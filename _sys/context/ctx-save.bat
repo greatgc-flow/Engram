@@ -23,10 +23,7 @@ if not exist "%CLAUDE_MD%" (
 echo [ctx-save] Checkpointing: %CD%
 
 :: Write minimal checkpoint marker to CLAUDE.md (no AI subprocess — token efficient)
-powershell -NoProfile -Command ^
-    "$f='%CLAUDE_MD%'; $ts=Get-Date -Format 'yyyy-MM-dd HH:mm'; ^
-     (Get-Content $f) -replace '(?<=## Current State\r?\n).*?(?=\r?\n##)', ^
-     ('Last ctx-save: ' + $ts + ' -- see _archive/sessions/ for snapshot') | Set-Content $f -Encoding UTF8" > nul 2>&1
+powershell -NoProfile -Command "$f='%CLAUDE_MD%'; $ts=Get-Date -Format 'yyyy-MM-dd HH:mm'; $c=(Get-Content $f -Raw); $c=$c -replace '(?<=## Current State\r?\n)[^\r\n]*', ('Last ctx-save: '+$ts+' -- see _archive/sessions/ for snapshot'); [System.IO.File]::WriteAllText($f,$c,(New-Object System.Text.UTF8Encoding($false)))" > nul 2>&1
 echo [ctx-save] CLAUDE.md checkpoint marker updated (no AI subprocess)
 
 :: Save checkpoint to local session log
@@ -63,21 +60,21 @@ if "%_GM_RECHECK%"=="1" (
     )
 )
 set "_GM_RECHECK="
-if "%GEMINI_MODE%"=="ON" (
-    set "_SUM=!SES_FILE!.midsummary.md"
-    echo [ctx-save] Generating Gemini mid-session summary...
-    type "!SES_FILE!" | gemini -p "Read the checkpoint log and write a 3-bullet summary: 1) What was done since last checkpoint 2) Current state 3) Immediate next steps." -o text -y > "!_SUM!" 2>&1
-    if not errorlevel 1 (
-        echo [ctx-save] Mid-summary: !_SUM!
-        call "%~dp0collab-log-append.bat" "Axis-D+" "ctx-save.bat" "OK" "Summary: !_SUM!"
-    ) else (
-        del "!_SUM!" > nul 2>&1
-        echo [ctx-save] Gemini mid-summary skipped (auth or network issue).
-        call "%~dp0collab-log-append.bat" "Axis-D+" "ctx-save.bat" "FAIL" "Error: api_error"
-        if defined GEMINI_DIR (
-            for /f "delims=" %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMddHHmmss"') do set "_ERR_DT=%%T"
-            powershell -NoProfile -Command "$f='%GEMINI_DIR%\status.json'; if (Test-Path $f) { $j=Get-Content $f -Raw | ConvertFrom-Json; $j.last_error='ctx_save_summary_failed_!_ERR_DT!'; $j.mode='OFF'; $j.reason='api_error'; [System.IO.File]::WriteAllText($f, ($j | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false))) }"
-        )
+if not "%GEMINI_MODE%"=="ON" goto :SKIP_GEMINI_SUM
+set "_SUM=!SES_FILE!.midsummary.md"
+echo [ctx-save] Generating Gemini mid-session summary...
+type "!SES_FILE!" | gemini -p "Read the checkpoint log and write a 3-bullet summary: 1) What was done since last checkpoint 2) Current state 3) Immediate next steps." -o text -y > "!_SUM!" 2>&1
+if not errorlevel 1 (
+    echo [ctx-save] Mid-summary: !_SUM!
+    call "%~dp0collab-log-append.bat" "Axis-D+" "ctx-save.bat" "OK" "Summary: !_SUM!"
+) else (
+    del "!_SUM!" > nul 2>&1
+    echo [ctx-save] Gemini mid-summary skipped (auth or network issue).
+    call "%~dp0collab-log-append.bat" "Axis-D+" "ctx-save.bat" "FAIL" "Error: api_error"
+    if defined GEMINI_DIR (
+        for /f "delims=" %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMddHHmmss"') do set "_ERR_DT=%%T"
+        powershell -NoProfile -Command "$f='%GEMINI_DIR%\status.json'; if (Test-Path $f) { $j=Get-Content $f -Raw | ConvertFrom-Json; $j.last_error='ctx_save_summary_failed_!_ERR_DT!'; $j.mode='OFF'; $j.reason='api_error'; [System.IO.File]::WriteAllText($f, ($j | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false))) }"
     )
 )
+:SKIP_GEMINI_SUM
 endlocal

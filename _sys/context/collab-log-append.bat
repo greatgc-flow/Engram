@@ -1,4 +1,5 @@
 @echo off
+setlocal DisableDelayedExpansion
 :: collab-log-append.bat [AXIS] [SCRIPT] [STATUS] [DETAIL]
 ::
 :: Appends one structured entry to _archive/collab-log/YYYY-MM-DD.md

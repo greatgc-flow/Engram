@@ -161,29 +161,29 @@ echo ---- >> "!_REPORT!"
 
 :: 3-1: no response file arg - should exit gracefully (no error)
 call "%TW%\context\raw-log.bat" "Axis-TEST" > "!_TMP!" 2>&1
-call :E "raw-log: no response file → graceful" 0 !ERRORLEVEL!
+call :E "raw-log: no response file ??? graceful" 0 !ERRORLEVEL!
 
 :: 3-2: nonexistent response file - silent skip
 call "%TW%\context\raw-log.bat" "Axis-TEST" "%TW%\nonexistent_file.txt" > "!_TMP!" 2>&1
-call :E "raw-log: nonexistent file → silent skip" 0 !ERRORLEVEL!
+call :E "raw-log: nonexistent file ??? silent skip" 0 !ERRORLEVEL!
 
-:: 3-3: valid response file only → creates response.txt in raw-log/
+:: 3-3: valid response file only ??? creates response.txt in raw-log/
 echo fake_response_content > "%TW%\fake_response.txt"
 call "%TW%\context\raw-log.bat" "Axis-TEST" "%TW%\fake_response.txt" > "!_TMP!" 2>&1
 set "_EC=!ERRORLEVEL!"
-call :E "raw-log: valid file → exit 0" 0 !_EC!
+call :E "raw-log: valid file ??? exit 0" 0 !_EC!
 dir /b "%TW%\_archive\raw-log\*Axis-TEST*response*" > "!_TMP!" 2>&1
 call :E "raw-log: response.txt created" 0 !ERRORLEVEL!
 
-:: 3-4: both response and directive files → creates both
+:: 3-4: both response and directive files ??? creates both
 echo fake_directive_content > "%TW%\fake_directive.txt"
 call "%TW%\context\raw-log.bat" "Axis-TEST2" "%TW%\fake_response.txt" "%TW%\fake_directive.txt" > "!_TMP!" 2>&1
 dir /b "%TW%\_archive\raw-log\*Axis-TEST2*directive*" > "!_TMP!" 2>&1
 call :E "raw-log: directive.txt created" 0 !ERRORLEVEL!
 
-:: 3-5: directive file nonexistent → response saved, directive silently skipped
+:: 3-5: directive file nonexistent ??? response saved, directive silently skipped
 call "%TW%\context\raw-log.bat" "Axis-TEST3" "%TW%\fake_response.txt" "%TW%\no_such_directive.txt" > "!_TMP!" 2>&1
-call :E "raw-log: missing directive → graceful" 0 !ERRORLEVEL!
+call :E "raw-log: missing directive ??? graceful" 0 !ERRORLEVEL!
 
 :: ================================================================
 :: GROUP 4: collab-log-append.bat
@@ -192,7 +192,7 @@ echo. >> "!_REPORT!"
 echo [GROUP 4] collab-log-append.bat >> "!_REPORT!"
 echo ---- >> "!_REPORT!"
 
-:: 4-1: OK status → creates MD log entry
+:: 4-1: OK status ??? creates MD log entry
 set "GEMINI_DIR=%TW%\_sys\gemini"
 call "%TW%\context\collab-log-append.bat" "Axis-TEST" "sandbox-test.bat" "OK" "Test detail" > "!_TMP!" 2>&1
 call :E "collab-log-append: OK status exit=0" 0 !ERRORLEVEL!
@@ -200,7 +200,7 @@ call :E "collab-log-append: OK status exit=0" 0 !ERRORLEVEL!
 for /f "delims=" %%D in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd"') do set "_TODAY=%%D"
 call :F "collab-log-append: MD file created" "%TW%\_archive\collab-log\!_TODAY!.md"
 
-:: 4-2: FAIL status → appends fail entry
+:: 4-2: FAIL status ??? appends fail entry
 call "%TW%\context\collab-log-append.bat" "Axis-TEST" "sandbox-test.bat" "FAIL" "Error: test_error" > "!_TMP!" 2>&1
 call :E "collab-log-append: FAIL status exit=0" 0 !ERRORLEVEL!
 
@@ -222,9 +222,9 @@ echo ---- >> "!_REPORT!"
 set "NO_GEMINI=1"
 set "GEMINI_MODE="
 
-:: 5-1: no args, NO_GEMINI=1 → exits 0 (non-blocking), writes UNKNOWN JSON
+:: 5-1: no args, NO_GEMINI=1 ??? exits 0 (non-blocking), writes UNKNOWN JSON
 call "%TW%\context\risk-scan.bat" > "!_TMP!" 2>&1
-call :E "risk-scan: no args, NO_GEMINI → exit 0 (non-blocking)" 0 !ERRORLEVEL!
+call :E "risk-scan: no args, NO_GEMINI ??? exit 0 (non-blocking)" 0 !ERRORLEVEL!
 
 :: 5-2: _archive\risk-scan.json created
 call :F "risk-scan: output JSON created" "%TW%\_archive\risk-scan.json"
@@ -239,11 +239,11 @@ call :E "risk-scan: output is valid JSON" 0 !ERRORLEVEL!
 
 :: 5-5: with task arg
 call "%TW%\context\risk-scan.bat" "test task description" > "!_TMP!" 2>&1
-call :E "risk-scan: with task arg → exit 0" 0 !ERRORLEVEL!
+call :E "risk-scan: with task arg ??? exit 0" 0 !ERRORLEVEL!
 
 :: 5-6: with task + files args
 call "%TW%\context\risk-scan.bat" "test task" "file1.bat,file2.ps1" > "!_TMP!" 2>&1
-call :E "risk-scan: with task+files → exit 0" 0 !ERRORLEVEL!
+call :E "risk-scan: with task+files ??? exit 0" 0 !ERRORLEVEL!
 
 :: 5-7: proceed=true in output
 powershell -NoProfile -Command "try{$j=Get-Content '%TW%\_archive\risk-scan.json' -Raw|ConvertFrom-Json;if($j.proceed -eq $true){exit 0}else{exit 1}}catch{exit 1}" > nul 2>&1
@@ -261,40 +261,40 @@ echo ---- >> "!_REPORT!"
 set "NO_GEMINI=1"
 set "GEMINI_MODE="
 
-:: 6-1: no JSONL exists → exit 0, graceful
+:: 6-1: no JSONL exists ??? exit 0, graceful
 call "%TW%\context\context-health.bat" > "!_TMP!" 2>&1
-call :E "context-health: no JSONL → exit 0" 0 !ERRORLEVEL!
+call :E "context-health: no JSONL ??? exit 0" 0 !ERRORLEVEL!
 findstr /c:"No JSONL" "!_TMP!" > nul 2>&1
 call :E "context-health: no JSONL message shown" 0 !ERRORLEVEL!
 
-:: 6-2: --force with no JSONL → exit 0
+:: 6-2: --force with no JSONL ??? exit 0
 call "%TW%\context\context-health.bat" --force > "!_TMP!" 2>&1
-call :E "context-health: --force no JSONL → exit 0" 0 !ERRORLEVEL!
+call :E "context-health: --force no JSONL ??? exit 0" 0 !ERRORLEVEL!
 
-:: 6-3: GREEN JSONL (100 KB) → reports GREEN
+:: 6-3: GREEN JSONL (100 KB) ??? reports GREEN
 powershell -NoProfile -Command "$f='%TW%\_sys\claude\config\projects\P--\session.jsonl'; $s=New-Object System.IO.FileStream($f,[System.IO.FileMode]::Create); $s.SetLength(102400); $s.Close()"
 call "%TW%\context\context-health.bat" > "!_TMP!" 2>&1
 call :E "context-health: GREEN JSONL exit=0" 0 !ERRORLEVEL!
 findstr /c:"GREEN" "!_TMP!" > nul 2>&1
 call :E "context-health: GREEN status reported" 0 !ERRORLEVEL!
 
-:: 6-4: YELLOW JSONL (700 KB) → reports YELLOW
+:: 6-4: YELLOW JSONL (700 KB) ??? reports YELLOW
 powershell -NoProfile -Command "$f='%TW%\_sys\claude\config\projects\P--\session.jsonl'; $s=New-Object System.IO.FileStream($f,[System.IO.FileMode]::Create); $s.SetLength(716800); $s.Close()"
 call "%TW%\context\context-health.bat" > "!_TMP!" 2>&1
 call :E "context-health: YELLOW JSONL exit=0" 0 !ERRORLEVEL!
 findstr /c:"YELLOW" "!_TMP!" > nul 2>&1
 call :E "context-health: YELLOW status reported" 0 !ERRORLEVEL!
 
-:: 6-5: RED JSONL (1.5 MB), NO_GEMINI → reports RED, skips handoff gracefully
+:: 6-5: RED JSONL (1.5 MB), NO_GEMINI ??? reports RED, skips handoff gracefully
 powershell -NoProfile -Command "$f='%TW%\_sys\claude\config\projects\P--\session.jsonl'; $s=New-Object System.IO.FileStream($f,[System.IO.FileMode]::Create); $s.SetLength(1572864); $s.Close()"
 call "%TW%\context\context-health.bat" > "!_TMP!" 2>&1
 call :E "context-health: RED JSONL exit=0 (Gemini skip graceful)" 0 !ERRORLEVEL!
 findstr /c:"RED" "!_TMP!" > nul 2>&1
 call :E "context-health: RED status reported" 0 !ERRORLEVEL!
 
-:: 6-6: --force with RED JSONL, NO_GEMINI → exits 0
+:: 6-6: --force with RED JSONL, NO_GEMINI ??? exits 0
 call "%TW%\context\context-health.bat" --force > "!_TMP!" 2>&1
-call :E "context-health: --force RED NO_GEMINI → exit 0" 0 !ERRORLEVEL!
+call :E "context-health: --force RED NO_GEMINI ??? exit 0" 0 !ERRORLEVEL!
 
 :: 6-7: status.json updated with context_health field
 powershell -NoProfile -Command "try{$j=Get-Content '%TW%\_sys\gemini\status.json' -Raw|ConvertFrom-Json;if($j.PSObject.Properties['context_health']){exit 0}else{exit 1}}catch{exit 1}" > nul 2>&1
@@ -311,10 +311,10 @@ echo ---- >> "!_REPORT!"
 
 set "GEMINI_DIR=%TW%\_sys\gemini"
 
-:: 7-1: NO_GEMINI=1 → GEMINI_MODE=OFF, reason=manual_override
+:: 7-1: NO_GEMINI=1 ??? GEMINI_MODE=OFF, reason=manual_override
 set "NO_GEMINI=1" & set "GEMINI_MODE=" & set "GEMINI_OFF_REASON="
 call "%PD%\_sys\gemini\gemini-status.bat"
-if "!GEMINI_MODE!"=="OFF" (call :OK "gemini-status: NO_GEMINI=1 → GEMINI_MODE=OFF") else (call :NG "gemini-status: NO_GEMINI=1 → GEMINI_MODE=OFF" "was !GEMINI_MODE!")
+if "!GEMINI_MODE!"=="OFF" (call :OK "gemini-status: NO_GEMINI=1 ??? GEMINI_MODE=OFF") else (call :NG "gemini-status: NO_GEMINI=1 ??? GEMINI_MODE=OFF" "was !GEMINI_MODE!")
 if "!GEMINI_OFF_REASON!"=="manual_override" (call :OK "gemini-status: reason=manual_override") else (call :NG "gemini-status: reason=manual_override" "was !GEMINI_OFF_REASON!")
 
 :: 7-2: status.json written with mode=OFF
@@ -322,10 +322,10 @@ call :F "gemini-status: status.json written" "%TW%\_sys\gemini\status.json"
 powershell -NoProfile -Command "try{$j=Get-Content '%TW%\_sys\gemini\status.json' -Raw|ConvertFrom-Json;if($j.mode -eq 'OFF'){exit 0}else{exit 1}}catch{exit 1}" > nul 2>&1
 call :E "gemini-status: status.json mode=OFF" 0 !ERRORLEVEL!
 
-:: 7-3: without NO_GEMINI (gemini in PATH but no .gemini auth dir) → not_authenticated
+:: 7-3: without NO_GEMINI (gemini in PATH but no .gemini auth dir) ??? not_authenticated
 set "NO_GEMINI=" & set "GEMINI_MODE=" & set "GEMINI_OFF_REASON="
 call "%PD%\_sys\gemini\gemini-status.bat"
-if "!GEMINI_MODE!"=="OFF" (call :OK "gemini-status: no auth dir → GEMINI_MODE=OFF") else (call :NG "gemini-status: no auth dir → GEMINI_MODE=OFF" "was !GEMINI_MODE!")
+if "!GEMINI_MODE!"=="OFF" (call :OK "gemini-status: no auth dir ??? GEMINI_MODE=OFF") else (call :NG "gemini-status: no auth dir ??? GEMINI_MODE=OFF" "was !GEMINI_MODE!")
 
 :: 7-4: installed=true in status.json (gemini.cmd found via npm-global)
 powershell -NoProfile -Command "try{$j=Get-Content '%TW%\_sys\gemini\status.json' -Raw|ConvertFrom-Json;if($j.installed -eq $true){exit 0}else{exit 1}}catch{exit 1}" > nul 2>&1
@@ -340,17 +340,17 @@ echo. >> "!_REPORT!"
 echo [GROUP 8] version-check.bat >> "!_REPORT!"
 echo ---- >> "!_REPORT!"
 
-:: 8-1: NO_GEMINI=1 → exits 1 with error message
+:: 8-1: NO_GEMINI=1 ??? exits 1 with error message
 set "GEMINI_MODE="
 call "%TW%\context\version-check.bat" > "!_TMP!" 2>&1
-call :E "version-check: NO_GEMINI → exit 1 (blocking)" 1 !ERRORLEVEL!
+call :E "version-check: NO_GEMINI ??? exit 1 (blocking)" 1 !ERRORLEVEL!
 findstr /c:"ERROR" "!_TMP!" > nul 2>&1
 call :E "version-check: ERROR message printed" 0 !ERRORLEVEL!
 
-:: 8-2: GEMINI_MODE=OFF explicitly → exits 1
+:: 8-2: GEMINI_MODE=OFF explicitly ??? exits 1
 set "GEMINI_MODE=OFF" & set "GEMINI_OFF_REASON=manual_override"
 call "%TW%\context\version-check.bat" > "!_TMP!" 2>&1
-call :E "version-check: GEMINI_MODE=OFF → exit 1" 1 !ERRORLEVEL!
+call :E "version-check: GEMINI_MODE=OFF ??? exit 1" 1 !ERRORLEVEL!
 
 :: ================================================================
 :: GROUP 9: agent-audit.bat
@@ -361,12 +361,12 @@ echo ---- >> "!_REPORT!"
 
 set "GEMINI_MODE=" & set "NO_GEMINI=1"
 
-:: 9-1: NO_GEMINI → exits 1
+:: 9-1: NO_GEMINI ??? exits 1
 call "%TW%\context\agent-audit.bat" > "!_TMP!" 2>&1
-call :E "agent-audit: NO_GEMINI → exit 1" 1 !ERRORLEVEL!
+call :E "agent-audit: NO_GEMINI ??? exit 1" 1 !ERRORLEVEL!
 
 :: 9-2: 9 agent .md files present
-for /f %%C in ('dir /b "%PD%\.claude\agents\*.md" 2^>nul ^| find /c /v ""') do set "_AGENT_CNT=%%C"
+set "_AC=0" & for %%F in ("%PD%\.claude\agents\*.md") do set /a "_AC+=1"
 if "!_AGENT_CNT!" geq "9" (call :OK "agent-audit: 9+ agent .md files present (!_AGENT_CNT!)") else (call :NG "agent-audit: 9+ agent .md files present" "found !_AGENT_CNT!")
 
 :: 9-3: .claude/agents dir accessible
@@ -382,7 +382,7 @@ echo ---- >> "!_REPORT!"
 set "GEMINI_MODE=" & set "NO_GEMINI=1"
 
 call "%TW%\context\script-deps.bat" > "!_TMP!" 2>&1
-call :E "script-deps: NO_GEMINI → exit 1" 1 !ERRORLEVEL!
+call :E "script-deps: NO_GEMINI ??? exit 1" 1 !ERRORLEVEL!
 findstr /c:"ERROR" "!_TMP!" > nul 2>&1
 call :E "script-deps: ERROR message printed" 0 !ERRORLEVEL!
 
@@ -395,22 +395,22 @@ echo ---- >> "!_REPORT!"
 
 set "GEMINI_MODE=" & set "NO_GEMINI=1"
 
-:: 11-1: no args, NO_GEMINI → exit 1 at Gemini check (before git check)
+:: 11-1: no args, NO_GEMINI ??? exit 1 at Gemini check (before git check)
 call "%TW%\context\git-draft.bat" > "!_TMP!" 2>&1
-call :E "git-draft: no args, NO_GEMINI → exit 1" 1 !ERRORLEVEL!
+call :E "git-draft: no args, NO_GEMINI ??? exit 1" 1 !ERRORLEVEL!
 
-:: 11-2: --staged flag, NO_GEMINI → exit 1
+:: 11-2: --staged flag, NO_GEMINI ??? exit 1
 call "%TW%\context\git-draft.bat" --staged > "!_TMP!" 2>&1
-call :E "git-draft: --staged NO_GEMINI → exit 1" 1 !ERRORLEVEL!
+call :E "git-draft: --staged NO_GEMINI ??? exit 1" 1 !ERRORLEVEL!
 
 :: 11-3: Gemini check happens before git check (GEMINI_MODE=OFF message present)
 call "%TW%\context\git-draft.bat" > "!_TMP!" 2>&1
 findstr /c:"ERROR" "!_TMP!" > nul 2>&1
 call :E "git-draft: ERROR message before git check" 0 !ERRORLEVEL!
 
-:: 11-4: invalid flag is passed (unknown flag) → still fails at Gemini check
+:: 11-4: invalid flag is passed (unknown flag) ??? still fails at Gemini check
 call "%TW%\context\git-draft.bat" --unknownflag > "!_TMP!" 2>&1
-call :E "git-draft: unknown flag with NO_GEMINI → exit 1" 1 !ERRORLEVEL!
+call :E "git-draft: unknown flag with NO_GEMINI ??? exit 1" 1 !ERRORLEVEL!
 
 :: ================================================================
 :: GROUP 12: ctx-save.bat
@@ -421,15 +421,15 @@ echo ---- >> "!_REPORT!"
 
 set "NO_GEMINI=1" & set "GEMINI_MODE="
 
-:: 12-1: no CLAUDE.md in current dir → exits 1
+:: 12-1: no CLAUDE.md in current dir ??? exits 1
 cd /d "%TW%"
 call "%TW%\context\ctx-save.bat" > "!_TMP!" 2>&1
-call :E "ctx-save: no CLAUDE.md → exit 1" 1 !ERRORLEVEL!
+call :E "ctx-save: no CLAUDE.md ??? exit 1" 1 !ERRORLEVEL!
 
-:: 12-2: with CLAUDE.md (valid), NO_GEMINI → exits 0
+:: 12-2: with CLAUDE.md (valid), NO_GEMINI ??? exits 0
 cd /d "%TW%\project"
 call "%TW%\context\ctx-save.bat" > "!_TMP!" 2>&1
-call :E "ctx-save: valid CLAUDE.md, NO_GEMINI → exit 0" 0 !ERRORLEVEL!
+call :E "ctx-save: valid CLAUDE.md, NO_GEMINI ??? exit 0" 0 !ERRORLEVEL!
 
 :: 12-3: session log file created in SESSION_DIR
 dir /b "%TR%\sessions\*.md" > "!_TMP!" 2>&1
@@ -452,7 +452,7 @@ echo ---- >> "!_REPORT!"
 
 set "NO_GEMINI=1" & set "GEMINI_MODE="
 
-:: 13-1: claude not in PATH → exits 1 with error
+:: 13-1: claude not in PATH ??? exits 1 with error
 :: (Remove npm-global from PATH temporarily for this test)
 set "_SAVED_PATH=!PATH!"
 set "PATH=%PD%\_sys\tools\ripgrep;%PD%\_sys\env\git\cmd;%PATH%"
@@ -461,21 +461,21 @@ call "%TW%\context\ctx-end.bat" > "!_TMP!" 2>&1
 set "_EC=!ERRORLEVEL!"
 set "PATH=!_SAVED_PATH!"
 :: ctx-end may succeed if claude is found via original PATH; just check graceful exit
-if !_EC! neq 0 (call :OK "ctx-end: no credentials → non-zero exit") else (
+if !_EC! neq 0 (call :OK "ctx-end: no credentials ??? non-zero exit") else (
     :: If claude is in PATH and credentials missing, it also exits 1
     call :OK "ctx-end: exited (credentials check)"
 )
 
-:: 13-2: claude in PATH, no credentials → exits 1
+:: 13-2: claude in PATH, no credentials ??? exits 1
 cd /d "%TW%\project"
 call "%TW%\context\ctx-end.bat" > "!_TMP!" 2>&1
 set "_EC=!ERRORLEVEL!"
-if !_EC! neq 0 (call :OK "ctx-end: missing credentials → exit 1") else (call :NG "ctx-end: missing credentials → exit 1" "got exit 0")
+if !_EC! neq 0 (call :OK "ctx-end: missing credentials ??? exit 1") else (call :NG "ctx-end: missing credentials ??? exit 1" "got exit 0")
 
-:: 13-3: --global flag, no credentials → exits 1
+:: 13-3: --global flag, no credentials ??? exits 1
 call "%TW%\context\ctx-end.bat" --global > "!_TMP!" 2>&1
 set "_EC=!ERRORLEVEL!"
-if !_EC! neq 0 (call :OK "ctx-end --global: missing credentials → non-zero exit") else (call :NG "ctx-end --global: missing credentials → non-zero" "got exit 0")
+if !_EC! neq 0 (call :OK "ctx-end --global: missing credentials ??? non-zero exit") else (call :NG "ctx-end --global: missing credentials ??? non-zero" "got exit 0")
 
 :: ================================================================
 :: GROUP 14: settings.json validation
