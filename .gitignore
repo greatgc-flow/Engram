@@ -1,0 +1,43 @@
+# Porta-Flow: Portable Sandbox Dev Environment - System Only Exclusions
+
+# 1. Huge Binary Environments
+_sys/env/
+_sys/tools/
+_sys/data/temp/
+_sys/data/setup-files/
+
+# 2. User Data & Workspaces (MANDATORY EXCLUSION)
+workspace/
+_workspace/
+_archive/
+
+# 3. Claude/Gemini Private State & History
+_sys/claude/config/.credentials.json
+_sys/claude/config/backups/
+_sys/claude/config/cache/
+_sys/claude/config/file-history/
+_sys/claude/config/paste-cache/
+_sys/claude/config/plans/
+_sys/claude/config/projects/
+_sys/claude/config/session-env/
+_sys/claude/config/sessions/
+_sys/claude/config/shell-snapshots/
+_sys/claude/config/tasks/
+_sys/claude/config/teams/
+_sys/claude/config/history.jsonl
+_sys/claude/config/.last-update-result.json
+_sys/gemini/config/
+
+# 4. Local Configs & Secrets
+**/settings.local.json
+**/local.config.bat
+.env
+*.log
+
+# 5. OS & IDE
+.DS_Store
+Thumbs.db
+.vscode/
+node_modules/
+__pycache__/
+*.pyc

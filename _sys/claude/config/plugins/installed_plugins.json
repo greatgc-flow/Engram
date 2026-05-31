@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "plugins": {
+    "harness@harness-marketplace": [
+      {
+        "scope": "user",
+        "installPath": "D:\\PortableDev2\\claude_config\\plugins\\cache\\harness-marketplace\\harness\\1.2.0",
+        "version": "1.2.0",
+        "installedAt": "2026-05-29T07:07:23.523Z",
+        "lastUpdated": "2026-05-29T07:07:23.523Z",
+        "gitCommitSha": "3fe5ad086e4c3e57afbe05a4f138225cad88e552"
+      }
+    ]
+  }
+}

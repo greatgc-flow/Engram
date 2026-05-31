@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Write(.claude/agents/**)",
+      "Write(.claude/skills/**)",
+      "Write(_workspace/**)",
+      "Write(_archive/**)",
+      "Write(_sys/claude/agent/CONTEXT.md)",
+      "Bash(_sys/context/*.bat)"
+    ],
+    "defaultMode": "auto"
+  },
+  "worktree": {
+    "baseRef": "fresh"
+  },
+  "enabledPlugins": {
+    "harness@harness-marketplace": true
+  },
+  "extraKnownMarketplaces": {
+    "harness-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "revfactory/harness"
+      }
+    }
+  },
+  "theme": "auto",
+  "editorMode": "normal",
+  "teammateMode": "auto",
+  "remoteControlAtStartup": true,
+  "inputNeededNotifEnabled": true,
+  "agentPushNotifEnabled": true,
+  "skipAutoPermissionPrompt": true
+}

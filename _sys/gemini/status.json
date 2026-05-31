@@ -1,0 +1,27 @@
+{
+    "mode":  "ON",
+    "reason":  "ready",
+    "installed":  true,
+    "authenticated":  true,
+    "last_check":  "20260531112028",
+    "last_error":  null,
+    "context_health":  {
+                           "jsonl_mb":  3.41,
+                           "status":  "RED",
+                           "checked":  "20260531114723"
+                       },
+    "gemini_metrics":  {
+                           "calls_today":  6,
+                           "calls_today_date":  "20260531",
+                           "last_call_ts":  "2026-05-31T15:51:20+09:00",
+                           "last_axis":  "Axis-E",
+                           "consecutive_failures":  0,
+                           "last_failure_reason":  null
+                       },
+    "ai_health":  {
+                      "claude_status":  "RED",
+                      "gemini_status":  "ON",
+                      "last_session_transition_recommended":  null,
+                      "dashboard_updated":  "20260531120000"
+                  }
+}

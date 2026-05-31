@@ -1,0 +1,44 @@
+# ================================================================
+# git_config/.gitconfig  -  포터블 Git 전용 설정
+#
+# start.bat 이 GIT_CONFIG_GLOBAL 환경변수로 이 파일을 지정함.
+# 포터블 Git(git\cmd\git.exe)이 있을 때만 적용됨.
+#
+# delta 연동: start.bat 에서 delta.exe 감지 시 GIT_PAGER=delta 설정
+#             이 파일에는 delta UI 옵션만 정의
+# ================================================================
+
+[core]
+    # Windows 에서 줄바꿈 자동 변환 방지 (팀 협업 시 혼란 예방)
+    autocrlf = input
+    safecrlf = warn
+
+[init]
+    defaultBranch = main
+
+[pull]
+    rebase = false
+
+# ── delta 옵션 (tools\delta\ 폴더가 있을 때 효과 있음) ─────────
+[delta]
+    navigate     = true
+    side-by-side = true
+    line-numbers = true
+    syntax-theme = Dracula
+
+[diff]
+    colorMoved = default
+
+[merge]
+    conflictstyle = diff3
+
+# ── 자주 쓰는 별칭 ──────────────────────────────────────────────
+[alias]
+    # 그래프 형태의 커밋 로그
+    lg  = log --oneline --graph --decorate --all
+    # 간결한 상태
+    st  = status -sb
+    # 마지막 커밋 내용 확인
+    last = log -1 HEAD --stat
+    # 스테이징 취소
+    unstage = reset HEAD --
