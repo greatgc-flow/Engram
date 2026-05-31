@@ -1,7 +1,12 @@
 <Configuration>
-  <!-- Windows Sandbox: Porta-Flow Unit Test Environment            -->
-  <!-- NOTE: Do NOT launch this template directly.                  -->
-  <!-- Use: run-sandbox-test.bat (generates path-correct .wsb)      -->
+  <!-- Porta-Flow Comprehensive Unit Test Sandbox               -->
+  <!-- Do NOT launch this template directly.                    -->
+  <!-- Use: run-sandbox-test.bat (injects __PORTABLE_ROOT__)    -->
+  <!--                                                          -->
+  <!-- Layout inside sandbox:                                   -->
+  <!--   C:\PortableDev   = host env (read-only)                -->
+  <!--   C:\TestResults   = writable, mapped back to host       -->
+  <!--   C:\TestWork      = writable workspace (sandbox-local)  -->
   <VGpu>Disable</VGpu>
   <Networking>Disable</Networking>
   <MappedFolders>
