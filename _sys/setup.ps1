@@ -43,6 +43,7 @@ $V = @{
     NodeJS = "22.22.3"
     Git    = "2.49.0"
     VSCode = "1.100.2"
+    Pwsh   = "7.6.2"
 }
 
 $URLs = @{
@@ -51,6 +52,7 @@ $URLs = @{
     Git    = "https://github.com/git-for-windows/git/releases/download/v$($V.Git).windows.1/PortableGit-$($V.Git)-64-bit.7z.exe"
     FFmpeg = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip"
     VSCode = "https://update.code.visualstudio.com/$($V.VSCode)/win32-x64-archive/stable"
+    Pwsh   = "https://github.com/PowerShell/PowerShell/releases/download/v$($V.Pwsh)/PowerShell-$($V.Pwsh)-win-x64.zip"
 }
 
 # ── Output helpers ─────────────────────────────────────────────
@@ -100,7 +102,7 @@ Write-Step "Folder structure"
 Run-Component "Folder structure" {
     @(
         $ENV_DIR, "$ENV_DIR\python", "$ENV_DIR\nodejs", "$ENV_DIR\ffmpeg",
-        "$ENV_DIR\git",  "$ENV_DIR\vscode", "$ENV_DIR\venv",
+        "$ENV_DIR\git",  "$ENV_DIR\vscode", "$ENV_DIR\venv", "$ENV_DIR\pwsh",
         $TOOLS_DIR, "$TOOLS_DIR\apps",
         "$CLAUDE_DIR\config", "$CLAUDE_DIR\agent",
         "$DATA_DIR\logs", "$DATA_DIR\temp", $SETUP_DIR,
@@ -250,6 +252,23 @@ if (-not $SkipVSCode) {
     }
 } else {
     Write-Info "VS Code skipped (-SkipVSCode)"
+}
+
+# ── 6.5. PowerShell 7 ─────────────────────────────────────────
+Write-Step "PowerShell $($V.Pwsh)"
+Run-Component "PowerShell 7" {
+    $pwshDir = Join-Path $ENV_DIR "pwsh"
+    $pwshExe = Join-Path $pwshDir "pwsh.exe"
+    if ($Force -or -not (Test-Path -LiteralPath $pwshExe)) {
+        $zipPath = Join-Path $SETUP_DIR "pwsh.zip"
+        if ($Force -or -not (Test-Path -LiteralPath $zipPath)) {
+            Download-File $URLs.Pwsh $zipPath "PowerShell $($V.Pwsh)"
+        }
+        Expand-Zip $zipPath $pwshDir
+        Write-OK "PowerShell 7 ready"
+    } else {
+        Write-Skip "PowerShell 7"
+    }
 }
 
 # ── 7. Python venv ─────────────────────────────────────────────

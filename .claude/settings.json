@@ -9,7 +9,7 @@
                                       "Bash(_sys/context/*.bat)"
                                   ]
                     },
-    "defaultShell":  "powershell",
+    "defaultShell": "powershell",
     "env":  {
                 "CLAUDE_CODE_PACKAGE_MANAGER_AUTO_UPDATE":  "false"
             }

@@ -5,7 +5,7 @@
       "repo": "anthropics/claude-plugins-official"
     },
     "installLocation": "G:\\내 드라이브\\PortableDev\\claude_config\\plugins\\marketplaces\\claude-plugins-official",
-    "lastUpdated": "2026-05-31T08:27:40.853Z"
+    "lastUpdated": "2026-05-31T15:01:02.535Z"
   },
   "harness-marketplace": {
     "source": {
@@ -13,6 +13,6 @@
       "repo": "revfactory/harness"
     },
     "installLocation": "D:\\PortableDev2\\claude_config\\plugins\\marketplaces\\harness-marketplace",
-    "lastUpdated": "2026-05-31T08:27:44.518Z"
+    "lastUpdated": "2026-05-31T15:37:09.888Z"
   }
 }

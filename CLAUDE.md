@@ -1,5 +1,5 @@
 # Portable Sandbox Dev Environment
-> Last updated: 2026-05-31
+> Last updated: 2026-06-01
 > This file lets Claude Code resume from where the setup conversation left off.
 
 ## What This Project Is
@@ -27,6 +27,8 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
 ├── _archive/               <- ALL rolling historical data (logs, sessions, workspace backups)
 │   ├── logs/               <- start.bat execution logs (LOG_DIR)
 │   ├── sessions/           <- ctx-save / ctx-end session files (SESSION_DIR)
+│   ├── collab-log/         <- Claude-Gemini collaboration logs (YYYY-MM-DD.md per day)
+│   ├── CHANGELOG.md        <- full change history (moved from CLAUDE.md for token efficiency)
 │   └── workspace_{YYYYMMDD_HHMMSS}/  <- _workspace backups per session
 │
 └── _sys/                   <- ALL system files (tools, config, data)
@@ -48,10 +50,12 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
     │
     ├── env/                <- runtime binaries
     │   ├── python/         <- portable Python (embeddable)
-    │   ├── nodejs/         <- portable Node.js + npm-global (Gemini CLI installed here)
+    │   ├── nodejs/         <- portable Node.js + npm-global (Gemini + Claude CLI here)
+    │   │   └── npm-global/ <- code.cmd (VS Code wrapper), claude.cmd, gemini.cmd
     │   ├── ffmpeg/         <- portable FFmpeg (bin/ subfolder)
     │   ├── git/            <- portable Git
     │   ├── vscode/         <- portable VS Code (data/ enables portable mode)
+    │   ├── pwsh/           <- portable PowerShell 7 (optional, setup.ps1 installs)
     │   └── venv/           <- Python venv (auto-created by start.bat)
     │
     ├── tools/              <- optional CLI + GUI tools (auto-detected)
@@ -70,7 +74,14 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
     │   └── agent/          <- agent state (CONTEXT.md)
     │
     ├── gemini/             <- Gemini CLI (binary in nodejs/npm-global)
-    │   └── config/         <- placeholder; Gemini CLI auth is NOT portable (stored in %USERPROFILE%\.gemini\)
+    │   └── config/         <- placeholder; Gemini CLI auth portable via Junction → %USERPROFILE%\.gemini\
+    │
+    ├── test/               <- test suite
+    │   ├── sandbox-test.bat   <- unit tests (~100 cases, WSB-ready)
+    │   ├── host-test.ps1      <- host-side tests (31 cases: settings, statusline, VS Code, npm)
+    │   ├── test-runner.ps1    <- orchestrator (Layer 1+2, WSB auto-detect, report)
+    │   ├── launch-wsbtest.ps1 <- WSB launcher (SUBST-aware, maps P:\ → C:\PortableDev)
+    │   └── results/           <- test reports (last-run.txt + timestamped archives)
     │
     └── data/               <- persistent data
         ├── temp/           <- isolated temp files
@@ -107,6 +118,11 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
 | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` auto-set | Harness (agent teams) requires this env var; start.bat sets it on every launch |
 | `setup.ps1` component-level try/catch (Run-Component) | One component failing does not abort the whole bootstrap; failures listed in summary |
 | `INSTALL.bat` at root | Single double-click entry for first-time setup; relays to `_sys\setup.ps1` |
+| `code.cmd` in `npm-global/` | VS Code portable wrapper; Claude Code IDE integration requires `code.cmd` in PATH |
+| `start.bat` syncs `statusline-command.sh` to `~/.claude/` | statusline script must be at `~/.claude/` on every host PC; start.bat copies it on each launch |
+| WSB (`launch-wsbtest.ps1`) as default test env | True OS isolation; sandbox-test.bat runs unmodified inside WSB; local fallback for CI |
+| `_archive/CHANGELOG.md` for change history | Keeps CLAUDE.md stable (better prompt-cache hits); history accessible but not loaded every session |
+| `pwsh/` in `env/` | Portable PowerShell 7; optional component via `setup.ps1 -Pwsh` |
 
 ## Key Bugs Fixed (for reference)
 

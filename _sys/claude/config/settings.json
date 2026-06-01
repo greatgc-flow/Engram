@@ -8,10 +8,14 @@
       "Write(_sys/claude/agent/CONTEXT.md)",
       "Bash(_sys/context/*.bat)"
     ],
-    "defaultMode": "auto"
+    "defaultMode": "default"
   },
   "worktree": {
     "baseRef": "fresh"
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash ~/.claude/statusline-command.sh"
   },
   "enabledPlugins": {
     "harness@harness-marketplace": true
