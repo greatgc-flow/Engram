@@ -25,22 +25,7 @@ set "_TASK=%~1"
 set "_FILES=%~2"
 
 :: --- Gemini mode check ---
-set "_GM_RECHECK=0"
-if not defined GEMINI_MODE set "_GM_RECHECK=1"
-if defined GEMINI_MODE if /i "%GEMINI_MODE%"=="OFF" if /i not "%GEMINI_OFF_REASON%"=="manual_override" set "_GM_RECHECK=1"
-if "%_GM_RECHECK%"=="1" (
-    if "%NO_GEMINI%"=="1" (
-        set "GEMINI_MODE=OFF"
-        set "GEMINI_OFF_REASON=manual_override"
-    ) else (
-        where gemini > nul 2>&1
-        if not errorlevel 1 (set "GEMINI_MODE=ON") else (
-            set "GEMINI_MODE=OFF"
-            set "GEMINI_OFF_REASON=not_installed"
-        )
-    )
-)
-set "_GM_RECHECK="
+call "%~dp0gemini-mode-check.bat"
 
 :: --- Gemini OFF: write UNKNOWN result, exit 0 (non-blocking) ---
 if not "%GEMINI_MODE%"=="ON" (

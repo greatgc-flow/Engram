@@ -76,7 +76,7 @@ When invoked by an agent, output structured data (JSON/XML) as primary. If escal
     - **Validator delegation (ad-hoc):** validator agent (Step 5b) calls `gemini -p` inline to pre-summarize `03_portability_audit.json` + `03_scenario_audit.json` → `_workspace/03_audit_summary.md`. Output contract: ≤20 bullet points. On failure, verifier reads raw JSON directly. No Axis script — direct inline call per §3-4 pattern 1.
 
 ## 4-1. Collaboration Protocol v2 (2026-05-31 — Peer Model)
-See `CONVENTION.md §3-5` for the full protocol. Key points for Gemini:
+See `COLLAB.md §C-1` for the full protocol. Key points for Gemini:
 
 **Peer rights — you may:**
 - **Request from Claude** using `[REQUEST_TO_CLAUDE: TYPE]` format. Always include `[REFERENCE: path]` when pointing to an artifact.

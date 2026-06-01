@@ -26,25 +26,8 @@ for /f "delims=" %%I in (
     'powershell -NoProfile -Command "Get-Date -Format yyyyMMddHHmmss"'
 ) do set "_DT=%%I"
 
-:: --- Check Gemini mode (undefined OR stale OFF from previous session start) ---
-set "_GM_RECHECK=0"
-if not defined GEMINI_MODE set "_GM_RECHECK=1"
-if defined GEMINI_MODE if /i "%GEMINI_MODE%"=="OFF" if /i not "%GEMINI_OFF_REASON%"=="manual_override" set "_GM_RECHECK=1"
-if "%_GM_RECHECK%"=="1" (
-    if "%NO_GEMINI%"=="1" (
-        set "GEMINI_MODE=OFF"
-        set "GEMINI_OFF_REASON=manual_override"
-    ) else (
-        where gemini > nul 2>&1
-        if not errorlevel 1 (
-            set "GEMINI_MODE=ON"
-        ) else (
-            set "GEMINI_MODE=OFF"
-            set "GEMINI_OFF_REASON=not_installed"
-        )
-    )
-)
-set "_GM_RECHECK="
+:: --- Check Gemini mode ---
+call "%~dp0gemini-mode-check.bat"
 if not "%GEMINI_MODE%"=="ON" (
     echo [version-check] ERROR: Gemini not available.
     echo                 Reason: %GEMINI_OFF_REASON%
