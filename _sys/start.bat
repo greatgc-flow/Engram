@@ -92,6 +92,12 @@ set "PIP_CACHE_DIR=%ENV_DIR%\python\pip-cache"
 set "PYTHONUSERBASE=%ENV_DIR%\python\userbase"
 set "CLAUDE_CONFIG_DIR=%CLAUDE_DIR%\config"
 set "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1"
+
+:: Sync statusline script to host Claude config (ensures statusline works on any PC)
+if exist "%CLAUDE_DIR%\config\statusline-command.sh" (
+    if not exist "%USERPROFILE%\.claude" mkdir "%USERPROFILE%\.claude"
+    copy /Y "%CLAUDE_DIR%\config\statusline-command.sh" "%USERPROFILE%\.claude\statusline-command.sh" >nul 2>&1
+)
 set "GEMINI_DIR=%SYS_DIR%\gemini"
 
 if exist "%GEMINI_DIR%\gemini-status.bat" (
@@ -105,6 +111,7 @@ if exist "%GEMINI_DIR%\gemini-status.bat" (
 :: ----------------------------------------------------------------
 set "PATH=%ENV_DIR%\nodejs\npm-global;%ENV_DIR%\venv\Scripts;%ENV_DIR%\python;%ENV_DIR%\python\Scripts;%ENV_DIR%\nodejs;%ENV_DIR%\ffmpeg\bin;%PATH%"
 
+if exist "%ENV_DIR%\pwsh" set "PATH=%ENV_DIR%\pwsh;%PATH%"
 if exist "%SYS_DIR%\context" set "PATH=%SYS_DIR%\context;%PATH%"
 if exist "%TOOLS_DIR%\ripgrep" set "PATH=%TOOLS_DIR%\ripgrep;%PATH%"
 if exist "%TOOLS_DIR%\fd" set "PATH=%TOOLS_DIR%\fd;%PATH%"

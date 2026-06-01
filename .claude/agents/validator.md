@@ -52,9 +52,21 @@ This HALT path is validator's only remaining authority. All PASS/FAIL belongs to
 
 5. Confirm both JSON files exist and are non-empty
 
+5b. (Optional — Gemini pre-summarization to save verifier tokens)
+    IF GEMINI_MODE=ON:
+    Bash: gemini -p "Summarize the key PASS/FAIL signals from these audit artifacts.
+    Be concise — bullet points only, max 20 items, no filler.
+    === portability audit ===
+    $(cat _workspace/03_portability_audit.json)
+    === scenario audit ===
+    $(cat _workspace/03_scenario_audit.json)" > _workspace/03_audit_summary.md 2>&1
+    On failure or GEMINI_MODE=OFF: skip silently (verifier reads raw JSON directly)
+
 6. SendMessage to verifier:
    "Audit phase complete. Artifacts: _workspace/03_portability_audit.json,
-    _workspace/03_scenario_audit.json. Please issue judgment."
+    _workspace/03_scenario_audit.json.
+    [If 03_audit_summary.md exists: Gemini summary also available at _workspace/03_audit_summary.md]
+    Please issue judgment."
 
 7. Update state.json: phase="validation_forwarded"
 

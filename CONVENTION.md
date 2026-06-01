@@ -585,3 +585,32 @@ ZONE C — Ask user first:
   • risk-scanner returns overall_risk = HIGH
   • loop_count reaches 2 → warn: "Loop 2/3. One more FAIL triggers HALT."
 ```
+
+## §9 — Testing Environment Policy (2026-06-01)
+
+### Default: Windows Sandbox (WSB)
+
+All script and environment tests MUST run in Windows Sandbox when possible.
+Local temp directory simulation (PortaFlowTest_*) is DEPRECATED as primary method.
+
+| Method | Use Case | Command |
+|--------|----------|---------|
+| WSB (default) | Full env validation, new-PC scenario, install/tool test | `powershell -ExecutionPolicy Bypass -File P:\_sys\test\launch-wsbtest.ps1` |
+| Local temp (fallback) | Quick unit checks, WSB feature not enabled | `P:\_sys\test\sandbox-test.bat` (directly) |
+
+### WSB Architecture
+- `launch-wsbtest.ps1`: resolves physical path (handles SUBST), generates temp `.wsb`, waits for results
+- `sandbox-test.bat` runs UNMODIFIED inside WSB — path layout (`C:\PortableDev`, `C:\TestResults`) matches WSB mounts
+- Host read-only: physical `P:\` → `C:\PortableDev`
+- Host writable: `P:\_sys\test\results\` → `C:\TestResults` (result survives sandbox exit)
+- Sandbox auto-shuts down after tests; result archived as `results\result_{timestamp}.txt`
+
+### When to Run WSB Tests
+- Before commit touching `_sys/*.bat` or `_sys/*.ps1`
+- After adding a tool to `tools/`
+- Before marking a portable-env harness task COMPLETE
+- After `setup.ps1` or `start.bat` structural changes
+
+### WSB Prerequisites
+- Windows Sandbox optional feature: `optionalfeatures.exe → Windows Sandbox`
+- Requires Win11 Pro / Enterprise / Pro for Workstations (this system qualifies)
