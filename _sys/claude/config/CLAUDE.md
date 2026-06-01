@@ -35,32 +35,35 @@ Gemini가 실작업을 수행하고, Claude는 방향 설정과 결과 점검을
 
 ### GEMINI_RATIO 레벨 (P:\_sys\gemini\config.json)
 
-| ratio | Claude 행동 기준 |
-|-------|----------------|
-| 0     | Gemini OFF — 모든 작업을 Claude가 독립 수행 |
-| 1–4   | Claude 독립 — 수동 요청 시에만 Gemini 참여 |
-| 5–6   | 복잡한 분석·설계 결정에만 consult 필수 |
-| 7–9   | 멀티파일·리팩토링·버그분석 등 비trivial 작업 전 반드시 consult |
-| 10    | **전면 위임** — 모든 읽기·쓰기·분석 행동 전에 Gemini 먼저 |
+| ratio | Gemini 호출 트리거 |
+|-------|------------------|
+| 0     | OFF — 자동 호출 없음 |
+| 1     | 명시적 Axis 실행 시에만 |
+| 2     | 아키텍처·구조 수준 설계 변경 |
+| 3     | 멀티파일 동시 수정 |
+| 4     | 단일 파일 주요 변경 (리팩토링·버그 수정) |
+| 5     | 모든 코드 편집 (Edit·Write 전) |
+| 6     | 코드 편집 + Bash 명령 전 |
+| 7     | 코드 편집 + Bash + 파일 읽기(분석 목적) 전 |
+| 8     | 코드·분석이 포함된 모든 실질적 응답 전 |
+| 9     | 짧은 단답 제외 모든 응답 전 |
+| 10    | **모든 채팅** — 길고 짧은 모든 메시지에 Gemini 먼저 호출 |
 
-### ratio 10: 전면 위임 규칙
-아래 각 행동을 하기 **전에** 반드시 Gemini를 호출한다:
+### 호출 방법 (2단계, PowerShell 도구 timeout 180000)
 
-- **파일 읽기(Read) 전**: 해당 파일에서 찾을 내용·관련 섹션을 Gemini에게 먼저 분석 요청
-- **파일 편집/쓰기(Edit·Write) 전**: 변경 내용의 완전한 초안을 Gemini에게 생성 요청 → 결과를 그대로 적용
-- **Bash 명령 전**: 명령의 정확성·위험성·대안을 Gemini에게 확인
-- **코드 분석·리뷰**: Gemini가 주도하고 Claude는 결과 검증
+병렬 실행 충돌 방지를 위해 호출마다 고유 파일명을 사용한다.
 
-### 호출 방법 (2단계, Bash 도구 timeout 180000)
-Step 1 — 쿼리 파일 작성 (Write 도구):
-  파일: `P:\_sys\gemini\consult-query.txt`
+Step 1 — 고유 쿼리 파일 작성 (Write 도구):
+  파일: `P:\_sys\gemini\cq-{YYYYMMDDHHMMSS}-{RAND4}.txt`
+  예시: `P:\_sys\gemini\cq-20260601185504-a3f2.txt`
   내용: TASK/CONTEXT/QUESTION 형식으로 작성
 
 Step 2 — Gemini 호출 (PowerShell 도구, timeout 180000):
 ```
 $env:PATH += ";P:\_sys\env\nodejs\npm-global"
-cmd /c "P:\_sys\context\gemini-consult.bat" 2>&1
+cmd /c "P:\_sys\context\gemini-consult.bat P:\_sys\gemini\cq-{위 파일명}" 2>&1
 ```
+(bat이 응답 후 쿼리 파일 자동 삭제)
 
 ### 위임 모드 (파일 내용 생성을 Gemini에게)
 쿼리에 "파일의 완전한 새 내용을 작성해줘" 포함 → Gemini가 전체 파일 내용을 텍스트로 출력

@@ -3,12 +3,19 @@ setlocal EnableDelayedExpansion
 :: ================================================================
 :: gemini-consult.bat (Axis-Q) - Synchronous Gemini consultation
 ::
-:: Reads _sys\gemini\consult-query.txt, calls Gemini, prints
-:: response to stdout. Claude waits for the result.
+:: Usage:
+::   gemini-consult.bat [query-file]
 ::
-:: Step 1: Claude writes query to _sys\gemini\consult-query.txt
-:: Step 2: Claude runs: cmd /c P:\_sys\context\gemini-consult.bat
-::         (Bash tool, timeout 180000)
+::   [query-file]  optional path to query file.
+::                 If omitted, falls back to _sys\gemini\consult-query.txt
+::
+:: Recommended (parallel-safe): pass a unique per-call filename
+::   e.g. cq-20260601185504-a3f2.txt
+::
+:: Step 1: Write query to unique file (TASK/CONTEXT/QUESTION format)
+:: Step 2: PowerShell tool (timeout 180000):
+::           $env:PATH += ";P:\_sys\env\nodejs\npm-global"
+::           cmd /c "P:\_sys\context\gemini-consult.bat P:\_sys\gemini\cq-{TS}-{RND}.txt" 2>&1
 :: ================================================================
 
 :: --- Resolve paths ---
@@ -20,7 +27,12 @@ if exist "%_ROOT%\_sys\env\nodejs\npm-global\gemini.cmd" (
     set "PATH=%_ROOT%\_sys\env\nodejs\npm-global;%PATH%"
 )
 
-set "_QFILE=%_GD%\consult-query.txt"
+:: --- Query file: use argument if provided, else default ---
+if not "%~1"=="" (
+    set "_QFILE=%~1"
+) else (
+    set "_QFILE=%_GD%\consult-query.txt"
+)
 
 :: --- Check query file ---
 if not exist "%_QFILE%" (
