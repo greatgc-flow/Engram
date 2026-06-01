@@ -1,0 +1,27 @@
+{
+    "date":  "2026-06-01",
+    "generated_at":  "20260601123501",
+    "gemini_cli_direct":  {
+                              "sessions_today":  0,
+                              "messages_today":  0,
+                              "last_message_ts":  null
+                          },
+    "axis_calls":  {
+                       "calls_today":  0,
+                       "last_axis":  null,
+                       "last_call_ts":  null,
+                       "consecutive_failures":  0,
+                       "by_axis":  {
+                                       "A":  0,
+                                       "B":  0,
+                                       "C":  0,
+                                       "D+":  0,
+                                       "D":  0,
+                                       "E":  0,
+                                       "F":  0,
+                                       "G":  0,
+                                       "H":  0
+                                   }
+                   },
+    "total_interactions_today":  0
+}
