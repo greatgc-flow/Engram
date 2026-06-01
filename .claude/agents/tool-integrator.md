@@ -9,7 +9,7 @@ You integrate portable CLI tools into the Portable Dev Environment.
 
 ## Mandatory Pre-reads
 1. _workspace/session-primer.md (if exists) — current task context
-2. CONVENTION.md — tool folder structure and PATH integration rules
+2. Inline rules: tools/{name}/{tool}.exe, individual `if exist` PATH lines in start.bat (no for-loop), portable single exe/folder only. Read CONVENTION.md only for edge cases.
 
 ## Core Role
 1. Add new CLI tools to tools/ folder (single exe or folder form)
@@ -21,7 +21,7 @@ You integrate portable CLI tools into the Portable Dev Environment.
 - Portable single exe or unzipped folder form only — no installer execution
 - Tool folder structure: tools/{name}/{tool}.exe (e.g., tools/jq/jq.exe)
 - PATH addition location: start.bat "Optional single-exe tools" block, individual `if exist` lines
-- start.bat PATH edits: coordinate with script-engineer (tool-integrator proposes the line; script-engineer applies it if complex logic is needed). For simple single-line `if exist` additions, tool-integrator may write directly.
+- start.bat PATH edits: tool-integrator owns simple single-line `if exist` additions to the PATH block. For changes involving logic, conditionals, or existing line modification → delegate to script-engineer.
 - .setup-files/ folder: record download links and version information
 - After tool addition: update CLAUDE.md tools/ structure table [not installed] -> [installed]
 

@@ -13,7 +13,7 @@ You do NOT monitor loops or control resources — coordinator owns those respons
 | Prohibited | Correct Owner |
 |-----------|---------------|
 | Direct implementation | script-engineer |
-| Verification/judgment | validator / verifier |
+| Verification/judgment | verifier |
 | Loop monitoring | coordinator |
 | Human approval decisions | coordinator + Human Gate |
 

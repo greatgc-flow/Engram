@@ -81,24 +81,7 @@ echo [ctx-end] Session saved. Safe to close.
 if "%GLOBAL_UPDATE%"=="0" echo         Tip: ctx-end --global  also updates global preferences.
 
 :: Optional: Gemini summary (skipped if GEMINI_MODE is not ON)
-set "_GM_RECHECK=0"
-if not defined GEMINI_MODE set "_GM_RECHECK=1"
-if defined GEMINI_MODE if /i "%GEMINI_MODE%"=="OFF" if /i not "%GEMINI_OFF_REASON%"=="manual_override" set "_GM_RECHECK=1"
-if "%_GM_RECHECK%"=="1" (
-    if "%NO_GEMINI%"=="1" (
-        set "GEMINI_MODE=OFF"
-        set "GEMINI_OFF_REASON=manual_override"
-    ) else (
-        where gemini > nul 2>&1
-        if not errorlevel 1 (
-            set "GEMINI_MODE=ON"
-        ) else (
-            set "GEMINI_MODE=OFF"
-            set "GEMINI_OFF_REASON=not_installed"
-        )
-    )
-)
-set "_GM_RECHECK="
+call "%~dp0gemini-mode-check.bat"
 if not "%GEMINI_MODE%"=="ON" goto :SKIP_GEMINI_SUM
 set "_SUM=!SES_FILE!.summary.md"
 echo [ctx-end] Generating Gemini summary...

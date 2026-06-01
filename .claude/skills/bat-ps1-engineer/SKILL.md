@@ -59,7 +59,7 @@ Never override: USERPROFILE, APPDATA, LOCALAPPDATA.
 
 ## Procedure for Script Modification
 
-1. Read CONVENTION.md §0, §1, §2 (rules baseline)
+1. Key rules inline above cover §0/§1/§2. Read CONVENTION.md only for edge cases.
 2. Read _sys/gemini/status.json (Gemini availability)
 3. If Gemini ON: run Axis-F (script-deps.bat) for dependency map
 4. Edit script (Edit/Write tool)

@@ -9,7 +9,7 @@ You audit portability (host PC independence) and isolation (no host contaminatio
 
 ## Mandatory Pre-reads
 1. _workspace/session-primer.md (if exists) — current task context
-2. CONVENTION.md — env var isolation rules and prohibited patterns
+2. Inline rules: no C:\D:\ hardcoded, no USERPROFILE/APPDATA/LOCALAPPDATA override, all paths via %BASE_DIR%. Read CONVENTION.md only for edge cases.
 3. _sys/gemini/status.json — Gemini mode (mode=ON -> Full-Corpus Scan; OFF -> Grep fallback)
 
 ## Core Role

@@ -9,7 +9,7 @@ You keep documentation synchronized with code and structure changes.
 
 ## Mandatory Pre-reads
 1. _workspace/session-primer.md (if exists) — current task context
-2. CONVENTION.md — document naming/path rules
+2. Inline doc rules: paths use _sys\env\, _sys\tools\, _sys\claude\ etc. Documents >100 lines: Gemini draft first. Always read current doc state before editing. Read CONVENTION.md only for edge cases.
 
 ## Core Role
 1. Identify and update relevant documents after code/structure changes

@@ -20,7 +20,7 @@ coordinator: request decomposition, task delegation, state management, Human App
 | docs-writer | README/CLAUDE.md/CONVENTION.md sync |
 | portability-auditor | isolation and portability verification |
 | scenario-auditor | user journey closed-loop verification |
-| validator | audit coordinator (NO PASS/FAIL authority) |
+| ~~validator~~ | deprecated — merged into verifier |
 | verifier | sole PASS/FAIL judge |
 | proposer | ROI analysis and version management |
 | risk-scanner | pre-flight risk identification (Phase 1.5) |
@@ -96,12 +96,12 @@ Phase 3:  Collaboration Loop (MAX 3)
   [Dev]    script-engineer (Axis-F pre → edit → Axis-D post → verifier request)
            tool-integrator
   [Organize] organizer → folder-tidier | docs-writer (organizer NEVER executes directly)
-  [Audit]  validator (Audit Coordinator, NO PASS/FAIL) →
+             Fast path: single doc update (no structural change) → coordinator → docs-writer directly
+  [Audit+Judge]  verifier (spawns auditors AND issues PASS/FAIL) →
              portability-auditor → _workspace/03_portability_audit.json
              scenario-auditor    → _workspace/03_scenario_audit.json
-  [Judge]  verifier (SOLE PASS/FAIL authority) →
              reads 03_*.json critical[] only (not full prose)
-             reads CONVENTION.md compliance
+             compliance check via inline rules (not full CONVENTION.md)
              Axis-E if agents/*.md changed
              → PASS or FAIL (verifier only)
   [Propose] proposer → _workspace/04_proposal.json (ROI + versions + improvements)
@@ -127,7 +127,7 @@ Phase 5:  Final cleanup
            Axis-D+ mid-summary (if Gemini ON, opt-in)
 ```
 
-Fast path: Single-file change, no structural/scenario impact → skip Phase 1.5 + Phase 3 validator/loop; coordinator → verifier directly (bypass validator orchestration).
+Fast path: Single-file change, no structural/scenario impact → skip Phase 1.5 + Phase 3 audit loop; coordinator → verifier directly.
 
 ## Data Flow
 ```
@@ -171,7 +171,7 @@ Phase 5: Execute autonomously after approval
 
 ## Error Handling
 - Team member failure: SendMessage status check → 1 restart → if still failing, route to coordinator for human intervention
-- loop_count ≥ 3: HALT immediately (validator executes HALT path), Human intervention required
+- loop_count ≥ 3: HALT immediately (verifier executes HALT path), Human intervention required
 - Role boundary violation: stop offending agent, re-delegate to correct agent
 - Human approval absent: maintain status "waiting_approval", no further action
 - ESCALATE_TO_TIER1 received: coordinator processes immediately (see coordinator.md for routing)

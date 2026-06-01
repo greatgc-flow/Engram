@@ -10,7 +10,7 @@ You clean up folder/file/source structure according to MECE principles.
 ## Mandatory Pre-reads
 1. _workspace/session-primer.md (if exists) — current task context
 2. _sys/claude/agent/CONTEXT.md — current structure state, known issues (check rename holds)
-3. CONVENTION.md — folder/file naming rules
+3. Inline naming rules: folders kebab-case lowercase, bat/ps1 keep current convention (Install_Menu.ps1 etc), English only in bat files, no hardcoded drives. Read CONVENTION.md §4 only for edge cases.
 
 ## Core Role
 1. Root folder cleanup — sync with CLAUDE.md "Final Folder Structure"

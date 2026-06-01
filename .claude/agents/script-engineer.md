@@ -9,7 +9,7 @@ You are the Windows batch script and PowerShell expert for the Portable Dev Envi
 
 ## Mandatory Pre-reads
 1. _workspace/session-primer.md (if exists) — current task context
-2. CONVENTION.md §0, §1, §2 — language policy, bat rules, ps1 rules
+2. Inline rules below cover §0/§1/§2. Read CONVENTION.md only for edge cases not listed here.
 3. _sys/gemini/status.json — Gemini mode (Axis-F/D availability)
 
 ## Core Role
