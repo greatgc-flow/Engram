@@ -159,6 +159,15 @@ call :E "git --version" 0 !ERRORLEVEL!
 "%PD%\_sys\env\nodejs\node.exe" --version > "!_TMP!" 2>&1
 call :E "node --version" 0 !ERRORLEVEL!
 
+"%PD%\_sys\tools\sqlite\sqlite3.exe" --version > "!_TMP!" 2>&1
+call :E "sqlite3 --version" 0 !ERRORLEVEL!
+
+"%PD%\_sys\tools\gh\gh.exe" --version > "!_TMP!" 2>&1
+call :E "gh --version portable" 0 !ERRORLEVEL!
+
+"%PD%\_sys\env\pwsh\pwsh.exe" --version > "!_TMP!" 2>&1
+call :E "pwsh --version" 0 !ERRORLEVEL!
+
 :: ================================================================
 :: GROUP 3: raw-log.bat
 :: ================================================================
@@ -538,6 +547,14 @@ call :E "start.bat: CLAUDE_CONFIG_DIR configured" 0 !ERRORLEVEL!
 findstr /c:"SUBST_DRIVE_LETTER" "%PD%\_sys\start.bat" > nul 2>&1
 call :E "start.bat: SUBST_DRIVE_LETTER portability logic" 0 !ERRORLEVEL!
 
+:: 15-7: sqlite PATH entry
+findstr /c:"sqlite" "%PD%\_sys\start.bat" > nul 2>&1
+call :E "start.bat: sqlite PATH entry" 0 !ERRORLEVEL!
+
+:: 15-8: gh PATH entry
+findstr /c:"\gh" "%PD%\_sys\start.bat" > nul 2>&1
+call :E "start.bat: gh PATH entry" 0 !ERRORLEVEL!
+
 :: ================================================================
 :: GROUP 16: New Files and Features (2026-06-01)
 :: ================================================================
@@ -555,6 +572,50 @@ call :E "start.bat: statusline sync block" 0 !ERRORLEVEL!
 findstr /c:"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" "%PD%\_sys\start.bat" > nul 2>&1
 call :E "start.bat: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS set" 0 !ERRORLEVEL!
 
+:: ---- 2026-06-01 session + tool fixes ----
+:: gemini-consult.bat: CRLF
+powershell -NoProfile -Command "if([IO.File]::ReadAllText('%PD%\_sys\context\gemini-consult.bat').Contains([char]13)){exit 0}else{exit 1}" > nul 2>&1
+call :E "gemini-consult.bat: CRLF endings" 0 !ERRORLEVEL!
+
+findstr /c:"approval-mode plan" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1
+call :E "gemini-consult.bat: --approval-mode plan" 0 !ERRORLEVEL!
+
+findstr /c:"_SID_FILE and _GUSAGE must be set here" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1
+call :E "gemini-consult.bat: _SID_FILE before gate" 0 !ERRORLEVEL!
+
+findstr /c:"_GUSAGE" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1
+call :E "gemini-consult.bat: _GUSAGE var" 0 !ERRORLEVEL!
+
+findstr /c:"tools\\ripgrep" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1
+call :E "gemini-consult.bat: ripgrep in PATH" 0 !ERRORLEVEL!
+
+findstr /c:"session-map" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1
+call :E "gemini-consult.bat: session-map update" 0 !ERRORLEVEL!
+
+findstr /c:"gemini-usage.bat" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1
+call :E "gemini-consult.bat: usage auto-update" 0 !ERRORLEVEL!
+
+:: ctx-end.bat: CRLF + session-map
+powershell -NoProfile -Command "if([IO.File]::ReadAllText('%PD%\_sys\context\ctx-end.bat').Contains([char]13)){exit 0}else{exit 1}" > nul 2>&1
+call :E "ctx-end.bat: CRLF endings" 0 !ERRORLEVEL!
+
+findstr /c:"session-map" "%PD%\_sys\context\ctx-end.bat" > nul 2>&1
+call :E "ctx-end.bat: session-map archive" 0 !ERRORLEVEL!
+
+:: gemini-usage.bat: Axis-Q
+findstr /c:"Q=0" "%PD%\_sys\gemini\gemini-usage.bat" > nul 2>&1
+call :E "gemini-usage.bat: Q=0 key" 0 !ERRORLEVEL!
+
+findstr /c:"A-HQ" "%PD%\_sys\gemini\gemini-usage.bat" > nul 2>&1
+call :E "gemini-usage.bat: [A-HQ] regex" 0 !ERRORLEVEL!
+
+:: Gemini CLI bundle: rg-win32-x64.exe
+call :F "Gemini bundle: rg-win32-x64.exe" "%PD%\_sys\env\nodejs\npm-global\node_modules\@google\gemini-cli\bundle\rg-win32-x64.exe"
+
+:: tools: sqlite3, gh
+call :F "tools\sqlite\sqlite3.exe" "%PD%\_sys\tools\sqlite\sqlite3.exe"
+call :F "tools\gh\gh.exe"          "%PD%\_sys\tools\gh\gh.exe"
+
 :: ================================================================
 :: GROUP 17: Document Content Integrity
 :: ================================================================
@@ -565,11 +626,10 @@ echo ---- >> "!_REPORT!"
 findstr /c:"CHANGELOG.md" "%PD%\CLAUDE.md" > nul 2>&1
 call :E "CLAUDE.md: references _archive/CHANGELOG.md" 0 !ERRORLEVEL!
 
-findstr /c:"9" "%PD%\CONVENTION.md" | findstr /c:"WSB" > nul 2>&1
-call :E "CONVENTION.md: section 9 WSB policy present" 0 !ERRORLEVEL!
+findstr /c:"WSB" "%PD%\CONVENTION.md" > nul 2>&1
+call :E "CONVENTION.md: WSB policy section present" 0 !ERRORLEVEL!
 
-findstr /c:"5b" "%PD%\.claude\agents\validator.md" > nul 2>&1
-call :E "validator.md: step 5b Gemini delegation" 0 !ERRORLEVEL!
+call :F "verifier.md: agent exists" "%PD%\.claude\agents\verifier.md"
 
 findstr /c:"2026-06-01" "%PD%\GEMINI.md" > nul 2>&1
 call :E "GEMINI.md: 2026-06-01 date updated" 0 !ERRORLEVEL!

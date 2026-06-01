@@ -99,6 +99,15 @@ del "!_SUM!" > nul 2>&1
 echo [ctx-end] Gemini summary skipped (auth or network issue).
 call "%~dp0collab-log-append.bat" "Axis-C" "ctx-end.bat" "FAIL" "Error: api_error"
 :SKIP_GEMINI_SUM
+:: ── Gemini 1:1 session-id + session-map cleanup ──────────────────
+set "_SID_FILE=!_BASE!\_sys\gemini\session-id.txt"
+set "_SMAP=!_BASE!\_sys\gemini\session-map.json"
+if exist "!_SID_FILE!" (
+    echo [ctx-end] Archiving Gemini session to session-map...
+    powershell -NoProfile -Command "$f='!_SMAP:\=\\!'; $now=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss'); $hist=@(); if(Test-Path $f){try{$m=Get-Content $f -Raw|ConvertFrom-Json; if($m.history){$hist=[array]$m.history}; if($m.active){$entry=$m.active|Select-Object *; Add-Member -InputObject $entry -NotePropertyName ended_at -NotePropertyValue $now -Force; $hist+=$entry}}catch{}}; $out=[ordered]@{active=$null;history=$hist}; [IO.File]::WriteAllText($f,($out|ConvertTo-Json -Depth 5),(New-Object System.Text.UTF8Encoding($false)))" >nul 2>&1
+    del "!_SID_FILE!" >nul 2>&1
+    echo [ctx-end] Gemini session archived.
+)
 :: ── Gemini session JSONL cleanup ─────────────────────────────────
 if not defined GEMINI_SESSION_KEEP set "GEMINI_SESSION_KEEP=7"
 set "_CHAT_DIR=!_BASE!\_sys\gemini\config\tmp\project\chats"

@@ -120,6 +120,8 @@ if exist "%TOOLS_DIR%\bat" set "PATH=%TOOLS_DIR%\bat;%PATH%"
 if exist "%TOOLS_DIR%\delta" set "PATH=%TOOLS_DIR%\delta;%PATH%"
 if exist "%TOOLS_DIR%\fzf" set "PATH=%TOOLS_DIR%\fzf;%PATH%"
 if exist "%TOOLS_DIR%\oh-my-posh" set "PATH=%TOOLS_DIR%\oh-my-posh;%PATH%"
+if exist "%TOOLS_DIR%\sqlite" set "PATH=%TOOLS_DIR%\sqlite;%PATH%"
+if exist "%TOOLS_DIR%\gh" set "PATH=%TOOLS_DIR%\gh;%PATH%"
 
 if exist "%ENV_DIR%\git\cmd\git.exe" (
     set "PATH=%ENV_DIR%\git\cmd;%ENV_DIR%\git\usr\bin;%PATH%"

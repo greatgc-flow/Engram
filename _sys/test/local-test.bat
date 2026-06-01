@@ -98,6 +98,9 @@ echo ---- >> "!_REPORT!"
 "%PD%\_sys\tools\delta\delta.exe" --version > "!_TMP!" 2>&1 & call :E "delta --version" 0 !ERRORLEVEL!
 "%PD%\_sys\env\git\cmd\git.exe" --version > "!_TMP!" 2>&1 & call :E "git --version" 0 !ERRORLEVEL!
 "%PD%\_sys\env\nodejs\node.exe" --version > "!_TMP!" 2>&1 & call :E "node --version" 0 !ERRORLEVEL!
+"%PD%\_sys\tools\sqlite\sqlite3.exe" --version > "!_TMP!" 2>&1 & call :E "sqlite3 --version" 0 !ERRORLEVEL!
+"%PD%\_sys\tools\gh\gh.exe" --version > "!_TMP!" 2>&1 & call :E "gh --version portable" 0 !ERRORLEVEL!
+"%PD%\_sys\env\pwsh\pwsh.exe" --version > "!_TMP!" 2>&1 & call :E "pwsh --version" 0 !ERRORLEVEL!
 
 echo. >> "!_REPORT!"
 echo [GROUP 3] raw-log.bat >> "!_REPORT!"
@@ -231,6 +234,44 @@ findstr /c:"ripgrep" "%PD%\_sys\start.bat" > nul 2>&1 & call :E "start.bat: ripg
 findstr /c:"gemini-status.bat" "%PD%\_sys\start.bat" > nul 2>&1 & call :E "start.bat: gemini-status call" 0 !ERRORLEVEL!
 findstr /c:"NPM_CONFIG_PREFIX" "%PD%\_sys\start.bat" > nul 2>&1 & call :E "start.bat: NPM_CONFIG_PREFIX" 0 !ERRORLEVEL!
 findstr /c:"SUBST_DRIVE_LETTER" "%PD%\_sys\start.bat" > nul 2>&1 & call :E "start.bat: SUBST portability" 0 !ERRORLEVEL!
+findstr /c:"sqlite" "%PD%\_sys\start.bat" > nul 2>&1 & call :E "start.bat: sqlite PATH entry" 0 !ERRORLEVEL!
+findstr /c:"\gh" "%PD%\_sys\start.bat" > nul 2>&1 & call :E "start.bat: gh PATH entry" 0 !ERRORLEVEL!
+
+echo. >> "!_REPORT!"
+echo [GROUP 16] 2026-06-01 Gemini Session + Tool Fixes >> "!_REPORT!"
+echo ---- >> "!_REPORT!"
+
+:: gemini-consult.bat: CRLF line endings
+powershell -NoProfile -Command "if([IO.File]::ReadAllText('%PD%\_sys\context\gemini-consult.bat').Contains([char]13)){exit 0}else{exit 1}" > nul 2>&1
+call :E "gemini-consult.bat: CRLF endings" 0 !ERRORLEVEL!
+
+:: gemini-consult.bat: key features
+findstr /c:"approval-mode plan" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1 & call :E "gemini-consult.bat: --approval-mode plan" 0 !ERRORLEVEL!
+findstr /c:"_SID_FILE and _GUSAGE must be set here" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1 & call :E "gemini-consult.bat: _SID_FILE before gate" 0 !ERRORLEVEL!
+findstr /c:"_GUSAGE" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1 & call :E "gemini-consult.bat: _GUSAGE var" 0 !ERRORLEVEL!
+findstr /c:"tools\\ripgrep" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1 & call :E "gemini-consult.bat: ripgrep in PATH" 0 !ERRORLEVEL!
+findstr /c:"session-map" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1 & call :E "gemini-consult.bat: session-map update" 0 !ERRORLEVEL!
+findstr /c:"gemini-usage.bat" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1 & call :E "gemini-consult.bat: usage auto-update" 0 !ERRORLEVEL!
+
+:: ctx-end.bat: CRLF + session-map
+powershell -NoProfile -Command "if([IO.File]::ReadAllText('%PD%\_sys\context\ctx-end.bat').Contains([char]13)){exit 0}else{exit 1}" > nul 2>&1
+call :E "ctx-end.bat: CRLF endings" 0 !ERRORLEVEL!
+findstr /c:"session-map" "%PD%\_sys\context\ctx-end.bat" > nul 2>&1 & call :E "ctx-end.bat: session-map archive" 0 !ERRORLEVEL!
+
+:: gemini-usage.bat: Axis-Q tracking
+findstr /c:"Q=0" "%PD%\_sys\gemini\gemini-usage.bat" > nul 2>&1 & call :E "gemini-usage.bat: Q=0 key" 0 !ERRORLEVEL!
+findstr /c:"A-HQ" "%PD%\_sys\gemini\gemini-usage.bat" > nul 2>&1 & call :E "gemini-usage.bat: [A-HQ] regex" 0 !ERRORLEVEL!
+
+:: Gemini CLI bundle: rg-win32-x64.exe
+call :F "Gemini bundle: rg-win32-x64.exe" "%PD%\_sys\env\nodejs\npm-global\node_modules\@google\gemini-cli\bundle\rg-win32-x64.exe"
+
+:: session-map.json: valid JSON if exists
+if exist "%PD%\_sys\gemini\session-map.json" (
+    powershell -NoProfile -Command "try{Get-Content '%PD%\_sys\gemini\session-map.json' -Raw|ConvertFrom-Json|Out-Null;exit 0}catch{exit 1}" > nul 2>&1
+    call :E "session-map.json: valid JSON" 0 !ERRORLEVEL!
+) else (
+    call :OK "session-map.json: not yet created (ok)"
+)
 
 :: --- Cleanup ---
 cd /d "P:\"
