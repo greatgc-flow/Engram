@@ -69,8 +69,8 @@ if errorlevel 1 (
 
 :: --- Run Gemini dependency analysis ---
 echo [script-deps] Analyzing CALL/INVOKE relationships via Gemini...
-
-type "%TEMP_MERGED%" | gemini -p "Analyze the provided scripts and map all CALL/INVOKE relationships. Return ONLY valid JSON: {\"scan_ts\":\"%_DT%\",\"nodes\":[{\"file\":\"\",\"type\":\"bat or ps1\"}],\"edges\":[{\"caller\":\"\",\"callee\":\"\",\"method\":\"call or invoke or start\"}]}" -o text -y > "%OUT_FILE%" 2>&1
+call "%~dp0gemini-session-read.bat"
+type "%TEMP_MERGED%" | gemini %_GEMINI_SESSION_FLAG% -p "Analyze the provided scripts and map all CALL/INVOKE relationships. Return ONLY valid JSON: {\"scan_ts\":\"%_DT%\",\"nodes\":[{\"file\":\"\",\"type\":\"bat or ps1\"}],\"edges\":[{\"caller\":\"\",\"callee\":\"\",\"method\":\"call or invoke or start\"}]}" -o text -y > "%OUT_FILE%" 2>&1
 
 if errorlevel 1 (
     echo [script-deps] ERROR: gemini returned non-zero. Check auth or network.

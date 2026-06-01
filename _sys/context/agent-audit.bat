@@ -54,8 +54,8 @@ if errorlevel 1 (
 
 :: --- Run Gemini agent consistency analysis ---
 echo [agent-audit] Analyzing agent definitions via Gemini...
-
-type "%TEMP_MERGED%" | gemini -p "Analyze ALL agent markdown files provided. Find: 1) Role overlaps (two agents doing the same thing), 2) Coverage gaps (tasks no agent handles), 3) Inconsistencies with CONVENTION.md. Return ONLY valid JSON: {\"scan_ts\":\"%_DT%\",\"overlaps\":[{\"agents\":[],\"issue\":\"\"}],\"gaps\":[{\"task\":\"\",\"suggested_owner\":\"\"}],\"inconsistencies\":[{\"agent\":\"\",\"issue\":\"\",\"severity\":\"High or Medium or Low\"}],\"ok_count\":0}" -o text -y > "%OUT_FILE%" 2>&1
+call "%~dp0gemini-session-read.bat"
+type "%TEMP_MERGED%" | gemini %_GEMINI_SESSION_FLAG% -p "Analyze ALL agent markdown files provided. Find: 1) Role overlaps (two agents doing the same thing), 2) Coverage gaps (tasks no agent handles), 3) Inconsistencies with CONVENTION.md. Return ONLY valid JSON: {\"scan_ts\":\"%_DT%\",\"overlaps\":[{\"agents\":[],\"issue\":\"\"}],\"gaps\":[{\"task\":\"\",\"suggested_owner\":\"\"}],\"inconsistencies\":[{\"agent\":\"\",\"issue\":\"\",\"severity\":\"High or Medium or Low\"}],\"ok_count\":0}" -o text -y > "%OUT_FILE%" 2>&1
 
 if errorlevel 1 (
     echo [agent-audit] ERROR: gemini returned non-zero. Check auth or network.

@@ -38,8 +38,8 @@ if not "%GEMINI_MODE%"=="ON" (
 :: --- Run Gemini version search ---
 echo [version-check] Querying latest tool versions via Gemini...
 echo [version-check] Date: %_DT:~0,8%
-
-gemini -p "Search for the latest stable release versions of these tools as of today. Return ONLY valid JSON, no markdown, no explanation. Format: {\"ripgrep\": \"VERSION\", \"fd\": \"VERSION\", \"jq\": \"VERSION\", \"bat\": \"VERSION\", \"delta\": \"VERSION\", \"fzf\": \"VERSION\", \"oh-my-posh\": \"VERSION\", \"nodejs-lts\": \"VERSION\"} where VERSION is just the version string like 1.2.3. Sources: GitHub releases for BurntSushi/ripgrep, sharkdp/fd, stedolan/jq, sharkdp/bat, dandavison/delta, junegunn/fzf, JanDeDobbeleer/oh-my-posh, and nodejs.org LTS." -o text -y > "%OUT_FILE%" 2>&1
+call "%~dp0gemini-session-read.bat"
+gemini %_GEMINI_SESSION_FLAG% -p "Search for the latest stable release versions of these tools as of today. Return ONLY valid JSON, no markdown, no explanation. Format: {\"ripgrep\": \"VERSION\", \"fd\": \"VERSION\", \"jq\": \"VERSION\", \"bat\": \"VERSION\", \"delta\": \"VERSION\", \"fzf\": \"VERSION\", \"oh-my-posh\": \"VERSION\", \"nodejs-lts\": \"VERSION\"} where VERSION is just the version string like 1.2.3. Sources: GitHub releases for BurntSushi/ripgrep, sharkdp/fd, stedolan/jq, sharkdp/bat, dandavison/delta, junegunn/fzf, JanDeDobbeleer/oh-my-posh, and nodejs.org LTS." -o text -y > "%OUT_FILE%" 2>&1
 
 if errorlevel 1 (
     echo [version-check] ERROR: gemini returned non-zero. Check auth or network.

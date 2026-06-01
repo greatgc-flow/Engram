@@ -55,7 +55,8 @@ if defined _COLLOG_LINES (
 
 :: --- Call Gemini ---
 echo [risk-scan] Calling Axis-I (Gemini risk assessment)...
-gemini -p "!_PROMPT!" -o text -y > "%_OUTPUT%" 2>nul
+call "%~dp0gemini-session-read.bat"
+gemini %_GEMINI_SESSION_FLAG% -p "!_PROMPT!" -o text -y > "%_OUTPUT%" 2>nul
 
 if errorlevel 1 (
     echo [risk-scan] ERROR: Gemini call failed.

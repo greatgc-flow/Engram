@@ -52,7 +52,8 @@ for %%A in ("%TEMP_DIFF%") do if %%~zA==0 (
 echo [git-draft] Generating commit message draft...
 
 set "TEMP_OUT=%TEMP%\git_draft_out_%RANDOM%.txt"
-type "%TEMP_DIFF%" | gemini -p "Read the git diff and write a conventional commit message. Format: type(scope): subject. Body (optional, 1-3 bullets of what/why). Rules: type is feat, fix, docs, refactor, chore, test, or style. Subject max 72 chars. English only, imperative mood. Output ONLY the commit message, nothing else." -o text -y > "!TEMP_OUT!" 2>&1
+call "%~dp0gemini-session-read.bat"
+type "%TEMP_DIFF%" | gemini %_GEMINI_SESSION_FLAG% -p "Read the git diff and write a conventional commit message. Format: type(scope): subject. Body (optional, 1-3 bullets of what/why). Rules: type is feat, fix, docs, refactor, chore, test, or style. Subject max 72 chars. English only, imperative mood. Output ONLY the commit message, nothing else." -o text -y > "!TEMP_OUT!" 2>&1
 if errorlevel 1 (
     del "%TEMP_DIFF%" > nul 2>&1
     del "!TEMP_OUT!" > nul 2>&1

@@ -114,7 +114,8 @@ echo [context-health] Writing handoff to: %_HANDOFF%
 
 set "_PROMPT=Read this session log and output ONLY a valid JSON object with no extra text, matching this exact schema: {\"version\":\"1.0\",\"generated_at\":\"ISO8601_timestamp\",\"session_context\":{\"project_id\":\"P--\",\"active_axis\":\"last_axis_mentioned_or_none\",\"model_used\":\"claude-sonnet-4-6\"},\"executive_summary\":{\"narrative\":\"dense 3-5 sentence summary of what was accomplished\",\"milestones_reached\":[\"item1\"],\"lessons_learned\":[\"item1\"]},\"technical_state\":{\"modified_files\":[\"path1\"],\"critical_constants\":{\"KEY\":\"VALUE\"},\"pending_changes\":[\"item1\"],\"unresolved_bugs\":[]},\"strategy_for_next_session\":{\"immediate_priority\":\"top 1 next action\",\"risks\":[\"risk1\"],\"suggested_entry_point\":\"first thing to do on next session\"}}. Be factual and dense. Output ONLY the JSON object, nothing else."
 
-type "!_SESSION_LOG!" | gemini -p "!_PROMPT!" -o text -y > "%_HANDOFF%" 2>nul
+call "%~dp0gemini-session-read.bat"
+type "!_SESSION_LOG!" | gemini %_GEMINI_SESSION_FLAG% -p "!_PROMPT!" -o text -y > "%_HANDOFF%" 2>nul
 
 if errorlevel 1 (
     echo [context-health] ERROR: Handoff generation failed. Check Gemini auth.

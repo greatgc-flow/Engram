@@ -61,7 +61,8 @@ set "_OUT=%_OUTDIR%\!_TS!.md"
 
 :: --- Call Gemini ---
 echo [Axis-R] Requesting Gemini review...
-type "%_TMPP%" | gemini -p "" -y -o text > "%_OUT%" 2>&1
+call "%~dp0gemini-session-read.bat"
+type "%_TMPP%" | gemini %_GEMINI_SESSION_FLAG% -p "" -y -o text > "%_OUT%" 2>&1
 if errorlevel 1 (
     echo [Axis-R] ERROR: Gemini call failed
     del "%_OUT%" >nul 2>&1

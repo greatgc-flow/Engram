@@ -64,21 +64,39 @@ if errorlevel 1 (
     exit /b 0
 )
 
-:: --- Session management ---
+:: --- Session management (9> lock: OS-level atomic, auto-releases on crash) ---
 set "_SESSION_FLAG="
 set "_SMAP=%_SID_FILE:session-id.txt=session-map.json%"
-if exist "%_SID_FILE%" (
-    set /p "_SID=" < "%_SID_FILE%"
-    set "_SESSION_FLAG=--resume !_SID!"
-    :: session-map: last_used + call_count 갱신
-    powershell -NoProfile -Command "$f='!_SMAP:\=\\!'; if(Test-Path $f){try{$m=Get-Content $f -Raw|ConvertFrom-Json; if($m.active){$m.active.last_used=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss'); $m.active.call_count=[int]$m.active.call_count+1; [IO.File]::WriteAllText($f,($m|ConvertTo-Json -Depth 5),(New-Object System.Text.UTF8Encoding($false)))}}catch{}}" >nul 2>&1
-) else (
-    for /f "delims=" %%U in ('powershell -NoProfile -Command "[guid]::NewGuid().ToString()"') do set "_NEW_SID=%%U"
-    > "%_SID_FILE%" echo !_NEW_SID!
-    set "_SESSION_FLAG=--session-id !_NEW_SID!"
-    :: session-map: 신규 active 항목 기록
-    powershell -NoProfile -Command "$f='!_SMAP:\=\\!'; $now=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss'); $hist=@(); if(Test-Path $f){try{$old=Get-Content $f -Raw|ConvertFrom-Json; if($old.history){$hist=[array]$old.history}}catch{}}; $m=[ordered]@{active=[ordered]@{gemini_session_id='!_NEW_SID!';started_at=$now;last_used=$now;call_count=1};history=$hist}; [IO.File]::WriteAllText($f,($m|ConvertTo-Json -Depth 5),(New-Object System.Text.UTF8Encoding($false)))" >nul 2>&1
+set "_LOCK=%_SID_FILE:session-id.txt=session.lock%"
+set "_WAIT_CNT=0"
+
+:ACQUIRE_LOCK
+2>nul (9>"%_LOCK%" (
+    :: 좀비 세션 방지: 12시간 이상 경과 시 초기화
+    if exist "%_SID_FILE%" (
+        powershell -NoProfile -Command "if((Get-Date)-(Get-Item '%_SID_FILE%').LastWriteTime -gt [TimeSpan]::FromHours(12)){Remove-Item '%_SID_FILE%' -Force;exit 1}else{exit 0}" >nul 2>&1
+        if errorlevel 1 (
+            echo [Axis-Q] Stale session ^(12h+^). Fresh start.
+            del "%_SMAP%" >nul 2>&1
+        )
+    )
+    if exist "%_SID_FILE%" (
+        set /p "_SID=" < "%_SID_FILE%"
+        set "_SESSION_FLAG=--resume !_SID!"
+        powershell -NoProfile -Command "$f='!_SMAP:\=\\!'; if(Test-Path $f){try{$m=Get-Content $f -Raw|ConvertFrom-Json; if($m.active){$m.active.last_used=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss'); $m.active.call_count=[int]$m.active.call_count+1; [IO.File]::WriteAllText($f,($m|ConvertTo-Json -Depth 5),(New-Object System.Text.UTF8Encoding($false)))}}catch{}}" >nul 2>&1
+    ) else (
+        for /f "delims=" %%U in ('powershell -NoProfile -Command "[guid]::NewGuid().ToString()"') do set "_NEW_SID=%%U"
+        > "%_SID_FILE%" echo !_NEW_SID!
+        set "_SESSION_FLAG=--session-id !_NEW_SID!"
+        powershell -NoProfile -Command "$f='!_SMAP:\=\\!'; $now=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss'); $hist=@(); if(Test-Path $f){try{$old=Get-Content $f -Raw|ConvertFrom-Json; if($old.history){$hist=[array]$old.history}}catch{}}; $m=[ordered]@{active=[ordered]@{gemini_session_id='!_NEW_SID!';started_at=$now;last_used=$now;call_count=1};history=$hist}; [IO.File]::WriteAllText($f,($m|ConvertTo-Json -Depth 5),(New-Object System.Text.UTF8Encoding($false)))" >nul 2>&1
+    )
+)) || (
+    set /a "_WAIT_CNT+=1"
+    if !_WAIT_CNT! geq 30 (echo [Axis-Q] Lock timeout. Proceeding. & goto :LOCK_DONE)
+    timeout /t 1 /nobreak >nul 2>&1
+    goto :ACQUIRE_LOCK
 )
+:LOCK_DONE
 
 :: --- Call Gemini ---
 echo [Axis-Q] Consulting Gemini...

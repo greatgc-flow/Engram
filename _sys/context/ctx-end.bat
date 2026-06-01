@@ -85,7 +85,8 @@ call "%~dp0gemini-mode-check.bat"
 if not "%GEMINI_MODE%"=="ON" goto :SKIP_GEMINI_SUM
 set "_SUM=!SES_FILE!.summary.md"
 echo [ctx-end] Generating Gemini summary...
-type "!SES_FILE!" | gemini -p "Read the session log below and write a concise summary with exactly 5 bullet points: 1) What was accomplished 2) Key decisions made 3) Files changed 4) Known issues remaining 5) Next actions. Be specific, not generic." -o text -y > "!_SUM!" 2>&1
+call "%~dp0gemini-session-read.bat"
+type "!SES_FILE!" | gemini %_GEMINI_SESSION_FLAG% -p "Read the session log below and write a concise summary with exactly 5 bullet points: 1) What was accomplished 2) Key decisions made 3) Files changed 4) Known issues remaining 5) Next actions. Be specific, not generic." -o text -y > "!_SUM!" 2>&1
 :: Check by file existence/size — Gemini may return non-zero even on success (routing errors)
 if not exist "!_SUM!" goto :CTX_END_GEMINI_FAIL
 for /f "delims=" %%Z in ('powershell -NoProfile -Command "(Get-Item -LiteralPath '!_SUM!').Length"') do set "_SZ=%%Z"
