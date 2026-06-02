@@ -61,8 +61,8 @@ set "_OUT=%_OUTDIR%\!_TS!.md"
 
 :: --- Call Gemini ---
 echo [Axis-R] Requesting Gemini review...
-call "%~dp0gemini-session-read.bat"
-type "%_TMPP%" | gemini %_GEMINI_SESSION_FLAG% -p "" -y -o text > "%_OUT%" 2>&1
+for /f "delims=" %%U in ('powershell -NoProfile -Command "[guid]::NewGuid().ToString()"') do set "_EPHEMERAL_SID=%%U"
+type "%_TMPP%" | gemini --session-id !_EPHEMERAL_SID! -p "" -y -o text > "%_OUT%" 2>&1
 if errorlevel 1 (
     echo [Axis-R] ERROR: Gemini call failed
     del "%_OUT%" >nul 2>&1

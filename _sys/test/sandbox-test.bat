@@ -658,6 +658,20 @@ call :F "Gemini bundle: rg-win32-x64.exe" "%PD%\_sys\env\nodejs\npm-global\node_
 call :F "tools\sqlite\sqlite3.exe" "%PD%\_sys\tools\sqlite\sqlite3.exe"
 call :F "tools\gh\gh.exe"          "%PD%\_sys\tools\gh\gh.exe"
 
+:: ---- parallel Axis scripts: ephemeral session ----
+for %%S in (risk-scan agent-audit script-deps version-check context-health gemini-batch-review) do (
+    powershell -NoProfile -Command "if((Get-Content '%PD%\_sys\context\%%S.bat' -Raw) -match 'EPHEMERAL_SID'){exit 0}else{exit 1}" > nul 2>&1
+    call :E "%%S.bat: ephemeral session used" 0 !ERRORLEVEL!
+    powershell -NoProfile -Command "if((Get-Content '%PD%\_sys\context\%%S.bat' -Raw) -notmatch 'gemini-session-read'){exit 0}else{exit 1}" > nul 2>&1
+    call :E "%%S.bat: no session-read call" 0 !ERRORLEVEL!
+)
+
+:: interactive scripts still use session-read
+for %%S in (ctx-save ctx-end git-draft) do (
+    powershell -NoProfile -Command "if((Get-Content '%PD%\_sys\context\%%S.bat' -Raw) -match '_GEMINI_SESSION_FLAG'){exit 0}else{exit 1}" > nul 2>&1
+    call :E "%%S.bat: session flag present - interactive" 0 !ERRORLEVEL!
+)
+
 :: ---- gemini-session-read.bat behavior ----
 powershell -NoProfile -Command "if([IO.File]::ReadAllText('%PD%\_sys\context\gemini-session-read.bat').Contains([char]13)){exit 0}else{exit 1}" > nul 2>&1
 call :E "gemini-session-read.bat: CRLF endings" 0 !ERRORLEVEL!

@@ -274,6 +274,20 @@ if exist "%PD%\_sys\gemini\session-map.json" (
     call :OK "session-map.json: not yet created (ok)"
 )
 
+:: ---- parallel Axis scripts: ephemeral session (no session-read) ----
+for %%S in (risk-scan agent-audit script-deps version-check context-health gemini-batch-review) do (
+    powershell -NoProfile -Command "if((Get-Content '%PD%\_sys\context\%%S.bat' -Raw) -match 'EPHEMERAL_SID'){exit 0}else{exit 1}" > nul 2>&1
+    call :E "%%S.bat: ephemeral session used" 0 !ERRORLEVEL!
+    powershell -NoProfile -Command "if((Get-Content '%PD%\_sys\context\%%S.bat' -Raw) -notmatch 'gemini-session-read'){exit 0}else{exit 1}" > nul 2>&1
+    call :E "%%S.bat: no session-read call" 0 !ERRORLEVEL!
+)
+
+:: interactive scripts still use session-read (sanity check)
+for %%S in (ctx-save ctx-end git-draft) do (
+    powershell -NoProfile -Command "if((Get-Content '%PD%\_sys\context\%%S.bat' -Raw) -match '_GEMINI_SESSION_FLAG'){exit 0}else{exit 1}" > nul 2>&1
+    call :E "%%S.bat: session flag present - interactive" 0 !ERRORLEVEL!
+)
+
 :: gemini-session-read.bat: CRLF
 powershell -NoProfile -Command "if([IO.File]::ReadAllText('%PD%\_sys\context\gemini-session-read.bat').Contains([char]13)){exit 0}else{exit 1}" > nul 2>&1
 call :E "gemini-session-read.bat: CRLF endings" 0 !ERRORLEVEL!
