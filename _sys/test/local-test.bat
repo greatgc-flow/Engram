@@ -69,6 +69,7 @@ call :F "git-draft.bat"           "%PD%\_sys\context\git-draft.bat"
 call :F "context-health.bat"      "%PD%\_sys\context\context-health.bat"
 call :F "collab-log-append.bat"   "%PD%\_sys\context\collab-log-append.bat"
 call :F "raw-log.bat"             "%PD%\_sys\context\raw-log.bat"
+call :F "gemini-session-read.bat" "%PD%\_sys\context\gemini-session-read.bat"
 call :F "gemini-status.bat"       "%PD%\_sys\gemini\gemini-status.bat"
 call :F "start.bat"               "%PD%\_sys\start.bat"
 call :F "rg.exe"                  "%PD%\_sys\tools\ripgrep\rg.exe"
@@ -272,6 +273,29 @@ if exist "%PD%\_sys\gemini\session-map.json" (
 ) else (
     call :OK "session-map.json: not yet created (ok)"
 )
+
+:: gemini-session-read.bat: CRLF
+powershell -NoProfile -Command "if([IO.File]::ReadAllText('%PD%\_sys\context\gemini-session-read.bat').Contains([char]13)){exit 0}else{exit 1}" > nul 2>&1
+call :E "gemini-session-read.bat: CRLF endings" 0 !ERRORLEVEL!
+
+:: no session-id.txt -> flag empty
+if exist "%TW%\_sys\gemini\session-id.txt" del "%TW%\_sys\gemini\session-id.txt" > nul 2>&1
+set "_GEMINI_SESSION_FLAG="
+call "%TW%\context\gemini-session-read.bat"
+if not defined _GEMINI_SESSION_FLAG (call :OK "gemini-session-read: no session -> flag empty") else (call :NG "gemini-session-read: no session -> flag empty" "was !_GEMINI_SESSION_FLAG!")
+
+:: serial calls must not deadlock
+set "_GEMINI_SESSION_FLAG="
+call "%TW%\context\gemini-session-read.bat"
+call :E "gemini-session-read: serial 2nd call succeeds" 0 !ERRORLEVEL!
+
+:: valid session-id.txt -> flag set
+powershell -NoProfile -Command "[IO.File]::WriteAllText('%TW%\_sys\gemini\session-id.txt','mock-uuid-1234',(New-Object System.Text.UTF8Encoding($false)))"
+set "_GEMINI_SESSION_FLAG="
+call "%TW%\context\gemini-session-read.bat"
+if "!_GEMINI_SESSION_FLAG!"=="--resume mock-uuid-1234" (call :OK "gemini-session-read: active session -> flag set") else (call :NG "gemini-session-read: active session -> flag set" "was !_GEMINI_SESSION_FLAG!")
+del "%TW%\_sys\gemini\session-id.txt" > nul 2>&1
+set "_GEMINI_SESSION_FLAG="
 
 :: --- Cleanup ---
 cd /d "P:\"

@@ -16,15 +16,17 @@ $PhysicalBaseDir = $BaseDir
 $Drive = ($BaseDir -replace '^([A-Za-z]):.*', '$1').ToUpper()
 $SubstLines = subst 2>&1
 foreach ($line in $SubstLines) {
-    if ($line -match "^${Drive}:\\\s+=>\s+(.+)$") {
+    if ($line -match "^${Drive}:\\:\s+=>\s+(.+)$") {
         $PhysicalBase = $Matches[1].Trim().TrimEnd('\')
         $Relative = $BaseDir.Substring(2)   # strip "P:"
+        if ($Relative -ne "" -and $Relative[0] -ne '\') { $Relative = "\" + $Relative }
         $PhysicalBaseDir = $PhysicalBase + $Relative
         break
     }
 }
+$PhysicalBaseDir = $PhysicalBaseDir.TrimEnd('\')
 
-$PhysicalResultsDir = $PhysicalBaseDir + "\_sys\test\results"
+$PhysicalResultsDir = Join-Path $PhysicalBaseDir "_sys\test\results"
 
 Write-Host "[WSB Test] Host base path  : $PhysicalBaseDir"
 Write-Host "[WSB Test] Results folder  : $PhysicalResultsDir"

@@ -62,6 +62,7 @@ mkdir "%TR%\sessions"
 
 :: Copy scripts to writable workspace (scripts need write access for outputs)
 xcopy "%PD%\_sys\context\*.bat" "%TW%\context\" /Q /Y > nul 2>&1
+xcopy "%PD%\_sys\gemini\*.bat" "%TW%\_sys\gemini\" /Q /Y > nul 2>&1
 
 :: Minimal gemini status.json
 powershell -NoProfile -Command ^
@@ -111,6 +112,7 @@ call :F "context scripts: git-draft.bat"      "%PD%\_sys\context\git-draft.bat"
 call :F "context scripts: context-health.bat" "%PD%\_sys\context\context-health.bat"
 call :F "context scripts: collab-log-append.bat" "%PD%\_sys\context\collab-log-append.bat"
 call :F "context scripts: raw-log.bat"        "%PD%\_sys\context\raw-log.bat"
+call :F "context scripts: gemini-session-read.bat" "%PD%\_sys\context\gemini-session-read.bat"
 call :F "gemini-status.bat"                   "%PD%\_sys\gemini\gemini-status.bat"
 call :F "start.bat"                           "%PD%\_sys\start.bat"
 call :F "tool: rg.exe"                        "%PD%\_sys\tools\ripgrep\rg.exe"
@@ -580,6 +582,46 @@ call :E "gemini-consult.bat: CRLF endings" 0 !ERRORLEVEL!
 findstr /c:"approval-mode plan" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1
 call :E "gemini-consult.bat: --approval-mode plan" 0 !ERRORLEVEL!
 
+:: Functional test: session-id.txt and session-map.json
+set "GEMINI_DIR=%TW%\_sys\gemini"
+set "BASE_DIR=%TW%"
+if exist "%TW%\_sys\gemini\session-id.txt" del "%TW%\_sys\gemini\session-id.txt"
+if exist "%TW%\_sys\gemini\session-map.json" del "%TW%\_sys\gemini\session-map.json"
+
+:: Mock config.json for gate
+echo {"ratio": 10} > "%TW%\_sys\gemini\config.json"
+
+:: Mock status.json for mode-check
+powershell -NoProfile -Command ^
+    "$j=[ordered]@{mode='ON';reason=$null;installed=$true;authenticated=$true;last_check='!_DT!';last_error=$null};" ^
+    "[System.IO.File]::WriteAllText('%TW%\_sys\gemini\status.json',($j|ConvertTo-Json),(New-Object System.Text.UTF8Encoding($false)))"
+
+:: Mock gemini.cmd to just exit 0
+echo @exit /b 0 > "%TW%\gemini.bat"
+set "ORIG_PATH=!PATH!"
+set "PATH=%TW%;!PATH!"
+
+echo test > "%TW%\q.txt"
+set "GEMINI_MODE=ON"
+set "NO_GEMINI="
+call "%TW%\context\gemini-consult.bat" "%TW%\q.txt" > "!_TMP!" 2>&1
+call :E "gemini-consult: functional run exit=0" 0 !ERRORLEVEL!
+if !ERRORLEVEL! neq 0 type "!_TMP!" >> "!_REPORT!"
+call :F "gemini-consult: session-id.txt created" "%TW%\_sys\gemini\session-id.txt"
+call :F "gemini-consult: session-map.json created" "%TW%\_sys\gemini\session-map.json"
+
+:: Check session-map.json content
+powershell -NoProfile -Command "try{$m=Get-Content '%TW%\_sys\gemini\session-map.json' -Raw|ConvertFrom-Json; if($m.active.gemini_session_id){exit 0}else{exit 1}}catch{exit 1}" > nul 2>&1
+call :E "session-map.json: has active session" 0 !ERRORLEVEL!
+
+:: usage.json generation
+call "%PD%\_sys\gemini\gemini-usage.bat" >> "!_TMP!" 2>&1
+call :F "gemini-usage: usage.json created" "%TW%\_sys\gemini\usage.json"
+powershell -NoProfile -Command "try{$u=Get-Content '%TW%\_sys\gemini\usage.json' -Raw|ConvertFrom-Json; if($u.date){exit 0}else{exit 1}}catch{exit 1}" > nul 2>&1
+call :E "usage.json: valid content" 0 !ERRORLEVEL!
+
+set "PATH=!ORIG_PATH!"
+
 findstr /c:"_SID_FILE and _GUSAGE must be set here" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1
 call :E "gemini-consult.bat: _SID_FILE before gate" 0 !ERRORLEVEL!
 
@@ -616,6 +658,30 @@ call :F "Gemini bundle: rg-win32-x64.exe" "%PD%\_sys\env\nodejs\npm-global\node_
 call :F "tools\sqlite\sqlite3.exe" "%PD%\_sys\tools\sqlite\sqlite3.exe"
 call :F "tools\gh\gh.exe"          "%PD%\_sys\tools\gh\gh.exe"
 
+:: ---- gemini-session-read.bat behavior ----
+powershell -NoProfile -Command "if([IO.File]::ReadAllText('%PD%\_sys\context\gemini-session-read.bat').Contains([char]13)){exit 0}else{exit 1}" > nul 2>&1
+call :E "gemini-session-read.bat: CRLF endings" 0 !ERRORLEVEL!
+
+:: no session-id.txt -> _GEMINI_SESSION_FLAG must be empty
+set "GEMINI_DIR=%TW%\_sys\gemini"
+if exist "%TW%\_sys\gemini\session-id.txt" del "%TW%\_sys\gemini\session-id.txt" > nul 2>&1
+set "_GEMINI_SESSION_FLAG="
+call "%TW%\context\gemini-session-read.bat"
+if not defined _GEMINI_SESSION_FLAG (call :OK "gemini-session-read: no session -> flag empty") else (call :NG "gemini-session-read: no session -> flag empty" "was !_GEMINI_SESSION_FLAG!")
+
+:: serial calls must not deadlock
+set "_GEMINI_SESSION_FLAG="
+call "%TW%\context\gemini-session-read.bat"
+call :E "gemini-session-read: serial 2nd call succeeds" 0 !ERRORLEVEL!
+
+:: valid session-id.txt -> _GEMINI_SESSION_FLAG=--resume <uuid>
+powershell -NoProfile -Command "[IO.File]::WriteAllText('%TW%\_sys\gemini\session-id.txt','mock-uuid-1234',(New-Object System.Text.UTF8Encoding($false)))"
+set "_GEMINI_SESSION_FLAG="
+call "%TW%\context\gemini-session-read.bat"
+if "!_GEMINI_SESSION_FLAG!"=="--resume mock-uuid-1234" (call :OK "gemini-session-read: active session -> flag set") else (call :NG "gemini-session-read: active session -> flag set" "was !_GEMINI_SESSION_FLAG!")
+del "%TW%\_sys\gemini\session-id.txt" > nul 2>&1
+set "_GEMINI_SESSION_FLAG="
+
 :: ================================================================
 :: GROUP 17: Document Content Integrity
 :: ================================================================
@@ -642,9 +708,7 @@ powershell -NoProfile -Command ^
     "try{$j=Get-Content '%PD%\.claude\settings.json' -Raw|ConvertFrom-Json;if($j.permissions.allow.Count -gt 0){exit 0}else{exit 1}}catch{exit 1}" > nul 2>&1
 call :E "settings.json: permissions.allow non-empty" 0 !ERRORLEVEL!
 
-:: ================================================================
 :: SUMMARY
-:: ================================================================
 cd /d "C:\"
 if exist "%TW%" rmdir /s /q "%TW%" > nul 2>&1
 

@@ -11,8 +11,10 @@
 :: Usage: call gemini-session-read.bat
 :: Then:  gemini %_GEMINI_SESSION_FLAG% -p "..." -o text
 ::
-:: TODO: extend lock scope to cover the full gemini execution block
-::       to prevent SQLite concurrent-access errors on shared sessions.
+:: NOTE: parallel Axis scripts (background tasks) should NOT share this session.
+::       They should generate their own ephemeral --session-id to avoid SQLite
+::       concurrent-write conflicts. Session sharing is reserved for interactive,
+::       user-facing conversational continuity only.
 :: ================================================================
 setlocal EnableDelayedExpansion
 
