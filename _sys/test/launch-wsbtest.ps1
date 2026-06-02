@@ -39,6 +39,7 @@ $WsbXml = @"
 <Configuration>
   <VGpu>Disable</VGpu>
   <Networking>Disable</Networking>
+  <ProtectedClient>Disable</ProtectedClient>
   <MappedFolders>
     <MappedFolder>
       <HostFolder>$PhysicalBaseDir</HostFolder>

@@ -135,34 +135,48 @@ echo. >> "!_REPORT!"
 echo [GROUP 2] Tool CLI Execution >> "!_REPORT!"
 echo ---- >> "!_REPORT!"
 
-"%PD%\_sys\tools\ripgrep\rg.exe" --version > "!_TMP!" 2>&1
-call :E "rg --version" 0 !ERRORLEVEL!
+:: Detect Windows Sandbox (WDAGUtilityAccount = sandbox user)
+set "_IN_WSB=0"
+if "%USERNAME%"=="WDAGUtilityAccount" set "_IN_WSB=1"
 
-"%PD%\_sys\tools\fd\fd.exe" --version > "!_TMP!" 2>&1
-call :E "fd --version" 0 !ERRORLEVEL!
+if "!_IN_WSB!"=="1" (call :SK "rg --version" "WSB: unsigned binary policy") else (
+    "%PD%\_sys\tools\ripgrep\rg.exe" --version > "!_TMP!" 2>&1 & call :E "rg --version" 0 !ERRORLEVEL!
+)
 
-"%PD%\_sys\tools\jq\jq.exe" --version > "!_TMP!" 2>&1
-call :E "jq --version" 0 !ERRORLEVEL!
+if "!_IN_WSB!"=="1" (call :SK "fd --version" "WSB: unsigned binary policy") else (
+    "%PD%\_sys\tools\fd\fd.exe" --version > "!_TMP!" 2>&1 & call :E "fd --version" 0 !ERRORLEVEL!
+)
 
-"%PD%\_sys\tools\bat\bat.exe" --version > "!_TMP!" 2>&1
-set "_EC=!ERRORLEVEL!"
-if !_EC! lss 0 (call :SK "bat --version" "DLL unavailable in Sandbox") else (call :E "bat --version" 0 !_EC!)
+if "!_IN_WSB!"=="1" (call :SK "jq --version" "WSB: unsigned binary policy") else (
+    "%PD%\_sys\tools\jq\jq.exe" --version > "!_TMP!" 2>&1 & call :E "jq --version" 0 !ERRORLEVEL!
+)
 
-"%PD%\_sys\tools\fzf\fzf.exe" --version > "!_TMP!" 2>&1
-call :E "fzf --version" 0 !ERRORLEVEL!
+if "!_IN_WSB!"=="1" (call :SK "bat --version" "WSB: unsigned binary policy") else (
+    "%PD%\_sys\tools\bat\bat.exe" --version > "!_TMP!" 2>&1
+    set "_EC=!ERRORLEVEL!"
+    if !_EC! lss 0 (call :SK "bat --version" "DLL unavailable") else (call :E "bat --version" 0 !_EC!)
+)
 
-"%PD%\_sys\tools\delta\delta.exe" --version > "!_TMP!" 2>&1
-set "_EC=!ERRORLEVEL!"
-if !_EC! lss 0 (call :SK "delta --version" "DLL unavailable in Sandbox") else (call :E "delta --version" 0 !_EC!)
+if "!_IN_WSB!"=="1" (call :SK "fzf --version" "WSB: unsigned binary policy") else (
+    "%PD%\_sys\tools\fzf\fzf.exe" --version > "!_TMP!" 2>&1 & call :E "fzf --version" 0 !ERRORLEVEL!
+)
 
-"%PD%\_sys\env\git\cmd\git.exe" --version > "!_TMP!" 2>&1
-call :E "git --version" 0 !ERRORLEVEL!
+if "!_IN_WSB!"=="1" (call :SK "delta --version" "WSB: unsigned binary policy") else (
+    "%PD%\_sys\tools\delta\delta.exe" --version > "!_TMP!" 2>&1
+    set "_EC=!ERRORLEVEL!"
+    if !_EC! lss 0 (call :SK "delta --version" "DLL unavailable") else (call :E "delta --version" 0 !_EC!)
+)
+
+if "!_IN_WSB!"=="1" (call :SK "git --version" "WSB: unsigned binary policy") else (
+    "%PD%\_sys\env\git\cmd\git.exe" --version > "!_TMP!" 2>&1 & call :E "git --version" 0 !ERRORLEVEL!
+)
 
 "%PD%\_sys\env\nodejs\node.exe" --version > "!_TMP!" 2>&1
 call :E "node --version" 0 !ERRORLEVEL!
 
-"%PD%\_sys\tools\sqlite\sqlite3.exe" --version > "!_TMP!" 2>&1
-call :E "sqlite3 --version" 0 !ERRORLEVEL!
+if "!_IN_WSB!"=="1" (call :SK "sqlite3 --version" "WSB: unsigned binary policy") else (
+    "%PD%\_sys\tools\sqlite\sqlite3.exe" --version > "!_TMP!" 2>&1 & call :E "sqlite3 --version" 0 !ERRORLEVEL!
+)
 
 "%PD%\_sys\tools\gh\gh.exe" --version > "!_TMP!" 2>&1
 call :E "gh --version portable" 0 !ERRORLEVEL!
