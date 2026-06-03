@@ -316,7 +316,7 @@ To prevent "Vertical" (multi-instance) and "Horizontal" (parallel execution) con
 ### 10-1. Session Isolation
 - Each `start.bat` instance MUST generate a unique `SESSION_UUID` (or `%RANDOM%`).
 - All agent-transient data must reside in `_thoughts/session-%SESSION_UUID%/`.
-- `session-master.json` should be synchronized via a lock-protected central file, but active work-in-progress must be isolated.
+- All IPC state must be accessed via `hub.py` (`.ai/mailbox.json`, `.ai/state.json`), never written directly.
 
 ### 10-2. Axis Script Safety
 - ALL scan scripts in `_sys/scans/` writing output MUST use a unique filename.

@@ -62,7 +62,7 @@ class TestSendCheck:
     def test_check_empty(self, ai_dir, capsys):
         hub.action_check(ai_dir, "claude")
         out = capsys.readouterr().out
-        assert "새 메시지 없음" in out
+        assert "inbox empty" in out
 
     def test_check_shows_all_messages(self, ai_dir, capsys):
         for i in range(3):

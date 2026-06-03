@@ -239,25 +239,22 @@ findstr /c:"sqlite" "%PD%\_sys\start.bat" > nul 2>&1 & call :E "start.bat: sqlit
 findstr /c:"\gh" "%PD%\_sys\start.bat" > nul 2>&1 & call :E "start.bat: gh PATH entry" 0 !ERRORLEVEL!
 
 echo. >> "!_REPORT!"
-echo [GROUP 16] 2026-06-01 Gemini Session + Tool Fixes >> "!_REPORT!"
+echo [GROUP 16] 2026-06-03 hub.py IPC + 3TCP v1 >> "!_REPORT!"
 echo ---- >> "!_REPORT!"
 
-:: gemini-consult.bat: CRLF line endings
-powershell -NoProfile -Command "if([IO.File]::ReadAllText('%PD%\_sys\context\gemini-consult.bat').Contains([char]13)){exit 0}else{exit 1}" > nul 2>&1
-call :E "gemini-consult.bat: CRLF endings" 0 !ERRORLEVEL!
+:: gemini-consult.bat removed (replaced by msg.bat ask --to gemini)
+call :SK "gemini-consult.bat: CRLF endings"          "deleted: replaced by msg.bat"
+call :SK "gemini-consult.bat: --approval-mode plan"  "deleted"
+call :SK "gemini-consult.bat: _SID_FILE before gate" "deleted"
+call :SK "gemini-consult.bat: _GUSAGE var"           "deleted"
+call :SK "gemini-consult.bat: ripgrep in PATH"       "deleted"
+call :SK "gemini-consult.bat: session-map update"    "deleted"
+call :SK "gemini-consult.bat: usage auto-update"     "deleted"
 
-:: gemini-consult.bat: key features
-findstr /c:"approval-mode plan" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1 & call :E "gemini-consult.bat: --approval-mode plan" 0 !ERRORLEVEL!
-findstr /c:"_SID_FILE and _GUSAGE must be set here" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1 & call :E "gemini-consult.bat: _SID_FILE before gate" 0 !ERRORLEVEL!
-findstr /c:"_GUSAGE" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1 & call :E "gemini-consult.bat: _GUSAGE var" 0 !ERRORLEVEL!
-findstr /c:"tools\\ripgrep" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1 & call :E "gemini-consult.bat: ripgrep in PATH" 0 !ERRORLEVEL!
-findstr /c:"session-map" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1 & call :E "gemini-consult.bat: session-map update" 0 !ERRORLEVEL!
-findstr /c:"gemini-usage.bat" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1 & call :E "gemini-consult.bat: usage auto-update" 0 !ERRORLEVEL!
-
-:: ctx-end.bat: CRLF + session-map
-powershell -NoProfile -Command "if([IO.File]::ReadAllText('%PD%\_sys\context\ctx-end.bat').Contains([char]13)){exit 0}else{exit 1}" > nul 2>&1
+:: ctx-end.bat: CRLF + check-gate (replaces session-map)
+powershell -NoProfile -Command "if([IO.File]::ReadAllText('%PD%\_sys\hooks\ctx-end.bat').Contains([char]13)){exit 0}else{exit 1}" > nul 2>&1
 call :E "ctx-end.bat: CRLF endings" 0 !ERRORLEVEL!
-findstr /c:"session-map" "%PD%\_sys\context\ctx-end.bat" > nul 2>&1 & call :E "ctx-end.bat: session-map archive" 0 !ERRORLEVEL!
+findstr /c:"check-gate" "%PD%\_sys\hooks\ctx-end.bat" > nul 2>&1 & call :E "ctx-end.bat: check-gate.bat used" 0 !ERRORLEVEL!
 
 :: gemini-usage.bat: Axis-Q tracking
 findstr /c:"Q=0" "%PD%\_sys\gemini\gemini-usage.bat" > nul 2>&1 & call :E "gemini-usage.bat: Q=0 key" 0 !ERRORLEVEL!
@@ -266,50 +263,31 @@ findstr /c:"A-HQ" "%PD%\_sys\gemini\gemini-usage.bat" > nul 2>&1 & call :E "gemi
 :: Gemini CLI bundle: rg-win32-x64.exe
 call :F "Gemini bundle: rg-win32-x64.exe" "%PD%\_sys\env\nodejs\npm-global\node_modules\@google\gemini-cli\bundle\rg-win32-x64.exe"
 
-:: session-map.json: valid JSON if exists
-if exist "%PD%\_sys\gemini\session-map.json" (
-    powershell -NoProfile -Command "try{Get-Content '%PD%\_sys\gemini\session-map.json' -Raw|ConvertFrom-Json|Out-Null;exit 0}catch{exit 1}" > nul 2>&1
-    call :E "session-map.json: valid JSON" 0 !ERRORLEVEL!
-) else (
-    call :OK "session-map.json: not yet created (ok)"
-)
+:: hub.py IPC core files
+call :F "hub.py: core IPC script"   "%PD%\_sys\core\hub.py"
+call :F "msg.bat: IPC channel"      "%PD%\_sys\cli\msg.bat"
+findstr /c:"PYTHONUTF8" "%PD%\_sys\cli\msg.bat" > nul 2>&1 & call :E "msg.bat: PYTHONUTF8=1 present" 0 !ERRORLEVEL!
+findstr /c:"hub.py" "%PD%\_sys\cli\msg.bat" > nul 2>&1 & call :E "msg.bat: calls hub.py" 0 !ERRORLEVEL!
 
-:: ---- parallel Axis scripts: ephemeral session (no session-read) ----
-for %%S in (risk-scan agent-audit script-deps version-check context-health gemini-batch-review) do (
-    powershell -NoProfile -Command "if((Get-Content '%PD%\_sys\context\%%S.bat' -Raw) -match 'EPHEMERAL_SID'){exit 0}else{exit 1}" > nul 2>&1
+:: parallel Axis scripts: ephemeral session (new _sys\scans\ paths)
+for %%S in (scan-risk scan-audit scan-deps scan-env scan-health) do (
+    powershell -NoProfile -Command "if((Get-Content '%PD%\_sys\scans\%%S.bat' -Raw) -match 'EPHEMERAL_SID'){exit 0}else{exit 1}" > nul 2>&1
     call :E "%%S.bat: ephemeral session used" 0 !ERRORLEVEL!
-    powershell -NoProfile -Command "if((Get-Content '%PD%\_sys\context\%%S.bat' -Raw) -notmatch 'gemini-session-read'){exit 0}else{exit 1}" > nul 2>&1
+    powershell -NoProfile -Command "if((Get-Content '%PD%\_sys\scans\%%S.bat' -Raw) -notmatch 'gemini-session-read'){exit 0}else{exit 1}" > nul 2>&1
     call :E "%%S.bat: no session-read call" 0 !ERRORLEVEL!
 )
 
-:: interactive scripts still use session-read (sanity check)
-for %%S in (ctx-save ctx-end git-draft) do (
-    powershell -NoProfile -Command "if((Get-Content '%PD%\_sys\context\%%S.bat' -Raw) -match '_GEMINI_SESSION_FLAG'){exit 0}else{exit 1}" > nul 2>&1
-    call :E "%%S.bat: session flag present - interactive" 0 !ERRORLEVEL!
-)
+:: interactive scripts use check-gate.bat (replaces _GEMINI_SESSION_FLAG)
+powershell -NoProfile -Command "if((Get-Content '%PD%\_sys\hooks\ctx-save.bat' -Raw) -match 'check-gate'){exit 0}else{exit 1}" > nul 2>&1
+call :E "ctx-save.bat: check-gate.bat used" 0 !ERRORLEVEL!
+powershell -NoProfile -Command "if((Get-Content '%PD%\_sys\tools\git-draft.bat' -Raw) -match 'check-gate'){exit 0}else{exit 1}" > nul 2>&1
+call :E "git-draft.bat: check-gate.bat used" 0 !ERRORLEVEL!
 
-:: gemini-session-read.bat: CRLF
-powershell -NoProfile -Command "if([IO.File]::ReadAllText('%PD%\_sys\context\gemini-session-read.bat').Contains([char]13)){exit 0}else{exit 1}" > nul 2>&1
-call :E "gemini-session-read.bat: CRLF endings" 0 !ERRORLEVEL!
-
-:: no session-id.txt -> flag empty
-if exist "%TW%\_sys\gemini\session-id.txt" del "%TW%\_sys\gemini\session-id.txt" > nul 2>&1
-set "_GEMINI_SESSION_FLAG="
-call "%TW%\context\gemini-session-read.bat"
-if not defined _GEMINI_SESSION_FLAG (call :OK "gemini-session-read: no session -> flag empty") else (call :NG "gemini-session-read: no session -> flag empty" "was !_GEMINI_SESSION_FLAG!")
-
-:: serial calls must not deadlock
-set "_GEMINI_SESSION_FLAG="
-call "%TW%\context\gemini-session-read.bat"
-call :E "gemini-session-read: serial 2nd call succeeds" 0 !ERRORLEVEL!
-
-:: valid session-id.txt -> flag set
-powershell -NoProfile -Command "[IO.File]::WriteAllText('%TW%\_sys\gemini\session-id.txt','mock-uuid-1234',(New-Object System.Text.UTF8Encoding($false)))"
-set "_GEMINI_SESSION_FLAG="
-call "%TW%\context\gemini-session-read.bat"
-if "!_GEMINI_SESSION_FLAG!"=="--resume mock-uuid-1234" (call :OK "gemini-session-read: active session -> flag set") else (call :NG "gemini-session-read: active session -> flag set" "was !_GEMINI_SESSION_FLAG!")
-del "%TW%\_sys\gemini\session-id.txt" > nul 2>&1
-set "_GEMINI_SESSION_FLAG="
+:: gemini-session-read.bat removed (replaced by hub.py)
+call :SK "gemini-session-read.bat: CRLF endings"          "deleted: replaced by hub.py"
+call :SK "gemini-session-read: no session -> flag empty"   "deleted"
+call :SK "gemini-session-read: serial 2nd call succeeds"   "deleted"
+call :SK "gemini-session-read: active session -> flag set" "deleted"
 
 :: --- Cleanup ---
 cd /d "P:\"

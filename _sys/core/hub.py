@@ -375,7 +375,7 @@ def action_check(ai_root: Path, target: str) -> None:
         and m.get("status") == "unread"
     ]
     if not unread:
-        print(f"### [INBOX] {target} — 새 메시지 없음")
+        print(f"[HUB] READ  0 messages for {target} (inbox empty)")
         return
     type_counts: dict[str, int] = {}
     for m in unread:

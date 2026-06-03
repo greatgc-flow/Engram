@@ -46,7 +46,7 @@ try {
     Test-Case "mark-read all" {
         & $venvPy $hub mark-read --target gemini --all | Out-Null
         $out = (& $venvPy $hub check --target gemini 2>&1) -join " "
-        if ($out -notmatch "새 메시지 없음") { throw "Expected empty inbox, got: $out" }
+        if ($out -notmatch "inbox empty") { throw "Expected inbox empty, got: $out" }
     }
 
     Test-Case "update-status + status pretty-print" {

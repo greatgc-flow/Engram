@@ -88,7 +88,7 @@ class TestMailboxEdge:
         """M-5: 빈 인박스 check → 에러 없이 안내 문구."""
         hub.action_check(ai_dir, "gemini")
         out = capsys.readouterr().out
-        assert "새 메시지 없음" in out
+        assert "inbox empty" in out
         assert "gemini" in out
 
     def test_m_message_id_sequential(self, ai_dir):

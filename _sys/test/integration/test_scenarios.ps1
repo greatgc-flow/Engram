@@ -168,7 +168,7 @@ Test-Scenario "Scenario D: msg.bat 단일 통로 — ask 포함 전체 인터페
 
         # msg.bat check (빈 인박스)
         $out = (cmd /c "`"$msgBat`" check --target gemini" 2>&1) -join ""
-        if ($out -notmatch "새 메시지 없음") { throw "Empty inbox check failed: $out" }
+        if ($out -notmatch "inbox empty") { throw "Empty inbox check failed: $out" }
     } finally {
         Pop-Location
         Remove-Item $proj -Recurse -Force -ErrorAction SilentlyContinue
