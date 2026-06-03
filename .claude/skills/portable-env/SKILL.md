@@ -70,7 +70,7 @@ State.json safety rule: If state.json exists with status != "done"/"halted", bac
 
 ```
 Phase 0:  Context health check (Axis-H → status.json)
-           Check collaboration health (§3-8: mode=ON, consecutive_failures < 3, no unresolved ESCALATED)
+           Check collaboration health (§C-4: mode=ON, consecutive_failures < 3, no unresolved ESCALATED)
            YELLOW → ctx-save recommendation
            RED → check-health.bat --force → handoff → /compact required
 
@@ -175,4 +175,4 @@ Phase 5: Execute autonomously after approval
 - Role boundary violation: stop offending agent, re-delegate to correct agent
 - Human approval absent: maintain status "waiting_approval", no further action
 - ESCALATE_TO_TIER1 received: coordinator processes immediately (see coordinator.md for routing)
-- Collaboration failure (REFUSED/schema mismatch): invoke §3-8 Teamwork-Broken Protocol
+- Collaboration failure (REFUSED/schema mismatch): invoke §C-4 Teamwork-Broken Protocol
