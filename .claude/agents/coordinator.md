@@ -24,22 +24,22 @@ Orchestrator performs orchestration only. All implementation is delegated.
 |-----------|------|
 | Loop limit | Max 3 correction-verification loops. loop_count >= 3 -> HALT immediately + request Human intervention |
 | No final merge | No final implementation without Human approval (human_approval: "approved") |
-| I/O standard | Loop state: `_workspace/state.json`. IPC (Claude↔Gemini): `hub.py send/check` |
+| I/O standard | Loop state: `.ai/state.json`. IPC (Claude↔Gemini): `hub.py send/check` |
 | Role boundary | On MECE violation: stop offending agent, re-delegate to correct agent |
 
 ## Mandatory Pre-reads (reduced)
 1. `python _sys/core/hub.py status ` — AI pair state, mission, unread messages
-2. `_workspace/state.json` — coordinator loop count, task status, known issues
+2. `.ai/state.json` — coordinator loop count, task status, known issues
 3. Inline rules: English-only agents/skills/JSON (§0). No for-loop PATH, no wmic, no hardcoded drives (§1). No USERPROFILE override (§3-3). Read CONVENTION.md only for edge cases.
 
 _sys/claude/agent/CONTEXT.md — read only at new-session orientation or when .ai/sessions/*/handoff.md absent.
 
 ## Core Responsibilities
 1. MECE decomposition of user requests -> delegate to appropriate specialists
-2. Real-time monitoring of team state via _workspace/state.json
+2. Real-time monitoring of team state via .ai/state.json
 3. Loop count surveillance — loop_count >= 3 -> HALT immediately
 4. Human Approval Gate — after verifier PASS + proposer complete, request user approval
-5. Result integration + _workspace/final-report.md
+5. Result integration + _state/final-report.md
 
 ## Context Health Monitoring — Proactive Axis-H Triggers
 
@@ -118,7 +118,7 @@ verifier: re-verify critical[] items only. Skip already-passed gates.
 loop_count >= 3 OR verifier HALT signal:
 1. state.json status="halted" immediately
 2. Report: "Verification loop exceeded 3 — root cause manual analysis required"
-3. Preserve loop_history in _workspace/04_verification_result.md
+3. Preserve loop_history in _state/04_verification_result.md
 4. No further automation — wait for Human intervention
 
 ## ESCALATE_TO_TIER1 Handler

@@ -21,7 +21,7 @@ Proposals only. All execution decisions belong to coordinator + Human.
 
 ## Mandatory Pre-reads
 1. python _sys/core/hub.py status — AI pair state + handoff context
-2. _workspace/state.json — current loop state and task status (for ROI context, not monitoring)
+2. .ai/state.json — current loop state and task status (for ROI context, not monitoring)
 
 ## Core Role (Three Responsibilities)
 
@@ -45,7 +45,7 @@ If GEMINI_MODE=OFF: manual WebFetch fallback for each tool's releases page.
 Identify: repeated work automation, duplication removal, simplification opportunities.
 Propose concrete actions with estimated time savings.
 
-## Output: _workspace/04_proposal.json + 04_proposal.md
+## Output: _state/04_proposal.json + 04_proposal.md
 
 JSON format (for agent consumption):
 ```json
@@ -66,7 +66,7 @@ Markdown format (for Human readability): 04_proposal.md with same structure.
 ```json
 {
   "phase": "proposal",
-  "artifacts": {"proposal": "_workspace/04_proposal.json"}
+  "artifacts": {"proposal": "_state/04_proposal.json"}
 }
 ```
 

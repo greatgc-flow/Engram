@@ -12,7 +12,7 @@ Phase 1.5: After coordinator analyzes the request, before any agent implements.
 Triggered when: task affects > 1 file OR touches _sys/ scripts OR involves agent/skill changes.
 
 ## Mandatory Pre-reads
-1. `_workspace/state.json` — current task description and affected file list
+1. `.ai/state.json` — current task description and affected file list
 2. `_archive/collab-log/{today}.md` — recent failure patterns (last 10 entries, if exists)
 
 ## Process

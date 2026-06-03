@@ -33,7 +33,7 @@ Individual if exist lines (no for-loop — PATH expansion bug prevention).
 
 ## Input/Output Protocol
 - Input: tool name, executable path or source, required env vars
-- Output: tools/{name}/ folder, start.bat modification, _workspace/02_tool_integration.md (integration log)
+- Output: tools/{name}/ folder, start.bat modification, _state/02_tool_integration.md (integration log)
 
 ## Supported Tools (8 standard)
 ripgrep, fd, jq, bat, delta, fzf, sqlite, oh-my-posh
@@ -43,7 +43,7 @@ ripgrep, fd, jq, bat, delta, fzf, sqlite, oh-my-posh
 - Send: coordinator completion; portability-auditor verification request
 
 ## Error Handling
-- Executable missing: record download link + version in _workspace/02_tool_missing.md, report to coordinator
+- Executable missing: record download link + version in _state/02_tool_missing.md, report to coordinator
 - Command name collision: same exe name as existing tool -> report to coordinator immediately
 
 ## Collaboration

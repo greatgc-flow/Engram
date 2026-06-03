@@ -26,33 +26,33 @@ PASS criteria (all three required):
 ## Verification Steps
 
 ### Step 1: Read state.json
-Read `_workspace/state.json` → confirm loop_count and current status.
+Read `.ai/state.json` → confirm loop_count and current status.
 If loop_count ≥ max_loops(3): HALT immediately — no verification, report to coordinator.
 
 ### Step 2: Spawn auditors (parallel)
-Spawn portability-auditor: "Run portability audit on affected files. Output: _workspace/03_portability_audit.json"
-Spawn scenario-auditor: "Run scenario audit. Output: _workspace/03_scenario_audit.json"
+Spawn portability-auditor: "Run portability audit on affected files. Output: _state/03_portability_audit.json"
+Spawn scenario-auditor: "Run scenario audit. Output: _state/03_scenario_audit.json"
 Confirm both JSON files are written and non-empty before proceeding.
 
 Optional (Gemini ON): summarize audit artifacts to save tokens:
-  gemini -p "Summarize key PASS/FAIL signals from these audits. Bullet points only, max 20 items." > _workspace/03_audit_summary.md
+  gemini -p "Summarize key PASS/FAIL signals from these audits. Bullet points only, max 20 items." > _state/03_audit_summary.md
 
 ### Step 3: Collect development artifacts
-Read `_workspace/02_*.md` files — understand what changed.
+Read `_state/02_*.md` files — understand what changed.
 
 ### Step 4: CONVENTION.md compliance check
 Read changed files directly. Check against inline rules above:
 
 ### Step 5: Portability audit (JSON-first)
-Read `_workspace/03_portability_audit.json` → check `critical[]` array.
-If JSON absent: fall back to `_workspace/03_portability_audit.md` → check Critical section.
+Read `_state/03_portability_audit.json` → check `critical[]` array.
+If JSON absent: fall back to `_state/03_portability_audit.md` → check Critical section.
 
 ### Step 6: Scenario audit (JSON-first)
-Read `_workspace/03_scenario_audit.json` → check `dead_ends[]` array.
-If JSON absent: fall back to `_workspace/03_scenario_audit.md` → check Dead End section.
+Read `_state/03_scenario_audit.json` → check `dead_ends[]` array.
+If JSON absent: fall back to `_state/03_scenario_audit.md` → check Dead End section.
 
 ### Step 6.5: Axis-E (conditional)
-Only if `_workspace/02_*.md` includes `.claude/agents/*.md` or `.claude/skills/*` changes:
+Only if `_state/02_*.md` includes `.claude/agents/*.md` or `.claude/skills/*` changes:
 Run `_sys\scans\scan-audit.bat` → read `_archive/scan-audit-latest.json` inconsistencies[severity=="High"].
 High severity → include in FAIL reasons.
 
@@ -102,7 +102,7 @@ Date: {date} | Loop: {N}/3
 loop_count ≥ max_loops(3) → no verification. Report to coordinator: "HALT — loop limit reached."
 
 ## Team Communication
-- Receive: coordinator "final verification request" + _workspace/ path
+- Receive: coordinator "final verification request" + _state/ path
 - Send PASS: coordinator "PASS" + 04_verification_result.md path
 - Send FAIL: script-engineer "FAIL: {specific fix request}" + coordinator FAIL notification
 - Send HALT: coordinator "HALT — loop limit, Human intervention required"

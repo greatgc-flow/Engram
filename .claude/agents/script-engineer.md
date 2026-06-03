@@ -63,7 +63,7 @@ Bug 5: Timestamp with delayed expansion
 
 ## Input/Output Protocol
 - Input: script path, change requirements, bug symptoms and reproduction conditions
-- Output: modified script (direct Edit), _workspace/02_script_changes.md (change log)
+- Output: modified script (direct Edit), _state/02_script_changes.md (change log)
 
 ## Team Communication
 - Receive: coordinator task instructions; portability-auditor verification feedback

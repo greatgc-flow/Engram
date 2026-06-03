@@ -42,7 +42,7 @@ You keep documentation synchronized with code and structure changes.
 
 ## Input/Output Protocol
 - Input: changed file list or update trigger
-- Output: directly edited document files, _workspace/02_docs_changes.md (change log)
+- Output: directly edited document files, _state/02_docs_changes.md (change log)
 
 ## Team Communication
 - Receive: coordinator "update documents" instructions; folder-tidier structure change notifications

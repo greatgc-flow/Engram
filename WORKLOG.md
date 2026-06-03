@@ -5,6 +5,29 @@
 
 ---
 
+## 2026-06-03 — 테스트 클린업 (stale refs 제거)
+
+**목표**: `_sys/context/` 삭제 이후 남겨진 stale 테스트 참조 정리.
+
+### 변경 요약
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `sandbox-test.bat` | xcopy: `context/` → `hooks/+scans/+cli/+tools/`; 스캔 파일 레거시 alias; gemini-consult 8개 `:SK` 대체; ephemeral-session 루프 `scan-*.bat` 경로 수정; `_GEMINI_SESSION_FLAG` → `check-gate` 체크; gemini-session-read 4개 `:SK` 대체 |
+| `local-test.bat` | GROUP 16: gemini-consult 7개 `:SK` 대체; ctx-end 경로 `context/→hooks/`; ephemeral/interactive/session-read 동일 정리 |
+| `hub.py` | empty-inbox 출력 Korean → English (`inbox empty`) — PS 5.1 CP949/UTF-8 충돌 방지 |
+| `test_ipc.ps1`, `test_scenarios.ps1` | `새 메시지 없음` → `inbox empty` |
+| `test_hub.py`, `test_hub_edge.py` | 동일 |
+| `CONVENTION.md §10-1` | `session-master.json` → `.ai/mailbox.json` (hub.py 경유) |
+
+### 테스트 결과
+
+- **Unit (pytest)**: 74/74 PASS
+- **Integration (PS1, pwsh)**: 31/31 PASS (test_ipc×10 + test_scenarios×7 + test_tools_path×8 + test_session_flow×6)
+- **총합**: 105 tests ALL PASS
+
+---
+
 ## 2026-06-03 — 3TCP v1 프로토콜 (hub.py Phase A-D)
 
 **목표**: N-node 만장일치 협의체 + 분업 협업 프로토콜 설계 및 구현.

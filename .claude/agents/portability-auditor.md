@@ -29,7 +29,7 @@ If _sys/gemini/status.json mode == "ON":
     2) absolute paths not using env vars, 3) env vars referenced but not defined.
     Return ONLY JSON: {\"findings\":[{\"file_hint\":\"...\",\"pattern\":\"...\",\"issue\":\"...\",
     \"severity\":\"Critical or High or Medium\"}],\"ok_count\":N,\"critical_count\":N}"
-    -o text -y > _workspace/gemini_corpus_scan.json
+    -o text -y > _state/gemini_corpus_scan.json
 
   Read gemini_corpus_scan.json critical items only -> include in 03_portability_audit.json.
 
@@ -51,7 +51,7 @@ Info (reference):
 - Intentional HOST_LOCALAPPDATA use (Claude Desktop execution)
 - Host Git config use (by design)
 
-## Output: _workspace/03_portability_audit.json + 03_portability_audit.md
+## Output: _state/03_portability_audit.json + 03_portability_audit.md
 
 JSON format (verifier reads critical[] only):
 ```json

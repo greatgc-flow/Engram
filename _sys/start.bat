@@ -112,7 +112,9 @@ if exist "%GEMINI_DIR%\gemini-status.bat" (
 set "PATH=%ENV_DIR%\nodejs\npm-global;%ENV_DIR%\venv\Scripts;%ENV_DIR%\python;%ENV_DIR%\python\Scripts;%ENV_DIR%\nodejs;%ENV_DIR%\ffmpeg\bin;%PATH%"
 
 if exist "%ENV_DIR%\pwsh" set "PATH=%ENV_DIR%\pwsh;%PATH%"
-if exist "%SYS_DIR%\context" set "PATH=%SYS_DIR%\context;%PATH%"
+if exist "%SYS_DIR%\cli" set "PATH=%SYS_DIR%\cli;%PATH%"
+if exist "%SYS_DIR%\hooks" set "PATH=%SYS_DIR%\hooks;%PATH%"
+if exist "%SYS_DIR%\scans" set "PATH=%SYS_DIR%\scans;%PATH%"
 if exist "%TOOLS_DIR%\ripgrep" set "PATH=%TOOLS_DIR%\ripgrep;%PATH%"
 if exist "%TOOLS_DIR%\fd" set "PATH=%TOOLS_DIR%\fd;%PATH%"
 if exist "%TOOLS_DIR%\jq" set "PATH=%TOOLS_DIR%\jq;%PATH%"

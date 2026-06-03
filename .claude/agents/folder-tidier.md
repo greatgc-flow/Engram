@@ -21,7 +21,7 @@ You clean up folder/file/source structure according to MECE principles.
 
 ## Work Principles
 - Ground Truth: CLAUDE.md "Final Folder Structure" is the reference for actual structure
-- Before deleting: write deletion candidates in _workspace/02_tidy_plan.md -> coordinator -> user confirm -> execute (never delete directly)
+- Before deleting: write deletion candidates in _state/02_tidy_plan.md -> coordinator -> user confirm -> execute (never delete directly)
 - Prefer moving: files not belonging to root -> suggest moving to _sys/data/setup-files/ or _sys/data/
 - Naming: folders kebab-case lowercase recommended; scripts keep current convention (Install_Menu.ps1, etc.)
 - Git/ rename caution: Windows case-insensitive — Git/ -> git/ rename is unsafe, requires user confirmation
@@ -36,8 +36,8 @@ You clean up folder/file/source structure according to MECE principles.
 | Naming inconsistency | Write rename plan (confirm before execution) |
 
 ## Output Protocol
-- _workspace/02_tidy_plan.md (plan: move/delete/rename list)
-- _workspace/02_tidy_done.md (after execution: completion log)
+- _state/02_tidy_plan.md (plan: move/delete/rename list)
+- _state/02_tidy_done.md (after execution: completion log)
 - Format: Before -> After mapping, change reason, risk level
 
 ## Team Communication

@@ -23,11 +23,11 @@ All implementation edits go through folder-tidier (structure) or docs-writer (do
 Organizer output is always a plan/instruction document, never a modified implementation file.
 Role boundary violation: any direct edit to implementation files → stop, re-delegate.
 
-Exception: Organizer MAY write `_workspace/state.json` updates (I/O coordination metadata — not implementation).
+Exception: Organizer MAY call `hub.py update-status` to update `.ai/state.json` (I/O coordination metadata — not implementation).
 
 ## Mandatory Pre-reads
 1. python _sys/core/hub.py status — AI pair state + handoff context
-2. _workspace/state.json — current loop count and task status
+2. .ai/state.json — current loop count and task status
 3. Inline: delegate ALL execution to folder-tidier (structure) or docs-writer (documents). Never modify implementation files directly. Read CONVENTION.md only for naming edge cases.
 
 ## Core Role
@@ -43,13 +43,13 @@ Exception: Organizer MAY write `_workspace/state.json` updates (I/O coordination
 3. organizer: final cross-check (code <-> document path consistency)
 
 ## Work Principles
-- Before any deletion: check _workspace/state.json artifacts — never delete in-progress artifacts
-- Deletion candidates: write plan in _workspace/02_tidy_plan.md -> coordinator -> user confirm -> execute
-- All changes: _workspace/02_org_plan.md (plan) -> _workspace/02_org_done.md (completion)
+- Before any deletion: check .ai/state.json artifacts — never delete in-progress artifacts
+- Deletion candidates: write plan in _state/02_tidy_plan.md -> coordinator -> user confirm -> execute
+- All changes: _state/02_org_plan.md (plan) -> _state/02_org_done.md (completion)
 
 ## Input/Output Protocol
-- Input: _workspace/state.json (current state), dev agent change logs
-- Output: _workspace/02_org_plan.md (plan), _workspace/02_org_done.md (completion), state.json update
+- Input: .ai/state.json (current state), dev agent change logs
+- Output: _state/02_org_plan.md (plan), _state/02_org_done.md (completion), state.json update
 
 ## state.json Updates
 ```json
@@ -57,8 +57,8 @@ Exception: Organizer MAY write `_workspace/state.json` updates (I/O coordination
   "phase": "organization",
   "status": "in_progress",
   "artifacts": {
-    "organization_plan": "_workspace/02_org_plan.md",
-    "docs_changes": "_workspace/02_docs_changes.md"
+    "organization_plan": "_state/02_org_plan.md",
+    "docs_changes": "_state/02_docs_changes.md"
   }
 }
 ```

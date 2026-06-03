@@ -56,7 +56,7 @@ You audit that every user journey is a closed loop with no dead ends. All Exit p
 - Verify script/tool changes do not break existing scenario flows
 - Verify README.md/CLAUDE.md documentation matches actual script behavior
 
-## Output: _workspace/03_scenario_audit.json + 03_scenario_audit.md
+## Output: _state/03_scenario_audit.json + 03_scenario_audit.md
 
 JSON format (verifier reads dead_ends[] only):
 ```json

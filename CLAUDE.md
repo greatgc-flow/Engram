@@ -1,5 +1,5 @@
 ﻿# Portable Sandbox Dev Environment
-> Last updated: 2026-06-01
+> Last updated: 2026-06-03
 > This file lets Claude Code resume from where the setup conversation left off.
 
 ## What This Project Is
@@ -11,7 +11,7 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
 ## Final Folder Structure
 
 ```
-[PortableDev]/              <- ROOT (3 docs + INSTALL.bat + register.bat + unregister.bat + workspace + .claude + _sys + _workspace + _archive)
+[PortableDev]/              <- ROOT (docs + INSTALL.bat + register.bat + unregister.bat + workspace + .claude + _sys + _state + .ai + _archive)
 ????? INSTALL.bat             <- double-click entry (calls _sys\setup.ps1)
 ????? register.bat            <- register this PC: context menu + SUBST drive (once per PC or USB move)
 ????? unregister.bat          <- permanently remove context menu + SUBST from this PC
@@ -20,9 +20,13 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
 ????? CONVENTION.md           <- coding standards (agents reference this)
 ????? workspace/              <- default project folder (can also be external)
 ????? .claude/                <- harness: agents/ + skills/
-????? _workspace/             <- agent session workspace (auto-managed, not user content)
-??  ?遺??? state.json + 02_*.md / 03_*.md / 04_*.md per session
-??  (backed up as _archive/workspace_{YYYYMMDD_HHMMSS}/ on new session start)
+????? _state/                 <- agent session workspace (auto-managed, not user content)
+??  ?遺??? 02_*.md / 03_*.md / 04_*.md per session
+????? .ai/                    <- project-local IPC state (hub.py managed, never write directly)
+??  ????? state.json          <- hub.py state (write via hub.py only)
+??  ????? mailbox.json        <- inter-agent messages
+??  ????? sessions/           <- handoff.md FIFO per session
+??  ?遺??? nodes.json          <- N-node consensus registry
 ??????? _archive/               <- ALL rolling historical data (logs, sessions, workspace backups)
 ??  ????? logs/               <- start.bat execution logs (LOG_DIR)
 ??  ????? sessions/           <- ctx-save / ctx-end session files (SESSION_DIR)
@@ -36,9 +40,24 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
     ????? setup.ps1           <- zerobase bootstrapper (download + install all)
     ????? cleanup.ps1         <- temp/cache/log cleanup (space optimizer)
     ????? local.config.bat.template  <- per-PC config template (copy & edit)
-    ??    ????? context/            <- session management scripts
-    ??  ????? ctx-save.bat    <- mid-session checkpoint (session log -> _archive\sessions\)
-    ??  ????? ctx-end.bat     <- full session summary + session log to _archive\sessions\
+    ??    ????? cli/                <- user-facing CLI entry points
+    ??  ????? cla.bat         <- Claude agent launcher
+    ??  ????? gem.bat         <- Gemini direct channel
+    ??  ?遺??? msg.bat         <- inter-agent message bus (3TCP)
+    ??    ????? hooks/              <- lifecycle hooks
+    ??  ????? ctx-save.bat    <- mid-session checkpoint
+    ??  ????? ctx-end.bat     <- session end + summary
+    ??  ????? check-gate.bat  <- Gemini mode gate
+    ??  ?遺??? collab-log-append.bat <- collaboration log writer
+    ??    ????? scans/              <- audit & scan scripts (Axis-B/E/F/H/I)
+    ??  ????? scan-env.bat    <- version/env check (Axis-B)
+    ??  ????? scan-health.bat <- context health (Axis-H)
+    ??  ????? scan-risk.bat   <- pre-flight risk (Axis-I)
+    ??  ????? scan-audit.bat  <- agent consistency (Axis-E)
+    ??  ?遺??? scan-deps.bat   <- script dependency map (Axis-F)
+    ??    ????? core/               <- Python IPC engine
+    ??  ?遺??? hub.py          <- hub: 16 actions, filelock, 3TCP v1
+    ??    ????? docs/               <- template documents
     ??  ????? CLAUDE_project.md  <- template for per-project CLAUDE.md
     ??  ?遺??? CLAUDE_global.md   <- template for _sys\claude\config\CLAUDE.md
     ??    ????? git_config/         <- portable git settings
