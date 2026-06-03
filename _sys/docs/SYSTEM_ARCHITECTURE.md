@@ -1,4 +1,4 @@
-# SYSTEM ARCHITECTURE — Portable Dev Environment
+﻿# SYSTEM ARCHITECTURE — Portable Dev Environment
 
 > 이 문서는 `_sys/` 시스템 레이어의 설계 결정과 컴포넌트 구조를 설명합니다.
 > 최신 변경 이력은 `WORKLOG.md` 참조.
@@ -18,40 +18,60 @@
         ↓
 [라이프사이클] _sys/hooks/ (session-end, append-log, check-gate, ctx-save, ctx-end)
 [분석]  _sys/scans/ (scan-risk, audit, deps, health, env)
-[도구]  _sys/tools/ (consult-ai, git-draft, batch-review, archive-data)
+[도구]  _sys/tools/ (git-draft, batch-review, archive-data)
 ```
 
-## 2. hub.py — 10개 액션 (Facade 패턴)
+## 2. hub.py — 11개 액션 (Facade 패턴)
+
+**Raw Data 철학**: `--format llm` 없음. 모든 출력은 손실 없는 Pretty-print Markdown.
+**단일 통로**: `msg.bat` → `hub.py %*` (동기 `ask` + 비동기 `send/check`)
 
 ### Write 액션 (filelock 적용)
 
 | 액션 | 설명 | Lock |
 |------|------|------|
-| `init-session --agent A` | SID 발급, pair 생성/join | state.lock |
+| `init-session --agent A` | SID 발급 (1줄 출력, bat 캡처용), pair 생성/join | state.lock |
 | `end-session --agent A` | handoff.md 갱신, mailbox 정리 | state.lock + mailbox.lock |
-| `send --from A --to B --msg TEXT` | 메시지 발송 | mailbox.lock |
-| `mark-read --target A [--all|--id N]` | 읽음 처리 | mailbox.lock |
+| `send --from A --to B --msg TEXT` | 비동기 메시지 발송 | mailbox.lock |
+| `mark-read --target A [--all\|--id N]` | 읽음 처리 | mailbox.lock |
 | `append-log --axis X --script N --status S --detail D` | .ai/log.jsonl 기록 | log.lock |
-| `archive-file --name N --file PATH` | _archive/{n}-YYYYMMDD.json + latest | 없음 (파일 복사) |
+| `archive-file --name N --file PATH` | _archive/{n}-YYYYMMDD.json + latest | 없음 |
 | `update-status --mission T [--blocked B] [--phase P]` | 미션/상태 갱신 | state.lock |
 
 ### Read 액션 (Lock-Free)
 
 | 액션 | 설명 |
 |------|------|
-| `check --target A [--format llm]` | 받은 메시지 조회 |
-| `status [--format llm]` | 전체 상태 (pair + mission + handoff) |
-| `check-gate [--agent gemini|claude]` | Gemini 가용 여부 확인 |
+| `check --target A` | 받은 메시지 전문 Pretty-print |
+| `status` | 세션 상태 전체 + handoff 원문 Pretty-print |
+| `check-gate [--agent gemini\|claude]` | Gemini 가용 여부 확인 |
 
-### Token-Zero (`--format llm`)
+### 동기 액션
 
-LLM에 raw JSON 절대 금지. 마크다운 요약만 출력:
-```
-[UNREAD:1]
-  From:gemini | ID:3 | 'Phase 2 완료, 검토 요청'
-[PAIR] c2b5-g4707 | mission=orchestrator rewrite | phase=2
-[MAILBOX] claude=0unread / gemini=1unread
-[HANDOFF] ⚠ Auth 버그 | DB 마이그레이션 대기
+| 액션 | 설명 |
+|------|------|
+| `ask --to gemini\|claude --query TEXT` | 동기 질의 (subprocess + ANSI strip) |
+| `ask --to gemini\|claude --query-file PATH` | 파일 읽어 질의 후 자동 삭제 |
+
+### Pretty-print 출력 예시
+
+```markdown
+### [INBOX] gemini — 2개 미읽음
+
+**[1]** From: **claude** | 2026-06-03T14:32
+Phase 1 완료. hub.py 리팩토링 진행해줘.
+
+---
+
+### [SESSION STATUS]
+**Pair**: c2b5-g4707
+**Mission**: hub.py 리팩토링
+**Phase**: 3
+**Blocked**: 없음
+
+### [HANDOFF]
+## [GOAL]
+- Portable Dev Environment AI 협업 구조 완성
 ```
 
 ## 3. .ai/ 폴더 구조
@@ -126,7 +146,7 @@ python "%~dp0..\core\hub.py" [action] [args]
 | CLI 진입점 | `_sys/cli/cla.bat` `gem.bat` `msg.bat` |
 | 라이프사이클 훅 | `_sys/hooks/session-end.bat` `ctx-save.bat` `ctx-end.bat` |
 | Axis 스캔 | `_sys/scans/scan-{risk,audit,deps,health,env}.bat` |
-| 수동 도구 | `_sys/tools/{consult-ai,git-draft,batch-review,archive-data}.bat` |
+| 수동 도구 | `_sys/tools/{git-draft,batch-review,archive-data}.bat` |
 | 테스트 | `_sys/test/run-tests.bat` (--unit|--integration|--all) |
 | AI 상태 | `.ai/state.json` (hub.py 경유만 쓰기) |
 | 아카이브 | `_archive/scan-{name}-latest.json` |

@@ -153,7 +153,7 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
 
 ## Gemini Consultation (Axis-Q)
 
-이 프로젝트에서 Gemini consult 스크립트 위치: `_sys\tools\consult-ai.bat`
+이 프로젝트에서 Gemini consult 스크립트 위치: `_sys\cli\msg.bat ask --to gemini`
 복잡한 작업 전 Gemini를 먼저 호출하고 응답을 기다린 후 진행할 것. (전역 CLAUDE.md 참조)
 
 ## Current State

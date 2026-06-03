@@ -1,22 +1,28 @@
 """
 hub.py — Portable Dev Environment AI 협업 허브 (Facade 패턴)
-10개 액션: Write 7개 (filelock) + Read 3개 (Lock-Free)
+11개 액션: Write 7개 (filelock) + Read 3개 (Lock-Free) + ask 1개 (동기 subprocess)
+
+Raw Data 철학: --format llm 없음. 모든 출력은 손실 없는 Pretty-print Markdown.
+단일 통로: msg.bat → hub.py %* (동기 ask + 비동기 send/check)
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import re
+import shutil
+import subprocess
 import sys
+import uuid
+from datetime import datetime
+from pathlib import Path
 
-# Windows 콘솔 UTF-8 강제 (CP949 가로막기)
+# Windows 콘솔 UTF-8 강제 (CP949 차단)
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if sys.stderr.encoding and sys.stderr.encoding.lower() not in ("utf-8", "utf8"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-import uuid
-from datetime import datetime
-from pathlib import Path
 
 
 # ─────────────────────────────────────────────────────────────
@@ -33,13 +39,13 @@ def find_ai_root() -> Path:
         if (candidate / ".git").exists():
             return candidate / ".ai"
         parent = candidate.parent
-        if parent == candidate:  # 드라이브 루트
+        if parent == candidate:
             return cwd / ".ai"
         candidate = parent
 
 
 def ensure_ai_dir(ai_root: Path) -> Path:
-    """필요한 하위 폴더 생성 및 초기 파일 생성."""
+    """필요한 하위 폴더 및 초기 파일 생성."""
     (ai_root / ".lock").mkdir(parents=True, exist_ok=True)
     (ai_root / "sessions").mkdir(parents=True, exist_ok=True)
     if not (ai_root / "mailbox.json").exists():
@@ -54,7 +60,7 @@ def ensure_ai_dir(ai_root: Path) -> Path:
 
 
 # ─────────────────────────────────────────────────────────────
-# JSON 유틸리티 (UTF-8 강제)
+# JSON / 유틸리티
 # ─────────────────────────────────────────────────────────────
 
 def _read_json(path: Path) -> dict:
@@ -73,8 +79,11 @@ def _now() -> str:
 
 
 def _short_id(prefix: str = "") -> str:
-    """prefix + 4자리 hex. 예: claude→'c2b5', gemini→'g4707'"""
     return prefix + uuid.uuid4().hex[:4]
+
+
+def _strip_ansi(text: str) -> str:
+    return re.sub(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])', '', text)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -84,12 +93,12 @@ def _short_id(prefix: str = "") -> str:
 def _get_lock(ai_root: Path, resource: str):
     from filelock import FileLock
     lock_path = ai_root / ".lock" / f"{resource}.lock"
-    os.makedirs(ai_root / ".lock", exist_ok=True)  # FileLock 전 필수
+    os.makedirs(ai_root / ".lock", exist_ok=True)
     return FileLock(str(lock_path), timeout=10)
 
 
 # ─────────────────────────────────────────────────────────────
-# handoff.md FIFO 관리 (≤3000토큰 ≈ 12000자)
+# handoff.md FIFO 관리
 # ─────────────────────────────────────────────────────────────
 
 HANDOFF_MAX_CHARS = 12000
@@ -99,7 +108,6 @@ HANDOFF_MAX_DECISIONS = 3
 
 
 def _parse_handoff(text: str) -> dict:
-    """섹션 파싱: [GOAL], [RECENT_COMPLETED], [PENDING_ISSUES], [KEY_DECISIONS]"""
     sections: dict[str, list[str]] = {
         "GOAL": [], "RECENT_COMPLETED": [], "PENDING_ISSUES": [], "KEY_DECISIONS": []
     }
@@ -133,12 +141,10 @@ def _read_handoff(session_dir: Path) -> dict:
 
 
 def _write_handoff(session_dir: Path, sections: dict) -> None:
-    # FIFO: 초과 항목 제거
     sections["RECENT_COMPLETED"] = sections["RECENT_COMPLETED"][-HANDOFF_MAX_COMPLETED:]
     sections["PENDING_ISSUES"] = sections["PENDING_ISSUES"][-HANDOFF_MAX_ISSUES:]
     sections["KEY_DECISIONS"] = sections["KEY_DECISIONS"][-HANDOFF_MAX_DECISIONS:]
     text = _render_handoff(sections)
-    # 3000토큰 방어 (12000자 초과 시 RECENT_COMPLETED 추가 축소)
     while len(text) > HANDOFF_MAX_CHARS and sections["RECENT_COMPLETED"]:
         sections["RECENT_COMPLETED"].pop(0)
         text = _render_handoff(sections)
@@ -146,92 +152,41 @@ def _write_handoff(session_dir: Path, sections: dict) -> None:
 
 
 # ─────────────────────────────────────────────────────────────
-# Token-Zero 포맷터
+# Write 액션 (filelock)
 # ─────────────────────────────────────────────────────────────
 
-def _format_llm_check(messages: list, target: str) -> str:
-    unread = [m for m in messages if m.get("to") == target and m.get("status") == "unread"]
-    if not unread:
-        return f"[UNREAD:0] {target}에게 새 메시지 없음"
-    lines = [f"[UNREAD:{len(unread)}]"]
-    for m in unread[-5:]:  # 최대 5개
-        lines.append(f"  From:{m['from']} | ID:{m['id']} | '{m['content'][:60]}'")
-    return "\n".join(lines)
-
-
-def _format_llm_status(state: dict, messages: list) -> str:
-    pair = state.get("pair") or "미설정"
-    mission = state.get("mission") or "없음"
-    blocked = state.get("blocked")
-    phase = state.get("phase")
-    unread_c = sum(1 for m in messages if m.get("to") == "claude" and m.get("status") == "unread")
-    unread_g = sum(1 for m in messages if m.get("to") == "gemini" and m.get("status") == "unread")
-    lines = [
-        f"[PAIR] {pair} | mission={mission}" + (f" | blocked={blocked}" if blocked else ""),
-    ]
-    if phase:
-        lines[0] += f" | phase={phase}"
-    lines.append(f"[MAILBOX] claude={unread_c}unread / gemini={unread_g}unread")
-    return "\n".join(lines)
-
-
-def _format_llm_handoff(sections: dict) -> str:
-    lines = []
-    if sections["PENDING_ISSUES"]:
-        lines.append("[HANDOFF] ⚠ " + " | ".join(sections["PENDING_ISSUES"][:2]))
-    if sections["RECENT_COMPLETED"]:
-        lines.append("[RECENT] " + sections["RECENT_COMPLETED"][-1])
-    return "\n".join(lines) if lines else "[HANDOFF] 이전 세션 정보 없음"
-
-
-# ─────────────────────────────────────────────────────────────
-# Write 액션 (filelock 적용)
-# ─────────────────────────────────────────────────────────────
-
-def action_init_session(ai_root: Path, agent: str, fmt: str) -> None:
-    """세션 초기화: SID 발급, pair 생성 또는 합류."""
-    # SID에 prefix 포함: claude→"c2b5", gemini→"g4707"
+def action_init_session(ai_root: Path, agent: str) -> None:
+    """세션 초기화: SID 발급, pair 생성/합류. SID만 stdout 출력 (bat 캡처용)."""
     prefix = "c" if agent == "claude" else "g"
     sid = _short_id(prefix)
     with _get_lock(ai_root, "state"):
         state = _read_json(ai_root / "state.json")
-        ts = _now()
         if agent == "claude":
             state["claude_sid"] = sid
         else:
             state["gemini_sid"] = sid
-
-        # pair 갱신: "c2b5-g4707" 형식
         c = state.get("claude_sid") or "c---"
         g = state.get("gemini_sid") or "g---"
         state["pair"] = f"{c}-{g}"
-        state["updated_at"] = ts
+        state["updated_at"] = _now()
         _write_json(ai_root / "state.json", state)
 
-    # 세션 폴더 생성
     session_dir = ai_root / "sessions" / state["pair"]
     session_dir.mkdir(parents=True, exist_ok=True)
-
-    if fmt == "llm":
-        handoff = _read_handoff(session_dir)
-        print(f"[SESSION] {agent}={sid} | pair={state['pair']}")
-        print(_format_llm_handoff(handoff))
-    else:
-        print(sid)
+    # SID만 출력 (gem.bat의 FOR /F 캡처 호환)
+    print(sid)
 
 
 def action_end_session(ai_root: Path, agent: str) -> None:
-    """세션 종료: handoff.md 갱신 (COMPLETED 추가), mailbox 정리."""
+    """세션 종료: handoff.md 갱신, mailbox read 메시지 정리."""
     with _get_lock(ai_root, "state"):
         state = _read_json(ai_root / "state.json")
         pair = state.get("pair")
         ts = _now()
-
+        completed_entry = f"{ts[:10]} {agent}: 세션 종료"
         if agent == "claude":
-            completed_entry = f"{ts[:10]} {agent}: 세션 종료"
             state["claude_sid"] = None
         else:
-            completed_entry = f"{ts[:10]} {agent}: 세션 종료"
             state["gemini_sid"] = None
         state["updated_at"] = ts
         _write_json(ai_root / "state.json", state)
@@ -243,11 +198,9 @@ def action_end_session(ai_root: Path, agent: str) -> None:
         handoff["RECENT_COMPLETED"].append(completed_entry)
         _write_handoff(session_dir, handoff)
 
-    # 읽은 메시지 정리 (read 상태 → 제거)
     with _get_lock(ai_root, "mailbox"):
         mb = _read_json(ai_root / "mailbox.json")
-        msgs = mb.get("messages", [])
-        msgs = [m for m in msgs if m.get("status") != "read"]
+        msgs = [m for m in mb.get("messages", []) if m.get("status") != "read"]
         mb["messages"] = msgs
         mb["unread_count"] = sum(1 for m in msgs if m.get("status") == "unread")
         _write_json(ai_root / "mailbox.json", mb)
@@ -256,18 +209,14 @@ def action_end_session(ai_root: Path, agent: str) -> None:
 
 
 def action_send(ai_root: Path, from_: str, to: str, msg: str) -> None:
-    """메시지 발송."""
+    """비동기 메시지 발송."""
     with _get_lock(ai_root, "mailbox"):
         mb = _read_json(ai_root / "mailbox.json")
         msgs = mb.get("messages", [])
         new_id = len(msgs) + 1
         msgs.append({
-            "id": new_id,
-            "from": from_,
-            "to": to,
-            "content": msg,
-            "status": "unread",
-            "timestamp": _now()
+            "id": new_id, "from": from_, "to": to,
+            "content": msg, "status": "unread", "timestamp": _now()
         })
         mb["messages"] = msgs
         mb["unread_count"] = sum(1 for m in msgs if m.get("status") == "unread")
@@ -292,12 +241,9 @@ def action_mark_read(ai_root: Path, target: str, all_: bool, msg_id: int | None)
 
 
 def action_append_log(ai_root: Path, axis: str, script: str, status: str, detail: str) -> None:
-    """Axis 실행 로그 기록."""
+    """Axis 실행 로그 기록 (.ai/log.jsonl)."""
     log_path = ai_root / "log.jsonl"
-    entry = {
-        "ts": _now(), "axis": axis, "script": script,
-        "status": status, "detail": detail
-    }
+    entry = {"ts": _now(), "axis": axis, "script": script, "status": status, "detail": detail}
     with _get_lock(ai_root, "log"):
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
@@ -305,24 +251,17 @@ def action_append_log(ai_root: Path, axis: str, script: str, status: str, detail
 
 
 def action_archive_file(ai_root: Path, name: str, file_path: str) -> None:
-    """파일을 _archive/{name}-YYYYMMDD.json + latest 로 아카이빙."""
+    """파일을 _archive/{name}-YYYYMMDD.json + {name}-latest.json으로 복사."""
     src = Path(file_path)
     if not src.exists():
         print(f"[ERROR] 파일 없음: {file_path}", file=sys.stderr)
         sys.exit(1)
-
-    # _archive 위치: ai_root 부모의 _archive/
     archive_dir = ai_root.parent / "_archive"
     archive_dir.mkdir(exist_ok=True)
-
     date_str = datetime.now().strftime("%Y%m%d")
-    dst_dated = archive_dir / f"{name}-{date_str}.json"
-    dst_latest = archive_dir / f"{name}-latest.json"
-
-    import shutil
-    shutil.copy2(src, dst_dated)
-    shutil.copy2(src, dst_latest)
-    print(f"[ARCHIVE] {name} → {dst_dated.name} + {name}-latest.json")
+    shutil.copy2(src, archive_dir / f"{name}-{date_str}.json")
+    shutil.copy2(src, archive_dir / f"{name}-latest.json")
+    print(f"[ARCHIVE] {name} → {name}-{date_str}.json + {name}-latest.json")
 
 
 def action_update_status(ai_root: Path, mission: str, blocked: str | None, phase: str | None) -> None:
@@ -340,46 +279,58 @@ def action_update_status(ai_root: Path, mission: str, blocked: str | None, phase
 
 
 # ─────────────────────────────────────────────────────────────
-# Read 액션 (Lock-Free)
+# Read 액션 (Lock-Free) — Raw Pretty-print Markdown
 # ─────────────────────────────────────────────────────────────
 
-def action_check(ai_root: Path, target: str, fmt: str) -> None:
-    """받은 메시지 확인."""
+def action_check(ai_root: Path, target: str) -> None:
+    """받은 메시지 전문을 Pretty-print Markdown으로 출력."""
     mb = _read_json(ai_root / "mailbox.json")
     msgs = mb.get("messages", [])
-    if fmt == "llm":
-        print(_format_llm_check(msgs, target))
-    else:
-        unread = [m for m in msgs if m.get("to") == target and m.get("status") == "unread"]
-        print(json.dumps(unread, ensure_ascii=False, indent=2))
+    unread = [m for m in msgs if m.get("to") == target and m.get("status") == "unread"]
+
+    if not unread:
+        print(f"### [INBOX] {target} — 새 메시지 없음")
+        return
+
+    print(f"### [INBOX] {target} — {len(unread)}개 미읽음\n")
+    for m in unread:
+        ts = m.get("timestamp", "")[:16]
+        print(f"**[{m['id']}]** From: **{m['from']}** | {ts}")
+        print()
+        print(m["content"])
+        print("\n---")
 
 
-def action_status(ai_root: Path, fmt: str) -> None:
-    """전체 상태 조회."""
+def action_status(ai_root: Path) -> None:
+    """세션 상태 전체를 Pretty-print Markdown으로 출력."""
     state = _read_json(ai_root / "state.json")
     mb = _read_json(ai_root / "mailbox.json")
     msgs = mb.get("messages", [])
+    unread_c = sum(1 for m in msgs if m.get("to") == "claude" and m.get("status") == "unread")
+    unread_g = sum(1 for m in msgs if m.get("to") == "gemini" and m.get("status") == "unread")
 
-    if fmt == "llm":
-        print(_format_llm_status(state, msgs))
-        # handoff 추가
-        pair = state.get("pair")
-        if pair:
-            session_dir = ai_root / "sessions" / pair
-            handoff = _read_handoff(session_dir)
-            print(_format_llm_handoff(handoff))
-    else:
-        print(json.dumps({
-            "state": state,
-            "unread_claude": sum(1 for m in msgs if m.get("to") == "claude" and m.get("status") == "unread"),
-            "unread_gemini": sum(1 for m in msgs if m.get("to") == "gemini" and m.get("status") == "unread"),
-        }, ensure_ascii=False, indent=2))
+    print("### [SESSION STATUS]")
+    print(f"**Pair**: {state.get('pair') or '없음'}")
+    print(f"**Mission**: {state.get('mission') or '없음'}")
+    print(f"**Phase**: {state.get('phase') or '없음'}")
+    print(f"**Blocked**: {state.get('blocked') or '없음'}")
+    print(f"**Updated**: {state.get('updated_at') or '없음'}")
+    print()
+    print("### [MAILBOX]")
+    print(f"claude: {unread_c} unread / gemini: {unread_g} unread")
+
+    pair = state.get("pair")
+    if pair:
+        handoff_path = ai_root / "sessions" / pair / "handoff.md"
+        if handoff_path.exists():
+            print()
+            print("### [HANDOFF]")
+            print(handoff_path.read_text(encoding="utf-8"))
 
 
 def action_check_gate(ai_root: Path, agent: str) -> None:
     """게이트 확인: Gemini/Claude 가용 여부."""
     if agent == "gemini":
-        # _sys/gemini/status.json 참조
         status_path = Path(__file__).parent.parent / "gemini" / "status.json"
         if status_path.exists():
             data = _read_json(status_path)
@@ -394,20 +345,77 @@ def action_check_gate(ai_root: Path, agent: str) -> None:
 
 
 # ─────────────────────────────────────────────────────────────
+# ask 액션 — 동기 subprocess (단일 통로의 동기 분기)
+# ─────────────────────────────────────────────────────────────
+
+def action_ask(to: str, query: str, query_file: str | None = None) -> None:
+    """동기식 AI 질의: subprocess로 Gemini/Claude CLI 호출, Raw 응답 출력.
+    --query-file 지정 시 파일을 읽어 쿼리로 사용하고 파일 자동 삭제 (구 consult-ai.bat 호환).
+    """
+    if query_file:
+        qf = Path(query_file)
+        if not qf.exists():
+            print(f"[ERROR] query file not found: {query_file}", file=sys.stderr)
+            sys.exit(1)
+        query = qf.read_text(encoding="utf-8")
+        qf.unlink()  # 응답 전 삭제 (consult-ai.bat 동작 유지)
+
+    if to == "gemini":
+        exe = shutil.which("gemini")
+        if not exe:
+            print("[ERROR] gemini CLI not found in PATH", file=sys.stderr)
+            sys.exit(1)
+        cmd = [exe, "-p", query, "-o", "text", "-y"]
+    elif to == "claude":
+        exe = shutil.which("claude")
+        if not exe:
+            print("[ERROR] claude CLI not found in PATH", file=sys.stderr)
+            sys.exit(1)
+        cmd = [exe, "-p", query]
+    else:
+        print(f"[ERROR] --to는 gemini 또는 claude만 허용", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+            env={**os.environ, "PYTHONUTF8": "1"},
+        )
+        output = _strip_ansi(result.stdout)
+        if result.returncode != 0:
+            err = _strip_ansi(result.stderr)
+            print(f"[WARN] {to} exited {result.returncode}: {err[:200]}", file=sys.stderr)
+        print(output.strip())
+    except subprocess.TimeoutExpired:
+        print("[ERROR] ask timeout (120s) — CLI가 응답하지 않음", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"[ERROR] ask 실패: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+# ─────────────────────────────────────────────────────────────
 # CLI 진입점
 # ─────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="hub", description="AI 협업 허브")
+    parser = argparse.ArgumentParser(prog="hub", description="AI 협업 허브 — 단일 통로")
     parser.add_argument("action", choices=[
         "init-session", "end-session", "send", "mark-read",
         "append-log", "archive-file", "update-status",
-        "check", "status", "check-gate"
+        "check", "status", "check-gate", "ask"
     ])
     parser.add_argument("--agent", choices=["claude", "gemini"])
     parser.add_argument("--from", dest="from_", metavar="AGENT")
     parser.add_argument("--to", dest="to_")
     parser.add_argument("--msg", dest="msg")
+    parser.add_argument("--query", dest="query", default="")
+    parser.add_argument("--query-file", dest="query_file", default=None)
     parser.add_argument("--target", dest="target")
     parser.add_argument("--all", dest="all_", action="store_true")
     parser.add_argument("--id", dest="msg_id", type=int)
@@ -420,8 +428,16 @@ def main() -> None:
     parser.add_argument("--mission", dest="mission")
     parser.add_argument("--blocked", dest="blocked", default=None)
     parser.add_argument("--phase", dest="phase", default=None)
-    parser.add_argument("--format", dest="fmt", default="", choices=["", "llm"])
     args = parser.parse_args()
+
+    # ask는 .ai/ 불필요
+    if args.action == "ask":
+        if not args.to_:
+            print("[ERROR] --to 필수", file=sys.stderr); sys.exit(1)
+        if not args.query and not args.query_file:
+            print("[ERROR] --query 또는 --query-file 필수", file=sys.stderr); sys.exit(1)
+        action_ask(args.to_, args.query, args.query_file)
+        return
 
     ai_root = find_ai_root()
     ensure_ai_dir(ai_root)
@@ -429,7 +445,7 @@ def main() -> None:
     act = args.action
     try:
         if act == "init-session":
-            action_init_session(ai_root, args.agent or "claude", args.fmt)
+            action_init_session(ai_root, args.agent or "claude")
         elif act == "end-session":
             action_end_session(ai_root, args.agent or "claude")
         elif act == "send":
@@ -453,9 +469,9 @@ def main() -> None:
         elif act == "check":
             if not args.target:
                 print("[ERROR] --target 필수", file=sys.stderr); sys.exit(1)
-            action_check(ai_root, args.target, args.fmt)
+            action_check(ai_root, args.target)
         elif act == "status":
-            action_status(ai_root, args.fmt)
+            action_status(ai_root)
         elif act == "check-gate":
             action_check_gate(ai_root, args.agent or "gemini")
     except Exception as e:

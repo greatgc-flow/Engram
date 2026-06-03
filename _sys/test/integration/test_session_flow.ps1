@@ -1,4 +1,4 @@
-﻿# test_session_flow.ps1 - session 연속성 통합 테스트
+# test_session_flow.ps1 - session 연속성 통합 테스트 (Raw Pretty-print 버전)
 param([string]$ProjectRoot)
 
 if (-not $ProjectRoot) {
@@ -18,7 +18,7 @@ function Test-Case($name, $block) {
 }
 
 $tmpDir = New-Item -ItemType Directory -Path (Join-Path $env:TEMP "session-test-$(Get-Random)")
-New-Item -ItemType Directory -Path (Join-Path $tmpDir ".git") | Out-Null  # hub.py 루트 탐지용
+New-Item -ItemType Directory -Path (Join-Path $tmpDir ".git") | Out-Null
 $origLocation = Get-Location
 Set-Location $tmpDir
 
@@ -31,18 +31,25 @@ try {
         if ($null -ne $state.claude_sid) { throw "claude_sid should be null after end-session" }
     }
 
-    Test-Case "new init shows previous handoff" {
-        $out = & $venvPy $hub init-session --agent claude --format llm 2>&1
-        if (-not ($out -match "SESSION")) { throw "Session info not shown: $out" }
+    Test-Case "init-session outputs SID only (bat-capture compatible)" {
+        $sid = (& $venvPy $hub init-session --agent claude 2>&1) -join ""
+        # SID는 5자 (prefix + 4 hex)
+        if ($sid.Length -ne 5) { throw "Expected 5-char SID, got '$sid' (len=$($sid.Length))" }
+        if ($sid -notmatch "^c[0-9a-f]{4}$") { throw "SID format wrong: '$sid'" }
+    }
+
+    Test-Case "status shows session info and mission" {
+        & $venvPy $hub update-status --mission "Persistent task" | Out-Null
+        $out = (& $venvPy $hub status 2>&1) -join "`n"
+        if ($out -notmatch "SESSION STATUS") { throw "Missing SESSION STATUS header, got: $out" }
+        if ($out -notmatch "Persistent task") { throw "Mission not in status, got: $out" }
     }
 
     Test-Case "mission persists across sessions" {
-        & $venvPy $hub update-status --mission "Persistent task" | Out-Null
         & $venvPy $hub end-session --agent claude | Out-Null
         & $venvPy $hub init-session --agent claude | Out-Null
-        $out = & $venvPy $hub status --format llm 2>&1
-        # mission은 state.json에 유지됨
-        if (-not ($out -match "Persistent task")) { throw "Mission not persisted: $out" }
+        $out = (& $venvPy $hub status 2>&1) -join "`n"
+        if ($out -notmatch "Persistent task") { throw "Mission not persisted: $out" }
     }
 
     Test-Case "cross-project isolation" {

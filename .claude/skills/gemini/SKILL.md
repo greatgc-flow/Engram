@@ -103,7 +103,7 @@ Axis 실행 전 **항상** STATUS 확인 (`GEMINI_MODE=ON`인지).
 | F | `_sys\scans\scan-deps.bat` | 제한 없음 | 스크립트 의존성 맵 |
 | G | `_sys\tools\git-draft.bat` | 제한 없음 | 커밋 메시지 초안 |
 | H | `_sys\scans\scan-health.bat` | 제한 없음 | 컨텍스트 건강 확인 |
-| Q | `_sys\tools\consult-ai.bat` | 제한 없음 | 동기 consult — 응답 전 Gemini 먼저 (ratio 5+) |
+| Q | `_sys\cli\msg.bat ask --to gemini` | 제한 없음 | 동기 consult — 응답 전 Gemini 먼저 (ratio 5+) |
 | R | `_sys\tools\batch-review.bat` | 수동 실행 | 미커밋 diff 일괄 리뷰 |
 
 **Axis-A 일일 한도 초과 시**: "오늘 Axis-A 3회 이미 사용. 내일 실행 권장."

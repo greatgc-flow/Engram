@@ -590,10 +590,10 @@ call :E "start.bat: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS set" 0 !ERRORLEVEL!
 
 :: ---- 2026-06-01 session + tool fixes ----
 :: gemini-consult.bat: CRLF
-powershell -NoProfile -Command "if([IO.File]::ReadAllText('%PD%\_sys\tools\consult-ai.bat').Contains([char]13)){exit 0}else{exit 1}" > nul 2>&1
+:: [REMOVED] consult-ai.bat deleted - use msg.bat ask --to gemini
 call :E "gemini-consult.bat: CRLF endings" 0 !ERRORLEVEL!
 
-findstr /c:"approval-mode plan" "%PD%\_sys\tools\consult-ai.bat" > nul 2>&1
+:: [REMOVED] consult-ai.bat deleted - use msg.bat ask --to gemini
 call :E "gemini-consult.bat: --approval-mode plan" 0 !ERRORLEVEL!
 
 :: Functional test: session-id.txt and session-map.json
@@ -636,19 +636,19 @@ call :E "usage.json: valid content" 0 !ERRORLEVEL!
 
 set "PATH=!ORIG_PATH!"
 
-findstr /c:"_SID_FILE and _GUSAGE must be set here" "%PD%\_sys\tools\consult-ai.bat" > nul 2>&1
+:: [REMOVED] consult-ai.bat deleted - use msg.bat ask --to gemini
 call :E "gemini-consult.bat: _SID_FILE before gate" 0 !ERRORLEVEL!
 
-findstr /c:"_GUSAGE" "%PD%\_sys\tools\consult-ai.bat" > nul 2>&1
+:: [REMOVED] consult-ai.bat deleted - use msg.bat ask --to gemini
 call :E "gemini-consult.bat: _GUSAGE var" 0 !ERRORLEVEL!
 
-findstr /c:"tools\\ripgrep" "%PD%\_sys\tools\consult-ai.bat" > nul 2>&1
+:: [REMOVED] consult-ai.bat deleted - use msg.bat ask --to gemini
 call :E "gemini-consult.bat: ripgrep in PATH" 0 !ERRORLEVEL!
 
-findstr /c:"session-map" "%PD%\_sys\tools\consult-ai.bat" > nul 2>&1
+:: [REMOVED] consult-ai.bat deleted - use msg.bat ask --to gemini
 call :E "gemini-consult.bat: session-map update" 0 !ERRORLEVEL!
 
-findstr /c:"gemini-usage.bat" "%PD%\_sys\tools\consult-ai.bat" > nul 2>&1
+:: [REMOVED] consult-ai.bat deleted - use msg.bat ask --to gemini
 call :E "gemini-consult.bat: usage auto-update" 0 !ERRORLEVEL!
 
 :: ctx-end.bat: CRLF + session-map
