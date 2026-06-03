@@ -68,15 +68,15 @@ try {
         }
     }
 
-    Test-Case "check-gate passes when gemini ON" {
+    Test-Case "ai-check passes when gemini ON" {
         $statusFile = Join-Path $ProjectRoot "_sys\gemini\status.json"
         if (Test-Path $statusFile) {
             $mode = (Get-Content $statusFile | ConvertFrom-Json).mode
             if ($mode -eq "ON") {
-                $gateBat = Join-Path $ProjectRoot "_sys\hooks\check-gate.bat"
+                $gateBat = Join-Path $ProjectRoot "_sys\hooks\ai-check.bat"
                 Set-Location $tmpDir
                 cmd /c "`"$gateBat`"" | Out-Null
-                if ($LASTEXITCODE -ne 0) { throw "check-gate returned $LASTEXITCODE (expected 0)" }
+                if ($LASTEXITCODE -ne 0) { throw "ai-check returned $LASTEXITCODE (expected 0)" }
             }
         }
     }

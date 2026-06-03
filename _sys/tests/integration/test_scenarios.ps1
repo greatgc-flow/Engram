@@ -1,4 +1,4 @@
-# test_scenarios.ps1 — 사용자 시나리오 E2E 테스트
+﻿# test_scenarios.ps1 — 사용자 시나리오 E2E 테스트
 # Gemini MECE 설계 시나리오 A~D + 추가 시나리오
 # 실제 claude/gemini CLI 호출 없음 (hub.py 직접 검증)
 
@@ -70,7 +70,7 @@ Test-Scenario "Scenario A: Claude 작업 시작 → Gemini 메시지 → 완료"
         if ($null -ne $state.claude_sid) { throw "claude_sid not null after end-session" }
         # handoff.md에 종료 기록
         $pair = $state.pair
-        $handoff = Get-Content (Join-Path $proj ".ai\sessions\$pair\handoff.md") -Raw
+        $handoff = Get-Content (Join-Path $proj ".ai\sessions\$pair\handoff.md") -Raw -Encoding UTF8
         if ($handoff -notmatch "claude: 세션 종료") { throw "handoff not updated" }
     } finally {
         Pop-Location

@@ -18,7 +18,7 @@ $venvPy = Join-Path $ProjectRoot "_sys\env\venv\Scripts\python.exe"
 $hub    = Join-Path $ProjectRoot "_sys\core\hub.py"
 $rg     = Join-Path $ProjectRoot "_sys\tools\ripgrep\rg.exe"
 $fd     = Join-Path $ProjectRoot "_sys\tools\fd\fd.exe"
-$claBat = Join-Path $ProjectRoot "_sys\cli\cla.bat"
+$claBat = Join-Path $ProjectRoot "_sys\cli\claude.bat"
 $cliBat = Join-Path $ProjectRoot "_sys\cli"
 
 Test-Case "venv python exists" {
@@ -50,9 +50,9 @@ Test-Case "fd exists" {
     if (-not (Test-Path $fd)) { throw "Not found: $fd" }
 }
 
-Test-Case "PORTABLE_ROOT in cla.bat" {
+Test-Case "PORTABLE_ROOT in claude.bat" {
     $content = Get-Content $claBat -Raw
-    if ($content -notmatch 'PORTABLE_ROOT') { throw "PORTABLE_ROOT not in cla.bat" }
+    if ($content -notmatch 'PORTABLE_ROOT') { throw "PORTABLE_ROOT not in claude.bat" }
 }
 
 Test-Case "no hardcoded P:\\ in cli/*.bat" {
