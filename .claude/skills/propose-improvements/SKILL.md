@@ -20,7 +20,7 @@ description: "ROI analysis, efficiency proposals, and component version update e
 
 ## Version Update Check
 
-With Gemini ON: Run `_sys\scans\scan-env.bat` -> read `_archive/scan-env-latest.json`
+With Gemini ON: Run `_sys\checks\check-versions.bat` -> read `_archive/version-check.json`
   -> compare with setup.ps1 $V section -> list items needing update
 
 With Gemini OFF: Manual WebFetch to each tool's GitHub releases page:

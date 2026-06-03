@@ -114,7 +114,7 @@ set "PATH=%ENV_DIR%\nodejs\npm-global;%ENV_DIR%\venv\Scripts;%ENV_DIR%\python;%E
 if exist "%ENV_DIR%\pwsh" set "PATH=%ENV_DIR%\pwsh;%PATH%"
 if exist "%SYS_DIR%\cli" set "PATH=%SYS_DIR%\cli;%PATH%"
 if exist "%SYS_DIR%\hooks" set "PATH=%SYS_DIR%\hooks;%PATH%"
-if exist "%SYS_DIR%\scans" set "PATH=%SYS_DIR%\scans;%PATH%"
+if exist "%SYS_DIR%\checks" set "PATH=%SYS_DIR%\checks;%PATH%"
 if exist "%TOOLS_DIR%\ripgrep" set "PATH=%TOOLS_DIR%\ripgrep;%PATH%"
 if exist "%TOOLS_DIR%\fd" set "PATH=%TOOLS_DIR%\fd;%PATH%"
 if exist "%TOOLS_DIR%\jq" set "PATH=%TOOLS_DIR%\jq;%PATH%"
@@ -127,7 +127,7 @@ if exist "%TOOLS_DIR%\gh" set "PATH=%TOOLS_DIR%\gh;%PATH%"
 
 if exist "%ENV_DIR%\git\cmd\git.exe" (
     set "PATH=%ENV_DIR%\git\cmd;%ENV_DIR%\git\usr\bin;%PATH%"
-    if exist "%SYS_DIR%\git_config\.gitconfig" set "GIT_CONFIG_GLOBAL=%SYS_DIR%\git_config\.gitconfig"
+    if exist "%SYS_DIR%\git-config\.gitconfig" set "GIT_CONFIG_GLOBAL=%SYS_DIR%\git-config\.gitconfig"
 )
 
 :: ----------------------------------------------------------------

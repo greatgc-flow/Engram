@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 setlocal EnableDelayedExpansion
 
 :: ================================================================
@@ -33,7 +33,7 @@ set "_FORCE=0"
 if "%~1"=="--force" set "_FORCE=1"
 
 :: --- Gemini mode check ---
-call "%~dp0..\hooks\check-gate.bat"
+call "%~dp0..\hooks\ai-check.bat"
 
 :: --- Find newest JSONL ---
 set "_JSONL="
@@ -119,7 +119,7 @@ type "!_SESSION_LOG!" | gemini --session-id !_EPHEMERAL_SID! -p "!_PROMPT!" -o t
 
 if errorlevel 1 (
     echo [context-health] ERROR: Handoff generation failed. Check Gemini auth.
-    call "%~dp0..\hooks\collab-log-append.bat" "Axis-H" "context-health.bat" "FAIL" "Error: handoff generation failed"
+    call "%~dp0..\hooks\collab-log.bat" "Axis-H" "context-health.bat" "FAIL" "Error: handoff generation failed"
     for /f "delims=" %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMddHHmmss"') do set "_ERR_DT=%%T"
     if exist "%_STATUS_FILE%" (
         powershell -NoProfile -Command "$f='%_STATUS_FILE%'; $j=Get-Content $f -Raw | ConvertFrom-Json; $j.last_error='context_health_failed_!_ERR_DT!'; [System.IO.File]::WriteAllText($f,($j|ConvertTo-Json -Depth 5),(New-Object System.Text.UTF8Encoding($false)))" > nul 2>&1
@@ -133,18 +133,18 @@ findstr /i "\[REFUSAL:" "%_HANDOFF%" > nul 2>&1
 if not errorlevel 1 (
     del "%_HANDOFF%" > nul 2>&1
     echo [context-health] Gemini refused handoff generation.
-    call "%~dp0..\hooks\collab-log-append.bat" "Axis-H" "context-health.bat" "REFUSED" "Gemini refused request"
+    call "%~dp0..\hooks\collab-log.bat" "Axis-H" "context-health.bat" "REFUSED" "Gemini refused request"
     endlocal
     exit /b 1
 )
 
 echo [context-health] Handoff written: %_HANDOFF%
-call "%~dp0..\hooks\collab-log-append.bat" "Axis-H" "context-health.bat" "OK" "Handoff: %_HANDOFF%"
+call "%~dp0..\hooks\collab-log.bat" "Axis-H" "context-health.bat" "OK" "Handoff: %_HANDOFF%"
 echo [context-health] Recommended actions:
 echo [context-health]   1. /compact  - compress current context (loses detail)
 echo [context-health]   2. New session - read _archive\session-handoff.json to resume
 
-call "%~dp0..\tools\archive-data.bat" --name scan-health --file "%_ARCHIVE_DIR%\session-handoff.json" || echo [WARN] Archive failed (non-blocking)
+call "%~dp0..\hooks\archive-data.bat" --name scan-health --file "%_ARCHIVE_DIR%\session-handoff.json" || echo [WARN] Archive failed (non-blocking)
 
 endlocal
 exit /b 0

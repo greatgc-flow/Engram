@@ -1,0 +1,213 @@
+============================================================= 
+  Porta-Flow Sandbox Unit Test Report                         
+  Run: 20260602_204806                                                  
+============================================================= 
+ 
+ 
+[GROUP 1] File Presence 
+---- 
+  [PASS] context scripts: ctx-save.bat 
+  [PASS] context scripts: ctx-end.bat 
+  [PASS] context scripts: version-check.bat 
+  [PASS] context scripts: agent-audit.bat 
+  [PASS] context scripts: risk-scan.bat 
+  [PASS] context scripts: script-deps.bat 
+  [PASS] context scripts: git-draft.bat 
+  [PASS] context scripts: context-health.bat 
+  [PASS] context scripts: collab-log-append.bat 
+  [PASS] context scripts: raw-log.bat 
+  [PASS] context scripts: gemini-session-read.bat 
+  [PASS] gemini-status.bat 
+  [PASS] start.bat 
+  [PASS] tool: rg.exe 
+  [PASS] tool: fd.exe 
+  [PASS] tool: jq.exe 
+  [PASS] tool: bat.exe 
+  [PASS] tool: fzf.exe 
+  [PASS] tool: delta.exe 
+  [PASS] tool: oh-my-posh.exe 
+  [PASS] config: CLAUDE.md 
+  [PASS] config: CONVENTION.md 
+  [PASS] config: GEMINI.md 
+  [PASS] config: settings.json 
+  [PASS] config: .claude/agents dir 
+ 
+[GROUP 2] Tool CLI Execution 
+---- 
+  [SKIP] rg --version [WSB: unsigned binary policy]
+  [SKIP] fd --version [WSB: unsigned binary policy]
+  [SKIP] jq --version [WSB: unsigned binary policy]
+  [SKIP] bat --version [WSB: unsigned binary policy]
+  [SKIP] fzf --version [WSB: unsigned binary policy]
+  [SKIP] delta --version [WSB: unsigned binary policy]
+  [SKIP] git --version [WSB: unsigned binary policy]
+  [PASS] node --version
+  [SKIP] sqlite3 --version [WSB: unsigned binary policy]
+  [PASS] gh --version portable
+  [PASS] pwsh --version
+ 
+[GROUP 3] raw-log.bat 
+---- 
+  [PASS] raw-log: no response file ??? graceful
+  [PASS] raw-log: nonexistent file ??? silent skip
+  [PASS] raw-log: valid file ??? exit 0
+  [PASS] raw-log: response.txt created
+  [PASS] raw-log: directive.txt created
+  [PASS] raw-log: missing directive ??? graceful
+ 
+[GROUP 4] collab-log-append.bat 
+---- 
+  [PASS] collab-log-append: OK status exit=0
+  [PASS] collab-log-append: MD file created 
+  [PASS] collab-log-append: FAIL status exit=0
+  [PASS] collab-log-append: content has Axis-TEST
+  [PASS] collab-log-append: REFUSED status exit=0
+ 
+[GROUP 5] risk-scan.bat 
+---- 
+  [PASS] risk-scan: no args, NO_GEMINI ??? exit 0 (non-blocking)
+  [PASS] risk-scan: output JSON created 
+  [PASS] risk-scan: JSON contains UNKNOWN
+  [PASS] risk-scan: output is valid JSON
+  [PASS] risk-scan: with task arg ??? exit 0
+  [PASS] risk-scan: with task+files ??? exit 0
+  [PASS] risk-scan: proceed=true in output
+ 
+[GROUP 6] context-health.bat 
+---- 
+  [PASS] context-health: no JSONL ??? exit 0
+  [PASS] context-health: no JSONL message shown
+  [PASS] context-health: --force no JSONL ??? exit 0
+  [PASS] context-health: GREEN JSONL exit=0
+  [PASS] context-health: GREEN status reported
+  [PASS] context-health: YELLOW JSONL exit=0
+  [PASS] context-health: YELLOW status reported
+  [PASS] context-health: RED JSONL exit=0 (Gemini skip graceful)
+  [PASS] context-health: RED status reported
+  [PASS] context-health: --force RED NO_GEMINI ??? exit 0
+  [PASS] context-health: status.json updated with context_health
+ 
+[GROUP 7] gemini-status.bat 
+---- 
+  [PASS] gemini-status: NO_GEMINI=1 ??? GEMINI_MODE=OFF 
+  [PASS] gemini-status: reason=manual_override 
+  [PASS] gemini-status: status.json written 
+  [PASS] gemini-status: status.json mode=OFF
+  [PASS] gemini-status: no auth dir ??? GEMINI_MODE=OFF 
+  [PASS] gemini-status: installed=true (gemini in PATH)
+ 
+[GROUP 8] version-check.bat 
+---- 
+  [PASS] version-check: NO_GEMINI ??? exit 1 (blocking)
+  [PASS] version-check: ERROR message printed
+  [PASS] version-check: GEMINI_MODE=OFF ??? exit 1
+ 
+[GROUP 9] agent-audit.bat 
+---- 
+  [PASS] agent-audit: NO_GEMINI ??? exit 1
+  [PASS] agent-audit: 9+ agent .md files present (11) 
+  [PASS] agent-audit: .claude/agents dir exists 
+ 
+[GROUP 10] script-deps.bat 
+---- 
+  [PASS] script-deps: NO_GEMINI ??? exit 1
+  [PASS] script-deps: ERROR message printed
+ 
+[GROUP 11] git-draft.bat 
+---- 
+  [PASS] git-draft: no args, NO_GEMINI ??? exit 1
+  [PASS] git-draft: --staged NO_GEMINI ??? exit 1
+  [PASS] git-draft: ERROR message before git check
+  [PASS] git-draft: unknown flag with NO_GEMINI ??? exit 1
+ 
+[GROUP 12] ctx-save.bat 
+---- 
+  [PASS] ctx-save: no CLAUDE.md ??? exit 1
+  [PASS] ctx-save: valid CLAUDE.md, NO_GEMINI ??? exit 0
+  [PASS] ctx-save: session log .md created
+  [PASS] ctx-save: CLAUDE.md checkpoint marker written
+  [PASS] ctx-save: Gemini skip graceful (no error output) 
+ 
+[GROUP 13] ctx-end.bat 
+---- 
+  [PASS] ctx-end: no credentials ??? non-zero exit 
+  [PASS] ctx-end: missing credentials ??? exit 1 
+  [PASS] ctx-end --global: missing credentials ??? non-zero exit 
+ 
+[GROUP 14] settings.json 
+---- 
+  [PASS] settings.json exists 
+  [PASS] settings.json: valid JSON
+  [PASS] settings.json: defaultShell=powershell
+  [PASS] settings.json: auto-update disabled
+ 
+[GROUP 15] start.bat structure 
+---- 
+  [PASS] start.bat: TOOLS_DIR PATH block present
+  [PASS] start.bat: ripgrep PATH entry
+  [PASS] start.bat: gemini-status.bat call present
+  [PASS] start.bat: NPM_CONFIG_PREFIX configured
+  [PASS] start.bat: CLAUDE_CONFIG_DIR configured
+  [PASS] start.bat: SUBST_DRIVE_LETTER portability logic
+  [PASS] start.bat: sqlite PATH entry
+  [PASS] start.bat: gh PATH entry
+ 
+[GROUP 16] New Files and Features 
+---- 
+  [PASS] code.cmd: VS Code wrapper 
+  [PASS] launch-wsbtest.ps1: WSB launcher 
+  [PASS] test/results/ dir exists 
+  [PASS] start.bat: statusline sync block
+  [PASS] start.bat: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS set
+  [PASS] gemini-consult.bat: CRLF endings
+  [PASS] gemini-consult.bat: --approval-mode plan
+  [PASS] gemini-consult: functional run exit=0
+  [PASS] gemini-consult: session-id.txt created 
+  [PASS] gemini-consult: session-map.json created 
+  [PASS] session-map.json: has active session
+  [PASS] gemini-usage: usage.json created 
+  [PASS] usage.json: valid content
+  [PASS] gemini-consult.bat: _SID_FILE before gate
+  [PASS] gemini-consult.bat: _GUSAGE var
+  [PASS] gemini-consult.bat: ripgrep in PATH
+  [PASS] gemini-consult.bat: session-map update
+  [PASS] gemini-consult.bat: usage auto-update
+  [PASS] ctx-end.bat: CRLF endings
+  [PASS] ctx-end.bat: session-map archive
+  [PASS] gemini-usage.bat: Q=0 key
+  [PASS] gemini-usage.bat: [A-HQ] regex
+  [PASS] Gemini bundle: rg-win32-x64.exe 
+  [PASS] tools\sqlite\sqlite3.exe 
+  [PASS] tools\gh\gh.exe 
+  [PASS] risk-scan.bat: ephemeral session used
+  [PASS] risk-scan.bat: no session-read call
+  [PASS] agent-audit.bat: ephemeral session used
+  [PASS] agent-audit.bat: no session-read call
+  [PASS] script-deps.bat: ephemeral session used
+  [PASS] script-deps.bat: no session-read call
+  [PASS] version-check.bat: ephemeral session used
+  [PASS] version-check.bat: no session-read call
+  [PASS] context-health.bat: ephemeral session used
+  [PASS] context-health.bat: no session-read call
+  [PASS] gemini-batch-review.bat: ephemeral session used
+  [PASS] gemini-batch-review.bat: no session-read call
+  [PASS] ctx-save.bat: session flag present - interactive
+  [PASS] ctx-end.bat: session flag present - interactive
+  [PASS] git-draft.bat: session flag present - interactive
+  [PASS] gemini-session-read.bat: CRLF endings
+  [PASS] gemini-session-read: no session - empty 
+  [PASS] gemini-session-read: serial 2nd call succeeds
+  [PASS] gemini-session-read: active session - set 
+ 
+[GROUP 17] Document Content Integrity 
+---- 
+  [PASS] CLAUDE.md: references _archive/CHANGELOG.md
+  [PASS] CONVENTION.md: WSB policy section present
+  [PASS] verifier.md: agent exists 
+  [PASS] GEMINI.md: 2026-06-01 date updated
+  [PASS] settings.json: defaultShell field present
+  [PASS] settings.json: permissions.allow non-empty
+ 
+============================================================= 
+  RESULT: PASS=153  FAIL=0  TOTAL=153          
+============================================================= 

@@ -8,7 +8,7 @@ CONTEXT.md = static topology only. Dynamic state → .ai/state.json.
 - Unified Manager: `_sys\manage.ps1` (Register/Unregister + Gemini Junction)
 - Gemini Auth: Directory Junction ACTIVE (`%USERPROFILE%\.gemini` → `_sys\gemini\config`)
 - Gemini Control: Claude-only orchestration. Gemini runs only on explicit Claude call.
-- GEMINI_MODE: set by `start.bat → gemini-status.bat`. Axis bats check via `check-gate.bat`.
+- GEMINI_MODE: set by `start.bat → gemini-status.bat`. Axis bats check via `ai-check.bat`.
 - local.config.bat options: `NO_GEMINI=1` (disable), `GEMINI_PING_TEST=1` (ping opt-in)
 - 3TCP v1: nodes.json N-node, consensus rounds (.ai/consensus/), message envelope (thread/type/cc/ref)
 
@@ -37,14 +37,14 @@ CONTEXT.md = static topology only. Dynamic state → .ai/state.json.
 - B: version-check.bat | C: ctx-end.bat session summary | D: inline syntax check
 - D+: ctx-save mid-summary (opt-in) | E: agent-audit.bat → _archive/agent-audit.json
 - F: script-deps.bat → _archive/script-deps.json | G: git-draft.bat → commit draft
-- H: context-health.bat → status.json + _archive/session-handoff.json
+- H: check-health.bat → status.json + _archive/session-handoff.json
 - I: risk-scan.bat → _archive/risk-scan.json (pre-flight risk, Phase 1.5)
 
 ## Context Health Thresholds (Axis-H)
 - Theory: 200k tokens | Quality limit: ~80k–100k tokens
 - GREEN <600KB | YELLOW 600KB–1.2MB | RED >1.2MB
 - YELLOW → complete phase → ctx-save → /compact before next heavy phase
-- RED → STOP → context-health.bat --force → MUST /compact or new session
+- RED → STOP → check-health.bat --force → MUST /compact or new session
 - Recovery: session-handoff.json → session-primer.md → new session
 
 ## Practical Figures

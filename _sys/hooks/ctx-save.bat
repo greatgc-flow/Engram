@@ -48,7 +48,7 @@ echo [ctx-save] Done. Session is still active.
 for %%I in ("%~dp0..\..") do set "_PORTABLE_ROOT=%%~fI"
 set "PYTHONUTF8=1"
 set "PATH=!_PORTABLE_ROOT!\_sys\env\venv\Scripts;%PATH%"
-call "%~dp0check-gate.bat" >nul 2>&1
+call "%~dp0ai-check.bat" >nul 2>&1
 if errorlevel 1 goto :SKIP_GEMINI_SUM
 set "_SUM=!SES_FILE!.midsummary.md"
 set "_QF=%TEMP%\ctx-save-query-%RANDOM%.txt"
@@ -61,11 +61,11 @@ if not exist "!_SUM!" goto :CTX_SAVE_GEMINI_FAIL
 for /f "delims=" %%Z in ('powershell -NoProfile -Command "(Get-Item -LiteralPath '!_SUM!').Length"') do set "_SZ=%%Z"
 if "!_SZ!"=="0" goto :CTX_SAVE_GEMINI_FAIL
 echo [ctx-save] Mid-summary: !_SUM!
-call "%~dp0collab-log-append.bat" "Axis-D+" "ctx-save.bat" "OK" "Summary: !_SUM!"
+call "%~dp0collab-log.bat" "Axis-D+" "ctx-save.bat" "OK" "Summary: !_SUM!"
 goto :SKIP_GEMINI_SUM
 :CTX_SAVE_GEMINI_FAIL
 del "!_SUM!" > nul 2>&1
 echo [ctx-save] Gemini mid-summary skipped (auth or network issue).
-call "%~dp0collab-log-append.bat" "Axis-D+" "ctx-save.bat" "FAIL" "Error: api_error"
+call "%~dp0collab-log.bat" "Axis-D+" "ctx-save.bat" "FAIL" "Error: api_error"
 :SKIP_GEMINI_SUM
 endlocal

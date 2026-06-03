@@ -95,20 +95,20 @@ Axis 실행 전 **항상** STATUS 확인 (`GEMINI_MODE=ON`인지).
 | Axis | 스크립트 | 제한 | 설명 |
 |------|---------|------|------|
 | A | portability-auditor 에이전트 | **최대 3회/일** | Full-Corpus 이식성 검사 |
-| B | `_sys\scans\scan-env.bat` | 제한 없음 | 도구 버전 검증 |
+| B | `_sys\checks\check-versions.bat` | 제한 없음 | 도구 버전 검증 |
 | C | `_sys\hooks\ctx-end.bat` | 세션 종료 시 | 세션 요약 |
 | D | 수동 Gemini 호출 | 제한 없음 | 문법/정책 검사 |
 | D+ | `_sys\hooks\ctx-save.bat` | 제한 없음 | 중간 체크포인트 |
-| E | `_sys\scans\scan-audit.bat` | 제한 없음 | 에이전트 감사 |
-| F | `_sys\scans\scan-deps.bat` | 제한 없음 | 스크립트 의존성 맵 |
-| G | `_sys\tools\git-draft.bat` | 제한 없음 | 커밋 메시지 초안 |
-| H | `_sys\scans\scan-health.bat` | 제한 없음 | 컨텍스트 건강 확인 |
+| E | `_sys\checks\check-agents.bat` | 제한 없음 | 에이전트 감사 |
+| F | `_sys\checks\check-deps.bat` | 제한 없음 | 스크립트 의존성 맵 |
+| G | `_sys\cli\git-draft.bat` | 제한 없음 | 커밋 메시지 초안 |
+| H | `_sys\checks\check-health.bat` | 제한 없음 | 컨텍스트 건강 확인 |
 | Q | `_sys\cli\msg.bat ask --to gemini` | 제한 없음 | 동기 consult — 응답 전 Gemini 먼저 (ratio 5+) |
-| R | `_sys\tools\batch-review.bat` | 수동 실행 | 미커밋 diff 일괄 리뷰 |
+| R | `_sys\cli\batch-review.bat` | 수동 실행 | 미커밋 diff 일괄 리뷰 |
 
 **Axis-A 일일 한도 초과 시**: "오늘 Axis-A 3회 이미 사용. 내일 실행 권장."
 
-실행 후 `collab-log-append.bat`가 자동으로 `_archive\collab-log\{date}.md`에 기록.
+실행 후 `collab-log.bat`가 자동으로 `_archive\collab-log\{date}.md`에 기록.
 
 ---
 

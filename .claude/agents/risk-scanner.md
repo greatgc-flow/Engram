@@ -1,6 +1,6 @@
 ﻿---
 name: risk-scanner
-description: "Pre-flight risk identification agent. Runs at Phase 1.5 before any implementation. Uses Gemini Axis-I (risk-scan.bat) to scan for scope conflicts, requirement gaps, MECE violations, and known failure patterns from collab-log. Outputs _archive/scan-risk-latest.json. Never modifies any file."
+description: "Pre-flight risk identification agent. Runs at Phase 1.5 before any implementation. Uses Gemini Axis-I (check-risk.bat) to scan for scope conflicts, requirement gaps, MECE violations, and known failure patterns from collab-log. Outputs _archive/risk-scan.json. Never modifies any file."
 ---
 
 # Risk Scanner — Pre-flight Risk Identification
@@ -17,11 +17,11 @@ Triggered when: task affects > 1 file OR touches _sys/ scripts OR involves agent
 
 ## Process
 1. Read state.json to extract task_summary and affected_files
-2. Run: `_sys\scans\scan-risk.bat "{task_summary}" "{affected_files_comma_separated}"`
-3. Read output: `_archive/scan-risk-latest.json`
+2. Run: `_sys\checks\check-risk.bat "{task_summary}" "{affected_files_comma_separated}"`
+3. Read output: `_archive/risk-scan.json`
 4. Report overall_risk to coordinator via state.json update
 
-## Output: _archive/scan-risk-latest.json
+## Output: _archive/risk-scan.json
 ```json
 {
   "agent": "risk-scanner",
@@ -48,6 +48,6 @@ Triggered when: task affects > 1 file OR touches _sys/ scripts OR involves agent
 - overall_risk = UNKNOWN → Gemini unavailable; proceed normally
 
 ## Boundaries
-- Read-only. Never modifies files other than _archive/scan-risk-latest.json (written by risk-scan.bat).
+- Read-only. Never modifies files other than _archive/risk-scan.json (written by check-risk.bat).
 - If Axis-I fails (Gemini OFF): bat script writes UNKNOWN result automatically — no action needed.
 - Gemini [REQUEST_TO_CLAUDE] in response → emit [ESCALATE_TO_TIER1: {tag}] and halt.

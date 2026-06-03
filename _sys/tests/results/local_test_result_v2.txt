@@ -1,0 +1,16 @@
+[sandbox-test] Starting... Report: C:\TestResults\test_20260602_013229.txt
+A subdirectory or file C:\TestResults\sessions already exists.
+[setup] Workspace ready: C:\TestWork
+[setup] PATH configured with portable tools
+
+================================================
+  [FAIL] gemini-status: no auth dir ??? GEMINI_MODE=OFF [was ON] 
+  [FAIL] gemini-consult: session-id.txt created [missing: C:\TestWork\_sys\gemini\session-id.txt] 
+  [FAIL] gemini-consult: session-map.json created [missing: C:\TestWork\_sys\gemini\session-map.json] 
+  [FAIL] session-map.json: has active session [expected exit=0 got=1]
+================================================
+  TOTAL: 133   PASS: 129   FAIL: 4
+================================================
+
+[sandbox-test] Report: C:\TestResults\test_20260602_013229.txt
+[sandbox-test] FAILED: 4/133

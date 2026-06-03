@@ -85,7 +85,7 @@ if "%GLOBAL_UPDATE%"=="0" echo         Tip: ctx-end --global  also updates globa
 for %%I in ("%~dp0..\..") do set "_PORTABLE_ROOT=%%~fI"
 set "PYTHONUTF8=1"
 set "PATH=!_PORTABLE_ROOT!\_sys\env\venv\Scripts;%PATH%"
-call "%~dp0check-gate.bat" >nul 2>&1
+call "%~dp0ai-check.bat" >nul 2>&1
 if errorlevel 1 goto :SKIP_GEMINI_SUM
 set "_SUM=!SES_FILE!.summary.md"
 set "_QF=%TEMP%\ctx-end-query-%RANDOM%.txt"
@@ -99,12 +99,12 @@ for /f "delims=" %%Z in ('powershell -NoProfile -Command "(Get-Item -LiteralPath
 if "!_SZ!"=="0" goto :CTX_END_GEMINI_FAIL
 call "%~dp0raw-log.bat" "Axis-C" "!_SUM!" "!SES_FILE!"
 echo [ctx-end] Summary: !_SUM!
-call "%~dp0collab-log-append.bat" "Axis-C" "ctx-end.bat" "OK" "Summary: !_SUM!"
+call "%~dp0collab-log.bat" "Axis-C" "ctx-end.bat" "OK" "Summary: !_SUM!"
 goto :SKIP_GEMINI_SUM
 :CTX_END_GEMINI_FAIL
 del "!_SUM!" > nul 2>&1
 echo [ctx-end] Gemini summary skipped (auth or network issue).
-call "%~dp0collab-log-append.bat" "Axis-C" "ctx-end.bat" "FAIL" "Error: api_error"
+call "%~dp0collab-log.bat" "Axis-C" "ctx-end.bat" "FAIL" "Error: api_error"
 :SKIP_GEMINI_SUM
 :: ── Gemini 1:1 session-id + session-map cleanup ──────────────────
 set "_SID_FILE=!_BASE!\_sys\gemini\session-id.txt"

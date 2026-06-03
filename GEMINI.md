@@ -1,5 +1,5 @@
 # Gemini CLI — Project Instructions
-> Last updated: 2026-06-01
+> Last updated: 2026-06-03
 
 > **IMPORTANT — DO NOT MODIFY THIS FILE.**
 > This file is managed exclusively by the Claude harness. Do not add, edit, or remove any content here.
@@ -70,10 +70,10 @@ When invoked by an agent, output structured data (JSON/XML) as primary. If escal
     - **Axis-D+:** Mid-session checkpoint summary — ctx-save mid-summary hook.
     - **Axis-E:** Agent definition consistency audit — agent-audit.bat → `_archive/agent-audit.json`.
     - **Axis-F:** Script dependency mapping — script-deps.bat → `_archive/script-deps.json`.
-    - **Axis-G:** Conventional commit message draft — git-draft.bat (console output, user reviews before commit).
-    - **Axis-H:** Context health check — context-health.bat reads JSONL size; if RED (>1.2MB), generates `_archive/session-handoff.json` for session continuity across /compact or session split.
-    - **Axis-I:** Pre-flight risk assessment — risk-scan.bat (Phase 1.5); scans collab-log for known failure patterns + affected files; outputs `_archive/risk-scan.json` (overall_risk: HIGH/MED/LOW/UNKNOWN). Non-blocking: GEMINI_MODE=OFF writes UNKNOWN result and exits 0.
-    - **Validator delegation (ad-hoc):** validator agent (Step 5b) calls `gemini -p` inline to pre-summarize `03_portability_audit.json` + `03_scenario_audit.json` → `_workspace/03_audit_summary.md`. Output contract: ≤20 bullet points. On failure, verifier reads raw JSON directly. No Axis script — direct inline call per §3-4 pattern 1.
+    - **Axis-G:** Conventional commit message draft — `_sys/cli/git-draft.bat` (console output, user reviews before commit).
+    - **Axis-H:** Context health check — `_sys/checks/check-health.bat` reads JSONL size; if RED (>1.2MB), generates `_archive/session-handoff.json` for session continuity across /compact or session split.
+    - **Axis-I:** Pre-flight risk assessment — `_sys/checks/check-risk.bat` (Phase 1.5); scans collab-log for known failure patterns + affected files; outputs `_archive/risk-scan.json` (overall_risk: HIGH/MED/LOW/UNKNOWN). Non-blocking: GEMINI_MODE=OFF writes UNKNOWN result and exits 0.
+    - **Validator delegation (ad-hoc):** validator agent (Step 5b) calls `gemini -p` inline to pre-summarize `03_portability_audit.json` + `03_scenario_audit.json` → `_state/03_audit_summary.md`. Output contract: ≤20 bullet points. On failure, verifier reads raw JSON directly. No Axis script — direct inline call per §3-4 pattern 1.
 
 ## 4-1. Collaboration Protocol v2 (2026-05-31 — Peer Model)
 See `PROTOCOL.md §C-1` for the full protocol. Key points for Gemini:

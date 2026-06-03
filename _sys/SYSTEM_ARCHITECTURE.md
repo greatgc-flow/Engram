@@ -10,15 +10,15 @@
 ```
 [사용자 / Gemini CLI]
         ↓
-[진입점] _sys/cli/cla.bat  gem.bat  msg.bat
+[진입점] _sys/cli/claude.bat  gemini.bat  msg.bat
         ↓ (PORTABLE_ROOT + venv PATH 주입)
 [코어]  _sys/core/hub.py  ← 모든 IPC 로직의 단일 진입점 (Facade)
         ↓
 [상태]  .ai/  ← 프로젝트 로컬 AI 상태 (mailbox.json, state.json, sessions/)
         ↓
-[라이프사이클] _sys/hooks/ (session-end, append-log, check-gate, ctx-save, ctx-end)
-[분석]  _sys/scans/ (scan-risk, audit, deps, health, env)
-[도구]  _sys/tools/ (git-draft, batch-review, archive-data)
+[라이프사이클] _sys/hooks/ (session-end, log-write, ai-check, collab-log, ctx-save, ctx-end)
+[분석]  _sys/checks/ (check-risk, check-agents, check-deps, check-health, check-versions)
+[도구]  _sys/cli/ (git-draft, batch-review) + _sys/hooks/ (archive-data)
 ```
 
 ## 2. hub.py — 11개 액션 (Facade 패턴)
@@ -44,7 +44,7 @@
 |------|------|
 | `check --target A` | 받은 메시지 전문 Pretty-print |
 | `status` | 세션 상태 전체 + handoff 원문 Pretty-print |
-| `check-gate [--agent gemini\|claude]` | Gemini 가용 여부 확인 |
+| `check-gate [--agent gemini\|claude]` | Gemini 가용 여부 확인 (hub.py action; bat: ai-check.bat) |
 
 ### 동기 액션
 
@@ -135,7 +135,7 @@ python "%~dp0..\core\hub.py" [action] [args]
 
 각 scan 스크립트는 완료 후 자동으로:
 1. `_archive/{name}.json` (즉시 출력)
-2. `_archive/{name}-YYYYMMDD.json` (날짜별 보존, archive-data.bat)
+2. `_archive/{name}-YYYYMMDD.json` (날짜별 보존, _sys/hooks/archive-data.bat)
 3. `_archive/{name}-latest.json` (항상 최신, agent MD 참조 경로)
 
 ## 8. 경로 빠른 참조
@@ -143,10 +143,10 @@ python "%~dp0..\core\hub.py" [action] [args]
 | 컴포넌트 | 경로 |
 |---------|------|
 | 코어 파이썬 | `_sys/core/hub.py` |
-| CLI 진입점 | `_sys/cli/cla.bat` `gem.bat` `msg.bat` |
+| CLI 진입점 | `_sys/cli/claude.bat` `gemini.bat` `msg.bat` |
 | 라이프사이클 훅 | `_sys/hooks/session-end.bat` `ctx-save.bat` `ctx-end.bat` |
-| Axis 스캔 | `_sys/scans/scan-{risk,audit,deps,health,env}.bat` |
-| 수동 도구 | `_sys/tools/{git-draft,batch-review,archive-data}.bat` |
-| 테스트 | `_sys/test/run-tests.bat` (--unit|--integration|--all) |
+| Axis 스캔 | `_sys/checks/check-{risk,agents,deps,health,versions}.bat` |
+| 수동 도구 | `_sys/cli/{git-draft,batch-review}.bat` \| `_sys/hooks/archive-data.bat` |
+| 테스트 | `_sys/tests/run-tests.bat` (--unit|--integration|--all) |
 | AI 상태 | `.ai/state.json` (hub.py 경유만 쓰기) |
-| 아카이브 | `_archive/scan-{name}-latest.json` |
+| 아카이브 | `_archive/{name}.json` + `{name}-YYYYMMDD.json` (archive-data.bat) |

@@ -43,7 +43,7 @@ _sys/claude/agent/CONTEXT.md — read only at new-session orientation or when .a
 
 ## Context Health Monitoring — Proactive Axis-H Triggers
 
-Run _sys\scans\scan-health.bat at:
+Run _sys\checks\check-health.bat at:
 
 MANDATORY:
 - Phase 0 start (before any work)
@@ -58,7 +58,7 @@ Response rules:
 - YELLOW: ctx-save at next natural pause.
   If next phase is HEAVY (>5 files, Axis-A, >=3 agent rewrites):
     Pause. Inform user: "Context YELLOW. Recommend /compact before proceeding."
-- RED: Stop. Run context-health.bat --force. Write session-primer.md. Report to user. Do not continue until /compact or new session confirmed.
+- RED: Stop. Run check-health.bat --force. Write session-primer.md. Report to user. Do not continue until /compact or new session confirmed.
 
 Heavy phase = task touches >5 files OR Axis-A (full corpus scan) OR >=3 agent MD rewrites.
 
@@ -94,7 +94,7 @@ Phase 3: Collaboration Loop (MAX 3)
   [Propose] proposer -> 04_proposal.json
   loop_count == 2: WARN USER "Loop 2/3. One more FAIL triggers HALT."
   loop_count >= 3: HALT (see HALT Procedure)
-Phase 4: Run Axis-G (git-draft.bat). Run context-health.bat (MANDATORY). Present summary.
+Phase 4: Run Axis-G (_sys\cli\git-draft.bat). Run check-health.bat (MANDATORY). Present summary.
          APPROVE -> state.json human_approval="approved" -> Phase 5
          REJECT -> feedback -> designated phase | No response -> status="waiting_approval"
 Phase 5: Update state.json system_state (last_completed, known_issues).
@@ -130,7 +130,7 @@ On [ESCALATE_TO_TIER1: {content}] from any Tier 2 agent:
    HUMAN_DECISION -> surface to user immediately
    POLICY_CLARIFICATION -> Claude interprets; update state.json
    GIT_OPERATION -> confirm with user; then execute
-   SESSION_MANAGEMENT -> context-health.bat; recommend /compact if needed
+   SESSION_MANAGEMENT -> check-health.bat; recommend /compact if needed
    READ_AND_VERIFY -> Claude reads file; reply to originating agent
 3. Log in collab-log: "[HH:MM:SS] ESCALATE_TO_TIER1 processed | TYPE | outcome"
 4. Resume interrupted agent task with resolved information

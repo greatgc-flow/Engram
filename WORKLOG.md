@@ -5,6 +5,48 @@
 
 ---
 
+## 2026-06-03 — MECE + 명칭 일반화 (Gemini 4-round 협의 완료)
+
+**목표**: 전체 파일/폴더 구조 MECE 정리 + 처음 보는 개발자가 이름만으로 목적 파악 가능한 수준으로 일반화.  
+Gemini Round 1~4 협의 완료 후 구현.
+
+### Phase A — 구조 정리
+| 변경 | 내용 |
+|------|------|
+| `_sys/tools/git-draft.bat`, `batch-review.bat` | → `_sys/cli/` (사용자 직접 실행 CLI) |
+| `_sys/tools/archive-data.bat` | → `_sys/hooks/` (Axis 스크립트 내부 헬퍼) |
+| `_state/collab/` | 빈 폴더 삭제 |
+| `_archive/scans/` | 신규 생성 + agent-audit.json, script-deps.json 이동 |
+| `_archive/workspace-*-legacy-*.json` (6개) | 삭제 |
+
+### Phase B — 폴더/파일명 rename
+| 구 이름 | 신 이름 | 기준 |
+|---------|---------|------|
+| `_sys/scans/` | `_sys/checks/` | "scans"는 보안 스캔 연상; "checks"가 점검 스크립트 의미 명확 |
+| `scan-env.bat` | `check-versions.bat` | "env" 모호; "versions" 목적 명확 |
+| `scan-audit.bat` | `check-agents.bat` | 무엇을 audit? "agents" 대상 명확 |
+| `scan-health/risk/deps.bat` | `check-health/risk/deps.bat` | prefix 일관성 |
+| `_sys/docs/` | `_sys/templates/` | 읽는 docs가 아닌 복사용 템플릿 |
+| `_sys/git_config/` | `_sys/git-config/` | 디렉토리 관례 (언더스코어 → 하이픈) |
+| `_sys/test/` | `_sys/tests/` | 복수형이 업계 관례 |
+| `_state/` | **유지** | Gemini Round1 5/5 + Round3 DISAGREE 신호 |
+| `cli/cla.bat` | `claude.bat` | "cla"는 프로젝트 전용 약어 |
+| `cli/gem.bat` | `gemini.bat` | "gem"은 Ruby gem 연상 |
+| `hooks/append-log.bat` | `log-write.bat` | 동사-목적어 패턴 |
+| `hooks/check-gate.bat` | `ai-check.bat` | "gate" 불명확; AI 서비스 체크임이 명확 |
+| `hooks/collab-log-append.bat` | `collab-log.bat` | "append" 생략해도 맥락 유지 |
+| `INSTALL.bat`, `CLEANUP.bat` | `install.bat`, `cleanup.bat` | 소문자가 현대 cross-platform 표준 |
+
+### Phase C/D — 배치파일 + 문서 현행화
+- `start.bat` PATH 블록: scans→checks, git_config→git-config 반영
+- `check-*.bat` 5개: 새 경로(ai-check, collab-log, archive-data) 반영
+- `git-draft.bat`, `batch-review.bat`: 이동 후 훅 경로 수정
+- 문서: GEMINI.md, CLAUDE.md, CONVENTION.md, PROTOCOL.md, CONTEXT.md, coordinator.md
+- Skills: gemini, portable-env, context-health, risk-scan, propose-improvements
+- Agents: risk-scanner, proposer, verifier
+
+---
+
 ## 2026-06-03 — 테스트 클린업 (stale refs 제거)
 
 **목표**: `_sys/context/` 삭제 이후 남겨진 stale 테스트 참조 정리.

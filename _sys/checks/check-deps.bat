@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 setlocal
 
 :: ================================================================
@@ -35,7 +35,7 @@ set "TEMP_MERGED=%TEMP%\script_deps_merged_%RANDOM%.txt"
 for /f "delims=" %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMddHHmmss"') do set "_DT=%%I"
 
 :: --- Check Gemini mode ---
-call "%~dp0..\hooks\check-gate.bat"
+call "%~dp0..\hooks\ai-check.bat"
 if not "%GEMINI_MODE%"=="ON" (
     echo [script-deps] ERROR: Gemini not available. Reason: %GEMINI_OFF_REASON%
     echo               Run start.bat first, or check _sys\gemini\status.json
@@ -78,7 +78,7 @@ if errorlevel 1 (
     echo [script-deps] ERROR: gemini returned non-zero. Check auth or network.
     del "%OUT_FILE%" > nul 2>&1
     del "%TEMP_MERGED%" > nul 2>&1
-    call "%~dp0..\hooks\collab-log-append.bat" "Axis-F" "script-deps.bat" "FAIL" "Error: api_error"
+    call "%~dp0..\hooks\collab-log.bat" "Axis-F" "script-deps.bat" "FAIL" "Error: api_error"
     if defined GEMINI_DIR (
         powershell -NoProfile -Command "$f='%GEMINI_DIR%\status.json'; if (Test-Path $f) { $j=Get-Content $f -Raw | ConvertFrom-Json; $j.last_error='script_deps_failed_%_DT%'; $j.mode='OFF'; $j.reason='api_error'; [System.IO.File]::WriteAllText($f, ($j | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false))) }"
     )
@@ -88,7 +88,7 @@ if errorlevel 1 (
 :: Check for Gemini refusal in output
 findstr /i "\[REFUSAL:" "%OUT_FILE%" > nul 2>&1
 if not errorlevel 1 (
-    call "%~dp0..\hooks\collab-log-append.bat" "Axis-F" "script-deps.bat" "REFUSED" "Gemini refused request"
+    call "%~dp0..\hooks\collab-log.bat" "Axis-F" "script-deps.bat" "REFUSED" "Gemini refused request"
     del "%OUT_FILE%" > nul 2>&1
     del "%TEMP_MERGED%" > nul 2>&1
     exit /b 1
@@ -99,7 +99,7 @@ del "%TEMP_MERGED%" > nul 2>&1
 
 echo [script-deps] Done: %OUT_FILE%
 echo [script-deps] Review edges for unexpected or missing call chains.
-call "%~dp0..\hooks\collab-log-append.bat" "Axis-F" "script-deps.bat" "OK" "Output: %OUT_FILE%"
-call "%~dp0..\tools\archive-data.bat" --name scan-deps --file "%OUT_FILE%" || echo [WARN] Archive failed (non-blocking)
+call "%~dp0..\hooks\collab-log.bat" "Axis-F" "script-deps.bat" "OK" "Output: %OUT_FILE%"
+call "%~dp0..\hooks\archive-data.bat" --name scan-deps --file "%OUT_FILE%" || echo [WARN] Archive failed (non-blocking)
 
 endlocal

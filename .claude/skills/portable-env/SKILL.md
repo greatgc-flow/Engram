@@ -32,7 +32,7 @@ Called via Axis scripts A-I. Separate token pool. Stateless per call.
 - No role boundary crossing — MECE roles, delegate only
 - Correction loops max 3 — loop_count ≥ 3 → HALT immediately
 - No final merge without Human Approval (human_approval: "approved")
-- All inter-agent state exchange via _workspace/state.json only
+- All inter-agent state exchange via .ai/state.json (hub.py managed) only
 
 ## state.json Schema (Full)
 ```json
@@ -45,8 +45,8 @@ Called via Axis scripts A-I. Separate token pool. Stateless per call.
   "status": "in_progress",
   "caution_flag": false,
   "artifacts": {
-    "risk_scan": "_archive/scan-risk-latest.json",
-    "session_primer": "_workspace/session-primer.md",
+    "risk_scan": "_archive/risk-scan.json",
+    "session_primer": "_state/session-primer.md",
     "scenario_audit": null,
     "portability_audit": null,
     "verification_result": null,
@@ -72,7 +72,7 @@ State.json safety rule: If state.json exists with status != "done"/"halted", bac
 Phase 0:  Context health check (Axis-H → status.json)
            Check collaboration health (§3-8: mode=ON, consecutive_failures < 3, no unresolved ESCALATED)
            YELLOW → ctx-save recommendation
-           RED → context-health.bat --force → handoff → /compact required
+           RED → check-health.bat --force → handoff → /compact required
 
 Phase 1:  Request analysis
            coordinator reads session-primer.md (if exists) + state.json + CONVENTION.md §0,§1,§3-3
@@ -80,9 +80,9 @@ Phase 1:  Request analysis
            coordinator writes _workspace/session-primer.md (max 10 lines, current task context)
 
 Phase 1.5: Risk scan [Axis-I]
-           risk-scanner agent → _sys\scans\scan-risk.bat
+           risk-scanner agent → _sys\checks\check-risk.bat
            reads: collab-log last 20 entries + affected files from state.json
-           outputs: _archive/scan-risk-latest.json
+           outputs: _archive/risk-scan.json
            HIGH → coordinator asks user (Zone C, §8)
            MED  → caution_flag = true in state.json, proceed
            LOW / UNKNOWN → proceed normally
@@ -98,13 +98,13 @@ Phase 3:  Collaboration Loop (MAX 3)
   [Organize] organizer → folder-tidier | docs-writer (organizer NEVER executes directly)
              Fast path: single doc update (no structural change) → coordinator → docs-writer directly
   [Audit+Judge]  verifier (spawns auditors AND issues PASS/FAIL) →
-             portability-auditor → _workspace/03_portability_audit.json
-             scenario-auditor    → _workspace/03_scenario_audit.json
+             portability-auditor → _state/03_portability_audit.json
+             scenario-auditor    → _state/03_scenario_audit.json
              reads 03_*.json critical[] only (not full prose)
              compliance check via inline rules (not full CONVENTION.md)
              Axis-E if agents/*.md changed
              → PASS or FAIL (verifier only)
-  [Propose] proposer → _workspace/04_proposal.json (ROI + versions + improvements)
+  [Propose] proposer → _state/04_proposal.json (ROI + versions + improvements)
   loop_count == 2 → coordinator warns user: "Loop 2/3. One more FAIL triggers HALT."
 
   Loop Restart Delta Protocol (when FAIL):
@@ -114,10 +114,10 @@ Phase 3:  Collaboration Loop (MAX 3)
     NOT: full CONTEXT.md, full CONVENTION.md, full verification_result prose
 
 Phase 4:  Human Approval Gate
-           Auto-generate commit draft: Axis-G (git-draft.bat)
+           Auto-generate commit draft: Axis-G (_sys\cli\git-draft.bat)
            Present: session-primer.md + changes + risk scan + verification + proposal
            APPROVE → Phase 5 | REJECT → loop | no response → waiting
-           Note: Run context-health.bat before presenting (per §3-9 POST-PHASE4 trigger)
+           Note: Run check-health.bat before presenting (per §3-9 POST-PHASE4 trigger)
 
 Phase 5:  Final cleanup
            coordinator updates state.json system_state (last_completed, known_issues)
@@ -131,8 +131,8 @@ Fast path: Single-file change, no structural/scenario impact → skip Phase 1.5 
 
 ## Data Flow
 ```
-Phase 1.5: risk-scan.bat → _archive/scan-risk-latest.json
-Phase 3 Dev: (edit files) → _workspace/02_*.md
+Phase 1.5: check-risk.bat → _archive/risk-scan.json
+Phase 3 Dev: (edit files) → _state/02_*.md
 Phase 3 Audit: portability-auditor → 03_portability_audit.json
                scenario-auditor → 03_scenario_audit.json
 Phase 3 Judge: verifier reads 03_*.json → writes 04_findings.json (JSON-first)

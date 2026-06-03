@@ -53,7 +53,7 @@ If JSON absent: fall back to `_state/03_scenario_audit.md` → check Dead End se
 
 ### Step 6.5: Axis-E (conditional)
 Only if `_state/02_*.md` includes `.claude/agents/*.md` or `.claude/skills/*` changes:
-Run `_sys\scans\scan-audit.bat` → read `_archive/scan-audit-latest.json` inconsistencies[severity=="High"].
+Run `_sys\checks\check-agents.bat` → read `_archive/agent-audit.json` inconsistencies[severity=="High"].
 High severity → include in FAIL reasons.
 
 ### Step 7: Issue judgment

@@ -11,8 +11,8 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
 ## Final Folder Structure
 
 ```
-[PortableDev]/              <- ROOT (docs + INSTALL.bat + register.bat + unregister.bat + workspace + .claude + _sys + _state + .ai + _archive)
-????? INSTALL.bat             <- double-click entry (calls _sys\setup.ps1)
+[PortableDev]/              <- ROOT (docs + install.bat + register.bat + unregister.bat + workspace + .claude + _sys + _state + .ai + _archive)
+????? install.bat             <- double-click entry (calls _sys\setup.ps1)
 ????? register.bat            <- register this PC: context menu + SUBST drive (once per PC or USB move)
 ????? unregister.bat          <- permanently remove context menu + SUBST from this PC
 ????? CLAUDE.md               <- this file
@@ -32,7 +32,7 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
 ??  ????? sessions/           <- ctx-save / ctx-end session files (SESSION_DIR)
 ??  ????? collab-log/         <- Claude-Gemini collaboration logs (YYYY-MM-DD.md per day)
 ??  ????? CHANGELOG.md        <- full change history (moved from CLAUDE.md for token efficiency)
-??  ?遺??? workspace_{YYYYMMDD_HHMMSS}/  <- _workspace backups per session
+??  ?遺??? workspace_{YYYYMMDD_HHMMSS}/  <- _state backups per session
 ???遺??? _sys/                   <- ALL system files (tools, config, data)
     ????? start.bat           <- main launcher (restores SUBST on reboot; warns if not registered)
     ????? launch.ps1          <- relay: registry -> start.bat (path safety)
@@ -41,26 +41,30 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
     ????? cleanup.ps1         <- temp/cache/log cleanup (space optimizer)
     ????? local.config.bat.template  <- per-PC config template (copy & edit)
     ??    ????? cli/                <- user-facing CLI entry points
-    ??  ????? cla.bat         <- Claude agent launcher
-    ??  ????? gem.bat         <- Gemini direct channel
+    ??  ????? claude.bat      <- Claude agent launcher
+    ??  ????? gemini.bat      <- Gemini direct channel
+    ??  ????? git-draft.bat   <- Axis-G commit message draft
+    ??  ????? batch-review.bat <- Axis-R batch code review
     ??  ?遺??? msg.bat         <- inter-agent message bus (3TCP)
     ??    ????? hooks/              <- lifecycle hooks
     ??  ????? ctx-save.bat    <- mid-session checkpoint
     ??  ????? ctx-end.bat     <- session end + summary
-    ??  ????? check-gate.bat  <- Gemini mode gate
-    ??  ?遺??? collab-log-append.bat <- collaboration log writer
-    ??    ????? scans/              <- audit & scan scripts (Axis-B/E/F/H/I)
-    ??  ????? scan-env.bat    <- version/env check (Axis-B)
-    ??  ????? scan-health.bat <- context health (Axis-H)
-    ??  ????? scan-risk.bat   <- pre-flight risk (Axis-I)
-    ??  ????? scan-audit.bat  <- agent consistency (Axis-E)
-    ??  ?遺??? scan-deps.bat   <- script dependency map (Axis-F)
+    ??  ????? ai-check.bat    <- Gemini mode gate (Axis-Q pre-check)
+    ??  ????? archive-data.bat <- hub.py archive-file helper
+    ??  ?遺??? collab-log.bat  <- collaboration log writer
+    ??    ????? checks/             <- health & quality check scripts (Axis-B/E/F/H/I)
+    ??  ????? check-versions.bat <- version/env check (Axis-B)
+    ??  ????? check-health.bat <- context health (Axis-H)
+    ??  ????? check-risk.bat  <- pre-flight risk (Axis-I)
+    ??  ????? check-agents.bat <- agent consistency (Axis-E)
+    ??  ?遺??? check-deps.bat  <- script dependency map (Axis-F)
     ??    ????? core/               <- Python IPC engine
     ??  ?遺??? hub.py          <- hub: 16 actions, filelock, 3TCP v1
-    ??    ????? docs/               <- template documents
+    ??    ????? templates/          <- copy-paste template documents
     ??  ????? CLAUDE_project.md  <- template for per-project CLAUDE.md
     ??  ?遺??? CLAUDE_global.md   <- template for _sys\claude\config\CLAUDE.md
-    ??    ????? git_config/         <- portable git settings
+    ????? SYSTEM_ARCHITECTURE.md <- system architecture reference
+    ??    ????? git-config/         <- portable git settings
     ??  ?遺??? .gitconfig
     ??    ????? env/                <- runtime binaries
     ??  ????? python/         <- portable Python (embeddable)
@@ -86,7 +90,7 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
     ??  ?遺??? agent/          <- agent state (CONTEXT.md)
     ??    ????? gemini/             <- Gemini CLI (binary in nodejs/npm-global)
     ??  ?遺??? config/         <- placeholder; Gemini CLI auth portable via Junction ??%USERPROFILE%\.gemini\
-    ??    ????? test/               <- test suite
+    ??    ????? tests/              <- test suite
     ??  ????? sandbox-test.bat   <- unit tests (~100 cases, WSB-ready)
     ??  ????? host-test.ps1      <- host-side tests (31 cases: settings, statusline, VS Code, npm)
     ??  ????? test-runner.ps1    <- orchestrator (Layer 1+2, WSB auto-detect, report)
@@ -126,7 +130,7 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
 | `local.config.bat` for per-PC overrides | start.bat auto-loads it before CONFIG defaults; not tracked in Git |
 | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` auto-set | Harness (agent teams) requires this env var; start.bat sets it on every launch |
 | `setup.ps1` component-level try/catch (Run-Component) | One component failing does not abort the whole bootstrap; failures listed in summary |
-| `INSTALL.bat` at root | Single double-click entry for first-time setup; relays to `_sys\setup.ps1` |
+| `install.bat` at root | Single double-click entry for first-time setup; relays to `_sys\setup.ps1` |
 | `code.cmd` in `npm-global/` | VS Code portable wrapper; Claude Code IDE integration requires `code.cmd` in PATH |
 | `start.bat` syncs `statusline-command.sh` to `~/.claude/` | statusline script must be at `~/.claude/` on every host PC; start.bat copies it on each launch |
 | WSB (`launch-wsbtest.ps1`) as default test env | True OS isolation; sandbox-test.bat runs unmodified inside WSB; local fallback for CI |
@@ -168,7 +172,7 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
 - 상태 변경: `python _sys/core/hub.py update-status --mission "..." ` 호출
 - 메시지 발송: `python _sys/core/hub.py send --from X --to Y --msg "..."`
 - 세션 조회: `python _sys/core/hub.py status --format llm`
-- 배치 진입점: `_sys/cli/cla.bat`, `_sys/cli/gem.bat`, `_sys/cli/msg.bat`
+- 배치 진입점: `_sys/cli/claude.bat`, `_sys/cli/gemini.bat`, `_sys/cli/msg.bat`
 
 ## Gemini Consultation (Axis-Q)
 
@@ -176,19 +180,20 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
 복잡한 작업 전 Gemini를 먼저 호출하고 응답을 기다린 후 진행할 것. (전역 CLAUDE.md 참조)
 
 ## Current State
-Last updated: 2026-06-03 (3TCP v1 완료)
+Last updated: 2026-06-03 (MECE 구조·명칭 정리 완료)
+2026-06-03 MECE + 일반성 기준 전면 정리 (Gemini Round 1~4 협의):
+- Phase A: tools/ bat 파일 → cli/hooks/, _state/collab/ 삭제, _archive/scans/ 분리
+- Phase B: scans→checks, docs→templates, git_config→git-config, test→tests
+         cla→claude, gem→gemini, append-log→log-write, check-gate→ai-check
+         collab-log-append→collab-log, INSTALL/CLEANUP → install/cleanup (소문자)
+- Phase C: start.bat, check-*.bat, test/*.bat 내부 경로 현행화
+- Phase D: GEMINI.md, CLAUDE.md, CONVENTION.md, agents/*.md, skills/*.md 문서 현행화
 2026-06-03 3TCP v1 완료:
-- Phase 0: _workspace/ 구 산출물 12개 삭제
-- Phase 1: _sys/core/hub.py 작성 (10 액션, filelock 3.29.0, Token-Zero)
-- Phase 2: _sys/cli/ (cla/gem/msg.bat) + _sys/hooks/ 작성
-- Phase 3~4: .ai/ 초기화, agents/*.md session-primer, CLAUDE.md hard rules
-- 3TCP v1: hub.py Phase A~D (timeout=None, 메시지 봉투, N-node, consensus)
-- PROTOCOL.md 신규 생성 (COLLAB.md 흡수 및 삭제, 3TCP v1 §P-0~P-7 추가)
-- CONVENTION.md, GEMINI.md 참조 COLLAB.md → PROTOCOL.md 업데이트
+- _sys/core/hub.py (16 액션, filelock, 3TCP v1), PROTOCOL.md 신규 생성
 
 ## Next Steps
 
-1. **Fresh PC setup**: INSTALL.bat (double-click) → _sys\setup.ps1 (사용자 직접 수행)
+1. **Fresh PC setup**: install.bat (double-click) → _sys\setup.ps1 (사용자 직접 수행)
 
 ---
 ## Gemini CLI Collaboration Model (3TCP v1)
@@ -198,15 +203,15 @@ Protocol details → **PROTOCOL.md §P-0, §C-1, §C-2**
 
 **Axes (GC Specializations):**
 - **Axis-A**: Full codebase analysis — portability-auditor (up to 500k tokens)
-- **Axis-B**: External version checks — version-check.bat (Google Search grounding)
+- **Axis-B**: External version checks — `_sys/checks/check-versions.bat` (Google Search grounding)
 - **Axis-C**: Session summarization — ctx-end.bat (optional, Flash model)
 - **Axis-D**: Script syntax pre-check — inline pass
 - **Axis-D+**: Mid-session checkpoint — ctx-save
-- **Axis-E**: Agent consistency audit — agent-audit.bat → _archive/agent-audit.json
-- **Axis-F**: Script dependency map — script-deps.bat → _archive/script-deps.json
-- **Axis-G**: Commit message draft — git-draft.bat (user reviews before commit)
-- **Axis-H**: Context health — context-health.bat (JSONL size → status.json + session-handoff.json)
-- **Axis-I**: Pre-flight risk — risk-scan.bat (Phase 1.5, collab-log patterns → _archive/risk-scan.json)
+- **Axis-E**: Agent consistency audit — `_sys/checks/check-agents.bat` → `_archive/scans/agent-audit.json`
+- **Axis-F**: Script dependency map — `_sys/checks/check-deps.bat` → `_archive/scans/script-deps.json`
+- **Axis-G**: Commit message draft — `_sys/cli/git-draft.bat` (user reviews before commit)
+- **Axis-H**: Context health — `_sys/checks/check-health.bat` (JSONL size → status.json + session-handoff.json)
+- **Axis-I**: Pre-flight risk — `_sys/checks/check-risk.bat` (collab-log patterns → `_archive/risk-scan.json`)
 
 **Constraints:**
 | Constraint | Detail |
@@ -218,11 +223,11 @@ Protocol details → **PROTOCOL.md §P-0, §C-1, §C-2**
 | No PASS/FAIL authority | Sensor only; verifier (CA) is the sole judge |
 
 **Related files:**
-- `_sys/scans/scan-env.bat` → version check → `_archive/version-check.json`
+- `_sys/checks/check-versions.bat` → version check → `_archive/version-check.json`
 - `_sys/hooks/ctx-end.bat` → session summary hook (optional, Flash)
-- `_sys/scans/scan-health.bat` → Axis-H: JSONL size → status.json + session-handoff.json
+- `_sys/checks/check-health.bat` → Axis-H: JSONL size → status.json + session-handoff.json
 - `.claude/agents/portability-auditor.md` → Gemini Full-Corpus Scan agent
-- `.claude/agents/proposer.md` → version-check.bat trigger + improvement proposal
+- `.claude/agents/proposer.md` → check-versions.bat trigger + improvement proposal
 - `CONVENTION.md §3-4` → Gemini call patterns and constraints
 
 ---

@@ -1,0 +1,25 @@
+﻿
+=============================================================
+  Porta-Flow Full Test Suite
+  Run: 20260601_213016
+  BaseDir: P:\
+=============================================================
+
+--- LAYER 1: Host-Side Tests ---
+
+--- LAYER 2: Sandbox Tests ---
+  --Local: running sandbox-test.bat directly
+  Physical base: P:\
+  Results dir  : P:\_sys\test\results\local_20260601_213016
+  Running sandbox-test.bat with PD=P:\ ...
+
+=============================================================
+  FULL TEST SUITE SUMMARY
+=============================================================
+  Layer 1 (Host)    : PASS= 31  FAIL=  0  SKIP=  0  TOTAL= 31
+
+  GRAND TOTAL       : PASS= 31  FAIL=  0  TOTAL= 31
+  RESULT: *** ALL PASS ***
+=============================================================
+  Report saved: P:\_sys\test\results\full-report_20260601_213016.txt
+

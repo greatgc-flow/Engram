@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 setlocal EnableDelayedExpansion
 
 :: ================================================================
@@ -25,7 +25,7 @@ set "_TASK=%~1"
 set "_FILES=%~2"
 
 :: --- Gemini mode check ---
-call "%~dp0..\hooks\check-gate.bat"
+call "%~dp0..\hooks\ai-check.bat"
 
 :: --- Gemini OFF: write UNKNOWN result, exit 0 (non-blocking) ---
 if not "%GEMINI_MODE%"=="ON" (
@@ -60,7 +60,7 @@ gemini --session-id !_EPHEMERAL_SID! -p "!_PROMPT!" -o text -y > "%_OUTPUT%" 2>n
 
 if errorlevel 1 (
     echo [risk-scan] ERROR: Gemini call failed.
-    call "%~dp0..\hooks\collab-log-append.bat" "Axis-I" "risk-scan.bat" "FAIL" "Error: Gemini call failed"
+    call "%~dp0..\hooks\collab-log.bat" "Axis-I" "risk-scan.bat" "FAIL" "Error: Gemini call failed"
     powershell -NoProfile -Command ^
         "$ts=(Get-Date -Format 'yyyy-MM-ddTHH:mm:sszzz'); $out=[pscustomobject]@{agent='risk-scanner';timestamp=$ts;task_summary='%_TASK%';risks=@();overall_risk='UNKNOWN';proceed=$true;note='Gemini call failed'}; [System.IO.File]::WriteAllText('%_OUTPUT%',($out | ConvertTo-Json -Depth 5),(New-Object System.Text.UTF8Encoding($false)))" > nul 2>&1
     endlocal
@@ -70,7 +70,7 @@ if errorlevel 1 (
 :: Check for Gemini refusal in output (non-blocking: write UNKNOWN result)
 findstr /i "\[REFUSAL:" "%_OUTPUT%" > nul 2>&1
 if not errorlevel 1 (
-    call "%~dp0..\hooks\collab-log-append.bat" "Axis-I" "risk-scan.bat" "REFUSED" "Gemini refused risk scan - proceeding with UNKNOWN"
+    call "%~dp0..\hooks\collab-log.bat" "Axis-I" "risk-scan.bat" "REFUSED" "Gemini refused risk scan - proceeding with UNKNOWN"
     powershell -NoProfile -Command ^
         "$ts=(Get-Date -Format 'yyyy-MM-ddTHH:mm:sszzz'); $out=[pscustomobject]@{agent='risk-scanner';timestamp=$ts;task_summary='%_TASK%';risks=@();overall_risk='UNKNOWN';proceed=$true;note='Gemini refused - proceeding without risk scan'}; [System.IO.File]::WriteAllText('%_OUTPUT%',($out | ConvertTo-Json -Depth 5),(New-Object System.Text.UTF8Encoding($false)))" > nul 2>&1
     echo [risk-scan] Gemini refused. UNKNOWN result written ^(non-blocking^).
@@ -83,10 +83,10 @@ call "%~dp0..\hooks\raw-log.bat" "Axis-I" "%_OUTPUT%"
 powershell -NoProfile -Command ^
     "$f='%_OUTPUT%'; try { $j=Get-Content $f -Raw | ConvertFrom-Json; $risk=$j.overall_risk; Write-Host \"[risk-scan] overall_risk=$risk\" } catch { Write-Host '[risk-scan] WARNING: Output is not valid JSON - check %_OUTPUT%' }"
 
-call "%~dp0..\hooks\collab-log-append.bat" "Axis-I" "risk-scan.bat" "OK" "Output: %_OUTPUT%"
+call "%~dp0..\hooks\collab-log.bat" "Axis-I" "risk-scan.bat" "OK" "Output: %_OUTPUT%"
 echo [risk-scan] Done. Output: %_OUTPUT%
 
-call "%~dp0..\tools\archive-data.bat" --name scan-risk --file "%_OUTPUT%" || echo [WARN] Archive failed (non-blocking)
+call "%~dp0..\hooks\archive-data.bat" --name scan-risk --file "%_OUTPUT%" || echo [WARN] Archive failed (non-blocking)
 
 endlocal
 exit /b 0

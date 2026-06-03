@@ -1,4 +1,4 @@
-﻿# Portable Dev Environment — Coding Conventions
+# Portable Dev Environment — Coding Conventions
 
 모든 소스 코드는 이 파일의 규칙을 준수해야 한다.
 verifier 에이전트는 이 파일을 기준으로 PASS/FAIL을 판정한다.
@@ -162,7 +162,7 @@ Thresholds:
   > 400KB  : STOP. Split before calling. Large includes degrade Gemini output quality.
              Prefer: summarize large files via Axis-D inline first, then include summary.
 
-Applies to: agent-audit.bat (merged agent file), portability-auditor corpus scan, any manual call.
+Applies to: check-agents.bat (merged agent file), portability-auditor corpus scan, any manual call.
 
 ### §3-4-B — Hub Script Protection (DO NOT RENAME OR DELETE)
 
@@ -170,14 +170,14 @@ The following scripts are called by ALL Axis bat files. Renaming or deleting the
 
 | File | Called by |
 |------|-----------|
-| `_sys\hooks\collab-log-append.bat` | ctx-save, ctx-end, version-check, agent-audit, script-deps, git-draft |
+| `_sys\hooks\collab-log.bat` | ctx-save, ctx-end, version-check, agent-audit, script-deps, git-draft |
 | `_sys\hooks\raw-log.bat` | same set |
-| `_sys\hooks\check-gate.bat` | all Axis bat files (ctx-save, ctx-end, context-health, version-check, agent-audit, script-deps, git-draft, risk-scan) |
+| `_sys\hooks\ai-check.bat` | all Axis bat files (ctx-save, ctx-end, context-health, version-check, agent-audit, script-deps, git-draft, risk-scan) |
 
 Rules:
 - Never rename or move these files without updating ALL callers simultaneously.
 - Before any script move/rename in `_sys\hooks\`, verify all callers are updated simultaneously.
-- Confirmed via Axis-F (script-deps.bat) on 2026-06-01.
+- Confirmed via Axis-F (check-deps.bat) on 2026-06-01.
 
 Known issue: Gemini CLI may emit `API returned invalid content after all retries` (NumericalClassifierStrategy failure) before producing valid output. This is an internal routing bug — does NOT indicate auth failure. If Axis output is valid JSON, proceed normally. Error files logged to `_sys\data\temp\gemini-client-error-generateJson-*.json`.
 
@@ -186,28 +186,28 @@ Known issue: Gemini CLI may emit `API returned invalid content after all retries
 After any gemini call (exit code 0) and before the success path, add:
   findstr /i "\[REFUSAL:" "%_OUTPUT%" > nul 2>&1
   if not errorlevel 1 (
-      call "%~dp0collab-log-append.bat" "Axis-X" "script.bat" "REFUSED" "Gemini refused request"
+      call "%~dp0collab-log.bat" "Axis-X" "script.bat" "REFUSED" "Gemini refused request"
       del "%_OUTPUT%" > nul 2>&1
       exit /b 1
   )
 
-Axis scripts requiring this pattern: agent-audit.bat, context-health.bat, version-check.bat,
-script-deps.bat, git-draft.bat, risk-scan.bat (risk-scan uses exit /b 0 — non-blocking).
+Axis scripts requiring this pattern: check-agents.bat, check-health.bat, check-versions.bat,
+check-deps.bat, git-draft.bat, check-risk.bat (risk-scan uses exit /b 0 — non-blocking).
 
 ### §3-4-D — Axis Token Budget
 
 | Axis | Script | Max tokens | Claude cost | Trigger |
 |------|--------|-----------|-------------|---------|
 | A | portability full-corpus | ≤500k | ~0 | max 3/day |
-| B | version-check.bat | ≤5k | ~0 | unlimited |
+| B | check-versions.bat | ≤5k | ~0 | unlimited |
 | C | ctx-end session summary | ≤10k | ~0 | 1/session-end |
 | D | syntax check (inline) | ≤5k | ~0 | 1/script-edit |
 | D+ | ctx-save mid-summary | ≤10k | ~0 | 1/ctx-save (opt-in) |
-| E | agent-audit.bat | ≤20k | ~0 | agents/*.md change only |
-| F | script-deps.bat | ≤5k | ~0 | 1/script-edit |
+| E | check-agents.bat | ≤20k | ~0 | agents/*.md change only |
+| F | check-deps.bat | ≤5k | ~0 | 1/script-edit |
 | G | git-draft.bat | ≤3k | ~0 | 1/commit |
-| H | context-health.bat | ≤2k | ~0 | max 5/session |
-| I | risk-scan.bat | ≤10k | ~0 | Phase 1.5 |
+| H | check-health.bat | ≤2k | ~0 | max 5/session |
+| I | check-risk.bat | ≤10k | ~0 | Phase 1.5 |
 
 ### 3-5. Claude-Gemini 협업 프로토콜 v2
 → **PROTOCOL.md §C-1** 참조. (역할 구조, 통신 형식, 거절 코드, 교착 규칙, 의무 목록)
@@ -233,7 +233,7 @@ script-deps.bat, git-draft.bat, risk-scan.bat (risk-scan uses exit /b 0 — non-
 ### 4-2. 스크립트 파일
 - PowerShell: PascalCase (`Install_Menu.ps1`, `Remove_Menu.ps1`, `launch.ps1`)
   - `Install_Menu.ps1` 및 `Remove_Menu.ps1`은 `-BaseDir` 파라미터를 받아 호출 위치(register.bat / unregister.bat)에서 BASE_DIR을 명시적으로 전달한다.
-- Batch (루트): lowercase (`register.bat`, `unregister.bat`, `INSTALL.bat`는 예외 대문자)
+- Batch (루트): lowercase (`register.bat`, `unregister.bat`, `install.bat`, `cleanup.bat`)
 - Batch (_sys/): lowercase (`start.bat`, `ctx-save.bat`, `ctx-end.bat`)
 
 ### 4-3. tools/ 하위 폴더
@@ -319,7 +319,7 @@ To prevent "Vertical" (multi-instance) and "Horizontal" (parallel execution) con
 - All IPC state must be accessed via `hub.py` (`.ai/mailbox.json`, `.ai/state.json`), never written directly.
 
 ### 10-2. Axis Script Safety
-- ALL scan scripts in `_sys/scans/` writing output MUST use a unique filename.
+- ALL scan scripts in `_sys/checks/` writing output MUST use a unique filename.
 - Pattern: `%_OUTPUT_DIR%/%AXIS_NAME%-%RANDOM%.json`.
 - Never use static filenames like `temp-audit.json` for shared analysis results.
 

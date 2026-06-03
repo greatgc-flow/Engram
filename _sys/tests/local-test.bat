@@ -67,7 +67,7 @@ call :F "risk-scan.bat"           "%PD%\_sys\context\risk-scan.bat"
 call :F "script-deps.bat"         "%PD%\_sys\context\script-deps.bat"
 call :F "git-draft.bat"           "%PD%\_sys\context\git-draft.bat"
 call :F "context-health.bat"      "%PD%\_sys\context\context-health.bat"
-call :F "collab-log-append.bat"   "%PD%\_sys\context\collab-log-append.bat"
+call :F "collab-log.bat"   "%PD%\_sys\context\collab-log.bat"
 call :F "raw-log.bat"             "%PD%\_sys\context\raw-log.bat"
 call :F "gemini-session-read.bat" "%PD%\_sys\context\gemini-session-read.bat"
 call :F "gemini-status.bat"       "%PD%\_sys\gemini\gemini-status.bat"
@@ -116,13 +116,13 @@ call "%TW%\context\raw-log.bat" "Axis-T2" "%TW%\rsp.txt" "%TW%\drv.txt" > "!_TMP
 dir /b "%TW%\_archive\raw-log\*directive*" > "!_TMP!" 2>&1 & call :E "raw-log: directive.txt created" 0 !ERRORLEVEL!
 
 echo. >> "!_REPORT!"
-echo [GROUP 4] collab-log-append.bat >> "!_REPORT!"
+echo [GROUP 4] collab-log.bat >> "!_REPORT!"
 echo ---- >> "!_REPORT!"
-call "%TW%\context\collab-log-append.bat" "Axis-T" "local-test.bat" "OK" "detail" > "!_TMP!" 2>&1
+call "%TW%\context\collab-log.bat" "Axis-T" "local-test.bat" "OK" "detail" > "!_TMP!" 2>&1
 for /f %%D in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd"') do set "_TD=%%D"
-call :F "collab-log-append: MD created" "%TW%\_archive\collab-log\!_TD!.md"
-call "%TW%\context\collab-log-append.bat" "Axis-T" "local-test.bat" "FAIL" "err" > "!_TMP!" 2>&1
-findstr /c:"Axis-T" "%TW%\_archive\collab-log\!_TD!.md" > nul 2>&1 & call :E "collab-log-append: content" 0 !ERRORLEVEL!
+call :F "collab-log: MD created" "%TW%\_archive\collab-log\!_TD!.md"
+call "%TW%\context\collab-log.bat" "Axis-T" "local-test.bat" "FAIL" "err" > "!_TMP!" 2>&1
+findstr /c:"Axis-T" "%TW%\_archive\collab-log\!_TD!.md" > nul 2>&1 & call :E "collab-log: content" 0 !ERRORLEVEL!
 
 echo. >> "!_REPORT!"
 echo [GROUP 5] risk-scan.bat >> "!_REPORT!"
@@ -254,7 +254,7 @@ call :SK "gemini-consult.bat: usage auto-update"     "deleted"
 :: ctx-end.bat: CRLF + check-gate (replaces session-map)
 powershell -NoProfile -Command "if([IO.File]::ReadAllText('%PD%\_sys\hooks\ctx-end.bat').Contains([char]13)){exit 0}else{exit 1}" > nul 2>&1
 call :E "ctx-end.bat: CRLF endings" 0 !ERRORLEVEL!
-findstr /c:"check-gate" "%PD%\_sys\hooks\ctx-end.bat" > nul 2>&1 & call :E "ctx-end.bat: check-gate.bat used" 0 !ERRORLEVEL!
+findstr /c:"ai-check" "%PD%\_sys\hooks\ctx-end.bat" > nul 2>&1 & call :E "ctx-end.bat: ai-check.bat used" 0 !ERRORLEVEL!
 
 :: gemini-usage.bat: Axis-Q tracking
 findstr /c:"Q=0" "%PD%\_sys\gemini\gemini-usage.bat" > nul 2>&1 & call :E "gemini-usage.bat: Q=0 key" 0 !ERRORLEVEL!
@@ -277,11 +277,11 @@ for %%S in (scan-risk scan-audit scan-deps scan-env scan-health) do (
     call :E "%%S.bat: no session-read call" 0 !ERRORLEVEL!
 )
 
-:: interactive scripts use check-gate.bat (replaces _GEMINI_SESSION_FLAG)
-powershell -NoProfile -Command "if((Get-Content '%PD%\_sys\hooks\ctx-save.bat' -Raw) -match 'check-gate'){exit 0}else{exit 1}" > nul 2>&1
-call :E "ctx-save.bat: check-gate.bat used" 0 !ERRORLEVEL!
-powershell -NoProfile -Command "if((Get-Content '%PD%\_sys\tools\git-draft.bat' -Raw) -match 'check-gate'){exit 0}else{exit 1}" > nul 2>&1
-call :E "git-draft.bat: check-gate.bat used" 0 !ERRORLEVEL!
+:: interactive scripts use ai-check.bat (replaces _GEMINI_SESSION_FLAG)
+powershell -NoProfile -Command "if((Get-Content '%PD%\_sys\hooks\ctx-save.bat' -Raw) -match 'ai-check'){exit 0}else{exit 1}" > nul 2>&1
+call :E "ctx-save.bat: ai-check.bat used" 0 !ERRORLEVEL!
+powershell -NoProfile -Command "if((Get-Content '%PD%\_sys\cli\git-draft.bat' -Raw) -match 'ai-check'){exit 0}else{exit 1}" > nul 2>&1
+call :E "git-draft.bat: ai-check.bat used" 0 !ERRORLEVEL!
 
 :: gemini-session-read.bat removed (replaced by hub.py)
 call :SK "gemini-session-read.bat: CRLF endings"          "deleted: replaced by hub.py"

@@ -1,0 +1,13 @@
+[sandbox-test] Starting... Report: C:\TestResults\test_20260602_013134.txt
+A subdirectory or file C:\TestResults\sessions already exists.
+[setup] Workspace ready: C:\TestWork
+[setup] PATH configured with portable tools
+
+================================================
+  [FAIL] gemini-status: no auth dir ??? GEMINI_MODE=OFF [was ON] 
+================================================
+  TOTAL: 127   PASS: 126   FAIL: 1
+================================================
+
+[sandbox-test] Report: C:\TestResults\test_20260602_013134.txt
+[sandbox-test] FAILED: 1/127

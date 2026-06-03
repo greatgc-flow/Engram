@@ -1,0 +1,19 @@
+[sandbox-test] Starting... Report: C:\TestResults\test_20260602_203304.txt
+[setup] Workspace ready: C:\TestWork
+[setup] PATH configured with portable tools
+
+================================================
+  [FAIL] rg --version [expected exit=0 got=1073751882]
+  [FAIL] fd --version [expected exit=0 got=1073751882]
+  [FAIL] jq --version [expected exit=0 got=1073751882]
+  [FAIL] bat --version [expected exit=0 got=1073751882]
+  [FAIL] fzf --version [expected exit=0 got=1073751882]
+  [FAIL] delta --version [expected exit=0 got=1073751882]
+  [FAIL] git --version [expected exit=0 got=-1058471934]
+  [FAIL] sqlite3 --version [expected exit=0 got=1073751882]
+================================================
+  TOTAL: 153   PASS: 145   FAIL: 8
+================================================
+
+[sandbox-test] Report: C:\TestResults\test_20260602_203304.txt
+[sandbox-test] FAILED: 8/153

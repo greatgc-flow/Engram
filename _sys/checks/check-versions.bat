@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 setlocal
 
 :: ================================================================
@@ -27,7 +27,7 @@ for /f "delims=" %%I in (
 ) do set "_DT=%%I"
 
 :: --- Check Gemini mode ---
-call "%~dp0..\hooks\check-gate.bat"
+call "%~dp0..\hooks\ai-check.bat"
 if not "%GEMINI_MODE%"=="ON" (
     echo [version-check] ERROR: Gemini not available.
     echo                 Reason: %GEMINI_OFF_REASON%
@@ -45,7 +45,7 @@ if errorlevel 1 (
     echo [version-check] ERROR: gemini returned non-zero. Check auth or network.
     echo                 Run 'gemini' interactively to re-authenticate.
     del "%OUT_FILE%" > nul 2>&1
-    call "%~dp0..\hooks\collab-log-append.bat" "Axis-B" "version-check.bat" "FAIL" "Error: api_error"
+    call "%~dp0..\hooks\collab-log.bat" "Axis-B" "version-check.bat" "FAIL" "Error: api_error"
     if defined GEMINI_DIR (
         powershell -NoProfile -Command "$f='%GEMINI_DIR%\status.json'; if (Test-Path $f) { $j=Get-Content $f -Raw | ConvertFrom-Json; $j.last_error='version_check_failed_%_DT%'; $j.mode='OFF'; $j.reason='api_error'; [System.IO.File]::WriteAllText($f, ($j | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false))) }"
     )
@@ -55,7 +55,7 @@ if errorlevel 1 (
 :: Check for Gemini refusal in output
 findstr /i "\[REFUSAL:" "%OUT_FILE%" > nul 2>&1
 if not errorlevel 1 (
-    call "%~dp0..\hooks\collab-log-append.bat" "Axis-B" "version-check.bat" "REFUSED" "Gemini refused request"
+    call "%~dp0..\hooks\collab-log.bat" "Axis-B" "version-check.bat" "REFUSED" "Gemini refused request"
     del "%OUT_FILE%" > nul 2>&1
     exit /b 1
 )
@@ -63,7 +63,7 @@ if not errorlevel 1 (
 call "%~dp0..\hooks\raw-log.bat" "Axis-B" "%OUT_FILE%"
 echo [version-check] Done: %OUT_FILE%
 echo [version-check] Compare with setup.ps1 version section to find updates.
-call "%~dp0..\hooks\collab-log-append.bat" "Axis-B" "version-check.bat" "OK" "Output: %OUT_FILE%"
-call "%~dp0..\tools\archive-data.bat" --name scan-env --file "%OUT_FILE%" || echo [WARN] Archive failed (non-blocking)
+call "%~dp0..\hooks\collab-log.bat" "Axis-B" "version-check.bat" "OK" "Output: %OUT_FILE%"
+call "%~dp0..\hooks\archive-data.bat" --name scan-env --file "%OUT_FILE%" || echo [WARN] Archive failed (non-blocking)
 
 endlocal

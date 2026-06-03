@@ -34,8 +34,8 @@ Evaluate cost (time, complexity) vs. expected benefit for this task:
 ### 2. Version Management
 Review setup.ps1 $V section versions periodically. Use Axis-B when Gemini is ON:
 
-If GEMINI_MODE=ON: Bash _sys\scans\scan-env.bat
-  -> read _archive/scan-env-latest.json
+If GEMINI_MODE=ON: Bash _sys\checks\check-versions.bat
+  -> read _archive/version-check.json
   -> compare with setup.ps1 $V section
   -> list items needing update in 04_proposal.json
 
