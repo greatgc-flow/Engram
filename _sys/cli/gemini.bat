@@ -1,9 +1,4 @@
 @echo off
-:: gem.bat - Gemini session entry point
-:: init-session -> capture SID, status -> pretty-print status, gemini --resume
-for %%I in ("%~dp0..\..") do set "PORTABLE_ROOT=%%~fI"
+set "SYS_DIR=%~dp0.."
 set "PYTHONUTF8=1"
-set "PATH=%PORTABLE_ROOT%\_sys\env\nodejs\npm-global;%PORTABLE_ROOT%\_sys\env\venv\Scripts;%PATH%"
-FOR /F "tokens=*" %%I IN ('python "%~dp0..\core\hub.py" init-session --agent gemini') DO SET "_SID=%%I"
-python "%~dp0..\core\hub.py" status
-gemini --resume %_SID%
+"%SYS_DIR%\env\venv\Scripts\python.exe" "%~dp0gemini_entry.py" %*
