@@ -19,10 +19,35 @@ def get_registry_key_name(base_dir):
     leaf = base_dir.name
     parent = base_dir.parent.name if base_dir.parent else ""
     drive = base_dir.drive.replace(":", "")
-    
+
     key_base = f"{drive}_{parent}_{leaf}" if parent and len(parent) > 2 else f"{drive}_{leaf}"
-    safe_key = re.sub(r'[\/:]', '_', key_base)
+    safe_key = re.sub(r'[^A-Za-z0-9]', '_', key_base)
+    safe_key = re.sub(r'_+', '_', safe_key).strip('_')
     return f"SandboxRun_{safe_key}"
+
+
+def get_relay_path(ascii_key: str) -> Path:
+    localappdata = Path(os.environ.get("LOCALAPPDATA", ""))
+    return localappdata / f"{ascii_key}.bat"
+
+
+def write_relay_bat(base_dir: Path, ascii_key: str) -> Path:
+    relay_path = get_relay_path(ascii_key)
+    launch_script = base_dir / "_sys" / "cli" / "launch.bat"
+    content = (
+        "@echo off\r\n"
+        f"set \"SANDBOX_ROOT={base_dir}\"\r\n"
+        "call \"%SANDBOX_ROOT%\\_sys\\cli\\launch.bat\" %*\r\n"
+    )
+    relay_path.write_bytes(content.encode("mbcs"))
+    return relay_path
+
+
+def delete_relay_bat(ascii_key: str) -> None:
+    relay_path = get_relay_path(ascii_key)
+    if relay_path.exists():
+        relay_path.unlink()
+        print(f"  [OK] Relay removed: {relay_path.name}")
 
 def get_subst_mappings():
     mappings = {}
@@ -83,6 +108,24 @@ def remove_gemini_portability(base_dir):
             except Exception as e:
                 print(f"  [Fail] Error removing junction: {e}")
 
+def update_claude_settings(base_dir, drive_letter):
+    if not drive_letter:
+        return
+    settings_path = base_dir / ".claude" / "settings.local.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    patterns = [
+        f"Bash(cmd /c \"{drive_letter}:\\_sys\\cli\\msg.bat\" *)",
+        f"PowerShell(cmd /c \"{drive_letter}:\\_sys\\cli\\msg.bat\" *)",
+        f"PowerShell(cmd /c \"{drive_letter}:\\_sys\\cli\\msg.bat\" ask *)",
+        f"PowerShell(Get-ChildItem \"{drive_letter}:\\_sys\\ *)",
+        f"PowerShell(Get-Content \"{drive_letter}:\\ *)"
+    ]
+    
+    config = {"permissions": {"allow": patterns}}
+    settings_path.write_text(json.dumps(config, indent=4), encoding="utf-8")
+    print(f"  [OK] .claude/settings.local.json updated (Drive {drive_letter}:)")
+
 def global_cleanup(base_dir):
     leaf = base_dir.name
     print(f"  [Info] Performing global cleanup for {leaf}...")
@@ -130,8 +173,8 @@ def global_cleanup(base_dir):
             res = subprocess.run(["reg", "delete", full_reg_path, "/f"], capture_output=True)
             if res.returncode == 0:
                 print(f"  [OK] Removed Orphan Registry: {subkey_name}")
+                delete_relay_bat(subkey_name)
             else:
-                # If deletion fails, we don't loop; we just log it.
                 print(f"  [Warning] Failed to delete registry key: {subkey_name}")
 
 def action_register(base_dir):
@@ -179,6 +222,9 @@ def action_register(base_dir):
                 except Exception:
                     continue
     
+    if assigned_letter:
+        update_claude_settings(base_dir, assigned_letter)
+
     # 2. Context Menu
     target_key = get_registry_key_name(base_dir)
     menu_label = f"Open in Sandbox: {base_dir.name}" + (f" ({base_dir} -> {assigned_letter}:)" if assigned_letter else f" ({base_dir})")
@@ -195,6 +241,9 @@ def action_register(base_dir):
         (r"Software\Classes\lnkfile\shell", "%1")
     ]
 
+    relay_path = write_relay_bat(base_dir, target_key)
+    print(f"  [OK] Relay created: {relay_path}")
+
     for path_base, arg in reg_paths:
         full_path = f"{path_base}\\{target_key}"
         try:
@@ -205,10 +254,9 @@ def action_register(base_dir):
                 winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, str(code_path))
 
             cmd_key = winreg.CreateKey(key, "command")
-            # [Plan D] The ultimate fix for CMD quoting issues:
-            # cmd.exe /c ""Path With Spaces" "Arg with Spaces""
-            # The outer double-quotes are mandatory when both path and args have quotes.
-            cmd_str = f'cmd.exe /c ""{launch_script}" "{arg}""'
+            # relay_path is always at ASCII-safe %LOCALAPPDATA% — avoids cmd.exe
+            # parser failures caused by Korean chars or parentheses in base_dir.
+            cmd_str = f'cmd.exe /c ""{relay_path}" "{arg}""'
             winreg.SetValueEx(cmd_key, "", 0, winreg.REG_SZ, cmd_str)
             winreg.CloseKey(key)
         except Exception as e:
@@ -241,8 +289,14 @@ def action_unregister(base_dir):
     print(f" Unregistering: {base_dir.name}")
     print(f"{'='*50}")
 
+    delete_relay_bat(get_registry_key_name(base_dir))
     global_cleanup(base_dir)
     remove_gemini_portability(base_dir)
+
+    settings_path = base_dir / ".claude" / "settings.local.json"
+    if settings_path.exists():
+        settings_path.unlink()
+        print("  [OK] .claude/settings.local.json removed")
 
     config_path = base_dir / "_sys" / "local.config.bat"
     if config_path.exists():

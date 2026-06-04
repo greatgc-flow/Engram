@@ -189,18 +189,32 @@ if defined SUBST_DRIVE_LETTER (
     set "TARGET=!TARGET:%BASE_DIR_PHYS%=%BASE_DIR%!"
 )
 
+:: A: no args -> open BASE_DIR as workspace
 if "!TARGET!"=="" (
-    set "TARGET_DIR=%BASE_DIR%\workspace"
+    set "TARGET_DIR=%BASE_DIR%"
     goto :RUN_DEV
 )
+
+:: validate path exists
+if not exist "!TARGET!" if not exist "!TARGET!\" (
+    echo [Error] Path not found: !TARGET!
+    goto :ERROR_EXIT
+)
+
+:: B: folder -> open in VS Code
 if exist "!TARGET!\" (
     set "TARGET_DIR=!TARGET!"
     goto :RUN_DEV
-) else (
-    set "TARGET_DIR="
-    for %%I in ("!TARGET!") do set "TARGET_DIR=%%~dpI"
-    goto :RUN_APP
 )
+
+:: C: file -> run with portable tools
+set "TARGET_EXT="
+set "TARGET_DIR="
+for %%I in ("!TARGET!") do (
+    set "TARGET_DIR=%%~dpI"
+    set "TARGET_EXT=%%~xI"
+)
+goto :RUN_APP
 
 :RUN_DEV
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
@@ -208,6 +222,8 @@ cd /d "%TARGET_DIR%"
 if exist "%ENV_DIR%\vscode\Code.exe" (
     call :LOG "[OK] Launching VS Code: %TARGET_DIR%"
     start "" "%ENV_DIR%\vscode\Code.exe" "."
+) else (
+    echo [Warning] VS Code not found at %ENV_DIR%\vscode\Code.exe
 )
 if not "%NO_DESKTOP%"=="1" (
     if exist "%HOST_LOCALAPPDATA%\Programs\Claude\Claude.exe" (
@@ -217,9 +233,22 @@ if not "%NO_DESKTOP%"=="1" (
 goto :END
 
 :RUN_APP
-call :LOG "[OK] Launching app: %TARGET%"
+call :LOG "[OK] Running: %TARGET%"
 cd /d "%TARGET_DIR%"
-start "Sandboxed App" "%TARGET%"
+if /i "!TARGET_EXT!"==".py" (
+    if exist "%VENV_DIR%\Scripts\python.exe" (
+        "%VENV_DIR%\Scripts\python.exe" "%TARGET%"
+    ) else if exist "%PY_DIR%\python.exe" (
+        "%PY_DIR%\python.exe" "%TARGET%"
+    ) else (
+        echo [Error] Portable Python not found
+        goto :ERROR_EXIT
+    )
+) else if /i "!TARGET_EXT!"==".bat" (
+    cmd /c "%TARGET%"
+) else (
+    start "Sandboxed App" "%TARGET%"
+)
 
 :END
 call :LOG "[Done] Finished"

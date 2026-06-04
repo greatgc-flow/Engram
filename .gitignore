@@ -25,6 +25,7 @@ _state/
 WORKLOG.md
 
 # 4. Claude/Gemini Private State, Config & History (Dynamic)
+.claude/settings.local.json
 _sys/claude/config/
 !_sys/claude/config/CLAUDE.md
 !_sys/claude/config/settings.json

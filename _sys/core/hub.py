@@ -422,8 +422,16 @@ def action_check_gate(ai_root: Path, agent: str) -> None:
 def _decode_output(data: bytes) -> str:
     if not data:
         return ""
-    # UTF-8, UTF-16-LE (Windows Claude), CP949 (Korean Windows CMD) 순서로 시도
-    for enc in ["utf-8", "utf-16-le", "cp949"]:
+    
+    # 윈도우 파이프에서 UTF-16-LE로 반환되는 경우 널 바이트(0x00)가 포함됨
+    if b'\x00' in data:
+        try:
+            # 널 바이트가 제거되어 한칸씩 벌어지는 현상 방지
+            return data.decode("utf-16-le").replace("\x00", "").replace("\r\n", "\n")
+        except UnicodeDecodeError:
+            pass
+            
+    for enc in ["utf-8", "cp949"]:
         try:
             return data.decode(enc).replace("\r\n", "\n")
         except UnicodeDecodeError:

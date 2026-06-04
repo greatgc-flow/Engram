@@ -1,5 +1,5 @@
 # Portable Sandbox Dev Environment
-> Last updated: 2026-06-03
+> Last updated: 2026-06-04
 > This file lets Claude Code resume from where the setup conversation left off.
 
 ## What This Project Is
@@ -13,7 +13,7 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
 ```
 [PortableDev]/
 ├── install.bat / register.bat / unregister.bat
-├── README.md / CLAUDE.md / CONVENTION.md / PROTOCOL.md
+├── README.md / CLAUDE.md / GEMINI.md / CONVENTION.md / PROTOCOL.md
 ├── workspace/     ← default project folder
 ├── .claude/       ← agents/ + skills/
 ├── _state/        ← agent session workspace (auto-managed)
@@ -63,13 +63,36 @@ Full annotated tree: `README.md`
 - 메시지 발송 (P2P): `python _sys/core/hub.py send --from X --to Y --msg "..."`
 - 룸 상태 조회: `python _sys/core/hub.py status`
 
-## P2P 협업 (PROTOCOL.md v3)
+## P2P 협업 (PROTOCOL.md v3.1)
 
 이 프로젝트는 **N-Way 단일 공유 세션(Room)**과 **무제한 합의 루프**를 기반으로 운영됩니다.
 - **COLLAB_RATE (0~10)**: 모든 노드 간의 협업 깊이를 조절합니다. (R:10 = 100% 완전 협업)
 - **만장일치 합의**: 작업 실행 전 모든 참여 노드의 동의가 필수입니다.
 - **업무 분담 (Division of Labor)**: 합의 후 각 노드는 자신의 전문 분야에 맞춰 업무를 분할 수행합니다.
 - **교차 검토 (Cross-check)**: 작업 완료 후 모든 노드가 결과물을 상호 검증합니다.
+
+## Collaboration Interface (Claude Optimized)
+
+### Direct P2P (Autonomous — Gemini 호출)
+글로벌 CLAUDE.md의 "Gemini Collaboration Protocol" 섹션 참조.
+
+### Human-relay (Human-in-the-loop)
+사람이 직접 개입해야 하는 경우 텍스트 태그로 요청:
+
+| Action | Format |
+|--------|--------|
+| Request to Peers | `[REQUEST_TO_PEERS: TYPE]` — WRITE_FILE \| HUMAN_DECISION \| POLICY_CLARIFICATION \| GIT_OPERATION \| SESSION_MANAGEMENT \| READ_AND_VERIFY |
+| Refusal | `[REFUSAL: CODE] reason` |
+
+**Critical boundaries:**
+- `_sys/` 스크립트 직접 편집 금지 → `[REQUEST_TO_PEERS: WRITE_FILE]` 요청.
+- 헌법적 문서(`PROTOCOL.md` 등) 수정 시 반드시 전체 노드 합의 필요.
+
+## Zero-Token Symmetric Memory
+
+- **Blackboard First**: 작업 시작 전 `.ai/sessions/room-{uuid}/handoff.md` 및 `summary_*.md`를 읽어 프로젝트 상태를 동기화 (**Re-orientation Phase**).
+- **Zero-Token Sharing**: 상세 분석·요약은 파일로 기록하고, 짧은 포인터(경로)만 공유.
+- **Symmetric Persistence**: `ctx-save` 실행 시 `CLAUDE.md`와 `_sys\gemini\config\GEMINI.md` 양쪽에 체크포인트를 기록하여 기억을 대칭 보존.
 
 ## Git 관리 원칙
 
@@ -95,13 +118,21 @@ setup.py 또는 start.bat이 최초 실행 시 생성:
 `workspace/`, `_archive/`, `.ai/`, `_sys/tools/`, `_sys/data/temp/`, `_sys/data/setup-files/`
 
 ## Current State
-Last updated: 2026-06-04 (Git 최소화 정리 완료)
-- PROTOCOL.md v3.0 적용: Tier 폐지, Room 세션 도입, COLLAB_RATE 일반화.
-- SYSTEM_ARCHITECTURE.md v3.0 적용: N-Way Room 아키텍처 반영.
-- 3TCP v1 및 P2P 협업 코어 확립.
-- Git 트래킹 최소화: 외부 마켓플레이스(386개), 테스트 결과, 임시 파일 제거.
+Last checkpoint: 2026-06-04 23:45 -- See .ai/ blackboard for details
+### 1) Tasks Completed Since Last Save
+- **Finalized Phase 3 Portability Framework**: `install.bat`, `register.bat` stability improved.
+- **Implemented N-Way Room Architecture**: `room-7fb9` active with `hub.py` coordination.
+- **Updated Collaboration Protocol**: `PROTOCOL.md v3.1` (Zero-Token sharing, P2P consensus).
+- **Established P2P Core**: `msg.bat` and `hub.py` now support node-to-node messaging.
+- **Repository Cleanup**: Removed 386+ external marketplace files and test artifacts.
 
-## Next Steps
+### 2) Technical State
+- **Room ID**: `room-7fb9` (ACTIVE)
+- **Active Consensuses**: `r-4601` (Roadmap), `r-5fb7` (Encoding Fix), `r-f2b2` (Doc Alignment).
+- **Protocol**: Symmetric memory persistence between `CLAUDE.md` and `GEMINI.md`.
 
-1. **Fresh PC setup**: install.bat (double-click) → _sys\core\setup.py
-2. **Integration Testing**: Phase 3 MECE 시나리오 검증 (`test_integration_py.py` 업데이트 필요)
+### 3) Critical Next Steps
+1. **Fresh PC setup validation**: Verify `install.bat` on a clean environment.
+2. **Integration Testing**: Update `test_integration_py.py` for Phase 3 MECE scenarios.
+3. **Claude Encoding Investigation**: Resolve `cross-check-plan-d-encoding` (r-5fb7).
+4. **Node ID Alignment**: Fix Node ID mismatch in scripts (r-f2b2).

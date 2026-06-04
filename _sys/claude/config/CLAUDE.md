@@ -73,7 +73,6 @@ Step 1 — 고유 쿼리 파일 작성 (Write 도구):
 
 Step 2 — Gemini 호출 (PowerShell 도구, timeout 180000):
 ```
-$env:PATH += ";P:\_sys\env\nodejs\npm-global"
 cmd /c "P:\_sys\cli\msg.bat" ask --to gemini --query-file "P:\_sys\gemini\cq-{위 파일명}" 2>&1
 ```
 (bat이 응답 후 쿼리 파일 자동 삭제)

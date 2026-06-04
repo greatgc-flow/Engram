@@ -1,7 +1,7 @@
 """gemini_entry.py — Gemini session entry point (shadow-fix wrapper).
 
-Calls hub.py init-session (captures session ID), shows status,
-then launches gemini.cmd --resume SESSION_ID to prevent recursion.
+Calls hub.py init-session (room membership only), shows status,
+then launches gemini.cmd via absolute path to prevent recursion.
 """
 import os
 import subprocess
@@ -29,18 +29,16 @@ def _env() -> dict:
 
 def main() -> None:
     env = _env()
-    sid_result = subprocess.run(
+    subprocess.run(
         [_PYTHON, str(_HUB), "init-session", "--agent", "gemini"],
-        capture_output=True, text=True, env=env,
+        capture_output=True, env=env,
     )
-    session_id = sid_result.stdout.strip()
     subprocess.run([_PYTHON, str(_HUB), "status"], env=env)
 
-    cmd = ["cmd", "/c", str(_GEMINI_CMD)]
-    if session_id:
-        cmd += ["--resume", session_id]
-    cmd += sys.argv[1:]
-    result = subprocess.run(cmd, env=env)
+    result = subprocess.run(
+        ["cmd", "/c", str(_GEMINI_CMD), *sys.argv[1:]],
+        env=env,
+    )
     sys.exit(result.returncode)
 
 
