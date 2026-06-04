@@ -56,14 +56,18 @@ Full annotated tree: `README.md`
 
 ## 3. Technical Mandates
 
-### 3-1. Windows Shell Rules (Gemini Optimized)
+### 3-1. Windows Shell Rules
 - Shell 명령 실행 시 `cmd /c` 또는 PowerShell 명시적 호출 사용
 - 경로 구분자: `\` (backslash)
 - `.bat` 파일 호출 시 `PYTHONUTF8=1` 환경변수 설정 필수
 - Korean 문자열을 `.bat` 파일에 직접 포함 금지 (chcp 65001 파서 버그)
 - 스크립팅 표준 전문: `CONVENTION.md §1` (bat) and `§2` (ps1)
 
-### 3-2. Zero-Token Symmetric Memory
+### 3-2. Cross-Node Query Protocol
+- **Write queries in English.** Korean tokenizes at 2–3x cost → wastes quota fast.
+- **Query file is deleted before the API call.** If the call fails, the file is already gone — always generate a fresh unique file per request. Never reuse.
+
+### 3-3. Zero-Token Symmetric Memory
 - **Blackboard First**: 작업을 시작하기 전 반드시 `.ai/sessions/room-{uuid}/` 내의 `handoff.md` 및 `summary_*.md` 파일을 읽어 프로젝트 상태를 동기화하십시오 (**Re-orientation Phase**).
 - **Zero-Token Sharing**: 상세한 분석이나 요약은 프롬프트에 직접 쓰는 대신 파일로 기록하고, 짧은 포인터(경로)만 공유하십시오.
 - **Symmetric Persistence**: `ctx-save` 실행 시 `CLAUDE.md`뿐만 아니라 `_sys\gemini\config\GEMINI.md`에도 체크포인트를 기록하여 기억을 대칭적으로 보존하십시오.

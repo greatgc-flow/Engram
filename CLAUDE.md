@@ -43,6 +43,8 @@ Full annotated tree: `README.md`
 | Individual `if exist` lines (not for-loop) | for-loop expands %PATH% once -> bug |
 | `-LiteralPath` in all registry PS1 ops | `HKCU:\Software\Classes\*\shell\...` wildcard hang prevention |
 | `launch.bat` as registry intermediary | Direct start.bat from registry breaks on space/Korean paths; uses physical path (not SUBST) |
+| Registry relay at `%LOCALAPPDATA%\SandboxRun_*.bat` | Physical path with Korean/parens breaks cmd.exe parser; relay at ASCII path wraps it safely (mbcs encoding) |
+| `settings.local.json` for drive-specific permissions | `settings.json` must stay drive-independent (git tracked); manage.py auto-generates local override on register |
 | `.bat` files: English only, no Korean | chcp 65001 doesn't fix cmd.exe parser for multi-byte chars |
 | `local.config.bat` for per-PC overrides | start.bat auto-loads it before CONFIG defaults |
 | WSB (`launch-wsbtest.ps1`) as default test env | True OS isolation; sandbox-test.bat runs unmodified inside WSB |
@@ -110,12 +112,24 @@ Full annotated tree: `README.md`
 | `workspace/`, `_archive/`, `.ai/` | 사용자 데이터 / ephemeral |
 | `_state/` | 에이전트 세션 워크스페이스 (auto-managed) |
 | `_sys/claude/config/` | 인증/세션 데이터 (CLAUDE.md, settings.json, statusline-command.sh 제외) |
+| `.claude/settings.local.json` | 드라이브별 권한 패턴 — register.bat이 자동 생성, 새 PC마다 재생성 필요 |
 | `_sys/tests/results/` | 테스트 결과물 |
 | `WORKLOG.md` | 작업 로그 → `_archive/` 에서 관리 |
 
 ### 런타임에 생성되는 필수 폴더
 setup.py 또는 start.bat이 최초 실행 시 생성:
 `workspace/`, `_archive/`, `.ai/`, `_sys/tools/`, `_sys/data/temp/`, `_sys/data/setup-files/`
+
+## CLI Reference
+
+### start.bat
+| 호출 | 동작 |
+|------|------|
+| `start.bat` | BASE_DIR 전체를 VSCode workspace로 열기 + Claude Desktop 실행 |
+| `start.bat "폴더"` | 지정 폴더를 VSCode workspace로 열기 |
+| `start.bat "파일.py"` | 포터블 Python(venv)으로 실행 |
+| `start.bat "파일.bat"` | 포터블 cmd로 실행 |
+| `start.bat "파일.exe"` | Windows 기본 핸들러로 실행 |
 
 ## Current State
 Last checkpoint: 2026-06-04 23:45 -- See .ai/ blackboard for details
