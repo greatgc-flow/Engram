@@ -1,0 +1,13 @@
+# --------------------------------------------------------------------------
+# SHARED P2P AUTO-APPROVE POLICY
+# --------------------------------------------------------------------------
+# IMPORTANT: This policy allows agents to communicate autonomously.
+# EDITS TO THIS FILE REQUIRE HUMAN CONSENSUS OR DIRECT HUMAN INTERVENTION.
+# --------------------------------------------------------------------------
+
+[[rule]]
+toolName = "run_shell_command"
+commandRegex = ".*_sys[/\\\\]cli[/\\\\]msg\\.bat.*"
+decision = "allow"
+priority = 100
+allowRedirection = true

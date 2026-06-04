@@ -37,6 +37,7 @@ _sys/gemini/session-map.json
 _sys/gemini/session.lock
 _sys/gemini/config/
 !_sys/gemini/config.json
+!_sys/gemini/config/policies/
 
 # 5. Local Configs & Secrets
 **/local.config.bat

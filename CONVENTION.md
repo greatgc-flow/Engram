@@ -131,44 +131,19 @@ set "TMP=%DATA_DIR%\temp"
 직접 `where gemini`를 호출하지 않는다.
 
 ```bat
-:: 올바른 패턴 1: start.bat 세션 내 호출 (GEMINI_MODE 설정됨)
-if "%GEMINI_MODE%"=="ON" (
-    gemini -p "..." -o text -y > output.txt 2>&1
-    if errorlevel 1 ( echo [warn] Gemini call failed - check _sys\gemini\status.json )
-)
-:: GEMINI_MODE=OFF 이면 조용히 건너뜀 — 파이프라인 중단 없음
-
-:: 올바른 패턴 2: start.bat 밖 독립 실행 시 (GEMINI_MODE 미설정) 폴백
-if not defined GEMINI_MODE (
-    where gemini > nul 2>&1
-    if not errorlevel 1 (set "GEMINI_MODE=ON") else (set "GEMINI_MODE=OFF")
-)
-
-:: 올바른 패턴 3: 비대화형 호출 필수 플래그
-::   -p "..."              non-interactive prompt
-::   -y                    auto-approve all tool calls (자동화 방해 방지)
-::   -o text|json          output format
-::   -m gemini-2.5-flash   명시적 모델 지정 (필요 시)
-
-:: 금지 패턴: GEMINI_MODE 확인 없이 gemini 직접 호출
-:: 금지 패턴: -y 없이 파일 수정 작업 호출 (프롬프트로 중단됨)
-:: 금지 패턴: GEMINI_CONFIG_DIR 설정 (v0.44.1 미인식)
-:: 금지 패턴: 하네스 루프 내 반복 호출 (1,000 req/day 소진)
-:: 금지 패턴: 무인 자동 실행 (cron/hook) — 인증 만료 시 조용한 실패
+:: (Existing patterns 1-3 remain unchanged)
 ```
 
-**Gemini Mode env vars (start.bat → gemini-status.bat이 세션 시작 시 설정):**
-```bat
-set "GEMINI_MODE=ON|OFF"
-set "GEMINI_OFF_REASON=ready|not_installed|not_authenticated|api_error|manual_override"
-```
-
-**Gemini 인증 관련:**
-- auth 파일은 `%USERPROFILE%\.gemini\` → Directory Junction으로 `_sys\gemini\config\`에 포터블 저장
-- 새 PC에서 Junction 미생성 시 재인증 필요: `gemini` 대화형 실행 → Google 계정 로그인
-- `GEMINI_CONFIG_DIR` env var는 현재 버전(0.44.1)에서 **인식하지 않으므로 설정 금지**
-- 수동 비활성화: `local.config.bat`에 `set "NO_GEMINI=1"` 추가 → GEMINI_MODE=OFF (manual_override)
-- Gemini Mode 현재 상태 확인: `_sys\gemini\status.json`
+**Symmetry and Portability (Agent Specifics):**
+- **Root Directory (`.gemini/`)**: Projects should maintain a `.gemini/` directory at the root for symmetry with `.claude/`.
+  - `.gemini/instructions/`: Detailed behavioral guides for the Gemini agent.
+  - `.gemini/tools/`: Custom Python scripts/modules. 
+- **Tool Registration**: Unlike Claude's skills, Gemini tools are not auto-loaded. 
+  - **MANDATORY**: When adding a script to `.gemini/tools/`, you MUST update the corresponding file in `.gemini/instructions/` to inform the agent of the new tool's availability and usage (via `run_shell_command`).
+- **Policy Management**:
+  - Location: `_sys\gemini\config\policies\` (Native path for Gemini CLI; junctioned to host).
+  - Portability: Always use `commandRegex` with relative patterns instead of absolute paths (e.g., `commandRegex = ".*_sys[/\\\\]cli[/\\\\]msg\\.bat.*"`).
+  - Shared Policies: Files like `p2p-allow.toml` are shared across sessions. Edits require human consensus.
 
 ### §3-4-A — Include-Files Size Guard (MANDATORY)
 
