@@ -1,66 +1,66 @@
-﻿---
+---
 name: gemini
-description: "Gemini CLI 통합 관리 — 상태 확인, 사용량 모니터링(토큰 0), 협업 로그 조회, ON/OFF 토글, Axis 실행, ratio 조절. Use for: gemini 상태, gemini usage, gemini on/off, axis 실행, 제미나이 모니터링, 사용량 확인, collab-log 조회, gemini rate, gemini ratio, 비율 변경."
+description: "Gemini CLI integration manager — status check, usage monitoring (zero token), collab log view, ON/OFF toggle, Axis execution, ratio adjustment. Use for: gemini status, gemini usage, gemini on/off, axis run, gemini monitoring, usage check, collab-log view, gemini rate, gemini ratio, ratio change, 제미나이 상태, 사용량, 협업 로그, 비율."
 ---
 
-# Gemini 통합 관리 스킬
+# Gemini Integration Management Skill
 
-## 트리거 매핑
+## Trigger Mapping
 
-| 사용자 요청 | 액션 |
-|------------|------|
-| "gemini 상태", "gemini status", "is gemini on" | → STATUS |
-| "gemini 사용량", "usage", "오늘 몇 번", "axis 몇 번" | → USAGE |
-| "협업 로그", "collab log", "오늘 axis 내역" | → COLLAB |
-| "gemini 켜기/끄기", "on", "off", "disable/enable gemini" | → TOGGLE |
-| "axis A 실행", "run axis B", "axis-H" | → AXIS |
+| User Request | Action |
+|-------------|--------|
+| "gemini status", "is gemini on", "gemini 상태" | → STATUS |
+| "gemini usage", "how many today", "axis count", "gemini 사용량" | → USAGE |
+| "collab log", "today's axis history", "협업 로그" | → COLLAB |
+| "gemini on/off", "enable/disable gemini", "gemini 켜기/끄기" | → TOGGLE |
+| "run axis A", "axis-H", "axis 실행" | → AXIS |
 | "gemini rate", "gemini ratio", "ratio N", "rate N", "비율 변경" | → RATIO |
 
 ---
 
 ## ACTION: STATUS
 
-Gemini 현재 상태 확인.
+Check current Gemini status.
 
-1. Bash: `_sys\gemini\gemini-status.bat`
+1. PowerShell: `cmd /c "P:\_sys\gemini\gemini-status.bat"`
 2. Read `_sys\gemini\status.json`
-3. 보고:
-   - **ON**: "Gemini ready. 오늘 Axis {calls_today}회 호출."
-   - **OFF**: "Gemini OFF — 이유: {reason}"
-     - `not_installed` → Gemini CLI 미설치 (`npm i -g @google/gemini-cli`)
-     - `not_authenticated` → 인증 필요 (`gemini auth` 실행)
-     - `api_error` / `manual_override` → 수동 또는 API 오류
+3. Report:
+   - **ON**: "Gemini ready. Axis calls today: {calls_today}."
+   - **OFF**: "Gemini OFF — reason: {reason}"
+     - `not_installed` → Gemini CLI not installed (`npm i -g @google/gemini-cli`)
+     - `not_authenticated` → Auth required (`gemini auth`)
+     - `api_error` / `manual_override` → Manual or API error
 
 ---
 
 ## ACTION: USAGE
 
-토큰 0 — 로컬 파일만 파싱.
+Zero token — local file parsing only.
 
-1. Bash: `_sys\gemini\gemini-usage.bat`
+1. PowerShell: `cmd /c "P:\_sys\gemini\gemini-usage.bat"`
 2. Read `_sys\gemini\usage.json`
-3. 대시보드 출력:
+3. Dashboard output:
 
 ```
-[Gemini 사용 현황] {date}
-직접 CLI  : {sessions_today}세션, {messages_today}메시지
-Axis 호출 : {calls_today}회 (연속실패 {consecutive_failures})
+[Gemini Usage] {date}
+Direct CLI : {sessions_today} sessions, {messages_today} messages
+Axis calls : {calls_today} (consecutive failures: {consecutive_failures})
   A={by_axis.A}  B={by_axis.B}  C={by_axis.C}  D={by_axis.D}  D+={by_axis.D+}
   E={by_axis.E}  F={by_axis.F}  G={by_axis.G}  H={by_axis.H}
-마지막    : {axis_calls.last_axis} @ {last_call_ts}
-총 상호작용: {total_interactions_today}
+Last call  : {axis_calls.last_axis} @ {last_call_ts}
+Total today: {total_interactions_today}
 ```
 
 ---
 
 ## ACTION: COLLAB
 
-오늘 협업 로그 조회.
+View today's collaboration log.
 
-1. 오늘 날짜 구하기: `Get-Date -Format yyyy-MM-dd`
+1. Get today's date: `Get-Date -Format yyyy-MM-dd`
 2. Read `_archive\collab-log\{YYYY-MM-DD}.md`
-   - 파일 없으면: "오늘({date}) 협업 로그 없음 — Axis 호출 없었음."
-3. 섹션 헤더 (`## [HH:MM:SS] Axis-X`) 기준으로 요약 보고
+   - If file missing: "No collab log for today ({date}) — no Axis calls made."
+3. Summarize by section header (`## [HH:MM:SS] Axis-X`)
 
 ---
 
@@ -68,80 +68,78 @@ Axis 호출 : {calls_today}회 (연속실패 {consecutive_failures})
 
 ### OFF (`NO_GEMINI=1`)
 
-Gemini를 비활성화하려면:
+**Current session only**: Run `set NO_GEMINI=1` in terminal, then re-run `gemini-status.bat`.
 
-**현재 세션만**: 터미널에서 `set NO_GEMINI=1` 후 `gemini-status.bat` 재실행.
-
-**영구 비활성화** (`local.config.bat`에 추가):
+**Permanent** (add to `local.config.bat`):
 ```bat
 set "NO_GEMINI=1"
 ```
-위치: `_sys\local.config.bat` (git 추적 안 함, PC 전용)
+Location: `_sys\local.config.bat` (not git-tracked, PC-specific)
 
-### ON (활성화)
+### ON (enable)
 
-`local.config.bat`에서 `NO_GEMINI` 줄 제거 또는:
+Remove `NO_GEMINI` line from `local.config.bat` or:
 ```bat
 set "NO_GEMINI=0"
 ```
-재실행 후 `gemini-status.bat`로 확인.
+Re-run then verify with `gemini-status.bat`.
 
 ---
 
 ## ACTION: AXIS
 
-Axis 실행 전 **항상** STATUS 확인 (`GEMINI_MODE=ON`인지).
+**Always** check STATUS first (`GEMINI_MODE=ON` required).
 
-| Axis | 스크립트 | 제한 | 설명 |
-|------|---------|------|------|
-| A | portability-auditor 에이전트 | **최대 3회/일** | Full-Corpus 이식성 검사 |
-| B | `_sys\checks\check-versions.bat` | 제한 없음 | 도구 버전 검증 |
-| C | `_sys\hooks\ctx-end.bat` | 세션 종료 시 | 세션 요약 |
-| D | 수동 Gemini 호출 | 제한 없음 | 문법/정책 검사 |
-| D+ | `_sys\hooks\ctx-save.bat` | 제한 없음 | 중간 체크포인트 |
-| E | `_sys\checks\check-agents.bat` | 제한 없음 | 에이전트 감사 |
-| F | `_sys\checks\check-deps.bat` | 제한 없음 | 스크립트 의존성 맵 |
-| G | `_sys\cli\git-draft.bat` | 제한 없음 | 커밋 메시지 초안 |
-| H | `_sys\checks\check-health.bat` | 제한 없음 | 컨텍스트 건강 확인 |
-| Q | `_sys\cli\msg.bat ask --to gemini` | 제한 없음 | 동기 consult — 응답 전 Gemini 먼저 (ratio 5+) |
-| R | `_sys\cli\batch-review.bat` | 수동 실행 | 미커밋 diff 일괄 리뷰 |
+| Axis | Script | Limit | Description |
+|------|--------|-------|-------------|
+| A | portability-auditor agent | **Max 3/day** | Full-corpus portability scan |
+| B | `_sys\checks\check-versions.bat` | Unlimited | Tool version verification |
+| C | `_sys\hooks\ctx-end.bat` | Session end | Session summary |
+| D | Manual Gemini call | Unlimited | Syntax/policy check |
+| D+ | `_sys\hooks\ctx-save.bat` | Unlimited | Mid-session checkpoint |
+| E | `_sys\checks\check-agents.bat` | Unlimited | Agent audit |
+| F | `_sys\checks\check-deps.bat` | Unlimited | Script dependency map |
+| G | `_sys\cli\git-draft.bat` | Unlimited | Commit message draft |
+| H | `_sys\checks\check-health.bat` | Unlimited | Context health check |
+| Q | `_sys\cli\msg.bat ask --to gemini` | Unlimited | Sync consult — Gemini first (ratio 5+) |
+| R | `_sys\cli\batch-review.bat` | Manual | Uncommitted diff batch review |
 
-**Axis-A 일일 한도 초과 시**: "오늘 Axis-A 3회 이미 사용. 내일 실행 권장."
+**Axis-A daily limit exceeded**: "Axis-A already used 3 times today. Recommend running tomorrow."
 
-실행 후 `collab-log.bat`가 자동으로 `_archive\collab-log\{date}.md`에 기록.
+After execution, `collab-log.bat` automatically records to `_archive\collab-log\{date}.md`.
 
 ---
 
 ## ACTION: RATIO
 
-GEMINI_RATIO 조회 또는 변경. (`_sys\gemini\config.json` 기준)
+Query or change GEMINI_RATIO. (Based on `_sys\gemini\config.json`)
 
-**인자 없음** (`/gemini ratio`): 현재 ratio와 레벨 설명 표시
-**인자 있음** (`/gemini ratio 7`): ratio를 N(0~10)으로 변경
+**No arg** (`/gemini ratio`): Show current ratio and level description.
+**With arg** (`/gemini ratio 7`): Change ratio to N (0~10).
 
-### 조회 (인자 없음)
+### Query (no arg)
 1. Read `_sys\gemini\config.json`
-2. 현재 ratio 값과 아래 표 기준으로 현재 레벨 설명 출력
+2. Output current ratio value and level description based on table below.
 
-### 변경 (인자 = N)
+### Change (arg = N)
 1. PowerShell (timeout 10000):
    ```
    cmd /c "P:\_sys\gemini\gemini-set-ratio.bat {N}"
    ```
-2. 변경 결과 보고
+2. Report change result.
 
-### Ratio 레벨 표
+### Ratio Level Table
 
-| ratio | Gemini 호출 트리거 |
-|-------|------------------|
-| 0 | OFF — 자동 호출 없음 |
-| 1 | 명시적 Axis 실행 시에만 |
-| 2 | 아키텍처·구조 수준 설계 변경 |
-| 3 | 멀티파일 동시 수정 |
-| 4 | 단일 파일 주요 변경 (리팩토링·버그 수정) |
-| 5 | 모든 코드 편집 (Edit·Write 전) |
-| 6 | 코드 편집 + Bash 명령 전 |
-| 7 | 코드 편집 + Bash + 파일 읽기(분석 목적) 전 |
-| 8 | 코드·분석이 포함된 모든 실질적 응답 전 |
-| 9 | 짧은 단답 제외 모든 응답 전 |
-| 10 | **모든 채팅** — 길고 짧은 모든 메시지에 Gemini 먼저 |
+| ratio | Gemini Call Trigger |
+|-------|---------------------|
+| 0 | OFF — no auto calls |
+| 1 | Explicit Axis execution only |
+| 2 | Architecture/structure-level design changes |
+| 3 | Multi-file simultaneous modification |
+| 4 | Single file major change (refactor/bugfix) |
+| 5 | All code edits (before Edit/Write) |
+| 6 | Code edits + before Bash commands |
+| 7 | Code edits + Bash + before file reads (analysis) |
+| 8 | Before all substantive responses involving code/analysis |
+| 9 | Before all responses except short one-liners |
+| 10 | **All chat** — Gemini consulted before every message |

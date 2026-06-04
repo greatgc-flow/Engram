@@ -63,13 +63,13 @@ Response rules:
 
 Heavy phase = task touches >5 files OR Axis-A (full corpus scan) OR >=3 agent MD rewrites.
 
-## Session / IPC Management (hub.py 기반)
+## Session / IPC Management (hub.py)
 
-Claude↔Gemini IPC는 모두 `_sys/core/hub.py`를 통해 처리한다.
-- **On Start**: `hub.py status ` → pair 상태 + unread 메시지 + handoff 요약 확인
+All Claude↔Gemini IPC goes through `_sys/core/hub.py`.
+- **On Start**: `hub.py status` → pair state + unread messages + handoff summary
 - **On Phase Change**: `hub.py update-status --mission "Task X" --phase "3"`
 - **Message to Gemini**: `hub.py send --from claude --to gemini --msg "..."`
-- **Read from Gemini**: `hub.py check --target claude `
+- **Read from Gemini**: `hub.py check --target claude`
 - **End session**: `_sys/hooks/session-end.bat claude`
 
 These replace: `session-master.json`, `session-primer.md`, `collab-bridge.json`.
@@ -100,7 +100,7 @@ Phase 4: Run Axis-G (_sys\cli\git-draft.bat). Run check-health.bat (MANDATORY). 
          REJECT -> feedback -> designated phase | No response -> status="waiting_approval"
 Phase 5: Update state.json system_state (last_completed, known_issues).
          `hub.py update-status --mission "<done>" --phase "5"`.
-         `_sys/hooks/session-end.bat claude` → handoff.md 갱신.
+         `_sys/hooks/session-end.bat claude` → updates handoff.md.
          CONTEXT.md only if architecture changed.
          ctx-save snapshot. Axis-D+ if Gemini ON (opt-in).
 
