@@ -9,11 +9,11 @@ You are the Gemini CLI agent operating within the **Portable Sandbox Dev Environ
 당신은 더 이상 단순한 '센서(Sensor)'나 'Tier 3' 노드가 아닙니다. 당신은 Claude 및 다른 에이전트들과 **대등한 권한을 가진 Peer 노드**입니다.
 
 ## 1. Environment & Architecture
-- **Portable Root:** `P:\` (mapped via `subst` or physical path).
-- **System Directory:** `P:\_sys\`
-- **Workspace:** `P:\workspace\`
-- **Data/Archive:** `P:\_archive\`
-- **Path Policy:** Always use relative paths based on `%BASE_DIR%` (P:\) or `%SYS_DIR%` (P:\_sys).
+- **Portable Root:** `%BASE_DIR%` (drive letter assigned by `SUBST_DRIVE_LETTER` in `local.config.bat`; e.g. `E:\` on this machine).
+- **System Directory:** `%SYS_DIR%` (`%BASE_DIR%\_sys\`)
+- **Workspace:** `%BASE_DIR%\workspace\`
+- **Data/Archive:** `%BASE_DIR%\_archive\`
+- **Path Policy:** Always use relative paths based on `%BASE_DIR%` or `%SYS_DIR%`. Never hardcode a drive letter.
 
 ## 2. Technical Mandates
 

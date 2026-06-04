@@ -307,21 +307,21 @@ Local temp directory simulation (PortaFlowTest_*) is DEPRECATED as primary metho
 
 | Method | Use Case | Command |
 |--------|----------|---------|
-| WSB (default) | Full env validation, new-PC scenario, install/tool test | `powershell -ExecutionPolicy Bypass -File P:\_sys\test\launch-wsbtest.ps1` |
-| Local temp (fallback) | Quick unit checks, WSB feature not enabled | `P:\_sys\test\sandbox-test.bat` (directly) |
+| WSB (default) | Full env validation, new-PC scenario, install/tool test | `python _sys\tests\launch_wsb.py` |
+| Local temp (fallback) | Quick unit checks, WSB feature not enabled | `_sys\tests\run-sandbox-test.bat` (directly) |
 
 ### WSB Architecture
-- `launch-wsbtest.ps1`: resolves physical path (handles SUBST), generates temp `.wsb`, waits for results
-- `sandbox-test.bat` runs UNMODIFIED inside WSB — path layout (`C:\PortableDev`, `C:\TestResults`) matches WSB mounts
-- Host read-only: physical `P:\` → `C:\PortableDev`
-- Host writable: `P:\_sys\test\results\` → `C:\TestResults` (result survives sandbox exit)
+- `launch_wsb.py`: resolves physical path (handles SUBST), generates temp `.wsb`, waits for results
+- `wsb-entry.bat` runs UNMODIFIED inside WSB — path layout (`C:\PortableDev`, `C:\TestResults`) matches WSB mounts
+- Host read-only: physical `<BASE_DIR>` → `C:\PortableDev`
+- Host writable: `_sys\tests\results\` → `C:\TestResults` (result survives sandbox exit)
 - Sandbox auto-shuts down after tests; result archived as `results\result_{timestamp}.txt`
 
 ### When to Run WSB Tests
-- Before commit touching `_sys/*.bat` or `_sys/*.ps1`
+- Before commit touching `_sys/*.bat` or `_sys/*.py`
 - After adding a tool to `tools/`
 - Before marking a portable-env harness task COMPLETE
-- After `setup.ps1` or `start.bat` structural changes
+- After `setup.py` or `start.bat` structural changes
 
 ### WSB Prerequisites
 - Windows Sandbox optional feature: `optionalfeatures.exe → Windows Sandbox`

@@ -82,8 +82,9 @@
 
 ## 6. Batch 파일 구조 원칙
 
-- **≤5줄 원칙**: 로직 없음, hub.py 위임만.
-- **PORTABLE_ROOT**: 동적 계산하여 드라이브 레터 하드코딩 방지.
+- **≤5줄 원칙**: 로직 없음. 모든 로직은 `_sys/core/*.py` 또는 전용 `.py` 모듈로 위임.
+- **PORTABLE_ROOT**: `%~dp0` 기반 동적 계산 — 드라이브 레터 하드코딩 금지.
+- **예외**: `start.bat` — 부모 프로세스 환경변수 설정 필수로 bat 유지 (SUBST 복원 + PATH/VENV 주입).
 
 ## 7. Collaborative Axis (일반화된 분석 도구)
 
