@@ -1,0 +1,7 @@
+{
+    "terminal.integrated.defaultProfile.windows": "PowerShell",
+    "git.openRepositoryInParentFolders": "always",
+    "workbench.secondarySideBar.defaultVisibility": "hidden",
+    "terminal.integrated.rightClickBehavior": "default",
+    "window.restoreWindows": "folders"
+}

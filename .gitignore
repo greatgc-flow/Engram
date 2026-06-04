@@ -1,7 +1,13 @@
 # Porta-Flow: Minimal Core Git Ignore
 
 # 1. Huge Binary Environments (Managed by install.bat)
-_sys/env/
+_sys/env/**
+!_sys/env/vscode/
+!_sys/env/vscode/data/
+!_sys/env/vscode/data/user-data/
+!_sys/env/vscode/data/user-data/User/
+!_sys/env/vscode/data/user-data/User/settings.json
+!_sys/env/vscode/data/user-data/User/keybindings.json
 _sys/tools/
 _sys/data/temp/
 _sys/data/setup-files/

@@ -24,6 +24,19 @@ def get_registry_key_name(base_dir):
     safe_key = re.sub(r'[\/:]', '_', key_base)
     return f"SandboxRun_{safe_key}"
 
+def get_subst_mappings():
+    mappings = {}
+    try:
+        out = subprocess.check_output(["subst"], text=True)
+        for line in out.splitlines():
+            # Format: P:\: => D:\Path
+            match = re.match(r'^([A-Z]):\\: => (.*)$', line, re.IGNORECASE)
+            if match:
+                mappings[match.group(1).upper()] = Path(match.group(2).strip())
+    except Exception:
+        pass
+    return mappings
+
 def set_gemini_portability(base_dir):
     gemini_host = Path(os.environ["USERPROFILE"]) / ".gemini"
     gemini_portable = base_dir / "_sys" / "gemini" / "config"
@@ -94,26 +107,32 @@ def global_cleanup(base_dir):
         (winreg.HKEY_CURRENT_USER, r"Software\Classes\lnkfile\shell")
     ]
     
-    target_pattern = rf"SandboxRun_.*({leaf}|_D_D_)"
+    target_pattern = rf"SandboxRun_.*({re.escape(leaf)}|_D_D_)"
     
     for hkey, path in roots:
+        to_delete = []
         try:
-            with winreg.OpenKey(hkey, path, 0, winreg.KEY_ALL_ACCESS) as key:
+            with winreg.OpenKey(hkey, path, 0, winreg.KEY_READ) as key:
                 i = 0
                 while True:
                     try:
                         subkey_name = winreg.EnumKey(key, i)
                         if re.search(target_pattern, subkey_name, re.IGNORECASE):
-                            # Recursively delete subkey
-                            subprocess.run(["reg", "delete", f"{path}\\{subkey_name}", "/f"], capture_output=True)
-                            print(f"  [OK] Removed Orphan Registry: {subkey_name}")
-                            # i doesn't increment because we deleted the key
-                        else:
-                            i += 1
+                            to_delete.append(subkey_name)
+                        i += 1
                     except OSError:
                         break
         except Exception:
-            pass
+            continue
+
+        for subkey_name in to_delete:
+            full_reg_path = f"HKCU\\{path}\\{subkey_name}"
+            res = subprocess.run(["reg", "delete", full_reg_path, "/f"], capture_output=True)
+            if res.returncode == 0:
+                print(f"  [OK] Removed Orphan Registry: {subkey_name}")
+            else:
+                # If deletion fails, we don't loop; we just log it.
+                print(f"  [Warning] Failed to delete registry key: {subkey_name}")
 
 def action_register(base_dir):
     print(f"\n{'='*50}")
@@ -125,35 +144,49 @@ def action_register(base_dir):
 
     # 1. Drive Mapping
     assigned_letter = None
-    prefer = base_dir.name[0].upper()
-    reserved = ['A', 'B', 'C']
-    candidates = [prefer] + [chr(x) for x in range(65, 91) if chr(x) not in reserved and chr(x) != prefer]
+    subst_map = get_subst_mappings()
     
-    for letter in candidates:
-        drive_path = f"{letter}:\\"
-        if not os.path.exists(drive_path):
-            try:
-                subprocess.run(["subst", f"{letter}:", str(base_dir)], check=True)
-                assigned_letter = letter
-                print(f"  [OK] Mapped {base_dir} to {letter}:")
-                break
-            except Exception:
-                continue
+    # Check if we already have a mapping for THIS base_dir
+    for letter, path in subst_map.items():
+        if path.resolve() == base_dir.resolve():
+            assigned_letter = letter
+            print(f"  [OK] Reusing existing mapping: {letter}: -> {base_dir}")
+            break
+            
+    if not assigned_letter:
+        prefer = base_dir.name[0].upper()
+        reserved = ['A', 'B', 'C']
+        candidates = [prefer] + [chr(x) for x in range(65, 91) if chr(x) not in reserved and chr(x) != prefer]
+        
+        for letter in candidates:
+            # Check if drive letter is taken by SUBST
+            if letter in subst_map:
+                mapped_path = subst_map[letter]
+                if not mapped_path.exists():
+                    print(f"  [Info] Drive {letter}: points to dead path. Releasing.")
+                    subprocess.run(["subst", f"{letter}:", "/D"], capture_output=True)
+                else:
+                    continue # Truly occupied
+
+            # Check if drive letter exists (physical or network)
+            drive_path = f"{letter}:\\"
+            if not os.path.exists(drive_path):
+                try:
+                    subprocess.run(["subst", f"{letter}:", str(base_dir)], check=True)
+                    assigned_letter = letter
+                    print(f"  [OK] Mapped {base_dir} to {letter}:")
+                    break
+                except Exception:
+                    continue
     
     # 2. Context Menu
     target_key = get_registry_key_name(base_dir)
     menu_label = f"Open in Sandbox: {base_dir.name}" + (f" ({base_dir} -> {assigned_letter}:)" if assigned_letter else f" ({base_dir})")
 
-    # SUBST 경로 사용: 한글/공백 포함 물리 경로는 cmd.exe 코드페이지 문제로 레지스트리 명령 실패
-    # SUBST가 성공한 경우 P:\ 같은 단순 경로로 대체
-    if assigned_letter:
-        cmd_base = Path(f"{assigned_letter}:\\")
-    else:
-        cmd_base = base_dir
-        print("  [Warning] No SUBST assigned — registry command uses physical path (Korean/spaces may fail)")
-
-    launch_script = cmd_base / "_sys" / "cli" / "launch.bat"
-    code_path = cmd_base / "_sys" / "env" / "vscode" / "Code.exe"
+    # Always use physical path so the command works even after reboot (SUBST not yet mapped).
+    # start.bat restores the SUBST mapping itself once it runs.
+    launch_script = base_dir / "_sys" / "cli" / "launch.bat"
+    code_path = base_dir / "_sys" / "env" / "vscode" / "Code.exe"
 
     reg_paths = [
         (r"Software\Classes\Directory\Background\shell", "%V"),
@@ -172,7 +205,10 @@ def action_register(base_dir):
                 winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, str(code_path))
 
             cmd_key = winreg.CreateKey(key, "command")
-            cmd_str = f"cmd.exe /c \"{launch_script}\" \"{arg}\""
+            # [Plan D] The ultimate fix for CMD quoting issues:
+            # cmd.exe /c ""Path With Spaces" "Arg with Spaces""
+            # The outer double-quotes are mandatory when both path and args have quotes.
+            cmd_str = f'cmd.exe /c ""{launch_script}" "{arg}""'
             winreg.SetValueEx(cmd_key, "", 0, winreg.REG_SZ, cmd_str)
             winreg.CloseKey(key)
         except Exception as e:
