@@ -214,6 +214,14 @@ def main() -> None:
     archive_gemini_session(_PORTABLE_ROOT)
     cleanup_gemini_sessions(_PORTABLE_ROOT, int(os.environ.get("GEMINI_SESSION_KEEP", "7")))
 
+    # Compact memory: archive stale project memories, prune dead links
+    try:
+        sys.path.insert(0, str(_SCRIPT_DIR))
+        from memory_compactor import main as compact_memory  # type: ignore
+        compact_memory(_PORTABLE_ROOT)
+    except Exception as exc:
+        print(f"[ctx-end] Memory compaction skipped ({exc}).")
+
 
 if __name__ == "__main__":
     main()
