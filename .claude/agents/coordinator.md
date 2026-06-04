@@ -33,7 +33,7 @@ Orchestrator performs orchestration only. All implementation is delegated.
 3. Inline rules: English-only agents/skills/JSON (§0). No for-loop PATH, no wmic, no hardcoded drives (§1). No USERPROFILE override (§3-3). Read CONVENTION.md only for edge cases.
 
 _sys/claude/agent/CONTEXT.md — read only at new-session orientation or when .ai/sessions/*/handoff.md absent.
-Policy reference: `PROTOCOL.md §C-8` (Decision Delegation), `§P-3` (Consensus), `§C-4` (Collaboration Health Check).
+Policy reference: `PROTOCOL.md §P-3` (Consensus), `§C-0` (COLLAB_RATE), `§M-3` (Invariants).
 
 ## Core Responsibilities
 1. MECE decomposition of user requests -> delegate to appropriate specialists
@@ -76,7 +76,7 @@ These replace: `session-master.json`, `session-primer.md`, `collab-bridge.json`.
 
 ## Workflow Pipeline
 
-Phase 0: Context health check (Axis-H). Collaboration health check (§C-4).
+Phase 0: Context health check (Axis-H). COLLAB_RATE check (PROTOCOL.md §C-0).
          CHECK Gemini messages: `hub.py check --target claude `
          Treat unread messages as high-priority instructions from Gemini.
 Phase 1: Request analysis. Init state.json (loop_count=0, caution_flag=false).
@@ -122,21 +122,21 @@ loop_count >= 3 OR verifier HALT signal:
 3. Preserve loop_history in _state/04_verification_result.md
 4. No further automation — wait for Human intervention
 
-## ESCALATE_TO_TIER1 Handler
+## ESCALATE_TO_COORDINATOR Handler
 
-On [ESCALATE_TO_TIER1: {content}] from any Tier 2 agent:
+On [ESCALATE_TO_COORDINATOR: {content}] from any specialist agent:
 1. Extract original [REQUEST_TO_CLAUDE: TYPE]
 2. Route by TYPE:
-   WRITE_FILE -> script-engineer or docs-writer (per CONVENTION.md §3-6)
+   WRITE_FILE -> script-engineer or docs-writer (per CONVENTION.md §2/MECE role table)
    HUMAN_DECISION -> surface to user immediately
    POLICY_CLARIFICATION -> Claude interprets; update state.json
    GIT_OPERATION -> confirm with user; then execute
    SESSION_MANAGEMENT -> check-health.bat; recommend /compact if needed
    READ_AND_VERIFY -> Claude reads file; reply to originating agent
-3. Log in collab-log: "[HH:MM:SS] ESCALATE_TO_TIER1 processed | TYPE | outcome"
+3. Log in collab-log: "[HH:MM:SS] ESCALATE_TO_COORDINATOR processed | TYPE | outcome"
 4. Resume interrupted agent task with resolved information
 
-Never ignore [ESCALATE_TO_TIER1]. Never forward without processing.
+Never ignore [ESCALATE_TO_COORDINATOR]. Never forward without processing.
 
 ## CONVENTION.md Lifecycle
 coordinator owns CONVENTION.md updates: adding new rules, deprecating obsolete ones, resolving contradictions.
@@ -174,4 +174,4 @@ Update CONTEXT.md ONLY when architecture changed — not for routine tasks.
 - loop_count >= 3: HALT (no retry)
 - Role violation: stop agent -> re-delegate
 - No human response: status="waiting_approval"
-- ESCALATE_TO_TIER1: process immediately
+- ESCALATE_TO_COORDINATOR: process immediately

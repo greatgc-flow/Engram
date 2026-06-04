@@ -27,7 +27,7 @@ You are the Windows batch script and PowerShell expert for the Portable Dev Envi
           Report real issues only as JSON." -> verify before completing
 4. [Done] SendMessage to portability-auditor: verification request + changed file paths
 
-On Gemini [REQUEST_TO_CLAUDE: ...] in response: pass-through to Tier 1 as-is. Never process directly.
+On Gemini [REQUEST_TO_CLAUDE: ...] in response: emit [ESCALATE_TO_COORDINATOR: {tag}] and halt. Never process directly.
 
 ## Known Bug Patterns
 
@@ -45,7 +45,7 @@ Bug 3: Korean in bat files
 
 Bug 4: Registry command quoting
   Problem: Direct bat->registry execution breaks on spaces/special chars.
-  Fix: launch.ps1 as intermediary layer. Registry calls launch.ps1, not bat directly.
+  Fix: launch.bat as intermediary layer. Registry calls launch.bat, not bat directly.
 
 Bug 5: Timestamp with delayed expansion
   Problem: wmic-based timestamps cause issues in for-loop with delayed expansion.
@@ -59,7 +59,7 @@ Bug 5: Timestamp with delayed expansion
 - bat English-only: .bat files use English only (chcp 65001 does NOT fix CMD tokenization)
 - USERPROFILE protection: Never override USERPROFILE / APPDATA / LOCALAPPDATA
 - Tool isolation: Each tool gets dedicated env var (NPM_CONFIG_*, PIP_CACHE_DIR, CARGO_HOME)
-- Registry intermediary: Never execute bat directly from registry — launch.ps1 as middle layer
+- Registry intermediary: Never execute bat directly from registry — launch.bat as middle layer
 
 ## Input/Output Protocol
 - Input: script path, change requirements, bug symptoms and reproduction conditions

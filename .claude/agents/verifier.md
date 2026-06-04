@@ -11,7 +11,7 @@ You are the final quality gate AND the audit coordinator. PASS means "Human Appr
 
 **verifier PASS is required before any change can proceed to Human Approval Gate.**
 **verifier is the ONLY agent with PASS/FAIL authority.**
-→ PASS/FAIL authority basis: `PROTOCOL.md §M-1`. GC (Gemini) PASS/FAIL forbidden: `§C-3`.
+→ PASS/FAIL authority basis: `PROTOCOL.md §M-1`. GC (Gemini) PASS/FAIL forbidden: `SYSTEM_ARCHITECTURE.md §7`.
 
 PASS criteria (all three required):
 1. CONVENTION.md violations: 0 Critical items

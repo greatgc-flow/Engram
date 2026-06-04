@@ -5,22 +5,22 @@
 Current session state: read .ai/state.json (hub.py status).
 CONTEXT.md = static topology only. Dynamic state → .ai/state.json.
 
-- Unified Manager: `_sys\manage.ps1` (Register/Unregister + Gemini Junction)
+- Unified Manager: `_sys\cli\manage.bat` (logic: `manage.py`) (Register/Unregister + Gemini Junction)
 - Gemini Auth: Directory Junction ACTIVE (`%USERPROFILE%\.gemini` → `_sys\gemini\config`)
-- Gemini Control: Claude-only orchestration. Gemini runs only on explicit Claude call.
+- Gemini Control: P2P peer model (PROTOCOL.md v3). Gemini runs only on explicit call.
 - GEMINI_MODE: set by `start.bat → gemini-status.bat`. Axis bats check via `ai-check.bat`.
 - local.config.bat options: `NO_GEMINI=1` (disable), `GEMINI_PING_TEST=1` (ping opt-in)
 - 3TCP v1: nodes.json N-node, consensus rounds (.ai/consensus/), message envelope (thread/type/cc/ref)
 
 ## Key Policy Files
 - Coding conventions (bat/ps1/env var/naming): `CONVENTION.md`
-- Orchestration protocol + 3TCP v1 spec: `PROTOCOL.md` (§P-0~P-7 + §C-1~C-8)
-- Gemini-facing rules: `GEMINI.md §4` (references PROTOCOL.md §C-1, §C-2)
+- P2P protocol + 3TCP v1 spec: `PROTOCOL.md` (§P-0~P-10 + §C-0)
+- Gemini-facing rules: `GEMINI.md §3` (collaboration interface)
 - Agent workflow: `CLAUDE.md` (global) + per-skill SKILL.md files
 
 ## Collaboration Policy
-- Full policy: `PROTOCOL.md §C-1` | Gemini reference: `GEMINI.md §4`
-- Model: Claude = orchestrator (What/Why), Gemini = domain executor (How)
+- Full policy: `PROTOCOL.md §C-0` (COLLAB_RATE) | Gemini reference: `GEMINI.md §3`
+- Model: All nodes are P2P peers. Consensus required before execution (§P-3).
 - Directive: self-contained — include file path + error target + goal
 - Failure format: `<failure_report><reason>CODE</reason><details>...</details></failure_report>`
 - Memory split: Gemini = technical How-To only; Claude = orchestration What/Why
@@ -45,7 +45,7 @@ CONTEXT.md = static topology only. Dynamic state → .ai/state.json.
 GREEN <600KB | YELLOW 600KB–1.2MB | RED >1.2MB
 - YELLOW → complete phase → ctx-save → /compact
 - RED → STOP → check-health.bat --force → MUST /compact or new session
-→ 전체 정책: `PROTOCOL.md §C-5`
+→ 협업 전환 정책: `PROTOCOL.md §C-0` (COLLAB_RATE)
 
 ## Practical Figures
 - Node.js LTS: v24.16.0 "Krypton" (Active), v22 Maintenance until 2027-04
@@ -53,7 +53,7 @@ GREEN <600KB | YELLOW 600KB–1.2MB | RED >1.2MB
 - Gemini CLI known issue: NumericalClassifierStrategy may return non-zero on success — use file-exist check, not errorlevel
 
 ## Completed Tasks
-- [x] Core scripts: start.bat, manage.ps1, ctx-save.bat, ctx-end.bat
+- [x] Core scripts: start.bat, manage.bat/manage.py, ctx-save.bat, ctx-end.bat
 - [x] Gemini Axis A–I implemented; collaboration policy v2
 - [x] MECE token efficiency refactor (2026-06-01): validator merged, CONVENTION.md split → COLLAB.md, agent pre-reads inlined, gemini-mode-check.bat extracted
 - [x] .gitattributes: bat/ps1 files locked to CRLF (prevents git LF conversion)

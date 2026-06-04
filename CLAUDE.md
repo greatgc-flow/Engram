@@ -32,7 +32,7 @@ Full annotated tree: `README.md`
 | Workspace at root or external | Multiple workspaces, nested or outside BASE_DIR |
 | Registry key = `SandboxRun_[FolderName]` | Multiple envs on same PC without conflict |
 | N-Way Room Session (`room-{uuid}`) | P2P equality: No node monopoly. Shared context for all nodes. |
-| Unified manage.ps1 manager | Single Source of Truth for naming, SUBST mapping, and Registry state |
+| Unified manage.bat (logic: manage.py) | Single Source of Truth for naming, SUBST mapping, and Registry state |
 | State-aware Cleanup | Registration auto-cleans orphaned keys from previous folder names/paths |
 | No USERPROFILE/APPDATA override | Preserves Git, SSH, host credentials |
 | Tool-specific env vars (NPM_CONFIG_*, etc.) | Precise isolation without broad side effects |
@@ -42,7 +42,7 @@ Full annotated tree: `README.md`
 | `_archive/` for all rolling data | logs + sessions + workspace backups in one place for easy cleanup |
 | Individual `if exist` lines (not for-loop) | for-loop expands %PATH% once -> bug |
 | `-LiteralPath` in all registry PS1 ops | `HKCU:\Software\Classes\*\shell\...` wildcard hang prevention |
-| `launch.ps1` as registry intermediary | Direct bat execution from registry breaks on space/Korean paths |
+| `launch.bat` as registry intermediary | Direct start.bat from registry breaks on space/Korean paths; uses physical path (not SUBST) |
 | `.bat` files: English only, no Korean | chcp 65001 doesn't fix cmd.exe parser for multi-byte chars |
 | `local.config.bat` for per-PC overrides | start.bat auto-loads it before CONFIG defaults |
 | WSB (`launch-wsbtest.ps1`) as default test env | True OS isolation; sandbox-test.bat runs unmodified inside WSB |

@@ -91,9 +91,10 @@ set "_BASE=%BASE_DIR%"
 - **레이블**: `Open in Sandbox: [Leaf] ([Full Physical Path] -> [SUBST]:)`
 - **자동 청소**: 등록 시 이전에 사용하던 다른 경로의 키를 자동으로 찾아 제거하여 고아 키 발생을 방지한다.
 
-### 2-3. launch.ps1 중간 계층 유지
-레지스트리에서 .bat을 직접 실행하지 않는다.
-`launch.ps1 → cmd /c call "start.bat" "arg"` 패턴을 유지한다.
+### 2-3. launch.bat 중간 계층 유지
+레지스트리에서 start.bat을 직접 실행하지 않는다.
+`launch.bat → call start.bat %*` 패턴을 유지한다.
+(레지스트리 명령: `cmd.exe /c ""<physical_path>\_sys\cli\launch.bat" "%V""` — 물리 경로 사용, SUBST 금지)
 
 ## 3. 환경 변수 격리 규칙
 
@@ -227,20 +228,17 @@ check-deps.bat, git-draft.bat, check-risk.bat (risk-scan uses exit /b 0 — non-
 | H | check-health.bat | ≤2k | ~0 | max 5/session |
 | I | check-risk.bat | ≤10k | ~0 | Phase 1.5 |
 
-### 3-5. Claude-Gemini 협업 프로토콜 v2
-→ **PROTOCOL.md §C-1** 참조. (역할 구조, 통신 형식, 거절 코드, 교착 규칙, 의무 목록)
-
-### 3-6. 3-Tier R&R
-→ **PROTOCOL.md §C-2** 참조. (Tier 구조, 작업 라우팅 테이블, Passthrough Rule)
+### 3-5. 협업 프로토콜
+→ **PROTOCOL.md §P-0~§P-10** (P2P 공통 코어), **§C-0** (COLLAB_RATE) 참조.
 
 ## §3-7 — Gemini-first Analysis Rule
-→ **PROTOCOL.md §C-3** 참조. (Axis 선택 테이블, 대형 문서 초안 패턴)
+Gemini를 분석 도구로 우선 사용해야 하는 경우 → **SYSTEM_ARCHITECTURE.md §7** (Axis 표) 참조.
 
 ## §3-8 — Collaboration Health Check
-→ **PROTOCOL.md §C-4** 참조. (Phase 0 검증, 협업 장애 프로토콜)
+협업 건강도 점검 → **Axis H** (`_sys/checks/check-health.bat`). 토큰 예산: §3-4-D 참조.
 
 ## §3-9 — Session Transition Triggers
-→ **PROTOCOL.md §C-5** 참조. (YELLOW/RED 임계값, Gemini Mode 전환)
+COLLAB_RATE 수준별 협업 전환 시점 → **PROTOCOL.md §C-0** 참조.
 
 ## 4. 폴더/파일 네이밍 규칙
 
@@ -249,7 +247,7 @@ check-deps.bat, git-draft.bat, check-risk.bat (risk-scan uses exit /b 0 — non-
 - 예외 (컨벤션 유지): `CONVENTION.md`, `CLAUDE.md`, `README.md`
 
 ### 4-2. 스크립트 파일
-- PowerShell: PascalCase (`Install_Menu.ps1`, `Remove_Menu.ps1`, `launch.ps1`)
+- PowerShell: PascalCase (`Install_Menu.ps1`, `Remove_Menu.ps1`)
   - `Install_Menu.ps1` 및 `Remove_Menu.ps1`은 `-BaseDir` 파라미터를 받아 호출 위치(register.bat / unregister.bat)에서 BASE_DIR을 명시적으로 전달한다.
 - Batch (루트): lowercase (`register.bat`, `unregister.bat`, `install.bat`, `cleanup.bat`)
 - Batch (_sys/): lowercase (`start.bat`, `ctx-save.bat`, `ctx-end.bat`)
@@ -259,7 +257,7 @@ check-deps.bat, git-draft.bat, check-risk.bat (risk-scan uses exit /b 0 — non-
 예: `tools/ripgrep/rg.exe`, `tools/jq/jq.exe`
 
 ## 5. CONTEXT.md and State Update Rules
-→ **PROTOCOL.md §C-6** 참조.
+→ `_sys/claude/agent/CONTEXT.md` 참조. 상태 변경은 반드시 `hub.py update-status` 경유.
 
 ## 6. local.config.bat — PC별 설정 패턴
 
@@ -291,12 +289,14 @@ if exist "%SYS_DIR%\local.config.bat" call "%SYS_DIR%\local.config.bat"
 - 도구별 격리 변수(`PIP_CACHE_DIR` 등)는 변경 시 격리가 깨질 수 있으므로 신중하게.
 
 ## 7. 에이전트 경로 정책
-→ **PROTOCOL.md §C-7** 참조.
+에이전트 파일 내에서 경로 참조 시 `%BASE_DIR%` / `%SYS_DIR%` 기반 상대 표기를 사용한다.
+드라이브 문자 하드코딩 금지. 상호 불가침 영역 → **PROTOCOL.md §M-1** 참조.
 
 ---
 
 ## §8 — Decision Delegation Policy
-→ **PROTOCOL.md §C-8** 참조.
+결정 위임 정책: 만장일치 합의가 필요한 사안은 **PROTOCOL.md §P-3** 참조.
+교착 상태 시 Human Gate 호출 → **PROTOCOL.md §M-3** (불변 규칙 #3) 참조.
 
 ## §9 — Testing Environment Policy (2026-06-01)
 

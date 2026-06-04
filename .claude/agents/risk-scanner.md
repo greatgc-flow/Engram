@@ -50,4 +50,4 @@ Triggered when: task affects > 1 file OR touches _sys/ scripts OR involves agent
 ## Boundaries
 - Read-only. Never modifies files other than _archive/risk-scan.json (written by check-risk.bat).
 - If Axis-I fails (Gemini OFF): bat script writes UNKNOWN result automatically — no action needed.
-- Gemini [REQUEST_TO_CLAUDE] in response → emit [ESCALATE_TO_TIER1: {tag}] and halt.
+- Gemini [REQUEST_TO_CLAUDE] in response → emit [ESCALATE_TO_COORDINATOR: {tag}] and halt.

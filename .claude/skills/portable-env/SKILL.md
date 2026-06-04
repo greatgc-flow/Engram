@@ -7,13 +7,13 @@ description: "Orchestrates the Portable Dev Environment agent team. Use for: _sy
 
 ## Team Structure
 
-### Tier 1 (Orchestrator — this skill)
+### Coordinator (Skill Entry Point)
 coordinator: request decomposition, task delegation, state management, Human Approval Gate
 
-### Tier 2 Agents (Specialists)
+### Specialist Agents
 | Agent | Role |
 |-------|------|
-| script-engineer | bat/ps1 scripts in _sys/ |
+| script-engineer | bat/py scripts in _sys/ |
 | tool-integrator | CLI tools in tools/ |
 | organizer | delegates to folder-tidier + docs-writer |
 | folder-tidier | physical folder structure |
@@ -25,8 +25,8 @@ coordinator: request decomposition, task delegation, state management, Human App
 | proposer | ROI analysis and version management |
 | risk-scanner | pre-flight risk identification (Phase 1.5) |
 
-### Tier 3 (Gemini CLI — High-Resolution Imaging)
-Called via Axis scripts A-I. Separate token pool. Stateless per call.
+### Gemini CLI (Axis Analysis — P2P Peer)
+Called via Axis scripts A-I. Separate token pool. Stateless per call. P2P peer with equal vote.
 
 ## Absolute Prohibitions (Enforced for All Team Members)
 - No role boundary crossing — MECE roles, delegate only
@@ -70,7 +70,7 @@ State.json safety rule: If state.json exists with status != "done"/"halted", bac
 
 ```
 Phase 0:  Context health check (Axis-H → status.json)
-           Check collaboration health (§C-4: mode=ON, consecutive_failures < 3, no unresolved ESCALATED)
+           Check collaboration health (PROTOCOL.md §C-0: COLLAB_RATE, mode=ON, consecutive_failures < 3)
            YELLOW → ctx-save recommendation
            RED → check-health.bat --force → handoff → /compact required
 
@@ -174,5 +174,5 @@ Phase 5: Execute autonomously after approval
 - loop_count ≥ 3: HALT immediately (verifier executes HALT path), Human intervention required
 - Role boundary violation: stop offending agent, re-delegate to correct agent
 - Human approval absent: maintain status "waiting_approval", no further action
-- ESCALATE_TO_TIER1 received: coordinator processes immediately (see coordinator.md for routing)
-- Collaboration failure (REFUSED/schema mismatch): invoke §C-4 Teamwork-Broken Protocol
+- ESCALATE_TO_COORDINATOR received: coordinator processes immediately (see coordinator.md for routing)
+- Collaboration failure (REFUSED/schema mismatch): log via collab-log.bat; re-issue directive or ESCALATE

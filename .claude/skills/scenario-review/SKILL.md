@@ -18,7 +18,7 @@ If Exit does not connect to next Entry = Dead End = scenario audit FAIL.
 ## 6 Core Scenario Loops
 
 [A] Initial Install: USB copy -> Install_Menu.ps1 -> right-click menu -> [B]
-[B] Session Start: right-click -> launch.ps1 -> start.bat -> IDE -> [C]
+[B] Session Start: right-click -> launch.bat -> start.bat -> IDE -> [C]
 [C] Dev Work: terminal -> code/AI -> ctx-save (checkpoint) -> [C] or ctx-end -> [D]
 [D] Migration: Remove_Menu.ps1 -> registry cleanup -> new PC [A]
 [E] Tool Expansion: need tool -> tools/ add -> start.bat PATH -> session restart -> [B]
@@ -39,7 +39,7 @@ If Exit does not connect to next Entry = Dead End = scenario audit FAIL.
 3. **Detect dead ends**
    Failure points that have no recovery path:
    - Install_Menu.ps1 fails -> no rollback
-   - launch.ps1 fails -> IDE doesn't open -> no recovery
+   - launch.bat fails -> IDE doesn't open -> no recovery
    - ctx-end fails -> session data lost -> no recovery
    Check each failure point for explicit recovery path.
 

@@ -14,20 +14,32 @@ USB나 클라우드 드라이브에 담아 어느 PC에서나 **즉시 동일한
 ├── install.bat               ← ★ 최초 설치 및 환경 재구축 (ZeroBase 지원)
 ├── register.bat              ← ★ PC 등록 (SUBST 할당 + 우클릭 메뉴)
 ├── unregister.bat            ← PC 영구 제거 (컨텍스트 메뉴 + SUBST 삭제)
-├── cleanup.bat               ← ★ 단계별 공간 최적화 (Tier 1~4)
+├── cleanup.bat               ← ★ 단계별 공간 최적화 (Level 1~4)
 │
 ├── CLAUDE.md                 ← Claude Code 협업 지침
+├── GEMINI.md                 ← Gemini CLI 협업 지침
 ├── README.md                 ← 본 문서
 ├── CONVENTION.md             ← 코딩 및 에이전트 규칙
+├── PROTOCOL.md               ← P2P 협업 프로토콜 (합의·분업·세션 연속성)
 ├── WORKLOG.md                ← 변경 이력 및 현재 미션
 │
+├── workspace/                ← 기본 프로젝트 작업 폴더
 ├── .claude/                  ← Claude Code 하네스 (agents/, skills/)
+├── .ai/                      ← IPC 상태 (hub.py 전용 — 직접 쓰기 금지)
+├── _state/                   ← 에이전트 세션 워크스페이스 (자동 관리)
+├── _archive/                 ← 로그, 세션, 워크스페이스 백업
 └── _sys/                     ← 시스템 레이어 (로직 및 설정)
     ├── core/                 ← 시스템 핵심 로직 (hub.py, setup.py, manage.py)
     ├── cli/                  ← 사용자 진입 도구 (msg.bat, manage.bat, cleanup.bat)
     ├── checks/               ← Axis A~I 정적 분석 스캔
     ├── hooks/                ← 에이전트 라이프사이클 훅
     ├── tests/                ← 유닛/통합/샌드박스 테스트 스위트
+    ├── templates/            ← 복사용 파일 템플릿
+    ├── data/                 ← 세션·로그 데이터 (로컬)
+    ├── env/                  ← Python·Node.js·VS Code·Git 포터블 바이너리
+    ├── tools/                ← 보조 CLI 도구 (ripgrep, jq 등)
+    ├── claude/               ← Claude Code CLI 설정 및 에이전트 정의
+    ├── gemini/               ← Gemini CLI 설정 (Directory Junction 연동)
     └── git-config/           ← 휴대용 깃 환경 설정
 ```
 
@@ -44,12 +56,12 @@ USB나 클라우드 드라이브에 담아 어느 PC에서나 **즉시 동일한
 
 ---
 
-## 🛡️ 에이전트 협업 및 보안 (3-Tier)
+## 🛡️ 에이전트 협업 및 보안 (P2P Peer)
 
-이 환경은 **Claude Code (Tier 1 Orchestrator)**를 중심으로 **Gemini CLI (Tier 3 Sensor)**가 상호 보완하도록 설계되었습니다.
+이 환경은 **Claude Code · Gemini CLI · Claude Agent** 등 모든 노드가 **대등한 Peer 권한**으로 협력하도록 설계되었습니다. 수직적 Tier 구조 없이, N-Way Room 세션에서 만장일치 합의 후 분업합니다.
 
-*   **동기화된 상태**: `.ai/state.json`을 통해 모든 에이전트가 동일한 미션과 페이즈를 공유합니다.
-*   **합의 프로토콜**: 중요한 결정은 `msg.bat consensus`를 통한 전원 합의 과정을 거칩니다.
+*   **N-Way Room 세션**: `.ai/` 하위 공통 `handoff.md`를 통해 모든 노드가 동일한 컨텍스트를 공유합니다.
+*   **만장일치 합의**: 중요한 결정은 `msg.bat consensus`를 통한 전원 합의 과정을 거칩니다. (`PROTOCOL.md §P-3`)
 *   **완전 격리**: 모든 캐시와 설정이 폴더 내부에 저장되어 호스트 PC를 오염시키지 않습니다.
 
 ---

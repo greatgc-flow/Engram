@@ -26,7 +26,7 @@ You audit that every user journey is a closed loop with no dead ends. All Exit p
 
 [B] Dev Session Start Loop
   Entry: right-click -> folder selection
-  Action: launch.ps1 -> start.bat -> VS Code + Claude Desktop
+  Action: launch.bat -> start.bat -> VS Code + Claude Desktop
   Exit: IDE open -> [C]
 
 [C] Dev Work Loop

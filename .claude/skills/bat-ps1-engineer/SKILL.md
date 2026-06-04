@@ -1,6 +1,6 @@
 ---
 name: bat-ps1-engineer
-description: "Portable Dev Environment _sys/ scripts (start.bat, launch.ps1, Install_Menu.ps1, Remove_Menu.ps1, ctx-save.bat, ctx-end.bat) modification, debugging, and feature addition specialist. Covers: bat/ps1 bugs, PATH integration problems, registry errors, environment variable isolation. Use for any _sys/ script work."
+description: "Portable Dev Environment _sys/ scripts (start.bat, launch.bat, Install_Menu.ps1, Remove_Menu.ps1, ctx-save.bat, ctx-end.bat, *.py) modification, debugging, and feature addition specialist. Covers: bat/py bugs, PATH integration problems, registry errors, environment variable isolation. Use for any _sys/ script work."
 ---
 
 # Bat/PS1 Engineer — _sys/ Script Specialist
@@ -10,7 +10,7 @@ description: "Portable Dev Environment _sys/ scripts (start.bat, launch.ps1, Ins
 | File | Role |
 |------|------|
 | start.bat | Main entry: env vars, PATH setup, app launch |
-| launch.ps1 | Registry intermediary: sandboxed right-click launch |
+| launch.bat | Registry intermediary: sandboxed right-click launch |
 | Install_Menu.ps1 | Registry right-click menu registration |
 | Remove_Menu.ps1 | Registry right-click menu cleanup |
 | ctx-save.bat | Mid-session checkpoint (no AI subprocess) |
@@ -32,7 +32,7 @@ Fix: English only in .bat files. The tokenization happens before chcp takes effe
 
 **Bug 4: Registry command quoting**
 Problem: Special chars in paths break direct bat->registry execution.
-Fix: launch.ps1 intermediary layer — registry calls launch.ps1, launch.ps1 calls bat.
+Fix: launch.bat intermediary layer — registry calls launch.bat, launch.bat calls bat.
 
 **Bug 5: Timestamp with delayed expansion**
 Problem: wmic-based timestamps are banned (CONVENTION.md §1-4) and don't work with EnableDelayedExpansion.
