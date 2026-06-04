@@ -123,10 +123,27 @@ def run_cleanup(tier=1, all_yes=False, dry_run=False, base_dir=None):
 
 if __name__ == "__main__":
     import argparse
+    import sys as _sys
     parser = argparse.ArgumentParser()
-    parser.add_argument("--tier", type=int, default=1)
+    parser.add_argument("--tier", type=int, default=None)
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    
-    run_cleanup(tier=args.tier, all_yes=args.all, dry_run=args.dry_run)
+
+    tier = args.tier
+    if tier is None:
+        print("=====================================================")
+        print(" Portable Dev - Cleanup Utility")
+        print("=====================================================")
+        print(" 1. Light (Safe) - Temp files, caches, old logs")
+        print(" 2. Hard        - Tier 1 + Setup archives + venv")
+        print(" 3. Reset       - Tier 2 + Portable Runtimes/Tools")
+        print(" 4. ZeroBase    - Tier 3 + Workspace + All data (WIPE)")
+        print("=====================================================")
+        try:
+            choice = input("Choose cleanup level (1-4, Default=1): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            choice = "1"
+        tier = int(choice) if choice in ("1", "2", "3", "4") else 1
+
+    run_cleanup(tier=tier, all_yes=args.all, dry_run=args.dry_run)
