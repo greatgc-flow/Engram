@@ -240,7 +240,7 @@ class TestRobustness:
         import sys
         result = subprocess.run(
             [sys.executable, hub.__file__, "nonexistent-action"],
-            capture_output=True, text=True
+            capture_output=True, text=True, timeout=10,
         )
         assert result.returncode != 0
 

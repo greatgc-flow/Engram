@@ -33,7 +33,8 @@ class TestStatusline:
             cwd=env["root"],
             capture_output=True,
             text=True,
-            encoding="utf-8"
+            encoding="utf-8",
+            timeout=15,
         )
 
     def test_status_empty(self, test_env):

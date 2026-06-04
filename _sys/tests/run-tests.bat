@@ -10,7 +10,7 @@
 :: run-tests [--scenario]      MECE scenario tests (Korean path + SUBST + lifecycle)
 :: run-tests [--scenarios]     user scenario E2E tests (~20s)
 :: run-tests [--all]           all tests (unit+lifecycle+integration+scenarios, ~90s)
-:: run-tests [--full]          all+stress (every test, ~120s, needs 4GB+ RAM)
+:: run-tests [--full]          all+stress (every test, ~120s, needs ~1.5GB RAM)
 :: run-tests [--no-stress]     same as --full but skips stress tests
 
 for %%I in ("%~dp0..\..") do set "PORTABLE_ROOT=%%~fI"
