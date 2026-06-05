@@ -1,5 +1,5 @@
 # PortableDev Agent Context
-> Last updated: 2026-06-03 | Status: MECE + zero-token doc consolidation complete (Phase A-F)
+> Last updated: 2026-06-05 | Status: MECE + zero-token doc consolidation complete (Phase A-F)
 
 ## System State
 Current session state: read .ai/state.json (hub.py status).
@@ -24,7 +24,6 @@ CONTEXT.md = static topology only. Dynamic state → .ai/state.json.
 - Directive: self-contained — include file path + error target + goal
 - Failure format: `<failure_report><reason>CODE</reason><details>...</details></failure_report>`
 - Division of Labor: Gemini = large-file analysis / full-corpus scan; Claude = file ops / tool calls (per §P-4)
-- Axis-A: max 3/day; quality limit ~500k tokens | Quota signal: `429` (not failure XML)
 
 ## Agent Team (current)
 - coordinator, script-engineer, tool-integrator, organizer, folder-tidier, docs-writer
@@ -32,14 +31,9 @@ CONTEXT.md = static topology only. Dynamic state → .ai/state.json.
 - proposer, risk-scanner
 - validator: DEPRECATED 2026-06-01 — merged into verifier
 
-## Gemini Axis Map (9 axes)
-- A: portability-auditor full-corpus scan (≤500k tokens, max 3/day)
-- B: check-versions.bat | C: ctx-end.bat session summary | D: inline syntax check
-- D+: ctx-save mid-summary (opt-in) | E: check-agents.bat → _archive/scans/agent-audit.json
-- F: check-deps.bat → _archive/scans/script-deps.json | G: git-draft.bat → commit draft
-- H: check-health.bat → _archive/session-handoff.json
-- I: check-risk.bat → _archive/risk-scan.json (pre-flight risk, Phase 1.5)
-→ Technical specs (script paths/output/quota): `SYSTEM_ARCHITECTURE.md §7` | Token budget: `CONVENTION.md §3-4-D`
+## Gemini Axis Map
+→ Full spec (trigger scripts, purpose, token quota): `SYSTEM_ARCHITECTURE.md §7` | Token budget: `CONVENTION.md §3-4-D`
+- Axis-A: max 3/day, ≤500k tokens | Quota signal: `429` (not failure XML)
 
 ## Context Health Thresholds (Axis-H)
 GREEN <600KB | YELLOW 600KB–1.2MB | RED >1.2MB
@@ -59,7 +53,7 @@ GREEN <600KB | YELLOW 600KB–1.2MB | RED >1.2MB
 - [x] .gitattributes: bat/ps1 files locked to CRLF (prevents git LF conversion)
 - [x] ctx-save/ctx-end: Gemini success check via file-exist (not errorlevel)
 - [x] 3TCP v1 (2026-06-03): hub.py Phase A-D (timeout=None, envelope, N-node, consensus); PROTOCOL.md created (COLLAB.md deleted); 105 tests ALL PASS
-- [x] MECE + zero-token consolidation (2026-06-03): Phase A-F (Gemini 3-round), ~3,460 tokens saved per session; SYSTEM_ARCHITECTURE.md §9 신규 (Axis SSoT); agents/*.md PROTOCOL.md 포인터 추가
+- [x] MECE + zero-token consolidation (2026-06-03): Phase A-F (Gemini 3-round), ~3,460 tokens saved per session; SYSTEM_ARCHITECTURE.md §7 new (Axis SSoT); agents/*.md PROTOCOL.md pointer added
 
 ## Known Issues
 - VS Code data: some 0-byte files — delete manually while VS Code is running.

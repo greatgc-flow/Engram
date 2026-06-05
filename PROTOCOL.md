@@ -264,6 +264,7 @@ This system uses a model mixing an **autonomy gradient with 5 major anchors** to
 | Low | R:0 | Read-only, grep, explore, doc reads |
 | Med | R:3 | `workspace/` code changes |
 | High | R:5 | `_sys/` script changes |
+| Multi-script | R:8 | Spans multiple `_sys/` scripts (manual override) |
 | Critical | R:10 | `PROTOCOL.md`, `CLAUDE.md`, `GEMINI.md`, `hub.py`, `nodes.json` |
 
 ---

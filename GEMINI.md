@@ -79,6 +79,7 @@ Task risk classification — apply within a session unless overridden globally:
 | Low  | R:0  | Read-only, grep, explore, doc reads |
 | Med  | R:3  | `workspace/` code changes |
 | High | R:5  | `_sys/` script changes |
+| Multi-script | R:8 | Spans multiple `_sys/` scripts (manual override) |
 | Critical | R:10 | `PROTOCOL.md`, `CLAUDE.md`, `GEMINI.md`, `hub.py`, `nodes.json` |
 
 *Rule:* Session-level overrides apply (user requests deep analysis → R:10 globally). **No exceptions for Level 10 core files.**
