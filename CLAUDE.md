@@ -160,5 +160,5 @@ Created on first run by `setup.py` or `start.bat`:
 | `start.bat "file.exe"` | Open with Windows default handler |
 
 ## Current State
-→ See `.ai/sessions/room-7fb9/handoff.md` for live session state.
+Last checkpoint: 2026-06-05 08:59 -- See .ai/ blackboard for details
 → See `_sys/claude/agent/CONTEXT.md` for static topology and agent team.

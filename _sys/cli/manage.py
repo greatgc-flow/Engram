@@ -69,17 +69,34 @@ def set_gemini_portability(base_dir):
     gemini_portable.mkdir(parents=True, exist_ok=True)
     
     if gemini_host.exists():
-        # Check if it's already a junction to the right place
-        if os.path.islink(gemini_host) or (gemini_host.is_dir() and gemini_host.stat().st_reparse_tag == 0xA0000003): # IO_REPARSE_TAG_MOUNT_POINT
-            # Using low-level check or just rmdir and recreate
+        # Check if it's already a junction or a real directory
+        is_junction = False
+        try:
+            # Low-level check for junction on Windows
+            if os.path.islink(gemini_host) or (gemini_host.is_dir() and getattr(gemini_host.stat(), 'st_reparse_tag', 0) == 0xA0000003):
+                is_junction = True
+        except Exception:
             pass
+
+        if is_junction:
+            try:
+                subprocess.run(["cmd", "/c", f"rmdir \"{gemini_host}\""], check=True)
+                print(f"  [Info] Removed existing junction: {gemini_host}")
+            except Exception as e:
+                print(f"  [Warning] Could not remove existing junction: {e}")
+                return
         else:
             backup = gemini_host.with_suffix(".host_backup")
             if not backup.exists():
-                shutil.move(str(gemini_host), str(backup))
-                print(f"  [Info] Backed up host Gemini config to {backup.name}")
+                try:
+                    shutil.move(str(gemini_host), str(backup))
+                    print(f"  [Info] Backed up host Gemini config to {backup.name}")
+                except Exception as e:
+                    print(f"  [Warning] Could not backup host Gemini config: {e}")
+                    return
             else:
-                print("  [Warning] .gemini and .gemini.host_backup both exist. Skipping junction.")
+                # If backup exists, we might be in a broken state. Try to remove the .gemini folder if it's empty or just skip.
+                print("  [Warning] .gemini and .gemini.host_backup both exist. Skipping junction to prevent data loss.")
                 return
 
     # Create Junction via CMD
