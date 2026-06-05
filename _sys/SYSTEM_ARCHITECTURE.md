@@ -114,6 +114,7 @@ Token budget details: `CONVENTION.md §3-4-D`
 | G | `git-draft.bat` | Commit message draft | — | ✓ |
 | H | `check-health.bat` | Context health check | Axis-1 | ✓ |
 | I | `check-risk.bat` | Pre-flight risk scan (Phase 1.5) | Axis-3 | ✓ |
+| J | `check-policy.bat` | Policy regression gate (local, zero-token) | Axis-3 | — |
 | sweep | `hub.py consensus-sweep` | Auto-escalate stalled rounds | Axis-2 | — |
 
 ---

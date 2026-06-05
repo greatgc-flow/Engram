@@ -34,6 +34,7 @@ CONTEXT.md = static topology only. Dynamic state → .ai/state.json.
 ## Gemini Axis Map
 → Full spec (trigger scripts, purpose, token quota): `SYSTEM_ARCHITECTURE.md §7` | Token budget: `CONVENTION.md §3-4-D`
 - Axis-A: max 3/day, ≤500k tokens | Quota signal: `429` (not failure XML)
+- Axis-J: `check-policy.bat` — local zero-token policy regression gate (7 checks, exits 1 on FAIL)
 
 ## Context Health Thresholds (Axis-H)
 GREEN <600KB | YELLOW 600KB–1.2MB | RED >1.2MB
