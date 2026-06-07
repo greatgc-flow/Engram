@@ -142,15 +142,48 @@ def _load_nodes(ai_root: Path) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────
-# handoff.md FIFO 관리
+# 설정 및 상수
 # ─────────────────────────────────────────────────────────────
 
-HANDOFF_MAX_CHARS = 12000
-HANDOFF_MAX_COMPLETED = 5
-HANDOFF_MAX_ISSUES = 3
-HANDOFF_MAX_DECISIONS = 3
-HANDOFF_MAX_CONSENSUS = 10
-HANDOFF_MAX_THREADS = 5
+def load_config() -> dict:
+    cfg_path = Path(__file__).parent / "hub_config.json"
+    defaults = {
+        "limits": {
+            "mailbox_max": 500,
+            "handoff_max_chars": 12000,
+            "handoff_max_completed": 5,
+            "handoff_max_issues": 3,
+            "handoff_max_decisions": 3,
+            "handoff_max_consensus": 10,
+            "handoff_max_threads": 5,
+            "large_payload_threshold": 4000
+        }
+    }
+    if not cfg_path.exists():
+        return defaults
+    try:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        # Merge defaults
+        for k, v in defaults["limits"].items():
+            cfg.setdefault("limits", {})
+            if k not in cfg["limits"]:
+                cfg["limits"][k] = v
+        return cfg
+    except Exception:
+        return defaults
+
+_CFG = load_config()
+_LIMITS = _CFG["limits"]
+
+HANDOFF_MAX_CHARS = _LIMITS["handoff_max_chars"]
+HANDOFF_MAX_COMPLETED = _LIMITS["handoff_max_completed"]
+HANDOFF_MAX_ISSUES = _LIMITS["handoff_max_issues"]
+HANDOFF_MAX_DECISIONS = _LIMITS["handoff_max_decisions"]
+HANDOFF_MAX_CONSENSUS = _LIMITS["handoff_max_consensus"]
+HANDOFF_MAX_THREADS = _LIMITS["handoff_max_threads"]
+
+_MAILBOX_MAX = _LIMITS["mailbox_max"]
+_LARGE_PAYLOAD_THRESHOLD = _LIMITS["large_payload_threshold"]
 
 _HANDOFF_SECTIONS = [
     "GOAL", "RECENT_COMPLETED", "PENDING_ISSUES", "KEY_DECISIONS",
@@ -250,8 +283,6 @@ def action_end_session(ai_root: Path, agent: str) -> None:
     print(f"[END] {agent} 세션 종료 완료")
 
 
-_MAILBOX_MAX = 500   # hard cap: oldest read msgs pruned first when exceeded
-
 def action_send(
     ai_root: Path, from_: str, to: str, msg: str,
     thread_id: str | None = None,
@@ -261,6 +292,19 @@ def action_send(
 ) -> None:
     if cc_list is None: cc_list = []
     auto_thread = thread_id or _short_id("t-")
+
+    # 대용량 페이로드 오프로드 (Threshold 초과 시)
+    if len(msg) > _LARGE_PAYLOAD_THRESHOLD and msg_type == "MSG":
+        payload_id = _short_id("p-")
+        payload_dir = ai_root / "payloads"
+        payload_dir.mkdir(parents=True, exist_ok=True)
+        payload_path = payload_dir / f"{payload_id}.json"
+        _write_json(payload_path, {"from": from_, "to": to, "content": msg, "timestamp": _now()})
+        
+        msg = f"payload://{payload_id}"
+        msg_type = "PAYLOAD_REF"
+        _log_p2p("OFFLOAD", f"Large msg saved to payloads/{payload_id}.json", from_node=from_)
+
     with _get_lock(ai_root, "mailbox"):
         mb = _read_json(ai_root / "mailbox.json")
         msgs = mb.get("messages", [])
@@ -340,7 +384,19 @@ def action_check(ai_root: Path, target: str) -> None:
     print(f"[HUB] READ  {len(unread)} messages for {target}\n")
     for m in unread:
         ts = m.get("timestamp", "")[:16]
-        print(f"**[{m['id']}]** From: **{m['from']}** | {ts} | type={m.get('type','MSG')}\n{m['content']}\n---")
+        content = m.get("content", "")
+        
+        # Payload dereference
+        if content.startswith("payload://"):
+            payload_id = content.replace("payload://", "")
+            payload_path = ai_root / "payloads" / f"{payload_id}.json"
+            if payload_path.exists():
+                pdata = _read_json(payload_path)
+                content = pdata.get("content", content) + f"\n\n(Payload loaded from {payload_id}.json)"
+            else:
+                content = f"[ERROR: Payload {payload_id} not found]"
+
+        print(f"**[{m['id']}]** From: **{m['from']}** | {ts} | type={m.get('type','MSG')}\n{content}\n---")
 
 
 def action_list_nodes(ai_root: Path) -> None:

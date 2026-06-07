@@ -1,0 +1,16 @@
+{
+  "version": "1.0",
+  "limits": {
+    "mailbox_max": 500,
+    "handoff_max_chars": 12000,
+    "handoff_max_completed": 5,
+    "handoff_max_issues": 3,
+    "handoff_max_decisions": 3,
+    "handoff_max_consensus": 10,
+    "handoff_max_threads": 5,
+    "large_payload_threshold": 4000
+  },
+  "modes": {
+    "high_capacity": false
+  }
+}

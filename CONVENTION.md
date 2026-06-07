@@ -86,12 +86,16 @@ All environment registration/unregistration and status management via `_sys\cli\
 ### 2-3. Space Optimization (cleanup.bat)
 - `cleanup.bat`: Performs Tier 1~4 step-by-step cleanup via `cleanup.py`.
 
-### 2-2. Registry and Menu Rules
+### 2-3. Registry and Menu Rules
 - **Key Naming**: `SandboxRun_[Drive]_[Parent]_[Leaf]` (special characters in paths replaced with `_`)
 - **Label**: `Open in Sandbox: [Leaf] ([Full Physical Path] -> [SUBST]:)`
 - **Auto-Cleanup**: Automatically removes keys from previously used paths during registration to prevent orphaned keys.
+- **Trailing Backslash Escape Fix (CRITICAL)**:
+  - **Issue**: Windows passes drive roots (e.g., `P:\`) with a trailing backslash. In a registry command like `"%V"`, this becomes `"P:\"`, where the backslash escapes the closing quote, breaking the command.
+  - **Solution**: Always append a dot to the argument: `"%V."`.
+  - **Normalization**: `start.bat` must normalize the incoming path using `for %%I in ("%~1") do set "TARGET=%%~fI"` to remove the dot (e.g., `P:\.` → `P:\`) before use.
 
-### 2-3. Maintain launch.bat Middle Layer
+### 2-4. Maintain launch.bat Middle Layer
 Do not execute `start.bat` directly from the registry.
 Maintain the `launch.bat → call start.bat %*` pattern.
 (Registry command: `cmd.exe /c ""<physical_path>\_sys\cli\launch.bat" "%V""` — use physical path, SUBST prohibited)

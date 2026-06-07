@@ -92,6 +92,14 @@ def cleanup_gemini_sessions(portable_root: Path, keep_days: int = 7) -> None:
 
 
 def main() -> None:
+    # Add portable paths to os.environ["PATH"] for shutil.which and subprocess
+    paths = [
+        str(_SYS_DIR / "env" / "venv" / "Scripts"),
+        str(_SYS_DIR / "env" / "nodejs" / "npm-global"),
+        os.environ.get("PATH", "")
+    ]
+    os.environ["PATH"] = os.pathsep.join(paths)
+
     global_update = "--global" in sys.argv
     cwd = Path.cwd()
 
@@ -122,6 +130,7 @@ def main() -> None:
             "4) Update Last updated date. Be thorough - this is the handoff for the next session.",
         ],
         env=env,
+        shell=True,
     )
     if result.returncode != 0:
         print("[ctx-end] ERROR: claude returned non-zero.")
@@ -139,6 +148,7 @@ def main() -> None:
                     "lessons from today. Keep it concise and universal across projects.",
                 ],
                 env=env,
+                shell=True,
             )
         else:
             print(f"[ctx-end] Note: no global CLAUDE.md found at {global_md}")

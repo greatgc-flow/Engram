@@ -54,7 +54,10 @@ if defined SUBST_DRIVE_LETTER (
         )
         echo [Info] Waiting for drive %SUBST_DRIVE_LETTER%: to stabilize...
         for /L %%I in (1,1,10) do (
-            if exist "%SUBST_DRIVE_LETTER%:\" goto :DRIVE_READY
+            if exist "%SUBST_DRIVE_LETTER%:\" (
+                timeout /t 2 > nul
+                goto :DRIVE_READY
+            )
             timeout /t 1 > nul
             <nul set /p=.
         )
@@ -175,6 +178,11 @@ if not exist "%VENV_DIR%" (
         "%PY_DIR%\python.exe" -m venv "%VENV_DIR%" >> "%LOG_FILE%" 2>&1
     )
 )
+:: Dynamically update pyvenv.cfg to match the current mapped drive/path
+if exist "%VENV_DIR%\pyvenv.cfg" (
+    "%PY_DIR%\python.exe" -c "import sys, re; p=sys.argv[1]; d=sys.argv[2]; txt=open(p, encoding='utf-8').read(); txt=re.sub(r'(?m)^(home\s*=\s*).*', r'\g<1>' + d.replace('\\', '\\\\'), txt); txt=re.sub(r'(?m)^(executable\s*=\s*).*', r'\g<1>' + d.replace('\\', '\\\\') + r'\\python.exe', txt); open(p, 'w', encoding='utf-8').write(txt)" "%VENV_DIR%\pyvenv.cfg" "%PY_DIR%"
+)
+
 if exist "%VENV_DIR%\Scripts" (
     set "VIRTUAL_ENV=%VENV_DIR%"
     set "PYTHONHOME="
@@ -185,6 +193,9 @@ if exist "%VENV_DIR%\Scripts" (
 :: 7. Target analysis
 :: ----------------------------------------------------------------
 set "TARGET=%~1"
+if defined TARGET (
+    for %%I in ("!TARGET!") do set "TARGET=%%~fI"
+)
 if defined SUBST_DRIVE_LETTER (
     set "TARGET=!TARGET:%BASE_DIR_PHYS%=%BASE_DIR%!"
 )
