@@ -3,9 +3,9 @@
 # =================================================================
 # 1. User Workspaces, Data, and Archives
 # =================================================================
-workspace/
-_workspace/
-_archive/
+/workspace/
+/_workspace/
+/_archive/
 WORKLOG.md
 
 # =================================================================
@@ -17,9 +17,10 @@ _state/
 # =================================================================
 # 3. Downloaded Environments, Binaries, and Runtimes
 # =================================================================
-# Everything inside env and tools is bootstrapped via install.bat
+# env/ is bootstrapped via install.bat — not tracked
 _sys/env/
-_sys/tools/
+# tools/apps/ is user-installed on first run — not tracked
+_sys/tools/apps/
 _sys/data/temp/
 _sys/data/setup-files/
 _sys/data/logs/

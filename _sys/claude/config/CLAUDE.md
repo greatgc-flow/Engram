@@ -33,7 +33,7 @@
 Claude's Role: **Joint Design → Joint Execution → Joint Review → Report**
 Gemini is a full partner, not just an advisor. Integration depth scales with Ratio.
 
-### GEMINI_RATIO Levels (P:\_sys\gemini\config.json)
+### GEMINI_RATIO Levels (P:\_sys\ai\config.json)
 
 Defines integration depth and intervention points.
 

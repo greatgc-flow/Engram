@@ -1,0 +1,18 @@
+# Workspace-local gitignore template
+# Copy to workspace root and customize
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Runtime state
+.env
+*.log
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Editor
+.vscode/
+*.swp

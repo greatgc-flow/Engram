@@ -43,6 +43,18 @@ class ConfigManager:
                 cls._config = {}
 
     @classmethod
+    def get_env_config(cls) -> Dict[str, Any]:
+        """Reads _sys/env.json (PATH entries, env vars manifest)."""
+        env_path = cls.get_sys_dir() / "env.json"
+        if env_path.exists():
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"[Warning] Failed to load env.json: {e}")
+        return {}
+
+    @classmethod
     def get_peers_config(cls) -> Dict[str, Any]:
         """Reads _sys/ai/peers.json and returns the peers dictionary."""
         peers_path = cls.get_sys_dir() / "ai" / "peers.json"

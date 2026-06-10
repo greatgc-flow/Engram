@@ -2,9 +2,12 @@
 launcher.py - Portable Dev Environment Launcher (Python Refactored)
 Handles drive mapping, environment variable injection, and process execution.
 Replaces start.bat.
+
+PATH and env vars are driven by _sys/env.json + _sys/ai/peers.json — no hardcoding here.
 """
 import os
 import sys
+import json
 import subprocess
 import time
 import traceback
@@ -17,6 +20,13 @@ if str(sys_dir) not in sys.path:
     sys.path.insert(0, str(sys_dir))
 
 from core.config import config
+
+
+def _load_json(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
 
 def log(msg: str, log_file: Path):
     print(msg)
@@ -52,72 +62,74 @@ def map_subst_drive(base_dir: Path, target_drive: str):
             time.sleep(1)
             print(".", end="", flush=True)
 
-def setup_environment(base_dir: Path, sys_dir: Path) -> dict:
-    """Prepares the environment variables for the sandbox."""
-    env_dir = sys_dir / "env"
-    tools_dir = sys_dir / "tools"
-    data_dir = sys_dir / "data"
-    claude_dir = sys_dir / "claude"
+def _resolve_path(base: str, sub: str, sys_dir: Path) -> Path:
+    """Resolves a {base, sub} entry from env.json to an absolute path."""
+    bases = {
+        "sys":   sys_dir,
+        "env":   sys_dir / "env",
+        "tools": sys_dir / "tools",
+    }
+    return bases.get(base, sys_dir) / sub
 
-    # Deep copy current env
+
+def setup_environment(base_dir: Path, sys_dir: Path) -> dict:
+    """Prepares the environment variables for the sandbox.
+
+    Sources (in order, later wins):
+      1. env.json  — static env_vars + tool_env_vars + path_entries
+      2. peers.json — per-peer env_vars (e.g. CLAUDE_CONFIG_DIR)
+      3. config.json env_overrides — user/device overrides
+    """
+    env_dir  = sys_dir / "env"
+    data_dir = sys_dir / "data"
+    env_cfg  = _load_json(sys_dir / "env.json")
+
     env = os.environ.copy()
 
-    # Paths
+    # ── Core paths ──────────────────────────────────────────────
     env["BASE_DIR"] = str(base_dir)
-    env["SYS_DIR"] = str(sys_dir)
-    
+    env["SYS_DIR"]  = str(sys_dir)
+
     sandbox_temp = data_dir / "temp"
     sandbox_temp.mkdir(parents=True, exist_ok=True)
     env["TEMP"] = str(sandbox_temp)
-    env["TMP"] = str(sandbox_temp)
+    env["TMP"]  = str(sandbox_temp)
 
-    # Tool Configs
-    env["NPM_CONFIG_PREFIX"] = str(env_dir / "nodejs" / "npm-global")
-    env["NPM_CONFIG_CACHE"] = str(env_dir / "nodejs" / "npm-cache")
-    env["PIP_CACHE_DIR"] = str(env_dir / "python" / "pip-cache")
-    env["PYTHONUSERBASE"] = str(env_dir / "python" / "userbase")
-    env["CLAUDE_CONFIG_DIR"] = str(claude_dir / "config")
-    env["PYTHONUTF8"] = "1"
-
-    # Apply user overrides from config.json
-    overrides = config.get("env_overrides", {})
-    for k, v in overrides.items():
+    # ── Static env_vars from env.json ───────────────────────────
+    for k, v in env_cfg.get("env_vars", {}).items():
         env[k] = str(v)
 
-    # Build PATH
+    # ── Tool env vars (path-based) from env.json ────────────────
+    for k, spec in env_cfg.get("tool_env_vars", {}).items():
+        env[k] = str(_resolve_path(spec["base"], spec["sub"], sys_dir))
+
+    # ── Per-peer env_vars from peers.json ───────────────────────
+    peers_raw = _load_json(sys_dir / "ai" / "peers.json").get("peers", {})
+    for peer_id, cfg in peers_raw.items():
+        if not cfg.get("enabled"):
+            continue
+        peer_subdir = sys_dir / cfg.get("sys_subdir", peer_id)
+        for k, rel in cfg.get("env_vars", {}).items():
+            env[k] = str(peer_subdir / rel)
+
+    # ── User / device overrides from config.json ────────────────
+    for k, v in config.get("env_overrides", {}).items():
+        env[k] = str(v)
+
+    # ── PATH from env.json path_entries ─────────────────────────
     path_entries = [
-        env_dir / "nodejs" / "npm-global",
-        env_dir / "venv" / "Scripts",
-        env_dir / "python",
-        env_dir / "python" / "Scripts",
-        env_dir / "nodejs",
-        env_dir / "ffmpeg" / "bin",
-        env_dir / "pwsh",
-        sys_dir / "cli",
-        sys_dir / "hooks",
-        sys_dir / "checks",
-        tools_dir / "ripgrep",
-        tools_dir / "fd",
-        tools_dir / "jq",
-        tools_dir / "bat",
-        tools_dir / "delta",
-        tools_dir / "fzf",
-        tools_dir / "oh-my-posh",
-        tools_dir / "sqlite",
-        tools_dir / "gh",
-        env_dir / "git" / "cmd",
-        env_dir / "git" / "usr" / "bin"
+        _resolve_path(e["base"], e["sub"], sys_dir)
+        for e in env_cfg.get("path_entries", [])
     ]
+    valid = [str(p) for p in path_entries if p.exists()]
+    env["PATH"] = ";".join(valid) + ";" + env.get("PATH", "")
 
-    valid_paths = [str(p) for p in path_entries if p.exists()]
-    env["PATH"] = ";".join(valid_paths) + ";" + env.get("PATH", "")
-
-    # Git Global Config
+    # ── Git global config ────────────────────────────────────────
     gitconfig = sys_dir / "git-config" / ".gitconfig"
     if gitconfig.exists():
         env["GIT_CONFIG_GLOBAL"] = str(gitconfig)
 
-    # VENV variables
+    # ── Venv activation ─────────────────────────────────────────
     venv_dir = env_dir / "venv"
     if (venv_dir / "Scripts").exists():
         env["VIRTUAL_ENV"] = str(venv_dir)
