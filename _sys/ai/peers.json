@@ -1,5 +1,5 @@
 {
-  "_version": "1.0",
+  "_version": "1.1",
   "_help": "AI peer registry. Add a peer here — setup.py installs, cleanup.py uninstalls, manage.py creates junctions. No code changes needed.",
   "peers": {
     "claude": {
@@ -18,6 +18,11 @@
       },
       "env_vars": {
         "CLAUDE_CONFIG_DIR": "config"
+      },
+      "cleanup": {
+        "peer_paths": [],
+        "peer_globs": [],
+        "config_paths": ["daemon.log", "plugins/cache/"]
       }
     },
     "gemini": {
@@ -34,7 +39,12 @@
       "project_junction": {
         "portable_subpath": "project"
       },
-      "env_vars": {}
+      "env_vars": {},
+      "cleanup": {
+        "peer_paths": ["usage.json", "session-map.json", "session.lock", "session-id.txt"],
+        "peer_globs": ["cq-*.txt"],
+        "config_paths": ["tmp/"]
+      }
     },
     "chatgpt": {
       "enabled": false,
@@ -44,7 +54,12 @@
       "sys_subdir": "chatgpt",
       "host_junction": null,
       "project_junction": null,
-      "env_vars": {}
+      "env_vars": {},
+      "cleanup": {
+        "peer_paths": [],
+        "peer_globs": [],
+        "config_paths": []
+      }
     }
   }
 }

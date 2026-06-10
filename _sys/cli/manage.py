@@ -15,8 +15,20 @@ if str(sys_dir) not in sys.path:
 
 from core.config import config
 
+
 def get_base_dir():
     return config.get_base_dir()
+
+
+def load_peers(sys_dir: Path) -> dict:
+    """Load AI peer definitions from _sys/ai/peers.json."""
+    peers_path = sys_dir / "ai" / "peers.json"
+    if peers_path.exists():
+        try:
+            return json.loads(peers_path.read_text(encoding="utf-8")).get("peers", {})
+        except Exception:
+            pass
+    return {}
 
 def get_registry_key_name(base_dir):
     leaf = base_dir.name
@@ -69,85 +81,123 @@ def get_subst_mappings():
         pass
     return mappings
 
-def set_gemini_portability(base_dir):
-    gemini_host = Path(os.environ["USERPROFILE"]) / ".gemini"
-    gemini_portable = base_dir / "_sys" / "gemini" / "config"
+def set_peer_portability(base_dir, peer_id, peer):
+    sys_subdir = peer.get("sys_subdir")
+    root_dir = peer.get("root_dir")
     
-    gemini_portable.mkdir(parents=True, exist_ok=True)
-    
-    host_exists = False
-    is_junction = False
-    try:
-        st = gemini_host.lstat()
-        host_exists = True
-        if os.path.islink(gemini_host) or getattr(st, 'st_reparse_tag', 0) == 0xA0000003:
-            is_junction = True
-    except FileNotFoundError:
-        pass
-    except Exception:
-        pass
-
-    if host_exists:
-        if is_junction:
+    # 1. Host Junction (Config)
+    host_j = peer.get("host_junction")
+    if host_j:
+        host_env = host_j.get("host_env")
+        host_dirname = host_j.get("host_dirname")
+        portable_subpath = host_j.get("portable_subpath", "config")
+        
+        if host_env in os.environ:
+            host_path = Path(os.environ[host_env]) / host_dirname
+            portable_path = base_dir / "_sys" / sys_subdir / portable_subpath
+            portable_path.mkdir(parents=True, exist_ok=True)
+            
+            host_exists = False
+            is_junction = False
             try:
-                gemini_host.unlink()
-                print(f"  [Info] Removed existing junction: {gemini_host}")
+                st = host_path.lstat()
+                host_exists = True
+                # Check for junction reparse tag
+                if os.path.islink(host_path) or getattr(st, 'st_reparse_tag', 0) == 0xA0000003:
+                    is_junction = True
+            except FileNotFoundError:
+                pass
+            
+            if host_exists:
+                if is_junction:
+                    try:
+                        host_path.unlink()
+                    except Exception:
+                        _cmd(f"rmdir \"{host_path}\"")
+                else:
+                    backup = host_path.with_suffix(".host_backup")
+                    if not backup.exists():
+                        try:
+                            shutil.move(str(host_path), str(backup))
+                            print(f"  [Info] Backed up host {peer_id} config to {backup.name}")
+                        except Exception as e:
+                            print(f"  [Warning] Could not backup host {peer_id} config: {e}")
+                            return
+                    else:
+                        print(f"  [Warning] {host_dirname} and backup both exist. Skipping junction.")
+                        return
+
+            try:
+                _cmd(f"mklink /J \"{host_path}\" \"{portable_path}\"")
+                print(f"  [OK] {peer_id} Host Portability enabled ({host_dirname} -> _sys/{sys_subdir}/{portable_subpath})")
             except Exception as e:
-                print(f"  [Warning] Could not remove existing junction: {e}")
-                return
-        else:
-            backup = gemini_host.with_suffix(".host_backup")
-            if not backup.exists():
+                print(f"  [Fail] Could not create {peer_id} host junction: {e}")
+
+    # 2. Project Junction
+    proj_j = peer.get("project_junction")
+    if proj_j:
+        portable_subpath = proj_j.get("portable_subpath", "project")
+        try:
+            _ensure_junction(base_dir / root_dir, base_dir / "_sys" / sys_subdir / portable_subpath)
+            print(f"  [OK] {peer_id} Project Portability enabled ({root_dir} -> _sys/{sys_subdir}/{portable_subpath})")
+        except Exception as e:
+            print(f"  [Fail] Could not set {peer_id} project junction: {e}")
+
+def remove_peer_portability(base_dir, peer_id, peer):
+    sys_subdir = peer.get("sys_subdir")
+    root_dir = peer.get("root_dir")
+    
+    # 1. Host Junction
+    host_j = peer.get("host_junction")
+    if host_j:
+        host_env = host_j.get("host_env")
+        host_dirname = host_j.get("host_dirname")
+        if host_env in os.environ:
+            host_path = Path(os.environ[host_env]) / host_dirname
+            
+            is_junction = False
+            try:
+                st = host_path.lstat()
+                if os.path.islink(host_path) or getattr(st, 'st_reparse_tag', 0) == 0xA0000003:
+                    is_junction = True
+            except Exception:
+                pass
+
+            if is_junction:
                 try:
-                    shutil.move(str(gemini_host), str(backup))
-                    print(f"  [Info] Backed up host Gemini config to {backup.name}")
+                    _cmd(f"rmdir \"{host_path}\"")
+                    print(f"  [OK] {peer_id} Host Portability disabled ({host_dirname} junction removed)")
+                    
+                    backup = host_path.with_suffix(".host_backup")
+                    if backup.exists():
+                        shutil.move(str(backup), str(host_path))
+                        print(f"  [Info] Restored host {peer_id} config from {backup.name}")
                 except Exception as e:
-                    print(f"  [Warning] Could not backup host Gemini config: {e}")
-                    return
-            else:
-                print("  [Warning] .gemini and .gemini.host_backup both exist. Skipping junction to prevent data loss.")
-                return
+                    print(f"  [Fail] Error removing {peer_id} host junction: {e}")
 
-    try:
-        _cmd(f"mklink /J \"{gemini_host}\" \"{gemini_portable}\"")
-        print("  [OK] Gemini Portability enabled (Junction created)")
-    except Exception as e:
-        print(f"  [Fail] Could not create Gemini junction: {e}")
-
-def remove_gemini_portability(base_dir):
-    gemini_host = Path(os.environ["USERPROFILE"]) / ".gemini"
-    gemini_portable = base_dir / "_sys" / "gemini" / "config"
-    
-    host_exists = False
-    is_junction = False
-    try:
-        st = gemini_host.lstat()
-        host_exists = True
-        if os.path.islink(gemini_host) or getattr(st, 'st_reparse_tag', 0) == 0xA0000003:
-            is_junction = True
-    except FileNotFoundError:
-        pass
-    except Exception:
-        pass
-
-    if host_exists:
-        if is_junction:
-            try:
-                _cmd(f"rmdir \"{gemini_host}\"")
-                print("  [OK] Gemini Portability disabled (Junction removed)")
-                
-                backup = gemini_host.with_suffix(".host_backup")
-                if backup.exists():
-                    shutil.move(str(backup), str(gemini_host))
-                    print(f"  [Info] Restored host Gemini config from {backup.name}")
-            except Exception as e:
-                print(f"  [Fail] Error removing junction: {e}")
+    # 2. Project Junction
+    proj_j = peer.get("project_junction")
+    if proj_j:
+        try:
+            if (base_dir / root_dir).exists():
+                _remove_junction(base_dir / root_dir)
+                print(f"  [OK] {peer_id} Project Portability disabled ({root_dir} junction removed)")
+        except Exception as e:
+            print(f"  [Fail] Error removing {peer_id} project junction: {e}")
 
 def _ensure_junction(host: Path, portable: Path) -> None:
     """host -> portable 방향 Junction 생성. host가 실제 디렉터리면 내용을 이동 후 교체."""
     portable.mkdir(parents=True, exist_ok=True)
 
-    if host.is_junction() or host.is_symlink():
+    is_reparse = False
+    try:
+        st = host.lstat()
+        if os.path.islink(host) or getattr(st, 'st_reparse_tag', 0) == 0xA0000003:
+            is_reparse = True
+    except FileNotFoundError:
+        pass
+
+    if is_reparse:
         _cmd(f"rmdir \"{host}\"")
     elif host.exists():
         for item in list(host.iterdir()):
@@ -156,7 +206,8 @@ def _ensure_junction(host: Path, portable: Path) -> None:
                 continue
             dest = portable / item.name
             if dest.exists():
-                shutil.rmtree(str(dest)) if dest.is_dir() else dest.unlink()
+                if dest.is_dir(): shutil.rmtree(str(dest))
+                else: dest.unlink()
             shutil.move(str(item), str(portable))
         host.rmdir()
 
@@ -164,40 +215,16 @@ def _ensure_junction(host: Path, portable: Path) -> None:
 
 
 def _remove_junction(host: Path) -> None:
-    if host.is_symlink():
+    is_reparse = False
+    try:
+        st = host.lstat()
+        if os.path.islink(host) or getattr(st, 'st_reparse_tag', 0) == 0xA0000003:
+            is_reparse = True
+    except Exception:
+        pass
+    if is_reparse:
         _cmd(f"rmdir \"{host}\"")
 
-
-def set_claude_project_portability(base_dir):
-    try:
-        _ensure_junction(base_dir / ".claude", base_dir / "_sys" / "claude" / "project")
-        print("  [OK] Claude Project Portability enabled (.claude -> _sys/claude/project)")
-    except Exception as e:
-        print(f"  [Fail] Could not set .claude junction: {e}")
-
-
-def remove_claude_project_portability(base_dir):
-    try:
-        _remove_junction(base_dir / ".claude")
-        print("  [OK] Claude Project Portability disabled (.claude junction removed)")
-    except Exception as e:
-        print(f"  [Fail] Error removing .claude junction: {e}")
-
-
-def set_gemini_project_portability(base_dir):
-    try:
-        _ensure_junction(base_dir / ".gemini", base_dir / "_sys" / "gemini" / "project")
-        print("  [OK] Gemini Project Portability enabled (.gemini -> _sys/gemini/project)")
-    except Exception as e:
-        print(f"  [Fail] Could not set .gemini junction: {e}")
-
-
-def remove_gemini_project_portability(base_dir):
-    try:
-        _remove_junction(base_dir / ".gemini")
-        print("  [OK] Gemini Project Portability disabled (.gemini junction removed)")
-    except Exception as e:
-        print(f"  [Fail] Error removing .gemini junction: {e}")
 
 
 def update_claude_settings(base_dir, drive_letter):
@@ -292,9 +319,11 @@ def action_register(base_dir):
     print(f"{'='*50}")
 
     global_cleanup(base_dir)
-    set_gemini_portability(base_dir)
-    set_claude_project_portability(base_dir)
-    set_gemini_project_portability(base_dir)
+    
+    peers = config.get_peers_config()
+    for peer_id, peer in peers.items():
+        if peer.get("enabled", True):
+            set_peer_portability(base_dir, peer_id, peer)
 
     assigned_letter = None
     subst_map = get_subst_mappings()
@@ -386,14 +415,15 @@ def action_unregister(base_dir):
 
     delete_relay_bat(get_registry_key_name(base_dir))
     global_cleanup(base_dir)
-    remove_gemini_portability(base_dir)
-    remove_claude_project_portability(base_dir)
-    remove_gemini_project_portability(base_dir)
+    
+    peers = config.get_peers_config()
+    for peer_id, peer in peers.items():
+        remove_peer_portability(base_dir, peer_id, peer)
 
-    settings_path = base_dir / ".claude" / "settings.local.json"
+    settings_path = base_dir / "_sys" / "claude" / "project" / "settings.local.json"
     if settings_path.exists():
         settings_path.unlink()
-        print("  [OK] .claude/settings.local.json removed")
+        print("  [OK] claude/project/settings.local.json removed")
 
     # Clear SUBST mapping from config
     config.set("SUBST_DRIVE_LETTER", None)

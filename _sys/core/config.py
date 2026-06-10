@@ -43,6 +43,18 @@ class ConfigManager:
                 cls._config = {}
 
     @classmethod
+    def get_peers_config(cls) -> Dict[str, Any]:
+        """Reads _sys/ai/peers.json and returns the peers dictionary."""
+        peers_path = cls.get_sys_dir() / "ai" / "peers.json"
+        if peers_path.exists():
+            try:
+                with open(peers_path, "r", encoding="utf-8") as f:
+                    return json.load(f).get("peers", {})
+            except Exception as e:
+                print(f"[Warning] Failed to load peers.json: {e}")
+        return {}
+
+    @classmethod
     def get(cls, key: str, default: Any = None) -> Any:
         cls._lazy_load()
         return cls._config.get(key, default)
