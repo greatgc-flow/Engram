@@ -2,7 +2,7 @@
 :: ================================================================
 :: gemini-set-ratio.bat [0-10]
 ::
-:: Sets COLLAB_RATE in _sys\gemini\config.json (PROTOCOL v3.1 Mixed-Model)
+:: Sets COLLAB_RATE in _sys\ai\config.json (PROTOCOL v3.1 Mixed-Model)
 ::
 :: Anchor Definitions:
 ::   [0] Solo         (100%% Autonomy - No consensus)
@@ -12,9 +12,7 @@
 ::   [10] Brain Sync  (0%% Autonomy - ABSOLUTE ZERO EXCEPTIONS)
 :: ================================================================
 
-if not defined GEMINI_DIR for %%I in ("%~dp0.") do set "GEMINI_DIR=%%~fI"
-set "_GD=%GEMINI_DIR%"
-set "_CFG=%_GD%\config.json"
+for %%I in ("%~dp0..\ai\config.json") do set "_CFG=%%~fI"
 
 if "%~1"=="" (
     echo Usage: gemini-set-ratio.bat [0-10]
@@ -46,4 +44,4 @@ if "%_N%"=="10" echo   [Brain Sync - ABSOLUTE ZERO EXCEPTIONS]
 
 type "%_CFG%"
 
-set "_GD=" & set "_CFG=" & set "_N="
+set "_CFG=" & set "_N="

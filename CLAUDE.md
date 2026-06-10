@@ -12,16 +12,32 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
 
 ```
 [PortableDev]/
-├── install.bat / register.bat / unregister.bat
+├── install.bat / register.bat / unregister.bat / cleanup.bat
 ├── README.md / CLAUDE.md / GEMINI.md / CONVENTION.md / PROTOCOL.md
 ├── workspace/     ← default project folder
-├── .claude/       ← agents/ + skills/
-├── .gemini/       ← instructions/ + tools/ (symmetric parity)
+├── .claude/       ← junction → _sys/claude/project/ (agents/ + skills/)
+├── .gemini/       ← junction → _sys/gemini/project/ (symmetric parity)
 ├── _state/        ← agent session workspace (auto-managed)
 ├── .ai/           ← IPC state (hub.py managed — never write directly)
 ├── _archive/      ← logs, sessions, collab-log, workspace backups
-└── _sys/          ← cli/ hooks/ checks/ core/ templates/ env/ tools/ tests/ data/
-                     SYSTEM_ARCHITECTURE.md  git-config/  claude/  gemini/
+└── _sys/
+    ├── ai/        ← cross-peer AI layer (peer-agnostic)
+    │   ├── config.json   ← collab config (ratio, review_interval_min)
+    │   ├── peers.json    ← peer registry (drives setup/cleanup/manage)
+    │   └── common/       ← shared agents/ skills/ mcp/ (workspace-independent)
+    ├── claude/    ← Claude-specific: config/ project/ agent/ *.bat
+    ├── gemini/    ← Gemini-specific: config/ project/ *.bat
+    ├── core/      ← hub.py, setup.py, config.py
+    ├── cli/       ← manage.py, cleanup.py, launcher.py, *.bat
+    ├── hooks/     ← lifecycle event handlers
+    ├── checks/    ← Axis A-I scan tools
+    ├── tests/     ← unit + integration tests
+    ├── templates/ ← CLAUDE_*.md, GEMINI.md templates
+    ├── docs/      ← TAXONOMY*.md, design docs
+    ├── git-config/
+    ├── env/       ← downloaded runtimes (NOT in git)
+    ├── tools/     ← downloaded utilities (NOT in git)
+    └── data/      ← temp/ logs/ setup-files/ (NOT in git)
 ```
 Full annotated tree: `README.md`
 
@@ -40,8 +56,10 @@ Full annotated tree: `README.md`
 | No USERPROFILE/APPDATA override | Preserves Git, SSH, host credentials |
 | Tool-specific env vars (NPM_CONFIG_*, etc.) | Precise isolation without broad side effects |
 | `CLAUDE_CONFIG_DIR = _sys\claude\config\` | Claude Code CLI auth/config travels with USB |
-| Gemini CLI via npm-global (nodejs/npm-global) | `gemini.cmd` auto-in-PATH via existing npm-global PATH entry |
-| Gemini auth in `%USERPROFILE%\.gemini\` (host) | Junctioned to `_sys\gemini\config` for portability |
+| AI CLI via npm-global (nodejs/npm-global) | `claude.cmd`, `gemini.cmd` auto-in-PATH; driven by `_sys/ai/peers.json` |
+| AI peer host junctions | `%USERPROFILE%\.{peer}` → `_sys/{peer}/config` — portability per peer |
+| `_sys/ai/config.json` for COLLAB_RATE | Cross-peer ratio setting; peer-agnostic (not inside gemini/) |
+| `_sys/ai/peers.json` drives install/cleanup | Adding peer = edit peers.json; no code change needed |
 | `_archive/` for all rolling data | logs + sessions + workspace backups in one place for easy cleanup |
 | Individual `if exist` lines (not for-loop) | for-loop expands %PATH% once -> bug |
 | `-LiteralPath` in all registry PS1 ops | `HKCU:\Software\Classes\*\shell\...` wildcard hang prevention |

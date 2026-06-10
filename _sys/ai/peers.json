@@ -1,0 +1,50 @@
+{
+  "_version": "1.0",
+  "_help": "AI peer registry. Add a peer here — setup.py installs, cleanup.py uninstalls, manage.py creates junctions. No code changes needed.",
+  "peers": {
+    "claude": {
+      "enabled": true,
+      "description": "Anthropic Claude Code CLI",
+      "npm_package": "@anthropic-ai/claude-code",
+      "root_dir": ".claude",
+      "sys_subdir": "claude",
+      "host_junction": {
+        "host_env": "USERPROFILE",
+        "host_dirname": ".claude",
+        "portable_subpath": "config"
+      },
+      "project_junction": {
+        "portable_subpath": "project"
+      },
+      "env_vars": {
+        "CLAUDE_CONFIG_DIR": "config"
+      }
+    },
+    "gemini": {
+      "enabled": true,
+      "description": "Google Gemini CLI",
+      "npm_package": "@google/gemini-cli",
+      "root_dir": ".gemini",
+      "sys_subdir": "gemini",
+      "host_junction": {
+        "host_env": "USERPROFILE",
+        "host_dirname": ".gemini",
+        "portable_subpath": "config"
+      },
+      "project_junction": {
+        "portable_subpath": "project"
+      },
+      "env_vars": {}
+    },
+    "chatgpt": {
+      "enabled": false,
+      "description": "OpenAI ChatGPT CLI — disabled by default, enable when ready",
+      "npm_package": "openai",
+      "root_dir": ".chatgpt",
+      "sys_subdir": "chatgpt",
+      "host_junction": null,
+      "project_junction": null,
+      "env_vars": {}
+    }
+  }
+}

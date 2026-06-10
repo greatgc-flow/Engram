@@ -1,0 +1,6 @@
+{
+  "_comment": "Cross-peer AI collaboration config. Peer-agnostic. Updated by set-ratio command.",
+  "ratio": 10,
+  "review_interval_min": 5,
+  "last_review_ts": null
+}

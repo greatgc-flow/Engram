@@ -15,8 +15,7 @@ from _common import (  # noqa: E402
     _PORTABLE_ROOT, _SYS_DIR, ai_available, gemini_call, is_refusal, log_collab,
 )
 
-_GEMINI_DIR = _SYS_DIR / "gemini"
-_CFG_FILE = _GEMINI_DIR / "config.json"
+_CFG_FILE = _SYS_DIR / "ai" / "config.json"
 
 
 def _ratio_ok(threshold: int) -> bool:

@@ -34,25 +34,62 @@ _sys/core/config.json
 .env
 
 # =================================================================
-# 5. Agent Dynamic Data & Status Logs
+# 5. Agent Dynamic Data & Status Logs (Peer-Agnostic)
 # =================================================================
-# .claude / .gemini are junctions to _sys/claude/project and _sys/gemini/project
-# Ignore junction paths to prevent double-tracking; content tracked under _sys/
+# Root AI peer junction dirs (junctions → _sys/{peer}/project/)
+# Adding a new peer: add its root_dir here (see _sys/ai/peers.json)
 .claude/
 .gemini/
-_sys/claude/project/settings.local.json
+.chatgpt/
 
-# Claude Local Status
-_sys/claude/status.json
+# Per-peer runtime state (peer-agnostic wildcard)
+_sys/*/project/settings.local.json
+_sys/*/status.json
+_sys/*/usage.json
+_sys/*/session-id.txt
+_sys/*/session-map.json
+_sys/*/session.lock
+_sys/*/cq-*.txt
+
+# Claude auth/runtime data in config/ (tracked: CLAUDE.md, settings.json, statusline-command.sh)
+_sys/claude/config/.claude.json
+_sys/claude/config/.credentials.json
+_sys/claude/config/.last-cleanup
+_sys/claude/config/.last-update-result.json
+_sys/claude/config/backups/
+_sys/claude/config/cache/
+_sys/claude/config/daemon.lock
+_sys/claude/config/daemon.status.json
+_sys/claude/config/daemon/
+_sys/claude/config/file-history/
+_sys/claude/config/history.jsonl
+_sys/claude/config/jobs/
+_sys/claude/config/paste-cache/
+_sys/claude/config/plans/
+_sys/claude/config/plugins/
+_sys/claude/config/projects/
+_sys/claude/config/sessions/
+_sys/claude/config/shell-snapshots/
+_sys/claude/config/stats-cache.json
+_sys/claude/config/tasks/
 _sys/claude/config/tmp/
-# Gemini Local Status & Sessions
-_sys/gemini/status.json
-_sys/gemini/usage.json
-_sys/gemini/session-id.txt
-_sys/gemini/session-map.json
-_sys/gemini/session.lock
+
+# Gemini auth/runtime data in config/ (tracked: GEMINI.md, CONTEXT.md, policies/)
+_sys/gemini/config/google_accounts.json
+_sys/gemini/config/history/
+_sys/gemini/config/installation_id
+_sys/gemini/config/oauth_creds.json
+_sys/gemini/config/projects.json
+_sys/gemini/config/settings.json
+_sys/gemini/config/state.json
+_sys/gemini/config/trustedFolders.json
 _sys/gemini/config/tmp/
-_sys/gemini/cq-*.txt
+
+# Deprecated: ratio/collab settings moved to _sys/ai/config.json
+_sys/gemini/config.json
+
+# Old version archives (moved to _sys/docs/Remains — not tracked)
+_sys/docs/Remains
 
 # =================================================================
 # 6. Test Environments & Results
