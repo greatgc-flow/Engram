@@ -1,6 +1,6 @@
 {
-  "_version": "1.1",
-  "_help": "AI peer registry. Add a peer here — setup.py installs, cleanup.py uninstalls, manage.py creates junctions. No code changes needed.",
+  "_version": "1.2",
+  "_help": "AI peer registry. Add a peer here — setup/cleanup/manage/workspace-init all driven by this file. No code changes needed.",
   "peers": {
     "claude": {
       "enabled": true,
@@ -15,6 +15,12 @@
       },
       "project_junction": {
         "portable_subpath": "project"
+      },
+      "workspace": {
+        "shadow_subdir": ".ai/claude",
+        "junction_name": ".claude",
+        "glue_file": "CLAUDE.md",
+        "glue_template": "templates/workspace.md"
       },
       "env_vars": {
         "CLAUDE_CONFIG_DIR": "config"
@@ -39,6 +45,12 @@
       "project_junction": {
         "portable_subpath": "project"
       },
+      "workspace": {
+        "shadow_subdir": ".ai/gemini",
+        "junction_name": ".gemini",
+        "glue_file": "GEMINI.md",
+        "glue_template": "templates/workspace.md"
+      },
       "env_vars": {},
       "cleanup": {
         "peer_paths": ["usage.json", "session-map.json", "session.lock", "session-id.txt"],
@@ -54,6 +66,12 @@
       "sys_subdir": "chatgpt",
       "host_junction": null,
       "project_junction": null,
+      "workspace": {
+        "shadow_subdir": ".ai/chatgpt",
+        "junction_name": ".chatgpt",
+        "glue_file": "CHATGPT.md",
+        "glue_template": "templates/workspace.md"
+      },
       "env_vars": {},
       "cleanup": {
         "peer_paths": [],

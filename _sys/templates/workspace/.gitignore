@@ -1,6 +1,9 @@
 # Workspace-local gitignore template
 # Copy to workspace root and customize
 
+# AI shadow directory (junctions + generated state — not project source)
+.ai/
+
 # Build outputs
 dist/
 build/

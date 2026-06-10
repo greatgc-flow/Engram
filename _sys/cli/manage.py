@@ -415,21 +415,135 @@ def action_unregister(base_dir):
 
     delete_relay_bat(get_registry_key_name(base_dir))
     global_cleanup(base_dir)
-    
-    peers = config.get_peers_config()
+
+    sys_dir = base_dir / "_sys"
+    peers = load_peers(sys_dir)
     for peer_id, peer in peers.items():
         remove_peer_portability(base_dir, peer_id, peer)
 
-    settings_path = base_dir / "_sys" / "claude" / "project" / "settings.local.json"
-    if settings_path.exists():
-        settings_path.unlink()
-        print("  [OK] claude/project/settings.local.json removed")
+    # Remove per-peer local settings (driven by peers.json, no hardcoding)
+    for peer_id, peer_cfg in peers.items():
+        subdir = sys_dir / peer_cfg.get("sys_subdir", peer_id)
+        settings_path = subdir / "project" / "settings.local.json"
+        if settings_path.exists():
+            settings_path.unlink()
+            print(f"  [OK] {peer_id}/project/settings.local.json removed")
 
     # Clear SUBST mapping from config
     config.set("SUBST_DRIVE_LETTER", None)
     print("  [OK] config.json cleared of drive mapping")
 
     print("\n Unregistration complete.")
+
+def _is_cli_available(peer_id: str, sys_dir: Path) -> bool:
+    """Check if a peer CLI binary exists in npm-global."""
+    npm_global = sys_dir / "env" / "nodejs" / "npm-global"
+    return (npm_global / f"{peer_id}.cmd").exists()
+
+
+def action_workspace_init(base_dir: Path, workspace_path: Path):
+    """
+    Initialize a workspace with MECE .ai/ shadow structure.
+
+    Layout after init:
+        workspace/proj/
+        ├── .ai/
+        │   ├── common/   → junction → _sys/ai/common/   (cross-workspace agents/skills/mcp)
+        │   ├── claude/   (peer shadow — source of truth for .claude/)
+        │   └── gemini/   (peer shadow — source of truth for .gemini/)
+        ├── .claude/      → junction → .ai/claude/   (if Claude CLI available)
+        ├── .gemini/      → junction → .ai/gemini/   (if Gemini CLI available)
+        └── CONTEXT.md    (peer-agnostic project context)
+    """
+    sys_dir = base_dir / "_sys"
+    peers = load_peers(sys_dir)
+
+    print(f"\n{'='*50}")
+    print(f" Workspace Init: {workspace_path}")
+    print(f"{'='*50}")
+
+    # ── Create workspace root from template (if new) ─────────────────────
+    if not workspace_path.exists():
+        template_dir = sys_dir / "templates" / "workspace"
+        if template_dir.exists():
+            shutil.copytree(str(template_dir), str(workspace_path))
+            print(f"  [OK] Created from template: {workspace_path.name}")
+        else:
+            workspace_path.mkdir(parents=True)
+            print(f"  [OK] Created (no template found): {workspace_path.name}")
+    else:
+        print(f"  [Info] Workspace exists — adding .ai/ structure only")
+
+    # ── .ai/ shadow directory ─────────────────────────────────────────────
+    ai_dir = workspace_path / ".ai"
+    ai_dir.mkdir(exist_ok=True)
+
+    # Common junction: .ai/common/ → _sys/ai/common/
+    common_src  = sys_dir / "ai" / "common"
+    common_link = ai_dir / "common"
+    if common_src.exists() and not common_link.exists():
+        try:
+            _ensure_junction(common_link, common_src)
+            print(f"  [OK] .ai/common → _sys/ai/common (junction)")
+        except Exception as e:
+            print(f"  [Warn] Could not create common junction: {e}")
+    elif common_link.exists():
+        print(f"  [--] .ai/common already set up")
+
+    # ── Per-peer scaffold + junction ──────────────────────────────────────
+    proj_name = workspace_path.name
+    for peer_id, cfg in peers.items():
+        ws_cfg        = cfg.get("workspace", {})
+        shadow_subdir = ws_cfg.get("shadow_subdir", f".ai/{peer_id}")
+        junction_name = ws_cfg.get("junction_name", cfg.get("root_dir", f".{peer_id}"))
+        glue_file     = ws_cfg.get("glue_file")
+        glue_template = ws_cfg.get("glue_template")
+
+        shadow_path   = workspace_path / Path(shadow_subdir)
+        shadow_path.mkdir(parents=True, exist_ok=True)
+
+        # Glue file (peer-specific thin wrapper over CONTEXT.md)
+        if glue_file:
+            glue_dest = shadow_path / glue_file
+            if not glue_dest.exists():
+                glue_src = None
+                if glue_template:
+                    glue_src = sys_dir / cfg.get("sys_subdir", peer_id) / glue_template
+                if glue_src and glue_src.exists():
+                    content = glue_src.read_text(encoding="utf-8").replace(
+                        "{{PROJECT_NAME}}", proj_name
+                    )
+                    glue_dest.write_text(content, encoding="utf-8")
+                    print(f"  [OK] {peer_id}: {glue_file} created from template")
+                else:
+                    glue_dest.write_text(
+                        f"# {peer_id.capitalize()} — {proj_name}\n"
+                        f"> Core context: see [CONTEXT.md](../CONTEXT.md)\n",
+                        encoding="utf-8"
+                    )
+                    print(f"  [OK] {peer_id}: {glue_file} created (default)")
+            else:
+                print(f"  [--] {peer_id}: {glue_file} already exists")
+
+        # Junction: workspace/.{peer}/ → workspace/.ai/{peer}/
+        junction_path = workspace_path / junction_name
+        if _is_cli_available(peer_id, sys_dir):
+            if not junction_path.exists():
+                try:
+                    _ensure_junction(junction_path, shadow_path)
+                    print(f"  [OK] {peer_id}: {junction_name} → {shadow_subdir} (junction)")
+                except Exception as e:
+                    print(f"  [Fail] {peer_id}: Could not create junction: {e}")
+            else:
+                print(f"  [--] {peer_id}: {junction_name} already exists")
+        else:
+            if not cfg.get("enabled", True):
+                print(f"  [--] {peer_id}: disabled (skipped)")
+            else:
+                print(f"  [--] {peer_id}: CLI not installed — scaffold ready, junction skipped")
+
+    print(f"\n  Done. Workspace '{proj_name}' is ready.")
+
 
 def action_cleanup(base_dir):
     # Delegate to cleanup.py
@@ -443,26 +557,40 @@ def action_cleanup(base_dir):
 def main():
     try:
         import argparse
-        parser = argparse.ArgumentParser()
-        # Accept 'register', 'unregister', 'cleanup' (case-insensitive due to batch %~n0)
-        parser.add_argument("action", type=str)
+        parser = argparse.ArgumentParser(
+            description="Portable Dev Environment Manager",
+            formatter_class=argparse.RawTextHelpFormatter
+        )
+        parser.add_argument("action", type=str,
+                            help="register | unregister | cleanup | workspace-init")
+        parser.add_argument("target", nargs="?", default="",
+                            help="workspace-init: workspace name (under bdir/workspace/) or absolute path")
         parser.add_argument("--base-dir", type=str, default="")
-        # Allow trailing unknown args for cleanup
-        args, unknown = parser.parse_known_args()
+        args, _unknown = parser.parse_known_args()
 
         action = args.action.lower()
         bdir = Path(args.base_dir).resolve() if args.base_dir else get_base_dir()
-        
+
         if action == "register":
             action_register(bdir)
         elif action == "unregister":
             action_unregister(bdir)
         elif action == "cleanup":
             action_cleanup(bdir)
+        elif action in ("workspace-init", "workspace_init"):
+            if not args.target:
+                print("[Error] workspace-init requires a workspace name or path.")
+                print("  Usage: manage.py workspace-init <name>    (creates bdir/workspace/<name>)")
+                print("         manage.py workspace-init <abs-path>")
+                sys.exit(1)
+            t = Path(args.target)
+            ws_path = t if t.is_absolute() else bdir / "workspace" / t
+            action_workspace_init(bdir, ws_path)
         else:
-            print(f"[Error] Unknown action: {action}")
+            print(f"[Error] Unknown action: '{action}'")
+            print("  Actions: register | unregister | cleanup | workspace-init <name>")
             sys.exit(1)
-            
+
     except Exception as e:
         print(f"\n[FATAL ERROR] An unexpected error occurred:")
         print(f"  {e}\n")
