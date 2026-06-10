@@ -63,6 +63,45 @@ def run_cleanup(tier=1, all_yes=False, dry_run=False, base_dir=None):
     total_freed += remove_path_safe(env_dir / "python" / "pip-cache", "pip 캐시", dry_run)
     total_freed += remove_path_safe(env_dir / "nodejs" / "npm-cache", "npm 캐시", dry_run)
     
+    # AI and IPC State
+    total_freed += remove_path_safe(base_dir / ".ai", r"AI IPC 통신 로그 (.ai)", dry_run)
+    total_freed += remove_path_safe(base_dir / "_state", r"AI 임시 상태 (_state)", dry_run)
+    total_freed += remove_path_safe(base_dir / "WORKLOG.md", r"임시 작업 로그 (WORKLOG.md)", dry_run)
+    
+    # Test Caches
+    total_freed += remove_path_safe(base_dir / ".pytest_cache", r"최상위 pytest 캐시", dry_run)
+    total_freed += remove_path_safe(sys_dir / "tests" / ".pytest_cache", r"단위 테스트 캐시", dry_run)
+    total_freed += remove_path_safe(sys_dir / "tests" / "unit" / ".pytest_cache", r"단위 테스트 캐시(unit)", dry_run)
+    total_freed += remove_path_safe(sys_dir / "tests" / "results", r"이전 테스트 결과물", dry_run)
+    total_freed += remove_path_safe(sys_dir / "tests" / "local_test_tmp", r"로컬 통합 테스트 임시파일", dry_run)
+    total_freed += remove_path_safe(sys_dir / "tests" / "integration" / "parallel_test_tmp", r"병렬 통합 테스트 임시파일", dry_run)
+    
+    # Dynamic Agent Config Garbage
+    total_freed += remove_path_safe(sys_dir / "claude" / "status.json", r"Claude 상태 파일", dry_run)
+    total_freed += remove_path_safe(sys_dir / "claude" / "config" / "daemon.log", r"Claude 데몬 로그", dry_run)
+    total_freed += remove_path_safe(sys_dir / "claude" / "config" / "plugins" / "cache" / "harness-marketplace" / "harness" / "1.2.0" / "_workspace", r"플러그인 캐시 워크스페이스", dry_run)
+    
+    total_freed += remove_path_safe(sys_dir / "gemini" / "status.json", r"Gemini 상태 파일", dry_run)
+    total_freed += remove_path_safe(sys_dir / "gemini" / "usage.json", r"Gemini 사용량 로그", dry_run)
+    total_freed += remove_path_safe(sys_dir / "gemini" / "session-map.json", r"Gemini 세션 맵", dry_run)
+    total_freed += remove_path_safe(sys_dir / "gemini" / "session.lock", r"Gemini 세션 락", dry_run)
+    total_freed += remove_path_safe(sys_dir / "gemini" / "config" / "tmp", r"Gemini 메모리 임시 저장소", dry_run)
+    for cq_file in (sys_dir / "gemini").glob("cq-*.txt"):
+        total_freed += remove_path_safe(cq_file, f"Gemini IPC 잔여 파일 ({cq_file.name})", dry_run)
+        
+    # Global Python Caches
+    pycache_count = 0
+    pycache_size = 0
+    for p in base_dir.rglob("__pycache__"):
+        if p.is_dir():
+            sz = get_dir_size(p)
+            pycache_size += sz
+            if not dry_run: shutil.rmtree(p)
+            pycache_count += 1
+    if pycache_count > 0:
+        print(f"  [OK] __pycache__ — {pycache_count}개 디렉토리 삭제됨 ({format_size(pycache_size)})")
+        total_freed += pycache_size
+    
     # Logs
     log_path = data_dir / "logs"
     if log_path.exists():
