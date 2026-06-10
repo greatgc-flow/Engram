@@ -29,6 +29,11 @@ def get_registry_key_name(base_dir):
     return f"SandboxRun_{safe_key}"
 
 
+def _cmd(command: str) -> None:
+    """shell=True로 cmd 명령 실행 — list2cmdline 이중 인용 문제 없이 COMSPEC 사용."""
+    subprocess.run(command, shell=True, check=True, capture_output=True)
+
+
 def get_relay_path(ascii_key: str) -> Path:
     localappdata = Path(os.environ.get("LOCALAPPDATA", ""))
     return localappdata / f"{ascii_key}.bat"
@@ -40,7 +45,7 @@ def write_relay_bat(base_dir: Path, ascii_key: str) -> Path:
     content = (
         "@echo off\r\n"
         f"set \"SANDBOX_ROOT={base_dir}\"\r\n"
-        "call \"%SANDBOX_ROOT%\\start.bat\" \"%~1\"\r\n"
+        "call \"%SANDBOX_ROOT%\\_sys\\start.bat\" \"%~1\"\r\n"
     )
     relay_path.write_bytes(content.encode("mbcs"))
     return relay_path
@@ -104,9 +109,9 @@ def set_gemini_portability(base_dir):
                 return
 
     try:
-        subprocess.run(["cmd", "/c", f"mklink /J \"{gemini_host}\" \"{gemini_portable}\""], check=True, capture_output=True)
+        _cmd(f"mklink /J \"{gemini_host}\" \"{gemini_portable}\"")
         print("  [OK] Gemini Portability enabled (Junction created)")
-    except subprocess.CalledProcessError as e:
+    except Exception as e:
         print(f"  [Fail] Could not create Gemini junction: {e}")
 
 def remove_gemini_portability(base_dir):
@@ -128,7 +133,7 @@ def remove_gemini_portability(base_dir):
     if host_exists:
         if is_junction:
             try:
-                subprocess.run(["cmd", "/c", f"rmdir \"{gemini_host}\""], check=True)
+                _cmd(f"rmdir \"{gemini_host}\"")
                 print("  [OK] Gemini Portability disabled (Junction removed)")
                 
                 backup = gemini_host.with_suffix(".host_backup")
@@ -137,6 +142,63 @@ def remove_gemini_portability(base_dir):
                     print(f"  [Info] Restored host Gemini config from {backup.name}")
             except Exception as e:
                 print(f"  [Fail] Error removing junction: {e}")
+
+def _ensure_junction(host: Path, portable: Path) -> None:
+    """host -> portable 방향 Junction 생성. host가 실제 디렉터리면 내용을 이동 후 교체."""
+    portable.mkdir(parents=True, exist_ok=True)
+
+    if host.is_junction() or host.is_symlink():
+        _cmd(f"rmdir \"{host}\"")
+    elif host.exists():
+        for item in list(host.iterdir()):
+            if item.name == "settings.local.json":
+                item.unlink()
+                continue
+            dest = portable / item.name
+            if dest.exists():
+                shutil.rmtree(str(dest)) if dest.is_dir() else dest.unlink()
+            shutil.move(str(item), str(portable))
+        host.rmdir()
+
+    _cmd(f"mklink /J \"{host}\" \"{portable}\"")
+
+
+def _remove_junction(host: Path) -> None:
+    if host.is_symlink():
+        _cmd(f"rmdir \"{host}\"")
+
+
+def set_claude_project_portability(base_dir):
+    try:
+        _ensure_junction(base_dir / ".claude", base_dir / "_sys" / "claude" / "project")
+        print("  [OK] Claude Project Portability enabled (.claude -> _sys/claude/project)")
+    except Exception as e:
+        print(f"  [Fail] Could not set .claude junction: {e}")
+
+
+def remove_claude_project_portability(base_dir):
+    try:
+        _remove_junction(base_dir / ".claude")
+        print("  [OK] Claude Project Portability disabled (.claude junction removed)")
+    except Exception as e:
+        print(f"  [Fail] Error removing .claude junction: {e}")
+
+
+def set_gemini_project_portability(base_dir):
+    try:
+        _ensure_junction(base_dir / ".gemini", base_dir / "_sys" / "gemini" / "project")
+        print("  [OK] Gemini Project Portability enabled (.gemini -> _sys/gemini/project)")
+    except Exception as e:
+        print(f"  [Fail] Could not set .gemini junction: {e}")
+
+
+def remove_gemini_project_portability(base_dir):
+    try:
+        _remove_junction(base_dir / ".gemini")
+        print("  [OK] Gemini Project Portability disabled (.gemini junction removed)")
+    except Exception as e:
+        print(f"  [Fail] Error removing .gemini junction: {e}")
+
 
 def update_claude_settings(base_dir, drive_letter):
     if not drive_letter:
@@ -231,6 +293,8 @@ def action_register(base_dir):
 
     global_cleanup(base_dir)
     set_gemini_portability(base_dir)
+    set_claude_project_portability(base_dir)
+    set_gemini_project_portability(base_dir)
 
     assigned_letter = None
     subst_map = get_subst_mappings()
@@ -323,6 +387,8 @@ def action_unregister(base_dir):
     delete_relay_bat(get_registry_key_name(base_dir))
     global_cleanup(base_dir)
     remove_gemini_portability(base_dir)
+    remove_claude_project_portability(base_dir)
+    remove_gemini_project_portability(base_dir)
 
     settings_path = base_dir / ".claude" / "settings.local.json"
     if settings_path.exists():

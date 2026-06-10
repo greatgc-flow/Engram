@@ -31,12 +31,17 @@ _sys/data/logs/
 **/local.config.bat
 _sys/config.json
 _sys/core/config.json
-.claude/settings.local.json
 .env
 
 # =================================================================
 # 5. Agent Dynamic Data & Status Logs
 # =================================================================
+# .claude / .gemini are junctions to _sys/claude/project and _sys/gemini/project
+# Ignore junction paths to prevent double-tracking; content tracked under _sys/
+.claude/
+.gemini/
+_sys/claude/project/settings.local.json
+
 # Claude Local Status
 _sys/claude/status.json
 _sys/claude/config/tmp/
@@ -48,7 +53,6 @@ _sys/gemini/session-map.json
 _sys/gemini/session.lock
 _sys/gemini/config/tmp/
 _sys/gemini/cq-*.txt
-.gemini/settings.json
 
 # =================================================================
 # 6. Test Environments & Results

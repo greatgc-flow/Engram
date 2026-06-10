@@ -5,6 +5,7 @@ Handles tiered cleanup of temporary files, caches, runtimes, and workspaces.
 import os
 import shutil
 import re
+import subprocess
 from pathlib import Path
 
 def get_dir_size(path):
@@ -22,6 +23,20 @@ def format_size(bytes):
     if bytes >= 1024**2: return f"{bytes/(1024**2):.2f} MB"
     if bytes >= 1024: return f"{bytes/1024:.2f} KB"
     return f"{bytes} B"
+
+def remove_junction_safe(path, label, dry_run=False):
+    path = Path(path)
+    if not path.is_symlink():
+        return
+    if dry_run:
+        print(f"  [Wait] {label} — Junction 해제 예정")
+        return
+    try:
+        subprocess.run(["cmd", "/c", f"rmdir \"{path}\""], check=True, capture_output=True)
+        print(f"  [OK] {label} — Junction 해제됨")
+    except Exception as e:
+        print(f"  [Fail] Could not remove junction {label}: {e}")
+
 
 def remove_path_safe(path, label, dry_run=False):
     path = Path(path)
@@ -48,8 +63,7 @@ def run_cleanup(tier=1, all_yes=False, dry_run=False, base_dir=None):
         sys_dir = base_dir / "_sys"
     env_dir = sys_dir / "env"
     data_dir = sys_dir / "data"
-    tools_dir = sys_dir / "tools"
-    
+
     total_freed = 0
     
     print(f"\n{'='*50}")
@@ -65,6 +79,7 @@ def run_cleanup(tier=1, all_yes=False, dry_run=False, base_dir=None):
     
     # AI and IPC State
     total_freed += remove_path_safe(base_dir / ".ai", r"AI IPC 통신 로그 (.ai)", dry_run)
+    total_freed += remove_path_safe(base_dir / ".vscode", r"VS Code 임시 설정 (.vscode)", dry_run)
     total_freed += remove_path_safe(base_dir / "_state", r"AI 임시 상태 (_state)", dry_run)
     total_freed += remove_path_safe(base_dir / "WORKLOG.md", r"임시 작업 로그 (WORKLOG.md)", dry_run)
     
@@ -131,9 +146,10 @@ def run_cleanup(tier=1, all_yes=False, dry_run=False, base_dir=None):
                         # Attempt to delete contents of python except python.exe if possible, or just skip
                         continue
                     total_freed += remove_path_safe(item, f"Runtime ({item.name})", dry_run)
-            total_freed += remove_path_safe(tools_dir, r"Portable Tools (_sys\tools)", dry_run)
             total_freed += remove_path_safe(sys_dir / "claude", r"Claude Config (_sys\claude)", dry_run)
             total_freed += remove_path_safe(sys_dir / "gemini" / "config", r"Gemini Config (_sys\gemini\config)", dry_run)
+            remove_junction_safe(base_dir / ".claude", r"Claude 프로젝트 Junction (.claude)", dry_run)
+            remove_junction_safe(base_dir / ".gemini", r"Gemini 프로젝트 Junction (.gemini)", dry_run)
             status_json = sys_dir / "gemini" / "status.json"
             if status_json.exists():
                 total_freed += status_json.stat().st_size
@@ -181,7 +197,7 @@ if __name__ == "__main__":
         print("=====================================================")
         print(" 1. Light (Safe) - Temp files, caches, old logs")
         print(" 2. Hard        - Tier 1 + Setup archives + venv")
-        print(" 3. Reset       - Tier 2 + Portable Runtimes/Tools")
+        print(" 3. Reset       - Tier 2 + Runtimes (Node/Git/VSCode/Claude CLI/Gemini CLI) + Junctions")
         print(" 4. ZeroBase    - Tier 3 + Workspace + All data (WIPE)")
         print("=====================================================")
         try:

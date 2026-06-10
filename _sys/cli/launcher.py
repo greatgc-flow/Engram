@@ -77,7 +77,8 @@ def setup_environment(base_dir: Path, sys_dir: Path) -> dict:
     env["PIP_CACHE_DIR"] = str(env_dir / "python" / "pip-cache")
     env["PYTHONUSERBASE"] = str(env_dir / "python" / "userbase")
     env["CLAUDE_CONFIG_DIR"] = str(claude_dir / "config")
-    
+    env["PYTHONUTF8"] = "1"
+
     # Apply user overrides from config.json
     overrides = config.get("env_overrides", {})
     for k, v in overrides.items():
