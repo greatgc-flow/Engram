@@ -1,5 +1,5 @@
 {
-  "_comment": "manage.py 오케스트레이션 상수. 코드 변경 없이 여기서 조정.",
+  "_comment": "manage.py / hub.py 오케스트레이션 상수. 코드 변경 없이 여기서 조정.",
   "subst": {
     "reserved_letters": ["A", "B", "C"],
     "default_preference_letter": "P"
@@ -9,5 +9,54 @@
   },
   "legacy": {
     "config_file": "local.config.bat"
+  },
+  "hub_nodes": [
+    {
+      "node_id": "cc",
+      "type": "peer",
+      "invoke": "claude",
+      "invoke_args": ["-p", "{query}"],
+      "memory": "persistent",
+      "timeout": 0
+    },
+    {
+      "node_id": "ca",
+      "type": "peer",
+      "invoke": "claude",
+      "invoke_args": ["-p", "{query}"],
+      "memory": "short-term",
+      "timeout": 0
+    },
+    {
+      "node_id": "gc",
+      "type": "peer",
+      "invoke": "gemini",
+      "invoke_args": ["-p", "{query}", "-o", "text", "-y"],
+      "memory": "session",
+      "timeout": 0
+    },
+    {
+      "node_id": "ag",
+      "type": "peer",
+      "invoke": "agy",
+      "invoke_args": ["-p", "{query}"],
+      "memory": "session",
+      "timeout": 0
+    },
+    {
+      "node_id": "cx",
+      "type": "peer",
+      "invoke": "codex",
+      "invoke_args": ["exec", "{query}"],
+      "memory": "session",
+      "timeout": 0
+    }
+  ],
+  "consensus": {
+    "default_voters": ["cc", "ca", "gc"],
+    "default_proposer": "cc"
+  },
+  "check_gate": {
+    "default_agent": "gc"
   }
 }

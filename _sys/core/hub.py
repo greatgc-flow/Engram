@@ -45,22 +45,36 @@ def find_ai_root() -> Path:
         candidate = parent
 
 
+def _load_orchestration() -> dict:
+    """_sys/ai/orchestration.json 로드 (hub 전용 상수 포함)."""
+    path = Path(__file__).parent.parent / "ai" / "orchestration.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except Exception:
+        return {}
+
+
+def _load_peers() -> dict:
+    """_sys/ai/peers.json 로드."""
+    path = Path(__file__).parent.parent / "ai" / "peers.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("peers", {}) if path.exists() else {}
+    except Exception:
+        return {}
+
+
 def _default_nodes() -> dict:
-    return {
-        "version": "2",
-        "nodes": {
-            "cc": {"type": "peer", "invoke": "claude",
-                   "invoke_args": ["-p", "{query}"], "timeout": 0, "memory": "persistent"},
-            "ca": {"type": "peer", "invoke": "claude",
-                   "invoke_args": ["-p", "{query}"], "timeout": 0, "memory": "short-term"},
-            "gc": {"type": "peer", "invoke": "gemini",
-                   "invoke_args": ["-p", "{query}", "-o", "text", "-y"], "timeout": 0, "memory": "session"},
-            "ag": {"type": "peer", "invoke": "agy",
-                   "invoke_args": ["-p", "{query}"], "timeout": 0, "memory": "session"},
-            "cx": {"type": "peer", "invoke": "codex",
-                   "invoke_args": ["-p", "{query}", "--quiet"], "timeout": 0, "memory": "session"},
-        }
-    }
+    """orchestration.json hub_nodes 배열에서 기본 노드 목록을 읽어 반환."""
+    orch = _load_orchestration()
+    nodes = {}
+    for entry in orch.get("hub_nodes", []):
+        nid = entry.get("node_id")
+        if nid:
+            nodes[nid] = {k: v for k, v in entry.items() if k != "node_id"}
+    if not nodes:
+        # orchestration.json 없을 때 최소 fallback (claude만)
+        nodes = {"cc": {"type": "peer", "invoke": "claude", "invoke_args": ["-p", "{query}"], "timeout": 0, "memory": "persistent"}}
+    return {"version": "2", "nodes": nodes}
 
 
 def ensure_ai_dir(ai_root: Path) -> Path:
@@ -466,12 +480,21 @@ def action_status(ai_root: Path) -> None:
 
 
 def action_check_gate(ai_root: Path, agent: str) -> None:
-    if agent == "gemini":
-        status_path = Path(__file__).parent.parent / "gemini" / "status.json"
+    peers = _load_peers()
+    gate = None
+    # agent는 node_id(gc) 또는 peer_id(gemini) 둘 다 허용
+    for peer_id, peer_cfg in peers.items():
+        if peer_id == agent or peer_cfg.get("sys_subdir") == agent:
+            gate = peer_cfg.get("gate")
+            break
+    if gate:
+        sys_dir = Path(__file__).parent.parent
+        status_path = sys_dir / gate["status_file"]
         if status_path.exists():
             data = _read_json(status_path)
-            if data.get("mode") == "ON": print("[GATE] gemini=ON"); sys.exit(0)
-        print("[GATE] gemini=OFF"); sys.exit(1)
+            if data.get(gate["mode_key"]) == gate["mode_on_value"]:
+                print(f"[GATE] {agent}=ON"); sys.exit(0)
+        print(f"[GATE] {agent}=OFF"); sys.exit(1)
     print(f"[GATE] {agent}=ON"); sys.exit(0)
 
 
@@ -728,10 +751,20 @@ def main() -> None:
     elif act == "update-status": action_update_status(ai_root, args.mission, args.blocked, args.phase)
     elif act == "check": action_check(ai_root, args.target)
     elif act == "status": action_status(ai_root)
-    elif act == "check-gate": action_check_gate(ai_root, args.agent or "gc")
+    elif act == "check-gate":
+        orch = _load_orchestration()
+        default_gate_agent = orch.get("check_gate", {}).get("default_agent", "gc")
+        action_check_gate(ai_root, args.agent or default_gate_agent)
     elif act == "consensus-propose":
-        voters = [v.strip() for v in (args.voters or "cc,ca,gc").split(",") if v.strip()]
-        action_consensus_propose(ai_root, args.subject, voters, args.from_ or "cc")
+        orch = _load_orchestration()
+        consensus_cfg = orch.get("consensus", {})
+        default_voters_list = consensus_cfg.get("default_voters", ["cc", "ca", "gc"])
+        default_proposer = consensus_cfg.get("default_proposer", "cc")
+        if args.voters:
+            voters = [v.strip() for v in args.voters.split(",") if v.strip()]
+        else:
+            voters = default_voters_list
+        action_consensus_propose(ai_root, args.subject, voters, args.from_ or default_proposer)
     elif act == "consensus-vote": action_consensus_vote(ai_root, args.round_id, args.voter, args.vote_val, args.reason)
     elif act == "consensus-check": action_consensus_check(ai_root, args.round_id)
     elif act == "consensus-sweep": action_consensus_sweep(ai_root, args.timeout or 30)

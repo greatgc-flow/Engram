@@ -5,6 +5,7 @@
     "claude": {
       "enabled": true,
       "description": "Anthropic Claude Code CLI",
+      "gate": null,
       "npm_package": "@anthropic-ai/claude-code",
       "root_dir": ".claude",
       "sys_subdir": "claude",
@@ -55,6 +56,11 @@
     "gemini": {
       "enabled": true,
       "description": "Google Gemini CLI",
+      "gate": {
+        "status_file": "gemini/status.json",
+        "mode_key": "mode",
+        "mode_on_value": "ON"
+      },
       "npm_package": "@google/gemini-cli",
       "root_dir": ".gemini",
       "sys_subdir": "gemini",
@@ -84,6 +90,7 @@
     "codex": {
       "enabled": true,
       "description": "OpenAI Codex CLI",
+      "gate": null,
       "npm_package": "@openai/codex",
       "root_dir": ".codex",
       "sys_subdir": "codex",
@@ -107,6 +114,7 @@
     "antigravity": {
       "enabled": true,
       "description": "Google Antigravity CLI (agy) — Gemini CLI successor",
+      "gate": null,
       "npm_package": null,
       "native_binary": {
         "bin_name": "agy",
