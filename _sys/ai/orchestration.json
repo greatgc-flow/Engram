@@ -54,7 +54,7 @@
     }
   ],
   "consensus": {
-    "default_voters": ["cc", "ca", "gc"],
+    "default_voters": ["cc", "ca", "gc", "ag", "cx"],
     "default_proposer": "cc"
   },
   "check_gate": {
