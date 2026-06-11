@@ -3,11 +3,11 @@ echo ========================================================
 echo [WSB] Portable Dev MECE Testing Environment Started
 echo ========================================================
 
-:: C:\PortableDev is Read-Only host mount.
-:: C:\TestResults is Writable host mount.
-set "SRC=C:\PortableDev"
-set "TGT=C:\TargetEnv"
-set "RES=C:\TestResults"
+:: %SYSTEMDRIVE%\PortableDev is Read-Only host mount.
+:: %SYSTEMDRIVE%\TestResults is Writable host mount.
+set "SRC=%SYSTEMDRIVE%\PortableDev"
+set "TGT=%SYSTEMDRIVE%\TargetEnv"
+set "RES=%SYSTEMDRIVE%\TestResults"
 
 echo [WSB] 1. Cloning SCRIPTS ONLY...
 :: Exclude binaries to test a fresh install

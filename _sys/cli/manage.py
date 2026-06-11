@@ -340,11 +340,13 @@ def apply_local_settings(base_dir: Path, peer_id: str, peer_cfg: dict, drive: st
     """Write peer-specific local settings files driven by peers.json local_settings field.
 
     Placeholders expanded in content strings:
-        {DRIVE}  — SUBST drive letter (may be empty if no SUBST mapping)
+        {DRIVE}    — drive letter only (e.g. "E")
+        {BASE_DIR} — full physical base path, JSON-escaped (e.g. "E:\\\\PortableDev")
     Target path is relative to _sys/{sys_subdir}/.
     """
     sys_dir = base_dir / "_sys"
     peer_subdir = sys_dir / peer_cfg.get("sys_subdir", peer_id)
+    base_dir_escaped = str(base_dir).replace("\\", "\\\\")
 
     for spec in peer_cfg.get("local_settings", []):
         target_rel = spec.get("target", "")
@@ -355,6 +357,7 @@ def apply_local_settings(base_dir: Path, peer_id: str, peer_cfg: dict, drive: st
 
         content_str = json.dumps(spec.get("content", {}))
         content_str = content_str.replace("{DRIVE}", drive)
+        content_str = content_str.replace("{BASE_DIR}", base_dir_escaped)
         target_path.write_text(
             json.dumps(json.loads(content_str), indent=4), encoding="utf-8"
         )
@@ -426,7 +429,9 @@ def global_cleanup(base_dir):
                 print(f"  [Warning] Failed to delete registry key: {subkey_name}")
 
     # Remove Windows 11 classic menu key (restore default simplified menu)
-    win11_key = r"Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}"
+    orch = config.get_orchestration_config()
+    win11_clsid = orch.get("windows", {}).get("win11_classic_menu_clsid", "{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}")
+    win11_key = rf"Software\Classes\CLSID\{win11_clsid}"
     res = subprocess.run(["reg", "delete", f"HKCU\\{win11_key}", "/f"], capture_output=True)
     if res.returncode == 0:
         print(f"  [OK] Windows 11 classic menu key removed")
@@ -446,18 +451,22 @@ def action_register(base_dir):
 
     assigned_letter = None
     subst_map = get_subst_mappings()
-    
+
+    orch = config.get_orchestration_config()
+    subst_cfg = orch.get("subst", {})
+    reserved = subst_cfg.get("reserved_letters", ["A", "B", "C"])
+    default_prefer = subst_cfg.get("default_preference_letter", "P")
+
     for letter, path in subst_map.items():
         if path.resolve() == base_dir.resolve():
             assigned_letter = letter
             print(f"  [OK] Reusing existing mapping: {letter}: -> {base_dir}")
             break
-            
+
     if not assigned_letter:
         prefer = base_dir.name[0].upper()
         if not ('A' <= prefer <= 'Z'):
-            prefer = 'P'
-        reserved = ['A', 'B', 'C']
+            prefer = default_prefer
         candidates = [prefer] + [chr(x) for x in range(65, 91) if chr(x) not in reserved and chr(x) != prefer]
         
         for letter in candidates:
@@ -480,7 +489,8 @@ def action_register(base_dir):
                     continue
     
     # Write per-peer local settings (e.g. settings.local.json with drive-specific permissions)
-    drive = assigned_letter or ""
+    # 폴백: SUBST 없을 때 물리 드라이브 레터 사용 (e.g. "E:" → "E")
+    drive = assigned_letter or base_dir.drive.rstrip(":")
     for peer_id, peer_cfg in peers.items():
         if peer_cfg.get("enabled", True) and peer_cfg.get("local_settings"):
             apply_local_settings(base_dir, peer_id, peer_cfg, drive)
@@ -501,7 +511,8 @@ def action_register(base_dir):
             _unregister_entry(base_key, entry.get("id", "entry"), relay_root)
 
     # Enable Windows 11 classic context menu (per-user, HKCU)
-    win11_key = r"Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"
+    win11_clsid = orch.get("windows", {}).get("win11_classic_menu_clsid", "{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}")
+    win11_key = rf"Software\Classes\CLSID\{win11_clsid}\InprocServer32"
     try:
         k = winreg.CreateKey(winreg.HKEY_CURRENT_USER, win11_key)
         winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "")
@@ -515,7 +526,8 @@ def action_register(base_dir):
     print("  [OK] State saved to config.json")
     
     # Optional cleanup of legacy file
-    legacy_config = base_dir / "_sys" / "local.config.bat"
+    legacy_filename = orch.get("legacy", {}).get("config_file", "local.config.bat")
+    legacy_config = base_dir / "_sys" / legacy_filename
     if legacy_config.exists():
         legacy_config.unlink()
         print("  [OK] Legacy local.config.bat removed.")
@@ -558,7 +570,8 @@ def action_unregister(base_dir):
 
 def _is_cli_available(peer_id: str, sys_dir: Path) -> bool:
     """Check if a peer CLI binary exists in npm-global."""
-    npm_global = sys_dir / "env" / "nodejs" / "npm-global"
+    npm_sub = config.get_env_config().get("tool_env_vars", {}).get("NPM_CONFIG_PREFIX", {}).get("sub", "nodejs/npm-global")
+    npm_global = sys_dir / "env" / npm_sub
     return (npm_global / f"{peer_id}.cmd").exists()
 
 

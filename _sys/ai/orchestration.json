@@ -1,0 +1,13 @@
+{
+  "_comment": "manage.py 오케스트레이션 상수. 코드 변경 없이 여기서 조정.",
+  "subst": {
+    "reserved_letters": ["A", "B", "C"],
+    "default_preference_letter": "P"
+  },
+  "windows": {
+    "win11_classic_menu_clsid": "{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}"
+  },
+  "legacy": {
+    "config_file": "local.config.bat"
+  }
+}

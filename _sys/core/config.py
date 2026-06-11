@@ -79,6 +79,18 @@ class ConfigManager:
         return {}
 
     @classmethod
+    def get_orchestration_config(cls) -> Dict[str, Any]:
+        """Reads _sys/ai/orchestration.json (manage.py constants registry)."""
+        path = cls.get_sys_dir() / "ai" / "orchestration.json"
+        if path.exists():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"[Warning] Failed to load orchestration.json: {e}")
+        return {}
+
+    @classmethod
     def get(cls, key: str, default: Any = None) -> Any:
         cls._lazy_load()
         return cls._config.get(key, default)

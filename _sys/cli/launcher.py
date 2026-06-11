@@ -20,6 +20,7 @@ if str(sys_dir) not in sys.path:
     sys.path.insert(0, str(sys_dir))
 
 from core.config import config
+from core.relocator import relocate
 
 
 def _load_json(path: Path) -> dict:
@@ -139,7 +140,10 @@ def setup_environment(base_dir: Path, sys_dir: Path) -> dict:
 
 def main():
     try:
-        # Base paths
+        # 1. Drive relocation check (Handles physical path changes)
+        relocate()
+
+        # 2. Base paths
         sys_dir_phys = config.get_sys_dir()
         base_dir_phys = config.get_base_dir()
 

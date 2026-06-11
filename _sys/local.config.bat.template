@@ -38,7 +38,7 @@
 
 :: -- Custom tool paths --
 :: Use system-installed npm instead of portable
-:: set "NPM_CONFIG_PREFIX=C:\Users\%USERNAME%\AppData\Roaming\npm"
+:: set "NPM_CONFIG_PREFIX=%APPDATA%\npm"
 
 :: -- Gemini settings --
 :: Disable Gemini completely on this PC (e.g. offline, no auth)

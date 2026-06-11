@@ -32,6 +32,7 @@ _sys/data/logs/
 **/local.config.bat
 _sys/config.json
 _sys/core/config.json
+_sys/data/last_base_dir.txt
 .env
 
 # =================================================================
