@@ -179,13 +179,16 @@ Created on first run by `setup.py` or `start.bat`:
 | `start.bat "file.exe"` | Open with Windows default handler |
 
 ## Current State
-Last checkpoint: 2026-06-11 — Integration tests (Phase 3), Encoding fix (r-5fb7), and Node ID alignment (r-f2b2) complete.
-Core architecture: hub.py refined for robust P2P communication; Node IDs cc/gc standardized.
-→ See `_sys/claude/agent/CONTEXT.md` for static topology and agent team.
+Last checkpoint: 2026-06-11 — Multi-peer universal collaboration protocol v4.0 complete.
+- `protocol.json` single source of truth (collab_rate, health, consensus, routing)
+- `infra.json` centralizes all bat/config/tool paths
+- 4-peer harness: cc, gc, ag, cx — entry points, health.json, try-finally lifecycle
+- hub.py: health-update/check/peer-status/context-fill/checkpoint + JSONL parsing (cx)
+- Composable protocol docs: `_sys/docs/protocol-*.md`
+- Common harness: `_sys/ai/common/agents|skills|mcp/`
+- Cross-review by gc+ag+cx, 165 unit tests passing
 
 ## Next Steps
 - Fresh PC setup validation: Verify install.bat and register.bat in Windows Sandbox (WSB).
-- Axis-A Corpus Scan: Perform full portability audit.
 - P2P Mailbox Reliability: Investigate occasional file lock timeouts.
-- Update documentation: Sync README.md with recent structural changes.
 

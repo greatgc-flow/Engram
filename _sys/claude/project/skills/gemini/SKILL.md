@@ -1,6 +1,6 @@
 ---
 name: gemini
-description: "Gemini CLI integration manager — status check, usage monitoring (zero token), collab log view, ON/OFF toggle, Axis execution, ratio adjustment. Use for: gemini status, gemini usage, gemini on/off, axis run, gemini monitoring, usage check, collab-log view, gemini rate, gemini ratio, ratio change, 제미나이 상태, 사용량, 협업 로그, 비율."
+description: "Gemini CLI integration manager — status check, usage monitoring (zero token), collab log view, ON/OFF toggle, Axis execution, collab_rate adjustment. Use for: gemini status, gemini usage, gemini on/off, axis run, gemini monitoring, usage check, collab-log view, collab rate, collab_rate change, 제미나이 상태, 사용량, 협업 로그, 협업 비율."
 ---
 
 # Gemini Integration Management Skill
@@ -14,7 +14,7 @@ description: "Gemini CLI integration manager — status check, usage monitoring 
 | "collab log", "today's axis history", "협업 로그" | → COLLAB |
 | "gemini on/off", "enable/disable gemini", "gemini 켜기/끄기" | → TOGGLE |
 | "run axis A", "axis-H", "axis 실행" | → AXIS |
-| "gemini rate", "gemini ratio", "ratio N", "rate N", "비율 변경" | → RATIO |
+| "gemini rate", "collab rate", "collab_rate N", "rate N", "비율 변경" | → RATIO |
 
 ---
 
