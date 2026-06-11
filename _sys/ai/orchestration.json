@@ -39,7 +39,8 @@
       "node_id": "ag",
       "type": "peer",
       "invoke": "agy",
-      "invoke_args": ["-p", "{query}"],
+      "invoke_args": ["--dangerously-skip-permissions", "-p", "{query}"],
+      "requires_pty": true,
       "memory": "session",
       "timeout": 0
     },

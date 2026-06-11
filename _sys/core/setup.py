@@ -295,10 +295,13 @@ def run_setup(force: bool = False, skip_vscode: bool = False, skip_ai: bool = Fa
     else:
         print("  [--] venv (already exists)")
 
-    # 6. Install filelock
+    # 6. Install pip packages
     print("  [i] Installing filelock...")
     subprocess.run([str(venv_py), "-m", "pip", "install", "filelock", "--quiet"], check=True)
     print("  [OK] filelock installed")
+    print("  [i] Installing pywinpty (agy PTY support)...")
+    subprocess.run([str(venv_py), "-m", "pip", "install", "pywinpty", "--quiet"], check=True)
+    print("  [OK] pywinpty installed")
 
     # 7. CLI Tools (driven by runtimes.json [tools])
     print("\n>>> CLI Tools (from _sys/runtimes.json)")

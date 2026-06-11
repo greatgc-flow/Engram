@@ -522,28 +522,65 @@ def _decode_output(data: bytes) -> str:
     return data.decode("utf-8", errors="replace")
 
 
+def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: dict) -> None:
+    """pywinpty로 pseudo-TTY 실행 — WriteConsole() API 우회 (agy 등 TUI CLI 전용)."""
+    try:
+        import winpty as _winpty
+    except ImportError:
+        print(f"[HUB:ERROR] pywinpty not installed (required for {node_id})", file=sys.stderr)
+        sys.exit(1)
+
+    p = _winpty.PtyProcess.spawn(cmd, env=process_env)
+    chunks: list[str] = []
+    deadline = time.monotonic() + (timeout_sec if timeout_sec > 0 else 300)
+    t0 = time.monotonic()
+
+    while time.monotonic() < deadline:
+        try:
+            chunk = p.read(4096)
+            if chunk:
+                chunks.append(chunk)
+        except EOFError:
+            break
+
+    try:
+        p.close()
+    except Exception:
+        pass
+
+    elapsed = int(time.monotonic() - t0)
+    output = _strip_ansi("".join(chunks))
+    print(f"[HUB] REPLY {node_id} | chars={len(output)} | elapsed={elapsed}s\n{output.strip()}")
+
+
 def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None) -> None:
     if query_file:
         qf = Path(query_file)
         if not qf.exists(): sys.exit(1)
         query = qf.read_text(encoding="utf-8")
         qf.unlink()
-    
-    # 쿼리 전달 전략: 
+
+    # 쿼리 전달 전략:
     # {query} 치환 방식은 Windows cmd/bat 호출 시 줄바꿈(\n)에서 인자가 잘리는 치명적 결함이 있음.
-    # 따라서 모든 노드 호출을 stdin(-p -) 방식으로 강제 전환하여 안정성 확보.
+    # 따라서 일반 노드는 stdin(-p -) 방식으로 강제 전환.
+    # requires_pty 노드(agy 등)는 pywinpty 사용 + query 직접 인라인.
     nodes = _load_nodes(ai_root) if ai_root else _default_nodes()["nodes"]
     node = nodes.get(to, {})
     exe_name = node.get("invoke", to)
     raw_args = node.get("invoke_args", ["-p", "{query}"])
-    
+    requires_pty = node.get("requires_pty", False)
+
     cmd_args = []
     use_stdin = False
     for arg in raw_args:
         if "{query}" in arg:
-            # {query}가 포함된 인자를 - (stdin) 지시자로 치환
-            cmd_args.append(arg.replace("{query}", "-"))
-            use_stdin = True
+            if requires_pty:
+                # PTY 모드: query를 직접 인라인 (stdin 치환 불필요)
+                cmd_args.append(arg.replace("{query}", query))
+            else:
+                # {query}가 포함된 인자를 - (stdin) 지시자로 치환
+                cmd_args.append(arg.replace("{query}", "-"))
+                use_stdin = True
         else:
             cmd_args.append(arg)
     
@@ -584,6 +621,11 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         for k, rel in target_peer_cfg.get("env_vars", {}).items():
             # Resolve relative path
             process_env[k] = str((peer_subdir / rel).resolve())
+
+    # requires_pty: pywinpty로 pseudo-TTY 실행 (WriteConsole() 우회)
+    if requires_pty and sys.platform == "win32":
+        _ask_with_pty(cmd, to, timeout_sec, process_env)
+        return
 
     try:
         t0 = time.monotonic()
