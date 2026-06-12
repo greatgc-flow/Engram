@@ -1,5 +1,7 @@
 # MECE Review: Model-Level Routing & Profile Optimization
 
+> **STATUS: SUPERSEDED** — Design analysis that led to `model_profiles.json` (v0.2, runtime_active) and `status_checks.json` (v0.2, runtime_active). See `_sys/ai/model_profiles.json` for the implemented artifacts. Retained for audit history only.
+
 **Context:** Analysis for the P:\ portable multi-peer environment (P2P Collab v3).
 **Objective:** Evaluate whether sub-model/model-profile routing improves token efficiency and effectiveness, and provide actionable design recommendations.
 
