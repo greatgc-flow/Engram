@@ -277,6 +277,58 @@ class TestPeerStatusDeclarative:
         assert state == "open"
 
 
+# ─── _is_workspace_local + artifact path validation ─────────────────────────
+
+class TestArtifactWorkspaceLocal:
+    def test_workspace_local_path_returns_true(self, ai_dir):
+        local = str(ai_dir.parent / "workspace" / "Result.md")
+        assert hub._is_workspace_local(ai_dir, local) is True
+
+    def test_ai_dir_itself_is_workspace_local(self, ai_dir):
+        assert hub._is_workspace_local(ai_dir, str(ai_dir / "artifacts" / "out.md")) is True
+
+    def test_external_path_returns_false(self, ai_dir):
+        external = "/tmp/external_report.md"
+        assert hub._is_workspace_local(ai_dir, external) is False
+
+    def test_relative_dot_escape_is_blocked(self, ai_dir, tmp_path):
+        escape = str(ai_dir) + "/../../outside.md"
+        assert hub._is_workspace_local(ai_dir, escape) is False
+
+    def test_artifact_status_warns_on_external_draft(self, ai_dir, capsys):
+        hub.action_artifact_claim(ai_dir, "Report.md", "gc")
+        external = "/tmp/gc_draft.md"
+        with patch("hub._is_workspace_local", side_effect=lambda a, p: p != external):
+            hub.action_artifact_status(ai_dir, "Report.md", register_peer="gc", draft_path=external)
+        err = capsys.readouterr().err
+        assert "outside workspace" in err
+
+    def test_artifact_status_no_warn_on_local_draft(self, ai_dir, capsys):
+        hub.action_artifact_claim(ai_dir, "Report2.md", "cc")
+        local_draft = str(ai_dir / "artifacts" / "Report2.gc.md")
+        hub.action_artifact_status(ai_dir, "Report2.md", register_peer="gc", draft_path=local_draft)
+        err = capsys.readouterr().err
+        assert "outside workspace" not in err
+
+    def test_artifact_finalize_warns_on_external_path(self, ai_dir, tmp_path, capsys):
+        hub.action_artifact_claim(ai_dir, "Out.md", "cc")
+        ext_file = tmp_path / "external" / "Out.md"
+        ext_file.parent.mkdir(parents=True)
+        ext_file.write_text("content", encoding="utf-8")
+        with patch("hub._is_workspace_local", return_value=False):
+            hub.action_artifact_finalize(ai_dir, "Out.md", str(ext_file))
+        err = capsys.readouterr().err
+        assert "outside workspace" in err
+
+    def test_artifact_finalize_no_warn_on_local_path(self, ai_dir, capsys):
+        hub.action_artifact_claim(ai_dir, "Local.md", "cc")
+        local_file = ai_dir.parent / "Local.md"
+        local_file.write_text("final content", encoding="utf-8")
+        hub.action_artifact_finalize(ai_dir, "Local.md", str(local_file))
+        err = capsys.readouterr().err
+        assert "outside workspace" not in err
+
+
 # ─── _resolve_profile_id ─────────────────────────────────────────────────────
 
 class TestResolveProfileId:

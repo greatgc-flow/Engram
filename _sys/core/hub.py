@@ -2411,6 +2411,16 @@ def _artifact_path(ai_root: Path) -> Path:
     return _portable_state_path(ai_root, cfg.get("path", cfg.get("storage_path", "artifacts.json")))
 
 
+def _is_workspace_local(ai_root: Path, path_str: str) -> bool:
+    """Return True if path_str resolves within the workspace root (ai_root.parent)."""
+    workspace_root = ai_root.parent.resolve()
+    try:
+        resolved = Path(path_str).resolve()
+        return resolved == workspace_root or workspace_root in resolved.parents
+    except Exception:
+        return False
+
+
 def action_artifact_claim(ai_root: Path, artifact_name: str, owner: str) -> None:
     art_path = _artifact_path(ai_root)
     art_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2444,8 +2454,11 @@ def action_artifact_status(ai_root: Path, artifact_name: str | None, register_pe
             if artifact_name not in data:
                 print(f"[HUB:ERROR] artifact {artifact_name} has not been claimed yet", file=sys.stderr)
                 sys.exit(1)
+            if not _is_workspace_local(ai_root, draft_path):
+                print(f"[HUB:WARN] artifact draft path is outside workspace: {draft_path}", file=sys.stderr)
             data[artifact_name].setdefault("drafts", {})[register_peer] = draft_path
             data[artifact_name]["status"] = "draft"
+            data[artifact_name]["external_draft_warned"] = not _is_workspace_local(ai_root, draft_path)
             _write_json(art_path, data)
             print(f"[HUB] ARTIFACT-DRAFT {artifact_name} | peer={register_peer} | path={draft_path}")
             return
@@ -2462,6 +2475,8 @@ def action_artifact_finalize(ai_root: Path, artifact_name: str, file_path: str) 
     if not actual_file.exists():
         print(f"[HUB:ERROR] file {file_path} not found for finalization", file=sys.stderr)
         sys.exit(1)
+    if not _is_workspace_local(ai_root, file_path):
+        print(f"[HUB:WARN] artifact final path is outside workspace: {file_path}", file=sys.stderr)
     sha_str = f"sha256:{hashlib.sha256(actual_file.read_bytes()).hexdigest()}"
     art_path = _artifact_path(ai_root)
     with _get_lock(ai_root, "artifact"):
