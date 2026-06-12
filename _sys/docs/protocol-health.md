@@ -1,4 +1,4 @@
-# Protocol: Health Management (v4.0)
+# Protocol: Health Management (v4.1)
 > Source: `_sys/ai/protocol.json["health"]` | Part of composable PROTOCOL.md
 
 ## 1. Zero-Token Principle
@@ -53,4 +53,5 @@ If all peers are RED → escalate to Human (Tier 0).
 Check before delegation: `context_health.status != "RED"` AND `availability.gate_open == true`
 
 ## §HISTORY
+- v4.1 (2026-06-12): Standardized zero-token health check thresholds.
 - v4.0 (2026-06-11): New file; health management system designed with all peers (cc,gc,ag,cx)

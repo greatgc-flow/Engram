@@ -28,3 +28,7 @@ Recent history uses Conventional Commit prefixes such as `feat:`, `fix:`, `docs:
 ## Security & Configuration Tips
 
 Do not override `USERPROFILE`, `APPDATA`, or `LOCALAPPDATA`. Do not write directly to `.ai` state; use the provided hub and CLI paths. Never rename shared hook scripts in `_sys\hooks\` without updating every caller and rerunning dependency checks.
+
+## AI Collaboration References
+
+AI peer behavior is configured outside this contributor guide. Use `PROTOCOL.md` for collaboration rules, `_sys/ai/protocol.json` for machine-readable policy, `_sys/ai/orchestration.json` for node invocation (`cc`, `ca`, `gc`, `ag`, `cx`), and `_sys/docs/workspace-environment.md` for peer configuration, tools, skills, and plugin layout.

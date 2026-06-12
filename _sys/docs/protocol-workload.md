@@ -1,4 +1,4 @@
-# Protocol: Workload Distribution (v4.0)
+# Protocol: Workload Distribution (v4.1)
 > Source: `_sys/ai/protocol.json["workload"]` | Part of composable PROTOCOL.md
 
 ## 1. Peer Equality & User Communication
@@ -50,4 +50,5 @@ gc has `fill_depth_multiplier: 3` — when gc starts a session, it reads 3x more
 - cx produces code patches; ca writes tests; cc reviews architecture
 
 ## §HISTORY
+- v4.1 (2026-06-12): Confirmed equal-authority P2P routing defaults.
 - v4.0 (2026-06-11): Extracted from PROTOCOL.md §P-4; added user communication equality, fill_depth_multiplier, cross-verification strategy

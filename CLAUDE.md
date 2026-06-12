@@ -97,7 +97,7 @@ Full annotated tree: `README.md`
 - For broad exploration: delegate to `Explore` sub-agent (isolates context blowout)
 - **3-strike rule**: 3 consecutive Grep/Read with no useful result → stop, delegate to `Explore` sub-agent
 
-## P2P Collaboration (PROTOCOL.md v3.3)
+## P2P Collaboration (PROTOCOL.md v4.1)
 
 This project runs on an **N-Way shared Room session** with **unlimited consensus rounds**.
 - **COLLAB_RATE (0~10)**: Controls collaboration depth across all nodes. (R:10 = 100% full sync)
@@ -179,7 +179,7 @@ Created on first run by `setup.py` or `start.bat`:
 | `start.bat "file.exe"` | Open with Windows default handler |
 
 ## Current State
-Last checkpoint: 2026-06-11 — Multi-peer universal collaboration protocol v4.0 complete.
+Last checkpoint: 2026-06-12 — Multi-peer universal collaboration protocol v4.1 complete.
 - `protocol.json` single source of truth (collab_rate, health, consensus, routing)
 - `infra.json` centralizes all bat/config/tool paths
 - 4-peer harness: cc, gc, ag, cx — entry points, health.json, try-finally lifecycle

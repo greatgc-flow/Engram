@@ -1,91 +1,112 @@
-# Portable Sandbox Dev Environment (Porta-Flow)
+# Porta-Flow: Portable Multi-AI Dev Workspace
 
-A fully isolated portable development environment based on a single Windows folder.  
-Carry it on a USB drive or cloud drive — spin up **the exact same environment** on any PC and collaborate with AI agents immediately.
+Porta-Flow is a Windows-first portable development workspace that lets Claude, Gemini, Antigravity, Codex, and human developers collaborate through one local folder.
 
----
+Clone it, carry it, register it on any PC, and keep the same tools, AI peer settings, consensus protocol, tests, and workspace state without polluting the host machine.
 
-## Project Structure (Minimalist Core)
+## Why Star This
 
-Only **design files and scripts** are git-tracked. Heavy binaries and data are managed automatically by `install.bat`.
+- **Multi-AI collaboration in one repo**: `cc`, `ca`, `gc`, `ag`, and `cx` work as equal peers through a shared hub.
+- **Portable by design**: runtimes, tools, CLI wrappers, hooks, and AI configs live under `_sys/`.
+- **Consensus-driven changes**: high-risk actions can be gated by `collab_rate`, finalized consensus, and traceable handoff state.
+- **Zero-token control plane**: health checks, context fill, feedback tracking, artifact metadata, and policy routing run locally before model calls.
+- **Auditable engineering loop**: protocol rules map to JSON config, runtime functions, and unit tests.
 
-```
-[PortableDev Root]
-├── install.bat               ← First-time install and environment rebuild (ZeroBase)
-├── register.bat              ← Register PC (SUBST assignment + right-click menu)
-├── unregister.bat            ← Permanent PC removal (context menu + SUBST deletion)
-├── cleanup.bat               ← Tiered space optimization (Level 1~4)
-│
-├── CLAUDE.md                 ← Claude Code collaboration guide
-├── GEMINI.md                 ← Gemini CLI collaboration guide
-├── README.md                 ← This document
-├── CONVENTION.md             ← Coding and agent conventions
-├── PROTOCOL.md               ← P2P collaboration protocol (consensus, division of labor, session continuity)
-├── WORKLOG.md                ← Change history and current mission
-│
-├── workspace/                ← Default project workspace
-├── .claude/                  ← Claude Code harness (agents/, skills/)
-├── .ai/                      ← IPC state (hub.py only — never write directly)
-├── _state/                   ← Agent session workspace (auto-managed)
-├── _archive/                 ← Logs, sessions, workspace backups
-└── _sys/                     ← System layer (logic and config)
-    ├── core/                 ← System core logic (hub.py, setup.py, manage.py)
-    ├── cli/                  ← User entry tools (msg.bat, manage.bat, cleanup.bat)
-    ├── checks/               ← Axis A~I static analysis scans
-    ├── hooks/                ← Agent lifecycle hooks
-    ├── tests/                ← Unit / integration / sandbox test suite
-    ├── templates/            ← Copy-ready file templates
-    ├── data/                 ← Session and log data (local)
-    ├── env/                  ← Python, Node.js, VS Code, Git portable binaries
-    ├── tools/                ← Auxiliary CLI tools (ripgrep, jq, etc.)
-    ├── claude/               ← Claude Code CLI config and agent definitions
-    ├── gemini/               ← Gemini CLI config (Directory Junction integration)
-    └── git-config/           ← Portable git environment config
+## AI Collaboration Model
+
+```text
+Human
+  |
+  v
+_sys/cli/msg.bat
+  |
+  v
+_sys/core/hub.py  <---->  _sys/ai/protocol.json
+  |
+  +-- cc / ca: Claude-based architecture, implementation, verification
+  +-- gc: Gemini large-context analysis and documentation
+  +-- ag: Antigravity shell and workflow orchestration
+  +-- cx: Codex code review, refactoring, tests, and patch planning
 ```
 
----
+Peers share room state through `.ai/`, exchange messages through the hub, record handoff context, and use `feedback-*` and `artifact-*` actions to keep collaboration durable.
+
+## Key Capabilities
+
+| Area | What it does |
+|---|---|
+| P2P hub | `_sys/core/hub.py` manages sessions, mailbox, ask, consensus, health, feedback, and artifacts. |
+| Consensus | `PROTOCOL.md` and `_sys/ai/protocol.json` define R:10 unanimous governance and action gates. |
+| Feedback loop | `feedback-add/list/resolve` keeps improvement items out of transient chat history. |
+| Artifact workflow | `artifact-claim/status/finalize` tracks single-owner merge flow and final file hashes. |
+| Health routing | Peer health files and gate checks prevent repeated calls to blocked peers. |
+| Portable tools | `_sys/tools/` carries utilities such as ripgrep, jq, gh, fd, fzf, bat, delta, sqlite, and oh-my-posh. |
+| Tests | `_sys/tests/unit` covers hub behavior, integration scenarios, locks, launchers, lifecycle, and paths. |
 
 ## Quick Start
 
-1. **First-time install**: Double-click `install.bat`  
-   - Automatically downloads Portable Python, Node.js, Git, VS Code, etc. and builds the environment.
-2. **Register PC**: Double-click `register.bat`  
-   - Adds **'Open in Sandbox'** to Windows Explorer right-click menu and assigns a fixed drive (SUBST).
-3. **Launch environment**: Right-click folder → select **Open in Sandbox**  
-   - VS Code launches in an isolated environment with all tools auto-registered in PATH.
+1. Run `INSTALL.bat` to rebuild portable runtimes and tools.
+2. Run `register.bat` to register the folder on the current PC.
+3. Use `_sys\cli\msg.bat status` to inspect the collaboration room.
+4. Use `_sys\tests\run-tests.bat --all` for full validation.
 
----
+## Project Structure
 
-## Agent Collaboration and Security (P2P Peer)
+```text
+.
+|-- README.md                  # Project overview
+|-- AGENTS.md                  # Contributor guide for this repository
+|-- PROTOCOL.md                # Multi-peer collaboration protocol index
+|-- CLAUDE.md / GEMINI.md      # Peer-facing workspace guides
+|-- INSTALL.bat                # Rebuild portable environment
+|-- register.bat               # Register host integration
+|-- unregister.bat             # Remove host integration
+|-- CLEANUP.bat                # Cleanup entrypoint
+|-- workspace/                 # Default user workspace
+|-- .ai/                       # Runtime collaboration state, hub-managed only
+|-- _archive/                  # Logs and archived runtime data
+`-- _sys/
+    |-- ai/                    # Protocol, peer registry, orchestration, traceability
+    |-- core/                  # hub.py, setup, config, relocation logic
+    |-- cli/                   # msg.bat and peer launch wrappers
+    |-- checks/                # Health, policy, deps, portability checks
+    |-- docs/                  # Architecture, protocol, environment maps
+    |-- hooks/                 # Lifecycle and context hooks
+    |-- tests/                 # Unit, integration, and sandbox tests
+    |-- tools/                 # Portable binary tools
+    |-- claude/                # Claude config, agents, skills
+    |-- gemini/                # Gemini config and project settings
+    |-- antigravity/           # Antigravity config and agentapi bridge
+    `-- codex/                 # Codex config and templates
+```
 
-This environment is designed for **Claude Code, Gemini CLI, Claude Agent**, and all other nodes to collaborate as **equal Peers**. No vertical tier structure — unanimous consensus in an N-Way Room session, then division of labor.
+## Configuration and Audit Maps
 
-- **N-Way Room Session**: All nodes share the same context via a common `handoff.md` under `.ai/`.
-- **Unanimous Consensus**: Critical decisions go through full consensus via `msg.bat consensus`. (`PROTOCOL.md §P-3`)
-- **Full Isolation**: All caches and settings are stored inside the folder — no host PC contamination.
+- `_sys/ai/protocol.json`: collaboration policy, runtime policy, guards, model profile convention.
+- `_sys/ai/peers.json`: managed peer registry and host/project junction metadata.
+- `_sys/ai/orchestration.json`: hub node IDs, invoke commands, aliases, and default voters.
+- `_sys/ai/lifecycle_policy.json`: health lifecycle, failure classification, room reset, messaging policy.
+- `_sys/ai/traceability_map.json`: protocol-to-config-to-code-to-test mapping.
+- `_sys/docs/workspace-connectivity-map.md`: root-to-runtime connectivity diagram.
+- `_sys/docs/workspace-environment.md`: portable tools, peer configs, skills, and plugin layout.
+- `_sys/docs/collaboration-mece-review.md`: collaboration design review and implemented feedback loop summary.
 
----
+## Validation
 
-## Management Principles (Portability)
+Fast hub-focused check:
 
-1. **ZeroBase Architecture**: With only the essential scripts present, running `install.bat` restores 100% of the environment anywhere.
-2. **Minimal Git Tracking**: Binaries (`env/`, `tools/`), logs (`_archive/`), and state (`.ai/`) are excluded from git to keep the repo lightweight.
-3. **Relative Path Basis**: All paths are calculated dynamically at runtime — drive letter changes cause no disruption.
+```bat
+python -m pytest _sys\tests\unit\test_hub.py
+```
 
----
+Full unit suite:
 
-## Testing and Verification
+```bat
+python -m pytest _sys\tests\unit
+```
 
-System stability is ensured through 3 levels of testing:
+Recent baseline: `198 passed, 1 skipped, 2 pytest config warnings`.
 
-- **Unit Tests**: Validates hub.py IPC and consensus logic.
-- **Integration Tests**: Validates interactions between real tools (msg.bat, git, etc.).
-- **WSB Tests**: Validates destructive lifecycle (ZeroBase install) inside Windows Sandbox.
+## Repository Hygiene
 
-Run: `_sys\tests\run-tests.bat --all`
-
-## System Maps and Audit References
-
-- `_sys/docs/workspace-connectivity-map.md`: root-to-runtime document/source/config connectivity map.
-- `_sys/docs/collaboration-mece-review.md`: MECE review of P2P communication, shared artifacts, and feedback loops.
-- `_sys/ai/traceability_map.json`: machine-readable mapping from protocol sections to config keys, runtime functions, and tests.
+Generated state, logs, telemetry, runtime caches, `.ai/`, `_archive/`, and heavy portable binaries should stay out of source control. Source, policy, tests, templates, and documentation should remain traceable and reviewable.

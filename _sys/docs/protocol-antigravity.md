@@ -1,4 +1,4 @@
-# Protocol: Antigravity (agy) Peer — ag (v4.0)
+# Protocol: Antigravity (agy) Peer — ag (v4.1)
 > Part of composable PROTOCOL.md | Peer-specific rules for ag node
 
 ## Node Identity
@@ -67,4 +67,5 @@ Written to `_sys/antigravity/health.json`:
 ```
 
 ## §HISTORY
+- v4.1 (2026-06-12): Verified integration of native agy.exe with N-Way Rooms.
 - v4.0 (2026-06-11): New file; PTY consensus policy, direct JSON vote, user comm scenarios

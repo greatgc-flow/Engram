@@ -69,7 +69,7 @@ Full annotated tree: `README.md`
 - Check room status: `python %SYS_DIR%\core\hub.py status`
 
 ## 5. Collaboration Protocol (P2P & Mixed-Model)
-Full R&R: `PROTOCOL.md v3.3`.
+Full R&R: `PROTOCOL.md v4.1`.
 
 ### Adaptive COLLAB_RATE
 Task risk classification — apply within a session unless overridden globally:
@@ -170,5 +170,5 @@ Created on first run by `setup.py` or `start.bat`:
 - **Note:** Directory Junctions ensure auth and memory travel with the portable drive, leaving no trace on the host OS.
 
 ## 9. Current State
-→ See `.ai/sessions/room-7fb9/handoff.md` for live session state.
+→ See `.ai/sessions/room-26ab/handoff.md` for live session state.
 → See `_sys/gemini/config/CONTEXT.md` for static topology and Axis map.

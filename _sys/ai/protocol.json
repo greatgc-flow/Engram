@@ -177,7 +177,10 @@
         ],
         "default_voters": [
             "cc",
-            "gc"
+            "ca",
+            "gc",
+            "ag",
+            "cx"
         ],
         "default_proposer": "cc",
         "timeout_minutes": 30,

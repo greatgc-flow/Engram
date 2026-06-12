@@ -54,7 +54,7 @@ class TestDocConsistency:
             pytest.skip("GEMINI.md not found")
             
         content = gemini_md.read_text(encoding="utf-8")
-        assert "v3" in content, "GEMINI.md might be referencing an outdated protocol version"
+        assert "v3" in content or "v4" in content, "GEMINI.md might be referencing an outdated protocol version"
 
     def test_no_korean_in_sys_scripts(self, doc_root):
         """Ensure no Korean characters in _sys batch scripts (except allowed ones)."""

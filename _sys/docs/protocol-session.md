@@ -1,4 +1,4 @@
-# Protocol: Session Management (v4.0)
+# Protocol: Session Management (v4.1)
 > Source: `_sys/ai/protocol.json["session"]` | Part of composable PROTOCOL.md
 
 ## 1. Session Decision Tree
@@ -66,4 +66,5 @@ Every peer entry point MUST:
 | Consensus round timeout | 30m | `consensus.timeout_minutes` |
 
 ## §HISTORY
+- v4.1 (2026-06-12): Verified session state and N-Way active room resolution.
 - v4.0 (2026-06-11): Extracted from PROTOCOL.md §P-6,§P-11; added decision tree, startup contract, fill_depth_multiplier

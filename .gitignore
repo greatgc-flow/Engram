@@ -54,6 +54,7 @@ _sys/*/session-id.txt
 _sys/*/session-map.json
 _sys/*/session.lock
 _sys/*/cq-*.txt
+_sys/mock_peer/
 
 # Claude auth/runtime data in config/ (tracked: CLAUDE.md, settings.json, statusline-command.sh)
 _sys/claude/config/.claude.json
@@ -76,6 +77,7 @@ _sys/claude/config/sessions/
 _sys/claude/config/shell-snapshots/
 _sys/claude/config/stats-cache.json
 _sys/claude/config/tasks/
+_sys/claude/config/telemetry/
 _sys/claude/config/tmp/
 
 # Antigravity (agy) runtime data — tracked: bin/agentapi.bat, health.json

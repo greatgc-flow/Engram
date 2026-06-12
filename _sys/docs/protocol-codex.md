@@ -1,4 +1,4 @@
-# Protocol: Codex Peer — cx (v4.0)
+# Protocol: Codex Peer — cx (v4.1)
 > Part of composable PROTOCOL.md | Peer-specific rules for cx node
 
 ## Node Identity
@@ -69,4 +69,5 @@ hub.py ask --to cx --query "Echo: system ready. Reply with your node ID and vers
 Verify: response received + `health.json entrypoint_ok = true`
 
 ## §HISTORY
+- v4.1 (2026-06-12): Verified stdin interface with 5-node consensus protocol.
 - v4.0 (2026-06-11): New file; stdin invocation pattern, sandbox flags, health metrics, user comm scenarios

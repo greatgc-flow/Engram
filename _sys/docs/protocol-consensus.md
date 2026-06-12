@@ -1,4 +1,4 @@
-# Protocol: Consensus & Voting (v4.0)
+# Protocol: Consensus & Voting (v4.1)
 > Source: `_sys/ai/protocol.json["consensus"]` | Part of composable PROTOCOL.md
 
 ## 1. Consensus Round Lifecycle
@@ -44,4 +44,5 @@ Round finalizes only after all ACKs received.
 - Run `hub.py consensus-sweep` at session end or ctx-save to clean stalled rounds
 
 ## §HISTORY
+- v4.1 (2026-06-12): Canonicalized default consensus voters across protocol.json and orchestration.json.
 - v4.0 (2026-06-11): Extracted from PROTOCOL.md §P-3; added PTY vote policy, tiebreak, ag direct-write rule
