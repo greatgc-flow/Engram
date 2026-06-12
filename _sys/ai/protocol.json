@@ -429,6 +429,11 @@
             "enabled": true,
             "portable_paths_only": true,
             "default_dir": ".ai/out"
+        },
+        "provenance_logs": {
+            "ask_history": ".ai/ask_history.jsonl",
+            "routing_metrics": ".ai/routing_metrics.jsonl",
+            "compliance_metrics": "_archive/compliance_metrics.jsonl"
         }
     },
     "communication_policy": {
@@ -491,6 +496,8 @@
             "exempt_actions": [
                 "ask",
                 "ask-coordinator",
+                "read",
+                "mark-read",
                 "check",
                 "status",
                 "check-gate",
@@ -559,24 +566,28 @@
             "artifact-claim",
             "artifact-finalize",
             "leader-yield",
-            "leader-claim",
             "elect-leader",
-            "assign-role",
-            "release-role",
             "append-handoff",
             "task-checkpoint",
-            "task-failover",
             "approval-request",
             "file-lock",
-            "file-unlock",
+            "file-unlock"
+        ],
+        "semi_governed_hub_actions": [
+            "leader-claim",
+            "assign-role",
+            "release-role",
+            "task-failover",
             "health-sweep"
         ],
+        "semi_governed_rule": "Exempt only when current coordinator or role holder is RED, STALE, rate-limited, or missing (emergency recovery). Normal elective changes require visible proposal and peer verification. All semi-governed changes must write an audit record.",
         "recovery_hub_actions": [
             "peer-recover",
             "report-error",
             "context-ack"
         ],
         "read_only_hub_actions": [
+            "read",
             "mark-read",
             "check",
             "status",
@@ -603,12 +614,14 @@
         "phase_action_matrix": {
             "default": {
                 "mutating_hub_actions": "allow",
+                "semi_governed_hub_actions": "requires_classification",
                 "read_only_hub_actions": "allow",
                 "recovery_hub_actions": "allow",
                 "unknown_actions": "requires_classification"
             },
             "no_code": {
                 "mutating_hub_actions": "block",
+                "semi_governed_hub_actions": "requires_classification",
                 "read_only_hub_actions": "allow",
                 "recovery_hub_actions": "allow",
                 "unknown_actions": "requires_classification"

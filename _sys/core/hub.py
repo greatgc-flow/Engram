@@ -141,7 +141,21 @@ def ensure_ai_dir(ai_root: Path) -> Path:
         _write_json(ai_root / "task_registry.json", {})
     if not (ai_root / "nodes.json").exists():
         _write_json(ai_root / "nodes.json", _default_nodes())
+    # Provenance logs — touch only; schema documented below as constants
+    for log_name in ("ask_history.jsonl", "routing_metrics.jsonl"):
+        if not (ai_root / log_name).exists():
+            (ai_root / log_name).write_text("", encoding="utf-8")
     return ai_root
+
+
+# ask_history.jsonl entry schema (append-only JSONL):
+# {"ts": ISO8601, "peer_id": str, "profile_id": str|null, "query_file": str|null,
+#  "output_file": str|null, "elapsed_sec": int|null, "health_state_at_ask": str,
+#  "success": bool, "failure_reason": str|null}
+#
+# routing_metrics.jsonl entry schema (append-only JSONL):
+# {"ts": ISO8601, "task_type": str, "selected_peer": str, "profile_id": str|null,
+#  "outcome": "success"|"failure"|"degraded", "latency_sec": float|null}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1269,7 +1283,40 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
     return output, elapsed
 
 
+def _append_ask_history(ai_root: Path | None, peer_id: str, query_file_path: str | None, output_file: str | None, elapsed_sec: int | None, success: bool, failure_reason: str | None) -> None:
+    """Append a provenance record to .ai/ask_history.jsonl."""
+    if not ai_root:
+        return
+    try:
+        h = _read_json(ai_root / "state.json")
+        coordinator = h.get("active_coordinator", "unknown")
+        peers_data = _load_peers()
+        peer_cfg = peers_data.get(peer_id, {})
+        subdir = peer_cfg.get("sys_subdir", peer_id)
+        health_path = Path(__file__).parent.parent / subdir / "health.json"
+        health_state = "unknown"
+        if health_path.exists():
+            health_state = _read_json(health_path).get("context_health", {}).get("status", "unknown")
+        entry = {
+            "ts": _now(),
+            "peer_id": peer_id,
+            "profile_id": None,
+            "query_file": query_file_path,
+            "output_file": output_file,
+            "elapsed_sec": elapsed_sec,
+            "health_state_at_ask": health_state,
+            "success": success,
+            "failure_reason": failure_reason,
+        }
+        log_path = ai_root / "ask_history.jsonl"
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True) -> None:
+    saved_query_file_path = query_file  # 경로를 unlink 전에 저장
     if query_file:
         qf = Path(query_file)
         if not qf.exists(): sys.exit(1)
@@ -1379,6 +1426,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     if requires_pty and sys.platform == "win32":
         output, elapsed = _ask_with_pty(cmd, to, timeout_sec, process_env, quiet)
         _record_ask_success(to, elapsed, ai_root)
+        _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
         if output_file:
             try:
                 base = ai_root if ai_root else Path.cwd()
@@ -1420,9 +1468,11 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             clean_err = _strip_ansi(err)
             reason, extra = _classify_ask_failure(clean_err + "\n" + output)
             _record_ask_failure(to, reason, clean_err or output, elapsed, ai_root, extra)
+            _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
             print(f"[HUB:WARN] {to} exited {result.returncode}\n{clean_err}", file=sys.stderr)
         else:
             _record_ask_success(to, elapsed, ai_root)
+            _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
 
         if output_file:
             try:
@@ -1442,11 +1492,13 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     except subprocess.TimeoutExpired:
         detail = f"ask timeout after {timeout_sec}s"
         _record_ask_failure(to, "timeout", detail, timeout_sec, ai_root)
+        _append_ask_history(ai_root, to, saved_query_file_path, output_file, timeout_sec, False, "timeout")
         print(f"[HUB:ERROR] {detail}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         reason, extra = _classify_ask_failure(str(e))
         _record_ask_failure(to, reason, str(e), None, ai_root, extra)
+        _append_ask_history(ai_root, to, saved_query_file_path, output_file, None, False, reason)
         print(f"[HUB:ERROR] ask 실패: {e}", file=sys.stderr)
         sys.exit(1)
 
@@ -1691,24 +1743,88 @@ def action_health_check(peer_filter: str | None = None) -> None:
     print(f"[HUB:GATE] HEALTH | {' '.join(results)}")
 
 
-def action_peer_status() -> None:
-    """모든 피어 건강 + 게이트 통합 테이블 출력 — check-gate 대체."""
+def _run_status_check(check: dict) -> tuple[bool, str]:
+    """Run a single safe status check command. Returns (success, output)."""
+    safe_classes = {"version_only", "local_config_presence", "local_session_listing"}
+    if check.get("class") not in safe_classes:
+        return False, f"skipped (class={check.get('class')} not in safe set)"
+    cmd_str = check.get("command", "")
+    if not cmd_str:
+        return False, "no command"
+    try:
+        parts = cmd_str.split()
+        # On Windows, .CMD/.BAT wrappers require shell=True or resolved path
+        exe = shutil.which(parts[0])
+        if exe:
+            parts[0] = exe
+        result = subprocess.run(
+            parts,
+            capture_output=True, timeout=10,
+            env={**os.environ, "PYTHONUTF8": "1"},
+            shell=(sys.platform == "win32" and exe is None),
+        )
+        out = result.stdout.decode("utf-8", errors="replace").strip()
+        return result.returncode == 0, out or result.stderr.decode("utf-8", errors="replace").strip()
+    except FileNotFoundError:
+        return False, "cli_not_found"
+    except Exception as e:
+        return False, str(e)
+
+
+def _derive_gate_state(check_results: dict, gate_rule: dict) -> str:
+    """Derive gate_state from check results and derived_gate_rule."""
+    if not gate_rule:
+        all_passed = all(ok for ok, _ in check_results.values())
+        return "open" if all_passed else "degraded"
+    closed_conditions = gate_rule.get("closed_if_any", [])
+    degraded_conditions = gate_rule.get("degraded_if_any", [])
+    open_conditions = gate_rule.get("open_if", [])
+    failed_ids = {cid for cid, (ok, _) in check_results.items() if not ok}
+    if any(c in failed_ids for c in closed_conditions):
+        return "closed"
+    if any(c in failed_ids for c in degraded_conditions):
+        return "degraded"
+    if open_conditions and all(c not in failed_ids for c in open_conditions):
+        return "open"
+    return "unknown"
+
+
+def action_peer_status(node_id: str | None = None) -> None:
+    """피어 상태 체크 — status_checks.json 선언적 엔진 + health.json 통합 테이블."""
+    sys_dir = Path(__file__).parent.parent
+    status_checks_path = sys_dir / "ai" / "status_checks.json"
+    checks_cfg = {}
+    if status_checks_path.exists():
+        try:
+            checks_cfg = json.loads(status_checks_path.read_text(encoding="utf-8")).get("peers", {})
+        except Exception:
+            pass
+
     peers_data = _load_peers()
     all_peers_cfg = peers_data.get("peers", peers_data)
-    print("┌─────────────────────────────────────────────────────┐")
-    print("│  PEER STATUS (Protocol v4.0)                        │")
-    print("├──────────┬──────────┬──────────┬────────────────────┤")
-    print("│ Peer     │ Gate     │ Health   │ Details            │")
-    print("├──────────┼──────────┼──────────┼────────────────────┤")
-    for peer_name, pcfg in all_peers_cfg.items():
-        if not pcfg.get("enabled", True):
-            continue
+
+    if node_id:
+        target_peers = {k: v for k, v in all_peers_cfg.items() if k == node_id}
+        if not target_peers:
+            print(f"[HUB:ERROR] unknown peer: {node_id}", file=sys.stderr)
+            return
+    else:
+        target_peers = {k: v for k, v in all_peers_cfg.items() if v.get("enabled", True)}
+
+    print("┌─────────────────────────────────────────────────────────────┐")
+    print("│  PEER STATUS (Protocol v4.1)                                │")
+    print("├──────────┬──────────┬──────────┬──────────┬─────────────────┤")
+    print("│ Peer     │ Gate     │ Health   │ Version  │ Details         │")
+    print("├──────────┼──────────┼──────────┼──────────┼─────────────────┤")
+
+    for peer_name, pcfg in target_peers.items():
         sys_subdir = pcfg.get("sys_subdir", peer_name)
-        peer_dir = Path(__file__).parent.parent / sys_subdir
-        # 게이트 확인
+        peer_dir = sys_dir / sys_subdir
+
+        # 기존 gate 파일 확인
         gate_cfg = pcfg.get("gate")
         if gate_cfg:
-            gate_file = Path(__file__).parent.parent / gate_cfg["status_file"]
+            gate_file = sys_dir / gate_cfg["status_file"]
             try:
                 gd = json.loads(gate_file.read_text(encoding="utf-8"))
                 gate = "ON" if gd.get(gate_cfg["mode_key"]) == gate_cfg["mode_on_value"] else "OFF"
@@ -1716,7 +1832,8 @@ def action_peer_status() -> None:
                 gate = "?"
         else:
             gate = "OPEN"
-        # 건강 확인
+
+        # health.json 확인
         health_path = peer_dir / "health.json"
         if health_path.exists():
             try:
@@ -1729,8 +1846,32 @@ def action_peer_status() -> None:
                 health, details = "ERR", ""
         else:
             health, details = "NO FILE", ""
-        print(f"│ {peer_name:<8} │ {gate:<8} │ {health:<8} │ {details:<18} │")
-    print("└──────────┴──────────┴──────────┴────────────────────┘")
+
+        # status_checks.json 선언적 체크 (version_only 클래스만)
+        # peers.json 키는 "claude"/"gemini"/etc이지만 status_checks.json 키는 "cc"/"gc"/etc
+        # lifecycle_policy.json node_to_peer 역방향 매핑으로 연결
+        version_str = ""
+        lp = _load_lifecycle_policy()
+        node_to_peer_map = lp.get("identity", {}).get("node_to_peer", {})
+        peer_to_node = {v: k for k, v in node_to_peer_map.items() if k not in ("ca",)}
+        node_id_for_peer = peer_to_node.get(peer_name, peer_name)
+        peer_checks = checks_cfg.get(node_id_for_peer, {})
+        if peer_checks:
+            check_results = {}
+            gate_rule = peer_checks.get("derived_gate_rule", {})
+            for check in peer_checks.get("safe_checks", []):
+                if check.get("class") == "version_only":
+                    ok, out = _run_status_check(check)
+                    check_results[check["id"]] = (ok, out)
+                    if ok and out:
+                        version_str = out.split("\n")[0][:8]
+            if check_results and not gate_cfg:
+                derived = _derive_gate_state(check_results, gate_rule)
+                gate = derived[:8]
+
+        print(f"│ {peer_name:<8} │ {gate:<8} │ {health:<8} │ {version_str:<8} │ {details:<15} │")
+
+    print("└──────────┴──────────┴──────────┴──────────┴─────────────────┘")
 
 
 def _task_registry_path(ai_root: Path) -> Path:
@@ -1911,6 +2052,26 @@ def _is_mutating_action(action: str) -> bool:
     return action in set(_operational_guard_cfg().get("mutating_hub_actions", []))
 
 
+def _current_coordinator_health(ai_root: Path) -> str:
+    """Return the health state of the active coordinator peer, or MISSING if unknown."""
+    try:
+        state = _read_json(ai_root / "state.json")
+        coordinator = state.get("active_coordinator") or state.get("leader")
+        if not coordinator:
+            return "MISSING"
+        sys_dir = Path(__file__).parent.parent
+        peers_data = _load_peers()
+        peer_cfg = peers_data.get(coordinator, {})
+        subdir = peer_cfg.get("sys_subdir", coordinator)
+        health_path = sys_dir / subdir / "health.json"
+        if not health_path.exists():
+            return "MISSING"
+        h = _read_json(health_path)
+        return h.get("context_health", {}).get("status", "MISSING")
+    except Exception:
+        return "MISSING"
+
+
 def _runtime_cfg() -> dict:
     return _load_protocol_cfg().get("runtime", {})
 
@@ -1924,7 +2085,7 @@ def _portable_state_path(ai_root: Path, rel: str) -> Path:
 
 def _action_group(action: str) -> str:
     cfg = _operational_guard_cfg()
-    for group in ("read_only_hub_actions", "recovery_hub_actions", "mutating_hub_actions"):
+    for group in ("read_only_hub_actions", "recovery_hub_actions", "semi_governed_hub_actions", "mutating_hub_actions"):
         if action in set(cfg.get(group, [])):
             return group
     return "unknown_actions"
@@ -1970,6 +2131,17 @@ def _guard_action(ai_root: Path, action: str, force_tier0: bool = False) -> None
     except Exception as e:
         print(f"[HUB:WARN] collab_rate guard check error: {e}", file=sys.stderr)
     group = _action_group(action)
+
+    # semi_governed actions: exempt only during RED/STALE/rate-limited recovery
+    if group == "semi_governed_hub_actions":
+        peer_state = _current_coordinator_health(ai_root)
+        if peer_state not in ("RED", "STALE", "RATE_LIMITED", "MISSING"):
+            if rate_guard.get("enabled", False) and current >= threshold and not _has_finalized_consensus(ai_root):
+                print(f"[HUB:BLOCK] action '{action}' is semi-governed and requires finalized consensus when coordinator is {peer_state}.", file=sys.stderr)
+                sys.exit(3)
+        # Always write audit record for semi-governed actions
+        _log_p2p("AUDIT", f"semi-governed action={action} coordinator_state={peer_state}", from_node="GUARD")
+
     phase = _current_phase(ai_root)
     if not phase:
         if cfg.get("missing_phase_policy") == "allow_with_warning":
@@ -2698,7 +2870,7 @@ def main() -> None:
     elif act == "health-check":
         action_health_check(args.peer)
     elif act == "peer-status":
-        action_peer_status()
+        action_peer_status(args.peer or None)
     elif act == "context-fill":
         sections = [s.strip() for s in args.sections.split(",")] if args.sections else None
         action_context_fill(ai_root, sections)

@@ -126,7 +126,7 @@
       },
       "process_on_startup": true,
       "do_not_use_for": ["consensus_vote", "synchronous_review", "blocking_decision"],
-      "migration_target": "handoff_blackboard_for_persistent_state"
+      "migration_target": "durable_maildir_transport"
     }
   }
 }
