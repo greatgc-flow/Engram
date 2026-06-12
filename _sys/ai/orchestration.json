@@ -22,6 +22,8 @@
     },
     {
       "node_id": "ca",
+      "enabled": false,
+      "disabled_reason": "Human standing override: keep ca inactive indefinitely unless the user explicitly names ca for re-enable.",
       "aliases": ["claude-alt"],
       "type": "peer",
       "invoke": "claude",
@@ -40,6 +42,8 @@
     },
     {
       "node_id": "ag",
+      "enabled": false,
+      "disabled_reason": "Human standing override: keep ag inactive indefinitely unless the user explicitly names ag for re-enable.",
       "aliases": ["antigravity", "agy"],
       "type": "peer",
       "invoke": "agy",
@@ -59,10 +63,18 @@
     }
   ],
   "consensus": {
-    "default_voters": ["cc", "ca", "gc", "ag", "cx"],
+    "default_voters": ["cc", "gc", "cx"],
+    "inactive_default_voters": ["ca", "ag"],
+    "inactive_default_note": "Standing human override: ca/ag remain inactive indefinitely unless explicitly named for re-enable.",
     "default_proposer": "cc"
   },
   "check_gate": {
     "default_agent": "gc"
+  },
+  "roles_registry": {
+    "architect": ["cc", "gc"],
+    "reviewer": ["cc"],
+    "coder": ["cx", "cc"],
+    "researcher": ["gc"]
   }
 }

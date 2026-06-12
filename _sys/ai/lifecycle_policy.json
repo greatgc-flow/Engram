@@ -10,11 +10,11 @@
       "cx": "codex"
     },
     "fallback_by_node": {
-      "cc": ["cx", "ag", "gc"],
+      "cc": ["cx", "gc"],
       "ca": ["cx", "cc"],
       "gc": ["cc", "cx"],
       "ag": ["cc", "cx"],
-      "cx": ["cc", "ag"]
+      "cx": ["cc", "gc"]
     }
   },
   "ask_failure_classification": {
@@ -118,7 +118,7 @@
       "mode": "retain_improve",
       "role": "async_mailbox_only",
       "default_priority": "INFO",
-      "allowed_types": ["MSG", "DIRECTIVE", "ARTIFACT", "VERIFY", "PAYLOAD_REF"],
+      "allowed_types": ["MSG", "DIRECTIVE", "ARTIFACT", "VERIFY", "PAYLOAD_REF", "APPROVAL_REQUEST"],
       "ttl_hours_by_priority": {
         "CRITICAL": 24,
         "DIRECTIVE": 12,

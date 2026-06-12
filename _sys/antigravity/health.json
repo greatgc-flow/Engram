@@ -1,21 +1,41 @@
 {
   "_version": "1.0",
   "peer_id": "ag",
+  "profile": {
+    "tier": "mid",
+    "context_window": 1000000,
+    "cost_tier": "low",
+    "supported_tools": [
+      "read_file",
+      "write_file",
+      "run_command",
+      "web_search",
+      "image_generation"
+    ],
+    "capabilities": [
+      "shell-scripts",
+      "quick-cli",
+      "file-ops",
+      "system-orchestration",
+      "real-time-feedback-loop",
+      "image-generation"
+    ]
+  },
   "context_health": {
-    "status": "GREEN",
+    "status": "STALE",
     "jsonl_mb": 0.0,
     "session_token_count": 0,
     "model_latency_ms": 0,
     "quota_limit_remaining": 100,
     "active_background_tasks_count": 0,
-    "checked_at": "20260612T112344",
+    "checked_at": "20260612T173250",
     "source": "self"
   },
   "session_health": {
     "consecutive_failures": 0,
     "last_failure_reason": null,
-    "last_success_at": "2026-06-12T11:23:44",
-    "session_count_today": 25,
+    "last_success_at": "2026-06-12T17:32:50",
+    "session_count_today": 40,
     "session_date": "20260612"
   },
   "availability": {
@@ -23,9 +43,8 @@
     "authenticated": true,
     "gate_open": true,
     "last_gate_check": null,
-    "active_pid": null,
     "last_invocation_exit_code": 0,
-    "last_invocation_duration_ms": 189000,
+    "last_invocation_duration_ms": 132000,
     "rate_limit_state": "ok"
   }
 }

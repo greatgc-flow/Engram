@@ -110,8 +110,12 @@ def setup_environment(base_dir: Path, sys_dir: Path) -> dict:
         if not cfg.get("enabled"):
             continue
         peer_subdir = sys_dir / cfg.get("sys_subdir", peer_id)
-        for k, rel in cfg.get("env_vars", {}).items():
-            env[k] = str(peer_subdir / rel)
+        for k, val in cfg.get("env_vars", {}).items():
+            if isinstance(val, str):
+                env[k] = str(peer_subdir / val)
+            else:
+                # Handle booleans and numbers as literal env vars
+                env[k] = str(val).lower() if isinstance(val, bool) else str(val)
 
     # ── User / device overrides from config.json ────────────────
     for k, v in config.get("env_overrides", {}).items():
@@ -148,7 +152,15 @@ def main():
         base_dir_phys = config.get_base_dir()
 
         # Target Analysis
-        target = sys.argv[1] if len(sys.argv) > 1 else ""
+        raw_target = sys.argv[1] if len(sys.argv) > 1 else ""
+        target = raw_target
+        if target:
+            # Normalize path (handles relative paths and trailing slashes)
+            t_path = Path(target).resolve()
+            target = str(t_path)
+            # Trailing backslash on drive root (e.g. E:\) can cause issues in some shells
+            if target.endswith(":\\"):
+                pass # Path.resolve() usually handles this well on Windows
 
         # Load config
         subst_drive = config.get("SUBST_DRIVE_LETTER")
@@ -192,6 +204,9 @@ def main():
             run_mode = "APP"
         else:
             raise ValueError(f"Path not found: {target}")
+
+        # Set workspace for layered config
+        config.set_workspace(target_dir)
 
         os.chdir(target_dir)
 

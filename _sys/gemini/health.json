@@ -1,21 +1,39 @@
 {
   "_version": "1.0",
   "peer_id": "gc",
+  "profile": {
+    "tier": "mid",
+    "context_window": 1000000,
+    "cost_tier": "low",
+    "supported_tools": [
+      "read_file",
+      "write_file",
+      "run_command",
+      "web_search"
+    ],
+    "capabilities": [
+      "documentation",
+      "large-corpus-analysis",
+      "axis-d",
+      "global-dependency-mapping",
+      "zero-shot-tool-integration"
+    ]
+  },
   "context_health": {
     "status": "GREEN",
     "jsonl_mb": 0.0,
     "context_window_usage_percent": 0.0,
-    "checked_at": "20260612T112536",
+    "checked_at": "20260612T214425",
     "source": "self"
   },
   "session_health": {
     "consecutive_failures": 0,
     "last_failure_reason": null,
-    "last_success_at": "2026-06-12T11:25:36",
-    "session_count_today": 43,
+    "last_success_at": "2026-06-12T21:44:25",
+    "session_count_today": 84,
     "session_date": "20260612",
-    "last_failure_detail": "YOLO mode is enabled. All tool calls will be automatically approved.\nApproval mode overridden to \"default\" because the current folder is not trusted.\nYOLO mode is enabled. All tool calls will be automatically approved.\nApproval mode overridden to \"default\" because the current folder is not trusted.\nGemini CLI is not running in a trusted directory. To proceed, either use `--skip-trust`, set the `GEMINI_CLI_TRUST_WORKSPACE=true` environment variable, or trust this directory in interactive mode. Fo",
-    "last_failure_at": "2026-06-12T00:27:31"
+    "last_failure_detail": "ask timeout after 180s",
+    "last_failure_at": "2026-06-12T21:42:12"
   },
   "availability": {
     "installed": true,
@@ -24,7 +42,7 @@
     "last_gate_check": null,
     "active_pid": null,
     "last_invocation_exit_code": 0,
-    "last_invocation_duration_ms": 0,
+    "last_invocation_duration_ms": 77000,
     "rate_limit_state": "ok"
   }
 }

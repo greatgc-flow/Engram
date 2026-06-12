@@ -104,6 +104,7 @@ _sys/antigravity/config/bin/*.exe
 _sys/codex/config/.codex/
 _sys/codex/config/history/
 _sys/codex/config/sessions/
+_sys/codex/config/tmp/
 
 # Gemini auth/runtime data in config/ (tracked: GEMINI.md, CONTEXT.md, policies/)
 _sys/gemini/config/google_accounts.json
@@ -115,6 +116,9 @@ _sys/gemini/config/settings.json
 _sys/gemini/config/state.json
 _sys/gemini/config/trustedFolders.json
 _sys/gemini/config/tmp/
+
+# Session plans and dynamic documentation (not tracked)
+/plans/
 
 # Deprecated: ratio/collab settings moved to _sys/ai/config.json
 _sys/gemini/config.json

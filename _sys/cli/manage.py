@@ -332,7 +332,13 @@ def _remove_junction(host: Path) -> None:
     except Exception:
         pass
     if is_reparse:
-        _cmd(f"rmdir \"{host}\"")
+        try:
+            host.unlink()
+        except Exception:
+            try:
+                os.rmdir(host)
+            except Exception as e:
+                print(f"  [Fail] Could not remove junction {host}: {e}")
 
 
 

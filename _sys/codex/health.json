@@ -1,20 +1,42 @@
 {
   "_version": "1.0",
   "peer_id": "cx",
+  "profile": {
+    "tier": "mid",
+    "context_window": 128000,
+    "cost_tier": "mid",
+    "supported_tools": [
+      "read_file",
+      "write_file",
+      "run_command"
+    ],
+    "capabilities": [
+      "code-generation",
+      "refactoring",
+      "focused-implementation",
+      "code-review",
+      "bug-fixing",
+      "test-authoring",
+      "patch-planning",
+      "repo-local-reasoning",
+      "cli-tooling",
+      "developer-workflow"
+    ]
+  },
   "context_health": {
     "status": "GREEN",
     "jsonl_mb": 0.0,
-    "checked_at": "20260612T104147",
+    "checked_at": "20260612T213259",
     "source": "self"
   },
   "session_health": {
     "consecutive_failures": 1,
-    "last_failure_reason": "nonzero_exit",
-    "last_success_at": "2026-06-12T08:35:56",
-    "session_count_today": 15,
+    "last_failure_reason": "timeout",
+    "last_success_at": "2026-06-12T21:04:55",
+    "session_count_today": 18,
     "session_date": "20260612",
-    "last_failure_detail": "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 11:03 AM.",
-    "last_failure_at": "2026-06-12T10:41:47"
+    "last_failure_detail": "ask timeout after 180s",
+    "last_failure_at": "2026-06-12T21:32:59"
   },
   "availability": {
     "installed": true,
@@ -24,7 +46,7 @@
     "cli_version": "codex-cli 0.139.0",
     "entrypoint_ok": false,
     "last_invocation_exit_code": 1,
-    "last_invocation_duration_ms": 8000,
+    "last_invocation_duration_ms": 180000,
     "rate_limit_state": "ok",
     "workspace_access": "unknown",
     "active_pid": null

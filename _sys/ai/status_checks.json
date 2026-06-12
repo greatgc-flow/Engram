@@ -1,0 +1,213 @@
+{
+  "_version": "0.1",
+  "_status": "inert_metadata",
+  "_updated": "2026-06-12",
+  "_purpose": "Declarative peer status checks. This file records safe discovery methods and is not consumed by runtime code yet.",
+  "general_contract": {
+    "safe_classes": ["version_only", "local_help", "local_config_presence", "local_session_listing", "declared_profile", "low_quota_diagnostic", "empirical_probe", "unsupported"],
+    "auth_states": ["authenticated", "unauthenticated", "expired", "unknown"],
+    "rate_states": ["ok", "limited", "exhausted", "unknown"],
+    "context_states": ["green", "yellow", "red", "stale", "unknown"],
+    "gate_states": ["open", "degraded", "closed", "unknown"],
+    "effect_classes": ["read_only", "declared_dry_validate", "external_io", "unknown"],
+    "secret_policy": "never_record_secret_values",
+    "default_frequency": {
+      "version_only": "session_start",
+      "local_help": "manual",
+      "local_config_presence": "session_start_or_auth_error",
+      "local_session_listing": "manual",
+      "declared_profile": "on_config_change",
+      "low_quota_diagnostic": "manual_or_after_failure",
+      "empirical_probe": "explicit_approval_only",
+      "unsupported": "never"
+    }
+  },
+  "peers": {
+    "cx": {
+      "status": "degraded",
+      "safe_checks": [
+        {
+          "id": "cx.version",
+          "class": "version_only",
+          "command": "codex --version",
+          "effect_class": "read_only",
+          "quota": "none_expected",
+          "records": ["version"],
+          "notes": "Observed permission warnings for temp cleanup/PATH alias; do not treat warning as auth failure."
+        },
+        {
+          "id": "cx.help",
+          "class": "local_help",
+          "command": "codex --help",
+          "effect_class": "read_only",
+          "quota": "none_expected",
+          "records": ["flags", "subcommands"]
+        },
+        {
+          "id": "cx.doctor",
+          "class": "low_quota_diagnostic",
+          "command": "codex doctor",
+          "effect_class": "external_io",
+          "quota": "network_diagnostic_possible",
+          "records": ["auth_configured", "reachability", "state_db", "sandbox"],
+          "frequency": "manual_or_session_start_only"
+        }
+      ],
+      "unsafe_or_unknown": [
+        {
+          "command": "codex exec <prompt>",
+          "reason": "model call consumes quota"
+        },
+        {
+          "command": "codex <prompt>",
+          "reason": "interactive/model call consumes quota"
+        },
+        {
+          "command": "codex model list",
+          "reason": "not confirmed as a valid safe command"
+        }
+      ],
+      "derived_gate_rule": {
+        "open_if": ["auth_configured", "reachability_ok", "state_db_ok"],
+        "degraded_if_any": ["reachability_warning", "state_db_warning", "permission_warning"],
+        "closed_if_any": ["auth_missing", "required_endpoint_unreachable"]
+      }
+    },
+    "cc": {
+      "status": "eligible",
+      "safe_checks": [
+        {
+          "id": "cc.version",
+          "class": "version_only",
+          "command": "claude --version",
+          "effect_class": "read_only",
+          "quota": "none_expected",
+          "records": ["version"]
+        },
+        {
+          "id": "cc.help",
+          "class": "local_help",
+          "command": "claude --help",
+          "effect_class": "read_only",
+          "quota": "none_expected",
+          "records": ["flags", "subcommands"]
+        },
+        {
+          "id": "cc.auth_status",
+          "class": "local_config_presence",
+          "command": "claude auth status",
+          "effect_class": "read_only",
+          "quota": "none_expected",
+          "records": ["loggedIn", "authMethod", "apiProvider", "subscriptionType"],
+          "redact": ["email", "orgId", "orgName"]
+        }
+      ],
+      "unsafe_or_unknown": [
+        {
+          "command": "claude -p <prompt>",
+          "reason": "model call consumes quota"
+        },
+        {
+          "command": "claude --print <prompt>",
+          "reason": "model call consumes quota"
+        },
+        {
+          "command": "claude --dangerously-skip-permissions",
+          "reason": "permission bypass risk"
+        }
+      ],
+      "known_overrides": {
+        "model_flag": "--model",
+        "effort_flag": "--effort",
+        "fallback_model_flag": "--fallback-model",
+        "structured_output_flag": "--json-schema",
+        "permission_mode_flag": "--permission-mode"
+      }
+    },
+    "gc": {
+      "status": "eligible",
+      "safe_checks": [
+        {
+          "id": "gc.version",
+          "class": "version_only",
+          "command": "gemini --version",
+          "effect_class": "read_only",
+          "quota": "none_expected",
+          "records": ["version"]
+        },
+        {
+          "id": "gc.help",
+          "class": "local_help",
+          "command": "gemini --help",
+          "effect_class": "read_only",
+          "quota": "none_expected",
+          "records": ["flags", "subcommands"]
+        },
+        {
+          "id": "gc.sessions",
+          "class": "local_session_listing",
+          "command": "gemini --list-sessions",
+          "effect_class": "read_only",
+          "quota": "none_expected",
+          "records": ["session_inventory"]
+        },
+        {
+          "id": "gc.status_bat",
+          "class": "declared_profile",
+          "command": "_sys\\gemini\\gemini-status.bat",
+          "effect_class": "declared_dry_validate",
+          "quota": "none_expected_unless_ping_enabled",
+          "records": ["_sys/gemini/status.json"]
+        }
+      ],
+      "unsafe_or_unknown": [
+        {
+          "command": "gemini -p <prompt>",
+          "reason": "model call consumes quota"
+        },
+        {
+          "command": "gemini --prompt-interactive <prompt>",
+          "reason": "model call consumes quota"
+        },
+        {
+          "command": "gemini --model-list",
+          "reason": "not confirmed as a valid safe command"
+        }
+      ],
+      "known_overrides": {
+        "model_flag": "--model",
+        "approval_mode_flag": "--approval-mode",
+        "read_only_mode": "plan",
+        "output_format_flag": "--output-format"
+      }
+    },
+    "ag": {
+      "status": "inactive_in_current_room",
+      "safe_checks": [
+        {
+          "id": "ag.version",
+          "class": "version_only",
+          "command": "agy --version",
+          "effect_class": "read_only",
+          "quota": "none_expected",
+          "records": ["version"]
+        }
+      ],
+      "unsafe_or_unknown": [
+        {
+          "command": "agy models",
+          "reason": "peer exploration indicated this may hang or behave as a prompt"
+        },
+        {
+          "command": "agy <unknown-subcommand>",
+          "reason": "unknown subcommands may block or consume quota"
+        }
+      ]
+    },
+    "ca": {
+      "status": "inactive_in_current_room",
+      "inherits": "cc",
+      "notes": "Same Claude CLI family as cc; not an active room member after human override."
+    }
+  }
+}

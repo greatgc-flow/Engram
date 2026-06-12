@@ -47,6 +47,117 @@ def test_ask_quiet_and_output_file(ai_dir, tmp_path, capsys):
         assert captured2.out == "mock output response"
 
 
+def test_thin_forward_envelope_excludes_full_context(ai_dir):
+    hub.action_init_session(ai_dir, "cx")
+    state = json.loads((ai_dir / "state.json").read_text("utf-8"))
+    session_dir = ai_dir / "sessions" / state["room_id"]
+    session_dir.mkdir(parents=True, exist_ok=True)
+    (session_dir / "handoff.md").write_text("## [ACTIVE_THREADS]\n" + ("large context\n" * 200), encoding="utf-8")
+
+    envelope = hub._thin_forward_envelope(ai_dir, "hello", "cx", "cx")
+
+    assert "USER_QUERY:\nhello" in envelope
+    assert "STATE_REFS:" in envelope
+    assert "large context" not in envelope
+    assert "HUB CONTEXT" not in envelope
+
+
+def test_matching_peers_uses_scores(ai_dir):
+    state = {
+        "active_coordinator": "cx",
+        "role_assignments": {},
+    }
+    (ai_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    health = {
+        "cx": {
+            "peer_id": "cx",
+            "profile": {"tier": "mid", "cost_tier": "mid", "capabilities": ["focused-implementation"]},
+            "context_health": {"status": "GREEN", "checked_at": "29990101T000000"},
+            "session_health": {"session_count_today": 1},
+            "availability": {"gate_open": True},
+        },
+        "cc": {
+            "peer_id": "cc",
+            "profile": {"tier": "mid", "cost_tier": "high", "capabilities": ["implementation"]},
+            "context_health": {"status": "GREEN", "checked_at": "29990101T000000"},
+            "session_health": {"session_count_today": 1},
+            "availability": {"gate_open": True},
+        },
+    }
+    with patch("hub.find_ai_root", return_value=ai_dir), \
+         patch("hub._read_peer_health", side_effect=lambda peer: (ai_dir / f"{peer}.json", health[peer])), \
+         patch("hub._load_orchestration", return_value={
+             "hub_nodes": [
+                 {"node_id": "cx", "aliases": [], "invoke": "mock"},
+                 {"node_id": "cc", "aliases": [], "invoke": "mock"},
+             ]
+         }), \
+         patch("hub._load_protocol_cfg", return_value={
+             "leader_election": {
+                 "election_score": {
+                     "capability_match_max": 10,
+                     "health_score": {"GREEN": 3, "YELLOW": 1, "STALE": -5, "RED": "blocked"},
+                     "continuity_bonus_max": 2,
+                     "console_fit_bonus_max": 1,
+                     "cost_penalty": {"low": 0, "mid": 1, "high": 2},
+                     "cold_start_penalty_max": 1,
+                 }
+             },
+             "workload": {"capability_registry": {}}
+         }):
+        matches = hub._matching_peers("implementation")
+    assert matches[0]["node_id"] == "cx"
+    assert "score" in matches[0]
+
+
+def test_task_checkpoint_writes_schema(ai_dir):
+    state = {
+        "role_assignments": {
+            "implementer": {"peer": "cx", "status": "ACTIVE", "assigned_at": "now"}
+        }
+    }
+    (ai_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    hub.action_task_checkpoint(ai_dir, "task-1", "cx", "checkpoint note")
+    data = json.loads((ai_dir / "task_registry.json").read_text("utf-8"))
+    task = data["task-1"]
+    assert task["task_id"] == "task-1"
+    assert task["owner"] == "cx"
+    assert task["status"] == "ACTIVE"
+    assert task["checkpoints"][0]["note"] == "checkpoint note"
+
+
+def test_role_guard_blocks_wrong_role(ai_dir):
+    state = {
+        "role_assignments": {
+            "reviewer": {"peer": "cc", "status": "ACTIVE", "assigned_at": "now"}
+        }
+    }
+    (ai_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    with pytest.raises(SystemExit) as excinfo:
+        hub.action_task_checkpoint(ai_dir, "task-1", "cc", "bad checkpoint")
+    assert excinfo.value.code == 3
+
+
+def test_context_fill_prints_parsed_handoff_lists(ai_dir, capsys):
+    hub.action_init_session(ai_dir, "cx")
+    capsys.readouterr()
+    state = json.loads((ai_dir / "state.json").read_text("utf-8"))
+    session_dir = ai_dir / "sessions" / state["room_id"]
+    session_dir.mkdir(parents=True, exist_ok=True)
+    (session_dir / "handoff.md").write_text(
+        "## [GOAL]\n- keep context compact\n\n## [ACTIVE_THREADS]\n- review round\n",
+        encoding="utf-8",
+    )
+
+    hub.action_context_fill(ai_dir, ["GOAL", "ACTIVE_THREADS"])
+    out = capsys.readouterr().out
+
+    assert "## [GOAL]" in out
+    assert "keep context compact" in out
+    assert "## [ACTIVE_THREADS]" in out
+    assert "review round" in out
+
+
 # 2. Test collab_rate guard on mutating action
 def test_collab_rate_guard(ai_dir, capsys):
     # Initialize a session first so room_id is set

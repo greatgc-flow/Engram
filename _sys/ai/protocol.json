@@ -10,6 +10,105 @@
         "ag",
         "cx"
     ],
+    "leader_election": {
+        "enabled": true,
+        "human_interface_peer_stays_fixed": true,
+        "active_coordinator_field": "active_coordinator",
+        "yield_context_threshold_percent": 80,
+        "yield_failure_threshold": 3,
+        "cool_down_seconds": 300,
+        "health_stale_minutes": 120,
+        "allow_failover_on_red": true,
+        "forwarding_mode": "thin_envelope",
+        "single_hop_forwarding_only": true,
+        "election_score": {
+            "capability_match_max": 10,
+            "health_score": {
+                "GREEN": 3,
+                "YELLOW": 1,
+                "STALE": -5,
+                "RED": "blocked"
+            },
+            "continuity_bonus_max": 2,
+            "console_fit_bonus_max": 1,
+            "cost_penalty": {
+                "low": 0,
+                "mid": 1,
+                "high": 2
+            },
+            "cold_start_penalty_max": 1
+        },
+        "human_interface_health_policy": {
+            "healthy": "normal",
+            "degraded": "thin_forwarding_and_concise_local_summary",
+            "rate_limited": "queue_or_manual_console_switch",
+            "auth_blocked": "request_setup_or_reroute_without_forwarding_credentials",
+            "hard_fail": "manual_console_migration_required"
+        },
+        "recommended_console_by_task": {
+            "general_repo_work": "cx",
+            "architecture_policy_review": "cc",
+            "large_context_research": "gc",
+            "shell_operations": "ag",
+            "independent_verification": "ca"
+        },
+        "role_enforcement": {
+            "enabled": true,
+            "scope": "hub_state_mutations",
+            "note": "Direct peer file writes are policy-governed until filesystem hooks/locks enforce them."
+        },
+        "forwarding_contract": {
+            "send_full_history": false,
+            "send_user_query": true,
+            "send_state_refs": true,
+            "auth_and_approval_owner": "human_interface_peer",
+            "credential_forwarding": "forbidden",
+            "coordinator_may_request_approval": true,
+            "preferred_refs": [
+                ".ai/state.json",
+                ".ai/sessions/{room_id}/handoff.md",
+                ".ai/task_registry.json"
+            ],
+            "max_forward_chars": 800
+        },
+        "prompt_templates": {
+            "compact": {
+                "purpose": "Low-tier or short-context peer handoff.",
+                "max_context_chars": 800,
+                "fields": [
+                    "TASK",
+                    "INPUT_REFS",
+                    "CONSTRAINTS",
+                    "DO",
+                    "DO_NOT",
+                    "OUTPUT_SCHEMA"
+                ]
+            },
+            "standard": {
+                "purpose": "Normal coordinator-to-peer routing.",
+                "max_context_chars": 4000,
+                "fields": [
+                    "TASK",
+                    "BACKGROUND",
+                    "INPUT_REFS",
+                    "CONSTRAINTS",
+                    "EXPECTED_OUTPUT"
+                ]
+            },
+            "deep_review": {
+                "purpose": "High-tier review when additional context is justified.",
+                "max_context_chars": 12000,
+                "fields": [
+                    "TASK",
+                    "DECISION_HISTORY",
+                    "CHANGED_FILES",
+                    "TEST_RESULTS",
+                    "OPEN_RISKS",
+                    "EXPECTED_OUTPUT"
+                ]
+            }
+        }
+    },
     "collab_rate": {
         "current": 10,
         "review_interval_min": 5,
@@ -170,18 +269,19 @@
     "consensus": {
         "r10_voters": [
             "cc",
-            "ca",
             "gc",
-            "ag",
             "cx"
         ],
         "default_voters": [
             "cc",
-            "ca",
             "gc",
-            "ag",
             "cx"
         ],
+        "inactive_default_voters": [
+            "ca",
+            "ag"
+        ],
+        "inactive_default_note": "Standing human override: ca/ag remain inactive indefinitely unless the user explicitly names ca/ag for re-enable.",
         "default_proposer": "cc",
         "timeout_minutes": 30,
         "offline_auto_abstain_minutes": 30,
@@ -255,15 +355,14 @@
             {
                 "task_type": "script",
                 "preferred": [
-                    "cc",
-                    "ag"
+                    "cc"
                 ],
                 "fallback": "cc"
             },
             {
                 "task_type": "verify",
                 "preferred": [
-                    "ca"
+                    "cc"
                 ],
                 "fallback": "cc"
             },
@@ -279,7 +378,7 @@
                 "task_type": "code-review",
                 "preferred": [
                     "cx",
-                    "ca"
+                    "cc"
                 ],
                 "fallback": "cc"
             },
@@ -293,7 +392,6 @@
             {
                 "task_type": "shell-ops",
                 "preferred": [
-                    "ag",
                     "cc"
                 ],
                 "fallback": "cc"
@@ -305,9 +403,9 @@
             "domain_leads": {
                 "code_review_impl": "cx",
                 "large_doc_analysis": "gc",
-                "shell_interactive": "ag",
+                "shell_interactive": "cc",
                 "architecture_session": "cc",
-                "verification": "ca"
+                "verification": "cc"
             }
         }
     },
@@ -370,6 +468,20 @@
         },
         "note": "Define model-specific virtual nodes in orchestration.json with explicit invoke_args. hub ask currently selects nodes, not arbitrary runtime model strings."
     },
+    "generated_artifacts": {
+        "policy": "Generated launcher outputs are tracked separately from governed source files and must not block consensus unless their generator, stable wrapper, or runtime behavior is affected.",
+        "volatile_outputs": [
+            "_sys/antigravity/config/bin/agentapi.bat"
+        ],
+        "stable_wrappers": [
+            "_sys/cli/agy.bat"
+        ],
+        "source_of_truth": [
+            "_sys/ai/orchestration.json",
+            "_sys/docs/workspace-environment.md"
+        ],
+        "audit_action": "Classify volatile generated drift as informational; review the source of truth and stable wrapper before proposing source edits."
+    },
     "operational_guard": {
         "enabled": true,
         "collab_rate_guard": {
@@ -378,6 +490,7 @@
             "require_finalized_consensus": true,
             "exempt_actions": [
                 "ask",
+                "ask-coordinator",
                 "check",
                 "status",
                 "check-gate",
@@ -386,12 +499,20 @@
                 "consensus-check",
                 "consensus-sweep",
                 "list-nodes",
+                "discover",
                 "health-check",
+                "health-precheck",
                 "peer-status",
+                "role-status",
                 "context-fill",
                 "preflight",
                 "context-hash",
                 "context-ack",
+                "task-status",
+                "lock-status",
+                "profile-validate",
+                "model-status",
+                "transient-scan",
                 "peer-recover",
                 "feedback-list",
                 "artifact-status",
@@ -399,6 +520,11 @@
                 "end-session",
                 "send",
                 "broadcast",
+                "append-handoff",
+                "append-log",
+                "checkpoint",
+                "task-checkpoint",
+                "update-status",
                 "health-update",
                 "report-error"
             ]
@@ -431,7 +557,19 @@
             "feedback-add",
             "feedback-resolve",
             "artifact-claim",
-            "artifact-finalize"
+            "artifact-finalize",
+            "leader-yield",
+            "leader-claim",
+            "elect-leader",
+            "assign-role",
+            "release-role",
+            "append-handoff",
+            "task-checkpoint",
+            "task-failover",
+            "approval-request",
+            "file-lock",
+            "file-unlock",
+            "health-sweep"
         ],
         "recovery_hub_actions": [
             "peer-recover",
@@ -445,12 +583,20 @@
             "check-gate",
             "consensus-check",
             "list-nodes",
+            "discover",
             "health-check",
+            "health-precheck",
             "peer-status",
+            "role-status",
             "context-fill",
             "preflight",
             "context-hash",
             "context-ack",
+            "task-status",
+            "lock-status",
+            "profile-validate",
+            "model-status",
+            "transient-scan",
             "feedback-list",
             "artifact-status"
         ],

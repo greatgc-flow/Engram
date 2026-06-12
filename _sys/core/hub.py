@@ -110,6 +110,8 @@ def _default_nodes() -> dict:
     orch = _load_orchestration()
     nodes = {}
     for entry in orch.get("hub_nodes", []):
+        if entry.get("enabled") is False:
+            continue
         nid = entry.get("node_id")
         if nid:
             nodes[nid] = {k: v for k, v in entry.items() if k != "node_id"}
@@ -126,12 +128,17 @@ def ensure_ai_dir(ai_root: Path) -> Path:
     if not (ai_root / "mailbox.json").exists():
         _write_json(ai_root / "mailbox.json", {"messages": [], "unread_count": 0})
     if not (ai_root / "state.json").exists():
-        _write_json(ai_root / "state.json", {
+        _write_state(ai_root, {
             "room_id": None,
             "members": {}, # {node_id: sid}
             "mission": None, "blocked": None, "phase": None,
+            "active_coordinator": None,
+            "human_interface_peer": None,
+            "role_assignments": {},
             "updated_at": None
         })
+    if not (ai_root / "task_registry.json").exists():
+        _write_json(ai_root / "task_registry.json", {})
     if not (ai_root / "nodes.json").exists():
         _write_json(ai_root / "nodes.json", _default_nodes())
     return ai_root
@@ -146,6 +153,62 @@ def _read_json(path: Path) -> dict:
         return json.loads(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
+
+
+def _validate_state(state: dict) -> None:
+    if not isinstance(state, dict):
+        raise ValueError("state must be an object")
+    for key in ("active_coordinator", "leader"):
+        if key in state and state[key] is not None and not isinstance(state[key], str):
+            raise ValueError(f"state.{key} must be a string or null")
+    leadership = state.get("leadership")
+    if leadership is not None:
+        if not isinstance(leadership, dict):
+            raise ValueError("state.leadership must be an object")
+        status = leadership.get("status")
+        if status is not None and status not in {"ACTIVE", "VACANT", "YIELDED"}:
+            raise ValueError("state.leadership.status is invalid")
+    assignments = state.get("role_assignments")
+    if assignments is not None:
+        if not isinstance(assignments, dict):
+            raise ValueError("state.role_assignments must be an object")
+        for role, info in assignments.items():
+            if not isinstance(role, str) or not isinstance(info, dict) or not isinstance(info.get("peer"), str):
+                raise ValueError("state.role_assignments entries must include peer strings")
+
+
+def _write_state(ai_root: Path, state: dict) -> None:
+    _validate_state(state)
+    _write_json(ai_root / "state.json", state)
+
+
+def _validate_task_registry(data: dict) -> None:
+    if not isinstance(data, dict):
+        raise ValueError("task registry must be an object")
+    for task_id, task in data.items():
+        if not isinstance(task_id, str) or not isinstance(task, dict):
+            raise ValueError("task registry entries must be objects")
+        if task.get("task_id") != task_id:
+            raise ValueError("task_id mismatch")
+        if task.get("status") not in {"ACTIVE", "BLOCKED", "DONE", "TRANSFERRED"}:
+            raise ValueError("task status is invalid")
+        checkpoints = task.get("checkpoints", [])
+        if not isinstance(checkpoints, list):
+            raise ValueError("task checkpoints must be a list")
+        for cp in checkpoints:
+            if not isinstance(cp, dict) or not cp.get("peer") or not cp.get("note") or not cp.get("at"):
+                raise ValueError("task checkpoint entries require peer, note, and at")
+
+
+def _write_task_registry(ai_root: Path, data: dict) -> None:
+    _validate_task_registry(data)
+    _write_json(_task_registry_path(ai_root), data)
+
+
+def _append_jsonl(path: Path, item: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
 
 def _write_json(path: Path, data: dict) -> None:
@@ -382,7 +445,7 @@ def action_init_session(ai_root: Path, agent: str, room_id: str | None = None) -
         members[agent] = sid
         state["members"] = members
         state["updated_at"] = _now()
-        _write_json(ai_root / "state.json", state)
+        _write_state(ai_root, state)
         _log_p2p("JOIN", f"Room={state['room_id']} SID={sid}", from_node=agent)
     session_dir = ai_root / "sessions" / state["room_id"]
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -398,7 +461,7 @@ def action_end_session(ai_root: Path, agent: str) -> None:
         if agent in members: del members[agent]
         state["members"] = members
         state["updated_at"] = ts
-        _write_json(ai_root / "state.json", state)
+        _write_state(ai_root, state)
         _log_p2p("EXIT", "Session ended", from_node=agent)
     if room_id:
         session_dir = ai_root / "sessions" / room_id
@@ -598,7 +661,7 @@ def action_update_status(ai_root: Path, mission: str, blocked: str | None, phase
         if blocked is not None: state["blocked"] = blocked if blocked else None
         if phase is not None: state["phase"] = phase
         state["updated_at"] = _now()
-        _write_json(ai_root / "state.json", state)
+        _write_state(ai_root, state)
         _log_p2p("STATUS", f"Mission={mission} Phase={phase}", from_node="SYSTEM")
     print(f"[STATUS] mission={mission}")
 
@@ -665,12 +728,33 @@ def action_status(ai_root: Path) -> None:
     
     print("### [ROOM STATUS]")
     print(f"**Room ID**: {state.get('room_id') or '없음'}")
+    leadership = state.get("leadership", {})
+    active_coordinator = state.get("active_coordinator") or state.get("leader")
+    print(f"**Leader**: {active_coordinator or 'VACANT (공석)'}")
+    if leadership:
+        print(f"**Leader Reason**: {leadership.get('reason') or '없음'}")
     print(f"**Members**: {', '.join(state.get('members', {}).keys()) or '없음'}")
+    roles = state.get("role_assignments") or state.get("roles") or {}
+    if roles:
+        role_text = []
+        for role, value in roles.items():
+            peer = value.get("peer") if isinstance(value, dict) else value
+            role_text.append(f"{role}={peer}")
+        print(f"**Roles**: {', '.join(role_text)}")
     print(f"**Mission**: {state.get('mission') or '없음'}")
     print(f"**Blocked**: {state.get('blocked') or '없음'}")
     print(f"**Phase**: {state.get('phase') or '없음'}")
     print(f"**Updated**: {state.get('updated_at') or '없음'}")
     print(f"**Mailbox**: {unread_count} unread")
+    task_path = _task_registry_path(ai_root)
+    tasks = _read_json(task_path) if task_path.exists() else {}
+    if tasks:
+        active_tasks = [k for k, v in tasks.items() if isinstance(v, dict) and v.get("status") == "ACTIVE"]
+        print(f"**Tasks**: {len(active_tasks)} active / {len(tasks)} total")
+    lock_path = _file_locks_path(ai_root)
+    locks = _read_json(lock_path) if lock_path.exists() else {}
+    if locks:
+        print(f"**Locks**: {len(locks)} active")
     
     consensus_dir = ai_root / "consensus"
     if consensus_dir.exists():
@@ -784,10 +868,8 @@ def _write_peer_health(peer_id: str, data: dict, ai_root: Path | None) -> None:
 def _ask_health_precheck(peer_id: str, ai_root: Path | None) -> None:
     if ai_root is None:
         return
-    _, data = _read_peer_health(peer_id)
-    ctx = data.get("context_health", {})
+    status, data = _peer_effective_health(peer_id)
     availability = data.get("availability", {})
-    status = ctx.get("status")
     if status == "RED" or availability.get("gate_open") is False:
         reason = data.get("session_health", {}).get("last_failure_reason") or "health_gate_closed"
         print(f"[HUB:SKIP] {peer_id} health blocked | status={status} reason={reason}", file=sys.stderr)
@@ -915,6 +997,143 @@ def _append_handoff_item(ai_root: Path, section: str, item: str) -> None:
         _write_handoff(session_dir, handoff)
 
 
+def _parse_compact_ts(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    for fmt in ("%Y%m%dT%H%M%S", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return datetime.strptime(str(value)[:19], fmt)
+        except ValueError:
+            pass
+    return None
+
+
+def _peer_effective_health(peer_id: str, stale_minutes: int | None = None) -> tuple[str, dict]:
+    if stale_minutes is None:
+        stale_minutes = int(_load_protocol_cfg().get("leader_election", {}).get("health_stale_minutes", 120) or 120)
+    _, data = _read_peer_health(peer_id)
+    status = data.get("context_health", {}).get("status", "UNKNOWN")
+    checked_at = data.get("context_health", {}).get("checked_at")
+    checked_dt = _parse_compact_ts(checked_at)
+    if checked_dt and (datetime.now() - checked_dt).total_seconds() > stale_minutes * 60:
+        status = "STALE"
+    if data.get("availability", {}).get("quarantined"):
+        status = "RED"
+    return status, data
+
+
+def _healthy_peer(peer_id: str) -> bool:
+    status, data = _peer_effective_health(peer_id)
+    return status not in {"RED", "STALE"} and data.get("availability", {}).get("gate_open") is not False
+
+
+def _role_guard(ai_root: Path, peer: str, action: str, allowed_roles: set[str], force_tier0: bool = False) -> None:
+    if force_tier0 or not peer or peer == "unknown":
+        return
+    cfg = _load_protocol_cfg().get("leader_election", {}).get("role_enforcement", {})
+    if not cfg.get("enabled", True):
+        return
+    state = _read_json(ai_root / "state.json")
+    assignments = state.get("role_assignments") or {}
+    if not assignments:
+        return
+    peer_roles = set()
+    for role, info in assignments.items():
+        if isinstance(info, dict) and info.get("peer") == peer and info.get("status") == "ACTIVE":
+            peer_roles.add(role)
+        elif isinstance(info, str) and info == peer:
+            peer_roles.add(role)
+    if not peer_roles:
+        print(f"[HUB:BLOCK] peer {peer} has no active role for action {action}", file=sys.stderr)
+        sys.exit(3)
+    if peer_roles.isdisjoint(allowed_roles):
+        print(f"[HUB:BLOCK] peer {peer} roles={','.join(sorted(peer_roles))} cannot perform {action}", file=sys.stderr)
+        sys.exit(3)
+
+
+def _matching_peers(needs: str, effort: str = "mid") -> list[dict]:
+    proto_cfg = _load_protocol_cfg()
+    election_cfg = proto_cfg.get("leader_election", {}).get("election_score", {})
+    capability_registry = proto_cfg.get("workload", {}).get("capability_registry", {})
+    role_registry = _load_orchestration().get("roles_registry", {})
+    nodes = {
+        node["node_id"]: node
+        for node in _load_orchestration().get("hub_nodes", [])
+        if node.get("enabled") is not False
+    }
+    tier_weight = {"low": 1, "mid": 2, "medium": 2, "high": 3}
+    effort_weight = {"low": 1, "mid": 2, "medium": 2, "high": 3, "xhigh": 4, "max": 5}
+    requested_effort = effort_weight.get(str(effort).lower(), 2)
+    needs_lower = str(needs or "").lower()
+    try:
+        state = _read_json(find_ai_root() / "state.json")
+    except Exception:
+        state = {}
+    active = state.get("active_coordinator") or state.get("leader")
+    health_score_cfg = election_cfg.get("health_score", {})
+    cost_penalty_cfg = election_cfg.get("cost_penalty", {})
+    capability_max = int(election_cfg.get("capability_match_max", 10) or 10)
+    continuity_bonus_max = int(election_cfg.get("continuity_bonus_max", 2) or 2)
+    console_bonus_max = int(election_cfg.get("console_fit_bonus_max", 1) or 1)
+    cold_start_penalty_max = int(election_cfg.get("cold_start_penalty_max", 1) or 1)
+    matches: list[dict] = []
+    for node_id, node_info in nodes.items():
+        status, h_data = _peer_effective_health(node_id)
+        if status == "RED":
+            continue
+        profile = h_data.get("profile", {})
+        capabilities = list(profile.get("capabilities", []))
+        capabilities.extend(capability_registry.get(node_id, []))
+        for role, peers in role_registry.items():
+            if node_id in peers:
+                capabilities.append(role)
+        aliases = [str(a).lower() for a in node_info.get("aliases", [])]
+        if not needs_lower:
+            capability_score = 1
+        elif needs_lower == node_id.lower() or needs_lower in aliases:
+            capability_score = capability_max
+        else:
+            cap_scores = []
+            for cap in capabilities:
+                cap_lower = str(cap).lower()
+                if cap_lower == needs_lower:
+                    cap_scores.append(capability_max)
+                elif needs_lower in cap_lower or cap_lower in needs_lower:
+                    cap_scores.append(max(1, capability_max - 3))
+            capability_score = max(cap_scores) if cap_scores else 0
+        matched = (
+            not needs_lower
+            or needs_lower == node_id.lower()
+            or needs_lower in aliases
+            or capability_score > 0
+        )
+        if not matched:
+            continue
+        cost_tier = str(profile.get("cost_tier", "mid")).lower()
+        model_tier = str(profile.get("tier", "mid")).lower()
+        if requested_effort >= 3 and tier_weight.get(model_tier, 2) < 2:
+            continue
+        raw_health_score = health_score_cfg.get(status, 0)
+        health_score = -999 if raw_health_score == "blocked" else int(raw_health_score or 0)
+        continuity_bonus = continuity_bonus_max if node_id == active and status not in {"RED", "STALE"} else 0
+        recommended = proto_cfg.get("leader_election", {}).get("recommended_console_by_task", {})
+        console_bonus = console_bonus_max if recommended.get(needs_lower) == node_id else 0
+        cost_penalty = int(cost_penalty_cfg.get(cost_tier, 1) or 0)
+        session_count = h_data.get("session_health", {}).get("session_count_today")
+        cold_start_penalty = cold_start_penalty_max if session_count == 0 else 0
+        score = capability_score + health_score + continuity_bonus + console_bonus - cost_penalty - cold_start_penalty
+        matches.append({
+            "node_id": node_id,
+            "status": status,
+            "cost_tier": cost_tier,
+            "model_tier": model_tier,
+            "capabilities": sorted(set(str(c) for c in capabilities)),
+            "score": score,
+        })
+    matches.sort(key=lambda x: (x["score"], x["status"] == "GREEN", -tier_weight.get(x["cost_tier"], 2)), reverse=True)
+    return matches
+
+
 def _new_member_sids(members: dict) -> dict:
     return {agent: _short_id(agent[:1]) for agent in members.keys()}
 
@@ -980,7 +1199,7 @@ def action_new_topic(ai_root: Path, subject: str) -> None:
         state["blocked"] = None
         state["phase"] = "new-topic"
         state["updated_at"] = _now()
-        _write_json(ai_root / "state.json", state)
+        _write_state(ai_root, state)
     new_dir = ai_root / "sessions" / new_room
     new_dir.mkdir(parents=True, exist_ok=True)
     _write_handoff(new_dir, carried)
@@ -1009,7 +1228,7 @@ def action_clear_room(ai_root: Path, subject: str) -> None:
         state["blocked"] = None
         state["phase"] = "clear-room"
         state["updated_at"] = _now()
-        _write_json(ai_root / "state.json", state)
+        _write_state(ai_root, state)
     new_dir = ai_root / "sessions" / new_room
     new_dir.mkdir(parents=True, exist_ok=True)
     _write_handoff(new_dir, sections)
@@ -1050,7 +1269,7 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
     return output, elapsed
 
 
-def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None) -> None:
+def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True) -> None:
     if query_file:
         qf = Path(query_file)
         if not qf.exists(): sys.exit(1)
@@ -1063,11 +1282,19 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     # requires_pty 노드(agy 등)는 pywinpty 사용 + query 직접 인라인.
     # aliases는 orchestration.json 각 노드의 "aliases" 필드에서 동적 로드
     nodes = _load_nodes(ai_root) if ai_root else _default_nodes()["nodes"]
+    disabled_nodes = {
+        entry.get("node_id")
+        for entry in _load_orchestration().get("hub_nodes", [])
+        if entry.get("enabled") is False and entry.get("node_id")
+    }
     if to not in nodes:
         for nid, ncfg in nodes.items():
             if to in ncfg.get("aliases", []):
                 to = nid
                 break
+    if to in disabled_nodes:
+        print(f"[ERROR] ask target disabled by default: {to}", file=sys.stderr)
+        sys.exit(1)
     node = nodes.get(to, {})
     if not node:
         print(f"[ERROR] unknown ask target: {to}", file=sys.stderr)
@@ -1087,7 +1314,8 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             timeout_sec = 300 if requires_pty else 180
 
     _ask_health_precheck(to, ai_root)
-    query = _build_ask_query_with_context(ai_root, query)
+    if include_context:
+        query = _build_ask_query_with_context(ai_root, query)
 
     cmd_args = []
     use_stdin = False
@@ -1221,6 +1449,56 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         _record_ask_failure(to, reason, str(e), None, ai_root, extra)
         print(f"[HUB:ERROR] ask 실패: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+def _read_query_arg(query: str, query_file: str | None) -> str:
+    if query_file:
+        qf = Path(query_file)
+        if not qf.exists():
+            sys.exit(1)
+        text = qf.read_text(encoding="utf-8")
+        qf.unlink()
+        return text
+    return query or ""
+
+
+def _thin_forward_envelope(ai_root: Path, query: str, coordinator: str, from_peer: str) -> str:
+    state = _read_json(ai_root / "state.json")
+    room_id = state.get("room_id") or "none"
+    cfg = _load_protocol_cfg().get("leader_election", {}).get("forwarding_contract", {})
+    max_chars = int(cfg.get("max_forward_chars", 800) or 800)
+    refs = [str(ref).replace("{room_id}", room_id) for ref in cfg.get("preferred_refs", [])]
+    roles = state.get("roles") or {}
+    meta = "\n".join([
+        f"ROOM: {room_id}",
+        f"FROM: {from_peer or 'unknown'}",
+        f"ACTIVE_COORDINATOR: {coordinator}",
+        "FORWARDING: thin_envelope; single_hop=true; no_credentials=true",
+        "STATE_REFS:",
+        *[f"- {ref}" for ref in refs],
+        f"ROLES: {json.dumps(roles, ensure_ascii=False)}",
+        "REQUEST: coordinate using state refs; do not require full chat history.",
+    ])
+    if len(meta) > max_chars:
+        meta = meta[: max_chars - 20] + "\n...[truncated]"
+    return f"{meta}\n\nUSER_QUERY:\n{query}"
+
+
+def action_ask_coordinator(ai_root: Path, query: str, query_file: str | None, timeout_sec: int, from_peer: str, quiet: bool = False, output_file: str | None = None) -> None:
+    query_text = _read_query_arg(query, query_file)
+    state = _read_json(ai_root / "state.json")
+    coordinator = state.get("active_coordinator") or state.get("leader")
+    if not coordinator:
+        coordinator = _load_orchestration().get("consensus", {}).get("default_proposer", "cc")
+    if not _healthy_peer(coordinator):
+        print(f"[HUB:ERROR] active coordinator {coordinator} is not healthy", file=sys.stderr)
+        sys.exit(2)
+    if "ask-coordinator" in query_text.lower():
+        print("[HUB:ERROR] nested ask-coordinator forwarding is not allowed", file=sys.stderr)
+        sys.exit(1)
+    envelope = _thin_forward_envelope(ai_root, query_text, coordinator, from_peer)
+    _record_routing_metric(ai_root, "ask_coordinator", from_peer=from_peer, coordinator=coordinator, query_chars=len(query_text), envelope_chars=len(envelope))
+    action_ask(coordinator, envelope, None, timeout_sec, ai_root, quiet=quiet, output_file=output_file, include_context=False)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1455,6 +1733,130 @@ def action_peer_status() -> None:
     print("└──────────┴──────────┴──────────┴────────────────────┘")
 
 
+def _task_registry_path(ai_root: Path) -> Path:
+    return ai_root / "task_registry.json"
+
+
+def _file_locks_path(ai_root: Path) -> Path:
+    return ai_root / "file_locks.json"
+
+
+def _routing_metrics_path(ai_root: Path) -> Path:
+    return ai_root / "routing_metrics.jsonl"
+
+
+def _record_routing_metric(ai_root: Path, event: str, **fields) -> None:
+    item = {"ts": _now(), "event": event}
+    item.update(fields)
+    _append_jsonl(_routing_metrics_path(ai_root), item)
+
+
+def _checkpoint_active_tasks(ai_root: Path, peer: str, note: str) -> None:
+    path = _task_registry_path(ai_root)
+    if not path.exists():
+        return
+    with _get_lock(ai_root, "task_registry"):
+        data = _read_json(path)
+        changed = False
+        for task in data.values():
+            if isinstance(task, dict) and task.get("status") == "ACTIVE" and task.get("owner") == peer:
+                task.setdefault("checkpoints", []).append({"peer": peer, "note": note, "at": _now()})
+                task["updated_at"] = _now()
+                changed = True
+        if changed:
+            _write_task_registry(ai_root, data)
+            _append_handoff_item(ai_root, "ACTIVE_THREADS", f"{_now()} {peer}: checkpoint-before-yield recorded")
+
+
+def action_leader_yield(ai_root: Path, agent: str, reason: str = "") -> None:
+    """현재 리더가 리더십을 양도하여 공석(VACANT)으로 변경."""
+    state_path = ai_root / "state.json"
+    pressure_reasons = ("context", "health", "rate", "limit", "failure", "degraded")
+    if any(token in (reason or "").lower() for token in pressure_reasons):
+        _checkpoint_active_tasks(ai_root, agent, f"checkpoint-before-yield: {reason or 'unspecified'}")
+    with _get_lock(ai_root, "state"):
+        state = _read_json(state_path)
+        current_leader = state.get("active_coordinator") or state.get("leader")
+        
+        if current_leader and current_leader != agent:
+            print(f"[HUB:WARN] {agent} tried to yield leadership, but current leader is {current_leader}", file=sys.stderr)
+            
+        state["leader"] = None
+        state["active_coordinator"] = None
+        state["leadership"] = {
+            "peer": None,
+            "status": "VACANT",
+            "yielded_by": agent,
+            "yielded_at": _now(),
+            "reason": reason or "none",
+        }
+        state["updated_at"] = _now()
+        _write_state(ai_root, state)
+        
+    entry = f"[{_now()}] ({agent}) [YIELD] yielded leadership. Reason: {reason or 'none'}"
+    _append_handoff_item(ai_root, "ACTIVE_THREADS", entry)
+    
+    _log_p2p("LEADER-YIELD", f"agent={agent} reason={reason or 'none'}", from_node=agent)
+    print(f"[HUB] LEADER-YIELD {agent} | status=VACANT | reason={reason or 'none'}")
+
+
+def action_leader_claim(ai_root: Path, agent: str, reason: str = "", domain: str = "") -> None:
+    """새로운 피어가 리더십을 획득."""
+    state_path = ai_root / "state.json"
+    with _get_lock(ai_root, "state"):
+        state = _read_json(state_path)
+        current_leader = state.get("active_coordinator") or state.get("leader")
+        
+        if current_leader and current_leader != agent:
+            status, _ = _peer_effective_health(current_leader)
+            
+            if status != "RED" and status != "STALE":
+                print(f"[HUB:ERR] Cannot claim leadership. {current_leader} is still active and healthy ({status}).", file=sys.stderr)
+                sys.exit(1)
+                
+        state["leader"] = agent
+        state["active_coordinator"] = agent
+        state["leadership"] = {
+            "peer": agent,
+            "status": "ACTIVE",
+            "domain": domain or reason or "general",
+            "reason": reason or "manual_claim",
+            "claimed_at": _now(),
+        }
+        state["updated_at"] = _now()
+        _write_state(ai_root, state)
+        
+    entry = f"[{_now()}] ({agent}) [CLAIM] claimed leadership. Domain: {domain or 'general'} Reason: {reason or 'manual_claim'}"
+    _append_handoff_item(ai_root, "ACTIVE_THREADS", entry)
+    
+    _log_p2p("LEADER-CLAIM", f"agent={agent} domain={domain or 'general'} reason={reason or 'manual_claim'}", from_node=agent)
+    print(f"[HUB] LEADER-CLAIM {agent} | domain={domain or 'general'} | reason={reason or 'manual_claim'}")
+
+
+def action_discover(ai_root: Path, needs: str, effort: str = "mid") -> None:
+    """피어 역할/기능 검색 — 요구되는 기능(needs)과 노력(effort)에 적합한 피어 추천."""
+    proto_cfg = _load_protocol_cfg()
+    matches = _matching_peers(needs, effort)
+    if not matches:
+        fallback = proto_cfg.get("consensus", {}).get("default_proposer", "cc")
+        print(f"[HUB:DISCOVER] No matching peers found for needs='{needs}'. Fallback to default proposer: {fallback}")
+        return
+        
+    print(f"[HUB:DISCOVER] Found {len(matches)} matching peer(s) for needs='{needs}':")
+    for m in matches:
+        print(f"  - {m['node_id']} (Score: {m.get('score', 0)}, Status: {m['status']}, Cost: {m['cost_tier']}, Tier: {m['model_tier']}) | Capabilities: {', '.join(m['capabilities'])}")
+
+
+def action_elect_leader(ai_root: Path, needs: str, effort: str = "mid", reason: str = "") -> None:
+    matches = _matching_peers(needs, effort)
+    if not matches:
+        candidate = _load_orchestration().get("consensus", {}).get("default_proposer", "cc")
+    else:
+        candidate = matches[0]["node_id"]
+    _record_routing_metric(ai_root, "elect_leader", needs=needs or "general", effort=effort, selected=candidate, candidates=[{"node_id": m["node_id"], "score": m.get("score")} for m in matches])
+    action_leader_claim(ai_root, candidate, reason or f"elected_for:{needs or 'general'}", needs or "general")
+
+
 def action_checkpoint(ai_root: Path, agent: str, note: str) -> None:
     """세션 중간에 handoff.md에 체크포인트 항목 추가 — 다른 피어가 즉시 확인 가능."""
     state = _read_json(ai_root / "state.json")
@@ -1486,8 +1888,9 @@ def action_context_fill(ai_root: Path, sections: list[str] | None = None) -> Non
     parsed = _parse_handoff(handoff_path.read_text(encoding="utf-8"))
     print(f"<!-- context-fill | room={room_id} | sections={','.join(wanted)} -->")
     for section, content in parsed.items():
-        if section in wanted and content.strip():
-            print(f"\n## [{section}]\n{content.strip()}")
+        section_text = "\n".join(content).strip() if isinstance(content, list) else str(content).strip()
+        if section in wanted and section_text:
+            print(f"\n## [{section}]\n{section_text}")
     print("<!-- /context-fill -->")
 
 
@@ -1865,9 +2268,318 @@ def action_artifact_finalize(ai_root: Path, artifact_name: str, file_path: str) 
     print(f"[HUB] ARTIFACT-FINALIZE {artifact_name} | hash={sha_str}")
 
 
+def action_assign_role(ai_root: Path, role: str, peer: str) -> None:
+    if not role or not peer:
+        print("[HUB:ERROR] assign-role requires --role and --peer", file=sys.stderr)
+        sys.exit(1)
+    if not _healthy_peer(peer):
+        status, _ = _peer_effective_health(peer)
+        print(f"[HUB:ERROR] cannot assign role to unhealthy peer {peer} status={status}", file=sys.stderr)
+        sys.exit(2)
+    with _get_lock(ai_root, "state"):
+        state = _read_json(ai_root / "state.json")
+        assignments = state.setdefault("role_assignments", {})
+        assignments[role] = {
+            "peer": peer,
+            "status": "ACTIVE",
+            "assigned_at": _now(),
+        }
+        state["roles"] = {k: v.get("peer") for k, v in assignments.items() if isinstance(v, dict)}
+        state["updated_at"] = _now()
+        _write_state(ai_root, state)
+    _append_handoff_item(ai_root, "ACTIVE_THREADS", f"{_now()} role:{role} assigned to {peer}")
+    print(f"[HUB] ASSIGN-ROLE {role} -> {peer}")
+
+
+def action_role_status(ai_root: Path) -> None:
+    state = _read_json(ai_root / "state.json")
+    assignments = state.get("role_assignments") or {}
+    if not assignments:
+        print("No active role assignments.")
+        return
+    print("role\tpeer\tstatus\tassigned_at")
+    for role, info in assignments.items():
+        if isinstance(info, dict):
+            print(f"{role}\t{info.get('peer','')}\t{info.get('status','')}\t{info.get('assigned_at','')}")
+        else:
+            print(f"{role}\t{info}\tACTIVE\t")
+
+def action_health_precheck(ai_root: Path, needs: str | None = None, peers: str | None = None) -> None:
+    orch = _load_orchestration()
+    selected: list[str] | None = None
+    if peers:
+        selected = [p.strip() for p in peers.split(",") if p.strip()]
+    elif needs:
+        selected = [m["node_id"] for m in _matching_peers(needs)]
+        if not selected:
+            selected = []
+    critical_failed = False
+    for node in orch.get("hub_nodes", []):
+        if node.get("enabled") is False and not peers:
+            continue
+        peer = node.get("node_id")
+        if selected is not None and peer not in selected:
+            continue
+        sys_subdir = _peer_sys_dir(peer)
+        h_file = sys_subdir / "health.json"
+        if h_file.exists():
+            h_data = _read_json(h_file)
+            status, h_data = _peer_effective_health(peer)
+            gate = h_data.get("availability", {}).get("gate_open", True)
+            if status == "YELLOW":
+                print(f"[HUB:WARN] Pre-check warning for {peer}: status={status}, gate_open={gate}")
+            if status == "RED" or gate is False:
+                print(f"[HUB:WARN] Pre-check failed for {peer}: status={status}, gate_open={gate}")
+                critical_failed = True
+    if critical_failed:
+        scope = needs or peers or "all"
+        print(f"[HUB:ERROR] Governance Health Pre-Check FAILED. Scope={scope}", file=sys.stderr)
+        sys.exit(1)
+    else:
+        scope = needs or peers or "all"
+        print(f"[HUB] PRE-CHECK OK: scope={scope}")
+
+def action_append_handoff(ai_root: Path, section: str, text: str) -> None:
+    if not section or not text:
+        print("[HUB:ERROR] append-handoff requires --section and --text", file=sys.stderr)
+        sys.exit(1)
+    state = _read_json(ai_root / "state.json")
+    room_id = state.get("room_id")
+    if not room_id:
+        print("[HUB:ERROR] No active room", file=sys.stderr)
+        sys.exit(1)
+    handoff_path = ai_root / "sessions" / room_id / "handoff.md"
+    if not handoff_path.exists():
+        print(f"[HUB:ERROR] {handoff_path} not found", file=sys.stderr)
+        sys.exit(1)
+    lines = handoff_path.read_text(encoding="utf-8").splitlines()
+    out = []
+    inserted = False
+    for line in lines:
+        out.append(line)
+        if line.strip() == f"## [{section.upper()}]":
+            out.append(f"- {text}")
+            inserted = True
+    if not inserted:
+        out.append(f"## [{section.upper()}]")
+        out.append(f"- {text}")
+    handoff_path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    print(f"[HUB] APPEND-HANDOFF to [{section.upper()}]")
+
+
+def action_task_checkpoint(ai_root: Path, task_id: str, peer: str, note: str) -> None:
+    if not task_id or not peer or not note:
+        print("[HUB:ERROR] task-checkpoint requires --id, --peer/--agent, and --msg", file=sys.stderr)
+        sys.exit(1)
+    _role_guard(ai_root, peer, "task-checkpoint", {"coordinator", "implementer", "documenter"})
+    path = _task_registry_path(ai_root)
+    with _get_lock(ai_root, "task_registry"):
+        data = _read_json(path) if path.exists() else {}
+        task = data.setdefault(task_id, {"task_id": task_id, "created_at": _now(), "checkpoints": []})
+        task["owner"] = peer
+        task["status"] = "ACTIVE"
+        task["updated_at"] = _now()
+        task.setdefault("checkpoints", []).append({"peer": peer, "note": note, "at": _now()})
+        _write_task_registry(ai_root, data)
+    _append_handoff_item(ai_root, "ACTIVE_THREADS", f"{_now()} task:{task_id} checkpoint by {peer}: {note[:120]}")
+    print(f"[HUB] TASK-CHECKPOINT {task_id} | peer={peer}")
+
+
+def action_task_status(ai_root: Path, task_id: str | None = None) -> None:
+    path = _task_registry_path(ai_root)
+    if not path.exists():
+        print("No task registry records found.")
+        return
+    data = _read_json(path)
+    if task_id:
+        print(json.dumps(data.get(task_id, {}), ensure_ascii=False, indent=2))
+        return
+    print("task_id\towner\tstatus\tupdated_at\tcheckpoints")
+    for key, item in data.items():
+        print(f"{key}\t{item.get('owner','')}\t{item.get('status','')}\t{item.get('updated_at','')}\t{len(item.get('checkpoints', []))}")
+
+
+def action_role_release(ai_root: Path, role: str, peer: str = "") -> None:
+    if not role:
+        print("[HUB:ERROR] release-role requires --role", file=sys.stderr)
+        sys.exit(1)
+    with _get_lock(ai_root, "state"):
+        state = _read_json(ai_root / "state.json")
+        assignments = state.get("role_assignments") or {}
+        current = assignments.get(role)
+        if not current:
+            print(f"[HUB:WARN] role {role} is not assigned")
+            return
+        if peer and isinstance(current, dict) and current.get("peer") != peer:
+            print(f"[HUB:ERROR] role {role} belongs to {current.get('peer')}, not {peer}", file=sys.stderr)
+            sys.exit(1)
+        assignments.pop(role, None)
+        state["role_assignments"] = assignments
+        state["roles"] = {k: v.get("peer") for k, v in assignments.items() if isinstance(v, dict)}
+        state["updated_at"] = _now()
+        _write_state(ai_root, state)
+    _append_handoff_item(ai_root, "ACTIVE_THREADS", f"{_now()} role:{role} released")
+    print(f"[HUB] RELEASE-ROLE {role}")
+
+
+def action_task_failover(ai_root: Path, task_id: str, to_peer: str, reason: str = "") -> None:
+    if not task_id or not to_peer:
+        print("[HUB:ERROR] task-failover requires --task-id and --peer", file=sys.stderr)
+        sys.exit(1)
+    if not _healthy_peer(to_peer):
+        status, _ = _peer_effective_health(to_peer)
+        print(f"[HUB:ERROR] failover target {to_peer} is not healthy status={status}", file=sys.stderr)
+        sys.exit(2)
+    path = _task_registry_path(ai_root)
+    with _get_lock(ai_root, "task_registry"):
+        data = _read_json(path) if path.exists() else {}
+        task = data.get(task_id)
+        if not task:
+            print(f"[HUB:ERROR] task {task_id} not found", file=sys.stderr)
+            sys.exit(1)
+        old_owner = task.get("owner")
+        task["owner"] = to_peer
+        task["status"] = "ACTIVE"
+        task["updated_at"] = _now()
+        task.setdefault("checkpoints", []).append({
+            "peer": to_peer,
+            "note": f"failover from {old_owner or 'unknown'}: {reason or 'manual'}",
+            "at": _now(),
+        })
+        _write_task_registry(ai_root, data)
+    _append_handoff_item(ai_root, "ACTIVE_THREADS", f"{_now()} task:{task_id} failover {old_owner or 'unknown'} -> {to_peer} ({reason or 'manual'})")
+    print(f"[HUB] TASK-FAILOVER {task_id} | {old_owner or 'unknown'} -> {to_peer}")
+
+
+def action_file_lock(ai_root: Path, name: str, owner: str, scope: str = "") -> None:
+    if not name or not owner:
+        print("[HUB:ERROR] file-lock requires --name and --peer/--agent", file=sys.stderr)
+        sys.exit(1)
+    path = _file_locks_path(ai_root)
+    with _get_lock(ai_root, "file_locks"):
+        data = _read_json(path) if path.exists() else {}
+        existing = data.get(name)
+        if existing and existing.get("owner") != owner:
+            print(f"[HUB:ERROR] {name} is locked by {existing.get('owner')}", file=sys.stderr)
+            sys.exit(1)
+        data[name] = {"name": name, "owner": owner, "scope": scope or "file", "locked_at": existing.get("locked_at") if existing else _now()}
+        _write_json(path, data)
+    print(f"[HUB] FILE-LOCK {name} | owner={owner}")
+
+
+def action_file_unlock(ai_root: Path, name: str, owner: str = "") -> None:
+    if not name:
+        print("[HUB:ERROR] file-unlock requires --name", file=sys.stderr)
+        sys.exit(1)
+    path = _file_locks_path(ai_root)
+    with _get_lock(ai_root, "file_locks"):
+        data = _read_json(path) if path.exists() else {}
+        existing = data.get(name)
+        if not existing:
+            print(f"[HUB:WARN] {name} is not locked")
+            return
+        if owner and existing.get("owner") != owner:
+            print(f"[HUB:ERROR] {name} is locked by {existing.get('owner')}, not {owner}", file=sys.stderr)
+            sys.exit(1)
+        data.pop(name, None)
+        _write_json(path, data)
+    print(f"[HUB] FILE-UNLOCK {name}")
+
+
+def action_lock_status(ai_root: Path) -> None:
+    path = _file_locks_path(ai_root)
+    data = _read_json(path) if path.exists() else {}
+    if not data:
+        print("No active file locks.")
+        return
+    print("name\towner\tscope\tlocked_at")
+    for name, item in data.items():
+        print(f"{name}\t{item.get('owner','')}\t{item.get('scope','')}\t{item.get('locked_at','')}")
+
+
+def action_health_sweep(ai_root: Path) -> None:
+    swept = 0
+    for node in _load_orchestration().get("hub_nodes", []):
+        if node.get("enabled") is False:
+            continue
+        peer = node.get("node_id")
+        status, data = _peer_effective_health(peer)
+        if status == "STALE":
+            data.setdefault("context_health", {})["status"] = "STALE"
+            data["context_health"]["stale_marked_at"] = _now()
+            _write_peer_health(peer, data, ai_root)
+            swept += 1
+    print(f"[HUB] HEALTH-SWEEP stale={swept}")
+
+
+def action_validate_profiles() -> None:
+    errors = []
+    for node in _load_orchestration().get("hub_nodes", []):
+        if node.get("enabled") is False:
+            continue
+        peer = node.get("node_id")
+        _, data = _read_peer_health(peer)
+        profile = data.get("profile", {})
+        for key in ("tier", "context_window", "cost_tier", "supported_tools", "capabilities"):
+            if key not in profile:
+                errors.append(f"{peer}: missing profile.{key}")
+    if errors:
+        for err in errors:
+            print(f"[HUB:PROFILE:ERR] {err}", file=sys.stderr)
+        sys.exit(1)
+    print("[HUB] PROFILE-VALIDATE OK")
+
+
+def action_model_status() -> None:
+    print("peer\tstatus\tcost\ttier\tcontext\tcapabilities")
+    for node in _load_orchestration().get("hub_nodes", []):
+        if node.get("enabled") is False:
+            continue
+        peer = node.get("node_id")
+        status, data = _peer_effective_health(peer)
+        profile = data.get("profile", {})
+        caps = ",".join(str(c) for c in profile.get("capabilities", []))
+        print(f"{peer}\t{status}\t{profile.get('cost_tier','')}\t{profile.get('tier','')}\t{profile.get('context_window','')}\t{caps}")
+
+
+def action_transient_scan(ai_root: Path) -> None:
+    root = ai_root.parent
+    candidates = []
+    for path in root.iterdir():
+        if path.is_file() and re.match(r"^[A-Za-z0-9_-]{4,12}\.(tmp|log|txt)$", path.name):
+            candidates.append(path.name)
+    if not candidates:
+        print("No transient root-file candidates found.")
+        return
+    print("transient-candidates")
+    for name in candidates:
+        print(name)
+
+
+def action_approval_request(ai_root: Path, from_peer: str, action: str, auth_needed: str, scope: str, risk: str, fallback: str = "") -> None:
+    _role_guard(ai_root, from_peer or "unknown", "approval-request", {"coordinator", "implementer", "researcher", "documenter"})
+    state = _read_json(ai_root / "state.json")
+    target = state.get("human_interface_peer") or state.get("active_console_peer") or "cx"
+    content = "\n".join([
+        "APPROVAL_REQUEST:",
+        f"REQUESTING_PEER: {from_peer or 'unknown'}",
+        f"EXECUTING_PEER: {from_peer or 'unknown'}",
+        f"ACTION: {action or 'unspecified'}",
+        f"AUTH_NEEDED: {auth_needed or 'unspecified'}",
+        f"SCOPE: {scope or 'unspecified'}",
+        f"RISK: {risk or 'unspecified'}",
+        f"FALLBACK: {fallback or 'none'}",
+    ])
+    action_send(ai_root, from_peer or "unknown", target, content, None, "APPROVAL_REQUEST", [], None, "CRITICAL")
+    _append_handoff_item(ai_root, "PENDING_ISSUES", f"{_now()} approval requested by {from_peer or 'unknown'} for {action or 'unspecified'}")
+    print(f"[HUB] APPROVAL-REQUEST {from_peer or 'unknown'} -> {target}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="hub", description="AI 협업 허브 — Protocol v4.1")
-    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize"])
+    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "model-status", "transient-scan"])
+    parser.add_argument("--needs")
+    parser.add_argument("--effort", default="mid")
     parser.add_argument("--agent")
     parser.add_argument("--room")
     parser.add_argument("--from", dest="from_")
@@ -1919,6 +2631,13 @@ def main() -> None:
     parser.add_argument("--category")
     parser.add_argument("--draft-path")
     parser.add_argument("--feedback-id")
+    parser.add_argument("--role")
+    parser.add_argument("--section")
+    parser.add_argument("--text")
+    parser.add_argument("--task-id")
+    parser.add_argument("--auth-needed")
+    parser.add_argument("--scope")
+    parser.add_argument("--fallback")
 
     args = parser.parse_args()
     if args.action == "ask":
@@ -1932,6 +2651,9 @@ def main() -> None:
     ensure_ai_dir(ai_root)
     act = args.action
     _guard_action(ai_root, act, args.force_tier0)
+    if act == "ask-coordinator":
+        action_ask_coordinator(ai_root, args.query, args.query_file, args.timeout, args.from_ or args.peer or args.agent or "unknown", quiet=args.quiet, output_file=args.output_file)
+        return
     if act == "init-session": action_init_session(ai_root, args.agent or "cc", args.room)
     elif act == "end-session": action_end_session(ai_root, args.agent or "cc")
     elif act == "send": 
@@ -2016,7 +2738,48 @@ def main() -> None:
         action_artifact_status(ai_root, args.name, args.peer or args.agent, args.draft_path)
     elif act == "artifact-finalize":
         action_artifact_finalize(ai_root, args.name, args.file_path)
+    elif act == "leader-yield":
+        action_leader_yield(ai_root, args.agent or "unknown", args.reason or args.detail)
+    elif act == "leader-claim":
+        action_leader_claim(ai_root, args.agent or "unknown", args.reason or args.detail or "", args.needs or "")
+    elif act == "elect-leader":
+        action_elect_leader(ai_root, args.needs or args.role or "general", args.effort, args.reason or args.detail or "")
+    elif act == "discover":
+        if not args.needs:
+            print("[HUB] discover requires --needs", file=sys.stderr); sys.exit(1)
+        action_discover(ai_root, args.needs, args.effort)
+    elif act == "assign-role":
+        action_assign_role(ai_root, args.role, args.peer)
+    elif act == "release-role":
+        action_role_release(ai_root, args.role, args.peer or args.agent or "")
+    elif act == "role-status":
+        action_role_status(ai_root)
+    elif act == "health-precheck":
+        action_health_precheck(ai_root, args.needs, args.peer)
+    elif act == "health-sweep":
+        action_health_sweep(ai_root)
+    elif act == "append-handoff":
+        action_append_handoff(ai_root, args.section, args.text)
+    elif act == "task-checkpoint":
+        action_task_checkpoint(ai_root, args.task_id or (str(args.id) if args.id else ""), args.peer or args.agent or "unknown", args.msg or args.detail or "")
+    elif act == "task-status":
+        action_task_status(ai_root, args.task_id or (str(args.id) if args.id else None))
+    elif act == "task-failover":
+        action_task_failover(ai_root, args.task_id or (str(args.id) if args.id else ""), args.peer or args.agent or "", args.reason or args.detail or "")
+    elif act == "approval-request":
+        action_approval_request(ai_root, args.from_ or args.peer or args.agent or "unknown", args.subject or args.msg or "", args.auth_needed or "", args.scope or args.file_path or "", args.severity or "workspace-write", args.fallback or "")
+    elif act == "file-lock":
+        action_file_lock(ai_root, args.name or args.file_path or "", args.peer or args.agent or "", args.scope or args.section or "")
+    elif act == "file-unlock":
+        action_file_unlock(ai_root, args.name or args.file_path or "", args.peer or args.agent or "")
+    elif act == "lock-status":
+        action_lock_status(ai_root)
+    elif act == "profile-validate":
+        action_validate_profiles()
+    elif act == "model-status":
+        action_model_status()
+    elif act == "transient-scan":
+        action_transient_scan(ai_root)
 
 if __name__ == "__main__":
     main()
-

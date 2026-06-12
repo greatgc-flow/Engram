@@ -1,0 +1,15 @@
+{
+  "commands": {
+    "install":    { "module": "core.setup",    "args": [] },
+    "cleanup":    { "module": "cli.manage",    "args": ["cleanup"] },
+    "register":   { "module": "cli.manage",    "args": ["register"] },
+    "unregister": { "module": "cli.manage",    "args": ["unregister"] },
+    "start":      { "module": "cli.launcher",  "args": [] },
+    "init":       { "module": "cli.manage",    "args": ["workspace-init"] }
+  },
+  "layers": {
+    "common":    "_sys/common",
+    "templates": "_sys/templates",
+    "workspace": "workspace"
+  }
+}

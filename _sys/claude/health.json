@@ -1,21 +1,39 @@
 {
   "_version": "1.0",
   "peer_id": "cc",
+  "profile": {
+    "tier": "high",
+    "context_window": 200000,
+    "cost_tier": "high",
+    "supported_tools": [
+      "read_file",
+      "write_file",
+      "run_command",
+      "ask_question"
+    ],
+    "capabilities": [
+      "architecture",
+      "implementation",
+      "_sys-scripts",
+      "orchestration",
+      "persistent-memory"
+    ]
+  },
   "context_health": {
     "status": "GREEN",
     "jsonl_mb": 0.0,
     "context_window_usage_percent": 0.0,
-    "checked_at": "20260612T101437",
+    "checked_at": "20260612T211057",
     "source": "self"
   },
   "session_health": {
     "consecutive_failures": 0,
     "last_failure_reason": null,
-    "last_success_at": "2026-06-12T10:14:37",
-    "session_count_today": 22,
+    "last_success_at": "2026-06-12T21:10:57",
+    "session_count_today": 57,
     "session_date": "20260612",
-    "last_failure_detail": "You've hit your session limit · resets 1:30am (Asia/Seoul)",
-    "last_failure_at": "2026-06-12T00:27:27"
+    "last_failure_detail": "ask timeout after 180s",
+    "last_failure_at": "2026-06-12T21:07:56"
   },
   "availability": {
     "installed": true,
@@ -24,7 +42,7 @@
     "last_gate_check": null,
     "active_pid": null,
     "last_invocation_exit_code": 0,
-    "last_invocation_duration_ms": 118000,
+    "last_invocation_duration_ms": 164000,
     "rate_limit_state": "ok",
     "quarantined": false
   }

@@ -1,0 +1,213 @@
+{
+  "_version": "0.1",
+  "_status": "inert_metadata",
+  "_updated": "2026-06-12",
+  "_purpose": "General-Specific bindings for the closed collaboration feedback loop. This file is not consumed by runtime code yet.",
+  "scope": {
+    "room_id": "room-26ab",
+    "active_room_peers": ["cc", "gc", "cx"],
+    "human_override": "ca/ag removed from room-26ab for this implementation round; global protocol voters remain unchanged.",
+    "global_voters_remain": ["cc", "ca", "gc", "ag", "cx"]
+  },
+  "general_loop": [
+    {
+      "step": "observe",
+      "purpose": "Read current state, handoff, task registry, health, and relevant artifacts.",
+      "allowed_effect": "read_only"
+    },
+    {
+      "step": "classify",
+      "purpose": "Classify task taxonomy, risk, required capabilities, model/profile needs, and consensus scope.",
+      "allowed_effect": "read_only"
+    },
+    {
+      "step": "ask",
+      "purpose": "Ask open-ended peer questions without leading or narrowing the solution space.",
+      "allowed_effect": "peer_state"
+    },
+    {
+      "step": "draft",
+      "purpose": "Write tagged draft artifacts with added/changed/deleted/open markers.",
+      "allowed_effect": "workspace_write",
+      "requires_consensus": true
+    },
+    {
+      "step": "resolve",
+      "purpose": "Resolve objections, update open items, or escalate if blocked.",
+      "allowed_effect": "governance_write"
+    },
+    {
+      "step": "final_call",
+      "purpose": "Ask for final blockers or missed context under R10.",
+      "allowed_effect": "peer_state"
+    },
+    {
+      "step": "implement",
+      "purpose": "Apply only the agreed scope.",
+      "allowed_effect": "workspace_write",
+      "requires_consensus": true
+    },
+    {
+      "step": "validate",
+      "purpose": "Run agreed validation, preferably read-only/schema validation for no-code rounds.",
+      "allowed_effect": "declared_dry_validate"
+    },
+    {
+      "step": "cross_review",
+      "purpose": "Reviewer and researcher inspect outputs for missed categories, contradictions, and safety regressions.",
+      "allowed_effect": "peer_state"
+    },
+    {
+      "step": "record",
+      "purpose": "Append handoff, task checkpoint, metrics, and provenance.",
+      "allowed_effect": "governance_write"
+    },
+    {
+      "step": "improve",
+      "purpose": "Feed residual gaps back into the next observe/classify cycle.",
+      "allowed_effect": "governance_write"
+    }
+  ],
+  "role_bindings": {
+    "coordinator": {
+      "preferred_peers": ["cx", "cc"],
+      "model_profiles": ["cx.default", "cc.default"],
+      "fallback": "cc.default"
+    },
+    "reviewer": {
+      "preferred_peers": ["cc"],
+      "model_profiles": ["cc.default", "cc.deep"],
+      "fallback": "gc.default"
+    },
+    "researcher": {
+      "preferred_peers": ["gc"],
+      "model_profiles": ["gc.default", "gc.plan"],
+      "fallback": "cc.default"
+    },
+    "implementer": {
+      "preferred_peers": ["cx"],
+      "model_profiles": ["cx.default"],
+      "fallback": "cc.default",
+      "notes": "cx is YELLOW in current status; cc review is required before implementation is considered accepted."
+    }
+  },
+  "routing_rules": [
+    {
+      "task_type": "coordination",
+      "route": ["cx.default", "cc.default"],
+      "final_reviewer": "cc.default"
+    },
+    {
+      "task_type": "consensus_framing",
+      "route": ["cc.default", "gc.plan", "cx.default"],
+      "final_reviewer": "cc.default"
+    },
+    {
+      "task_type": "implementation_planning",
+      "route": ["cc.default", "cx.default", "gc.plan"],
+      "final_reviewer": "cc.default"
+    },
+    {
+      "task_type": "code_mutation",
+      "route": ["cx.default", "cc.default"],
+      "final_reviewer": "cc.default"
+    },
+    {
+      "task_type": "test_authoring",
+      "route": ["cx.default", "cc.default"],
+      "final_reviewer": "cc.default"
+    },
+    {
+      "task_type": "verification",
+      "route": ["cc.default", "gc.default"],
+      "final_reviewer": "cc.default"
+    },
+    {
+      "task_type": "large_corpus_research",
+      "route": ["gc.default", "cc.default"],
+      "final_reviewer": "cc.default"
+    },
+    {
+      "task_type": "web_doc_research",
+      "route": ["gc.default", "cc.default"],
+      "final_reviewer": "cc.default"
+    },
+    {
+      "task_type": "summarization_compaction",
+      "route": ["gc.plan", "cc.default"],
+      "final_reviewer": "cc.default"
+    },
+    {
+      "task_type": "mailbox_handoff_hygiene",
+      "route": ["gc.plan", "cx.default", "cc.default"],
+      "final_reviewer": "cc.default"
+    },
+    {
+      "task_type": "status_health_checking",
+      "route": ["gc.default", "cx.default", "cc.default"],
+      "final_reviewer": "cc.default"
+    },
+    {
+      "task_type": "security_auth_sensitive_operation",
+      "route": ["cc.deep", "cx.default"],
+      "final_reviewer": "cc.deep"
+    },
+    {
+      "task_type": "model_profile_design",
+      "route": ["gc.plan", "cc.default", "cx.default"],
+      "final_reviewer": "cc.default"
+    },
+    {
+      "task_type": "status_check_design",
+      "route": ["gc.default", "cc.default", "cx.default"],
+      "final_reviewer": "cc.default"
+    },
+    {
+      "task_type": "no_code_json_edit",
+      "route": ["cx.default", "cc.default"],
+      "final_reviewer": "cc.default"
+    },
+    {
+      "task_type": "large_context_research",
+      "route": ["gc.default", "cc.default"],
+      "final_reviewer": "cc.default"
+    },
+    {
+      "task_type": "default",
+      "route": ["cc.default", "gc.default", "cx.default"],
+      "final_reviewer": "cc.default"
+    }
+  ],
+  "message_delivery_contract": {
+    "current_storage": ".ai/mailbox.json",
+    "target_storage": ".ai/mailbox/msg-{uuid}.json",
+    "states": ["sent", "acked", "completed", "failed"],
+    "durable_write_required_for_success": true,
+    "lock_timeout_policy": "failed_delivery_retryable",
+    "payload_policy": "workspace_file_ref_or_declared_payload_resolver"
+  },
+  "metrics": {
+    "active_logs": {
+      "ask_history": ".ai/ask_history.jsonl",
+      "routing_metrics": ".ai/routing_metrics.jsonl",
+      "compliance_metrics": "_archive/compliance_metrics.jsonl",
+      "residual_gaps": ".ai/feedback.jsonl"
+    },
+    "initial_metrics": [
+      "acknowledgement_rate",
+      "routing_success_rate",
+      "correction_rate_after_review",
+      "human_interface_redirect_rate"
+    ],
+    "deferred_metrics": [
+      "exact_token_cost_per_accepted_decision"
+    ]
+  },
+  "completion_rules": {
+    "draft_tags_allowed_until_final": ["ADDED", "CHANGED", "DELETED", "OPEN"],
+    "remove_tags_on_final_artifact": true,
+    "final_call_required": true,
+    "cross_review_required": true,
+    "validation_required": true
+  }
+}

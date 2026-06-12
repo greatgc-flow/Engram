@@ -85,8 +85,8 @@ if not exist "%PY_EXE%" (
     "%PY_EXE%" "%~dp0_sys\data\setup-files\get-pip.py" --no-warn-script-location
 )
 
-echo [OK] Python is ready. Handing over to setup.py...
-"%PY_EXE%" "%~dp0_sys\core\setup.py" %* || (echo [FATAL] Setup failed. & pause & exit /b 1)
+echo [OK] Python is ready. Handing over to dispatcher...
+call "%~dp0_sys\core\dispatch.bat" install %* || (echo [FATAL] Setup failed. & pause & exit /b 1)
 
 echo [OK] Setup completed successfully.
 endlocal
