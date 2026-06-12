@@ -9,11 +9,7 @@ if exist "%~dp0..\env\nodejs\npm-global\gemini.cmd" (
     set "PATH=%~dp0..\env\nodejs\npm-global;%PATH%"
 )
 
-if defined GEMINI_DIR (
-    set "_STATUS_FILE=%GEMINI_DIR%\status.json"
-) else (
-    set "_STATUS_FILE=%~dp0status.json"
-)
+set "_STATUS_FILE=%~dp0status.json"
 
 for /f "delims=" %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMddHHmmss"') do set "_DT=%%I"
 

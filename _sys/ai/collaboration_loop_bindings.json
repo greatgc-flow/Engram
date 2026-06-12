@@ -1,6 +1,6 @@
 {
   "_version": "0.2",
-  "_status": "inert_metadata",
+  "_status": "runtime_active",
   "_updated": "2026-06-13",
   "_purpose": "General-Specific bindings for the closed collaboration feedback loop. Room-specific state is in .ai/state.json; this file contains general policy bindings only.",
   "general_loop": [

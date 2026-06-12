@@ -1,8 +1,8 @@
 {
-  "_version": "0.1",
-  "_status": "inert_metadata",
-  "_updated": "2026-06-12",
-  "_purpose": "Specific model and mode profiles for declarative peer/model routing. This file is not consumed by runtime code yet.",
+  "_version": "0.2",
+  "_status": "runtime_active",
+  "_updated": "2026-06-13",
+  "_purpose": "Specific model and mode profiles for declarative peer/model routing. Consumed by hub.py _resolve_profile_id() and action_validate_profiles().",
   "general_contract": {
     "profile_id_format": "{peer}.{mode}",
     "confidence_levels": ["observed", "documented", "declared", "inferred", "unknown"],
