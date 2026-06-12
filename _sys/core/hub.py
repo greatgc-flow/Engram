@@ -1454,6 +1454,8 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         output, elapsed = _ask_with_pty(cmd, to, timeout_sec, process_env, quiet)
         _record_ask_success(health_peer, elapsed, ai_root)
         _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
+        if ai_root:
+            _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="success", latency_sec=elapsed)
         if output_file:
             try:
                 base = ai_root if ai_root else Path.cwd()
@@ -1496,10 +1498,14 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             reason, extra = _classify_ask_failure(clean_err + "\n" + output)
             _record_ask_failure(health_peer, reason, clean_err or output, elapsed, ai_root, extra)
             _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
+            if ai_root:
+                _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=elapsed, failure_reason=reason)
             print(f"[HUB:WARN] {to} exited {result.returncode}\n{clean_err}", file=sys.stderr)
         else:
             _record_ask_success(health_peer, elapsed, ai_root)
             _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
+            if ai_root:
+                _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="success", latency_sec=elapsed)
 
         if output_file:
             try:
@@ -1520,12 +1526,16 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         detail = f"ask timeout after {timeout_sec}s"
         _record_ask_failure(health_peer, "timeout", detail, timeout_sec, ai_root)
         _append_ask_history(ai_root, to, saved_query_file_path, output_file, timeout_sec, False, "timeout")
+        if ai_root:
+            _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=timeout_sec, failure_reason="timeout")
         print(f"[HUB:ERROR] {detail}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         reason, extra = _classify_ask_failure(str(e))
         _record_ask_failure(health_peer, reason, str(e), None, ai_root, extra)
         _append_ask_history(ai_root, to, saved_query_file_path, output_file, None, False, reason)
+        if ai_root:
+            _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=None, failure_reason=reason)
         print(f"[HUB:ERROR] ask 실패: {e}", file=sys.stderr)
         sys.exit(1)
 
