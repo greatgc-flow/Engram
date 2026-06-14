@@ -1,11 +1,11 @@
 # _sys Restructure Plan — v1.0
 
-> Status: DEBATE_FINAL — gc+cx 끝장 교차검토 완료 (2026-06-15)
-> Date: 2026-06-14 (updated 2026-06-15)
-> Author: cc (coordinator), gc (cross-reviewer), cx (independent auditor)
+> Status: DEBATE_FINAL_R3 — gc+cx 3-round 끝장 교차검토 완료 (2026-06-15)
+> Date: 2026-06-14 (updated 2026-06-15 R3)
+> Author: cc (coordinator), gc (cross-reviewer R1+R3), cx (independent auditor R2+R3)
 > Protocol: R:10 (Brain Sync) — 전체 피어 끝장 플랜
-> Review: gc CRITICAL×1/HIGH×4/MEDIUM×3/LOW×2 + cx CRITICAL×2/HIGH×4/MEDIUM×4/LOW×1 → 전부 반영
-> ⚠️ CRITICAL CHANGES: Phase 1+2 원자적 통합, rollback-phase1.ps1 Phase 0 필수, status.json write-through cache 전략
+> Review: R1+R2: gc CRITICAL×1/HIGH×4 + cx CRITICAL×2/HIGH×4 | R3: Root Swap REJECTED + verify-all V1~V10
+> ⚠️ CRITICAL R3: Root Swap(병렬 _sys_new/)=REJECT, cut-over "rename backup" 방식, 2-gate verify-all, runtime/recovery/
 
 ---
 
@@ -383,6 +383,20 @@ protocol/
 
 > 절대 혼용 금지. `user-directives.md`는 common/ 전용 (knowledge/ 오염 금지 — Tier 1.5 규칙).
 
+### 3-7b. MECE 엣지 케이스 배치 결정 (cx Round-3 반영)
+
+| 항목 | 위치 | 근거 |
+|------|------|------|
+| `rollback.ps1`, `cutover.ps1` | `runtime/recovery/` | 영구 복구 스크립트 — 임시 생성 아님 |
+| `manage.py gen-traceability` 출력 | `config/integrations/traceability.json` (커밋된 정책 맵) + `data/state/traceability.generated.json` (런타임 증거) | 둘의 역할이 다름 |
+| hub.py 에러 로그 | `data/logs/` | 시스템 실행 로그 |
+| knowledge-system 에러 요약 | `knowledge/logs/` (큐레이팅된 경우만) | raw는 `data/logs/` |
+| 피어 세션 로그 raw | `peers/{id}/runtime/` | 피어 CLI 소유 |
+| hub 정규화 세션 로그 | `data/logs/` | hub.py 소유 |
+| workspace `.ai/` 템플릿 | `templates/workspace/.ai/` | Base Template 하위 |
+| hub.py 테스트 | `tests/unit/` | 피어별 분리 아님 — hub는 단일 엔진 |
+| `verify-all` 검증 설정 | `config/integrations/verify-config.json` | JSON-driven 검증 정책 |
+
 ### 3-8. `runtime/` — 코드 실행 계층 (was `cli/` + `hooks/` + `checks/`)
 
 ```
@@ -400,17 +414,23 @@ runtime/
 │   ├── collab_log.py
 │   ├── raw_log.py
 │   └── ...
-└── checks/                            # was _sys/checks/ (bat 래퍼 없이 py만)
-    ├── check_agents.py
-    ├── check_deps.py
-    ├── check_policy.py
-    ├── check_portability.py
-    ├── check_risk.py
-    └── check_versions.py
-    # check_health.py → 제거 (hub.py health-update 통합)
-    # _common.py → 제거 (update_status_error → hub.py 경유)
-    # *.bat → 모두 제거 (불필요 래퍼)
+├── checks/                            # was _sys/checks/ (bat 래퍼 없이 py만)
+│   ├── check_agents.py
+│   ├── check_deps.py
+│   ├── check_policy.py
+│   ├── check_portability.py
+│   ├── check_risk.py
+│   └── check_versions.py
+│   # check_health.py → 제거 (hub.py health-update 통합)
+│   # _common.py → 제거 (update_status_error → hub.py 경유)
+│   # *.bat → 모두 제거 (불필요 래퍼)
+└── recovery/                          # 🆕 복구 스크립트 (cx MECE: 영구 홈 필요)
+    ├── cutover.ps1                    # 🆕 원자적 cut-over 실행 (프로세스 종료 + junction 재등록)
+    └── rollback.ps1                   # 🆕 cut-over 실패 시 즉시 복구 (was rollback-phase1.ps1)
 ```
+
+> **cx MECE:** `rollback.ps1`은 `runtime/recovery/`에 영구 보관 (Phase 0 임시 생성 아님).
+> `cutover.ps1`도 동일 위치에서 관리 — 단일 double-click 실행으로 전체 cut-over 완료.
 
 ### 3-9. `common/` — 교차-워크스페이스 공통 자원
 
@@ -653,6 +673,21 @@ hub.py 내:
 > 총 7개 Phase. 각 Phase 완료 후 pytest 통과 확인 후 다음 단계 진행.  
 > ⚠️ gc HIGH 수정: 피어 디렉토리 이동(Phase 1)이 설정 중앙화(Phase 2)보다 먼저 — hub.py가 새 경로를 읽기 전에 실제 파일이 존재해야 함.
 
+### 마이그레이션 전략 선택 결정 (gc+cx Round-3 확정)
+
+> **ROOT SWAP (병렬 _sys_new/ 디렉토리) — REJECTED:**
+> 이유 1 (gc CRITICAL): `_sys_new/`를 복사→수정→rename 시 git이 "거대 DELETE+ADD"로 처리 → 전체 파일 이력 소멸.
+> 이유 2 (gc CRITICAL): `env/`+`tools/` = 500MB~1.5GB. USB에서 2배 복사 = IOPS 병목 + 공간 부족.
+> 이유 3 (gc CRITICAL): cut-over 시 Claude/Gemini 프로세스 종료 필수 — 어떤 방식도 이를 피할 수 없음.
+>
+> **SUBST 재포인팅 — REJECTED:**
+> host junction (`%USERPROFILE%\.claude → P:\_sys\claude\config\`)은 여전히 old 구조 참조.
+> P:\ 재마운트로도 junction 재등록 불가피 → 이점 없음.
+>
+> **Git Branch In-Place (채택된 전략 — 유지):**
+> git mv로 이력 보존 + 단일 브랜치 + 완성 후 main merge = conceptual "swap". 가장 안전.
+> 개선: cut-over 순서를 "delete" → "rename backup" 방식으로 변경 (cx CRITICAL).
+
 ### Phase 0 — 사전 준비 (cx CRITICAL 반영: rollback 준비 필수)
 ```
 1. git checkout -b feat/sys-restructure
@@ -666,8 +701,19 @@ hub.py 내:
    robocopy _sys\claude _sys\._backup\claude /E /XD .git
    robocopy _sys\codex  _sys\._backup\codex  /E /XD .git
    robocopy _sys\antigravity _sys\._backup\antigravity /E /XD .git
-6. rollback-phase1.ps1 생성 (Phase 1 실패 시 사용):
-   # 내용: junction 제거 → 디렉토리 역이동 → 원본 junction 재등록 → pytest 통과 확인
+6. runtime/recovery/ 생성 + 복구 스크립트 작성 (cx: 영구 홈):
+   a) _sys/runtime/recovery/rollback.ps1:
+      # junction 제거 → 디렉토리 역이동 → 원본 junction 재등록 → pytest 통과 확인
+   b) _sys/runtime/recovery/cutover.ps1 (cx CRITICAL: rename-backup 방식):
+      # 1. taskkill /f /im node.exe, python.exe (모든 피어 프로세스 강제 종료)
+      # 2. $stamp = Get-Date -Format "yyyyMMddHHmmss"
+      # 3. ⚠️ NEVER delete first — rename backup:
+      #    Rename-Item _sys "_sys_old_rollback_$stamp"  (← NOT rm, NOT del)
+      # 4. (git branch 방식에서는 이 단계 없음 — git merge main으로 대체)
+      # 5. python _sys/core/virtualizer.py mount
+      # 6. python _sys/runtime/cli/manage.py verify-all --mode post-cutover
+      # 7. 검증 PASS → git commit (단일 커밋 완성)
+      # 8. 검증 FAIL → rollback.ps1 실행
 7. .gitignore 피어 경로 패턴 사전 업데이트 (cx HIGH: 이동 전 패턴 교체):
    Old 패턴 → New 패턴 (§Phase 7 목록 참조):
    _sys/gemini/config/** → _sys/peers/gc/runtime/config/**
@@ -864,6 +910,88 @@ hub.py 내:
 9. 루트 CLAUDE.md, GEMINI.md 경로 참조 업데이트
 ```
 
+### Phase 6.5 — 완결적 점검 (verify-all) — cx Round-3 설계
+
+> **목적**: 최종 merge/commit 전 "완전히 완료됨" 여부를 기계적으로 확인.
+> **명령**: `python _sys/runtime/cli/manage.py verify-all --sys-dir _sys --mode pre-commit`
+> **설정**: `_sys/config/integrations/verify-config.json` (cx: JSON-driven 검증 정책)
+> **결과**: 항목별 `[PASS]` / `[FAIL: REASON]`, exit code 0 or 1.
+>
+> **2-gate 검증 (cx CRITICAL)**:
+> - **Gate 1 (pre-commit)**: merge/commit 전 실행 — 구조+경로+JSON+테스트
+> - **Gate 2 (post-commit)**: main merge 후 실행 — junction+health+실제 경로 확인
+>   일부 버그는 실제 `_sys/` 경로에서만 발생 (`Path(__file__).parent.parent` 등)
+
+```
+V1. 디렉토리 구조 체크:
+    - _sys/에 정확히 12개 소스 소유 root 디렉토리 (예외: .pytest_cache, __pycache__ 제외)
+    - 허용 목록: config, core, peers, knowledge, protocol, runtime, common, templates, tests, data, env, tools
+    - 명령: Get-ChildItem _sys -Directory | Select-Object Name
+
+V2. 구 경로 참조 제로 체크:
+    - 대상: _sys/gemini, _sys/claude, _sys/codex, _sys/antigravity, _sys/ai, status.json
+    - 명령: rg "_sys/(gemini|claude|codex|antigravity|ai)|status\.json" 
+            --glob="*.py" --glob="*.bat" --glob="*.json" --glob="*.md"
+            --exclude-glob="env/**" --exclude-glob="tools/**" --exclude-glob="data/logs/**"
+            --exclude-glob="docs/Garbage/**"
+    - 허용 예외: migration-history 문서, DEBATE_LOG.md 내 과거 기록
+
+V3. JSON 무결성 체크:
+    - 모든 _ref, _extends, _doc 필드 대상 경로가 실제 파일로 존재
+    - 모든 JSON 파일이 valid JSON (json.loads 통과)
+    - 명령: python _sys/runtime/checks/check_json_integrity.py --sys-dir _sys
+
+V4. Junction 대상 존재 체크 (pre-commit: 존재 여부만):
+    - _sys/peers/cc/runtime/config/ 존재
+    - _sys/peers/gc/runtime/config/ 존재
+    - _sys/peers/cx/runtime/config/ 존재
+    - _sys/peers/ag/runtime/config/ 존재
+
+V5. 테스트 스위트 (Gate 1):
+    - PORTABLE_SYS_DIR 환경변수로 경로 주입 가능 여부 확인
+    - python -m pytest _sys/tests/unit -q
+    - 기준: 93+ passed, 0 failed
+
+V6. hub.py 부트스트랩 체크:
+    - python _sys/core/hub.py peer-status --json → exit 0
+    - config/integrations/infra.json 로드 확인
+    - infra.json 실패 시 __file__ fallback 동작 확인
+
+V7. JSON 스키마 검증:
+    - _schema 필드를 가진 모든 JSON을 knowledge/schemas/{schema}.json 으로 검증
+    - 스키마 없는 경우: lint만 (valid JSON 확인)
+
+V8. 피어 상태 체크 (Gate 2 only — junction 재등록 후):
+    - python _sys/core/hub.py health-update --all
+    - python _sys/core/hub.py peer-status
+    - 기준: enabled 피어 모두 OPEN 또는 알려진 외부 오류(quota/auth)만
+
+V9. Traceability 일관성:
+    - python _sys/runtime/cli/manage.py gen-traceability --check
+    - 커밋된 config/integrations/traceability.json과 auto-gen 결과 diff
+    - 기준: diff 0줄 (또는 의도적 수동 추가 항목만)
+
+V10. git 상태 클린:
+    - git status --porcelain=v1 → 예상치 못한 변경 없음
+    - git ls-files --others --exclude-standard → 의도치 않은 untracked 파일 없음
+    - .gitignore가 모든 peer runtime 경로 커버 확인
+
+--- verify-all 실패 시 롤백 절차 (cx 설계) ---
+Step 1: 상태 파악
+  Test-Path _sys
+  Get-ChildItem -Directory -Filter "_sys_old_rollback_*"  (root swap 방식의 경우)
+  python _sys/core/hub.py peer-status
+
+Step 2: 복구 (git branch 방식)
+  git stash (또는 git reset --hard HEAD)
+  python _sys/core/virtualizer.py mount (원본 junction 재등록)
+  python -m pytest _sys/tests/ -q
+
+Step 3: 검증
+  python _sys/core/hub.py peer-status
+  git status
+```
+
 ### Phase 7 — 연결성·추적성 최종화
 ```
 전수 경로 참조 검증:
@@ -956,23 +1084,27 @@ PROTOCOL.md (루트 인덱스)
 
 ---
 
-## 8. 리스크 분석 (gc+cx 끝장검토 반영)
+## 8. 리스크 분석 (gc+cx Round 1~3 전체 반영)
 
 | 심각도 | 리스크 | 영향 | 완화 |
 |--------|--------|------|------|
-| CRITICAL | Claude Code 실행 중 junction 이동 | _sys/claude/config/ 파손 → 세션 불능 | Phase 1+2는 반드시 next-session fresh start + 프리플라이트 process check |
+| CRITICAL | Claude Code 실행 중 junction 이동 | _sys/claude/config/ 파손 → 세션 불능 | Phase 1+2는 반드시 next-session fresh start + cutover.ps1 프리플라이트 process check |
 | CRITICAL | Phase 1(이동) + Phase 2(hub.py 업데이트) 분리 커밋 | 중간 상태에서 pytest 전면 실패 | Phase 1+2 단일 원자 커밋 (§Phase 1+2 통합) |
-| CRITICAL | rollback 미비 — git만으로 불충분 | ignored 런타임 파일 + host junction 복구 불가 | Phase 0에서 filesystem backup + rollback-phase1.ps1 생성 |
+| CRITICAL | rollback 미비 — git만으로 불충분 | ignored 런타임 파일 + host junction 복구 불가 | Phase 0에서 filesystem backup + runtime/recovery/rollback.ps1 생성 |
+| CRITICAL | cut-over "delete _sys 후 rename" 순서 오류 | 실패 시 _sys 없음 → 복구 불가 | cutover.ps1: rename backup 먼저 (Rename-Item _sys _sys_old_rollback_$stamp) → rename new → 검증 → 실패 시 rollback.ps1 |
+| HIGH | verify-all 단일 gate로 일부 버그 미감지 | 실제 경로에서만 나타나는 버그 누락 | 2-gate: pre-commit (V1~V5+V7+V9+V10) + post-commit (V6+V8) |
 | HIGH | status.json 31+개 일괄 제거 blast radius | 참조 파일 실행 불능 | write-through cache 전략 (§Phase 3 대안) |
 | HIGH | .gitignore 패턴 전면 파손 | tracked/untracked 파일 혼란 | Phase 0에서 사전 업데이트 (§Phase 7 목록) |
 | HIGH | CLAUDE.md/GEMINI.md old-path 하드코딩 | AI 피어에 구 경로 노출 → 잘못된 명령 실행 | Phase 1+2에서 루트 문서 동시 업데이트 |
-| HIGH | Junction 재등록 누락 | 피어 CLI 실행 불가 | Phase 1+2 PART A step 7 즉시 검증 |
-| HIGH | hub.py 경로 참조 누락 | 런타임 오류 | Phase별 pytest 통과 게이트 |
+| HIGH | Junction 재등록 누락 | 피어 CLI 실행 불가 | Phase 1+2 PART A step 7 즉시 검증 + verify-all V4/V8 |
+| HIGH | hub.py 경로 참조 누락 | 런타임 오류 | Phase별 pytest 통과 게이트 + verify-all V5/V6 |
 | MEDIUM | status.json 참조가 skills/agents에도 있음 | Phase 0 감사 범위 미달 | Phase 0 grep에 모든 파일 타입 포함 |
-| MEDIUM | traceability.json 수동 유지 drift | 추적성 루프 파손 | auto-gen 스크립트로 대체 (§Phase 7) |
+| MEDIUM | traceability.json 수동 유지 drift | 추적성 루프 파손 | auto-gen 스크립트로 대체 + verify-all V9 |
 | MEDIUM | knowledge-policy.json vs knowledge/index.json 혼동 | 설정 레이어 오염 | 명칭 분리 + _doc 필드로 역할 명시 |
 | MEDIUM | infra.json 자체 로드 실패 시 bootstrap 불능 | hub.py 시작 불가 | __file__ 기준 _sys 경로 hardcode fallback |
+| MEDIUM | env/tools (500MB~1.5GB) 백업 시 USB IOPS 병목 | Phase 0 backup이 수분 소요 | 백업에서 env/ tools/ 제외 (git 미추적, 업데이트 자유) |
 | LOW | Phase 7 grep의 archive/garbage 파일 오탐 | "0건" 달성 불가 | --exclude-glob 명시적 제외 목록 |
+| LOW | git rename 감지 미신뢰 | blame/log 이력 누락 | tracked 파일은 git mv 사용; 생성/런타임 파일은 이력 불필요로 수용 |
 | LOW | 브랜치 merge 충돌 | 진행 중 변경과 충돌 | Phase 0에서 브랜치 격리 |
 
 ---
@@ -1001,11 +1133,14 @@ PROTOCOL.md (루트 인덱스)
 |------|------|------|
 | Claude Code 실행 중 _sys/claude/config/ 이동 | 세션 파괴 (불복구) | cx CRITICAL |
 | Phase 1 이동 + Phase 2 hub.py 업데이트를 별도 커밋으로 분리 | 중간 broken state | gc/cx CRITICAL |
+| cut-over에서 _sys/ 먼저 삭제 ("delete then rename") | 실패 시 _sys/ 없음 → 복구 불가 | cx CRITICAL |
+| verify-all 단일 gate (pre-commit만) | 실제 경로에서만 나타나는 버그 누락 | cx CRITICAL |
 | JSON 파일을 naive 문자열 치환으로 경로 업데이트 | 구조 파손 | cx HIGH |
 | rollback plan 없이 Phase 1 시작 | 복구 불가 | cx CRITICAL |
 | status.json을 31개 참조 감사 전 삭제 | 다수 스크립트 실행 불능 | gc/cx HIGH |
 | peer.json과 registry.json에 동일 필드 중복 | 유지 drift → MECE 위반 | gc HIGH |
 | traceability.json 전체를 수동으로만 유지 | 필연적 drift → 추적성 루프 파손 | gc/cx MEDIUM |
+| env/ tools/ 디렉토리를 Phase 0 filesystem backup에 포함 | USB IOPS 병목 + 공간 부족 | gc Round-3 |
 
 ---
 
