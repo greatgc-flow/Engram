@@ -48,7 +48,7 @@
       "aliases": ["antigravity", "agy"],
       "type": "peer",
       "invoke": "agy",
-      "invoke_args": ["--allowedTools", "Edit Write Read Glob Grep Bash", "--permission-mode", "acceptEdits", "-p", "{query}"],
+      "invoke_args": ["--allowedTools", "Edit Write Read Glob Grep Bash MultiEdit", "--permission-mode", "acceptEdits", "-p", "{query}"],
       "requires_pty": true,
       "memory": "session",
       "timeout": 0

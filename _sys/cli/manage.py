@@ -79,8 +79,6 @@ def main():
     except Exception as e:
         print(f"\n[FATAL] {e}")
         traceback.print_exc()
-        import os
-        os.system("pause >nul")
         sys.exit(1)
 
 

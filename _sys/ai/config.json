@@ -1,7 +1,0 @@
-{
-    "_comment":  "DEPRECATED: ratio field moved to _sys/ai/protocol.json collab_rate.current (Protocol v4.0). This file is kept for backward compat only.",
-    "_deprecated":  "use _sys/ai/protocol.json collab_rate.current",
-    "review_interval_min":  5,
-    "last_review_ts":  null,
-    "ratio":  10
-}

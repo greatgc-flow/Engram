@@ -25,5 +25,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n[FATAL] {e}")
         traceback.print_exc()
-        os.system("pause >nul")
         sys.exit(1)

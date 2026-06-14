@@ -147,7 +147,8 @@ def test_build_session_cmd_gc_fresh():
         args, use_stdin, gc_id = hub._build_session_cmd("gc", None, "gemini")
     assert "--session-id" in args
     assert "--approval-mode" in args
-    assert "yolo" in args
+    assert "auto_edit" in args
+    assert "yolo" not in args
     assert "--skip-trust" in args
     assert use_stdin is True
     assert gc_id is not None
@@ -157,7 +158,7 @@ def test_build_session_cmd_gc_resume():
     args, use_stdin, gc_id = hub._build_session_cmd("gc", "uuid-gc-1", "gemini")
     assert args == [
         "--resume", "uuid-gc-1", "-p", "-", "-o", "text",
-        "--approval-mode", "yolo", "--skip-trust",
+        "--approval-mode", "auto_edit", "--skip-trust",
     ]
     assert use_stdin is True
     assert gc_id is None

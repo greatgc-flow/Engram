@@ -26,10 +26,6 @@
 - out-of-band direct writes: documented as non-enforceable at runtime (governed by peer consensus & policy alignment)
 
 ---
-<!-- Original v3.4 content preserved below for reference -->
-
-
----
 
 ## §META — Document Guide
 
@@ -62,8 +58,8 @@ It abolishes vertical tiers, synchronizes context through N-Way single shared se
 **Principle**: All collaborations respect each node's technical characteristics, but **decision-making and proposal rights are completely equal**.
 Every node can initiate a `PROPOSE` (consensus proposal) at any stage.
 
-| Attribute | Human | Claude Code (CC) | Claude Agent (CA) | Gemini CLI (GC) | Antigravity (AG) | Codex (CX) |
-|-----------|-------|------------------|-------------------|-----------------|------------------|------------|
+| Attribute | Human | Claude Code (CC) | Claude Agent (CA) ⚠️ inactive | Gemini CLI (GC) | Antigravity (AG) ⚠️ inactive | Codex (CX) |
+|-----------|-------|------------------|-------------------------------|-----------------|-------------------------------|------------|
 | **Authority** | Tier 0 (Veto) | Peer (Equal) | Peer (Equal) | Peer (Equal) | Peer (Equal) | Peer (Equal) |
 | **Cognition Scope** | Console · UI Output | Full File · Tool · Memory | Within Work Scope | Large-context analysis | Shell/PTY orchestration | Repo-local coding/review |
 | **Session Type** | N-Way Room Participation | N-Way Room Participation | N-Way Room Participation | N-Way Room Participation | N-Way Room Participation | N-Way Room Participation |

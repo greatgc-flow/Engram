@@ -90,7 +90,7 @@ Peers share room state through `.ai/`, exchange messages through the hub, record
 - `_sys/ai/status_checks.json`: safe discovery checks consumed by peer-status declarative engine.
 - `_sys/ai/collaboration_loop_bindings.json`: general collaboration loop steps, role bindings, and routing rules.
 - `_sys/ai/traceability_map.json`: protocol-to-config-to-code-to-test mapping (v1.1, 14 entries).
-- `_sys/docs/TAXONOMY_v10.md`: governance framework — quality attributes, categories, scoring (v10.0, canonical).
+- `_sys/docs/TAXONOMY_v11.md`: governance framework — quality attributes, categories, scoring (v11.0, canonical).
 - `_sys/docs/workspace-connectivity-map.md`: root-to-runtime connectivity diagram.
 - `_sys/docs/workspace-environment.md`: portable tools, peer configs, skills, and plugin layout.
 - `_sys/docs/collaboration-mece-review.md`: collaboration design review and implemented feedback loop summary.

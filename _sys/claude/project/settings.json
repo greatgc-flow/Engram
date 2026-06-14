@@ -1,19 +1,14 @@
-﻿{
+{
     "permissions": {
         "allow": [
-            "Bash(_sys/cli/*.bat)",
-            "Bash(_sys/hooks/*.bat)",
-            "Bash(_sys/scans/*.bat)",
-            "Bash(_sys/tools/*.bat)",
-            "Bash(_sys/gemini/*.bat)",
             "Bash(_sys/tools/ripgrep/rg.exe *)",
             "Bash(_sys/tools/fd/fd.exe *)",
-            "Bash(python _sys/core/hub.py *)",
+            "PowerShell(python _sys/core/hub.py *)",
             "Write(.ai/**)",
+            "Write(_sys/**)",
             "Write(.claude/agents/**)",
             "Write(.claude/skills/**)",
-            "Write(_archive/**)",
-            "Write(_sys/claude/agent/CONTEXT.md)"
+            "Write(_archive/**)"
         ]
     },
     "defaultShell": "powershell",

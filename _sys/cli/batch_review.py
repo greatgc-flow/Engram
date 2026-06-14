@@ -94,7 +94,7 @@ def main() -> None:
         return
 
     prompt = (
-        "Review the following uncommitted git diff. Report in Korean:\n"
+        "Review the following uncommitted git diff. Report in English:\n"
         "1) Bugs or risky patterns\n"
         "2) Improvements or simplification opportunities\n"
         "3) One-line summary of changes\n"

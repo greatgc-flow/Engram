@@ -40,10 +40,6 @@ def _env() -> dict:
 
 
 def _health(env: dict, status: str, pid: int | None = None) -> None:
-    extra_args = []
-    if pid is not None:
-        # extra는 hub.py health-update에서 --extra JSON으로 전달
-        pass
     subprocess.run(
         [_PYTHON, str(_HUB), "health-update", "--peer", "ag", "--status", status],
         capture_output=True, env=env,

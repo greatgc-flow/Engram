@@ -208,14 +208,15 @@ class TestAsk:
             hub.action_ask("gc", "", str(qf), 120, None)
         assert not qf.exists()
 
-    def test_ask_nonzero_exit_warns(self, capsys):
+    def test_ask_nonzero_exit_propagates(self, capsys):
         mock_proc = _make_mock_proc(stdout=b"partial response", stderr=b"some error", returncode=1)
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
-             patch("subprocess.Popen", return_value=mock_proc):
+             patch("subprocess.Popen", return_value=mock_proc), \
+             pytest.raises(SystemExit) as exc_info:
             hub.action_ask("gc", "test", None, 120, None)
-        out, err = capsys.readouterr()
-        assert "[HUB:WARN] gc exited 1" in err
-        assert "partial response" in out
+        assert exc_info.value.code == 1
+        _, err = capsys.readouterr()
+        assert "[HUB:ERROR] gc exited 1" in err
 
     def test_ask_prepends_room_context_and_records_success(self, ai_dir, tmp_path, monkeypatch):
         peer_dir = tmp_path / "gemini"
@@ -263,8 +264,10 @@ class TestAsk:
         monkeypatch.setattr(hub, "_peer_sys_dir", lambda peer_id: peer_dir)
         mock_proc = _make_mock_proc(stderr=b"Fatal error\nError: spawn EPERM", returncode=1)
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
-             patch("subprocess.Popen", return_value=mock_proc):
+             patch("subprocess.Popen", return_value=mock_proc), \
+             pytest.raises(SystemExit) as exc_first:
             hub.action_ask("gc", "hello", None, 120, ai_dir)
+        assert exc_first.value.code == 1
 
         health = json.loads((peer_dir / "health.json").read_text("utf-8"))
         assert health["context_health"]["status"] == "RED"
@@ -591,6 +594,20 @@ class TestConsensusProtocol:
         with pytest.raises(SystemExit):
             hub.action_consensus_vote(ai_dir, rid, "cc", "agree", "")  # already closed
 
+    def test_vote_invalid_value_rejected(self, ai_dir):
+        hub.action_consensus_propose(ai_dir, "Test", ["cc"], "cc")
+        rounds = list((ai_dir / "consensus").glob("*.json"))
+        rid = json.loads(rounds[0].read_text("utf-8"))["round_id"]
+        with pytest.raises(SystemExit):
+            hub.action_consensus_vote(ai_dir, rid, "cc", "typo_value", "")
+
+    def test_vote_empty_value_rejected(self, ai_dir):
+        hub.action_consensus_propose(ai_dir, "Test2", ["cc"], "cc")
+        rounds = list((ai_dir / "consensus").glob("*.json"))
+        rid = json.loads(rounds[-1].read_text("utf-8"))["round_id"]
+        with pytest.raises(SystemExit):
+            hub.action_consensus_vote(ai_dir, rid, "cc", "", "")
+
 
 # ─── §P-7 N-Node 등록 ─────────────────────────────────────────
 class TestNodeManagement:
@@ -818,9 +835,9 @@ class TestEnhancedCollaboration:
             hub.action_ask("gc", "hello", None, 0, ai_dir, quiet=True, output_file=str(out))
         assert out.read_text("utf-8") == "model response"
         assert capsys.readouterr().out == ""
-        # timeout_sec=0 resolves to 7 from _runtime_cfg; communicate gets min(heartbeat_sec, ~7)
+        # timeout_sec=0 means unlimited; communicate gets heartbeat_sec (30s) for process-death polling
         communicate_timeout = mock_proc.communicate.call_args.kwargs.get("timeout", 0)
-        assert communicate_timeout <= 7
+        assert communicate_timeout == 30
 
     def test_feedback_add_list_resolve(self, ai_dir, capsys):
         hub.action_feedback_add(ai_dir, "cx", "runtime", "high", "Need quiet mode", "details")

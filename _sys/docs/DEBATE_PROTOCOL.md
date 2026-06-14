@@ -296,7 +296,7 @@ Note: STATUS must be one of the three options — no conditional qualifiers (e.g
 
 **4-4. Round Management:**
 - Rounds numbered from 1.
-- Marking ABSENT: coordinator, after confirmed 3-min timeout, with user notification.
+- Marking ABSENT: coordinator, after confirmed 30-min timeout (per `protocol.json consensus.timeout_minutes`), with user notification.
 - Minimum quorum: N-1 active peers (3 peers → minimum 2).
 - Transcripts: `P:\.ai\debate\{topic}-round{n}.md` — IMMUTABLE after written.
 

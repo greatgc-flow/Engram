@@ -1467,9 +1467,9 @@ def _build_session_cmd(health_peer: str, session_id: str | None, exe: str) -> tu
         return ["exec", "-"] + _CX_BASE, True, None
     if health_peer == "gc":
         if session_id:
-            return ["--resume", session_id, "-p", "-", "-o", "text", "--approval-mode", "yolo", "--skip-trust"], True, None
+            return ["--resume", session_id, "-p", "-", "-o", "text", "--approval-mode", "auto_edit", "--skip-trust"], True, None
         new_uuid = str(uuid.uuid4())
-        return ["--session-id", new_uuid, "-p", "-", "-o", "text", "--approval-mode", "yolo", "--skip-trust"], True, new_uuid
+        return ["--session-id", new_uuid, "-p", "-", "-o", "text", "--approval-mode", "auto_edit", "--skip-trust"], True, new_uuid
     return [], False, None
 
 
@@ -1698,7 +1698,8 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 lease_status = "failed"
                 _record_ask_failure(health_peer, reason, clean_err or output, elapsed, ai_root, extra)
                 _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
-                print(f"[HUB:WARN] {to} exited {proc.returncode}\n{clean_err}", file=sys.stderr)
+                print(f"[HUB:ERROR] {to} exited {proc.returncode}\n{clean_err}", file=sys.stderr)
+                sys.exit(1)
 
         elif proc.returncode != 0:
             clean_err = _strip_ansi(_decode_output(raw_err))
@@ -1708,7 +1709,8 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
             if ai_root:
                 _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=elapsed, failure_reason=reason)
-            print(f"[HUB:WARN] {to} exited {proc.returncode}\n{clean_err}", file=sys.stderr)
+            print(f"[HUB:ERROR] {to} exited {proc.returncode}\n{clean_err}", file=sys.stderr)
+            sys.exit(1)
         else:
             _record_ask_success(health_peer, elapsed, ai_root)
             _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
@@ -1832,6 +1834,10 @@ def action_consensus_propose(ai_root: Path, subject: str, voters: list[str], pro
 
 
 def action_consensus_vote(ai_root: Path, round_id: str, voter: str, vote_val: str, reason: str) -> None:
+    _VALID_VOTES = {"agree", "disagree", "abstain"}
+    if vote_val not in _VALID_VOTES:
+        print(f"[HUB:ERROR] invalid vote value '{vote_val}'; must be one of {sorted(_VALID_VOTES)}", file=sys.stderr)
+        sys.exit(1)
     rpath = ai_root / "consensus" / f"{round_id}.json"
     if not rpath.exists(): sys.exit(1)
     with _get_lock(ai_root, f"consensus_{round_id}"):
@@ -3303,7 +3309,7 @@ def action_approval_request(ai_root: Path, from_peer: str, action: str, auth_nee
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="hub", description="AI 협업 허브 — Protocol v4.1")
-    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "model-status", "transient-scan"])
+    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan"])
     parser.add_argument("--needs")
     parser.add_argument("--effort", default="mid")
     parser.add_argument("--agent")
