@@ -257,7 +257,7 @@ Entry points for launching each peer with health+auth pre-checks:
 | `cx` | `_sys/cli/codex.bat` → `codex_entry.py` | `_sys/codex/health.json` |
 | `ag` | `_sys/cli/agy.bat` → `agy_entry.py` | `_sys/antigravity/health.json` |
 
-Console autonomy defaults are documented in `_sys/docs/peer-console-defaults.md`.
+Console autonomy defaults (minimum permission profiles) are documented in `_sys/docs/protocol-permissions.md`.
 
 ---
 
