@@ -33,7 +33,7 @@
       "version": "1.0.0",
       "description": "Hardcoded path and environment audit",
       "compatible_peers": ["cc", "gc", "cx"],
-      "entrypoint": "_sys/ai/common/agents/portability-auditor.md",
+      "entrypoint": "_sys/ai/common/agents/portability-auditor.json",
       "tags": ["audit", "portability"]
     },
     {
@@ -42,7 +42,7 @@
       "version": "1.0.0",
       "description": "Formal proposal [PROPOSAL:] drafting",
       "compatible_peers": ["cc", "gc", "cx"],
-      "entrypoint": "_sys/ai/common/agents/proposer.md",
+      "entrypoint": "_sys/ai/common/agents/proposer.json",
       "tags": ["governance", "proposal"]
     },
     {
@@ -51,7 +51,7 @@
       "version": "1.0.0",
       "description": "Security and regression risk analysis",
       "compatible_peers": ["cc", "gc", "cx"],
-      "entrypoint": "_sys/ai/common/agents/risk-scanner.md",
+      "entrypoint": "_sys/ai/common/agents/risk-scanner.json",
       "tags": ["risk", "security"]
     },
     {
@@ -60,7 +60,7 @@
       "version": "1.0.0",
       "description": "Goal Frame success criteria validation",
       "compatible_peers": ["cc", "cx"],
-      "entrypoint": "_sys/ai/common/agents/verifier.md",
+      "entrypoint": "_sys/ai/common/agents/verifier.json",
       "tags": ["qa", "validation"]
     },
     {

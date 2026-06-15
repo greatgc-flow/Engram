@@ -28,7 +28,7 @@ def _resolve_path_entry(base: str, sub: str, sys_dir: Path) -> Path:
     return bases.get(base, sys_dir) / sub
 
 
-def _map_subst(base_dir: Path, drive: str) -> None:
+def _map_subst_drive(base_dir: Path, drive: str) -> None:
     """Ensure SUBST drive is mapped; remap if occupied by a different path."""
     drive_root = f"{drive}:\\"
     if os.path.exists(drive_root):
@@ -182,7 +182,7 @@ def main(ctx: dict) -> None:
     base_dir = base_dir_phys
     sys_dir  = sys_dir_phys
     if drive:
-        _map_subst(base_dir_phys, drive)
+        _map_subst_drive(base_dir_phys, drive)
         base_dir = Path(f"{drive}:\\")
         sys_dir  = base_dir / "_sys"
 
@@ -209,7 +209,8 @@ def main(ctx: dict) -> None:
     if raw_target:
         t_path = Path(raw_target).resolve()
         if drive and str(base_dir_phys) in str(t_path):
-            raw_target = str(t_path).replace(str(base_dir_phys), str(base_dir))
+            target = str(t_path)
+            raw_target = target.replace(str(base_dir_phys), str(base_dir))
         else:
             raw_target = str(t_path)
 

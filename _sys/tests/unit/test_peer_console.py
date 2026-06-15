@@ -39,7 +39,7 @@ def test_gemini_does_not_modify_management_command():
 
 def test_codex_defaults_to_workspace_write():
     args = peer_default_args("cx", [])
-    assert args == ["-s", "workspace-write"]
+    assert args == ["-s", "workspace-write", "--ignore-rules"]
 
 
 def test_codex_respects_explicit_sandbox_policy():

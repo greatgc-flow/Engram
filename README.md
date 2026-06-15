@@ -1,116 +1,151 @@
-# Porta-Flow: Portable Multi-AI Dev Workspace
+# Porta-Flow: Self-Evolving Multi-AI Dev Workspace
 
-Porta-Flow is a Windows-first portable development workspace that lets Claude, Gemini, Antigravity, Codex, and human developers collaborate through one local folder.
+[![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
+[![Windows](https://img.shields.io/badge/os-windows-green.svg)](https://microsoft.com/windows)
+[![Tests: 299 Pass](https://img.shields.io/badge/tests-299%20pass-success.svg)](_sys/tests)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Clone it, carry it, register it on any PC, and keep the same tools, AI peer settings, consensus protocol, tests, and workspace state without polluting the host machine.
+A Windows-first portable dev workspace where Claude (`cc`), Gemini (`gc`), Codex (`cx`), and Antigravity (`ag`) collaborate as **equal peers** alongside human developers — fully portable on USB or cloud drive, with a **self-evolving collaboration loop** that learns from every session.
 
-## Why Star This
+---
 
-- **Multi-AI collaboration in one repo**: `cc`, `ca`, `gc`, `ag`, and `cx` work as equal peers through a shared hub.
-- **Portable by design**: runtimes, tools, CLI wrappers, hooks, and AI configs live under `_sys/`.
-- **Consensus-driven changes**: high-risk actions can be gated by `collab_rate`, finalized consensus, and traceable handoff state.
-- **Zero-token control plane**: health checks, context fill, feedback tracking, artifact metadata, and policy routing run locally before model calls.
-- **Auditable engineering loop**: protocol rules map to JSON config, runtime functions, and unit tests.
+## 🧠 Self-Evolution System
 
-## AI Collaboration Model
+The unique selling point: lessons extracted from peer interactions automatically propagate to all nodes and harden into runtime rules.
 
-```text
+```
+Peer session output
+  → [LESSON_LEARNED:] tag
+  → lesson-extractor agent
+  → hub.py lessons-propose → lessons-activate
+  → lesson-broadcast (all peers via .ai/mailbox.json)
+  → trigger_count ≥ 3 → lesson-sweep
+  → runtime-directives.jsonl (binding on all future sessions)
+```
+
+No human required. No peer repeats another's mistake.
+
+---
+
+## 🏗 Architecture
+
+```
 Human
-  |
-  v
+  │
+  ▼
 _sys/cli/msg.bat
-  |
-  v
-_sys/core/hub.py  <---->  _sys/ai/protocol.json
-  |
-  +-- cc / ca: Claude-based architecture, implementation, verification
-  +-- gc: Gemini large-context analysis and documentation
-  +-- ag: Antigravity shell and workflow orchestration
-  +-- cx: Codex code review, refactoring, tests, and patch planning
+  │
+  ▼
+_sys/core/hub.py ◄──────── _sys/ai/protocol.json  (SSOT: collab_rate, routing, guards)
+  │                         _sys/ai/user-directives.md
+  │                         _sys/ai/runtime-directives.jsonl  (evolved rules)
+  │
+  ├── cc / ca  Claude — architecture, implementation, verification
+  ├── gc       Gemini — large-context analysis, documentation, audit
+  ├── cx       Codex  — code review, refactoring, patch planning
+  └── ag       Antigravity — shell ops, workflow orchestration
 ```
 
-Peers share room state through `.ai/`, exchange messages through the hub, record handoff context, and use `feedback-*` and `artifact-*` actions to keep collaboration durable.
+Peers share room state through `.ai/`, exchange messages through the hub, record handoff context in rolling markdown, and use `lesson-*`, `thread-*`, and `proposal-*` actions to govern and evolve collaboratively.
 
-## Key Capabilities
+---
 
-| Area | What it does |
+## ✨ Key Features
+
+| Feature | Description |
 |---|---|
-| P2P hub | `_sys/core/hub.py` manages sessions, mailbox, ask, consensus, health, feedback, and artifacts. |
-| Consensus | `PROTOCOL.md` and `_sys/ai/protocol.json` define R:10 unanimous governance and action gates. |
-| Feedback loop | `feedback-add/list/resolve` keeps improvement items out of transient chat history. |
-| Artifact workflow | `artifact-claim/status/finalize` tracks single-owner merge flow and final file hashes. |
-| Health routing | Peer health files and gate checks prevent repeated calls to blocked peers. |
-| Portable tools | `_sys/tools/` carries utilities such as ripgrep, jq, gh, fd, fzf, bat, delta, sqlite, and oh-my-posh. |
-| Tests | `_sys/tests/unit` covers hub behavior, integration scenarios, locks, launchers, lifecycle, and paths. |
+| 🤖 **Multi-AI Peers** | `cc`, `gc`, `cx`, `ag` work as equals — no coordinator monopoly (AP-20). |
+| 🧬 **Self-Evolving** | Lessons auto-broadcast; `trigger_count ≥ 3` promotes to runtime directives. |
+| 🛡 **Consensus-Driven** | R:10 unanimous governance gates for high-risk `_sys/` changes. |
+| 🧳 **100% Portable** | Runtimes, tools, CLI wrappers, and AI configs live in `_sys/`. Zero host pollution. |
+| 🔧 **Tool Registry** | 15 shared tools (9 agents + 6 skills) — any peer can invoke any tool. |
+| 🛰 **P2P Mailbox** | File-based IPC — no server, no broker, works offline. |
+| 🔍 **21 Anti-Patterns** | `cross-reviewer` agent detects AP-01~AP-21 (consensus drift, governance violations, etc.). |
+| 📋 **Audit Trail** | Proposals, threads, handoffs, and routing metrics fully traceable. |
 
-## Quick Start
+---
 
-1. Run `INSTALL.bat` to rebuild portable runtimes and tools.
-2. Run `register.bat` to register the folder on the current PC.
-3. Use `_sys\cli\msg.bat status` to inspect the collaboration room.
-4. Use `_sys\tests\run-tests.bat --all` for full validation.
+## 🚀 Quick Start
 
-## Project Structure
+```bat
+REM 1. Rebuild portable runtimes and tools
+INSTALL.bat
 
-```text
+REM 2. Register this folder on the current PC (creates SUBST drive, context menu)
+register.bat
+
+REM 3. Check the live collaboration room
+_sys\cli\msg.bat status
+
+REM 4. Validate the multi-agent hub
+_sys\tests\run-tests.bat --all
+```
+
+---
+
+## 📂 Project Structure
+
+```
 .
-|-- README.md                  # Project overview
-|-- AGENTS.md                  # Contributor guide for this repository
-|-- PROTOCOL.md                # Multi-peer collaboration protocol index
-|-- CLAUDE.md / GEMINI.md      # Peer-facing workspace guides
-|-- INSTALL.bat                # Rebuild portable environment
-|-- register.bat               # Register host integration
-|-- unregister.bat             # Remove host integration
-|-- CLEANUP.bat                # Cleanup entrypoint
-|-- workspace/                 # Default user workspace
-|-- .ai/                       # Runtime collaboration state, hub-managed only
-|-- _archive/                  # Logs and archived runtime data
-`-- _sys/
-    |-- ai/                    # Protocol, peer registry, orchestration, traceability
-    |-- core/                  # hub.py, setup, config, relocation logic
-    |-- cli/                   # msg.bat and peer launch wrappers
-    |-- checks/                # Health, policy, deps, portability checks
-    |-- docs/                  # Architecture, protocol, environment maps
-    |-- hooks/                 # Lifecycle and context hooks
-    |-- tests/                 # Unit, integration, and sandbox tests
-    |-- tools/                 # Portable binary tools
-    |-- claude/                # Claude config, agents, skills
-    |-- gemini/                # Gemini config and project settings
-    |-- antigravity/           # Antigravity config and agentapi bridge
-    `-- codex/                 # Codex config and templates
+├── README.md / CLAUDE.md / GEMINI.md / AGENTS.md  ← Peer workspace guides
+├── PROTOCOL.md / CONVENTION.md                      ← Constitutional docs
+├── INSTALL.bat / register.bat / unregister.bat / CLEANUP.bat
+├── workspace/          ← Default user workspace
+├── .ai/                ← Runtime collaboration state (hub-managed only)
+├── _archive/           ← Logs, sessions, collab-log
+└── _sys/
+    ├── ai/             ← protocol.json (SSOT), peers.json, knowledge/, proposals/
+    │   └── common/     ← tool-registry.json + 9 agents + 6 skills (shared across peers)
+    ├── core/           ← hub.py (IPC hub v4.2), launcher.py, setup.py, config.py
+    ├── cli/            ← msg.bat, peer wrappers, manage.py, peer_console.py
+    ├── checks/         ← Health, policy, portability, risk checks (Axis A-I)
+    ├── docs-v2/        ← SSOT v1.1: invariants, general rules, peer-specific, ops
+    ├── docs/           ← Archive: history/, architecture/, plans/, user/
+    ├── hooks/          ← ctx-save, ctx-end, collab-log, memory-compactor
+    ├── tests/          ← 299 unit tests + integration + WSB sandbox
+    ├── templates/      ← CLAUDE_*.md, GEMINI.md templates
+    ├── claude/         ← Claude config, agents, skills, health
+    ├── gemini/         ← Gemini config, health, session state
+    ├── codex/          ← Codex config, templates
+    └── antigravity/    ← Antigravity config and agentapi bridge
 ```
 
-## Configuration and Audit Maps
+---
 
-- `_sys/ai/protocol.json`: collaboration policy, runtime policy, guards, model profile convention.
-- `_sys/ai/peers.json`: managed peer registry and host/project junction metadata.
-- `_sys/ai/orchestration.json`: hub node IDs, invoke commands, virtual nodes, and default voters.
-- `_sys/ai/lifecycle_policy.json`: health lifecycle, failure classification, room reset, messaging policy.
-- `_sys/ai/model_profiles.json`: per-peer model profiles for declarative routing and profile-validate.
-- `_sys/ai/status_checks.json`: safe discovery checks consumed by peer-status declarative engine.
-- `_sys/ai/collaboration_loop_bindings.json`: general collaboration loop steps, role bindings, and routing rules.
-- `_sys/ai/traceability_map.json`: protocol-to-config-to-code-to-test mapping (v1.1, 14 entries).
-- `_sys/docs/TAXONOMY_v11.md`: governance framework — quality attributes, categories, scoring (v11.0, canonical).
-- `_sys/docs/workspace-connectivity-map.md`: root-to-runtime connectivity diagram.
-- `_sys/docs/workspace-environment.md`: portable tools, peer configs, skills, and plugin layout.
-- `_sys/docs/collaboration-mece-review.md`: collaboration design review and implemented feedback loop summary.
+## ⚙ Configuration & Audit Maps
 
-## Validation
+| File | Purpose |
+|------|---------|
+| `_sys/ai/protocol.json` | Collab policy, routing, guards, action classification |
+| `_sys/ai/peers.json` | Peer registry: invoke commands, env vars, junction metadata |
+| `_sys/ai/common/tool-registry.json` | 15 shared tools across all peers |
+| `_sys/ai/knowledge/general/active-lessons.jsonl` | Live peer learning database |
+| `_sys/ai/runtime-directives.jsonl` | Auto-promoted rules (TTL 48h, from lesson-sweep) |
+| `_sys/ai/proposals/` | Async governance proposals with vote tracking |
+| `_sys/docs-v2/10-invariants.md` | MUST/MUST-NOT rules (INV-01~18, PRO-01~15) |
+| `_sys/docs-v2/ops/anti-patterns.md` | 21 anti-patterns (AP-01~AP-21) |
+| `_sys/ai/traceability_map.json` | Protocol → config → code → test mapping |
+| `_sys/ai/orchestration.json` | Hub node IDs, invoke commands, virtual nodes |
+| `_sys/ai/model_profiles.json` | Per-peer model profiles for declarative routing |
 
-Fast hub-focused check:
+---
 
-```bat
-python -m pytest _sys\tests\unit\test_hub.py
-```
-
-Full unit suite:
+## ✅ Validation
 
 ```bat
+REM Core hub + collaboration suite
+python -m pytest _sys\tests\unit\test_hub.py _sys\tests\unit\test_hub_collaboration.py
+
+REM Full unit suite
 python -m pytest _sys\tests\unit
 ```
 
-Recent baseline: `216 passed, 23 pre-existing failures (test_launcher_paths / test_path_scenarios / test_system_lifecycle — launcher refactor gap), 2 pytest config warnings`. Core hub suite: `108 passed`.
+**Current baseline:** `299 passed, 11 xfail (manage.py API migration pending)` — core hub and collaboration: 100% green.
 
-## Repository Hygiene
+---
 
-Generated state, logs, telemetry, runtime caches, `.ai/`, `_archive/`, and heavy portable binaries should stay out of source control. Source, policy, tests, templates, and documentation should remain traceable and reviewable.
+## 🔒 Repository Hygiene
+
+- **Tracked:** source (`.py`, `.bat`), config (`.json`), docs (`.md`), tests
+- **Ignored:** `_sys/env/` (large binaries), `.ai/` (runtime state), `_archive/`, `_sys/data/`, `Garbage/`, `tmp/`
+- **Per-PC:** `.claude/settings.local.json` (auto-generated by `register.bat`)

@@ -20,21 +20,21 @@
     ]
   },
   "context_health": {
-    "status": "STALE",
+    "status": "GREEN",
     "jsonl_mb": 0.0,
     "context_window_usage_percent": 0.0,
-    "checked_at": "20260615T235935",
+    "checked_at": "20260616T064812",
     "source": "self",
     "stale_marked_at": "2026-06-14T22:29:44"
   },
   "session_health": {
     "consecutive_failures": 2,
     "last_failure_reason": "lease_expired",
-    "last_success_at": "2026-06-15T21:22:37",
-    "session_count_today": 20,
-    "session_date": "20260615",
-    "last_failure_detail": "lease expired at 2026-06-15T23:59:25",
-    "last_failure_at": "2026-06-15T23:59:35"
+    "last_success_at": "2026-06-16T06:40:50",
+    "session_count_today": 1,
+    "session_date": "20260616",
+    "last_failure_detail": "lease expired at 2026-06-16T06:48:02",
+    "last_failure_at": "2026-06-16T06:48:12"
   },
   "availability": {
     "installed": true,
@@ -43,7 +43,7 @@
     "last_gate_check": null,
     "active_pid": null,
     "last_invocation_exit_code": 1,
-    "last_invocation_duration_ms": 167000,
+    "last_invocation_duration_ms": 73000,
     "rate_limit_state": "ok",
     "entrypoint_ok": true,
     "quarantined": false

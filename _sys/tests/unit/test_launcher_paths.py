@@ -26,7 +26,7 @@ import pytest
 SYS_DIR = Path(__file__).parent.parent.parent
 LAUNCH_BAT  = SYS_DIR / "cli" / "launch.bat"
 START_BAT   = SYS_DIR / "start.bat"
-LAUNCHER_PY = SYS_DIR / "cli" / "launcher.py"
+LAUNCHER_PY = SYS_DIR / "core" / "launcher.py"  # logic moved from cli/launcher.py (thin wrapper)
 ENV_JSON    = SYS_DIR / "env.json"
 PEERS_JSON  = SYS_DIR / "ai" / "peers.json"
 
@@ -309,9 +309,11 @@ class TestNodeJsPathSafety:
     def test_start_bat_verifies_subst_target_before_reuse(self):
         """[S-3] launcher.py must verify existing SUBST maps to this env."""
         content = LAUNCHER_PY.read_text(encoding="utf-8", errors="ignore")
+        # Sentinel check: verify SUBST points to this env's launcher.py
         assert "launcher.py" in content, \
             "launcher.py must verify SUBST drive via sentinel file check"
-        assert '"/D"' in content or "'/D'" in content, \
+        # Must release wrong SUBST with /D before remapping
+        assert '"/D"' in content or "'/D'" in content or '"/D"' in content, \
             "launcher.py must release wrong SUBST mapping with /D"
 
 

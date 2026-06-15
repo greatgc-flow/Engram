@@ -55,7 +55,7 @@ def test_gc_no_yolo():
 
 def test_hub_timeout_zero_is_unlimited(monkeypatch):
     monkeypatch.setattr(hub, "_runtime_cfg", lambda: {"ask_default_timeout_sec": 7})
-    monkeypatch.setattr(hub, "_lease_cfg", lambda: (999, 1800))
+    monkeypatch.setattr(hub, "_lease_cfg", lambda: (999, 1800, 1800))  # heartbeat, lease, zombie
     monkeypatch.setattr(hub, "_load_orchestration", lambda: {
         "hub_nodes": [{
             "node_id": "mock_peer",
@@ -75,5 +75,5 @@ def test_hub_timeout_zero_is_unlimited(monkeypatch):
 
 
 def test_hub_lease_timeout_is_1800():
-    _, lease_timeout_sec = hub._lease_cfg()
+    _, lease_timeout_sec, _ = hub._lease_cfg()  # (heartbeat, lease, zombie)
     assert lease_timeout_sec >= 1800

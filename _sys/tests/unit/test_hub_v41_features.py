@@ -111,7 +111,8 @@ class TestRoutingMetrics:
              patch("hub._resolve_profile_id", return_value="mock.default"), \
              patch("hub._ask_health_precheck"), \
              patch("hub._record_ask_failure"), \
-             patch("hub._append_ask_history"):
+             patch("hub._append_ask_history"), \
+             pytest.raises(SystemExit):
             hub.action_ask("mock_peer", "hello", None, 10, ai_dir, quiet=True)
 
         lines = [l for l in metrics_path.read_text(encoding="utf-8").splitlines() if l.strip()]

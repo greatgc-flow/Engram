@@ -2,6 +2,7 @@
 manage.py - Thin wrapper. Logic moved to core.virtualizer + core.registrar.
 Kept for backward compatibility and direct CLI invocation.
 """
+import subprocess
 import sys
 import traceback
 from pathlib import Path
@@ -9,6 +10,24 @@ from pathlib import Path
 _sys = Path(__file__).parent.parent.resolve()
 if str(_sys) not in sys.path:
     sys.path.insert(0, str(_sys))
+
+
+def get_subst_mappings() -> dict[str, str]:
+    """Return current SUBST mappings as {drive_letter: physical_path}.
+    Uses encoding='oem' because Windows cmd tools output in OEM code page (cp949 on Korean locales).
+    """
+    try:
+        raw = subprocess.check_output(["subst"], encoding='oem', stderr=subprocess.DEVNULL)
+        result = {}
+        for line in raw.splitlines():
+            parts = line.split("=>")
+            if len(parts) == 2:
+                drive = parts[0].strip().rstrip(":\\")
+                path  = parts[1].strip()
+                result[drive] = path
+        return result
+    except Exception:
+        return {}
 
 
 def _make_ctx(base_dir: Path, extra_args: list) -> dict:
