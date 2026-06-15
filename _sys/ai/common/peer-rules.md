@@ -1,4 +1,4 @@
-# common-peer-rules.md — Shared Peer Invariants (v1.0)
+﻿# common-peer-rules.md — Shared Peer Invariants (v1.0)
 > **Date**: 2026-06-14 | **Scope**: All AI peers (cc, gc, cx, ag)
 > These rules apply to every peer equally. Peer-specific files reference this document
 > and override only where their technical constraints differ.
@@ -94,5 +94,6 @@ A RED peer will not receive work until `peer-recover` is run. See `protocol-heal
 
 ---
 
-> *Authority: `_sys/docs/PROTOCOL_INVARIANTS.md` (INV-01~18, PRO-01~15)*
-> *Protocol docs: `_sys/docs/protocol-*.md`*
+> *Authority: `_sys/docs-v2/10-invariants.md` (INV-01~18, PRO-01~15)*
+> *Protocol docs: `_sys/docs-v2/` (SSOT — see 00-MANIFEST.md for load order)*
+> *Legal Code archive: `_sys/docs/history/` (read-only reference)*

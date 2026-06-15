@@ -1,4 +1,4 @@
-# Global Claude Preferences
+﻿# Global Claude Preferences
 <!-- Copy this file to: [PortableDev]\_sys\claude\config\CLAUDE.md  -->
 <!-- CLAUDE_CONFIG_DIR in start.bat points claude here automatically -->
 <!-- Update with ctx-end --global                                    -->
@@ -32,9 +32,10 @@
 
 All peers (cc, gc, ag, cx) are **absolutely equal**. Any peer may communicate with user directly.
 Protocol config: **`P:\_sys\ai\protocol.json`** (single source of truth — collab_rate, routing, health, consensus)
-Protocol docs: `P:\_sys\docs\protocol-*.md` (composable domain files)
+Protocol docs: `P:\_sys\docs-v2\` (SSOT v1.1 — see 00-MANIFEST.md for load order)
 Common peer rules (IPC paths, hub commands, session start): `P:\_sys\ai\common\peer-rules.md`
-MUST/MUST-NOT rules index: `P:\_sys\docs\PROTOCOL_INVARIANTS.md` (INV-01~18, PRO-01~15)
+MUST/MUST-NOT rules index: `P:\_sys\docs-v2\10-invariants.md` (INV-01~18, PRO-01~15)
+Legal Code archive: `P:\_sys\docs\history\` (read-only reference)
 
 > `_sys/ai/config.json "ratio"` is DEPRECATED → use `protocol.json["collab_rate"]["current"]`
 

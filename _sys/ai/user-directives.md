@@ -1,4 +1,4 @@
-# User Directives - Active Standing Rules
+﻿# User Directives - Active Standing Rules
 
 > Scope: all peers (`cc`, `gc`, `cx`, `ag`)
 > Effective: immediately
@@ -33,7 +33,7 @@
 - References:
   - `_sys/ai/orchestration.json`
   - `_sys/cli/peer_console.py`
-  - `_sys/docs/protocol-permissions.md` (authoritative per-peer profiles)
+  - `_sys/docs/protocol/protocol-permissions.md` (authoritative per-peer profiles)
 
 ## Revoked Directives
 

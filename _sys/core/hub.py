@@ -3374,6 +3374,288 @@ def action_lessons_retire(ai_root: Path, lesson_id: str, reason: str = "") -> No
     sys.exit(1)
 
 
+def action_lesson_broadcast(ai_root: Path, lesson_id: str, from_peer: str = "system") -> None:
+    """Broadcast a lesson notification to all active peers' mailboxes."""
+    if not lesson_id:
+        print("[HUB:ERROR] lesson-broadcast requires --lesson-id", file=sys.stderr)
+        sys.exit(1)
+    all_lessons = _load_active_lessons(workspace_ai_root=ai_root)
+    lesson = next((l for l in all_lessons if l.get("id") == lesson_id), None)
+    if not lesson:
+        print(f"[HUB:ERROR] lesson {lesson_id} not found or not active", file=sys.stderr)
+        sys.exit(1)
+    state = _read_json(ai_root / "state.json")
+    targets = [n for n in state.get("members", {}).keys() if n != from_peer]
+    if not targets:
+        print(f"[HUB] LESSON-BROADCAST {lesson_id} | no targets (no other room members)")
+        return
+    sev = lesson.get("severity", "medium").upper()
+    rule = lesson.get("compact_rule", "")[:120]
+    msg = f"[LESSON:{lesson_id}] {sev} — {lesson.get('title', '')} | Rule: {rule}"
+    action_broadcast(ai_root, from_peer, msg, targets, "LESSON", priority="P1")
+    print(f"[HUB] LESSON-BROADCAST {lesson_id} -> {','.join(targets)}")
+
+
+def action_lesson_sweep(ai_root: Path, min_triggers: int = 3, stale_days: int = 14) -> None:
+    """Sweep lessons: promote high-frequency lessons to runtime-directives; retire stale lessons.
+
+    A lesson with trigger_count >= min_triggers is promoted to a runtime-directive (TTL 48h).
+    A lesson not triggered in stale_days is retired automatically.
+    """
+    rd_path = _runtime_directives_path(ai_root)
+    promoted = 0
+    retired = 0
+    now = datetime.now()
+    cutoff = now - timedelta(days=stale_days)
+
+    paths_to_check = [
+        _knowledge_root() / "general" / "active-lessons.jsonl",
+        ai_root / "knowledge" / "active-lessons.jsonl",
+    ]
+    for lesson_path in paths_to_check:
+        if not lesson_path.exists():
+            continue
+        output = []
+        for line in lesson_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                output.append(line)
+                continue
+            if item.get("status") != "active":
+                output.append(json.dumps(item, ensure_ascii=False))
+                continue
+            trigger_count = item.get("trigger_count", 0)
+            last_triggered_str = item.get("last_triggered")
+            last_triggered = None
+            if last_triggered_str:
+                try:
+                    last_triggered = datetime.strptime(last_triggered_str, "%Y%m%dT%H%M%S")
+                except ValueError:
+                    pass
+            # Promote high-frequency
+            if trigger_count >= min_triggers and not item.get("promoted_to_directive"):
+                _save_runtime_directive(
+                    rd_path,
+                    rule=item.get("compact_rule", ""),
+                    source_peer="lesson-sweep",
+                    trigger_reason=f"lesson {item['id']} promoted (triggers={trigger_count})",
+                    detail=item.get("title", ""),
+                    ttl_hours=48,
+                    clear_condition="manual",
+                )
+                item["promoted_to_directive"] = True
+                promoted += 1
+                print(f"[HUB] LESSON-SWEEP promote {item['id']} (triggers={trigger_count})")
+            # Retire stale
+            if last_triggered and last_triggered < cutoff and trigger_count == 0:
+                item["status"] = "retired"
+                item.setdefault("retirement", {})["retired_at"] = now.strftime("%Y%m%dT%H%M%S")
+                item["retirement"]["retire_reason"] = f"stale: no triggers in {stale_days}d"
+                retired += 1
+                print(f"[HUB] LESSON-SWEEP retire {item['id']} (stale)")
+            output.append(json.dumps(item, ensure_ascii=False))
+        lesson_path.write_text("\n".join(output) + "\n", encoding="utf-8")
+    print(f"[HUB] LESSON-SWEEP done | promoted={promoted} retired={retired}")
+
+
+def action_lesson_inject(ai_root: Path, peer_id: str = "cc") -> None:
+    """Print the [PEER LESSONS] injection block for a given peer (for startup context)."""
+    all_lessons = _load_active_lessons(workspace_ai_root=ai_root)
+    filtered = _filter_lessons_for_peer(all_lessons, peer_id, workspace_ai_root=ai_root)
+    block = _compile_lessons_block(filtered, workspace_ai_root=ai_root)
+    if block:
+        print(block)
+    else:
+        print(f"[HUB] No active lessons for peer={peer_id}")
+
+
+def _threads_dir(ai_root: Path) -> Path:
+    state = _read_json(ai_root / "state.json") if (ai_root / "state.json").exists() else {}
+    room_id = state.get("room_id") or "default"
+    d = ai_root / "sessions" / room_id / "threads"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _short_msg_id() -> str:
+    return f"msg-{uuid.uuid4().hex[:8]}"
+
+
+def action_thread_new(ai_root: Path, topic: str, from_peer: str, msg: str = "") -> None:
+    """Create a new shared topic thread in .ai/sessions/{room}/threads/{topic}.jsonl."""
+    topic_slug = re.sub(r"[^\w-]", "-", topic.lower())[:40]
+    path = _threads_dir(ai_root) / f"{topic_slug}.jsonl"
+    if path.exists():
+        print(f"[HUB] Thread '{topic_slug}' already exists. Use thread-append to add messages.")
+        return
+    entry = {
+        "id": _short_msg_id(), "from": from_peer, "ts": _now(),
+        "type": "THREAD_CREATE", "topic": topic_slug,
+        "content": msg or f"Thread opened by {from_peer}",
+        "reactions": {},
+    }
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    _append_handoff_item(ai_root, "ACTIVE_THREADS", f"{_now()} thread:{topic_slug} opened by {from_peer}")
+    print(f"[HUB] THREAD-NEW '{topic_slug}' | from={from_peer} | file={path.name}")
+
+
+def action_thread_append(ai_root: Path, topic: str, from_peer: str, msg: str) -> None:
+    """Append a message to an existing topic thread."""
+    topic_slug = re.sub(r"[^\w-]", "-", topic.lower())[:40]
+    path = _threads_dir(ai_root) / f"{topic_slug}.jsonl"
+    if not path.exists():
+        print(f"[HUB:ERROR] thread '{topic_slug}' not found. Create with thread-new first.", file=sys.stderr)
+        sys.exit(1)
+    entry = {
+        "id": _short_msg_id(), "from": from_peer, "ts": _now(),
+        "type": "MSG", "topic": topic_slug, "content": msg, "reactions": {},
+    }
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    print(f"[HUB] THREAD-APPEND '{topic_slug}' | from={from_peer} | id={entry['id']}")
+
+
+def action_thread_react(ai_root: Path, topic: str, from_peer: str, emoji: str, msg_id: int | None = None) -> None:
+    """Add a compact reaction to the latest (or specified) message in a thread.
+
+    emoji: ACK | NACK | BLOCKED | IDEA | DONE
+    If msg_id is None, reacts to the last message.
+    Also checks if all r10_voters have ACKed — if so, prints CONSENSUS_REACHED.
+    """
+    topic_slug = re.sub(r"[^\w-]", "-", topic.lower())[:40]
+    path = _threads_dir(ai_root) / f"{topic_slug}.jsonl"
+    if not path.exists():
+        print(f"[HUB:ERROR] thread '{topic_slug}' not found.", file=sys.stderr)
+        sys.exit(1)
+    lines = [l for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    messages = []
+    for line in lines:
+        try:
+            messages.append(json.loads(line))
+        except json.JSONDecodeError:
+            messages.append({"_raw": line})
+    if not messages:
+        print("[HUB:ERROR] thread is empty", file=sys.stderr); sys.exit(1)
+    target_id = str(msg_id) if msg_id else None
+    target_idx = -1
+    if target_id:
+        for i, m in enumerate(messages):
+            if m.get("id") == target_id:
+                target_idx = i; break
+        if target_idx == -1:
+            print(f"[HUB:ERROR] message id={target_id} not found", file=sys.stderr); sys.exit(1)
+    messages[target_idx].setdefault("reactions", {})[from_peer] = emoji
+    path.write_text("\n".join(json.dumps(m, ensure_ascii=False) for m in messages) + "\n", encoding="utf-8")
+    reacted_msg = messages[target_idx]
+    print(f"[HUB] THREAD-REACT '{topic_slug}' | {from_peer}:{emoji} -> msg={reacted_msg.get('id','?')}")
+    # Check consensus: if all r10_voters have ACKed
+    cfg = _load_protocol_cfg()
+    voters = cfg.get("consensus", {}).get("r10_voters", [])
+    reactions = reacted_msg.get("reactions", {})
+    acked = [v for v in voters if reactions.get(v) == "ACK"]
+    if voters and len(acked) == len(voters):
+        print(f"[HUB] CONSENSUS_REACHED on thread '{topic_slug}' msg={reacted_msg.get('id','?')} | voters={','.join(acked)}")
+        _append_handoff_item(ai_root, "CONSENSUS_HISTORY", f"{_now()} thread:{topic_slug} consensus reached (ACK from {','.join(acked)})")
+
+
+def _proposals_dir() -> Path:
+    d = Path(__file__).parent.parent / "ai" / "proposals"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def action_proposal_add(ai_root: Path, subject: str, from_peer: str, impact: str = "med", rationale: str = "", text: str = "") -> None:
+    """Add a governance proposal to _sys/ai/proposals/."""
+    now_str = datetime.now().strftime("%Y%m%dT%H%M%S")
+    date_str = datetime.now().strftime("%Y%m%d")
+    p_dir = _proposals_dir()
+    slug = re.sub(r"[^\w-]", "-", subject.lower())[:40]
+    seq = 1
+    for f in p_dir.glob(f"{date_str}-{slug}-*.md"):
+        try:
+            seq = max(seq, int(f.stem.rsplit("-", 1)[-1]) + 1)
+        except ValueError:
+            pass
+    proposal_id = f"{date_str}-{slug}-{seq:03d}"
+    cfg = _load_protocol_cfg()
+    voters = cfg.get("consensus", {}).get("r10_voters", ["cc", "gc", "cx"])
+    votes_block = "\n".join(f"- {v}: PENDING" for v in voters)
+    content = f"""[PROPOSAL: {proposal_id}]
+Author: {from_peer}
+Date: {now_str}
+Impact: {impact.upper()}
+Subject: {subject}
+Rationale: {rationale or "(not provided)"}
+
+Changes:
+{text or "(not specified)"}
+
+Votes:
+{votes_block}
+"""
+    path = p_dir / f"{proposal_id}.md"
+    path.write_text(content, encoding="utf-8")
+    _append_handoff_item(ai_root, "PENDING_ISSUES", f"{_now()} proposal:{proposal_id} by {from_peer} — {subject}")
+    print(f"[HUB] PROPOSAL-ADD {proposal_id} | from={from_peer} | impact={impact.upper()}")
+    print(f"      Vote with: hub.py proposal-vote --proposal-id {proposal_id} --vote agree --voter <peer>")
+
+
+def action_proposal_vote(ai_root: Path, proposal_id: str, voter: str, vote: str, reason: str = "") -> None:
+    """Add a vote to a governance proposal and check if consensus is reached."""
+    p_dir = _proposals_dir()
+    # Find matching file
+    matches = list(p_dir.glob(f"{proposal_id}*.md")) or list(p_dir.glob(f"*{proposal_id}*.md"))
+    if not matches:
+        print(f"[HUB:ERROR] proposal '{proposal_id}' not found in {p_dir}", file=sys.stderr)
+        sys.exit(1)
+    path = matches[0]
+    content = path.read_text(encoding="utf-8")
+    # Replace voter's PENDING with vote
+    vote_upper = vote.upper()
+    if vote_upper not in ("AGREE", "DISAGREE", "ABSTAIN", "NEED_MORE_INFO"):
+        vote_upper = vote.upper()
+    updated = re.sub(rf"^(- {re.escape(voter)}): PENDING$", rf"\1: {vote_upper}", content, flags=re.MULTILINE)
+    if updated == content:
+        # Try to append if voter not in template
+        updated = content + f"\n- {voter}: {vote_upper}"
+    if reason:
+        updated += f"\n  Reason ({voter}): {reason}"
+    path.write_text(updated, encoding="utf-8")
+    print(f"[HUB] PROPOSAL-VOTE {proposal_id} | {voter}:{vote_upper}")
+    # Check consensus
+    cfg = _load_protocol_cfg()
+    voters = cfg.get("consensus", {}).get("r10_voters", ["cc", "gc", "cx"])
+    agreed = [v for v in voters if re.search(rf"^- {re.escape(v)}: AGREE", updated, re.MULTILINE)]
+    disagreed = [v for v in voters if re.search(rf"^- {re.escape(v)}: DISAGREE", updated, re.MULTILINE)]
+    if len(agreed) == len(voters):
+        print(f"[HUB] PROPOSAL CONSENSUS_OK {proposal_id} | unanimous agree: {','.join(agreed)}")
+        _append_handoff_item(ai_root, "CONSENSUS_HISTORY", f"{_now()} proposal:{proposal_id} CONSENSUS_OK (agree={','.join(agreed)})")
+    elif disagreed:
+        print(f"[HUB] PROPOSAL NACK {proposal_id} | disagreed: {','.join(disagreed)}")
+
+
+def action_proposal_list(ai_root: Path) -> None:
+    """List all governance proposals with their vote status."""
+    p_dir = _proposals_dir()
+    proposals = sorted(p_dir.glob("*.md"), reverse=True)
+    if not proposals:
+        print("No proposals found."); return
+    cfg = _load_protocol_cfg()
+    voters = cfg.get("consensus", {}).get("r10_voters", ["cc", "gc", "cx"])
+    print(f"{'Proposal':<45} {'Status':<15} Votes")
+    print("-" * 80)
+    for path in proposals:
+        content = path.read_text(encoding="utf-8")
+        agreed = sum(1 for v in voters if re.search(rf"^- {re.escape(v)}: AGREE", content, re.MULTILINE))
+        pending = sum(1 for v in voters if re.search(rf"^- {re.escape(v)}: PENDING", content, re.MULTILINE))
+        status = "CONSENSUS_OK" if agreed == len(voters) else ("PENDING" if pending > 0 else "PARTIAL")
+        print(f"{path.stem:<45} {status:<15} agree={agreed}/{len(voters)}")
+
+
 def _leases_path(ai_root: Path) -> Path:
     return ai_root / "leases.json"
 
@@ -4072,7 +4354,7 @@ def action_approval_request(ai_root: Path, from_peer: str, action: str, auth_nee
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="hub", description="AI 협업 허브 — Protocol v4.1")
-    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear"])
+    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "proposal-add", "proposal-vote", "proposal-list"])
     parser.add_argument("--needs")
     parser.add_argument("--effort", default="mid")
     parser.add_argument("--agent")
@@ -4143,6 +4425,14 @@ def main() -> None:
     parser.add_argument("--title")
     parser.add_argument("--peers")
     parser.add_argument("--directive-id", dest="directive_id")
+    parser.add_argument("--topic")
+    parser.add_argument("--emoji")
+    parser.add_argument("--proposal-id", dest="proposal_id")
+    parser.add_argument("--impact", default="med")
+    parser.add_argument("--rationale")
+    parser.add_argument("--trim", action="store_true")
+    parser.add_argument("--days", type=int, default=14)
+    parser.add_argument("--min-triggers", dest="min_triggers", type=int, default=3)
 
     args = parser.parse_args()
     if args.action == "ask":
@@ -4297,7 +4587,7 @@ def main() -> None:
     elif act == "directive-clear":
         action_directive_clear(ai_root, args.directive_id or args.round_id or "")
     elif act == "lessons-list":
-        action_lessons_list(ai_root, peer_id=args.peer or args.to or None)
+        action_lessons_list(ai_root, peer_id=args.peer or args.to_ or None)
     elif act == "lessons-propose":
         peer_ids = [p.strip() for p in (args.peers or "").split(",") if p.strip()] or None
         action_lessons_propose(
@@ -4313,6 +4603,34 @@ def main() -> None:
         action_lessons_activate(ai_root, lesson_id=args.lesson_id or args.round_id or "")
     elif act == "lessons-retire":
         action_lessons_retire(ai_root, lesson_id=args.lesson_id or args.round_id or "", reason=args.reason or "")
+    elif act == "lesson-broadcast":
+        action_lesson_broadcast(ai_root, lesson_id=args.lesson_id or args.round_id or "", from_peer=args.from_ or args.peer or "system")
+    elif act == "lesson-sweep":
+        action_lesson_sweep(ai_root, min_triggers=args.min_triggers, stale_days=args.days)
+    elif act == "lesson-inject":
+        action_lesson_inject(ai_root, peer_id=args.peer or args.to_ or "cc")
+    elif act == "thread-new":
+        if not args.topic:
+            print("[HUB] thread-new requires --topic", file=sys.stderr); sys.exit(1)
+        action_thread_new(ai_root, topic=args.topic, from_peer=args.from_ or args.peer or "cc", msg=args.msg or "")
+    elif act == "thread-append":
+        if not args.topic:
+            print("[HUB] thread-append requires --topic", file=sys.stderr); sys.exit(1)
+        action_thread_append(ai_root, topic=args.topic, from_peer=args.from_ or args.peer or "cc", msg=args.msg or "")
+    elif act == "thread-react":
+        if not args.topic or not args.emoji:
+            print("[HUB] thread-react requires --topic and --emoji", file=sys.stderr); sys.exit(1)
+        action_thread_react(ai_root, topic=args.topic, from_peer=args.from_ or args.peer or "cc", emoji=args.emoji, msg_id=args.id)
+    elif act == "proposal-add":
+        if not args.subject:
+            print("[HUB] proposal-add requires --subject", file=sys.stderr); sys.exit(1)
+        action_proposal_add(ai_root, subject=args.subject, from_peer=args.from_ or args.peer or "cc", impact=args.impact, rationale=args.rationale or args.detail or "", text=args.text or "")
+    elif act == "proposal-vote":
+        if not args.proposal_id or not args.vote_val:
+            print("[HUB] proposal-vote requires --proposal-id and --vote", file=sys.stderr); sys.exit(1)
+        action_proposal_vote(ai_root, proposal_id=args.proposal_id, voter=args.voter or args.peer or args.agent or "cc", vote=args.vote_val, reason=args.reason or "")
+    elif act == "proposal-list":
+        action_proposal_list(ai_root)
 
 if __name__ == "__main__":
     main()

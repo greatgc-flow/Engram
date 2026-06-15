@@ -1,0 +1,139 @@
+{
+  "tools": [
+    {
+      "tool_id": "architect",
+      "type": "agent",
+      "version": "1.0.0",
+      "description": "System architecture and MECE design",
+      "compatible_peers": ["cc", "gc"],
+      "entrypoint": "_sys/ai/common/agents/architect.json",
+      "tags": ["design", "architecture"]
+    },
+    {
+      "tool_id": "implementer",
+      "type": "agent",
+      "version": "1.0.0",
+      "description": "Code generation and refactoring",
+      "compatible_peers": ["cc", "cx"],
+      "entrypoint": "_sys/ai/common/agents/implementer.json",
+      "tags": ["code", "implementation"]
+    },
+    {
+      "tool_id": "researcher",
+      "type": "agent",
+      "version": "1.0.0",
+      "description": "Codebase mapping and exploration",
+      "compatible_peers": ["gc"],
+      "entrypoint": "_sys/ai/common/agents/researcher.json",
+      "tags": ["research", "discovery"]
+    },
+    {
+      "tool_id": "portability-auditor",
+      "type": "agent",
+      "version": "1.0.0",
+      "description": "Hardcoded path and environment audit",
+      "compatible_peers": ["cc", "gc", "cx"],
+      "entrypoint": "_sys/ai/common/agents/portability-auditor.md",
+      "tags": ["audit", "portability"]
+    },
+    {
+      "tool_id": "proposer",
+      "type": "agent",
+      "version": "1.0.0",
+      "description": "Formal proposal [PROPOSAL:] drafting",
+      "compatible_peers": ["cc", "gc", "cx"],
+      "entrypoint": "_sys/ai/common/agents/proposer.md",
+      "tags": ["governance", "proposal"]
+    },
+    {
+      "tool_id": "risk-scanner",
+      "type": "agent",
+      "version": "1.0.0",
+      "description": "Security and regression risk analysis",
+      "compatible_peers": ["cc", "gc", "cx"],
+      "entrypoint": "_sys/ai/common/agents/risk-scanner.md",
+      "tags": ["risk", "security"]
+    },
+    {
+      "tool_id": "verifier",
+      "type": "agent",
+      "version": "1.0.0",
+      "description": "Goal Frame success criteria validation",
+      "compatible_peers": ["cc", "cx"],
+      "entrypoint": "_sys/ai/common/agents/verifier.md",
+      "tags": ["qa", "validation"]
+    },
+    {
+      "tool_id": "cross-reviewer",
+      "type": "agent",
+      "version": "1.0.0",
+      "description": "Adversarial AP-01~AP-21 anti-pattern detection",
+      "compatible_peers": ["cc", "gc", "cx"],
+      "entrypoint": "_sys/ai/common/agents/cross-reviewer.json",
+      "tags": ["review", "adversarial"]
+    },
+    {
+      "tool_id": "lesson-extractor",
+      "type": "agent",
+      "version": "1.0.0",
+      "description": "Parses peer output for [LESSON_LEARNED:] tags",
+      "compatible_peers": ["*"],
+      "entrypoint": "_sys/ai/common/agents/lesson-extractor.json",
+      "tags": ["learning", "parser"]
+    },
+    {
+      "tool_id": "consensus-vote",
+      "type": "skill",
+      "version": "1.0.0",
+      "description": "Consensus voting protocol logic",
+      "compatible_peers": ["*"],
+      "entrypoint": "_sys/ai/common/skills/consensus-vote.md",
+      "tags": ["consensus", "voting"]
+    },
+    {
+      "tool_id": "context-fill",
+      "type": "skill",
+      "version": "1.0.0",
+      "description": "Re-orientation context injection protocol",
+      "compatible_peers": ["*"],
+      "entrypoint": "_sys/ai/common/skills/context-fill.md",
+      "tags": ["session", "context"]
+    },
+    {
+      "tool_id": "health-check",
+      "type": "skill",
+      "version": "1.0.0",
+      "description": "Peer health and routing gate check",
+      "compatible_peers": ["*"],
+      "entrypoint": "_sys/ai/common/skills/health-check.md",
+      "tags": ["health", "monitoring"]
+    },
+    {
+      "tool_id": "lesson-add",
+      "type": "skill",
+      "version": "1.0.0",
+      "description": "Proposing and activating new peer lessons",
+      "compatible_peers": ["*"],
+      "entrypoint": "_sys/ai/common/skills/lesson-add.md",
+      "tags": ["learning", "hub"]
+    },
+    {
+      "tool_id": "reflect",
+      "type": "skill",
+      "version": "1.0.0",
+      "description": "End-of-task reflection and closure",
+      "compatible_peers": ["*"],
+      "entrypoint": "_sys/ai/common/skills/reflect.md",
+      "tags": ["reflection", "quality"]
+    },
+    {
+      "tool_id": "peer-propose",
+      "type": "skill",
+      "version": "1.0.0",
+      "description": "Sending [PROPOSAL:] blocks to threads",
+      "compatible_peers": ["*"],
+      "entrypoint": "_sys/ai/common/skills/peer-propose.md",
+      "tags": ["consensus", "ipc"]
+    }
+  ]
+}

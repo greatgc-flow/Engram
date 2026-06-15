@@ -24,31 +24,33 @@
     ]
   },
   "context_health": {
-    "status": "RED",
+    "status": "GREEN",
     "jsonl_mb": 0.0,
-    "checked_at": "20260614T183032",
-    "source": "self"
+    "checked_at": "20260615T154711",
+    "source": "self",
+    "stale_marked_at": "2026-06-14T23:08:19"
   },
   "session_health": {
-    "consecutive_failures": 1,
+    "consecutive_failures": 0,
     "last_failure_reason": null,
-    "last_success_at": "2026-06-14T18:24:02",
-    "session_count_today": 20,
-    "session_date": "20260614",
+    "last_success_at": "2026-06-15T15:47:11",
+    "session_count_today": 11,
+    "session_date": "20260615",
     "last_failure_detail": "ask timeout after 180s",
     "last_failure_at": "2026-06-14T10:28:57"
   },
   "availability": {
     "installed": true,
     "authenticated": true,
-    "gate_open": false,
+    "gate_open": true,
     "last_gate_check": null,
     "cli_version": "codex-cli 0.139.0",
-    "entrypoint_ok": false,
-    "last_invocation_exit_code": 1,
-    "last_invocation_duration_ms": 33633757,
+    "entrypoint_ok": true,
+    "last_invocation_exit_code": 0,
+    "last_invocation_duration_ms": 76000,
     "rate_limit_state": "ok",
     "workspace_access": "unknown",
-    "active_pid": null
+    "active_pid": null,
+    "quarantined": false
   }
 }

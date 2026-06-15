@@ -184,9 +184,10 @@ Last checkpoint: 2026-06-12 — Multi-peer universal collaboration protocol v4.1
 - `infra.json` centralizes all bat/config/tool paths
 - 4-peer harness: cc, gc, ag, cx — entry points, health.json, try-finally lifecycle
 - hub.py: health-update/check/peer-status/context-fill/checkpoint + JSONL parsing (cx)
-- Composable protocol docs: `_sys/docs/protocol-*.md`
-- Common harness: `_sys/ai/common/agents|skills|mcp/`
+- Protocol docs: `_sys/docs-v2/` (SSOT v1.1 — 10-invariants → general/* → specific/{peer})
+- Common harness: `_sys/ai/common/agents|skills|mcp|tool-registry.json`
 - Cross-review by gc+ag+cx, 165 unit tests passing
+- hub.py v4.2: lesson-*, thread-*, proposal-* commands added (2026-06-15)
 
 ## Next Steps
 - Fresh PC setup validation: Verify install.bat and register.bat in Windows Sandbox (WSB).

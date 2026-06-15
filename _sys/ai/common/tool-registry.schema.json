@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Tool Registry Schema",
+  "type": "object",
+  "required": ["tools"],
+  "properties": {
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["tool_id", "type", "version", "description", "compatible_peers", "entrypoint"],
+        "properties": {
+          "tool_id": { "type": "string" },
+          "type": { "type": "string", "enum": ["agent", "skill", "mcp"] },
+          "version": { "type": "string" },
+          "description": { "type": "string" },
+          "compatible_peers": { "type": "array", "items": { "type": "string" } },
+          "entrypoint": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "input_contract": { "type": "string" },
+          "output_contract": { "type": "string" }
+        }
+      }
+    }
+  }
+}

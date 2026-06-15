@@ -24,13 +24,15 @@ class TestDocConsistency:
             "PROTOCOL.md",
             "CONVENTION.md"
         ]
-        mandatory_sys = [
-            "SYSTEM_ARCHITECTURE.md"
+        mandatory_docs_v2 = [
+            "00-MANIFEST.md",
+            "10-invariants.md",
         ]
         for filename in mandatory_root:
             assert (doc_root / filename).exists(), f"Mandatory root doc missing: {filename}"
-        for filename in mandatory_sys:
-            assert (doc_root / "_sys" / filename).exists(), f"Mandatory sys doc missing: {filename}"
+        # docs-v2 is now the SSOT; _sys/SYSTEM_ARCHITECTURE.md was archived to docs-v2/20-architecture.md
+        for filename in mandatory_docs_v2:
+            assert (doc_root / "_sys" / "docs-v2" / filename).exists(), f"Mandatory docs-v2 doc missing: {filename}"
 
     def test_claude_md_sections(self, doc_root):
         """Ensure project CLAUDE.md contains required lifecycle sections."""

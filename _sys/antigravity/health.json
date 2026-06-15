@@ -45,6 +45,7 @@
     "last_gate_check": null,
     "last_invocation_exit_code": 0,
     "last_invocation_duration_ms": 132000,
-    "rate_limit_state": "ok"
+    "rate_limit_state": "ok",
+    "entrypoint_ok": true
   }
 }

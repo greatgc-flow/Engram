@@ -20,11 +20,12 @@
     ]
   },
   "context_health": {
-    "status": "GREEN",
+    "status": "STALE",
     "jsonl_mb": 0.0,
     "context_window_usage_percent": 0.0,
     "checked_at": "20260613T032846",
-    "source": "self"
+    "source": "self",
+    "stale_marked_at": "2026-06-14T22:29:44"
   },
   "session_health": {
     "consecutive_failures": 0,
@@ -44,6 +45,7 @@
     "last_invocation_exit_code": 0,
     "last_invocation_duration_ms": 7000,
     "rate_limit_state": "ok",
-    "quarantined": false
+    "quarantined": false,
+    "entrypoint_ok": true
   }
 }

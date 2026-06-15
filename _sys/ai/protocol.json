@@ -2,7 +2,9 @@
   "_version": "1.1",
   "_protocol_version": "4.1",
   "_help": "Universal multi-peer collaboration protocol config. Single source of truth. All peers read this. No hardcoding.",
-  "_updated": "2026-06-12",
+  "_updated": "2026-06-15",
+  "_docs_root": "_sys/docs-v2",
+  "_docs_history": "_sys/docs/history",
   "_peers_voted": [
     "cc",
     "ca",
@@ -558,7 +560,20 @@
         "task-checkpoint",
         "update-status",
         "health-update",
-        "report-error"
+        "report-error",
+        "lessons-list",
+        "lessons-propose",
+        "lessons-activate",
+        "lessons-retire",
+        "lesson-broadcast",
+        "lesson-sweep",
+        "lesson-inject",
+        "thread-new",
+        "thread-append",
+        "thread-react",
+        "proposal-add",
+        "proposal-vote",
+        "proposal-list"
       ]
     },
     "default_shell": "powershell",
@@ -596,7 +611,17 @@
       "task-checkpoint",
       "approval-request",
       "file-lock",
-      "file-unlock"
+      "file-unlock",
+      "lesson-broadcast",
+      "lesson-sweep",
+      "lessons-propose",
+      "lessons-activate",
+      "lessons-retire",
+      "thread-new",
+      "thread-append",
+      "thread-react",
+      "proposal-add",
+      "proposal-vote"
     ],
     "semi_governed_hub_actions": [
       "leader-claim",
@@ -637,7 +662,10 @@
       "directive-list",
       "directive-clear",
       "feedback-list",
-      "artifact-status"
+      "artifact-status",
+      "lessons-list",
+      "lesson-inject",
+      "proposal-list"
     ],
     "phase_action_matrix": {
       "default": {
