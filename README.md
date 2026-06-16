@@ -74,11 +74,16 @@ _sys\env\venv\Scripts\python.exe -m pytest _sys\tests\unit -q
 .
 ├── README.md / PROTOCOL.md
 ├── workspace/          ← Your code goes here
+│   └── .engram/        ← [SPECIFIC] Workspace-specific local configs
 ├── .ai/                ← Runtime collaboration state (hub-managed)
 │   ├── knowledge/      ← BIVCA Hippocampus & Shorthand Staging
 │   ├── exocortex/      ← Second Brain logs and indexes
 │   └── sessions/       ← Hand-offs, Threads, and Working Memory
 └── _sys/
+    ├── common/
+    │   └── workspace_shared/ ← [GENERAL] Cross-workspace global resources
+    ├── templates/
+    │   └── workspace_base/   ← Base template for initializing new workspaces
     ├── config/         ← "No Code" JSON registries (BIVCA, Peers, Infra)
     ├── core/           ← hub.py (The Brainstem) & virtualizer.py
     ├── docs-v2/        ← SSOT (General/Specific/Ops/Exceptions)
