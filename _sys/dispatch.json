@@ -52,7 +52,7 @@
   },
 
   "pipelines": {
-    "install":    ["provision.deploy", "virtual.mount", "registry.apply", "state.write"],
+    "install":    ["provision.deploy", "state.write"],
     "register":   ["virtual.mount", "registry.apply", "state.write"],
     "unregister": ["registry.remove", "virtual.unmount", "state.prune"],
     "cleanup":    ["scrub.run"],
