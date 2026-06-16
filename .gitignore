@@ -200,6 +200,15 @@ _sys/temp_manual_gen.py
 # Accidental 0-byte peer temp files (e.g., /See created by cx during ask session)
 /See
 /Remains
+# IPC subprocess temp files (8-char alphanumeric) scattered to root by hub.py proc_cwd bug
+/[0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_]
+
+# Pytest temp dirs scattered to root
+/.pytest-basetemp/
+/.pytest-local/
+/.pytest-tmp/
+/.pytest-work/
+/pytest_local/
 
 # =================================================================
 # 8. System, Editor, & Cache Garbage

@@ -1,13 +1,13 @@
-﻿{
-  "autoUpdatesChannel": "latest",
-  "theme": "auto",
-  "statusLine": {
-    "type": "command",
-    "command": "bash ~/.claude/statusline-command.sh"
-  },
+{
   "permissions": {
     "allow": [
       "Bash(codex exec *)"
     ]
-  }
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash ~/.claude/statusline-command.sh"
+  },
+  "autoUpdatesChannel": "latest",
+  "theme": "auto"
 }
