@@ -194,6 +194,8 @@ _sys/temp_manual_gen.py
 # =================================================================
 # 8. System, Editor, & Cache Garbage
 # =================================================================
+# Personal brain-dump / credential notes — never commit
+/MemoryDump.md
 /Garbage/
 /tmp/
 .DS_Store
