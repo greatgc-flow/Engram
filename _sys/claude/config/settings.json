@@ -8,6 +8,8 @@
     "type": "command",
     "command": "bash ~/.claude/statusline-command.sh"
   },
+  "effortLevel": "medium",
   "autoUpdatesChannel": "latest",
-  "theme": "auto"
+  "theme": "auto",
+  "agentPushNotifEnabled": true
 }

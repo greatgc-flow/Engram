@@ -16,7 +16,7 @@
 - **Room ID**: `room-fe18` (ACTIVE)
 - **Protocol**: `PROTOCOL.md v4.1` / `protocol.json v1.1` (SSOT)
 - **Consensus**: COLLAB_RATE=10 (Full Sync mode).
-- **Members**: cc, gc, cx (Active voters).
+- **Members**: cc, gc (Active voters).
 - **Health**: GREEN (All peers synchronized).
 - **Infra**: `infra.json` managing all portable paths correctly.
 
