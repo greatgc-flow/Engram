@@ -1,5 +1,5 @@
 # docs-v2 MANIFEST
-> Version: 1.1 | Date: 2026-06-15 | Purpose: Workspace redesign SSOT (Active)
+> Version: 1.2 | Date: 2026-06-18 | Purpose: Workspace redesign SSOT (Active)
 > Synthesized from _sys/docs/ originals (archived). Principles: MECE · General-Specific · Lazy (token-zero).
 > Status: **ACTIVE SSOT** — _sys/docs/ is archived to _sys/docs/history/ (Legal Code reference only).
 

@@ -252,17 +252,19 @@
 
 ---
 
-## GAPS — Not yet in docs-v2 (to be addressed in Step 2)
+## GAPS — Resolution Tracker
 
-| # | Gap | Category | Target doc |
-|---|-----|----------|------------|
-| 1 | Model-level routing matrix (Standard/Effort/DeepThink criteria) | B6 | docs-v2/general/routing.md |
-| 2 | Self-care cycle event triggers + procedure | C4 | docs-v2/general/self-evolution.md |
-| 3 | Audit checklist (standalone) | E3 | docs-v2/ops/audit-checklist.md |
-| 4 | Trade-off parameter registry (EFFORT, SLIM, SANDBOX, LEADER_REELECT_PER_TASK) | H | docs-v2/general/tradeoffs.md |
-| 5 | Plan-Do-See as standalone executable procedure | E4 | docs-v2/general/protocol.md |
-| 6 | Coordinator handoff (graceful switch, not just failover) | B1 | docs-v2/general/routing.md |
-| 7 | Brain anatomy mapping (4-layer: Amygdala/PFC/Hippocampus/Neocortex) | C1 | docs-v2/general/architecture.md |
-| 8 | Zero-Token IPC Protocol (echo-back + coordinator signal pattern) | B8 | docs-v2/general/protocol.md |
-| 9 | LEADER_REELECT_PER_TASK flag in protocol.json schema | H | _sys/ai/protocol.json |
-| 10 | /Garbage governance policy (manual, user-controlled, no auto-delete) | — | docs-v2/ops/governance.md |
+| # | Gap | Status | Resolved in |
+|---|-----|--------|-------------|
+| 1 | Model-level routing matrix | ✅ DONE | routing.md §6 + peers.json model_profiles |
+| 2 | Self-care cycle event triggers + procedure | ✅ DONE | self-evolution.md §4 + self_care.py |
+| 3 | Audit checklist (perspective-based) | ✅ DONE | audit-checklist.md §H |
+| 4 | Trade-off parameter registry | ✅ DONE | general/tradeoffs.md |
+| 5 | Plan-Do-See as standalone procedure | ✅ DONE | protocol.md §7 |
+| 6 | Coordinator graceful handoff | ✅ DONE | routing.md §7 |
+| 7 | Brain anatomy mapping (4-layer) | ✅ DONE | 20-architecture.md §7 |
+| 8 | Zero-Token IPC Protocol | ✅ DONE | protocol.md §8 |
+| 9 | LEADER_REELECT_PER_TASK in protocol.json | ✅ DONE | protocol.json leader_election.reelect_per_task |
+| 10 | /Garbage governance policy | ✅ DONE | ops/governance.md |
+
+All 10 gaps resolved as of 2026-06-18 (Steps 2–5).

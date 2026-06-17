@@ -7,10 +7,10 @@ This registry tracks all tunable system parameters, their config locations, and 
 | Parameter | Description | Range | Trade-off | Config Location |
 | :--- | :--- | :--- | :--- | :--- |
 | **COLLAB_RATE** | Collaboration depth & consensus requirement | 0-10 | Token cost vs. Consensus quality | `protocol.json` -> `collab_rate.current` |
-| **EFFORT** | Model effort level (supported models) | low/medium/high | Speed vs. Analytical depth | `model_profiles.json` -> `nodes.{id}.effort` |
+| **EFFORT** | Model effort level per peer | standard/effort/deepthink | Speed vs. Analytical depth | `_sys/ai/peers.json` -> `peers.{id}.model_profiles` |
 | **SLIM** | Protocol message/handoff verbosity | true/false | Token savings vs. Comprehension quality | `orchestration.json` -> `session.slim_mode` |
 | **SANDBOX** | Process/Tool isolation level | off/partial/full | Execution speed vs. System safety | `governance_params.json` -> `security.sandbox_level` |
-| **LEADER_REELECT_PER_TASK** | Force re-election for every discrete task | bool | Optimal routing vs. Transactional overhead | `protocol.json` -> `leader_election.enabled` |
+| **LEADER_REELECT_PER_TASK** | Force re-election for every discrete task | bool (default: false) | Optimal routing vs. Transactional overhead | `protocol.json` -> `leader_election.reelect_per_task` |
 
 ## Runtime Adjustment
 Parameters can be adjusted via the following methods:

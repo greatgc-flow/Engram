@@ -1,5 +1,5 @@
 # General — Autonomous Environment Maintenance (Self-Evolution)
-> Status: DRAFT (Pending Phase 1 Protocol Consensus)
+> Status: ACTIVE (self_care.py implemented 2026-06-18; event pipeline wired to ctx_end)
 > Purpose: Defines the mechanisms for peers to autonomously heal, document, and refactor the environment.
 
 ## 1. Core Principle: Autonomy vs. Consensus
@@ -70,9 +70,26 @@ Self-care is **event-driven** (not time-based). Time-based cycles waste tokens w
 - SaturationDetector findings → `proposal-add` only (read-only trigger)
 - Tier-2 (protocol/config) changes → full R:10 consensus required
 
-## 5. Implementation Roadmap
-- **Phase 1:** Update `protocol.json` with `autonomous_maintenance` section (Requires R:10).
-- **Phase 2:** Implement `saturation-scan.py` — Read-only, Tier-0. ✅ (rescued from _sys_new)
-- **Phase 3:** Implement `sync-docs.py` and hook into `consensus_finalize` (Requires R:8). ✅ (rescued from _sys_new)
-- **Phase 4:** Add SelfHealer actions to `hub.py` and sync contracts (Requires R:10).
-- **Phase 5:** Wire event triggers to hub.py commands (session_end → self-care pipeline).
+## 5. Implementation Status
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| Phase 1 | `protocol.json` autonomous_maintenance section | ⏳ Pending R:10 consensus |
+| Phase 2 | `saturation_scan.py` — Read-only, Tier-0 | ✅ `_sys/checks/saturation_scan.py` |
+| Phase 3 | `sync_docs.py` — capsule → docs-v2 syncer | ✅ `_sys/checks/sync_docs.py` |
+| Phase 4 | SelfHealer actions in `hub.py` | ⏳ Requires R:10 |
+| Phase 5 | `self_care.py` event pipeline + ctx_end wiring | ✅ `_sys/checks/self_care.py` (2026-06-18) |
+
+### Implemented Entry Points (Phase 5)
+
+```
+ctx_end.py  →  self_care.py --trigger session_end
+                    ↓ (non-blocking Popen)
+              Step 1: observe   (health.json + directives)
+              Step 2: validate  (virtualizer.py --status)
+              Step 3: cleanup   (sweep expired TTL directives)
+              Step 4: scan      (saturation_scan.py --quiet)
+              Step 5: propose   (hub.py proposal-add if findings)
+              Step 6: sync      (sync_docs.py --dry-run)
+              Step 7: record    (_archive/self-care-log.jsonl)
+```
