@@ -1,5 +1,5 @@
 {
-  "_version": "1.2",
+  "_version": "1.3",
   "_updated": "2026-06-18",
   "_help": "Maps policy/document sections to config keys, runtime functions, and tests for auditability. All docs paths → _sys/docs-v2/ (SSOT). Archive: _sys/docs/history/.",
   "entries": [
