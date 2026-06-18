@@ -35,13 +35,13 @@
   - `_sys/cli/peer_console.py`
   - `_sys/docs/protocol/protocol-permissions.md` (authoritative per-peer profiles)
 
-### DIR-003: hub.py 공개 API 변경 시 test_contracts.py 동기화 필수
+### DIR-003: test_contracts.py Must Be Updated When hub.py Public API Changes
 
 - Effective: 2026-06-16
 - Status: ACTIVE
-- Rule: `hub.py`의 공개 API (`_lease_cfg`, `_build_session_cmd`, `action_ask`, 및 모든 `action_*` 함수)의 시그니처(파라미터명, 기본값, 반환 타입 어노테이션)를 변경할 경우, 반드시 `_sys/tests/unit/test_contracts.py`를 같은 커밋에 업데이트해야 한다.
-- Why: 과거 `_lease_cfg()` 2-tuple→3-tuple 변경 시 테스트 26개가 무음으로 깨진 사건에서 도출된 규칙.
-- Scope: `cc`, `gc`, `cx` 모두 적용. API 변경 PR 리뷰 시 contract 업데이트 여부를 체크리스트에 포함.
+- Rule: When modifying the public API of `hub.py` (`_lease_cfg`, `_build_session_cmd`, `action_ask`, or any `action_*` function) — including parameter names, defaults, or return type annotations — `_sys/tests/unit/test_contracts.py` MUST be updated in the same commit.
+- Why: Derived from incident where `_lease_cfg()` 2-tuple→3-tuple change silently broke 26 tests. Source: LL-008.
+- Scope: Applies to all peers (cc, gc, cx). Include contract-update verification in PR checklist for any API change.
 - Source: LL-008 / gc self-evolution audit 2026-06-16.
 
 ## Revoked Directives

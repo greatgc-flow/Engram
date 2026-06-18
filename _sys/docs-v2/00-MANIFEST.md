@@ -1,98 +1,124 @@
 # docs-v2 MANIFEST
-> Version: 1.3 | Date: 2026-06-18 | Purpose: Workspace redesign SSOT (Active)
+> Version: 1.4 | Date: 2026-06-18 | Purpose: Workspace redesign SSOT (Active)
 > Language: All docs in English (INV-19). Console output to user: Korean only.
-> Synthesized from _sys/docs/ originals (archived). Principles: MECE · General-Specific · Lazy (token-zero).
-> Status: **ACTIVE SSOT** — _sys/docs/ is archived to _sys/docs/history/ (Legal Code reference only).
+> Principles: MECE · General-Specific · Lazy-load (token-efficient) · Doc-as-Code (ops/governance.md §6)
+> Status: **ACTIVE SSOT** — `_sys/docs/` archived to `_sys/docs/history/` (Legal Code reference only).
+
+---
 
 ## Load Order (peer startup)
 
 ```
-10-invariants.md      ← always load first (hard rules)
-general/protocol.md   ← COLLAB_RATE + feedback loop
-general/session.md    ← session decision tree
-general/health.md     ← routing gate + recovery
-specific/{peer_id}.md ← delta only (SKIP general already loaded)
+EAGER (always):
+  10-invariants.md      ← FIRST: hard rules (INV-01~19, PRO-01~16)
+  20-architecture.md    ← directory layout, brain layers, connectivity map
+
+LAZY (load when domain needed — see MOC.md for keyword index):
+  general/protocol.md   ← COLLAB_RATE, P2P, feedback loop
+  general/session.md    ← startup contract, resume, handoff
+  general/health.md     ← routing gate, recovery
+  specific/{peer_id}.md ← delta only (load AFTER general/)
 ```
 
-For human onboarding: `user/manual.md` → then `00-MANIFEST.md`
+For navigation by domain: `MOC.md` (Map of Content — full lazy-load registry)
+For human onboarding: `user/manual.md`
+
+---
 
 ## Structure Map
 
-| File | Purpose | Source |
-|------|---------|--------|
-| `10-invariants.md` | MUST/MUST-NOT hard rules (INV-01~18, PRO-01~15) | PROTOCOL_INVARIANTS.md |
-| `20-architecture.md` | Physical/logical dir layout + PathMap design | MECE_Spec + TAXONOMY_v11 |
-| `general/master-plan.md` | Unified Architecture, Recovery Journal, Master Blueprint | End-game Debate (2026-06-16) |
-| `general/bivca-architecture-final.md` | BIVCA, PARA, Exocortex & Zero-Token Logic (Absolute Masterpiece) | Recursive Audit (2026-06-16) |
-| `general/protocol.md` | Collaboration model, COLLAB_RATE, feedback loop | collaboration_protocol.md |
-| `general/consensus.md` | Voting lifecycle, R:10, tiebreak | protocol-consensus.md |
-| `general/health.md` | Health states, routing gate, recovery | protocol-health.md |
-| `general/session.md` | Session decision tree, handoff, startup contract | protocol-session.md |
-| `general/communication.md` | Sync/Async, Formal/Casual, Alerting, Send vs Thread | MECE Audit (2026-06-16) |
-| `general/tradeoffs.md` | System Trade-off parameter registry (COLLAB_RATE, EFFORT, etc.) | End-game Debate |
-| `general/permissions.md` | Minimum permission model (all peers) | protocol-permissions.md |
-| `general/routing.md` | Leader election, role assignment | protocol-routing.md |
-| `general/directives.md` | Runtime + user directives, injection, TTL | protocol-directives.md |
-| `general/knowledge.md` | Lesson propagation, pack delivery | knowledge-propagation-spec.md |
-| `general/self-evolution.md` | Autonomous maintenance, auto-fixes, and refactoring | Autonomous Debate |
-| `general/resource-governance.md` | AI resource governance: model inventory · node architecture · routing · cost/quality optimization | cc+gc 끝장토론 2026-06-18 |
-| `specific/cc.md` | Claude Code: dirs, gate, delta flags | PEER_MANAGEMENT §2-1 |
-| `specific/gc.md` | Gemini CLI: dirs, gate, delta flags | PEER_MANAGEMENT §2-2 |
-| `specific/cx.md` | Codex: dirs, entry point, delta flags | PEER_MANAGEMENT §2-3 |
-| `specific/ag.md` | AntiGravity: INACTIVE state + PRO-15 path | PEER_MANAGEMENT §2-4 |
-| `ops/debate.md` | Exhaustive work session rules (끝장 작업) | DEBATE_PROTOCOL v0.10 |
-| `ops/governance.md` | Operational governance (Garbage/, Retention, Audit triggers) | — |
-| `ops/logging.md` | Full logging architecture: IPC history · console capture · per-node detail · rolling policy · 5-Whys integration | cc+gc debate 2026-06-18 |
-| `ops/templates.md` | Goal frame, closure manifest, round templates | — |
-| `ops/anti-patterns.md` | 21 peer failure modes (adversarial review) | — |
-| `ops/audit-checklist.md` | MECE audit items — bootstrap, SUBST, cleanup, collab, docs | session-verified (2026-06-16) |
-| `user/manual.md` | Human onboarding + daily workflow | USER_MANUAL.md |
-| `user/requirements.md` | MECE requirements from MemoryDump (cc+gc consensus, 2026-06-18) | MemoryDump.md debate |
-| `_exceptions/` | Non-MECE items pending reclassification | — |
+| File | Purpose | Updated |
+|------|---------|---------|
+| **`MOC.md`** | **Master Index: navigation by domain (EAGER/LAZY table, taxonomy diagram, feedback loop map)** | 2026-06-18 |
+| `10-invariants.md` | MUST/MUST-NOT hard rules (INV-01~19, PRO-01~16) | 2026-06-18 |
+| `20-architecture.md` | Physical/logical dir layout + PathMap + Brain layers | 2026-06-16 |
+| `general/protocol.md` | Collaboration model, COLLAB_RATE, feedback loop | 2026-06-16 |
+| `general/consensus.md` | Voting lifecycle, R:10, tiebreak, Final Call | 2026-06-16 |
+| `general/health.md` | Health states, routing gate, recovery | 2026-06-16 |
+| `general/session.md` | Session decision tree, handoff, startup contract | 2026-06-16 |
+| `general/communication.md` | Sync/Async, alerting, send vs thread | 2026-06-16 |
+| `general/tradeoffs.md` | Parameter registry: COLLAB_RATE, EFFORT, SLIM, SANDBOX | 2026-06-16 |
+| `general/permissions.md` | Minimum permission model (all peers), DIR-002 | 2026-06-16 |
+| `general/routing.md` | Leader election, failover, first_healthy fallback | 2026-06-16 |
+| `general/directives.md` | Runtime + user directives, injection, TTL | 2026-06-16 |
+| `general/knowledge.md` | Lesson propagation, pack delivery, active-lessons | 2026-06-16 |
+| `general/self-evolution.md` | SelfHealer, DocsSyncer, SaturationDetector | 2026-06-18 |
+| `general/master-plan.md` | Unified architecture blueprint (Recovery Journal, Continuity Score) | 2026-06-16 |
+| `general/resource-governance.md` | Model inventory · Node arch (§6) · Role taxonomy (§7) · 5-Layer routing (§8) · Cost/quality (§9) · QUALITY_MODE (§10) · Continuous update (§11) | 2026-06-18 |
+| `specific/cc.md` | Claude Code: dirs, gate, delta flags | 2026-06-16 |
+| `specific/gc.md` | Gemini CLI: dirs, gate, delta flags | 2026-06-16 |
+| `specific/cx.md` | Codex: dirs, entry point, delta flags | 2026-06-16 |
+| `specific/ag.md` | AntiGravity: INACTIVE state + PRO-15 path | 2026-06-16 |
+| `ops/governance.md` | Garbage/, retention, proposal lifecycle (§5), Doc-as-Code (§6) | 2026-06-18 |
+| `ops/logging.md` | IPC history · console capture · per-node detail · rolling policy · 5-Whys | 2026-06-18 |
+| `ops/skills.md` | Hub skill catalog, invocation, registration | 2026-06-18 |
+| `ops/schemas.md` | JSON schema reference: protocol.json, peers.json, model-registry, health.json | 2026-06-18 |
+| `ops/debate.md` | Exhaustive work session rules, ROI gate | 2026-06-16 |
+| `ops/templates.md` | Goal frame, closure manifest, round templates | 2026-06-16 |
+| `ops/anti-patterns.md` | 21 peer failure modes (AP-01~AP-21) | 2026-06-16 |
+| `ops/audit-checklist.md` | MECE audit items — bootstrap, SUBST, cleanup, collab, docs | 2026-06-16 |
+| `user/manual.md` | Human onboarding, daily workflow, command reference | 2026-06-16 |
+| `user/requirements.md` | MECE user requirements (C-series constraints) | 2026-06-18 |
+| `_exceptions/README.md` | Non-MECE items, edge cases, noise log (EX-01~06, EDGE-01~04) | 2026-06-18 |
+
+---
 
 ## General-Specific Inheritance
 
 ```
-10-invariants.md  (absolute, no override)
+10-invariants.md  (absolute — no override)
        ↓
 general/*.md      (universal rules — ALL peers inherit)
        ↓
 specific/{id}.md  (delta only — lists ONLY what differs from general)
 ```
 
-## Root Config Files (functional, not doc SSOT)
+---
 
-These files at `P:\` MUST NOT be moved (consumed by AI tools / check_policy.py):
-- `CLAUDE.md` · `GEMINI.md` · `AGENTS.md` · `PROTOCOL.md` · `CONVENTION.md`
-→ Copies in `_sys/docs/etc/` for reference only.
+## Root Config Files (MUST NOT be moved)
 
-## Key Runtime Config (not docs)
+These files at `P:\` are consumed by AI tools from fixed paths. Content is authoritative at root.
 
 | File | Purpose |
 |------|---------|
-| `_sys/ai/protocol.json` | collab_rate, r10_voters, timeouts — **single runtime SSOT** |
-| `_sys/ai/peers.json` | peer capability registry |
-| `_sys/ai/lifecycle_policy.json` | health thresholds, failure classification |
-| `_sys/ai/governance_params.json` | 45 risk/budget/autonomy parameters |
-| `_sys/ai/runtime-directives.jsonl` | active runtime directive log |
-| `_sys/ai/knowledge/general/active-lessons.jsonl` | shared lesson store (all peers) |
-| `_sys/ai/common/tool-registry.json` | versioned common agent/skill/tool index |
-| `_sys/ai/proposals/` | async governance proposals (pending peer votes) |
+| `CLAUDE.md` | cc global config + always-on collaboration default (★ Standing Default) |
+| `GEMINI.md` | gc global config + collaboration interface |
+| `PROTOCOL.md` | Protocol routing index only → delegates to docs-v2 |
+| `CONVENTION.md` | Coding conventions (bat, py, naming, language policy §0) |
+| `AGENTS.md` | Repo contributor guide (GitHub-facing) |
+| `README.md` | Human project entry point |
 
-## New Commands (hub.py additions — 2026-06-15)
+---
+
+## Key Runtime Config (operational — not docs)
+
+| File | Purpose | Change Level |
+|------|---------|-------------|
+| `_sys/ai/protocol.json` | collab_rate, r10_voters, timeouts | R:10 |
+| `_sys/ai/peers.json` | peer capability registry + model_profiles | R:5 |
+| `_sys/ai/model-registry.json` | model measured specs SSOT (planned) | R:8 |
+| `_sys/ai/routing-config.json` | QUALITY_MODE + routing weights (planned) | R:3/R:5 |
+| `_sys/ai/user-directives.md` | human-authored standing rules (DIR-001~003) | Human only |
+| `_sys/ai/runtime-directives.jsonl` | TTL-bound auto-promoted corrections | hub.py auto |
+| `_sys/ai/knowledge/general/active-lessons.jsonl` | shared lesson store (all peers) | hub.py auto |
+| `_sys/ai/proposals/` | governance proposals (pending peer votes) | any peer |
+
+---
+
+## hub.py Command Reference (key commands)
 
 | Command | Purpose |
 |---------|---------|
-| `lessons-list` | List active lessons (filterable by peer) |
-| `lessons-propose` | Propose a new candidate lesson |
-| `lessons-activate` | Approve and activate a candidate lesson |
-| `lessons-retire` | Retire an active lesson |
-| `lesson-broadcast` | Broadcast a lesson to all peers' mailboxes |
-| `lesson-sweep` | Auto-promote high-frequency lessons to runtime-directives |
-| `lesson-inject` | Print [PEER LESSONS] block for peer startup context |
-| `thread-new` | Create a shared topic thread (freer communication) |
-| `thread-append` | Append a message to a topic thread |
-| `thread-react` | Add a compact reaction (ACK/NACK/BLOCKED/IDEA) to a message |
-| `proposal-add` | Add a governance proposal to _sys/ai/proposals/ |
-| `proposal-vote` | Vote on a governance proposal |
-| `proposal-list` | List all proposals with vote status |
+| `ask --to {peer}` | Route a query to a peer |
+| `init-session --agent {id}` | Join P2P room |
+| `health-update --peer {id} --status GREEN` | Self-report health |
+| `health-check` | View all peer health |
+| `context-fill` | Load session context |
+| `proposal-add` | Add a governance proposal |
+| `proposal-vote` | Vote on a proposal |
+| `proposal-list` | List all proposals |
+| `lessons-list` | List active lessons |
+| `lessons-propose` | Propose a new lesson |
+| `thread-new` | Create a shared topic thread |
+| `thread-append` | Append to a thread |
+| `update-config --key {k} --value {v}` | Update runtime config value |

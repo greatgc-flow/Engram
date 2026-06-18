@@ -24,20 +24,20 @@
     ]
   },
   "context_health": {
-    "status": "YELLOW",
+    "status": "RED",
     "jsonl_mb": 0.0,
-    "checked_at": "20260616T183547",
+    "checked_at": "20260618T084340",
     "source": "self",
     "stale_marked_at": "2026-06-16T07:17:51"
   },
   "session_health": {
-    "consecutive_failures": 4,
+    "consecutive_failures": 5,
     "last_failure_reason": "nonzero_exit",
     "last_success_at": "2026-06-16T15:35:57",
-    "session_count_today": 3,
-    "session_date": "20260616",
-    "last_failure_detail": "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Jun 18th, 2026 10:46 PM.",
-    "last_failure_at": "2026-06-16T18:35:47"
+    "session_count_today": 0,
+    "session_date": "20260618",
+    "last_failure_detail": "error: invalid value 'full' for '--sandbox <SANDBOX_MODE>'\n  [possible values: read-only, workspace-write, danger-full-access]\n\n  tip: a similar value exists: 'danger-full-access'\n\nFor more information, try '--help'.",
+    "last_failure_at": "2026-06-18T08:43:40"
   },
   "availability": {
     "installed": true,
@@ -47,7 +47,7 @@
     "cli_version": "codex-cli 0.139.0",
     "entrypoint_ok": true,
     "last_invocation_exit_code": 1,
-    "last_invocation_duration_ms": 13000,
+    "last_invocation_duration_ms": 0,
     "rate_limit_state": "ok",
     "workspace_access": "unknown",
     "active_pid": null,
