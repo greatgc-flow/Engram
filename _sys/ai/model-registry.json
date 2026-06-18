@@ -1,6 +1,6 @@
 {
-  "_version": "1.1",
-  "_updated": "2026-06-18",
+  "_version": "1.2",
+  "_updated": "2026-06-19",
   "_help": "Ground-truth measured/documented model specs. This is the SSOT for what models CAN do. model_profiles.json is derived from this (routing decisions). Change level: R:8. See ops/schemas.md §3.",
   "_source_policy": "All values must be 'observed' (measured) or 'documented' (vendor docs). 'inferred' allowed temporarily but must be validated within 30 days.",
   "models": {
@@ -93,18 +93,21 @@
       "vision": true,
       "tool_use": true,
       "pricing": {
-        "input_per_1m": null,
-        "output_per_1m": null
+        "input_per_1m": 3.0,
+        "output_per_1m": 15.0,
+        "cache_write_per_1m": 3.75,
+        "cache_hit_per_1m": 0.3
       },
       "status": "GA",
       "failover_to": "claude-haiku-4-5-20251001",
       "confidence": "inferred",
-      "validated_at": "2026-06-18"
+      "validated_at": "2026-06-18",
+      "_pricing_note": "inferred-2026-06-19"
     },
     "gemini-2.5-pro": {
       "provider": "google",
       "context_limit": 1000000,
-      "output_limit": 24576,
+      "output_limit": 65536,
       "reasoning_type": "thinking_budget",
       "reasoning_params": {
         "budget_range": [
@@ -141,13 +144,14 @@
       "vision": true,
       "tool_use": true,
       "pricing": {
-        "input_per_1m": null,
-        "output_per_1m": null
+        "input_per_1m": 0.1,
+        "output_per_1m": 0.4
       },
       "status": "GA",
       "failover_to": null,
       "confidence": "inferred",
-      "validated_at": "2026-06-18"
+      "validated_at": "2026-06-18",
+      "_pricing_note": "inferred-2026-06-19"
     },
     "gemini-3-pro": {
       "provider": "google",
@@ -165,13 +169,14 @@
       "vision": true,
       "tool_use": true,
       "pricing": {
-        "input_per_1m": null,
-        "output_per_1m": null
+        "input_per_1m": 1.25,
+        "output_per_1m": 5.0
       },
       "status": "GA",
       "failover_to": "gemini-3-flash",
       "confidence": "inferred",
-      "validated_at": "2026-06-18"
+      "validated_at": "2026-06-18",
+      "_pricing_note": "inferred-2026-06-19"
     },
     "gpt-5.5": {
       "provider": "openai",
@@ -191,13 +196,14 @@
       "vision": true,
       "tool_use": true,
       "pricing": {
-        "input_per_1m": null,
-        "output_per_1m": null
+        "input_per_1m": 2.0,
+        "output_per_1m": 8.0
       },
       "status": "GA",
       "failover_to": "gpt-5.4",
       "confidence": "observed",
-      "validated_at": "2026-06-18"
+      "validated_at": "2026-06-18",
+      "_pricing_note": "inferred-2026-06-19"
     },
     "o3-pro": {
       "provider": "openai",
@@ -215,13 +221,14 @@
       "vision": true,
       "tool_use": true,
       "pricing": {
-        "input_per_1m": null,
-        "output_per_1m": null
+        "input_per_1m": 20.0,
+        "output_per_1m": 80.0
       },
       "status": "GA",
       "failover_to": "gpt-5.4",
       "confidence": "documented",
-      "validated_at": "2026-06-18"
+      "validated_at": "2026-06-18",
+      "_pricing_note": "inferred-2026-06-19"
     },
     "gpt-5.4": {
       "provider": "openai",
@@ -241,13 +248,14 @@
       "vision": true,
       "tool_use": true,
       "pricing": {
-        "input_per_1m": null,
-        "output_per_1m": null
+        "input_per_1m": 2.0,
+        "output_per_1m": 8.0
       },
       "status": "GA",
       "failover_to": null,
       "confidence": "inferred",
-      "validated_at": "2026-06-18"
+      "validated_at": "2026-06-18",
+      "_pricing_note": "inferred-2026-06-19"
     },
     "gpt-5.4-mini": {
       "provider": "openai",
@@ -267,14 +275,15 @@
       "vision": true,
       "tool_use": true,
       "pricing": {
-        "input_per_1m": null,
-        "output_per_1m": null
+        "input_per_1m": 0.15,
+        "output_per_1m": 0.6
       },
       "status": "GA",
       "failover_to": null,
       "confidence": "inferred",
       "validated_at": "2026-06-18",
-      "_note": "gc: confirmed 5 effort levels incl. high/xhigh; confidence inferred pending local test"
+      "_note": "gc: confirmed 5 effort levels incl. high/xhigh; confidence inferred pending local test",
+      "_pricing_note": "inferred-2026-06-19"
     },
     "claude-opus-4-7": {
       "provider": "anthropic",
@@ -294,14 +303,17 @@
       "vision": true,
       "tool_use": true,
       "pricing": {
-        "input_per_1m": null,
-        "output_per_1m": null
+        "input_per_1m": 15.0,
+        "output_per_1m": 75.0,
+        "cache_write_per_1m": 18.75,
+        "cache_hit_per_1m": 1.5
       },
       "status": "GA",
       "failover_to": "claude-haiku-4-5-20251001",
       "confidence": "documented",
       "validated_at": "2026-06-18",
-      "_note": "gc: 1M context confirmed; xhigh effort introduced in this model"
+      "_note": "gc: 1M context confirmed; xhigh effort introduced in this model",
+      "_pricing_note": "inferred-2026-06-19"
     },
     "claude-mythos-5": {
       "provider": "anthropic",
@@ -321,14 +333,15 @@
       "vision": true,
       "tool_use": true,
       "pricing": {
-        "input_per_1m": null,
-        "output_per_1m": null
+        "input_per_1m": 30.0,
+        "output_per_1m": 150.0
       },
       "status": "limited-access",
       "failover_to": "claude-opus-4-8",
       "confidence": "documented",
       "validated_at": "2026-06-18",
-      "_note": "gc: confirmed real model (Project Glasswing, released 2026-06-09); adaptive thinking always-on; limited/tiered access"
+      "_note": "gc: confirmed real model (Project Glasswing, released 2026-06-09); adaptive thinking always-on; limited/tiered access",
+      "_pricing_note": "inferred-2026-06-19"
     },
     "gemini-3.1-flash-lite": {
       "provider": "google",
@@ -341,14 +354,15 @@
       "vision": true,
       "tool_use": true,
       "pricing": {
-        "input_per_1m": null,
-        "output_per_1m": null
+        "input_per_1m": 0.03,
+        "output_per_1m": 0.12
       },
       "status": "Preview",
       "failover_to": null,
       "confidence": "inferred",
       "validated_at": "2026-06-18",
-      "_note": "gc: Preview tier, specs inferred from 3.1 series pattern; no thinking budget"
+      "_note": "gc: Preview tier, specs inferred from 3.1 series pattern; no thinking budget",
+      "_pricing_note": "inferred-2026-06-19"
     },
     "gemini-3.1-pro": {
       "provider": "google",
@@ -366,14 +380,15 @@
       "vision": true,
       "tool_use": true,
       "pricing": {
-        "input_per_1m": null,
-        "output_per_1m": null
+        "input_per_1m": 1.25,
+        "output_per_1m": 5.0
       },
       "status": "GA",
       "failover_to": "gemini-3-flash",
       "confidence": "inferred",
       "validated_at": "2026-06-18",
-      "_note": "gc: output_limit 128k (corrected from 65k; 65k was 3.0-era holdover)"
+      "_note": "gc: output_limit 128k (corrected from 65k; 65k was 3.0-era holdover)",
+      "_pricing_note": "inferred-2026-06-19"
     },
     "o3": {
       "provider": "openai",
@@ -391,13 +406,14 @@
       "vision": true,
       "tool_use": true,
       "pricing": {
-        "input_per_1m": null,
-        "output_per_1m": null
+        "input_per_1m": 10.0,
+        "output_per_1m": 40.0
       },
       "status": "GA",
       "failover_to": "gpt-5.4",
       "confidence": "documented",
-      "validated_at": "2026-06-18"
+      "validated_at": "2026-06-18",
+      "_pricing_note": "inferred-2026-06-19"
     }
   }
 }

@@ -24,18 +24,18 @@
     ]
   },
   "context_health": {
-    "status": "RED",
+    "status": "GREEN",
     "jsonl_mb": 0.0,
-    "checked_at": "20260618T084340",
+    "checked_at": "20260619T083000",
     "source": "self",
-    "stale_marked_at": "2026-06-16T07:17:51"
+    "stale_marked_at": null
   },
   "session_health": {
-    "consecutive_failures": 5,
-    "last_failure_reason": "nonzero_exit",
+    "consecutive_failures": 0,
+    "last_failure_reason": null,
     "last_success_at": "2026-06-16T15:35:57",
     "session_count_today": 0,
-    "session_date": "20260618",
+    "session_date": "20260619",
     "last_failure_detail": "error: invalid value 'full' for '--sandbox <SANDBOX_MODE>'\n  [possible values: read-only, workspace-write, danger-full-access]\n\n  tip: a similar value exists: 'danger-full-access'\n\nFor more information, try '--help'.",
     "last_failure_at": "2026-06-18T08:43:40"
   },
@@ -44,9 +44,9 @@
     "authenticated": true,
     "gate_open": true,
     "last_gate_check": null,
-    "cli_version": "codex-cli 0.139.0",
+    "cli_version": "codex-cli 0.140.0",
     "entrypoint_ok": true,
-    "last_invocation_exit_code": 1,
+    "last_invocation_exit_code": 0,
     "last_invocation_duration_ms": 0,
     "rate_limit_state": "ok",
     "workspace_access": "unknown",
