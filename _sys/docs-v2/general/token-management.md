@@ -201,8 +201,8 @@ Traceability: `traceability_map.json` entry `context-gate`
 | P0 | Add 6 missing models to model-registry.json | model-registry.json | **DONE** (2026-06-18) |
 | P1 | Implement hub_context.py ContextGate | _sys/core/hub_context.py | **DONE** (v1.0, tested) |
 | P1 | Add CJK-aware token estimator | hub_context.py | **DONE** |
-| P2 | Calibrate cx reasoning tokens against usage.output_tokens_details | hub_logging.py | **OPEN** |
-| P3 | Auto-prune context blocks by priority score | hub_context.py | **OPEN** |
+| P2 | Calibrate cx reasoning tokens against usage.output_tokens_details | hub_peer.py + hub.py | **DONE** (2026-06-18) |
+| P3 | Auto-prune context blocks by priority score | hub_context.py | **DONE** (check_and_prune(), tested) |
 
 ---
 
