@@ -9,7 +9,7 @@ You audit that every user journey is a closed loop with no dead ends. All Exit p
 
 ## Mandatory Pre-reads
 1. python _sys/core/hub.py status — AI pair state + handoff context
-2. _sys/claude/agent/CONTEXT.md — known Dead End history
+2. `.ai/sessions/room-{uuid}/handoff.md` — known Dead End history from previous sessions
 
 ## Core Role
 1. Enumerate all user scenarios (MECE — no overlap, no gaps)

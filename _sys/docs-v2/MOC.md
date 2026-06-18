@@ -1,6 +1,6 @@
 # MOC — Master Index (Map of Content)
 
-> docs-v2 SSOT v1.3 | Updated: 2026-06-18
+> docs-v2 SSOT v1.4 | Updated: 2026-06-18
 > Single navigation root for all peers and human readers.
 > Loading strategy: EAGER for invariants/arch; LAZY (search when needed) for everything else.
 
@@ -174,6 +174,10 @@ docs-v2/
     ↓
 [self_care.py: analyzes logs → proposals]
     ↓
+[active-lessons.jsonl accumulates patterns]
+    ↓ ⚠ OPEN GAP (EDGE-05)
+[Phase 6: lesson-frequency graduation → proposal-add to docs-v2]  ← NOT YET IMPLEMENTED
+    ↓
 [Consensus: R:5 or R:8 ACK]
     ↓
 [Apply: routing-config.json + docs-v2 + peers.json updated]
@@ -182,7 +186,8 @@ docs-v2/
 ```
 
 _Every link in this loop is documented: Resource-Governance §8-§11, ops/logging.md §10, ops/governance.md §5-§6, general/self-evolution.md §4._
+_Open gap (EDGE-05): lesson→docs-v2 graduation path not yet automated. See `_exceptions/README.md §EDGE-05`._
 
 ---
 
-_MOC v1.0 created 2026-06-18. cc+gc collab_rate:10 exhaustive audit. Covers 30 docs-v2 files + 7 root files + 7 operational config files._
+_MOC v1.4 updated 2026-06-18. cc+gc Round 2 cross-link sync audit (collab_rate:10). 28 findings resolved. EDGE-02 closed, EDGE-05 opened. Covers 30 docs-v2 files + 7 root files + 7 operational config files._

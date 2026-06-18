@@ -46,6 +46,8 @@ Full annotated tree: `README.md`
 ### 3-2. Cross-Node Query Protocol
 - **Write queries in English.** Korean tokenizes at 2–3x cost → wastes quota fast.
 - **Query file is deleted before the API call.** Always generate a fresh unique file per request. Never reuse.
+- **IPC file naming:** `_sys/gemini/gc-{YYYYMMDDHHMMSS}-{RAND4}.txt` (unique per call, English only).
+- **Context fill depth:** `fill_depth_multiplier = 3` — gc reads 3× more context-fill sections than other peers (configured in hub.py `_build_gc_ask_cmd`). See `_sys/docs-v2/specific/gc.md` §Session Reuse.
 
 ### 3-3. Zero-Token Symmetric Memory
 - **Blackboard First**: Before starting work, you MUST read `handoff.md` and `summary_*.md` files in `.ai/sessions/room-{uuid}/` to sync project state (**Re-orientation Phase**). Follow the `handoff.md` rolling rule to keep logs compact.
@@ -69,9 +71,11 @@ Full annotated tree: `README.md`
 - Check room status: `python %SYS_DIR%\core\hub.py status`
 
 ## 5. Collaboration Protocol (P2P & Mixed-Model)
-Full R&R: `PROTOCOL.md v4.1`.
+Full R&R: **`_sys/docs-v2/general/protocol.md`** (COLLAB_RATE model, P2P, feedback loop).
+Consensus rules: **`_sys/docs-v2/general/consensus.md`** (R:10, Final Call, tiebreak).
+Runtime config (SSOT): **`_sys/ai/protocol.json`** → `collab_rate.current` (not this file).
 
-### Adaptive COLLAB_RATE
+### COLLAB_RATE: Risk-Based Application (summary — full table in protocol.md)
 Task risk classification — apply within a session unless overridden globally:
 
 | Risk | Rate | Applies To |
@@ -80,7 +84,7 @@ Task risk classification — apply within a session unless overridden globally:
 | Med  | R:3  | `workspace/` code changes |
 | High | R:5  | `_sys/` script changes |
 | Multi-script | R:8 | Spans multiple `_sys/` scripts (manual override) |
-| Critical | R:10 | `PROTOCOL.md`, `CLAUDE.md`, `GEMINI.md`, `hub.py`, `nodes.json` |
+| Critical | R:10 | `PROTOCOL.md`, `CLAUDE.md`, `GEMINI.md`, `hub.py`, `protocol.json` |
 
 *Rule:* Session-level overrides apply (user requests deep analysis → R:10 globally). **No exceptions for Level 10 core files.**
 
@@ -170,5 +174,7 @@ Created on first run by `setup.py` or `start.bat`:
 - **Note:** Directory Junctions ensure auth and memory travel with the portable drive, leaving no trace on the host OS.
 
 ## 9. Current State
-→ See .ai/sessions/room-fe18/handoff.md for live session state.
-→ See _sys/gemini/config/CONTEXT.md for static topology and Axis map.
+→ See `.ai/sessions/room-{current-room-id}/handoff.md` for live session state.
+  (Check active room ID: `python _sys/core/hub.py status`)
+→ Static topology and Axis map: `_sys/docs-v2/20-architecture.md` (connectivity map, §6).
+→ Session startup contract: `_sys/docs-v2/general/session.md`.

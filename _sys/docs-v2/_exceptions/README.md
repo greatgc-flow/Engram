@@ -34,11 +34,11 @@ This folder holds items that don't cleanly fit the General/Specific/Ops/User tax
 **Risk:** Schema docs reference non-existent runtime files.
 **Resolution:** Create during P2 implementation (resource-governance.md §4).
 
-### EDGE-02: `.ai/` vs `_sys/ai/` path inconsistency in session.md
+### EDGE-02: ~~`.ai/` vs `_sys/ai/` path inconsistency~~ (RESOLVED 2026-06-18)
 
-`general/session.md` references `.ai/state.json` but runtime path may be `_sys/ai/`.
-**Risk:** Peer writes to wrong location on cold start.
-**Resolution:** Verify hub.py actual path, then align session.md.
+Verified: `.ai/sessions/` exists at root (`P:\.ai\sessions\room-*`). Path in session.md is correct.
+`_sys/ai/` holds config/state files (protocol.json, peers.json, etc.); `.ai/` holds runtime IPC (sessions, mailbox).
+**Resolution:** Closed — no fix needed. Paths serve different purposes and are both correct.
 
 ### EDGE-03: master-plan.md implementation status unknown
 
@@ -50,6 +50,15 @@ This folder holds items that don't cleanly fit the General/Specific/Ops/User tax
 Documented in `ops/governance.md §6` as planned. Until it exists, INV-19 and coverage map rely on peer discipline.
 **Resolution:** Implement and wire into self_care.py.
 
+### EDGE-05: No automated path from active-lessons.jsonl → docs-v2 (feedback loop open)
+
+**Root cause (gc exhaustive audit, 2026-06-18):** The feedback loop has an open gap at the Directive-to-Normative Graduation step.
+- `runtime-directives.jsonl` corrects behavior with TTL. `active-lessons.jsonl` accumulates lessons.
+- **Missing:** No automated trigger promotes a high-frequency lesson from `active-lessons.jsonl` into a permanent `docs-v2` rule or `10-invariants.md` entry.
+- **Risk:** Directives expire → lessons bloat context without being synthesized into SSOT architecture. Root fixes remain implicit, not structural.
+**Current state:** DocsSyncer (self-evolution.md §2.2) handles `consensus_finalize` → docs-v2 sync. But there is no lesson-frequency threshold check that triggers a promotion proposal.
+**Resolution:** Extend `self_care.py` to: (1) count lesson occurrence frequency, (2) when a lesson appears ≥ 3 times in 7 days → auto-generate `proposal-add` to graduate it into a docs-v2 rule or invariant. Requires R:10 consensus to apply. Add to Phase 6 of self-evolution.md §5.
+
 ---
 
 ## Noise Candidates (Review at Next Audit)
@@ -58,6 +67,6 @@ Documented in `ops/governance.md §6` as planned. Until it exists, INV-19 and co
 |------|----------|--------|
 | `delightful-imagining-tower.md` | `_sys/claude/config/plans/` | Superseded by resource-governance v3 |
 | `glittery-mapping-shore.md` | `_sys/claude/config/plans/` | Unknown state |
-| `20260615-adopt-docs-v2-as-ssot-001.md` | `_sys/ai/proposals/` | ACCEPTED — move to `_archive/proposals/accepted/` |
+| `20260615-adopt-docs-v2-as-ssot-001.md` | `_sys/ai/proposals/` | ~~MOVED~~ → `_archive/proposals/accepted/` (2026-06-18) |
 
-_Last audited: 2026-06-18 (cc+gc exhaustive audit, collab_rate:10)_
+_Last audited: 2026-06-18 (cc+gc cross-link sync audit, collab_rate:10). Round 2._

@@ -35,7 +35,7 @@ Peer equality = equal proposal/review/vote rights. Human veto always overrides.
 | Med | 3 | `workspace/` code changes |
 | High | 5 | `_sys/` script changes |
 | Multi-script | 8 | Spans multiple `_sys/` scripts |
-| Critical | 10 | `PROTOCOL.md`, `CLAUDE.md`, `GEMINI.md`, `hub.py`, `nodes.json` |
+| Critical | 10 | `PROTOCOL.md`, `CLAUDE.md`, `GEMINI.md`, `hub.py`, `protocol.json` |
 
 Zero-token local operations (observe/validate/classify) are **exempt** from COLLAB_RATE at all levels.
 

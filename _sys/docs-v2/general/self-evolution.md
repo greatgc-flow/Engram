@@ -34,8 +34,9 @@ Monitors structural health and prevents architectural bloat.
   - Tech debt backlog (> 3 unresolved `_exceptions`)
 - **Action:** Auto-generates a `proposal-add` for architecture refactoring. *Never auto-executes.*
 
-## 3. Protocol.json Integration (Proposed)
-A new `"autonomous_maintenance"` section will be added to `protocol.json` to define thresholds, voters, and triggers for these subsystems.
+## 3. Protocol.json Integration
+**Status: Phase 1 — Pending R:10 consensus** (see §5 implementation table).
+A new `"autonomous_maintenance"` section will be added to `protocol.json` to define thresholds, voters, and triggers for these subsystems. Until Phase 1 is complete, all thresholds are hardcoded in the scripts listed in §5.
 
 ## 4. Self-Care Cycle (Event-Based)
 
@@ -79,6 +80,7 @@ Self-care is **event-driven** (not time-based). Time-based cycles waste tokens w
 | Phase 3 | `sync_docs.py` — capsule → docs-v2 syncer | ✅ `_sys/checks/sync_docs.py` |
 | Phase 4 | SelfHealer actions in `hub.py` | ⏳ Requires R:10 |
 | Phase 5 | `self_care.py` event pipeline + ctx_end wiring | ✅ `_sys/checks/self_care.py` (2026-06-18) |
+| Phase 6 | Lesson-frequency graduation: active-lessons → docs-v2 proposal | ⏳ EDGE-05 (closes feedback loop gap) |
 
 ### Implemented Entry Points (Phase 5)
 

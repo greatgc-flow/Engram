@@ -70,6 +70,11 @@
 | E-04 | Root MD file set: `README.md`, `CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, `PROTOCOL.md`, `CONVENTION.md` — all present | `Get-ChildItem "P:\" -Filter "*.md"` |
 | E-05 | `AGENTS.md` has `## Current State` section (cx session continuity) | Section exists; `ctx_save.py` updates it |
 | E-06 | `GEMINI.md` and `CLAUDE.md` version/last-updated header current | Not older than 30 days from last structural change |
+| E-07 | All file paths referenced in docs-v2 actually exist on disk | `check_docs_mece.py --path-check` → 0 broken paths (planned: EDGE-04) |
+| E-08 | All internal markdown anchor links (`§N`, `#section`) resolve to real sections | `check_docs_mece.py --anchor-check` → 0 broken anchors (planned: EDGE-04) |
+| E-09 | Numeric constants in docs match runtime config values (e.g., `collab_rate:10` in protocol.json) | `check_docs_mece.py --value-sync` → 0 drift (planned: EDGE-04) |
+| E-10 | Root docs (CONVENTION.md, GEMINI.md) contain no normative content duplicated from docs-v2 | Root docs are pointers only; normative content lives in docs-v2 SSOT |
+| E-11 | No Korean text in any file under `_sys/` (except `_archive/`, `_sys/claude/config/CLAUDE.md`) | INV-19 enforcement; `grep -r "[가-힣]" _sys/ --exclude-dir=_archive` → 0 hits |
 
 ---
 
@@ -137,5 +142,6 @@ Run these perspective checks at milestone boundaries (before release, after larg
 | Session continuity hook | C-05, E-05 |
 | New `.bat` file | F-01~F-04 |
 | Doc path restructure | E-01~E-06 |
+| Root doc / docs-v2 sync | E-07~E-11 |
 | Test suite change | D-01~D-05 |
 | Peer permission / health | F-05, G-02, G-03 |

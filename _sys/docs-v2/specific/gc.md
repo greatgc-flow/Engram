@@ -50,6 +50,15 @@ Future: migrate bat scripts to read `health.json["availability"]["gate_open"]` d
 
 ---
 
+## Health & Auto-Remediation
+
+- INV-15 triggers SelfHealer when `consecutive_failures ≥ failure_threshold` (default 5, from `protocol.json["health"]`).
+- gc is the **primary large-corpus analyst** (fill_depth_multiplier=3). On gc RED: hub.py routes analysis tasks to cc as fallback (R04 Large Corpus Analyst → cc fallback in resource-governance.md §7).
+- RED recovery: `hub.py peer-recover --peer gc` (NOT manual health-update). See INV-11.
+- See `general/self-evolution.md §2.1` for full SelfHealer tier description.
+
+---
+
 ## Gate & Entry
 
 - Gate script: `_sys/gemini/gemini-gate.bat`

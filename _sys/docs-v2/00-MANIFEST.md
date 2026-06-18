@@ -59,7 +59,7 @@ For human onboarding: `user/manual.md`
 | `ops/audit-checklist.md` | MECE audit items — bootstrap, SUBST, cleanup, collab, docs | 2026-06-16 |
 | `user/manual.md` | Human onboarding, daily workflow, command reference | 2026-06-16 |
 | `user/requirements.md` | MECE user requirements (C-series constraints) | 2026-06-18 |
-| `_exceptions/README.md` | Non-MECE items, edge cases, noise log (EX-01~06, EDGE-01~04) | 2026-06-18 |
+| `_exceptions/README.md` | Non-MECE items, edge cases, noise log (EX-01~06, EDGE-01~05; EDGE-02 closed) | 2026-06-18 |
 
 ---
 

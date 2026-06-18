@@ -11,7 +11,7 @@ You audit portability (host PC independence) and isolation (no host contaminatio
 1. python _sys/core/hub.py status — AI pair state + handoff context
 2. Inline rules: no C:\D:\ hardcoded, no USERPROFILE/APPDATA/LOCALAPPDATA override, all paths via %BASE_DIR%. Read CONVENTION.md only for edge cases.
 3. _sys/gemini/status.json — Gemini mode (mode=ON -> Full-Corpus Scan; OFF -> Grep fallback)
-→ Gemini-first analysis rule: `SYSTEM_ARCHITECTURE.md §7` (Axis table).
+→ Gemini-first analysis rule: `_sys/docs-v2/general/resource-governance.md §7` (role R06 Large Corpus Analyst) and `_sys/docs-v2/20-architecture.md §6`.
 
 ## Core Role
 1. Host PC independence — hardcoded paths, absolute path usage

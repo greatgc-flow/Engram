@@ -58,7 +58,7 @@ Full annotated tree: `README.md`
 | `CLAUDE_CONFIG_DIR = _sys\claude\config\` | Claude Code CLI auth/config travels with USB |
 | AI CLI via npm-global (nodejs/npm-global) | `claude.cmd`, `gemini.cmd` auto-in-PATH; driven by `_sys/ai/peers.json` |
 | AI peer host junctions | `%USERPROFILE%\.{peer}` → `_sys/{peer}/config` — portability per peer |
-| `_sys/ai/config.json` for COLLAB_RATE | Cross-peer ratio setting; peer-agnostic (not inside gemini/) |
+| `_sys/ai/protocol.json` for COLLAB_RATE | Cross-peer runtime config SSOT; `collab_rate.current`, health thresholds, r10_voters |
 | `_sys/ai/peers.json` drives install/cleanup | Adding peer = edit peers.json; no code change needed |
 | `_archive/` for all rolling data | logs + sessions + workspace backups in one place for easy cleanup |
 | Individual `if exist` lines (not for-loop) | for-loop expands %PATH% once -> bug |
@@ -97,7 +97,10 @@ Full annotated tree: `README.md`
 - For broad exploration: delegate to `Explore` sub-agent (isolates context blowout)
 - **3-strike rule**: 3 consecutive Grep/Read with no useful result → stop, delegate to `Explore` sub-agent
 
-## P2P Collaboration (PROTOCOL.md v4.1)
+## P2P Collaboration
+
+Full protocol: **`_sys/docs-v2/general/protocol.md`**. Consensus: **`_sys/docs-v2/general/consensus.md`**.
+Runtime config SSOT: **`_sys/ai/protocol.json`** (`collab_rate.current`).
 
 This project runs on an **N-Way shared Room session** with **unlimited consensus rounds**.
 - **COLLAB_RATE (0~10)**: Controls collaboration depth across all nodes. (R:10 = 100% full sync)
@@ -113,7 +116,7 @@ This project runs on an **N-Way shared Room session** with **unlimited consensus
 | Med | R:3 | `workspace/` code changes |
 | High | R:5 | `_sys/` script changes |
 | Multi-script | R:8 | Spans multiple `_sys/` scripts (manual override) |
-| Critical | R:10 | `PROTOCOL.md`, `CLAUDE.md`, `GEMINI.md`, `hub.py`, `nodes.json` |
+| Critical | R:10 | `PROTOCOL.md`, `CLAUDE.md`, `GEMINI.md`, `hub.py`, `protocol.json` |
 
 ### IPC Compact Syntax
 - AGREE: `ACK:r-{round_id}` / DISAGREE: `NACK:r-{round_id}:REASON={short}`
@@ -179,18 +182,16 @@ Created on first run by `setup.py` or `start.bat`:
 | `start.bat "file.exe"` | Open with Windows default handler |
 
 ## Current State
-Last checkpoint: 2026-06-16 10:30 -- See .ai/ blackboard for details
-- **Room ID**: `room-fe18` (Active)
-- **Protocol**: `PROTOCOL.md v4.1` / `protocol.json v1.1` (SSOT)
-- **DIR-003 Active**: Mandatory `test_contracts.py` sync for `hub.py` API changes (triggered by `_lease_cfg` break).
-- **Docs-v2 Migration**: Reached consensus to use `_sys/docs-v2/` as primary SSOT.
-- **Peer Lessons**: LL-008 (API stability) logged.
-- **Health**: ALL GREEN (gc recovered from lease expirations).
-- **Tests**: 198 unit tests passing (cross-reviewed by gc+ag+cx).
+Last checkpoint: 2026-06-18 — docs-v2 cross-link sync audit complete (cc+gc, collab_rate:10).
+See `.ai/sessions/` blackboard for live session state (`hub.py status`).
+- **Protocol**: `_sys/docs-v2/` SSOT active (v1.4) · `protocol.json` runtime SSOT
+- **DIR-003 Active**: Mandatory `test_contracts.py` sync for `hub.py` API changes.
+- **Health**: Check via `hub.py health-check`
+- **Tests**: See `_sys/tests/` — run `pytest` from `_sys/core/`
 
-## Next Steps
-- **Voting Gap Resolution**: Resolve §14-5 gaps (NEED_MORE_INFO sent to cc).
-- **TAXONOMY_v11**: Execute final governance framework transition.
-- **WSB Validation**: Verify `install.bat` and `register.bat` in Windows Sandbox.
-- **P2P Reliability**: Investigate occasional mailbox file lock timeouts.
+## Next Steps (Open Items)
+- EDGE-01: Create `model-registry.json` + `routing-config.json`
+- EDGE-03: Audit `master-plan.md` implementation status
+- EDGE-04: Implement `check_docs_mece.py`
+- EDGE-05: Lesson→docs-v2 graduation (Phase 6 of self-evolution)
 

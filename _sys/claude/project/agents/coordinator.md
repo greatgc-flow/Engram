@@ -32,8 +32,8 @@ Orchestrator performs orchestration only. All implementation is delegated.
 2. `.ai/state.json` — coordinator loop count, task status, known issues
 3. Inline rules: English-only agents/skills/JSON (§0). No for-loop PATH, no wmic, no hardcoded drives (§1). No USERPROFILE override (§3-3). Read CONVENTION.md only for edge cases.
 
-_sys/claude/agent/CONTEXT.md — read only at new-session orientation or when .ai/sessions/*/handoff.md absent.
-Policy reference: `PROTOCOL.md §P-3` (Consensus), `§C-0` (COLLAB_RATE), `§M-3` (Invariants).
+Session context: `.ai/sessions/room-{uuid}/handoff.md` (re-orientation) or `_sys/docs-v2/general/session.md`.
+Policy reference: `_sys/docs-v2/general/consensus.md` (Consensus/R:10), `_sys/docs-v2/general/protocol.md` (COLLAB_RATE), `_sys/docs-v2/10-invariants.md` (INV/PRO rules).
 
 ## Core Responsibilities
 1. MECE decomposition of user requests -> delegate to appropriate specialists

@@ -56,3 +56,12 @@ No additional flags. FORBIDDEN: `--dangerously-skip-permissions`.
 - `config/CLAUDE.md` — update via `ctx-end --global` or manual edit
 - `config/projects/*/memory/` — auto-managed by cc memory system
 - `health.json` — ONLY via `hub.py health-update --peer cc`
+
+---
+
+## Health & Auto-Remediation
+
+- INV-15 triggers SelfHealer when `consecutive_failures ≥ failure_threshold` (default 5, from `protocol.json["health"]`).
+- cc is the **primary human interface node** and cannot be auto-restarted by SelfHealer Tier-0/1 without explicit human approval.
+- On cc RED state: SelfHealer logs the event, escalates to Human Gate (INV-16). Do NOT auto-recover cc silently.
+- See `general/self-evolution.md §2.1` for full SelfHealer tier description.

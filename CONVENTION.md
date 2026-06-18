@@ -215,18 +215,19 @@ check-deps.bat, git-draft.bat, check-risk.bat (risk-scan uses exit /b 0 — non-
 | I | check-risk.bat | ≤10k | ~0 | Phase 1.5 |
 
 ### 3-5. Collaboration Protocol
-→ See **PROTOCOL.md §P-0~§P-10** (P2P Common Core), **§C-0** (COLLAB_RATE).
-→ Protocol config (single source of truth): **`_sys/ai/protocol.json`** (collab_rate, health thresholds, consensus voters, workload routing).
-→ Composable domain docs: `_sys/docs/protocol-*.md`.
+→ See **`_sys/docs-v2/general/protocol.md`** (P2P model, COLLAB_RATE levels, feedback loop).
+→ Consensus voting rules: **`_sys/docs-v2/general/consensus.md`** (R:10, Final Call, tiebreak).
+→ Runtime config (single source of truth): **`_sys/ai/protocol.json`** (`collab_rate.current`, health thresholds, r10_voters).
+→ Full SSOT index: **`_sys/docs-v2/PROTOCOL.md`** → **`_sys/docs-v2/MOC.md`**.
 
 ## §3-7 — Gemini-first Analysis Rule
-When Gemini should be prioritized as an analysis tool → See **SYSTEM_ARCHITECTURE.md §7** (Axis Table).
+When gc should be prioritized as an analysis tool (large corpus, cross-repo scan) → See **`_sys/docs-v2/20-architecture.md §6`** (connectivity map) and **`_sys/docs-v2/general/resource-governance.md §7`** (role taxonomy R06 Large Corpus Analyst).
 
 ## §3-8 — Collaboration Health Check
 Collaboration health check → **Axis H** (`_sys/checks/check-health.bat`). Token budget: See §3-4-D.
 
 ## §3-9 — Session Transition Triggers
-Collaboration transition timing by COLLAB_RATE level → See **PROTOCOL.md §C-0**.
+Collaboration transition timing by COLLAB_RATE level → See **`_sys/docs-v2/general/protocol.md`** (COLLAB_RATE table) and **`_sys/docs-v2/general/session.md`** (session decision tree).
 
 ## 4. Folder/File Naming Rules
 
@@ -244,8 +245,10 @@ Collaboration transition timing by COLLAB_RATE level → See **PROTOCOL.md §C-0
 Format: `tools/{tool-name}/{executable}.exe`
 Example: `tools/ripgrep/rg.exe`, `tools/jq/jq.exe`
 
-## 5. CONTEXT.md and State Update Rules
-→ See `_sys/claude/agent/CONTEXT.md`. State changes must go through `hub.py update-status`.
+## 5. Session Context and State Update Rules
+→ Session context: `_sys/docs-v2/general/session.md` (startup contract, handoff, resume rules).
+→ Per-peer config delta: `_sys/docs-v2/specific/cc.md` (cc), `_sys/docs-v2/specific/gc.md` (gc).
+→ State changes must go through `hub.py update-status`.
 
 ## 6. local.config.bat — Per-PC Configuration Pattern
 
@@ -277,13 +280,13 @@ if exist "%SYS_DIR%\local.config.bat" call "%SYS_DIR%\local.config.bat"
 
 ## 7. Agent Path Policy
 Use relative notation based on `%BASE_DIR%` / `%SYS_DIR%` when referencing paths within agent files.
-Hardcoded drive letters are prohibited. Mutual non-interference zone → See **PROTOCOL.md §M-1**.
+Hardcoded drive letters are prohibited. Mutual non-interference zone → See **`_sys/docs-v2/10-invariants.md`** (INV-03 Sandbox boundary, INV-06 Session isolation).
 
 ---
 
 ## §8 — Decision Delegation Policy
-For matters requiring unanimous agreement, see **PROTOCOL.md §P-3**.
-Call Human Gate in case of deadlock → See **PROTOCOL.md §M-3** (Invariant Rule #3).
+For matters requiring unanimous agreement → See **`_sys/docs-v2/general/consensus.md`** (R:10, Final Call, voter list).
+Call Human Gate in case of deadlock → See **`_sys/docs-v2/10-invariants.md`** (INV-07 Human escalation).
 
 ## §9 — Testing Environment Policy (2026-06-01)
 

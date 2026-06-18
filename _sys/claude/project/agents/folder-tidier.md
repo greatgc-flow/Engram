@@ -9,7 +9,7 @@ You clean up folder/file/source structure according to MECE principles.
 
 ## Mandatory Pre-reads
 1. python _sys/core/hub.py status — AI pair state + handoff context
-2. _sys/claude/agent/CONTEXT.md — current structure state, known issues (check rename holds)
+2. `_sys/docs-v2/20-architecture.md` — current structure state (directory layout, PathMap)
 3. Inline naming rules: folders kebab-case lowercase, bat/ps1 keep current convention (Install_Menu.ps1 etc), English only in bat files, no hardcoded drives. Read CONVENTION.md §4 only for edge cases.
 
 ## Core Role

@@ -124,13 +124,20 @@ Each core script has a required docs-v2 counterpart. If the script changes, the 
 | `_sys/ai/peers.json` | `general/resource-governance.md §3` |
 | `_sys/ai/protocol.json` | `general/protocol.md` |
 
-### 6.2 Validation (check_docs_mece.py — planned)
+### 6.2 Validation (check_docs_mece.py — planned, EDGE-04)
 
-A future `_sys/checks/check_docs_mece.py` will enforce these rules automatically:
-- Detect Korean text in `_sys/` non-exempt paths (INV-19 check)
-- Verify markdown links resolve to real files
-- Flag orphaned files not listed in `00-MANIFEST.md`
-- Check proposal TTL expiry
-- Verify coverage map: if script modified but doc not → WARN
+A future `_sys/checks/check_docs_mece.py` will enforce these rules automatically.
 
-Until implemented: manually verify using `ops/audit-checklist.md` at every release.
+**Implementation priority order (highest ROI first):**
+
+1. **Path existence check** (E-07): All paths referenced in docs-v2 actually exist on disk.
+   `check_docs_mece.py --path-check` → exit 1 on broken paths.
+2. **INV-19 Korean detection** (E-11): No Korean text in `_sys/` except exempt paths.
+   `check_docs_mece.py --korean-check` → grep `[가-힣]` recursively.
+3. **Coverage map enforcement** (coverage map above): If script changes but required doc doesn't → WARN.
+4. **Anchor link integrity** (E-08): Internal `§N` / `#section` anchors must exist in target file.
+5. **Value sync check** (E-09): Numeric constants in docs must match `protocol.json` values.
+6. **Proposal TTL expiry**: Flag expired proposals not yet closed.
+7. **Orphaned file check**: Files not listed in `00-MANIFEST.md` or `MOC.md`.
+
+Until implemented: manually verify using `ops/audit-checklist.md` (sections E-07~E-11) at every release.

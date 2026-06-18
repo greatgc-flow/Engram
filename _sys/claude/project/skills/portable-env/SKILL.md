@@ -70,7 +70,7 @@ State.json safety rule: If state.json exists with status != "done"/"halted", bac
 
 ```
 Phase 0:  Context health check (Axis-H → status.json)
-           Check collaboration health (PROTOCOL.md §C-0: COLLAB_RATE, mode=ON, consecutive_failures < 3)
+           Check collaboration health (`_sys/ai/protocol.json["collab_rate"]`: mode=ON, consecutive_failures < 3)
            YELLOW → ctx-save recommendation
            RED → check-health.bat --force → handoff → /compact required
 

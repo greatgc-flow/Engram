@@ -73,8 +73,8 @@ Defines integration depth and intervention points.
 | 9 | **Pairing** | R:8 + Verify direction after 5 explores | Direction shifts |
 | 10 | **Sync** | **Full Phase** (Plan/Exec/Review/Report) | **Mandatory Every Step** |
 
-> **R:10 Detail**: Share detailed goals → Consensus → Proceed. No solo decision-making. Cross-verify results before reporting. (Ref: PROTOCOL.md §C-0)
-> **Final Call (R:8+)**: Proposer sends plan + "Any additional feedback or missed context?" → Finalized only after "ACK/Proceed" from all peers. (Ref: PROTOCOL.md §P-3-FC)
+> **R:10 Detail**: Share detailed goals → Consensus → Proceed. No solo decision-making. Cross-verify results before reporting. (Ref: `_sys/docs-v2/general/protocol.md §COLLAB_RATE`)
+> **Final Call (R:8+)**: Proposer sends plan + "Any additional feedback or missed context?" → Finalized only after "ACK/Proceed" from all peers. (Ref: `_sys/docs-v2/general/consensus.md §Final Call`)
 
 ### R:6~10 Trigger Rules
 

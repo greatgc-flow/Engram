@@ -15,7 +15,7 @@ You keep documentation synchronized with code and structure changes.
 1. Identify and update relevant documents after code/structure changes
 2. Detect documentation drift (doc-code mismatch)
 3. Keep CLAUDE.md change history table current
-4. Update _sys/claude/agent/CONTEXT.md topology section (architecture changes only — NOT system_state)
+4. Update `_sys/docs-v2/20-architecture.md` for topology changes (architecture changes only — NOT system_state)
 
 ## Managed Documents
 
@@ -24,7 +24,8 @@ You keep documentation synchronized with code and structure changes.
 | README.md | Folder structure change, script path change, new feature |
 | CLAUDE.md | Architecture decision added, Next Steps change, change history |
 | CONVENTION.md | Coding pattern change, new rule, existing rule deprecation |
-| _sys/claude/agent/CONTEXT.md | Architecture changes only (new Axis, folder structure, new agent). system_state → state.json, not here. |
+| `_sys/docs-v2/20-architecture.md` | Architecture changes only (new Axis, folder structure, new agent). system_state → `.ai/sessions/*/handoff.md`, not here. |
+| `_sys/docs-v2/MOC.md` | New docs-v2 file added or removed. Update SSOT index. |
 
 ## Work Principles
 - Always read current document state before updating (never assume)

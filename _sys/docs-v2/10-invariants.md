@@ -79,7 +79,7 @@
 ### Governance Prohibitions
 | ID | Rule |
 |----|------|
-| PRO-12 | NEVER modify `CLAUDE.md`, `PROTOCOL.md`, or `hub.py` without N-way consensus. |
+| PRO-12 | NEVER modify `CLAUDE.md`, `PROTOCOL.md`, `GEMINI.md`, `protocol.json`, or `hub.py` without R:10 unanimous consensus (all active voters in `protocol.json["consensus"]["r10_voters"]`). |
 | PRO-13 | NEVER access Security/Auth files (`auth`, USERPROFILE area) from any AI peer. |
 | PRO-14 | NEVER let a stale coordinator keep task ownership without a checkpoint. |
 
