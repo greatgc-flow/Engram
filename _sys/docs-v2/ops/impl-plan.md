@@ -604,6 +604,13 @@ Config in governance_params.json (add these keys):
 3. ✅ hub.py action_report_error: calls HubError.report_from_legacy() for severity=error/fatal
 4. ✅ error_show_stacktrace, error_5whys_auto_log in governance_params.json
 
+### Phase 7: Integration Closure (P7) ✅ DONE (2026-06-18)
+1. ✅ model_profiles.json v0.3 — F-01/F-02 applied (context_window, output_limit corrected)
+2. ✅ orchestration.json — adapter_class field added to all 7 hub_nodes
+3. ✅ hub.py — ContextGate lazy import + action_ask() check (failover warn / reject exit)
+4. ✅ protocol.json v1.2 — autonomous_maintenance section (Phase 1 of self-evolution.md)
+5. ✅ traceability_map.json v1.3 — version bump + 4 new runtime entries
+
 ---
 
 ## 11. Completion Criteria
