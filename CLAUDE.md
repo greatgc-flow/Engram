@@ -78,6 +78,13 @@ Full annotated tree: `README.md`
 - Path separator: `\` (backslash)
 - Always set `PYTHONUTF8=1` when calling `.bat` files
 
+## CRITICAL: Cross-Node Query Protocol
+
+- **Write queries in English.** (Korean tokenizes at 2–3x cost).
+- **Unique query files.** Always generate a fresh unique file per request.
+- **IPC file naming:** `_sys/ai/ipc/cc-{YYYYMMDDHHMMSS}-{RAND4}.txt` (unique per call).
+- **Encoding:** Always use UTF-8 without BOM for IPC files.
+
 ## CRITICAL: Peer-to-Peer State Management
 
 - **All nodes are equal**: Claude does not monopolize orchestration.

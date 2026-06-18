@@ -13,11 +13,13 @@ updated: 2026-06-18
 - **`action_report_error` guard**: `_record_ask_failure` calls `action_report_error` which may trigger T4 sys.exit mid-function. Consider wrapping in try/except to allow health.json write to complete before exit.
 - **`peer-recover` exit code**: Returns exit 1 even on success (line ~2410). Should return 0.
 - **`update-signatures` guard**: Blocked by phase policy during 'planning' phase. Needs phase exemption for maintenance actions.
+- **ag session tracking (B2)**: Implement session state tracking for Antigravity (`ag`) in `hub.py` for parity with `gc` and `cx`.
 
-### hub_peer.py
-- **`build_cmd` return type changed**: Now returns `tuple[list[str], bool]` but no changelog entry. Docs and tests were mismatched until this session. Add migration note to CHANGELOG.
+### axis-h / check_health.py (D2)
+- **Legacy status.json coupling**: Migrate direct `status.json` write to `hub_health.py` / `health.json` model to fully decouple health checks from legacy gate files. Axis scripts should eventually read from a central health hub.
 
 ### check_docs_mece.py
+- **`build_cmd` return type changed**: Now returns `tuple[list[str], bool]` but no changelog entry. Docs and tests were mismatched until this session. Add migration note to CHANGELOG.
 - **CHK-06 `_PROPOSALS_DIR` path**: Currently `_ROOT / "_archive" / "proposals" / "pending"` — this directory rarely exists in practice. Consider adding it to the test fixture or changing the path.
 - **CHK-07 manifest format**: Checks for `.md` filenames in manifest. If manifest format changes, CHK-07 silently passes. Add format validation.
 
@@ -38,6 +40,7 @@ updated: 2026-06-18
 - **`health-reset` action**: No command to reset a peer's health to GREEN. Currently requires direct JSON edit. Add `hub.py health-reset --peer gc`.
 - **`update-signatures` phase bypass**: Should not be blocked by collab_rate guard since it's a maintenance action.
 - **Remaining items dashboard**: `hub.py remaining-items` command that reads this file and formats it as a status report.
+- **Hub Usage Dashboard (A3)**: Implement a hub-level peer call summary (e.g., `hub.py usage-report`) that aggregates calls today per peer from hub logs, providing a central alternative to `gemini-usage.bat`.
 
 ### Medium-term
 - **token-management.md MECE update**: Model specs are outdated (cc context 200k→1M, output 4096→128k, Extended Thinking API changed). See plan file `delightful-imagining-tower.md` for full details.
