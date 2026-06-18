@@ -19,12 +19,12 @@ All communication is categorized by Synchronicity, Formality, and Reach.
 
 ## 2. Interaction Tiers
 
-### 2.1. Casual Sync (상시 소통)
+### 2.1. Casual Sync
 - **Tool:** `thread-append`
 - **Convention:** Use `sync-{topic}` naming for low-latency, non-blocking inquiries.
 - **Rule:** Peers should respond as part of their next turn if a specific inquiry is directed at them.
 
-### 2.2. End-game Debate (끝장 토론)
+### 2.2. End-game Debate
 - **Tool:** `thread-new` + `proposal-add`
 - **Convention:** Use `debate-{topic}` naming for formal, blocking architectural or protocol disputes.
 - **Rule:** Requires R:7+ COLLAB_RATE and mandatory unanimous ACK/NACK before closure.

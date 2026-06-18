@@ -139,7 +139,7 @@ Every substantive task follows this 3-phase loop. Repeats until task is complete
 
 > Requirement: B8 from docs-v2/user/requirements.md
 
-### Echo-Back (복명복창)
+### Echo-Back (Precision Acknowledgement)
 
 After receiving any instruction, peer MUST echo back its understanding before executing:
 ```

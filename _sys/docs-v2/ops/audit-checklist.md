@@ -30,7 +30,7 @@
 | B-02 | Tier 2 removes `env/venv`; `tools/` and `workspace/` survive | `test_cleanup_tiers_sys_c1` Tier-2 block |
 | B-03 | Tier 3 removes `env/*` except `env/python`; `tools/` and `workspace/` survive | `test_cleanup_tier3_resets_runtime` |
 | B-04 | Tier 4 removes `workspace/`, `_archive/`, `*.md` at base root | `test_cleanup_tier4_source_files_survive` |
-| B-05 | Tier 4 does NOT remove `_sys/local.config.bat` | Source config (not data). `test_cleanup_tiers_sys_c1` asserts `.exists()` after Tier 4 |
+| B-05 | Tier 4 does NOT remove local.config.bat (if present) | PC-local config, gitignored. `test_cleanup_tiers_sys_c1` asserts `.exists()` after Tier 4 |
 | B-06 | Tier 4 preserves all `*.bat` at root (`install.bat`, `register.bat`, `CLEANUP.bat`) and `_sys/` itself | `test_cleanup_tier4_source_files_survive` assertions |
 
 ---

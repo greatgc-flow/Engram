@@ -83,6 +83,27 @@ class SelfCare:
 
         self.state["steps_completed"].append("cleanup")
 
+    # ── Step 3: Docs MECE ─────────────────────────────────────────────────────
+
+    def docs_mece(self) -> None:
+        mece_script = _CHECKS_DIR / "check_docs_mece.py"
+        if not mece_script.exists():
+            self.state["steps_completed"].append("docs_mece")
+            return
+        result = subprocess.run(
+            [sys.executable, str(mece_script), "--checks", "CHK-01,CHK-02", "--json"],
+            capture_output=True, text=True
+        )
+        try:
+            out = json.loads(result.stdout)
+        except Exception:
+            out = {}
+        self.state["docs_mece"] = out
+        if result.returncode != 0:
+            summary = out.get("summary", {})
+            self.state["errors"].append(f"docs_mece: CHK failures {summary}")
+        self.state["steps_completed"].append("docs_mece")
+
     # ── Step 4: Scan ──────────────────────────────────────────────────────────
 
     def scan(self) -> None:
@@ -136,12 +157,13 @@ class SelfCare:
 
     def run(self, trigger: str = "manual") -> None:
         steps = [
-            ("observe",  self.observe),
-            ("validate", self.validate),
-            ("cleanup",  self.cleanup),
-            ("scan",     self.scan),
-            ("propose",  self.propose),
-            ("sync",     self.sync),
+            ("observe",    self.observe),
+            ("validate",   self.validate),
+            ("cleanup",    self.cleanup),
+            ("docs_mece",  self.docs_mece),
+            ("scan",       self.scan),
+            ("propose",    self.propose),
+            ("sync",       self.sync),
         ]
         for name, fn in steps:
             try:

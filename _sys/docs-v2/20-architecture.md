@@ -172,5 +172,5 @@ Input →  [Amygdala: risk check]
 - **Managed vs unmanaged junctions**: unmanaged junctions are reported by `pathmap prune` but NEVER auto-deleted
 - **Snapshot before apply**: `pathmap apply` always snapshots current state before mutating
 
-> Full spec: `_sys/docs/architecture/MECE_Directory_Architecture_Specification.md` (v2.6, 61KB)
-> Implementation blueprint: `_sys/docs/plans/sys-restructure-plan.md`
+> Full spec archived: `_sys/docs/history/` (v2.6 — pre-docs-v2 SSOT migration)
+> Implementation blueprint archived: `_sys/docs/history/` (superseded by docs-v2)

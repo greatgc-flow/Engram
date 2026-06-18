@@ -1,5 +1,5 @@
 # User Manual — Portable Multi-Peer Dev Environment
-> Condensed from USER_MANUAL.md. Full version → `_sys/docs/user/USER_MANUAL.md`.
+> Condensed from USER_MANUAL.md. Full version archived → `_sys/docs/history/` (pre-docs-v2 SSOT).
 
 ---
 

@@ -28,7 +28,7 @@ To prevent LLM hallucination in SSOT (docs-v2) and ensure safe self-healing.
 ## 4. Session Persistence (Continuity Score)
 To eliminate context drop and fragmentation.
 - **Stable Fingerprint:** Hash only normative compatibility fields (peer ID, approval-mode, skip-trust). Exclude environment-specific paths or incidental flags.
-- **Resume Failure Classification:** Classify errors as *Transient* (timeout/network) vs. *Permanent* (expired/invalid). Transient errors keep the session ID; Permanent errors 발급 a new one.
+- **Resume Failure Classification:** Classify errors as *Transient* (timeout/network) vs. *Permanent* (expired/invalid). Transient errors keep the session ID; Permanent errors issue a new one.
 - **Continuity Score:** Replace hard 4h/24h cut-offs with a weighted score (time, pending issues, active threads) to decide between RESUME, RESUME+FILL, or NEW.
 
 ## 5. Communication Framework (The Usage Contract)

@@ -33,7 +33,7 @@
 | EDGE-01b | `_sys/ai/routing-config.json` | ops/schemas.md §4 + resource-governance.md §10 | P3 |
 | EDGE-04 | `_sys/checks/check_docs_mece.py` | ops/governance.md §6.2 | P3 |
 | EDGE-05 | Lesson→docs-v2 graduation in self_care.py | self-evolution.md §5 Phase 6 | P4 |
-| NEW-01 | `_sys/ai/workspace-config.json` (schema) | this doc §3 | P1 |
+| NEW-01 | workspace-config.json (schema — per-workspace, not global) | this doc §3 | P1 |
 | NEW-02 | `_sys/ai/error-taxonomy.json` | this doc §6 | P2 |
 | NEW-03 | ContextGate v1.0 in hub.py | resource-governance.md §3 | P3 |
 | NEW-04 | hub.py modular extraction | this doc §4 | P4 |
@@ -361,7 +361,7 @@ Invoked by: self_care.py Phase 3, pre-commit hook (planned), manual
 | ID | Check | Implementation | Error Level |
 |----|-------|---------------|-------------|
 | CHK-01 | **Path existence**: all paths in docs-v2 exist on disk | grep `\`path/to/\`` in *.md → os.path.exists() | T3 |
-| CHK-02 | **INV-19 Korean detection**: no Korean in _sys/ except exempt | re.findall('[가-힣]') in files | T3 |
+| CHK-02 | **INV-19 Korean detection**: no Korean in _sys/ except exempt | regex Hangul range scan (skip code blocks) | T3 |
 | CHK-03 | **Coverage map**: if script changed, doc must change in same commit | git log --name-only + coverage map in governance.md §6.1 | T2 |
 | CHK-04 | **Anchor integrity**: `§N` / `#section` anchors exist in target | parse markdown headers → validate refs | T2 |
 | CHK-05 | **Value sync**: numeric constants in docs match protocol.json | regex extract numbers + compare | T2 |

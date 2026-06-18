@@ -1,4 +1,4 @@
-# Ops — Exhaustive Work Session (끝장 작업)
+# Ops — Exhaustive Work Session
 > Source: DEBATE_PROTOCOL.md v0.10 CANONICAL · 2026-06-14
 > Changelogs and appendices → _sys/docs/protocol/DEBATE_PROTOCOL.md (original)
 
@@ -94,7 +94,7 @@ Finding severity:
 
 ---
 
-## §16 — Exhaustive Work Session Rules (끝장 작업 거버넌스)
+## §16 — Exhaustive Work Session Rules
 
 1. **ROI Gate**: Continue rounds as long as HIGH findings are being resolved. Stop when 2 consecutive rounds produce only LOW or no findings.
 2. **Termination authority**: Active coordinator (not peer-specific) calls closure.

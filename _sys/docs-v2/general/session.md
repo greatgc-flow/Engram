@@ -85,7 +85,7 @@ Override: `hub.py ask --session-policy fresh` for independent cross-review calls
 ## 6. Handoff Rolling Rule
 
 When `handoff.md` exceeds **2KB**, trim as follows:
-1. Move all items in `[RECENT_COMPLETED]` marked `[DONE]` to `_archive/handoff-YYYYMMDD.md` (append).
+1. Move all items in `[RECENT_COMPLETED]` marked `[DONE]` to `_archive/handoff-{YYYYMMDD}.md` (append).
 2. Keep a max of 3 items in `[RECENT_COMPLETED]` after trim.
 3. `[CONSENSUS_HISTORY]` — keep last 5 rounds only; archive earlier rounds.
 4. Never delete `[GOAL]`, `[PENDING_ISSUES]`, or `[ACTIVE_THREADS]` without human instruction.
