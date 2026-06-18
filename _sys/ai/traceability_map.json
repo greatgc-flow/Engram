@@ -1,105 +1,154 @@
-﻿{
-  "_version": "1.1",
-  "_updated": "2026-06-13",
-  "_help": "Maps policy/document sections to config keys, runtime functions, and tests for auditability.",
+{
+  "_version": "1.2",
+  "_updated": "2026-06-18",
+  "_help": "Maps policy/document sections to config keys, runtime functions, and tests for auditability. All docs paths → _sys/docs-v2/ (SSOT). Archive: _sys/docs/history/.",
   "entries": [
     {
       "id": "collab-rate-guard",
-      "docs": ["PROTOCOL.md#active-constraints", "_sys/docs/protocol/collaboration_protocol.md#zero-token-boundary-and-governance"],
+      "docs": ["_sys/docs-v2/general/protocol.md#collab_rate", "_sys/docs-v2/10-invariants.md#inv-01"],
       "config": ["_sys/ai/protocol.json#/collab_rate", "_sys/ai/protocol.json#/operational_guard/collab_rate_guard"],
       "runtime": ["_sys/core/hub.py#_guard_action", "_sys/core/hub.py#_has_finalized_consensus"],
       "tests": ["_sys/tests/unit/test_hub.py#TestOperationalGuard"]
     },
     {
       "id": "p2p-ask-runtime",
-      "docs": ["_sys/docs/collaboration-mece-review.md#p2p-communication-without-message-or-time-limits"],
+      "docs": ["_sys/docs-v2/general/protocol.md#canonical-feedback-loop", "_sys/docs-v2/general/communication.md"],
       "config": ["_sys/ai/protocol.json#/runtime", "_sys/ai/protocol.json#/communication_policy"],
       "runtime": ["_sys/core/hub.py#action_ask", "_sys/core/hub.py#_ask_with_pty"],
       "tests": ["_sys/tests/unit/test_hub.py#TestEnhancedCollaboration"]
     },
     {
       "id": "feedback-loop",
-      "docs": ["_sys/docs/collaboration-mece-review.md#closed-feedback-loop-for-improvement-items"],
+      "docs": ["_sys/docs-v2/MOC.md#feedback-loop-closure-map", "_sys/docs-v2/general/protocol.md#canonical-feedback-loop"],
       "config": ["_sys/ai/protocol.json#/feedback_loop"],
       "runtime": ["_sys/core/hub.py#action_feedback_add", "_sys/core/hub.py#action_feedback_list", "_sys/core/hub.py#action_feedback_resolve"],
       "tests": ["_sys/tests/unit/test_hub.py#TestEnhancedCollaboration"]
     },
     {
       "id": "artifact-workflow",
-      "docs": ["_sys/docs/collaboration-mece-review.md#shared-artifact-collaboration-resultmd"],
+      "docs": ["_sys/docs-v2/general/communication.md#shared-artifact"],
       "config": ["_sys/ai/protocol.json#/artifact_workflow"],
       "runtime": ["_sys/core/hub.py#action_artifact_claim", "_sys/core/hub.py#action_artifact_status", "_sys/core/hub.py#action_artifact_finalize", "_sys/core/hub.py#_is_workspace_local"],
       "tests": ["_sys/tests/unit/test_hub.py#TestEnhancedCollaboration", "_sys/tests/unit/test_hub_v41_features.py#TestArtifactWorkspaceLocal"]
     },
     {
       "id": "canonical-voters",
-      "docs": ["PROTOCOL.md#quick-reference-composable-protocol-files"],
+      "docs": ["_sys/docs-v2/general/consensus.md#r10-unanimous", "_sys/docs-v2/10-invariants.md#pro-12"],
       "config": ["_sys/ai/protocol.json#/consensus/r10_voters"],
       "runtime": ["_sys/core/hub.py#main consensus-propose"],
       "tests": ["_sys/tests/unit/test_hub.py#TestConsensusProtocol"]
     },
     {
       "id": "model-profiles",
-      "docs": ["_sys/docs/architecture/workspace-connectivity-map.md#peer-model-designation"],
-      "config": ["_sys/ai/protocol.json#/model_profiles", "_sys/ai/orchestration.json#/hub_nodes"],
+      "docs": ["_sys/docs-v2/general/resource-governance.md#node-architecture", "_sys/docs-v2/ops/schemas.md#2-peersjson"],
+      "config": ["_sys/ai/model_profiles.json", "_sys/ai/orchestration.json#/hub_nodes"],
       "runtime": ["_sys/core/hub.py#_load_nodes", "_sys/core/hub.py#action_ask"],
       "tests": ["_sys/tests/unit/test_hub.py#TestAsk"]
     },
     {
       "id": "semi-governed-actions",
-      "docs": ["_sys/ai/protocol.json#/semi_governed_hub_actions", "_sys/ai/protocol.json#/semi_governed_rule"],
+      "docs": ["_sys/docs-v2/10-invariants.md#inv-01", "_sys/docs-v2/general/protocol.md#collab_rate"],
       "config": ["_sys/ai/protocol.json#/semi_governed_hub_actions", "_sys/ai/protocol.json#/phase_action_matrix"],
       "runtime": ["_sys/core/hub.py#_guard_action", "_sys/core/hub.py#_current_coordinator_health", "_sys/core/hub.py#_action_group"],
       "tests": ["_sys/tests/unit/test_hub.py#TestOperationalGuard"]
     },
     {
       "id": "declarative-peer-status",
-      "docs": ["_sys/ai/status_checks.json"],
+      "docs": ["_sys/docs-v2/general/health.md", "_sys/docs-v2/specific/gc.md#health-auto-remediation"],
       "config": ["_sys/ai/status_checks.json", "_sys/ai/lifecycle_policy.json#/identity/node_to_peer"],
       "runtime": ["_sys/core/hub.py#action_peer_status", "_sys/core/hub.py#_run_status_check"],
       "tests": ["_sys/tests/unit/test_hub_v41_features.py#TestRunStatusCheck", "_sys/tests/unit/test_hub_v41_features.py#TestDeriveGateState", "_sys/tests/unit/test_hub_v41_features.py#TestPeerStatusDeclarative"]
     },
     {
       "id": "model-profile-validation",
-      "docs": ["_sys/ai/model_profiles.json"],
-      "config": ["_sys/ai/model_profiles.json", "_sys/ai/orchestration.json#/hub_nodes"],
+      "docs": ["_sys/docs-v2/general/resource-governance.md#continuous-update-model-registry"],
+      "config": ["_sys/ai/model_profiles.json", "_sys/ai/model-registry.json", "_sys/ai/orchestration.json#/hub_nodes"],
       "runtime": ["_sys/core/hub.py#action_validate_profiles", "_sys/core/hub.py#_resolve_profile_id", "_sys/core/hub.py#_load_model_profiles"],
       "tests": ["_sys/tests/unit/test_hub_v41_features.py#TestResolveProfileId"]
     },
     {
       "id": "ask-provenance",
-      "docs": ["_sys/ai/protocol.json#/runtime/provenance_logs"],
-      "config": ["_sys/ai/protocol.json#/runtime/provenance_logs"],
+      "docs": ["_sys/docs-v2/ops/logging.md#ipc-log", "_sys/docs-v2/ops/logging.md#cost-log"],
+      "config": ["_sys/ai/protocol.json#/runtime/provenance_logs", "_sys/ai/logging-config.json"],
       "runtime": ["_sys/core/hub.py#_append_ask_history", "_sys/core/hub.py#ensure_ai_dir"],
       "tests": ["_sys/tests/unit/test_hub.py#TestAsk", "_sys/tests/unit/test_hub_v41_features.py#TestRoutingMetrics"]
     },
     {
       "id": "routing-metrics",
-      "docs": ["_sys/ai/collaboration_loop_bindings.json#/metrics"],
-      "config": ["_sys/ai/collaboration_loop_bindings.json#/metrics/active_logs"],
+      "docs": ["_sys/docs-v2/general/resource-governance.md#cost-tracking-and-quality-measurement"],
+      "config": ["_sys/ai/collaboration_loop_bindings.json#/metrics", "_sys/ai/routing-config.json"],
       "runtime": ["_sys/core/hub.py#_record_routing_metric", "_sys/core/hub.py#action_ask", "_sys/core/hub.py#action_ask_coordinator"],
       "tests": ["_sys/tests/unit/test_hub_v41_features.py#TestRoutingMetrics"]
     },
     {
       "id": "virtual-nodes",
-      "docs": ["_sys/ai/orchestration.json#/hub_nodes", "_sys/ai/model_profiles.json#/profiles/cc.deep", "_sys/ai/model_profiles.json#/profiles/gc.plan"],
+      "docs": ["_sys/docs-v2/general/resource-governance.md#node-architecture", "_sys/docs-v2/general/resource-governance.md#5-layer-routing-architecture"],
       "config": ["_sys/ai/orchestration.json#/hub_nodes", "_sys/ai/model_profiles.json"],
-      "runtime": ["_sys/core/hub.py#action_ask (health_peer delegation)", "_sys/core/hub.py#_load_nodes"],
+      "runtime": ["_sys/core/hub.py#action_ask", "_sys/core/hub.py#_load_nodes"],
       "tests": ["_sys/tests/unit/test_hub.py#TestAsk"]
     },
     {
       "id": "declarative-lifecycle-policy",
-      "docs": ["_sys/ai/lifecycle_policy.json"],
+      "docs": ["_sys/docs-v2/general/health.md", "_sys/docs-v2/10-invariants.md#inv-15"],
       "config": ["_sys/ai/lifecycle_policy.json"],
       "runtime": ["_sys/core/hub.py#_load_lifecycle_policy", "_sys/core/hub.py#_node_to_peer_map", "_sys/core/hub.py#_operational_guard_cfg"],
       "tests": ["_sys/tests/unit/test_hub.py#TestLifecycleActions"]
     },
     {
       "id": "workspace-environment",
-      "docs": ["README.md#configuration-and-audit-maps", "_sys/docs/architecture/workspace-environment.md"],
-      "config": ["_sys/ai/peers.json", "_sys/ai/orchestration.json", "_sys/ai/lifecycle_policy.json", "_sys/core/hub_config.json"],
+      "docs": ["_sys/docs-v2/20-architecture.md", "_sys/docs-v2/ops/impl-plan.md#2-workspace-scoping-architecture"],
+      "config": ["_sys/ai/peers.json", "_sys/ai/orchestration.json", "_sys/ai/infra.json"],
       "runtime": ["_sys/cli/msg.bat", "_sys/core/hub.py", "_sys/cli/*_entry.py"],
       "tests": ["_sys/tests/unit/test_config.py", "_sys/tests/unit/test_launcher_paths.py", "_sys/tests/unit/test_system_lifecycle.py"]
+    },
+    {
+      "id": "self-evolution-selfhealer",
+      "docs": ["_sys/docs-v2/general/self-evolution.md#selfhealer-auto-remediation", "_sys/docs-v2/10-invariants.md#inv-15"],
+      "config": ["_sys/ai/protocol.json#/health", "_sys/ai/lifecycle_policy.json#/health_lifecycle"],
+      "runtime": ["_sys/checks/self_care.py", "_sys/checks/saturation_scan.py", "_sys/checks/sync_docs.py"],
+      "tests": []
+    },
+    {
+      "id": "lesson-graduation",
+      "docs": ["_sys/docs-v2/general/self-evolution.md#phase-6", "_sys/docs-v2/_exceptions/README.md#edge-05"],
+      "config": ["_sys/ai/governance_params.json#lesson_graduation_threshold"],
+      "runtime": ["_sys/checks/self_care.py#_check_lesson_graduation"],
+      "tests": []
+    },
+    {
+      "id": "context-gate",
+      "docs": ["_sys/docs-v2/general/resource-governance.md#contextgate-v10"],
+      "config": ["_sys/ai/governance_params.json#context_gate_warn_pct", "_sys/ai/model-registry.json"],
+      "runtime": ["_sys/core/hub_context.py#ContextGate"],
+      "tests": ["_sys/tests/unit/test_hub_context.py"]
+    },
+    {
+      "id": "workspace-scoping",
+      "docs": ["_sys/docs-v2/ops/impl-plan.md#2-workspace-scoping-architecture"],
+      "config": ["workspace/{name}/specific/config/workspace-config.json", "_sys/ai/infra.json"],
+      "runtime": ["_sys/core/hub.py#action_context_fill"],
+      "tests": []
+    },
+    {
+      "id": "docs-mece-check",
+      "docs": ["_sys/docs-v2/ops/governance.md#62-validation", "_sys/docs-v2/ops/impl-plan.md#5-check_docs_mecepy-implementation-spec"],
+      "config": ["_sys/ai/governance_params.json#docs_mece_checks_enabled"],
+      "runtime": ["_sys/checks/check_docs_mece.py"],
+      "tests": []
+    },
+    {
+      "id": "error-visibility",
+      "docs": ["_sys/docs-v2/ops/impl-plan.md#6-error-visibility-design"],
+      "config": ["_sys/ai/error-taxonomy.json", "_sys/ai/governance_params.json#error_show_stacktrace"],
+      "runtime": ["_sys/core/hub.py#_escalate_error"],
+      "tests": []
+    },
+    {
+      "id": "inv-19-language-policy",
+      "docs": ["_sys/docs-v2/10-invariants.md#inv-19", "_sys/docs-v2/ops/impl-plan.md#5-check_docs_mecepy-implementation-spec"],
+      "config": ["_sys/ai/governance_params.json#docs_mece_exempt_paths"],
+      "runtime": ["_sys/checks/check_docs_mece.py#CHK-02"],
+      "tests": []
     }
   ],
   "known_external_limits": [

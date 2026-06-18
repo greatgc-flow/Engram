@@ -5,10 +5,15 @@
     "Budget & Compute",
     "Consensus & Decisioning",
     "Context & Memory",
-    "Reliability & Governance"
+    "Reliability & Governance",
+    "Context Gate",
+    "Self-Evolution",
+    "Error Visibility",
+    "Docs MECE"
   ],
-  "_version": "11.0",
-  "_key_count": 47,
+  "_version": "12.0",
+  "_key_count": 63,
+  "_updated": "2026-06-18",
   "last_review_ts": null,
   "collaboration_depth": 10,
   "consensus_timeout": 30,
@@ -56,7 +61,35 @@
   "post_mortem_sla_hours": 48,
   "delivery_retry_limit": 3,
   "lazy_init_enabled": 1,
-  "workspace_template_path": "./_sys/templates/workspace/",
-  "common_space_path": "./_sys/common/",
-  "workspace_connection_schema": "./_sys/paths.json"
+  "workspace_template_path": "_sys/templates/workspace_base",
+  "common_space_path": "_sys/ai/common",
+  "workspace_specific_subdir": "specific",
+  "workspace_config_file": "specific/config/workspace-config.json",
+
+  "_section_context_gate": "ContextGate v1.0 — token estimation thresholds",
+  "context_gate_enabled": true,
+  "context_gate_warn_pct": 0.80,
+  "context_gate_failover_pct": 0.95,
+
+  "_section_self_evolution": "Self-Evolution Phase 5+6 — lesson graduation",
+  "lesson_graduation_threshold": 3,
+  "lesson_graduation_window_days": 7,
+  "lesson_graduation_target_doc": "_sys/docs-v2/10-invariants.md",
+  "lesson_graduation_auto_propose": true,
+
+  "_section_error_visibility": "Error tier display and escalation",
+  "error_show_stacktrace": true,
+  "error_5whys_auto_log": true,
+  "error_escalate_after_n": 2,
+
+  "_section_docs_mece": "check_docs_mece.py configuration",
+  "docs_mece_exempt_paths": [
+    "_archive/",
+    "_sys/docs/history/",
+    "_sys/claude/config/CLAUDE.md",
+    "Garbage/"
+  ],
+  "docs_mece_checks_enabled": ["CHK-01", "CHK-02", "CHK-03", "CHK-04", "CHK-05", "CHK-06", "CHK-07"],
+  "docs_mece_fail_on": ["CHK-01", "CHK-02"],
+  "docs_mece_coverage_map": "_sys/docs-v2/ops/governance.md"
 }

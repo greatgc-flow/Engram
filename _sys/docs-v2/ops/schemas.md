@@ -196,7 +196,96 @@
 
 ---
 
-## 7. Schema Validation
+## 5. workspace-config.json
+
+**Path:** `workspace/{name}/specific/config/workspace-config.json`
+**Purpose:** Per-workspace overrides of governance_params.json and routing-config.json. Scope C in three-scope model.
+**Change requires:** R:0 (per-workspace user authority)
+**See:** ops/impl-plan.md §2 (Workspace Scoping Architecture)
+
+```jsonc
+{
+  "_version": "1.0",
+  "_workspace": "{name}",
+  "_inherits": "_sys/ai/protocol.json",    // parent config
+  "overrides": {
+    "collaboration_depth": null,           // null = inherit
+    "quality_mode": null,
+    "task_delegation_threshold": null
+  },
+  "agents": {
+    "include_common": true,               // include Scope A: _sys/ai/common/agents/
+    "workspace_agents_dir": "specific/agents"
+  },
+  "skills": {
+    "include_common": true,
+    "workspace_skills_dir": "specific/skills"
+  },
+  "routing": {
+    "preferred_peer": null,
+    "task_overrides": {}
+  },
+  "logging": {
+    "console_level": "INFO",
+    "file_enabled": true
+  }
+}
+```
+
+---
+
+## 6. logging-config.json
+
+**Path:** `_sys/ai/logging-config.json`
+**Purpose:** 7-type logging taxonomy with rolling policy configuration.
+**Change requires:** R:3
+**See:** ops/logging.md (full type specs), ops/impl-plan.md §8
+
+Key structure:
+```jsonc
+{
+  "log_dir": "_sys/data/logs",
+  "types": {
+    "ipc-log":       {"file": "ipc-log.jsonl",      "retention_days": 7,  "max_mb": 50},
+    "cost-log":      {"file": "cost-log.jsonl",      "retention_days": 90, "max_mb": null},
+    "error-log":     {"file": "error-log.jsonl",     "retention_days": 30, "max_mb": 10},
+    "self-care-log": {"file": "self-care-log.jsonl", "retention_days": 30, "max_mb": 10}
+  },
+  "rolling": {
+    "strategy": "size_and_age",
+    "archive_format": "{name}-{date}.jsonl.gz"
+  }
+}
+```
+
+---
+
+## 7. error-taxonomy.json
+
+**Path:** `_sys/ai/error-taxonomy.json`
+**Purpose:** Maps error types to escalation tier, retry policy, 5-Whys templates.
+**Change requires:** R:5
+**See:** ops/impl-plan.md §6
+
+Key structure:
+```jsonc
+{
+  "tiers": {
+    "T0": {"console": false, "peer_escalate": false},
+    "T3": {"console": true,  "peer_escalate": true, "inv": "INV-15"},
+    "T4": {"console": true,  "peer_escalate": true, "halt": true, "human_gate": true}
+  },
+  "errors": {
+    "PEER_TIMEOUT":        {"tier": "T2", "retry": true,  "5whys": "peer_timeout"},
+    "CONSENSUS_DEADLOCK":  {"tier": "T4", "retry": false, "human_required": true},
+    "INV_VIOLATION":       {"tier": "T4", "retry": false}
+  }
+}
+```
+
+---
+
+## 9. Schema Validation
 
 All schemas listed here should be validated against their respective JSON files:
 - `_sys/ai/collaboration_policy.schema.json` — validates collab policy structure

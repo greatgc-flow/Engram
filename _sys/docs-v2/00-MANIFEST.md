@@ -49,6 +49,7 @@ For human onboarding: `user/manual.md`
 | `specific/gc.md` | Gemini CLI: dirs, gate, delta flags | 2026-06-16 |
 | `specific/cx.md` | Codex: dirs, entry point, delta flags | 2026-06-16 |
 | `specific/ag.md` | AntiGravity: INACTIVE state + PRO-15 path | 2026-06-16 |
+| **`ops/impl-plan.md`** | **Implementation blueprint: config layer, workspace arch, hub decomp, check automation, error visibility** | **2026-06-18** |
 | `ops/governance.md` | Garbage/, retention, proposal lifecycle (§5), Doc-as-Code (§6) | 2026-06-18 |
 | `ops/logging.md` | IPC history · console capture · per-node detail · rolling policy · 5-Whys | 2026-06-18 |
 | `ops/skills.md` | Hub skill catalog, invocation, registration | 2026-06-18 |

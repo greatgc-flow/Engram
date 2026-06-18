@@ -62,6 +62,7 @@ Peer: search this table first. Load only the file(s) relevant to your current ta
 | Governance & proposals | `ops/governance.md` | Garbage/, retention, proposal lifecycle, Doc-as-Code |
 | Skill system | `ops/skills.md` | hub skills, catalog, invocation, registration |
 | JSON schemas | `ops/schemas.md` | protocol.json, peers.json, model-registry, routing-config, health.json |
+| **Implementation plan** | **`ops/impl-plan.md`** | **Pre-code blueprint: config layer, workspace arch, hub decomp, Phase 0-6 sequence** |
 | Exhaustive work rules | `ops/debate.md` | ROI gate, exhaustive work sessions, DIR-001 |
 | Failure modes | `ops/anti-patterns.md` | AP-01~AP-21, peer failure taxonomy |
 | Audit checklist | `ops/audit-checklist.md` | MECE audit, release checklist, bootstrap checks |

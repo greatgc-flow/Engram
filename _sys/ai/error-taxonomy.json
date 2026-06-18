@@ -1,0 +1,53 @@
+{
+  "_version": "1.0",
+  "_updated": "2026-06-18",
+  "_help": "Maps error types to escalation tier and remediation. Read by hub.py. See ops/impl-plan.md §6.",
+
+  "tiers": {
+    "T0": {"label": "silent",  "log": true,  "console": false, "peer_escalate": false, "halt": false},
+    "T1": {"label": "info",    "log": true,  "console": true,  "peer_escalate": false, "halt": false},
+    "T2": {"label": "warn",    "log": true,  "console": true,  "peer_escalate": false, "halt": false},
+    "T3": {"label": "error",   "log": true,  "console": true,  "peer_escalate": true,  "halt": false, "inv": "INV-15"},
+    "T4": {"label": "fatal",   "log": true,  "console": true,  "peer_escalate": true,  "halt": true,  "human_gate": true}
+  },
+
+  "errors": {
+    "PEER_TIMEOUT":         {"tier": "T2", "retry": true,  "category": "TRANSIENT",    "5whys": "peer_timeout"},
+    "PEER_RATE_LIMIT":      {"tier": "T2", "retry": false, "category": "RESOURCE",     "5whys": "resource_limit"},
+    "PEER_RED_GATE":        {"tier": "T3", "retry": false, "category": "HEALTH",       "5whys": "health_degraded"},
+    "PEER_NOT_FOUND":       {"tier": "T3", "retry": false, "category": "CONFIG",       "5whys": "peer_missing"},
+    "PEER_REFUSAL":         {"tier": "T2", "retry": false, "category": "POLICY",       "5whys": "peer_refusal"},
+    "CONFIG_NOT_FOUND":     {"tier": "T3", "retry": false, "category": "CONFIG",       "5whys": "config_missing"},
+    "CONFIG_INVALID":       {"tier": "T3", "retry": false, "category": "CONFIG",       "5whys": "config_corrupt"},
+    "ROUTING_NO_ELIGIBLE":  {"tier": "T3", "retry": false, "category": "ROUTING",      "5whys": "no_peer_available"},
+    "CONTEXT_GATE_REJECT":  {"tier": "T2", "retry": false, "category": "RESOURCE",     "5whys": "context_too_large"},
+    "CONSENSUS_TIMEOUT":    {"tier": "T3", "retry": true,  "category": "CONSENSUS",    "5whys": "consensus_stall"},
+    "CONSENSUS_DEADLOCK":   {"tier": "T4", "retry": false, "category": "CONSENSUS",    "5whys": "consensus_deadlock", "human_required": true},
+    "INV_VIOLATION":        {"tier": "T4", "retry": false, "category": "INVARIANT",    "5whys": "invariant_breach"},
+    "DOCS_MECE_FAIL":       {"tier": "T3", "retry": false, "category": "DOCS",         "5whys": "docs_mece_check_fail"},
+    "LESSON_GRAD_FAIL":     {"tier": "T2", "retry": true,  "category": "SELF_EVOLVE",  "5whys": "lesson_graduation_fail"},
+    "HUB_INTERNAL":         {"tier": "T4", "retry": false, "category": "INTERNAL",     "5whys": "hub_internal_error"},
+    "WORKSPACE_INIT_FAIL":  {"tier": "T3", "retry": false, "category": "WORKSPACE",    "5whys": "workspace_init_fail"}
+  },
+
+  "5whys_templates": {
+    "peer_timeout":          ["Why did peer not respond in time?", "Why was the query too large or complex?", "Why was ContextGate not applied?", "Why was no smaller model attempted?", "Why was health check insufficient?"],
+    "resource_limit":        ["Why was rate limit hit?", "Why was daily budget not tracked?", "Why was quota not monitored before the call?", "Why was fallback not attempted?", "Why was cost_log not reviewed?"],
+    "health_degraded":       ["Why is peer RED/gate_closed?", "Why was the error not caught earlier?", "Why was peer_recover not triggered?", "Why was health.json stale?", "Why was monitoring interval too long?"],
+    "config_missing":        ["Why is the config file missing?", "Why was EDGE-01 not resolved?", "Why was infra.json not checked at startup?", "Why was workspace-init not run?", "Why is there no config validation on startup?"],
+    "config_corrupt":        ["Why is the JSON malformed?", "Why was no schema validation applied?", "Why was the file written without atomicity?", "Why was no backup kept?", "Why was the write not logged?"],
+    "no_peer_available":     ["Why are no peers eligible?", "Why are all peers RED?", "Why was health not checked before routing?", "Why is there no local fallback?", "Why was human escalation not triggered?"],
+    "context_too_large":     ["Why is the context too large?", "Why was lazy loading not applied?", "Why were all docs included eagerly?", "Why was ContextGate threshold too high?", "Why was context not summarized first?"],
+    "consensus_stall":       ["Why did consensus not complete?", "Why did a voter not respond?", "Why was timeout too short?", "Why was no tiebreak applied?", "Why was the subject too ambiguous?"],
+    "consensus_deadlock":    ["Why are votes split?", "Why was tiebreak rule not applied?", "Why was human gate not triggered immediately?", "Why were voters unable to find common ground?", "Why was the proposal not refined before voting?"],
+    "invariant_breach":      ["Which invariant was violated?", "Why was the guard not enforced?", "Why was the action allowed to proceed?", "Why was the invariant not checked before execution?", "Why is the invariant not in 10-invariants.md?"],
+    "docs_mece_check_fail":  ["Which check failed (CHK-N)?", "Why was the doc path broken?", "Why was Korean text introduced?", "Why was coverage map not updated?", "Why was commit made without running check?"],
+    "hub_internal_error":    ["What Python exception occurred?", "Why was the exception not caught at a higher level?", "Why was the input not validated?", "Why was the state inconsistent?", "Why was no recovery path available?"]
+  },
+
+  "console_format": {
+    "prefix": "━━ {tier_label} ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "suffix": "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "body_template": "유형: {error_type} ({tier})\n피어: {peer} | 작업: {action}\n원인: {message}\n해결: {remediation}"
+  }
+}

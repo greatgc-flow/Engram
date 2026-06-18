@@ -1,0 +1,34 @@
+{
+  "_version": "1.0",
+  "_workspace": "{PROJECT_NAME}",
+  "_created_at": "{CREATED_AT}",
+  "_inherits": "_sys/ai/protocol.json",
+  "_help": "Per-workspace config overrides. null = use parent value. See _sys/docs-v2/ops/impl-plan.md §2.",
+
+  "overrides": {
+    "collaboration_depth": null,
+    "quality_mode": null,
+    "task_delegation_threshold": null,
+    "consensus_timeout": null
+  },
+
+  "agents": {
+    "include_common": true,
+    "workspace_agents_dir": "specific/agents"
+  },
+
+  "skills": {
+    "include_common": true,
+    "workspace_skills_dir": "specific/skills"
+  },
+
+  "routing": {
+    "preferred_peer": null,
+    "task_overrides": {}
+  },
+
+  "logging": {
+    "console_level": "INFO",
+    "file_enabled": true
+  }
+}

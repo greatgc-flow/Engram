@@ -1,0 +1,107 @@
+{
+  "_version": "1.0",
+  "_updated": "2026-06-18",
+  "_help": "7-type logging configuration. Rolling policy: size_and_age. Read by hub_logging.py. See ops/logging.md.",
+
+  "log_dir": "_sys/data/logs",
+  "debug_mode_env": "DEBUG",
+  "console_encoding": "utf-8",
+
+  "types": {
+    "ipc-log": {
+      "file": "ipc-log.jsonl",
+      "retention_days": 7,
+      "max_mb": 50,
+      "level": "INFO",
+      "description": "Full IPC send/receive history. Captures query + response before file deletion."
+    },
+    "console-log": {
+      "file": "console-log.jsonl",
+      "retention_days": 30,
+      "max_mb": 20,
+      "level": "INFO",
+      "description": "Console output to user (channel: user/system/debug)."
+    },
+    "cost-log": {
+      "file": "cost-log.jsonl",
+      "retention_days": 90,
+      "max_mb": null,
+      "level": "INFO",
+      "description": "Per-ask cost, quality score, latency. Feeds self_care.py ROI analysis."
+    },
+    "error-log": {
+      "file": "error-log.jsonl",
+      "retention_days": 30,
+      "max_mb": 10,
+      "level": "WARN",
+      "description": "T2+ errors with 5-Whys template. Feeds SelfHealer."
+    },
+    "reasoning-log": {
+      "file": "reasoning-log.jsonl",
+      "retention_days": 14,
+      "max_mb": 30,
+      "level": "DEBUG",
+      "description": "cx/cc extended reasoning token usage. Budget efficiency tracking."
+    },
+    "model-drift": {
+      "file": "model-drift.jsonl",
+      "retention_days": null,
+      "max_mb": 5,
+      "level": "WARN",
+      "description": "model-registry.json validation failures. Feeds Dual-Vector pipeline §11."
+    },
+    "self-care-log": {
+      "file": "self-care-log.jsonl",
+      "retention_days": 30,
+      "max_mb": 10,
+      "level": "INFO",
+      "description": "self_care.py execution results per phase."
+    }
+  },
+
+  "rolling": {
+    "strategy": "size_and_age",
+    "archive_dir": "archive",
+    "archive_format": "{name}-{date}.jsonl.gz",
+    "compress": true,
+    "check_interval_hours": 24
+  },
+
+  "schemas": {
+    "ipc-log": {
+      "ts": "ISO8601",
+      "direction": "send|receive",
+      "peer_id": "string",
+      "query_file": "string|null",
+      "query_preview": "string (first 500 chars)",
+      "response_preview": "string|null (first 500 chars)",
+      "elapsed_sec": "number|null",
+      "success": "boolean"
+    },
+    "cost-log": {
+      "ts": "ISO8601",
+      "peer_id": "string",
+      "model_id": "string",
+      "profile_id": "string|null",
+      "task_type": "string|null",
+      "input_tokens": "number|null",
+      "output_tokens": "number|null",
+      "reasoning_tokens": "number|null",
+      "cost_usd": "number|null",
+      "quality_score": "number|null (0-10)",
+      "latency_sec": "number|null",
+      "success": "boolean"
+    },
+    "error-log": {
+      "ts": "ISO8601",
+      "error_type": "string (from error-taxonomy.json)",
+      "tier": "T0|T1|T2|T3|T4",
+      "peer": "string|null",
+      "action": "string|null",
+      "message": "string",
+      "stacktrace": "string|null",
+      "5whys_template": "string|null",
+      "resolved": "boolean"
+    }
+  }
+}

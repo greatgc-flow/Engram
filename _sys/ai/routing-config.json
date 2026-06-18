@@ -1,0 +1,96 @@
+{
+  "_version": "1.0",
+  "_updated": "2026-06-18",
+  "_help": "QUALITY_MODE dial + task-type → node routing weights. Change QUALITY_MODE: R:3. Change routing_weights: R:5. See ops/schemas.md §4 and resource-governance.md §10.",
+
+  "quality_mode": 5,
+  "quality_mode_override": null,
+
+  "task_overrides": {
+    "ESCALATION": 10,
+    "FAST_QA": 0,
+    "IMPLEMENT": 5,
+    "LARGE_CORPUS": 8,
+    "COST_SENSITIVE": 2,
+    "SECURITY_SENSITIVE": 10,
+    "CODE_MUTATION": 5,
+    "VERIFICATION": 5,
+    "SUMMARIZATION": 3,
+    "HEALTH_CHECK": 0
+  },
+
+  "routing_weights": {
+    "R01": {
+      "_label": "Router/Triage",
+      "primary": "cc::claude-haiku-4-5-20251001::none::none",
+      "fallback": "gc::gemini-3-flash::none::none",
+      "weight": 1.0
+    },
+    "R02": {
+      "_label": "Consensus Framer",
+      "primary": "gc::gemini-2.5-pro::medium::none",
+      "fallback": "cc::claude-sonnet-4-6::medium::none",
+      "weight": 1.0
+    },
+    "R03": {
+      "_label": "Planner/Architect",
+      "primary": "cc::claude-sonnet-4-6::medium::none",
+      "fallback": "cx::gpt-5.5::medium::none",
+      "weight": 1.0
+    },
+    "R04": {
+      "_label": "Large Corpus Analyst",
+      "primary": "gc::gemini-3-pro::high::none",
+      "fallback": "cc::claude-opus-4-8::high::none",
+      "weight": 1.0
+    },
+    "R05": {
+      "_label": "Deep Reasoner",
+      "primary": "cc::claude-opus-4-8::max::none",
+      "fallback": "cx::o3-pro::high::none",
+      "weight": 1.0
+    },
+    "R06": {
+      "_label": "Large Corpus Research",
+      "primary": "gc::gemini-3-pro::max::none",
+      "fallback": "cc::claude-opus-4-8::high::none",
+      "weight": 1.0
+    },
+    "R07": {
+      "_label": "Code Mutator",
+      "primary": "cx::gpt-5.5::high::danger-full-access",
+      "fallback": "cc::claude-sonnet-4-6::medium::none",
+      "weight": 1.0
+    },
+    "R08": {
+      "_label": "Test Author",
+      "primary": "cc::claude-sonnet-4-6::low::none",
+      "fallback": "gc::gemini-3-flash::none::none",
+      "weight": 1.0
+    },
+    "R09": {
+      "_label": "Verifier",
+      "primary": "cc::claude-sonnet-4-6::medium::none",
+      "fallback": "gc::gemini-2.5-pro::medium::none",
+      "weight": 1.0
+    },
+    "R10": {
+      "_label": "Health Monitor",
+      "primary": "cc::claude-haiku-4-5-20251001::none::none",
+      "fallback": "gc::gemini-3-flash::none::none",
+      "weight": 1.0
+    },
+    "R11": {
+      "_label": "Knowledge Synthesizer",
+      "primary": "cc::claude-sonnet-4-6::medium::none",
+      "fallback": "gc::gemini-2.5-pro::medium::none",
+      "weight": 1.0
+    },
+    "R12": {
+      "_label": "Fast QA",
+      "primary": "cc::claude-haiku-4-5-20251001::none::none",
+      "fallback": "cx::gpt-5.5::none::none",
+      "weight": 1.0
+    }
+  }
+}
