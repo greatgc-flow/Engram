@@ -606,6 +606,18 @@ Config in governance_params.json (add these keys):
 4. ✅ protocol.json v1.2 — autonomous_maintenance section (Phase 1 of self-evolution.md)
 5. ✅ traceability_map.json v1.3 — version bump + 4 new runtime entries
 
+### Phase TDD: Comprehensive Test Coverage ✅ DONE (2026-06-18)
+1. ✅ test_hub_logging.py — 47 tests, HubLogger 7-type JSONL + rolling/gzip
+2. ✅ test_hub_error.py — 37 tests, T0–T4 taxonomy, sys.exit(4), 5-Whys
+3. ✅ test_check_docs_mece.py — 44 tests, CHK-01~07 all edge cases
+4. ✅ test_hub.py fixes — HubError T4 exit isolation, EPERM exit code
+5. ✅ test_hub_peer.py fixes — build_cmd tuple API, stdin mode
+6. ✅ test_hub_v41_features.py fixes — lease sweep HubError isolation
+7. ✅ hub.py fixes — _write_json_atomic race condition (UUID + backoff), ctx.get() KeyError
+8. ✅ README.md rewrite — feature-first, collab_rate table, follow-along examples
+9. ✅ remaining-items.md — tech debt + improvement backlog
+10. ✅ **Total: 688 tests, 0 failures**
+
 ---
 
 ## 11. Completion Criteria

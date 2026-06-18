@@ -134,7 +134,7 @@
       "docs": ["_sys/docs-v2/ops/governance.md#62-validation", "_sys/docs-v2/ops/impl-plan.md#5-check_docs_mecepy-implementation-spec"],
       "config": ["_sys/ai/governance_params.json#docs_mece_checks_enabled"],
       "runtime": ["_sys/checks/check_docs_mece.py"],
-      "tests": []
+      "tests": ["_sys/tests/unit/test_check_docs_mece.py"]
     },
     {
       "id": "error-visibility",
@@ -148,7 +148,7 @@
       "docs": ["_sys/docs-v2/10-invariants.md#inv-19", "_sys/docs-v2/ops/impl-plan.md#5-check_docs_mecepy-implementation-spec"],
       "config": ["_sys/ai/governance_params.json#docs_mece_exempt_paths"],
       "runtime": ["_sys/checks/check_docs_mece.py#CHK-02"],
-      "tests": []
+      "tests": ["_sys/tests/unit/test_check_docs_mece.py#TestChk02Inv19Korean"]
     },
     {
       "id": "peer-adapter-interface",

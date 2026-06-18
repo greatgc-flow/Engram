@@ -196,10 +196,10 @@ Traceability: `traceability_map.json` entry `context-gate`
 
 | Priority | Item | File | Status |
 |----------|------|------|--------|
-| P0 | Update model_profiles.json F-01, F-02 | model_profiles.json | **TODO** |
-| P0 | Replace o4-mini with gpt-5.5 in orchestration.json | orchestration.json | **TODO** |
-| P1 | Implement hub_context.py ContextGate | _sys/core/hub_context.py | OPEN |
-| P1 | Add CJK-aware token estimator | hub_context.py | OPEN |
+| P0 | Update model_profiles.json F-01, F-02 | model_profiles.json | **DONE** (2026-06-18) |
+| P0 | Replace o4-mini with gpt-5.5 in orchestration.json | orchestration.json | **DONE** (2026-06-18) |
+| P1 | Implement hub_context.py ContextGate | _sys/core/hub_context.py | **DONE** (v1.0, tested) |
+| P1 | Add CJK-aware token estimator | hub_context.py | **DONE** |
 | P2 | Calibrate against cx usage.output_tokens_details | hub_logging.py | OPEN |
 | P3 | Auto-prune context blocks by priority | hub_context.py | OPEN |
 
