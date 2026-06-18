@@ -143,6 +143,47 @@ class TestCodexAdapter:
         result = self.adapter.parse_output("plain output", node)
         assert result == "plain output"
 
+    def test_extract_usage_returns_reasoning_tokens(self):
+        response = json.dumps({
+            "usage": {
+                "input_tokens": 500,
+                "output_tokens": 200,
+                "output_tokens_details": {"reasoning_tokens": 150},
+            },
+            "messages": [{"role": "assistant", "content": "ok"}],
+        })
+        usage = self.adapter.extract_usage(response, self.node)
+        assert usage["input_tokens"] == 500
+        assert usage["output_tokens"] == 200
+        assert usage["reasoning_tokens"] == 150
+
+    def test_extract_usage_no_reasoning_tokens(self):
+        response = json.dumps({
+            "usage": {"input_tokens": 100, "output_tokens": 50},
+            "messages": [{"role": "assistant", "content": "hi"}],
+        })
+        usage = self.adapter.extract_usage(response, self.node)
+        assert usage["reasoning_tokens"] is None
+
+    def test_extract_usage_without_json_flag_returns_empty(self):
+        node = {"invoke": "codex", "invoke_args": ["exec", "{query}"]}
+        usage = self.adapter.extract_usage('{"usage": {"input_tokens": 1}}', node)
+        assert usage == {}
+
+    def test_extract_usage_invalid_json_returns_empty(self):
+        usage = self.adapter.extract_usage("not json", self.node)
+        assert usage == {}
+
+
+# ── BaseAdapter extract_usage ─────────────────────────────────────────────────
+
+class TestBaseAdapterExtractUsage:
+    def test_base_adapter_returns_empty(self):
+        from hub_peer import BaseAdapter
+        adapter = BaseAdapter()
+        node = {"invoke": "claude", "invoke_args": ["-p", "{query}"]}
+        assert adapter.extract_usage("any text", node) == {}
+
 
 # ── VirtualAdapter ────────────────────────────────────────────────────────────
 

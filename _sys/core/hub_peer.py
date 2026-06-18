@@ -98,6 +98,10 @@ class BaseAdapter:
         """Replace {query} placeholder in invoke_args with actual query."""
         return [a.replace("{query}", query) for a in raw_args]
 
+    def extract_usage(self, stdout: str, node: dict[str, Any]) -> dict[str, Any]:
+        """Extract token usage metadata from raw subprocess stdout. Override per adapter."""
+        return {}
+
     def build_cmd(self, node: dict[str, Any], query: str, session_id: str | None = None) -> tuple[list[str], bool]:
         invoke = node.get("invoke", "claude")
         raw_args = node.get("invoke_args", ["-p", "{query}"])
@@ -170,6 +174,22 @@ class CodexAdapter(BaseAdapter):
         if session_id:
             return [invoke, "exec", "resume", session_id, "-"] + base, True
         return [invoke, "exec", "-"] + base, True
+
+    def extract_usage(self, stdout: str, node: dict[str, Any]) -> dict[str, Any]:
+        """Extract token usage from Codex --json response."""
+        if "--json" not in node.get("invoke_args", []):
+            return {}
+        try:
+            data = json.loads(stdout)
+            usage = data.get("usage", {})
+            details = usage.get("output_tokens_details", {})
+            return {
+                "input_tokens": usage.get("input_tokens"),
+                "output_tokens": usage.get("output_tokens"),
+                "reasoning_tokens": details.get("reasoning_tokens"),
+            }
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return {}
 
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
         # Codex --json mode: extract assistant content from JSON response

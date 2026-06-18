@@ -1951,7 +1951,22 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         if logger:
             logger.log_ipc(peer_id=to, direction="receive", response_preview=raw_text, elapsed_sec=float(elapsed))
             profile_id = _resolve_profile_id(to)
-            logger.log_cost(peer_id=to, model_id=node.get("invoke", to), profile_id=profile_id, latency_sec=float(elapsed))
+            usage: dict = adapter.extract_usage(raw_text, node) if adapter else {}
+            logger.log_cost(
+                peer_id=to,
+                model_id=node.get("invoke", to),
+                profile_id=profile_id,
+                latency_sec=float(elapsed),
+                input_tokens=usage.get("input_tokens"),
+                output_tokens=usage.get("output_tokens"),
+                reasoning_tokens=usage.get("reasoning_tokens"),
+            )
+            if usage.get("reasoning_tokens") is not None:
+                logger.log_reasoning(
+                    peer_id=to,
+                    model_id=node.get("invoke", to),
+                    reasoning_tokens=usage["reasoning_tokens"],
+                )
 
         # ── Output Parsing (Adapter-based) ────────────────────────
         if adapter:
