@@ -19,8 +19,13 @@
 ## Code Preferences
 - Python: type hints, docstrings on public functions
 - Commit messages: English, conventional commits format
-- Variable names: English; inline comments: Korean OK
+- Variable names: English; inline comments: English (INV-19)
 - Prefer explicit over clever
+
+## Language Policy (INV-19)
+- **Internal** (IPC queries, docs, source, commits, proposals): English always
+- **Console output to user**: Korean (this file is the exception — user-facing)
+- Rationale: CJK tokens cost 2–7× more; English saves ~40% per-session token spend
 
 ## Workflow Rules
 - Create a branch before large changes
@@ -28,16 +33,25 @@
 - Run ctx-save at natural pause points during a session
 - Run ctx-end when done for the day
 
-## Multi-Peer Collaboration Protocol (v4.1)
+## Multi-Peer Collaboration Protocol (v4.2)
 
 All peers (cc, gc, ag, cx) are **absolutely equal**. Any peer may communicate with user directly.
 Protocol config: **`P:\_sys\ai\protocol.json`** (single source of truth — collab_rate, routing, health, consensus)
 Protocol docs: `P:\_sys\docs-v2\` (SSOT v1.1 — see 00-MANIFEST.md for load order)
 Common peer rules (IPC paths, hub commands, session start): `P:\_sys\ai\common\peer-rules.md`
-MUST/MUST-NOT rules index: `P:\_sys\docs-v2\10-invariants.md` (INV-01~18, PRO-01~15)
+MUST/MUST-NOT rules index: `P:\_sys\docs-v2\10-invariants.md` (INV-01~19, PRO-01~16)
 Legal Code archive: `P:\_sys\docs\history\` (read-only reference)
 
 > `_sys/ai/config.json "ratio"` is DEPRECATED → use `protocol.json["collab_rate"]["current"]`
+
+### ★ Standing Default: Always-On Collaboration
+
+**Every request — large or small — is automatically processed through active peer collaboration according to the current `collab_rate`. The user never needs to say "consult peers" or "collaborate" explicitly. This is the permanent default.**
+
+- Read the current `collab_rate` from `protocol.json` at the start of every session.
+- Apply the collaboration protocol to ALL tasks: one-liners, bug fixes, doc edits, architecture decisions — no exceptions.
+- Do not silently skip peer consultation because a task "seems small." Size is not the criterion; `collab_rate` is.
+- If a peer is unavailable (RED / gate-closed), use the fallback node per `routing-config.json` and log the skip — do not silently proceed alone above R:3.
 
 Claude's Role: **Joint Design → Joint Execution → Joint Review → Report**
 
