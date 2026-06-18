@@ -191,7 +191,9 @@ class TestLease:
             }
         }
         (ai_dir / "leases.json").write_text(json.dumps(data), encoding="utf-8")
-        hub._lease_sweep(ai_dir)
+        # Isolate HubError T4 sys.exit so we can assert on lease state after sweep
+        with patch("hub_error.HubError.report", return_value=None):
+            hub._lease_sweep(ai_dir)
         swept = json.loads((ai_dir / "leases.json").read_text("utf-8"))
         assert swept["gc"]["status"] == "expired"
 

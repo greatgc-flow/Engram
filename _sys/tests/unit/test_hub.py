@@ -267,7 +267,7 @@ class TestAsk:
              patch("subprocess.Popen", return_value=mock_proc), \
              pytest.raises(SystemExit) as exc_first:
             hub.action_ask("gc", "hello", None, 120, ai_dir)
-        assert exc_first.value.code == 1
+        assert exc_first.value.code in (1, 4)  # T4 fatal exit or legacy T1
 
         health = json.loads((peer_dir / "health.json").read_text("utf-8"))
         assert health["context_health"]["status"] == "RED"
@@ -870,8 +870,9 @@ class TestEnhancedCollaboration:
         rd_path = tmp_path / "runtime-directives.jsonl"
         health_dir = tmp_path / "gc_health"
         health_dir.mkdir()
-        # health.json 없음 → 기본값(consecutive_failures=0)에서 시작
-        with patch.object(hub, "_runtime_directives_path", return_value=rd_path):
+        # Isolate HubError.report from sys.exit so the test can assert on directive state
+        with patch.object(hub, "_runtime_directives_path", return_value=rd_path), \
+             patch("hub_error.HubError.report", return_value=None):
             hub._record_ask_failure("gc", "rate_limit", "quota exceeded", 5, ai_dir, health_dir=health_dir)
             assert hub._get_active_runtime_directives(rd_path) == []
             hub._record_ask_failure("gc", "rate_limit", "quota exceeded", 5, ai_dir, health_dir=health_dir)

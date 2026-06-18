@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -265,11 +266,23 @@ def _validate_state(state: dict) -> None:
 
 def _write_json_atomic(path: Path, data: dict) -> None:
     """Atomic write using a temporary file and os.replace."""
-    temp_path = path.with_suffix(path.suffix + ".tmp")
+    # Use a unique temporary file to avoid collisions between parallel processes on Windows
+    temp_path = path.parent / f"{path.name}.{uuid.uuid4().hex[:8]}.tmp"
     try:
         temp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        # os.replace is atomic on both POSIX and Windows (replaces existing)
-        os.replace(str(temp_path), str(path))
+        # os.replace is atomic on both POSIX and Windows (replaces existing).
+        # On Windows, it fails if target is open; retry with backoff handles this.
+        max_retries = 5
+        for i in range(max_retries):
+            try:
+                os.replace(str(temp_path), str(path))
+                return
+            except PermissionError:
+                if i == max_retries - 1:
+                    raise
+                # Exponential backoff: 20ms, 40ms, 80ms, 160ms, 320ms + jitter
+                delay = (0.02 * (2**i)) + (random.random() * 0.01)
+                time.sleep(delay)
     except Exception as e:
         if temp_path.exists():
             try: temp_path.unlink()
@@ -1104,7 +1117,7 @@ def _record_ask_failure(
     _write_peer_health(peer_id, data, ai_root, health_dir)
 
     # ── Error Visibility Integration ──────────────────────────
-    severity = "error" if ctx["status"] == "RED" else "warn"
+    severity = "error" if ctx.get("status") == "RED" else "warn"
     action_report_error(ai_root, peer_id, reason, detail, severity)
 
     logger = _get_logger()

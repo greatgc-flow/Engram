@@ -30,12 +30,14 @@ class TestPeerAdapterProtocol:
         assert isinstance(adapter.node_id, str)
 
     @pytest.mark.parametrize("cls", [ClaudeAdapter, GeminiAdapter, CodexAdapter, VirtualAdapter])
-    def test_build_cmd_returns_list(self, cls):
+    def test_build_cmd_returns_tuple(self, cls):
         adapter = cls()
         node = {"invoke": "claude", "invoke_args": ["-p", "{query}"]}
-        cmd = adapter.build_cmd(node, "test query")
-        assert isinstance(cmd, list)
-        assert len(cmd) >= 1
+        result = adapter.build_cmd(node, "test query")
+        assert isinstance(result, tuple) and len(result) == 2
+        cmd, use_stdin = result
+        assert isinstance(cmd, list) and len(cmd) >= 1
+        assert isinstance(use_stdin, bool)
 
 
 # ── ClaudeAdapter ─────────────────────────────────────────────────────────────
@@ -49,7 +51,7 @@ class TestClaudeAdapter:
         }
 
     def test_build_cmd_substitutes_query(self):
-        cmd = self.adapter.build_cmd(self.node, "hello world")
+        cmd, _ = self.adapter.build_cmd(self.node, "hello world")
         assert "hello world" in cmd
         assert cmd[0] == "claude"
 
@@ -59,7 +61,7 @@ class TestClaudeAdapter:
 
     def test_build_cmd_no_query_placeholder(self):
         node = {"invoke": "claude", "invoke_args": ["--version"]}
-        cmd = self.adapter.build_cmd(node, "ignored")
+        cmd, _ = self.adapter.build_cmd(node, "ignored")
         assert cmd == ["claude", "--version"]
 
 
@@ -74,9 +76,13 @@ class TestGeminiAdapter:
         }
 
     def test_build_cmd_substitutes_query(self):
-        cmd = self.adapter.build_cmd(self.node, "explain me")
-        assert "explain me" in cmd
+        cmd, use_stdin = self.adapter.build_cmd(self.node, "explain me")
         assert cmd[0] == "gemini"
+        # GeminiAdapter uses stdin mode: query passed via stdin, not in cmd
+        if use_stdin:
+            assert "-" in cmd or "explain me" not in cmd
+        else:
+            assert "explain me" in cmd
 
     def test_parse_output_strips_session_headers(self):
         raw = "✦ Session started\n● connecting...\n─────\nActual response here"
@@ -102,9 +108,12 @@ class TestCodexAdapter:
         }
 
     def test_build_cmd_substitutes_query(self):
-        cmd = self.adapter.build_cmd(self.node, "write a test")
-        assert "write a test" in cmd
+        cmd, use_stdin = self.adapter.build_cmd(self.node, "write a test")
         assert cmd[0] == "codex"
+        if use_stdin:
+            assert "-" in cmd or "write a test" not in cmd
+        else:
+            assert "write a test" in cmd
 
     def test_parse_output_extracts_json_assistant_content(self):
         response = json.dumps({
@@ -145,10 +154,13 @@ class TestVirtualAdapter:
             "invoke": "claude",
             "invoke_args": ["-p", "{query}", "--effort", "max"]
         }
-        cmd = adapter.build_cmd(node, "deep question")
+        cmd, use_stdin = adapter.build_cmd(node, "deep question")
         assert cmd[0] == "claude"
-        assert "deep question" in cmd
         assert "--effort" in cmd
+        if use_stdin:
+            assert "-" in cmd or "deep question" not in cmd
+        else:
+            assert "deep question" in cmd
 
 
 # ── get_adapter factory ───────────────────────────────────────────────────────

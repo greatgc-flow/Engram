@@ -1,222 +1,247 @@
 # Engram
 
 [![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
-[![Windows](https://img.shields.io/badge/platform-Windows-0078d4.svg)](https://microsoft.com/windows)
-[![Tests: 469](https://img.shields.io/badge/tests-469%20collected-success.svg)](_sys/tests)
-[![Peers: 4](https://img.shields.io/badge/AI%20peers-4%20equal-purple.svg)](_sys/ai/peers.json)
-[![Architecture: Brain-Inspired](https://img.shields.io/badge/architecture-Brain--Inspired-ff69b4.svg)](_sys/docs-v2/20-architecture.md)
+[![Tests: 688](https://img.shields.io/badge/tests-688%20passing-brightgreen.svg)](_sys/tests/unit)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Platform: Windows](https://img.shields.io/badge/platform-Windows%2011-0078d4.svg)](https://microsoft.com/windows)
+[![Protocol: v4.2](https://img.shields.io/badge/protocol-v4.2-purple.svg)](_sys/ai/protocol.json)
+[![Peers: 4](https://img.shields.io/badge/AI%20peers-4%20equal-ff69b4.svg)](_sys/ai/peers.json)
 
-> **A portable Windows environment where Claude, Gemini, Codex, and Antigravity collaborate as truly equal AI peers — debating, self-healing, and evolving together.**
-
----
-
-## What Is This?
-
-Engram is not a chatbot wrapper. It's a **multi-agent operating system** that runs entirely from a USB drive or cloud-synced folder — no host installation, no registry pollution, no hardcoded paths.
-
-Four AI peers share a single workspace, coordinate through a lightweight hub, and hold each other accountable through unanimous consensus. When one peer makes a mistake, all peers learn. When the system detects architectural bloat, it proposes its own refactoring. No single AI is in charge.
+> **A portable Windows dev environment where Claude, Gemini, Codex, and Antigravity collaborate as equal AI peers — every task, every decision, automatically cross-verified and self-healing.**
 
 ---
 
-## 🔥 Key Features (v4.2 Stabilization)
+## Why Engram?
 
-| Feature | Description | Benefit |
-|---------|-------------|---------|
-| **ContextGate v1.0** | CJK-aware token estimation + auto-pruning | Never hit "Context Full" errors again. |
-| **Smart Failover** | Transparent task rerouting (e.g., cc → gc) | Quality drops to Gemini 1M if Claude 200k overflows. |
-| **7-Type Logging** | IPC, Cost, Error, Reasoning, Drift, Self-Care, Console | Total traceability for every token spent. |
-| **Taxonomy Error Console** | Korean 5-Whys root cause analysis | Fix environment issues in seconds, not hours. |
-| **Portable Hub 4.2** | Adapter-based peer decomposition | Easily add new LLM providers without touching core code. |
+Most AI coding tools work in isolation. Engram is different: it runs **4 AI peers in parallel**, each checking the others' work. Every code change, every architectural decision, every bug fix goes through peer review — automatically, without you having to ask.
+
+And it all runs from a single folder. USB drive, cloud share, or network path. Zero host pollution. Right-click any folder → instant AI-powered dev environment.
 
 ---
 
-## 🚀 Quick Start (3 Minutes)
+## ✨ Key Features
 
-**Prerequisites:** Windows 10/11 (with Git).
+### 🤝 Always-On Multi-Peer Collaboration
+Every task is automatically routed through active peer collaboration per `collab_rate`. Claude, Gemini, Codex, and Antigravity each contribute their strengths. No single AI is in charge — unanimous consent is required for high-risk changes.
+
+```
+You → [hub.py] → Claude + Gemini + Codex + Antigravity
+                      ↕ cross-verify ↕
+                  [consensus] → action
+```
+
+### 🔌 Portable by Design
+Zero installation on the host. Mount from USB, cloud drive, or network share. All tools (Python 3.14, Node.js, Git, AI CLIs) are self-contained under a single root folder.
 
 ```bat
-git clone https://github.com/your-org/engram.git
-cd engram
-INSTALL.bat      :: 📦 Bootstraps Python, Node, all AI CLIs
-REGISTER.bat     :: 🛠️ Sets up Virtual Drive P: (leaves zero host trace)
-P:\start.bat     :: 🌟 Launch your multi-peer environment
+:: Mount anywhere, leave zero trace
+REGISTER.bat   :: Maps P:\ via subst — removes on UNREGISTER.bat
 ```
+
+### 🧠 ContextGate v1.0
+CJK-aware token estimation protects your context budget automatically:
+- **80% utilization** → warning logged
+- **95% utilization** → automatic failover to a lower-cost peer
+- **>95%** → request rejected before token overflow
+
+### 🛡️ Protocol v4.2 — Governance at Every Level
+11 collaboration levels from fully autonomous to unanimous consent:
+
+| Rate | Mode | When It Applies | Consent Required |
+|:----:|:-----|:----------------|:----------------|
+| 0 | **Inactive** | Exploration, read-only | — |
+| 1 | **Manual** | Explicit axis calls only | — |
+| 2 | **Architecture** | Before arch/structure decisions | — |
+| 3 | **Planning** | Multi-file task planning | — |
+| 4 | **Checkpoint** | Start + completion review | — |
+| 5 | **Code Partner** | Before every Edit/Write | — |
+| 6 | **Error Partner** | All edits + on any error | — |
+| 7 | **Direction** | All edits + trade-off analysis | Major direction shifts |
+| 8 | **Milestone** | Every sub-task review | Step completion |
+| 9 | **Pairing** | Every 5 explores, verify direction | Direction changes |
+| 10 | **Sync** | Full Phase: Plan/Exec/Review/Report | **Mandatory every step** |
+
+### 🏥 Self-Healing Error Taxonomy (T0–T4)
+5-tier error classification with automatic remediation:
+
+| Tier | Severity | Action |
+|:----:|:---------|:-------|
+| T0 | Info | Log only |
+| T1 | Silent | Record, continue |
+| T2 | Display | Show to user |
+| T3 | Warning | Alert + suggest fix |
+| T4 | **Fatal** | Display + `sys.exit(4)` |
+
+### 📋 MECE Doc Validation (CHK-01~07)
+7 automated checks keep code, config, and documentation in perfect sync:
+
+| Check | What it validates |
+|:-----:|:-----------------|
+| CHK-01 | All paths in docs actually exist |
+| CHK-02 | No Korean (CJK) in internal docs (INV-19) |
+| CHK-03 | Python file changes covered in docs |
+| CHK-04 | All `[[anchor]]` links resolve |
+| CHK-05 | `collab_rate` values match `protocol.json` |
+| CHK-06 | No proposals older than 14 days pending |
+| CHK-07 | All docs listed in `00-MANIFEST.md` |
+
+### 🧪 688 Tests, All Passing
+Comprehensive TDD coverage including parallel IPC stress tests, adapter protocol conformance, context gate edge cases, and error taxonomy integration.
 
 ---
 
-## 📖 Real-World Example: "The TDD Loop"
-
-Engram shines when you let peers collaborate on complex tasks. Here's how you use it:
-
-1.  **Exploration**: Ask Gemini to scan a new repo.
-    ```bash
-    gemini "Scan the /src folder and explain the MECE gaps in the parser."
-    ```
-2.  **Implementation**: Let Claude implement the fix with TDD.
-    ```bash
-    claude "Based on Gemini's report, write a failing test in pytest then fix it."
-    ```
-3.  **Cross-Review**: Use Codex to audit the security and performance.
-    ```bash
-    codex "Review Claude's latest commit. Any O(n^2) risks or safety leaks?"
-    ```
-4.  **Consensus**: Finalize the change into the Neocortex (`docs-v2/`).
-    ```bash
-    hub consensus-propose --subject "Parser fix v1.1" --voters "cc,gc,cx"
-    ```
-
----
-
-## Architecture: The Four-Layer Brain
+## 🏗️ Architecture
 
 ```
-┌──────────────────────────────────────────────────────┐
-│  NEOCORTEX      docs-v2/        Semantic SSOT        │
-│  HIPPOCAMPUS    _archive/       Session memory       │
-│  PREFRONTAL     hub.py          Orchestration        │
-│  AMYGDALA       check_risk.py   Risk/Safety gate     │
-└──────────────────────────────────────────────────────┘
-```
-
-Every action passes through the Amygdala first. The Prefrontal Cortex (`hub.py`) coordinates peers. The Hippocampus records what happened. The Neocortex (`docs-v2/`) stores what's normatively true — and can only be updated by unanimous consensus.
-
----
-
-## Hello World: Three AIs, One Decision
-
-```bash
-# Ask all active peers a question in parallel
-python _sys/core/hub.py ask-all --query "Should we split this 800-line file?"
-
-# ━━ cc (Claude) ━━━━━━━━━━━━━━━━━━━━━━━━━
-# Yes. Lines 1-400 are routing logic, 401-800 are health checks.
-# Split into routing.py + health.py. Zero shared state.
-#
-# ━━ gc (Gemini) ━━━━━━━━━━━━━━━━━━━━━━━━━
-# Agree. Saturation scan confirms churn rate > 5 commits/7 days.
-# Recommend splitting before the next feature addition.
-#
-# ━━ cx (Codex) ━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Confirmed. No shared imports detected. Safe to split now.
-
-# Unanimous? Lock it in.
-python _sys/core/hub.py consensus-propose \
-  --subject "Split hub.py into routing.py + health.py" \
-  --voters "cc,gc,cx"
-```
-
-No human prompt engineering required. The peers read the codebase, debate the tradeoffs, and reach a decision together.
-
----
-
-## Quick Start
-
-**Prerequisites:** Windows 10/11, API keys for the AI CLIs you want.
-
-```bat
-git clone https://github.com/your-org/engram.git
-cd engram
-INSTALL.bat      :: bootstraps Python, Node, all AI CLIs into _sys/env/
-REGISTER.bat     :: sets up SUBST drive P:, context menu entry
-P:\start.bat     :: launch
-```
-
-**Teardown** — leaves zero trace on the host:
-
-```bat
-P:\UNREGISTER.bat
-P:\CLEANUP.bat
-```
-
----
-
-## Core Concepts
-
-### Equal Peers, Unanimous Decisions
-
-All AI peers (`cc`, `gc`, `cx`, `ag`) have identical authority. No peer can unilaterally modify the protocol or another peer's scope. High-stakes changes require unanimous ACK from all active peers.
-
-```bash
-# Propose → Vote → Finalize (any peer can do any step)
-python _sys/core/hub.py consensus-propose --subject "Change COLLAB_RATE to 8" --voters "cc,gc,cx"
-python _sys/core/hub.py consensus-vote --voter cc --vote ACK
-python _sys/core/hub.py consensus-vote --voter gc --vote ACK
-python _sys/core/hub.py consensus-vote --voter cx --vote ACK
-# → Applied.
-```
-
-### Self-Care on Every Session Close
-
-```
-ctx-end
-  → sweep expired directives (TTL-based, zero manual work)
-  → validate all junctions
-  → scan for architectural saturation
-  → auto-propose refactors if needed (never auto-applies)
-  → log to _archive/self-care-log.jsonl
-```
-
-### Collaboration Rate — One Dial
-
-| Rate | Mode | Trigger |
-|:----:|------|---------|
-| 0 | Solo | Read-only exploration |
-| 3 | Guard | `_sys/` script changes |
-| 5 | Partner | Multi-file refactors |
-| 10 | Brain Sync | Protocol/config edits |
-
-### Model Selection Per Task
-
-Each peer selects the right model automatically — hub.py stays thin:
-
-| Peer | standard | effort | deepthink |
-|------|----------|--------|-----------|
-| Claude | haiku-4-5 | sonnet-4-6 | opus-4-8 |
-| Gemini | 2.0-flash | 2.5-pro | 2.5-pro |
-| Codex | mini | o4-mini | o3 |
-
----
-
-## Structure
-
-```
-P:\
+P:\  (portable root, mapped via subst)
+│
 ├── _sys/
-│   ├── core/hub.py              ← orchestration engine
-│   ├── ai/peers.json            ← peer registry + model profiles
-│   ├── ai/protocol.json         ← collab_rate, consensus, election rules
-│   ├── checks/self_care.py      ← 7-step session-end pipeline
-│   ├── checks/saturation_scan.py
-│   ├── docs-v2/                 ← SSOT for all normative docs (Neocortex)
-│   │   ├── general/             ← universal rules, all peers inherit
-│   │   ├── specific/            ← per-peer deltas only
-│   │   └── ops/                 ← audit, debate, governance
-│   └── tests/unit/              ← 469 tests, TDD-first
-├── workspace/                   ← your projects
-└── _archive/                    ← session logs, handoffs, self-care logs
+│   ├── core/
+│   │   ├── hub.py           ← IPC orchestrator (all peer routing)
+│   │   ├── hub_peer.py      ← PeerAdapter: Claude/Gemini/Codex/Virtual
+│   │   ├── hub_context.py   ← ContextGate v1.0
+│   │   ├── hub_health.py    ← HealthReader + PeerHealthState
+│   │   ├── hub_logging.py   ← 7-type JSONL logger
+│   │   └── hub_error.py     ← T0-T4 error taxonomy display
+│   │
+│   ├── ai/
+│   │   ├── protocol.json    ← collab_rate, consensus, routing (SSOT)
+│   │   ├── orchestration.json ← 7 hub nodes + adapter_class
+│   │   ├── model_profiles.json ← context/output limits per model
+│   │   └── error-taxonomy.json ← T0-T4 error definitions
+│   │
+│   ├── checks/
+│   │   ├── check_docs_mece.py ← CHK-01~07 validation
+│   │   └── self_care.py       ← autonomous maintenance
+│   │
+│   └── tests/unit/          ← 688 tests, all pass
+│
+├── workspace/               ← your projects go here
+├── CLAUDE.md                ← Claude's global instructions
+├── GEMINI.md                ← Gemini's global instructions
+└── README.md                ← you are here
 ```
 
 ---
 
-## Roadmap
+## ⚡ Quick Start
 
-- [ ] Phase 4: SelfHealer auto-remediation in hub.py (Tier-0/1/2)
-- [ ] Linux/macOS portability (SUBST → symlink equivalent)
-- [ ] MCP registry for workspace-specific tool extensions
-- [ ] Web dashboard for peer collaboration visualization
+### Prerequisites
+- Windows 10/11
+- Git
+- Node.js (for AI CLIs)
+
+### 1. Clone
+```bat
+git clone https://github.com/greatgc-flow/Porta-Flow.git engram
+cd engram
+```
+
+### 2. Install AI Peers
+```bat
+npm install -g @anthropic-ai/claude-cli
+npm install -g @google/gemini-cli
+```
+
+### 3. Mount the Environment
+```bat
+REGISTER.bat
+```
+This maps `P:\` via Windows `subst`. All tools become available at `P:\_sys\`.
+
+### 4. Run Your First Collaboration
+```bat
+python P:\_sys\core\hub.py peer-status
+```
+```
+┌──────────────────────────────────────────────────────────────┐
+│  PEER STATUS (live-refreshed)                                │
+├──────────┬──────────┬──────────┬──────────┬────────────────┤
+│ Peer     │ Gate     │ Health   │ Version  │ Details        │
+├──────────┼──────────┼──────────┼──────────┼────────────────┤
+│ claude   │ OPEN     │ GREEN    │ 2.1.x    │ 0.0MB          │
+│ gemini   │ OPEN     │ GREEN    │ 0.47.x   │ 0.0MB          │
+│ codex    │ open     │ GREEN    │ codex-cl │ 0.0MB          │
+│ antigrav │ open     │ GREEN    │ 1.0.x    │ 0.0MB          │
+└──────────┴──────────┴──────────┴──────────┴────────────────┘
+```
 
 ---
 
-## Contributing
+## 📖 Usage Examples
 
-Built on three recursive principles:
+### Ask a single peer
+```bat
+python P:\_sys\core\hub.py ask --to gc --query "Review this architecture diagram"
+```
 
-1. **MECE** — every classification is mutually exclusive and collectively exhaustive
-2. **5-Whys** — every fix traces to root cause, not symptom
-3. **Closed Feedback Loop** — every process output improves the process itself
+### Broadcast to all peers
+```bat
+python P:\_sys\core\hub.py ask-all --query "Should we use JSONL or SQLite for the log store?"
+```
+Each peer responds independently, Claude synthesizes.
 
-Open an issue, create a debate round, or add a peer via `peers.json`.
+### Run MECE doc validation
+```bat
+python P:\_sys\checks\check_docs_mece.py --checks CHK-01,CHK-02,CHK-03
+```
+```
+[CHK-01] ✓ All 47 doc paths exist
+[CHK-02] ✓ No INV-19 violations found
+[CHK-03] ✓ All Python changes covered in docs
+```
+
+### Change collaboration intensity
+```bat
+:: Check current level
+python P:\_sys\core\hub.py status
+
+:: Bump to full sync mode (unanimous consent on everything)
+P:\_sys\cli\set-collab-rate.bat 10
+```
+
+### Run the full test suite
+```bat
+cd P:\_sys\tests\unit
+python -m pytest -q
+```
+```
+688 passed in 32s ✓
+```
 
 ---
 
-*Built by a human and four AI peers who don't always agree but always ship.*
+## 🔧 Configuration
+
+All configuration lives in `_sys/ai/` as JSON files (single source of truth):
+
+| File | Purpose |
+|:-----|:--------|
+| `protocol.json` | `collab_rate`, consensus voters, routing |
+| `orchestration.json` | Hub nodes, adapter classes |
+| `model_profiles.json` | Context/output limits per model |
+| `error-taxonomy.json` | T0-T4 error definitions |
+| `logging-config.json` | 7-type JSONL log settings |
+| `governance_params.json` | Thresholds (ContextGate, CHK checks) |
+
+---
+
+## 🤝 Contributing
+
+1. Fork and create a branch
+2. Write tests first (TDD)
+3. All 688 tests must pass: `python -m pytest _sys/tests/unit/ -q`
+4. MECE checks must pass: `python _sys/checks/check_docs_mece.py`
+5. Open a PR — peer review required (at least one AI peer cross-check encouraged)
+
+---
+
+## 📄 License
+
+MIT License — see [LICENSE](LICENSE).
+
+Built for portability. Engineered for autonomy. Designed for collaboration.
+
+---
+
+*Engram — because good ideas need a place to live.*
