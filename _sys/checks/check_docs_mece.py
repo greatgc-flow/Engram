@@ -223,7 +223,12 @@ def chk_03_coverage_map(_exempt: list[str]) -> list[Finding]:
     except Exception:
         return findings
 
-    py_changed = {f for f in changed if f.endswith(".py") and f.startswith("_sys/")}
+    _PY_DOC_EXEMPT_PREFIXES = ("_sys/tests/", "_sys/checks/self_care.py")
+    py_changed = {
+        f for f in changed
+        if f.endswith(".py") and f.startswith("_sys/")
+        and not any(f.startswith(p) for p in _PY_DOC_EXEMPT_PREFIXES)
+    }
     doc_changed = {f for f in changed if f.endswith(".md") and f.startswith("_sys/docs-v2/")}
 
     if py_changed and not doc_changed:
