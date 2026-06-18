@@ -11,8 +11,7 @@ updated: 2026-06-18
 ### hub.py
 - **T4 exit code consistency**: `test_ask_eperm_marks_peer_red_and_blocks_next_call` now accepts `code in (1, 4)`. Decide whether EPERM should be T1 (exit 1) or T4 (fatal exit 4) and unify.
 - **`action_report_error` guard**: `_record_ask_failure` calls `action_report_error` which may trigger T4 sys.exit mid-function. Consider wrapping in try/except to allow health.json write to complete before exit.
-- **`peer-recover` exit code**: Returns exit 1 even on success (line ~2410). Should return 0.
-- **`update-signatures` guard**: Blocked by phase policy during 'planning' phase. Needs phase exemption for maintenance actions.
+- **`update-signatures` guard**: Blocked by `_guard_action` even during maintenance. Needs phase exemption for this action.
 - **ag session tracking (B2)**: Implement session state tracking for Antigravity (`ag`) in `hub.py` for parity with `gc` and `cx`.
 
 ### axis-h / check_health.py (D2)
@@ -37,7 +36,6 @@ updated: 2026-06-18
 | `relocator.py` | Zero unit tests — only used on folder move | MEDIUM |
 | `self_care.py` | lesson_graduation algorithm only unit-tested | MEDIUM |
 | `check_docs_mece.py` | CHK-06 with real proposals dir | LOW |
-| `hub.py` | `peer-recover` exit code correctness | LOW |
 | `scrubber.py` / `virtualizer.py` | Zero unit tests — cleanup/junction utilities | LOW |
 
 ## 3. Missing Features

@@ -616,7 +616,7 @@ Config in governance_params.json (add these keys):
 7. ✅ hub.py fixes — _write_json_atomic race condition (UUID + backoff), ctx.get() KeyError
 8. ✅ README.md rewrite — feature-first, collab_rate table, follow-along examples
 9. ✅ remaining-items.md — tech debt + improvement backlog
-10. ✅ **Total: 688 tests, 0 failures**
+10. ✅ **Total: 687 tests, 0 failures**
 
 ---
 

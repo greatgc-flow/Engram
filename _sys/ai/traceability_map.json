@@ -264,6 +264,9 @@
       ],
       "tests": [
         "_sys/tests/unit/test_hub.py#TestLifecycleActions"
+      ],
+      "invariants": [
+        "INV-15"
       ]
     },
     {
@@ -303,7 +306,10 @@
         "_sys/checks/saturation_scan.py",
         "_sys/checks/sync_docs.py"
       ],
-      "tests": []
+      "tests": [],
+      "invariants": [
+        "INV-15"
+      ]
     },
     {
       "id": "lesson-graduation",
@@ -384,7 +390,10 @@
       "runtime": [
         "_sys/core/hub.py#_escalate_error"
       ],
-      "tests": []
+      "tests": [],
+      "invariants": [
+        "INV-16"
+      ]
     },
     {
       "id": "inv-19-language-policy",
@@ -469,7 +478,10 @@
         "_sys/core/hub_error.py#HubError",
         "_sys/core/hub.py#action_report_error"
       ],
-      "tests": []
+      "tests": [],
+      "invariants": [
+        "INV-16"
+      ]
     }
   ],
   "known_external_limits": [

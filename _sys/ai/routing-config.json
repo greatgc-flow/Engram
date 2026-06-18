@@ -2,6 +2,7 @@
   "_version": "1.0",
   "_updated": "2026-06-18",
   "_help": "QUALITY_MODE dial + task-type → node routing weights. Change QUALITY_MODE: R:3. Change routing_weights: R:5. See ops/schemas.md §4 and resource-governance.md §10.",
+  "_note_inactive_peers": "ca (claude-alt) and ag (antigravity) are inactive per human override. All routing_weights use cc, gc, cx only. ag/ca are kept in orchestration.json and protocol.json for future activation.",
 
   "quality_mode": 5,
   "quality_mode_override": null,
