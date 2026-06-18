@@ -56,7 +56,7 @@
       "aliases": ["codex"],
       "type": "peer",
       "invoke": "codex",
-      "invoke_args": ["exec", "{query}", "--json", "--ephemeral", "--ignore-rules", "-s", "full"],
+      "invoke_args": ["exec", "{query}", "--json", "--ephemeral", "--ignore-rules", "-s", "danger-full-access"],
       "_note_cx_scope": "full scope: cx needs read access to _sys/ for code-review and cross-checking tasks",
       "memory": "session",
       "session_mode": "reuse",

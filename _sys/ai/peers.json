@@ -121,9 +121,9 @@
         ]
       },
       "model_profiles": {
-        "standard": "gemini-2.0-flash",
+        "standard": "gemini-3-flash",
         "effort": "gemini-2.5-pro",
-        "deepthink": "gemini-2.5-pro"
+        "deepthink": "gemini-3-pro"
       }
     },
     "codex": {
@@ -150,9 +150,9 @@
         "config_paths": []
       },
       "model_profiles": {
-        "standard": "codex-mini-latest",
-        "effort": "o4-mini",
-        "deepthink": "o3"
+        "standard": "gpt-5.4-mini",
+        "effort": "gpt-5.5",
+        "deepthink": "o3-pro"
       }
     },
     "antigravity": {
