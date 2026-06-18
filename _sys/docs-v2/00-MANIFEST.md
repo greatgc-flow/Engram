@@ -34,7 +34,7 @@ For human onboarding: `user/manual.md` → then `00-MANIFEST.md`
 | `general/directives.md` | Runtime + user directives, injection, TTL | protocol-directives.md |
 | `general/knowledge.md` | Lesson propagation, pack delivery | knowledge-propagation-spec.md |
 | `general/self-evolution.md` | Autonomous maintenance, auto-fixes, and refactoring | Autonomous Debate |
-| `general/token-management.md` | Per-peer model inventory, parameters, ContextGate v1.0 design | cc+gc debate 2026-06-18 |
+| `general/resource-governance.md` | AI resource governance: model inventory · node architecture · routing · cost/quality optimization | cc+gc 끝장토론 2026-06-18 |
 | `specific/cc.md` | Claude Code: dirs, gate, delta flags | PEER_MANAGEMENT §2-1 |
 | `specific/gc.md` | Gemini CLI: dirs, gate, delta flags | PEER_MANAGEMENT §2-2 |
 | `specific/cx.md` | Codex: dirs, entry point, delta flags | PEER_MANAGEMENT §2-3 |

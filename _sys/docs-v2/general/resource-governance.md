@@ -1,7 +1,8 @@
-# General — Token & Context Management
+# General — AI Resource Governance
 
-> Status: DRAFT v2 (리서치 기반 전면 보완 2026-06-18 — cc+gc 토론 + 3-agent web research)
-> Purpose: 피어별 모델 전체 인벤토리, 파라미터 참조, ContextGate v1.0 설계 스펙.
+> Status: DRAFT v2 (리서치 기반 전면 보완 2026-06-18 — cc+gc 끝장토론 + 3-agent web research)
+> Renamed from: `token-management.md` (범위 확장)
+> Scope: 모델 인벤토리 → 파라미터 참조 → 노드 아키텍처 → 역할 할당 → 라우팅 레이어 → 비용/품질 최적화 → 피드백 루프 → 지속 업데이트 방안
 
 ---
 
