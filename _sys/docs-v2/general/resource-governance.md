@@ -363,4 +363,376 @@ if required_output > profile["output_limit"]:
 
 ---
 
-_cc+gc+3-agent research 합의 완료 2026-06-18. v1 대비 수정: cc context/output 전면, gc thinking_budget/temperature 수정, cx o4-mini 단종·gpt-5.5 추가, reasoning 토큰 실측 가능성 반영._
+---
+
+## 6. 노드 아키텍처
+
+### 6.1 노드 정의
+
+**Node = (peer_id, model_id, thinking_config, sandbox_level)**
+
+4차원 조합이 하나의 실행 단위. 동일 peer라도 설정이 다르면 다른 노드.
+
+```
+cc::haiku-4-5::none::none
+cc::sonnet-4-6::adaptive:medium::none
+cc::opus-4-8::adaptive:max::none
+gc::gemini-3.5-flash::level:minimal::none
+gc::gemini-2.5-pro::budget:12000::none
+gc::gemini-2.5-pro::budget:24576::none
+cx::gpt-5.5::effort:low::read-only
+cx::gpt-5.5::effort:high::workspace-write
+cx::o3::effort:high::danger-full-access
+```
+
+### 6.2 노드 특성 매트릭스
+
+| 노드 ID | Context | Output | Input $/1M | Output $/1M | 속도 | 한국어 | 파일 쓰기 | 웹 검색 | 코드 실행 |
+|---------|--------:|-------:|----------:|----------:|------|--------|----------|--------|---------|
+| cc::haiku::none | 200k | 4k | $0.80 | $4.00 | ⚡⚡⚡ | ✓ | ✗ | ✗ | ✗ |
+| cc::sonnet::adaptive:medium | 1M | 128k | $3.00 | $15.00 | ⚡⚡ | ✓✓ | ✓ | ✗ | ✗ |
+| cc::opus::adaptive:max | 1M | 128k | $15.00 | $75.00 | ⚡ | ✓✓ | ✓ | ✗ | ✗ |
+| gc::3.5-flash::minimal | 1M | 65k | $0.07 | $0.30 | ⚡⚡⚡ | ✓ | ✗ | ✓ | ✓ |
+| gc::2.5-pro::budget:12000 | 1M | ~12k | $7.00 | $21.00 | ⚡⚡ | ✓ | ✗ | ✓ | ✓ |
+| gc::2.5-pro::budget:24576 | 1M | ~4k | $7.00 | $21.00 | ⚡ | ✓ | ✗ | ✓ | ✓ |
+| cx::gpt-5.5::effort:low::rw | 1M | 128k | $5.00 | $15.00 | ⚡⚡ | ✓ | ✓ | ✓ | ✓ |
+| cx::gpt-5.5::effort:high::rw | 1M | 128k | $5.00 | $30.00 | ⚡ | ✓ | ✓ | ✓ | ✓ |
+| cx::o3::effort:high::dfa | 200k | 100k | $2.00 | $8.00+ | ⚡ | ✓ | ✓ | ✗ | ✓ |
+
+> **gc 2.5-pro 주의:** thinking_budget + output_tokens 공유 풀 = 24,576.
+> budget=12,000 설정 시 실제 output 최대 ≈ 12,576토큰. budget=24,576 시 output ≈ 0.
+> 실용 분할: `thinking_budget = min(complexity × 8000, 20000)`, reserved_output ≥ 4,576
+
+### 6.3 노드별 품질 차원 (상대 점수 1~5)
+
+| 노드 | 코드 생성 | 복잡 추론 | 문서 작성 | 한국어 품질 | 대용량 분석 | 보안 리뷰 |
+|------|:--------:|:--------:|:--------:|:---------:|:---------:|:--------:|
+| cc::haiku | 3 | 2 | 3 | 4 | 2 | 2 |
+| cc::sonnet::medium | 5 | 4 | 5 | 5 | 4 | 4 |
+| cc::opus::max | 5 | 5 | 5 | 5 | 4 | 5 |
+| gc::3.5-flash | 3 | 3 | 4 | 3 | 5 | 3 |
+| gc::2.5-pro::12k | 4 | 5 | 5 | 3 | 5 | 5 |
+| cx::gpt-5.5::high | 5 | 5 | 4 | 3 | 4 | 5 |
+| cx::o3::high | 5 | 5 | 3 | 3 | 3 | 5 |
+
+---
+
+## 7. 역할 분류 및 노드 매핑
+
+### 7.1 역할 전체 분류 (MECE)
+
+| # | 역할 | 설명 | 트리거 |
+|---|------|------|--------|
+| R01 | **Router/Triage** | 태스크 분석, 피어 선택, 미션 분해 | 모든 ask 진입 시 |
+| R02 | **Implementer** | 코드 작성, 파일 생성, 리팩터 | write/edit 요청 |
+| R03 | **Architect** | 시스템 설계, 의존성 분석, 프로토콜 결정 | 구조 변경 전 |
+| R04 | **Code Reviewer** | 코드 리뷰, 보안 분석, 테스트 검증 | PR/완료 후 |
+| R05 | **Doc Writer (KO)** | 한국어 문서 초안, 규격서, 요약 | docs 요청 |
+| R06 | **Large Corpus Analyst** | 전체 repo 분석, 의존성 맵, 포화 감지 | saturation_scan |
+| R07 | **Test Author** | TDD 테스트 작성, RED→GREEN 검증 | 구현 전/후 |
+| R08 | **Debugger** | 버그 추적, 로그 분석, root cause | 실패 발생 시 |
+| R09 | **Consensus Facilitator** | R:8+ 합의 진행, 투표 집계, ACK 확인 | 거버넌스 결정 |
+| R10 | **Self-Care Executor** | self_care.py 단계 실행, 포화 제안 | session_end |
+| R11 | **Escalation Handler** | 연속 실패, 교착 상태, 긴급 복구 | error_threshold>5 |
+| R12 | **Fast QA** | 단순 검증, 형식 확인, lint 수준 | 빠른 체크 |
+
+### 7.2 역할 → 노드 매핑
+
+| 역할 | Primary 노드 | Fallback 노드 | 선택 이유 |
+|------|-------------|-------------|---------|
+| R01 Router | gc::3.5-flash::minimal | cc::haiku::none | 최저 비용, 빠른 분류 |
+| R02 Implementer | cc::sonnet::adaptive:medium | cx::gpt-5.5::effort:medium | 한국어 코드, Tool use |
+| R03 Architect | gc::2.5-pro::budget:12000 | cc::opus::adaptive:high | 대용량 컨텍스트, 깊은 추론 |
+| R04 Code Reviewer | cx::gpt-5.5::effort:high | cc::sonnet::adaptive:high | 코드 전문성, reasoning 강점 |
+| R05 Doc Writer (KO) | cc::sonnet::adaptive:low | cc::opus::adaptive:medium | 한국어 품질 최우선 |
+| R06 Large Corpus | gc::2.5-pro::budget:0 | gc::3.5-flash::minimal | 1M context, 대용량 처리 |
+| R07 Test Author | cc::sonnet::adaptive:medium | cx::gpt-5.5::effort:medium | TDD 패턴, Tool use |
+| R08 Debugger | cx::gpt-5.5::effort:high | cc::opus::adaptive:high | reasoning 추론 강점 |
+| R09 Consensus | cc::sonnet::adaptive:low | gc::3.5-flash::minimal | 프로토콜 이해, 낮은 비용 |
+| R10 Self-Care | cc::haiku::none | gc::3.5-flash::minimal | 경량, 비차단 |
+| R11 Escalation | cc::opus::adaptive:max | gc::2.5-pro::budget:20000 | 최고 추론, 최후 수단 |
+| R12 Fast QA | cc::haiku::none | gc::3.5-flash::minimal | 최저 비용, 즉시 응답 |
+
+### 7.3 노드 재사용 (동일 노드 N역할)
+
+```
+cc::sonnet::adaptive:medium  →  R02(Implementer) + R07(Test Author) + R09(Consensus)
+gc::3.5-flash::minimal       →  R01(Router) + R10(Self-Care) + R12(Fast QA)
+gc::2.5-pro::budget:12000    →  R03(Architect) + R06(Large Corpus)
+cx::gpt-5.5::effort:high     →  R04(Code Reviewer) + R08(Debugger)
+cc::opus::adaptive:max        →  R11(Escalation) — 전용 (비용 최고)
+```
+
+---
+
+## 8. 5-레이어 라우팅 아키텍처
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  LAYER 0: Registry (모델 스펙 SSOT)                              │
+│                                                                 │
+│  model-registry.json  ← 모든 모델의 실측 스펙 (R:8 변경)         │
+│       ↓ (파생)                                                   │
+│  peers.json           ← 운영 매핑만 (standard/effort/deepthink)  │
+│  routing-config.json  ← 역할→노드 가중치, QUALITY_MODE 설정      │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────────────────┐
+│  LAYER 1: Router (hub.py action_ask 진입 전)                    │
+│                                                                 │
+│  Input: task_type, estimated_tokens, required_caps,            │
+│         QUALITY_MODE, budget_constraint                         │
+│                                                                 │
+│  Gate 1: Capability Filter                                      │
+│    - 파일 쓰기 필요? → cc 또는 cx (sandbox: workspace-write)    │
+│    - 웹 검색 필요? → gc 또는 cx                                 │
+│    - 코드 실행 필요? → gc 또는 cx                               │
+│                                                                 │
+│  Gate 2: Context Gate (ContextGate v1.0)                        │
+│    - _estimate_tokens(query+context) vs profile.usable_context  │
+│    - 초과 <10% → Pruning → 재시도                               │
+│    - 초과 ≥10% → Failover to gc                                 │
+│                                                                 │
+│  Gate 3: Output Tier                                            │
+│    - expected_output_size → required_tokens                     │
+│    - required > profile.output_limit → tier 승급               │
+│                                                                 │
+│  Gate 4: Language                                               │
+│    - CJK-heavy (>30%) + 문서 역할 → cc 우선                    │
+│                                                                 │
+│  Gate 5: QUALITY_MODE × Cost Sort → 최종 노드 선택             │
+│    - Mode 0: cheapest capable node                              │
+│    - Mode 5: min(cost × (1/quality_score))                      │
+│    - Mode 10: max(quality_score) regardless of cost             │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────────────────┐
+│  LAYER 2: Node Execution                                        │
+│                                                                 │
+│  선택된 Node = (peer, model, thinking_config, sandbox)          │
+│  hub.py → peer CLI 호출 → 응답 수신                              │
+│                                                                 │
+│  실행 중 수집:                                                   │
+│    - tokens_in, tokens_out, reasoning_tokens (cx API)           │
+│    - latency_ms, exit_code                                      │
+│    - task_type 태그 ([REFACTOR], [REVIEW], [DOC] 등)            │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────────────────┐
+│  LAYER 3: Observer (비용 + 품질 수집)                            │
+│                                                                 │
+│  cost-log.jsonl 항목:                                           │
+│  { ts, peer, model, thinking_config, task_type,                 │
+│    tokens_in, tokens_out, reasoning_tokens,                     │
+│    latency_ms, outcome, quality_signals }                       │
+│                                                                 │
+│  품질 프록시 (자동):                                             │
+│    test_pass_rate   : pytest 결과 (0/1)                         │
+│    ack_rate         : 피어 ACK / (ACK+NACK)                    │
+│    output_reuse     : 다른 피어가 출력을 그대로 사용 여부        │
+│    user_override    : 사용자 롤백/수정 여부 (부정 신호)          │
+│                                                                 │
+│  위치: _sys/data/logs/cost-log.jsonl (gitignored)               │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────────────────┐
+│  LAYER 4: Feedback Loop (self_care.py 분석 단계)                │
+│                                                                 │
+│  트리거: 10 커밋 OR 누적 비용 임계값 초과                        │
+│                                                                 │
+│  PLAN-DO-SEE-ADJUST:                                            │
+│    PLAN  → Router가 노드 선택 (routing-config.json 기반)        │
+│    DO    → Node Execution                                       │
+│    SEE   → Observer 수집값 분석                                  │
+│             - 노드별 cost_per_success 계산                       │
+│             - 노드별 failover_rate, nack_rate                   │
+│    ADJUST→ proposal-add "ROUTING_UPDATE: {node} weight {Δ}"    │
+│             R:8 ACK 후 routing-config.json 갱신                 │
+│                                                                 │
+│  cx reasoning dynamic budget:                                   │
+│    실측 10회 이상 → per-effort 평균으로 static budget 대체       │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────────────────┐
+│  LAYER 5: Registry Update (지속 업데이트 — §11 참조)            │
+│                                                                 │
+│  check_versions.py (주간) + hub.py 404/400 감지 (즉시)          │
+│       ↓                                                         │
+│  model-registry.json 변경 proposal → R:8 ACK → peers.json 파생 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 9. 비용/품질 최적화 + 피드백 루프
+
+### 9.1 비용 추적 스키마
+
+```jsonc
+// _sys/data/logs/cost-log.jsonl (1줄 = 1 ask)
+{
+  "ts":               "2026-06-18T10:30:00Z",
+  "session_id":       "cc-20260618-ABC1",
+  "peer":             "cc",
+  "model":            "claude-sonnet-4-6",
+  "thinking_config":  "adaptive:medium",
+  "task_type":        "IMPLEMENT",
+  "tokens_in":        4200,
+  "tokens_out":       1800,
+  "reasoning_tokens": 0,
+  "latency_ms":       3400,
+  "cost_usd":         0.0396,
+  "outcome":          "success",
+  "quality_signals": {
+    "test_pass":      true,
+    "ack_rate":       1.0,
+    "output_reuse":   true,
+    "user_override":  false
+  }
+}
+```
+
+### 9.2 ROI 집계 지표
+
+| KPI | 계산 | 목표 |
+|-----|------|------|
+| cost_per_success | 누적 비용 / 성공 태스크 수 | 감소 추세 |
+| quality_score | (test_pass×0.4 + ack_rate×0.3 + output_reuse×0.2 + (1-override)×0.1) | ≥ 0.75 |
+| failover_rate | failover 횟수 / 전체 ask 수 | < 0.05 |
+| reasoning_efficiency | actual_reasoning / reserved_budget | 0.6~0.9 |
+| context_utilization | avg(tokens_in / context_limit) | 0.3~0.7 |
+
+### 9.3 세션 ROI 리포트
+
+```
+// ctx_end.py 실행 시 _archive/roi/{date}.md 자동 생성
+[Session ROI Report] 2026-06-18
+총 비용:   $0.42  |  성공 태스크: 12  |  cost/success: $0.035
+품질 점수: 0.83   |  failover:  2회  |  override: 0회
+최다 사용 노드: cc::sonnet::medium (8회, $0.21)
+비용 절감 기회: R01 Router → gc::3.5-flash 전환 시 $0.08 절약 가능
+```
+
+---
+
+## 10. QUALITY_MODE 다이얼
+
+단일 파라미터 `QUALITY_MODE` (0~10), `_sys/ai/routing-config.json`에 저장.
+COLLAB_RATE와 **직교(orthogonal)** — 독립 파라미터.
+
+| Mode | 명칭 | 모델 티어 | Thinking/Reasoning | COLLAB_RATE 권장 | 예상 비용 |
+|:----:|------|----------|-------------------|----------------|---------|
+| 0 | **Budget** | standard 강제 | none / 0 / minimal | 0~3 | 최저 (~$0.05/ask) |
+| 2 | **Economy** | standard 우선 | low / 1000 | 3~5 | 낮음 |
+| 5 | **Balanced** | effort 우선 (기본) | medium / auto | 5 | 중간 (~$0.30/ask) |
+| 7 | **Quality** | effort~deepthink | high / 12000 | 5~8 | 높음 |
+| 10 | **Premium** | deepthink 강제 | max / 24576 / xhigh | 8~10 | 최고 (~$2.00/ask) |
+
+```python
+# routing-config.json
+{
+  "quality_mode": 5,          // 현재 설정
+  "quality_mode_override": null,  // 특정 task_type별 오버라이드 가능
+  "task_overrides": {
+    "ESCALATION": 10,         // 에스컬레이션은 항상 Premium
+    "FAST_QA":    0,          // 빠른 체크는 항상 Budget
+    "IMPLEMENT":  5           // 구현은 Balanced
+  }
+}
+```
+
+**Mode 전환 예시 (CLI):**
+```bash
+python _sys/core/hub.py update-config --key quality_mode --value 7
+# → routing-config.json 즉시 반영, 다음 ask부터 적용
+```
+
+---
+
+## 11. 지속 업데이트 방안
+
+### 11.1 파일 구조
+
+```
+_sys/ai/
+  model-registry.json    ← 모든 모델 실측 스펙 SSOT (R:8 변경)
+  peers.json             ← 운영 매핑 (model-registry에서 파생)
+  routing-config.json    ← QUALITY_MODE, 역할→노드 가중치
+_sys/checks/
+  check_versions.py      ← 주간 모델 스펙 polling
+_sys/data/logs/
+  cost-log.jsonl         ← 세션별 비용/품질 기록 (gitignored)
+  model-drift.jsonl      ← 실측값 vs 등록값 괴리 기록
+```
+
+### 11.2 model-registry.json 스키마
+
+```jsonc
+{
+  "_version": "1.0",
+  "_last_validated": "2026-06-18",
+  "models": {
+    "claude-sonnet-4-6": {
+      "provider": "anthropic",
+      "context_limit": 1000000,
+      "output_limit": 128000,
+      "reasoning_type": "adaptive",
+      "reasoning_params": {"effort": ["low","medium","high","max"]},
+      "temperature_supported": true,
+      "vision": true,
+      "tool_use": true,
+      "pricing": {"input_per_1m": 3.00, "output_per_1m": 15.00},
+      "status": "GA",
+      "validated_at": "2026-06-18"
+    }
+  }
+}
+```
+
+### 11.3 감지 → 검증 → 반영 파이프라인
+
+```
+[감지] Dual-Vector
+  A. check_versions.py  — 주간 스케줄, 공식 /models API 폴링
+  B. hub.py 인터셉트    — 404(모델 없음) / 400(파라미터 거부) 즉시 감지
+
+        ↓
+
+[검증] check_versions.py --validate {model_id}
+  - 최소 payload 테스트 (context, output 한도 실측)
+  - 파라미터 유효성 확인 (thinking, temperature 등)
+  - 결과를 model-registry.json 후보 항목으로 기록
+
+        ↓
+
+[제안] proposal-add "MODEL_REGISTRY_UPDATE: {model_id} {field} {old}→{new}"
+  - R:8 unanimous ACK 필요 (registry 변경은 헌법적 수준)
+
+        ↓
+
+[반영] peers.json 자동 파생
+  - hub.py는 매 ask마다 peers.json 동적 로드 → 재시작 불필요
+
+        ↓
+
+[드리프트 감지] Observer (LAYER 3)
+  - 실사용 tokens_out > registered output_limit 감지
+  - reasoning_tokens 평균이 registered budget과 >20% 괴리 시
+  - → model-drift.jsonl 기록 → 다음 self_care.py에서 재검증 트리거
+```
+
+### 11.4 오너십 및 권한
+
+| 작업 | 담당 | 합의 레벨 |
+|------|------|---------|
+| check_versions.py 실행 | self_care.py 자동 | 자동 (exempt) |
+| model-registry.json 변경 제안 | 모든 피어 가능 | proposal-add |
+| model-registry.json 최종 반영 | unanimous ACK 후 자동 | **R:8** |
+| peers.json 운영 매핑 변경 | 모든 피어 가능 | R:5 |
+| routing-config.json 가중치 조정 | self_care.py 분석 후 제안 | R:5 |
+| QUALITY_MODE 변경 | 사용자 또는 피어 | R:3 |
+
+---
+
+_cc+gc 끝장토론 + 3-agent web research 합의 완료 2026-06-18.
+§6~11 신규 추가: 노드 아키텍처 · 역할 분류(R01~R12) · 5-레이어 라우팅 · PLAN-DO-SEE-ADJUST 피드백 루프 · QUALITY_MODE 0~10 · model-registry 지속 업데이트 파이프라인._
