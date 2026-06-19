@@ -74,7 +74,11 @@
         "standard": "claude-haiku-4-5-20251001",
         "effort": "claude-sonnet-4-6",
         "deepthink": "claude-opus-4-8"
-      }
+      },
+      "node_ids": [
+        "cc",
+        "ca"
+      ]
     },
     "gemini": {
       "enabled": false,
@@ -124,7 +128,10 @@
         "standard": "gemini-3-flash",
         "effort": "gemini-2.5-pro",
         "deepthink": "gemini-3-pro"
-      }
+      },
+      "node_ids": [
+        "gc"
+      ]
     },
     "codex": {
       "enabled": true,
@@ -153,7 +160,10 @@
         "standard": "gpt-5.4-mini",
         "effort": "gpt-5.5",
         "deepthink": "o3-pro"
-      }
+      },
+      "node_ids": [
+        "cx"
+      ]
     },
     "antigravity": {
       "enabled": true,
@@ -196,7 +206,10 @@
         "standard": "default",
         "effort": "default",
         "deepthink": "default"
-      }
+      },
+      "node_ids": [
+        "ag"
+      ]
     }
   }
 }

@@ -130,10 +130,26 @@ class Validator:
         registered_ids = set(peer_entries.keys())
         self.info(f"{label}: {len(registered_ids)} peer entries ({', '.join(sorted(registered_ids))})")
 
-        # Suspended peers should have enabled:false in peers.json too
+        # Identity split check: every entry should declare node_ids mapping
+        all_declared_node_ids: set[str] = set()
         for peer_key, peer_val in peer_entries.items():
-            if isinstance(peer_val, dict) and peer_val.get("enabled") is False:
+            if not isinstance(peer_val, dict):
+                continue
+            if peer_val.get("enabled") is False:
                 self.info(f"{label}: {peer_key} correctly marked enabled:false")
+            nids = peer_val.get("node_ids")
+            if nids is None:
+                self.warn(f"{label}: {peer_key} missing node_ids field (identity split unresolved)")
+            elif isinstance(nids, list):
+                all_declared_node_ids.update(nids)
+
+        # All enabled/disabled orchestration peer IDs should be declared in some node_ids list
+        all_orch_peer_ids = enabled_ids | disabled_ids
+        undeclared = all_orch_peer_ids - all_declared_node_ids
+        if undeclared:
+            self.warn(f"{label}: orchestration peer IDs not in any node_ids: {sorted(undeclared)}")
+        else:
+            self.info(f"{label}: identity split resolved — all orchestration peer IDs declared in node_ids")
 
     def _check_model_profiles(self, disabled_ids: set):
         label = "model_profiles.json"
