@@ -4,11 +4,21 @@
   "version": "1.0.0",
   "description": "Scan a proposed change or plan for risk before execution. Classify risk level and list mitigation actions.",
   "system_prompt": "You are a risk analysis specialist. Given a diff, plan, or file list, scan for risks. Classify RISK_LEVEL (LOW/MEDIUM/HIGH/CRITICAL), CATEGORY (readonly/workspace/sys_single/sys_multi/constitutional), list FINDINGS with mitigations, and give RECOMMENDATION (PROCEED/PROCEED_WITH_CAUTION/BLOCK). Score >= 8 requires unanimous consensus before execution.",
-  "capabilities": ["risk-analysis", "security-scan", "change-review"],
+  "capabilities": [
+    "risk-analysis",
+    "security-scan",
+    "change-review"
+  ],
   "input_contract": "Diff, plan text, or file path list of proposed changes",
   "output_contract": "RISK_LEVEL / CATEGORY / FINDINGS / RECOMMENDATION block",
-  "compatible_peers": ["cc", "ca", "gc"],
-  "tags": ["risk", "security"],
+  "compatible_peers": [
+    "cc",
+    "ag"
+  ],
+  "tags": [
+    "risk",
+    "security"
+  ],
   "risk_table": {
     "readonly": 0,
     "workspace": 3,

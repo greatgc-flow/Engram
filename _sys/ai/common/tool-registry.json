@@ -5,7 +5,7 @@
       "type": "agent",
       "version": "1.0.0",
       "description": "System architecture and MECE design",
-      "compatible_peers": ["cc", "gc"],
+      "compatible_peers": ["cc", "ag"],
       "entrypoint": "_sys/ai/common/agents/architect.json",
       "tags": ["design", "architecture"]
     },
@@ -23,7 +23,7 @@
       "type": "agent",
       "version": "1.0.0",
       "description": "Codebase mapping and exploration",
-      "compatible_peers": ["gc"],
+      "compatible_peers": ["ag"],
       "entrypoint": "_sys/ai/common/agents/researcher.json",
       "tags": ["research", "discovery"]
     },
@@ -32,7 +32,7 @@
       "type": "agent",
       "version": "1.0.0",
       "description": "Hardcoded path and environment audit",
-      "compatible_peers": ["cc", "gc", "cx"],
+      "compatible_peers": ["cc", "ag", "cx"],
       "entrypoint": "_sys/ai/common/agents/portability-auditor.json",
       "tags": ["audit", "portability"]
     },
@@ -41,7 +41,7 @@
       "type": "agent",
       "version": "1.0.0",
       "description": "Formal proposal [PROPOSAL:] drafting",
-      "compatible_peers": ["cc", "gc", "cx"],
+      "compatible_peers": ["cc", "ag", "cx"],
       "entrypoint": "_sys/ai/common/agents/proposer.json",
       "tags": ["governance", "proposal"]
     },
@@ -50,7 +50,7 @@
       "type": "agent",
       "version": "1.0.0",
       "description": "Security and regression risk analysis",
-      "compatible_peers": ["cc", "gc", "cx"],
+      "compatible_peers": ["cc", "ag", "cx"],
       "entrypoint": "_sys/ai/common/agents/risk-scanner.json",
       "tags": ["risk", "security"]
     },
@@ -68,7 +68,7 @@
       "type": "agent",
       "version": "1.0.0",
       "description": "Adversarial AP-01~AP-21 anti-pattern detection",
-      "compatible_peers": ["cc", "gc", "cx"],
+      "compatible_peers": ["cc", "ag", "cx"],
       "entrypoint": "_sys/ai/common/agents/cross-reviewer.json",
       "tags": ["review", "adversarial"]
     },

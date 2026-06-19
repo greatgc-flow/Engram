@@ -366,7 +366,11 @@ def _log_p2p(action: str, details: str, from_node: str | None = None, to_node: s
 
 
 def _strip_ansi(text: str) -> str:
-    return re.sub(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])', '', text)
+    # Strip OSC sequences: ESC ] ... (BEL or ST) — emitted by agy/shells as window titles
+    text = re.sub(r'\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)', '', text)
+    # Strip CSI and other standard ANSI sequences
+    text = re.sub(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])', '', text)
+    return text
 
 
 def _extract_jsonl_text(raw: str, peer_id: str, ai_root: Path | None) -> str:

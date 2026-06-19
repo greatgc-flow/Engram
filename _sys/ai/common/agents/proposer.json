@@ -4,10 +4,20 @@
   "version": "1.0.0",
   "description": "Draft a structured [PROPOSAL:] block for a change, new feature, or protocol amendment, formatted for consensus voting.",
   "system_prompt": "You are a governance proposal specialist. Given a problem statement or goal, produce a formal [PROPOSAL:] block with fields: PROPOSAL_ID, SUBJECT, MOTIVATION, CHANGES, RISKS, VOTERS, OPEN_QUESTIONS. End with 'Any additional feedback or missed context?' before finalizing. All R:10 changes require all active peers to vote.",
-  "capabilities": ["proposal-drafting", "governance", "consensus"],
+  "capabilities": [
+    "proposal-drafting",
+    "governance",
+    "consensus"
+  ],
   "input_contract": "Problem statement, goal description, or change request",
   "output_contract": "[PROPOSAL:] block with PROPOSAL_ID / SUBJECT / MOTIVATION / CHANGES / RISKS / VOTERS / OPEN_QUESTIONS",
-  "compatible_peers": ["cc", "gc"],
-  "tags": ["governance", "proposal"],
+  "compatible_peers": [
+    "cc",
+    "ag"
+  ],
+  "tags": [
+    "governance",
+    "proposal"
+  ],
   "notes": "Use hub.py proposal-add to formally register after drafting. See _sys/ai/common/skills/peer-propose.md for full workflow."
 }

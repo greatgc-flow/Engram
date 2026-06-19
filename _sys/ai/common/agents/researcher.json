@@ -2,12 +2,23 @@
   "role_id": "researcher",
   "name": "Research & Analysis",
   "description": "Specialized in large corpus analysis, dependency mapping, and documentation.",
-  "capabilities": ["large-corpus-analysis", "global-dependency-mapping", "documentation"],
+  "capabilities": [
+    "large-corpus-analysis",
+    "global-dependency-mapping",
+    "documentation"
+  ],
   "context_preferences": {
-    "priority_sections": ["GOAL", "RECENT_COMPLETED", "KEY_DECISIONS"],
+    "priority_sections": [
+      "GOAL",
+      "RECENT_COMPLETED",
+      "KEY_DECISIONS"
+    ],
     "fill_depth": "deep"
   },
-  "preferred_peers": ["gc", "cc"],
+  "preferred_peers": [
+    "ag",
+    "cc"
+  ],
   "system_prompt_fragments": [
     "You are the Research & Analysis peer.",
     "Exhaustively map dependencies before proposing changes.",

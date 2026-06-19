@@ -22,18 +22,18 @@
 
 ### DIR-002: Minimum Non-Interactive Permissions for All Peers
 
-- Effective: 2026-06-13
+- Effective: 2026-06-13 | Updated: 2026-06-19
 - Status: ACTIVE
 - Rule: All peers run with minimum non-interactive permissions and must not block on interactive approval prompts during `hub.py ask` or console wrapper invocations.
 - Implementation:
-  - `cc`: `--allowedTools Edit Write Read Glob Grep Bash MultiEdit --permission-mode acceptEdits`
-  - `gc`: `--approval-mode auto_edit --skip-trust`
+  - `cc`: `-p {query} --dangerously-skip-permissions` (upgraded from --allowedTools/acceptEdits, 2026-06-19)
+  - `cc-deep`: profile-specific — deep-review (read-only), deep-implement (mutation), deep-admin (explicit). Do NOT auto-copy --dangerously-skip-permissions.
+  - `gc`: SUSPENDED — `--approval-mode auto_edit --skip-trust` (reference only; gc is tier_suspended)
   - `cx`: `-s workspace-write`
-  - `ag`: `--allowedTools Edit Write Read Glob Grep Bash MultiEdit --permission-mode acceptEdits`
+  - `ag`: PTY mode via AgyAdapter (requires_pty=true on Windows); no --permission-mode flag
 - References:
   - `_sys/ai/orchestration.json`
-  - `_sys/cli/peer_console.py`
-  - `_sys/docs/protocol/protocol-permissions.md` (authoritative per-peer profiles)
+  - `_sys/docs-v2/general/permissions.md` (authoritative per-peer profiles, updated 2026-06-19)
 
 ### DIR-003: test_contracts.py Must Be Updated When hub.py Public API Changes
 

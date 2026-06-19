@@ -4,12 +4,47 @@
   "_updated": "2026-06-13",
   "_purpose": "Declarative peer status checks. Safe discovery methods per peer. Consumed by hub.py peer-status action.",
   "general_contract": {
-    "safe_classes": ["version_only", "local_help", "local_config_presence", "local_session_listing", "declared_profile", "low_quota_diagnostic", "empirical_probe", "unsupported"],
-    "auth_states": ["authenticated", "unauthenticated", "expired", "unknown"],
-    "rate_states": ["ok", "limited", "exhausted", "unknown"],
-    "context_states": ["green", "yellow", "red", "stale", "unknown"],
-    "gate_states": ["open", "degraded", "closed", "unknown"],
-    "effect_classes": ["read_only", "declared_dry_validate", "external_io", "unknown"],
+    "safe_classes": [
+      "version_only",
+      "local_help",
+      "local_config_presence",
+      "local_session_listing",
+      "declared_profile",
+      "low_quota_diagnostic",
+      "empirical_probe",
+      "unsupported"
+    ],
+    "auth_states": [
+      "authenticated",
+      "unauthenticated",
+      "expired",
+      "unknown"
+    ],
+    "rate_states": [
+      "ok",
+      "limited",
+      "exhausted",
+      "unknown"
+    ],
+    "context_states": [
+      "green",
+      "yellow",
+      "red",
+      "stale",
+      "unknown"
+    ],
+    "gate_states": [
+      "open",
+      "degraded",
+      "closed",
+      "unknown"
+    ],
+    "effect_classes": [
+      "read_only",
+      "declared_dry_validate",
+      "external_io",
+      "unknown"
+    ],
     "secret_policy": "never_record_secret_values",
     "default_frequency": {
       "version_only": "session_start",
@@ -32,7 +67,9 @@
           "command": "codex --version",
           "effect_class": "read_only",
           "quota": "none_expected",
-          "records": ["version"],
+          "records": [
+            "version"
+          ],
           "notes": "Observed permission warnings for temp cleanup/PATH alias; do not treat warning as auth failure."
         },
         {
@@ -41,7 +78,10 @@
           "command": "codex --help",
           "effect_class": "read_only",
           "quota": "none_expected",
-          "records": ["flags", "subcommands"]
+          "records": [
+            "flags",
+            "subcommands"
+          ]
         },
         {
           "id": "cx.doctor",
@@ -49,7 +89,12 @@
           "command": "codex doctor",
           "effect_class": "external_io",
           "quota": "network_diagnostic_possible",
-          "records": ["auth_configured", "reachability", "state_db", "sandbox"],
+          "records": [
+            "auth_configured",
+            "reachability",
+            "state_db",
+            "sandbox"
+          ],
           "frequency": "manual_or_session_start_only"
         }
       ],
@@ -68,9 +113,20 @@
         }
       ],
       "derived_gate_rule": {
-        "open_if": ["auth_configured", "reachability_ok", "state_db_ok"],
-        "degraded_if_any": ["reachability_warning", "state_db_warning", "permission_warning"],
-        "closed_if_any": ["auth_missing", "required_endpoint_unreachable"]
+        "open_if": [
+          "auth_configured",
+          "reachability_ok",
+          "state_db_ok"
+        ],
+        "degraded_if_any": [
+          "reachability_warning",
+          "state_db_warning",
+          "permission_warning"
+        ],
+        "closed_if_any": [
+          "auth_missing",
+          "required_endpoint_unreachable"
+        ]
       }
     },
     "cc": {
@@ -82,7 +138,9 @@
           "command": "claude --version",
           "effect_class": "read_only",
           "quota": "none_expected",
-          "records": ["version"]
+          "records": [
+            "version"
+          ]
         },
         {
           "id": "cc.help",
@@ -90,7 +148,10 @@
           "command": "claude --help",
           "effect_class": "read_only",
           "quota": "none_expected",
-          "records": ["flags", "subcommands"]
+          "records": [
+            "flags",
+            "subcommands"
+          ]
         },
         {
           "id": "cc.auth_status",
@@ -98,8 +159,17 @@
           "command": "claude auth status",
           "effect_class": "read_only",
           "quota": "none_expected",
-          "records": ["loggedIn", "authMethod", "apiProvider", "subscriptionType"],
-          "redact": ["email", "orgId", "orgName"]
+          "records": [
+            "loggedIn",
+            "authMethod",
+            "apiProvider",
+            "subscriptionType"
+          ],
+          "redact": [
+            "email",
+            "orgId",
+            "orgName"
+          ]
         }
       ],
       "unsafe_or_unknown": [
@@ -133,7 +203,9 @@
           "command": "gemini --version",
           "effect_class": "read_only",
           "quota": "none_expected",
-          "records": ["version"]
+          "records": [
+            "version"
+          ]
         },
         {
           "id": "gc.help",
@@ -141,7 +213,10 @@
           "command": "gemini --help",
           "effect_class": "read_only",
           "quota": "none_expected",
-          "records": ["flags", "subcommands"]
+          "records": [
+            "flags",
+            "subcommands"
+          ]
         },
         {
           "id": "gc.sessions",
@@ -149,7 +224,9 @@
           "command": "gemini --list-sessions",
           "effect_class": "read_only",
           "quota": "none_expected",
-          "records": ["session_inventory"]
+          "records": [
+            "session_inventory"
+          ]
         },
         {
           "id": "gc.status_bat",
@@ -157,7 +234,9 @@
           "command": "_sys\\gemini\\gemini-status.bat",
           "effect_class": "declared_dry_validate",
           "quota": "none_expected_unless_ping_enabled",
-          "records": ["_sys/gemini/status.json"]
+          "records": [
+            "_sys/gemini/status.json"
+          ]
         }
       ],
       "unsafe_or_unknown": [
@@ -190,7 +269,9 @@
           "command": "agy --version",
           "effect_class": "read_only",
           "quota": "none_expected",
-          "records": ["version"]
+          "records": [
+            "version"
+          ]
         }
       ],
       "unsafe_or_unknown": [

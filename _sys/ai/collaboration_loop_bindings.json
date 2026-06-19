@@ -71,11 +71,11 @@
     "reviewer": {
       "preferred_peers": ["cc"],
       "model_profiles": ["cc.default", "cc.deep"],
-      "fallback": "gc.default"
+      "fallback": "ag.default"
     },
     "researcher": {
-      "preferred_peers": ["gc"],
-      "model_profiles": ["gc.default", "gc.plan"],
+      "preferred_peers": ["ag"],
+      "model_profiles": ["ag.default"],
       "fallback": "cc.default"
     },
     "implementer": {
@@ -93,12 +93,12 @@
     },
     {
       "task_type": "consensus_framing",
-      "route": ["cc.default", "gc.plan", "cx.default"],
+      "route": ["cc.default", "ag.default", "cx.default"],
       "final_reviewer": "cc.default"
     },
     {
       "task_type": "implementation_planning",
-      "route": ["cc.default", "cx.default", "gc.plan"],
+      "route": ["cc.default", "cx.default", "ag.default"],
       "final_reviewer": "cc.default"
     },
     {
@@ -113,32 +113,32 @@
     },
     {
       "task_type": "verification",
-      "route": ["cc.default", "gc.default"],
+      "route": ["cc.default", "ag.default"],
       "final_reviewer": "cc.default"
     },
     {
       "task_type": "large_corpus_research",
-      "route": ["gc.default", "cc.default"],
+      "route": ["ag.default", "cc.default"],
       "final_reviewer": "cc.default"
     },
     {
       "task_type": "web_doc_research",
-      "route": ["gc.default", "cc.default"],
+      "route": ["ag.default", "cc.default"],
       "final_reviewer": "cc.default"
     },
     {
       "task_type": "summarization_compaction",
-      "route": ["gc.plan", "cc.default"],
+      "route": ["ag.default", "cc.default"],
       "final_reviewer": "cc.default"
     },
     {
       "task_type": "mailbox_handoff_hygiene",
-      "route": ["gc.plan", "cx.default", "cc.default"],
+      "route": ["ag.default", "cx.default", "cc.default"],
       "final_reviewer": "cc.default"
     },
     {
       "task_type": "status_health_checking",
-      "route": ["gc.default", "cx.default", "cc.default"],
+      "route": ["ag.default", "cx.default", "cc.default"],
       "final_reviewer": "cc.default"
     },
     {
@@ -148,12 +148,12 @@
     },
     {
       "task_type": "model_profile_design",
-      "route": ["gc.plan", "cc.default", "cx.default"],
+      "route": ["ag.default", "cc.default", "cx.default"],
       "final_reviewer": "cc.default"
     },
     {
       "task_type": "status_check_design",
-      "route": ["gc.default", "cc.default", "cx.default"],
+      "route": ["ag.default", "cc.default", "cx.default"],
       "final_reviewer": "cc.default"
     },
     {
@@ -163,12 +163,12 @@
     },
     {
       "task_type": "large_context_research",
-      "route": ["gc.default", "cc.default"],
+      "route": ["ag.default", "cc.default"],
       "final_reviewer": "cc.default"
     },
     {
       "task_type": "default",
-      "route": ["cc.default", "gc.default", "cx.default"],
+      "route": ["cc.default", "ag.default", "cx.default"],
       "final_reviewer": "cc.default"
     }
   ],

@@ -4,11 +4,23 @@
   "version": "1.0.0",
   "description": "Scans peer session output for [LESSON_LEARNED:] tags and queues lessons for addition",
   "system_prompt": "You are a lesson extraction specialist. Scan the provided peer output for [LESSON_LEARNED:] blocks. For each block found: extract severity, category, rule, and context. Format as a hub.py lessons-propose command. If no blocks found, output NONE.",
-  "capabilities": ["text-parsing", "lesson-extraction", "knowledge-management"],
+  "capabilities": [
+    "text-parsing",
+    "lesson-extraction",
+    "knowledge-management"
+  ],
   "input_contract": "Peer session output text (any length)",
   "output_contract": "List of hub.py command lines: `python _sys/core/hub.py lessons-propose --title ... --rule ... --severity ... --category ...`",
   "on_output": "Execute each generated lessons-propose command, then lessons-activate, then lesson-broadcast",
-  "compatible_peers": ["cc", "gc", "cx", "ag"],
-  "tags": ["learning", "knowledge", "self-evolution"],
+  "compatible_peers": [
+    "cc",
+    "ag",
+    "cx"
+  ],
+  "tags": [
+    "learning",
+    "knowledge",
+    "self-evolution"
+  ],
   "parse_pattern": "\\[LESSON_LEARNED:[^\\]]*\\]\\n(?:.*\\n)*?(?=\\[|$)"
 }
