@@ -52,7 +52,7 @@ Read .ai/state.json
 | `[ACTIVE_THREADS]` | In-flight threads | 5 |
 
 Context-fill sections controlled by `protocol.json["session"]["context_fill_sections"]`.
-`fill_depth_multiplier`: gc=3 (reads more), others=1.
+`fill_depth_multiplier`: all active peers=1 (equal depth). Historical: ag was 3 before 2026-06-19 equality fix.
 
 ---
 

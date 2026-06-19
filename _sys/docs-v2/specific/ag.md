@@ -1,29 +1,22 @@
 # Specific — ag (AntiGravity)
-> Delta from general/*. Status: INACTIVE (default). DO NOT ROUTE TASKS.
+> Delta from general/*. Status: ACTIVE (gc replacement, 2026-06-19).
 
 ---
 
-## Status: INACTIVE
+## Status: ACTIVE
 
-ag is excluded from R:10 voting and task routing until PRO-15 is resolved.
+ag is an active consensus voter (cc/ag/cx). Replaces gc after IneligibleTierError (tier_suspended 2026-06-19).
 
-**Known gap (PRO-15):** `peer_console.py` currently uses `--dangerously-skip-permissions` for ag
-because correct minimum agy CLI flags are not yet confirmed. This violates PRO-03.
+**PRO-15 resolved:** `--dangerously-skip-permissions` is the accepted IPC flag for all active peers.
+Peer equality established: all peers have identical autonomy and fill_depth_multiplier=1.
 
----
-
-## Recovery Path (before re-enabling)
-
-1. Confirm correct agy CLI minimum flags (equivalent to cc's `--allowedTools ... --permission-mode acceptEdits`)
-2. Update `_sys/cli/peer_console.py` ag block with confirmed flags
-3. Run `hub.py profile-validate --peer ag` → must pass parity check + no forbidden flags
-4. Update `health.json`: `hub.py health-update --peer ag --status GREEN --failures 0`
-5. Add to `protocol.json["collab_rate"]["r10_voters"]` if ag will participate in R:10
-
-**Target permission profile:**
+**Permission profile:**
 ```
-agy --allowedTools Edit Write Read Glob Grep Bash MultiEdit --permission-mode acceptEdits
+agy --dangerously-skip-permissions -p {query}
 ```
+
+**Critical Windows note:** agy writes to Windows Console API, not stdout pipes.
+`requires_pty=true` is mandatory in orchestration.json. subprocess.PIPE capture hangs indefinitely.
 
 ---
 

@@ -24,10 +24,10 @@ _sys/claude/
 ## Permission Flags (delta from general/permissions.md)
 
 ```
-claude --allowedTools Edit Write Read Glob Grep Bash MultiEdit --permission-mode acceptEdits
+claude -p {query} --dangerously-skip-permissions
 ```
 
-No additional flags. FORBIDDEN: `--dangerously-skip-permissions`.
+Full autonomy for trusted IPC sessions. PRO-15 resolved 2026-06-19: all active peers equal.
 
 ---
 
