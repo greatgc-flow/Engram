@@ -306,6 +306,74 @@ class TestAsk:
         assert env["GEMINI_CLI_TRUST_WORKSPACE"] == "true"
         assert env["SOME_FALSE_FLAG"] == "false"
 
+    def _ag_node(self):
+        return {
+            "node_id": "ag", "invoke": "agy", "type": "peer",
+            "adapter_class": "AgyAdapter",
+            "invoke_args": ["--dangerously-skip-permissions", "-p", "{query}"],
+            "requires_pty": True, "timeout": 300, "memory": "ephemeral",
+        }
+
+    def test_ask_ag_uses_pty_path(self, monkeypatch, capsys):
+        """ag with requires_pty=true must go through _ask_with_pty, not Popen."""
+        import subprocess as _sp
+        node = self._ag_node()
+        monkeypatch.setattr(hub, "_load_orchestration", lambda: {"hub_nodes": [node]})
+        mock_pty = MagicMock(return_value=("ANTIGRAVITY", 16))
+        with patch("shutil.which", return_value="/usr/bin/agy"), \
+             patch("hub._ask_with_pty", mock_pty), \
+             patch("subprocess.Popen") as mock_popen:
+            hub.action_ask("ag", "test", None, 300, None)
+        mock_pty.assert_called_once()
+        mock_popen.assert_not_called()
+
+    def test_ask_ag_pty_output_through_parse_output(self, monkeypatch, capsys):
+        """PTY output must be passed through adapter.parse_output before printing."""
+        node = self._ag_node()
+        monkeypatch.setattr(hub, "_load_orchestration", lambda: {"hub_nodes": [node]})
+        with patch("shutil.which", return_value="/usr/bin/agy"), \
+             patch("hub._ask_with_pty", return_value=("  clean response  ", 10)):
+            hub.action_ask("ag", "test", None, 300, None)
+        out, _ = capsys.readouterr()
+        assert "clean response" in out
+
+    def test_ask_ag_pty_writes_output_file(self, tmp_path, monkeypatch):
+        """PTY path must write parsed output to output_file when specified."""
+        node = self._ag_node()
+        ai_dir = tmp_path / ".ai"
+        ai_dir.mkdir()
+        out_file = ai_dir / "reply.txt"
+        monkeypatch.setattr(hub, "_load_orchestration", lambda: {"hub_nodes": [node]})
+        monkeypatch.setattr(hub, "_peer_sys_dir", lambda _: tmp_path / "antigravity")
+        with patch("shutil.which", return_value="/usr/bin/agy"), \
+             patch("hub._ask_with_pty", return_value=("PTY OUTPUT", 5)):
+            hub.action_ask("ag", "test", None, 300, ai_dir, output_file=str(out_file))
+        assert out_file.exists()
+        assert "PTY OUTPUT" in out_file.read_text(encoding="utf-8")
+
+    def test_ask_ag_pty_quiet_mode(self, monkeypatch, capsys):
+        """PTY quiet mode must print only the response, no header."""
+        node = self._ag_node()
+        monkeypatch.setattr(hub, "_load_orchestration", lambda: {"hub_nodes": [node]})
+        with patch("shutil.which", return_value="/usr/bin/agy"), \
+             patch("hub._ask_with_pty", return_value=("quiet reply", 3)):
+            hub.action_ask("ag", "test", None, 300, None, quiet=True)
+        out, _ = capsys.readouterr()
+        assert "quiet reply" in out
+        assert "[HUB]" not in out
+
+    def test_ask_ag_pty_ansi_stripped(self, monkeypatch, capsys):
+        """PTY output ANSI codes must be stripped before returning."""
+        node = self._ag_node()
+        monkeypatch.setattr(hub, "_load_orchestration", lambda: {"hub_nodes": [node]})
+        ansi_output = "\x1b[32mgreen text\x1b[0m"
+        with patch("shutil.which", return_value="/usr/bin/agy"), \
+             patch("hub._ask_with_pty", return_value=(ansi_output, 5)):
+            hub.action_ask("ag", "test", None, 300, None)
+        out, _ = capsys.readouterr()
+        assert "\x1b" not in out
+        assert "green text" in out
+
     def test_ask_failure_classification_reads_lifecycle_policy(self, monkeypatch):
         monkeypatch.setattr(hub, "_load_lifecycle_policy", lambda: {
             "ask_failure_classification": {

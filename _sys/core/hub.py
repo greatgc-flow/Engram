@@ -1866,7 +1866,24 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
 
     # ── PTY path ───────────────────────────────────────────────
     if requires_pty and sys.platform == "win32":
-        output, elapsed = _ask_with_pty(cmd, to, timeout_sec, process_env, quiet)
+        raw_pty, elapsed = _ask_with_pty(cmd, to, timeout_sec, process_env, quiet=True)
+        # _ask_with_pty already strips ANSI; apply again as defense-in-depth before adapter
+        raw_pty = _strip_ansi(raw_pty)
+        output = adapter.parse_output(raw_pty, node) if adapter else raw_pty
+        logger = _get_logger()
+        if logger:
+            logger.log_ipc(peer_id=to, direction="receive", response_preview=output, elapsed_sec=float(elapsed))
+            profile_id = _resolve_profile_id(to)
+            usage: dict = adapter.extract_usage(raw_pty, node) if adapter else {}
+            logger.log_cost(
+                peer_id=to,
+                model_id=node.get("invoke", to),
+                profile_id=profile_id,
+                latency_sec=float(elapsed),
+                input_tokens=usage.get("input_tokens"),
+                output_tokens=usage.get("output_tokens"),
+                reasoning_tokens=usage.get("reasoning_tokens"),
+            )
         _record_ask_success(health_peer, elapsed, ai_root)
         _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
         if ai_root:
@@ -1884,6 +1901,8 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 sys.exit(1)
         elif quiet:
             print(output, end="")
+        else:
+            print(f"[HUB] REPLY {to} | chars={len(output)} | elapsed={elapsed}s\n{output.strip()}")
         return
 
     # ── Subprocess path (with optional session-retry) ──────────
