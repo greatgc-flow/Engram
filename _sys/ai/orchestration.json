@@ -17,7 +17,7 @@
       "type": "peer",
       "adapter_class": "ClaudeAdapter",
       "invoke": "claude",
-      "invoke_args": ["-p", "{query}", "--allowedTools", "Edit Write Read Glob Grep Bash MultiEdit", "--permission-mode", "acceptEdits"],
+      "invoke_args": ["-p", "{query}", "--dangerously-skip-permissions"],
       "memory": "persistent",
       "timeout": 0
     },
@@ -28,7 +28,7 @@
       "type": "peer",
       "adapter_class": "ClaudeAdapter",
       "invoke": "claude",
-      "invoke_args": ["-p", "{query}", "--allowedTools", "Edit Write Read Glob Grep Bash MultiEdit", "--permission-mode", "acceptEdits"],
+      "invoke_args": ["-p", "{query}", "--dangerously-skip-permissions"],
       "memory": "short-term",
       "timeout": 0
     },

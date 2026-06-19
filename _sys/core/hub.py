@@ -2635,8 +2635,8 @@ def action_peer_status(node_id: str | None = None) -> None:
                 mb = ctx.get("jsonl_mb", 0.0)
                 failures = int(sh.get("consecutive_failures", 0))
                 reason = sh.get("last_failure_reason") or ""
-                # gate_open=false 이면 gate 컬럼에 반영
-                if not gate_cfg and av.get("gate_open") is False:
+                # gate_open=false overrides gate file display (health.json is authoritative)
+                if av.get("gate_open") is False:
                     gate = "CLOSED"
                 details_parts = [f"{mb:.1f}MB"]
                 if failures:
