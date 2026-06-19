@@ -118,17 +118,43 @@ task-failover, task-status, thread-react, transient-scan
 
 ## Benchmark I — Adapter Fuzz Test
 
-**Adapters:** ClaudeAdapter, CodexAdapter, GeminiAdapter, VirtualAdapter  
-**Test cases:** 20 fuzz inputs × 4 node configs × 4 adapters = **320 total**
+**Adapters:** AgyAdapter, ClaudeAdapter, CodexAdapter, GeminiAdapter, VirtualAdapter  
+**Test cases:** 20 fuzz inputs × 4 node configs × 5 adapters = **400 total** *(+80 after ag activation)*
 
 | Adapter | parse_output | extract_usage | Silent empty |
 |---------|-------------|---------------|-------------|
+| AgyAdapter | 80/80 OK | 80/80 OK | None |
 | ClaudeAdapter | 80/80 OK | 80/80 OK | None |
 | CodexAdapter | 80/80 OK | 80/80 OK | None |
 | GeminiAdapter | 80/80 OK | 80/80 OK | None |
 | VirtualAdapter | 80/80 OK | 80/80 OK | None |
 
-**Result: ROBUST** — All adapters handled all fuzz inputs (empty, binary, null bytes, 5MB strings, malformed JSON, Unicode heavy, HTML, ANSI codes) without throwing exceptions.
+**Result: ROBUST** — All 5 adapters handled all fuzz inputs (empty, binary, null bytes, 5MB strings, malformed JSON, Unicode heavy, HTML, ANSI codes) without throwing exceptions.
+
+---
+
+---
+
+## ag Activation (2026-06-19)
+
+**Status:** ACTIVE — ag (Antigravity CLI agy v1.0.9) replaces gc as consensus voter.
+
+| Component | Change |
+|-----------|--------|
+| hub_peer.py | AgyAdapter added (commit a714510) |
+| hub.py PTY path | parse_output + cost logging + ANSI strip (commit 945aa1b) |
+| orchestration.json | requires_pty=true, AgyAdapter, timeout=300 |
+| routing-config.json v1.1 | R02/R04/R06 primary=ag; R01/R08-R11 fallback=ag |
+| protocol.json | default_voters=cc/ag/cx; ag capability expanded |
+| model-registry.json v1.3 | `default` model entry for ag |
+| test_hub_peer.py | 9 AgyAdapter unit tests |
+| test_hub.py | 5 PTY path integration tests |
+| Total tests | 706 passed |
+
+**Smoke test:** `hub.py ask --to ag "Reply: ANTIGRAVITY"` → 16s, correct response.
+**IPC test:** ag self-described capabilities, read protocol.json and ag.md autonomously.
+
+**Key finding:** On Windows, agy uses Console API (not stdout pipes). `requires_pty=true` is mandatory — subprocess.PIPE capture hangs indefinitely.
 
 ---
 
