@@ -211,6 +211,45 @@ class HubLogger:
             "effort_level": effort_level,
         })
 
+    def log_token_calibration(
+        self,
+        *,
+        peer_id: str,
+        model_id: str,
+        estimated_tokens: int,
+        actual_prompt_tokens: int | None,
+        actual_completion_tokens: int | None,
+        actual_reasoning_tokens: int | None,
+        ipc_protocol_version: int | None = None,
+    ) -> None:
+        """Calibration record comparing static token estimate vs actual API usage.
+
+        Only written when actual_reasoning_tokens is not None (i.e., output_tokens_details present).
+        Used to improve estimate_tokens() accuracy over time (TM-04).
+        Logged to: data/logs/token_calibration.jsonl
+        """
+        if actual_reasoning_tokens is None:
+            return
+        record = {
+            "ts": _now_iso(),
+            "_type": "token_calibration",
+            "peer_id": peer_id,
+            "model_id": model_id,
+            "estimated_tokens": estimated_tokens,
+            "actual_reasoning_tokens": actual_reasoning_tokens,
+            "prompt_tokens": actual_prompt_tokens,
+            "completion_tokens": actual_completion_tokens,
+            "ipc_protocol_version": ipc_protocol_version,
+        }
+        # Write to data/logs/ (sibling of the normal log dir) for separation
+        calib_path = self._log_dir.parent / "logs" / "token_calibration.jsonl"
+        try:
+            calib_path.parent.mkdir(parents=True, exist_ok=True)
+            with calib_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError as exc:
+            print(f"[hub_logging] token_calibration write error: {exc}", file=sys.stderr)
+
     def log_model_drift(
         self,
         *,

@@ -1739,10 +1739,28 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         sys.exit(1)
     
     saved_query_file_path = query_file
+    ipc_protocol_version: int | None = None
     if query_file:
         qf = Path(query_file)
         if not qf.exists(): sys.exit(1)
-        query = qf.read_text(encoding="utf-8")
+        raw_content = qf.read_text(encoding="utf-8")
+        # Parse IPC envelope headers (lines starting with "PROTOCOL_")
+        lines = raw_content.splitlines()
+        body_start = 0
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("PROTOCOL_VERSION:"):
+                try:
+                    ipc_protocol_version = int(stripped.split(":", 1)[1].strip())
+                except ValueError:
+                    pass
+                body_start += 1
+            elif stripped == "---" and body_start > 0:
+                body_start += 1
+                break
+            else:
+                break
+        query = "\n".join(lines[body_start:]) if body_start > 0 else raw_content
         qf.unlink()
 
     nodes = _load_nodes(ai_root) if ai_root else _default_nodes()["nodes"]
@@ -1794,8 +1812,19 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             model_id = profile_data.get("model_id") or health_peer
 
             gate_result = _ContextGate().check(query, model_id)
-            action = gate_result.get("action", "pass") 
-            if action == "failover":
+            action = gate_result.get("action", "pass")
+            if action == "prune":
+                # Context > 80% — prune query as a single low-priority block
+                # (Full priority-tagged block pruning requires caller to supply context_blocks)
+                gate = _ContextGate()
+                pruned = gate.check_and_prune(
+                    [{"text": query, "priority": 1}], model_id
+                )
+                if pruned:
+                    query = pruned[0]["text"]
+                util = gate_result.get("utilization", 0)
+                print(f"[ContextGate] context {util:.0%} full → prune applied", file=sys.stderr)
+            elif action == "failover":
                 failover_model = gate_result.get("failover_model", "gc")
                 # Prevent immediate loop if failover_model is same as current (via ID or alias)
                 if failover_model == to or failover_model == original_to:
@@ -2012,6 +2041,17 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                     peer_id=to,
                     model_id=node.get("invoke", to),
                     reasoning_tokens=usage["reasoning_tokens"],
+                )
+                # Token calibration: compare static estimate vs actual (TM-04)
+                from hub_context import estimate_tokens as _estimate_tokens
+                logger.log_token_calibration(
+                    peer_id=to,
+                    model_id=node.get("invoke", to),
+                    estimated_tokens=_estimate_tokens(query),
+                    actual_prompt_tokens=usage.get("input_tokens"),
+                    actual_completion_tokens=usage.get("output_tokens"),
+                    actual_reasoning_tokens=usage["reasoning_tokens"],
+                    ipc_protocol_version=ipc_protocol_version,
                 )
 
         # ── Output Parsing (Adapter-based) ────────────────────────
