@@ -329,6 +329,34 @@ class TestGetAdapterForPeer:
             adapter = get_adapter_for_peer("claude")  # match by invoke name
         assert isinstance(adapter, ClaudeAdapter)
 
+    def test_virtual_node_with_disabled_parent_is_rejected(self):
+        nodes = [
+            {"node_id": "gc", "type": "peer", "enabled": False, "invoke": "gemini"},
+            {
+                "node_id": "gc-plan",
+                "type": "virtual",
+                "parent_node": "gc",
+                "adapter_class": "VirtualAdapter",
+            },
+        ]
+        with self._mock_orch(nodes), pytest.raises(ValueError, match="node-tree"):
+            get_adapter_for_peer("gc-plan")
+
+    def test_alias_resolves_through_recursive_tree_gate(self):
+        nodes = [
+            {"node_id": "cc", "type": "peer", "invoke": "claude"},
+            {
+                "node_id": "cc-deep",
+                "type": "virtual",
+                "parent_node": "cc",
+                "aliases": ["claude-deep"],
+                "adapter_class": "VirtualAdapter",
+            },
+        ]
+        with self._mock_orch(nodes):
+            assert hub_peer.is_routable("claude-deep")
+            assert hub_peer.root_peer_id("claude-deep") == "cc"
+
 
 # ── Session state ─────────────────────────────────────────────────────────────
 

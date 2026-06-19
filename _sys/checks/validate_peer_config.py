@@ -102,8 +102,10 @@ class Validator:
                     self.error(f"{label}: virtual node {n.get('node_id')!r} references missing parent {parent_id!r}")
                 if parent_id is None:
                     # Virtual nodes may use 'peer' field instead of 'parent_node'
-                    if not n.get("peer"):
-                        self.warn(f"{label}: virtual node {n.get('node_id')!r} has no parent_node or peer field")
+                    if n.get("peer"):
+                        self.warn(f"{label}: virtual node {n.get('node_id')!r} uses legacy peer field; use parent_node")
+                    else:
+                        self.error(f"{label}: virtual node {n.get('node_id')!r} has no parent_node")
 
         # Disabled parent → virtual child should also have enabled:false
         for n in nodes:
@@ -112,11 +114,24 @@ class Validator:
                 if parent_id:
                     parent = nodes_map.get(parent_id)
                     if parent and parent.get("enabled") is False:
-                        if n.get("enabled") is not False:
-                            self.warn(
-                                f"{label}: virtual node {n.get('node_id')!r} parent {parent_id!r} is disabled "
-                                f"but child lacks enabled:false"
-                            )
+                        pass  # Effective disablement is inherited; do not copy local state.
+
+        for node_id in ids:
+            seen = set()
+            current = node_id
+            while current:
+                if current in seen:
+                    self.error(f"{label}: parent cycle detected at {current!r} from {node_id!r}")
+                    break
+                seen.add(current)
+                current_node = nodes_map.get(current)
+                if current_node is None:
+                    break
+                current = current_node.get("parent_node") or (
+                    current_node.get("peer")
+                    if current_node.get("type") == "virtual"
+                    else None
+                )
 
         self.info(f"{label}: {len(enabled_peers)} enabled peers, {len(disabled_peers)} disabled peers")
 

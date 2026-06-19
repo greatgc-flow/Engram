@@ -1,5 +1,5 @@
 # Specific — gc (Gemini CLI)
-> Delta from general/*. Load after general/. Status: ACTIVE.
+> Delta from general/*. Load after general/. Status: SUSPENDED.
 
 ---
 

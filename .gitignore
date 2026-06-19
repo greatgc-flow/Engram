@@ -88,7 +88,7 @@ _sys/claude/config/tmp/
 _sys/claude/config/uploads/
 
 # Antigravity (agy) runtime data — tracked: bin/agentapi.bat
-# Everything else in config/ is runtime-generated
+# agentapi.bat and everything else in config/ are runtime-generated
 _sys/antigravity/config/brain/
 _sys/antigravity/config/conversations/
 _sys/antigravity/config/cache/
@@ -105,7 +105,7 @@ _sys/antigravity/config/installation_id
 _sys/antigravity/config/*.exe
 _sys/antigravity/config/bin/*.exe
 # Re-include tracked files
-!_sys/antigravity/config/bin/agentapi.bat
+_sys/antigravity/config/bin/agentapi.bat
 
 # Codex runtime data in config/ (tracked: CODEX.md)
 _sys/codex/config/.codex/

@@ -50,19 +50,12 @@ def _enabled_physical_peers() -> list[dict]:
 
 
 def _disabled_nodes() -> list[dict]:
-    nodes = []
-    for n in _all_nodes():
-        if n.get("enabled") is False:
-            nodes.append(n)
-            continue
-        # Virtual node with disabled parent
-        parent_id = n.get("parent_node")
-        if parent_id:
-            parents = {x["node_id"]: x for x in _all_nodes() if "node_id" in x}
-            parent = parents.get(parent_id)
-            if parent and parent.get("enabled") is False:
-                nodes.append(n)
-    return nodes
+    orch = _orchestration()
+    return [
+        node
+        for node in _all_nodes()
+        if node.get("node_id") and not hub.is_routable(node["node_id"], orch=orch)
+    ]
 
 
 def _node_ids(nodes: list[dict]) -> list[str]:
@@ -201,6 +194,17 @@ def test_inv_p08_disabled_absent_from_default_nodes():
     )
 
 
+def test_default_nodes_does_not_resurrect_all_disabled_config():
+    orch = {
+        "hub_nodes": [
+            {"node_id": "only-peer", "type": "peer", "enabled": False}
+        ]
+    }
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(hub, "_load_orchestration", lambda: orch)
+        assert hub._default_nodes()["nodes"] == {}
+
+
 # ─── INV-P09: get_adapter_for_peer() raises for disabled peers ────────────────
 
 @pytest.mark.parametrize("node_id", [
@@ -284,3 +288,56 @@ def test_transition_enabled_to_disabled_makes_unroutable():
     # Re-enabling restores routability
     orch["hub_nodes"][0]["enabled"] = True
     assert hub.is_routable("test-peer", orch=orch)
+
+
+def test_nested_descendants_inherit_disablement_and_recover():
+    """Parent state propagates recursively without mutating child local state."""
+    orch = {
+        "hub_nodes": [
+            {"node_id": "root", "type": "peer"},
+            {"node_id": "child", "type": "virtual", "parent_node": "root"},
+            {"node_id": "grandchild", "type": "virtual", "parent_node": "child"},
+        ]
+    }
+    assert hub.is_routable("grandchild", orch=orch)
+    orch["hub_nodes"][0]["enabled"] = False
+    assert not hub.is_routable("child", orch=orch)
+    assert not hub.is_routable("grandchild", orch=orch)
+    assert "enabled" not in orch["hub_nodes"][1]
+    assert "enabled" not in orch["hub_nodes"][2]
+    orch["hub_nodes"][0].pop("enabled")
+    assert hub.is_routable("grandchild", orch=orch)
+
+
+def test_child_local_disablement_survives_parent_recovery():
+    orch = {
+        "hub_nodes": [
+            {"node_id": "root", "type": "peer", "enabled": False},
+            {"node_id": "child", "type": "virtual", "parent_node": "root", "enabled": False},
+        ]
+    }
+    orch["hub_nodes"][0].pop("enabled")
+    assert hub.is_routable("root", orch=orch)
+    assert not hub.is_routable("child", orch=orch)
+
+
+@pytest.mark.parametrize(
+    "nodes",
+    [
+        [
+            {"node_id": "root", "type": "peer"},
+            {"node_id": "child", "type": "virtual", "parent_node": "missing"},
+        ],
+        [
+            {"node_id": "a", "type": "virtual", "parent_node": "b"},
+            {"node_id": "b", "type": "virtual", "parent_node": "a"},
+        ],
+        [
+            {"node_id": "a", "type": "virtual", "peer": "b"},
+            {"node_id": "b", "type": "virtual", "peer": "a"},
+        ],
+    ],
+)
+def test_invalid_parent_trees_fail_closed(nodes):
+    orch = {"hub_nodes": nodes}
+    assert not hub.is_routable(nodes[-1]["node_id"], orch=orch)

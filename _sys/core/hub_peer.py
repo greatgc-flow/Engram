@@ -40,6 +40,81 @@ def _load_orchestration() -> dict:
     return {}
 
 
+def resolve_node_id(node_id: str | None, *, orch: dict | None = None) -> str | None:
+    """Resolve a node ID, alias, or invoke name to its canonical node ID."""
+    if not node_id or not isinstance(node_id, str):
+        return None
+    orch = orch or _load_orchestration()
+    nodes = orch.get("hub_nodes", [])
+    for node in nodes:
+        canonical = node.get("node_id")
+        if canonical == node_id or node_id in node.get("aliases", []):
+            return canonical
+    for node in nodes:
+        if node.get("invoke") == node_id:
+            return node.get("node_id")
+    return None
+
+
+def _parent_node_id(node: dict) -> str | None:
+    """Return the declared parent, accepting legacy `peer` during migration."""
+    return node.get("parent_node") or (
+        node.get("peer") if node.get("type") == "virtual" else None
+    )
+
+
+def is_routable(node_id: str | None, *, orch: dict | None = None) -> bool:
+    """Return effective routability after recursively evaluating ancestors."""
+    orch = orch or _load_orchestration()
+    canonical = resolve_node_id(node_id, orch=orch)
+    if canonical is None:
+        return False
+    nodes = {
+        node["node_id"]: node
+        for node in orch.get("hub_nodes", [])
+        if node.get("node_id")
+    }
+    current = canonical
+    seen: set[str] = set()
+    while current:
+        if current in seen:
+            return False
+        seen.add(current)
+        node = nodes.get(current)
+        if node is None or node.get("enabled") is False:
+            return False
+        parent = _parent_node_id(node)
+        if not parent:
+            return True
+        current = parent
+    return False
+
+
+def root_peer_id(node_id: str | None, *, orch: dict | None = None) -> str | None:
+    """Return the physical root peer for a routable node tree."""
+    orch = orch or _load_orchestration()
+    canonical = resolve_node_id(node_id, orch=orch)
+    if canonical is None or not is_routable(canonical, orch=orch):
+        return None
+    nodes = {
+        node["node_id"]: node
+        for node in orch.get("hub_nodes", [])
+        if node.get("node_id")
+    }
+    current = canonical
+    seen: set[str] = set()
+    while current not in seen:
+        seen.add(current)
+        node = nodes.get(current)
+        if node is None:
+            return None
+        parent = _parent_node_id(node)
+        if not parent:
+            return current
+        current = parent
+    return None
+
+
 # ── Protocol (structural interface) ──────────────────────────────────────────
 
 @runtime_checkable
@@ -293,17 +368,13 @@ def get_adapter_for_peer(peer_id: str, *, skip_disabled: bool = True) -> BaseAda
     Raises ValueError if peer is disabled (enabled:false) unless skip_disabled=False.
     """
     orch = _load_orchestration()
-    for node in orch.get("hub_nodes", []):
-        if node.get("node_id") == peer_id or peer_id in node.get("aliases", []):
-            if skip_disabled and node.get("enabled") is False:
-                raise ValueError(f"peer {peer_id!r} is disabled (enabled:false)")
-            return get_adapter(node)
-    # Fallback: try matching by invoke name (covers renamed/aliased peers)
-    for node in orch.get("hub_nodes", []):
-        if node.get("invoke", "") == peer_id:
-            if skip_disabled and node.get("enabled") is False:
-                raise ValueError(f"peer {peer_id!r} is disabled (enabled:false)")
-            return get_adapter(node)
+    canonical = resolve_node_id(peer_id, orch=orch)
+    if canonical is not None:
+        if skip_disabled and not is_routable(canonical, orch=orch):
+            raise ValueError(f"peer {peer_id!r} is disabled by node-tree policy")
+        for node in orch.get("hub_nodes", []):
+            if node.get("node_id") == canonical:
+                return get_adapter(node)
     return BaseAdapter()
 
 

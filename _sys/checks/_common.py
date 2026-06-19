@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -28,16 +29,57 @@ def build_env() -> dict:
     return e
 
 
+def _active_ai_peer() -> str | None:
+    """Select the first enabled, healthy review peer from live configuration."""
+    try:
+        orchestration = json.loads(
+            (_SYS_DIR / "ai" / "orchestration.json").read_text(encoding="utf-8")
+        )
+        peers = json.loads(
+            (_SYS_DIR / "ai" / "peers.json").read_text(encoding="utf-8")
+        ).get("peers", {})
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    node_to_sys_dir = {}
+    for peer_cfg in peers.values():
+        if not isinstance(peer_cfg, dict) or peer_cfg.get("enabled") is False:
+            continue
+        for node_id in peer_cfg.get("node_ids", []):
+            node_to_sys_dir[node_id] = peer_cfg.get("sys_subdir")
+
+    enabled = {
+        node.get("node_id")
+        for node in orchestration.get("hub_nodes", [])
+        if node.get("type") == "peer"
+        and node.get("enabled", True) is not False
+        and node.get("node_id")
+    }
+    for node_id in ("ag", "cc", "cx"):
+        if node_id not in enabled:
+            continue
+        sys_subdir = node_to_sys_dir.get(node_id)
+        if not sys_subdir:
+            continue
+        try:
+            health = json.loads(
+                (_SYS_DIR / sys_subdir / "health.json").read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError):
+            continue
+        availability = health.get("availability", {})
+        if (
+            health.get("context_health", {}).get("status") in {"GREEN", "YELLOW"}
+            and availability.get("gate_open") is not False
+            and availability.get("authenticated") is not False
+        ):
+            return node_id
+    return None
+
+
 def ai_available() -> bool:
-    """Return True if Gemini is available (ai_check.py exits 0)."""
-    venv_py = _SYS_DIR / "env" / "venv" / "Scripts" / "python.exe"
-    python = str(venv_py) if venv_py.exists() else sys.executable
-    r = subprocess.run(
-        [python, str(_SYS_DIR / "hooks" / "ai_check.py")],
-        capture_output=True, env=build_env(),
-        shell=(os.name == "nt"),
-    )
-    return r.returncode == 0
+    """Return True when an enabled, healthy review peer is available."""
+    return _active_ai_peer() is not None
 
 
 def gemini_call(
@@ -46,13 +88,57 @@ def gemini_call(
     stdin: Optional[str] = None,
     timeout: int = 120,
 ) -> subprocess.CompletedProcess:
-    """Run gemini CLI with an ephemeral session. stdin is optional piped input."""
-    sid = str(uuid.uuid4())
-    return subprocess.run(
-        ["gemini", "--session-id", sid, "-p", prompt, "-o", "text", "-y"],
-        capture_output=True, text=True, input=stdin, timeout=timeout, env=build_env(),
-        shell=(os.name == "nt"),
-    )
+    """Compatibility wrapper that routes check analysis through the active peer."""
+    peer = _active_ai_peer()
+    if peer is None:
+        return subprocess.CompletedProcess(
+            args=["hub.py", "ask"], returncode=1, stdout="", stderr="no active AI peer"
+        )
+    content = prompt + (("\n\n[INPUT]\n" + stdin) if stdin else "")
+    query_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            suffix=f"-{uuid.uuid4().hex[:8]}.txt",
+            delete=False,
+        ) as query_file:
+            query_file.write(content)
+            query_path = Path(query_file.name)
+        venv_py = _SYS_DIR / "env" / "venv" / "Scripts" / "python.exe"
+        python = str(venv_py) if venv_py.exists() else sys.executable
+        command = [
+            python,
+            str(_SYS_DIR / "core" / "hub.py"),
+            "ask",
+            "--to",
+            peer,
+            "--query-file",
+            str(query_path),
+            "--quiet",
+            "--session-policy",
+            "fresh",
+            "--timeout",
+            str(timeout),
+        ]
+        try:
+            return subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=timeout + 30,
+                env=build_env(),
+            )
+        except subprocess.TimeoutExpired as exc:
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=124,
+                stdout=exc.stdout or "",
+                stderr=exc.stderr or f"active peer timed out after {timeout + 30}s",
+            )
+    finally:
+        if query_path is not None:
+            query_path.unlink(missing_ok=True)
 
 
 def is_refusal(text: str) -> bool:
@@ -77,6 +163,8 @@ def write_unknown_json(out_file: Path, task: str, note: str) -> None:
 
 def update_status_error(dt: str, error_key: str) -> None:
     """Mark Gemini status.json as OFF with api_error reason."""
+    if _active_ai_peer() != "gc":
+        return
     gemini_dir = Path(os.environ.get("GEMINI_DIR", str(_SYS_DIR / "gemini")))
     status_file = gemini_dir / "status.json"
     if not status_file.exists():

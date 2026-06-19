@@ -107,7 +107,7 @@
       "weaknesses": ["prompt_calls_consume_quota", "model_list_not_confirmed"],
       "status_source": "observed",
       "confidence": "observed",
-      "routing_state": "eligible",
+      "routing_state": "blocked",
       "notes": "Safe local commands observed: gemini --version, gemini --help, gemini --list-sessions."
     },
     "gc.plan": {
@@ -126,7 +126,7 @@
       "weaknesses": ["not_for_workspace_mutation"],
       "status_source": "declared",
       "confidence": "declared",
-      "routing_state": "eligible",
+      "routing_state": "blocked",
       "invoke_overrides": {
         "approval_mode": "plan"
       }

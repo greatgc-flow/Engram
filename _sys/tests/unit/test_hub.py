@@ -19,6 +19,28 @@ def _make_mock_proc(stdout=b"", stderr=b"", returncode=0):
     return mock_proc
 
 
+def test_ask_coordinator_falls_back_from_unroutable_stale_leader(ai_dir):
+    (ai_dir / "state.json").write_text(
+        json.dumps({"room_id": "room-test", "leader": "gc", "members": {}}),
+        encoding="utf-8",
+    )
+    orch = {
+        "hub_nodes": [
+            {"node_id": "gc", "type": "peer", "enabled": False},
+            {"node_id": "cc", "type": "peer"},
+        ],
+        "consensus": {"default_voters": ["cc"]},
+    }
+    with patch("hub._load_orchestration", return_value=orch), \
+         patch("hub.is_routable", side_effect=lambda peer, orch=None: peer == "cc"), \
+         patch("hub._healthy_peer", side_effect=lambda peer, ai_root=None: peer == "cc"), \
+         patch("hub._thin_forward_envelope", return_value="forwarded"), \
+         patch("hub._record_routing_metric"), \
+         patch("hub.action_ask") as ask:
+        hub.action_ask_coordinator(ai_dir, "review", None, 30, "cx")
+    assert ask.call_args.args[0] == "cc"
+
+
 # ─── init-session ───────────────────────────────────────────
 class TestInitSession:
     def test_cc_creates_sid(self, ai_dir, capsys):
@@ -374,6 +396,16 @@ class TestAsk:
         assert "\x1b" not in out
         assert "green text" in out
 
+    def test_ask_ag_empty_pty_response_is_failure(self, monkeypatch, capsys):
+        node = self._ag_node()
+        monkeypatch.setattr(hub, "_load_orchestration", lambda: {"hub_nodes": [node]})
+        with patch("shutil.which", return_value="/usr/bin/agy"), \
+             patch("hub._ask_with_pty", return_value=("", 5)), \
+             pytest.raises(SystemExit) as exc:
+            hub.action_ask("ag", "test", None, 300, None)
+        assert exc.value.code == 1
+        assert "no usable response" in capsys.readouterr().err
+
     def test_ask_failure_classification_reads_lifecycle_policy(self, monkeypatch):
         monkeypatch.setattr(hub, "_load_lifecycle_policy", lambda: {
             "ask_failure_classification": {
@@ -529,7 +561,8 @@ class TestMessageEnvelope:
         mb = json.loads((ai_dir / "mailbox.json").read_text("utf-8"))
         assert [m["content"] for m in mb["messages"]] == ["fresh"]
 
-    def test_broadcast_fans_out_to_room_members_except_sender(self, ai_dir):
+    def test_broadcast_fans_out_to_room_members_except_sender(self, ai_dir, monkeypatch):
+        monkeypatch.setattr(hub, "is_routable", lambda peer: True)
         hub.action_init_session(ai_dir, "cc", "room-broadcast")
         hub.action_init_session(ai_dir, "gc", "room-broadcast")
         hub.action_init_session(ai_dir, "ag", "room-broadcast")
@@ -540,6 +573,7 @@ class TestMessageEnvelope:
 
     def test_broadcast_large_payload_uses_single_shared_file(self, ai_dir, monkeypatch):
         monkeypatch.setattr(hub, "_LARGE_PAYLOAD_THRESHOLD", 10)
+        monkeypatch.setattr(hub, "is_routable", lambda peer: True)
         hub.action_init_session(ai_dir, "cc", "room-broadcast")
         hub.action_init_session(ai_dir, "gc", "room-broadcast")
         hub.action_init_session(ai_dir, "ag", "room-broadcast")
@@ -548,6 +582,15 @@ class TestMessageEnvelope:
         assert len(payloads) == 1
         mb = json.loads((ai_dir / "mailbox.json").read_text("utf-8"))
         assert {m["content"] for m in mb["messages"]} == {f"payload://{payloads[0].stem}"}
+
+    def test_broadcast_filters_unroutable_room_members(self, ai_dir, monkeypatch):
+        monkeypatch.setattr(hub, "is_routable", lambda peer: peer != "gc")
+        hub.action_init_session(ai_dir, "cc", "room-broadcast")
+        hub.action_init_session(ai_dir, "gc", "room-broadcast")
+        hub.action_init_session(ai_dir, "ag", "room-broadcast")
+        hub.action_broadcast(ai_dir, "cc", "notice")
+        mb = json.loads((ai_dir / "mailbox.json").read_text("utf-8"))
+        assert [m["to"] for m in mb["messages"]] == ["ag"]
 
     def test_send_prunes_orphaned_payload_files(self, ai_dir, monkeypatch):
         monkeypatch.setattr(hub, "_load_lifecycle_policy", lambda: {

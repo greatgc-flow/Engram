@@ -176,40 +176,27 @@ def _load_peers() -> dict:
 
 
 def is_routable(node_id: str, *, orch: dict | None = None) -> bool:
-    """Return True only if node_id is an enabled node in orchestration.json.
-
-    Checks both explicit enabled:false and virtual-node parent disablement.
-    Use this as the single authoritative gate before any peer dispatch.
-    """
-    if orch is None:
-        orch = _load_orchestration()
-    nodes = {n["node_id"]: n for n in orch.get("hub_nodes", []) if "node_id" in n}
-    node = nodes.get(node_id)
-    if node is None:
+    """Compatibility wrapper for the shared recursive node-tree gate."""
+    if not _HUB_PEER_AVAILABLE:
         return False
-    if node.get("enabled") is False:
-        return False
-    # Virtual nodes may use either 'parent_node' or 'peer' to reference their parent
-    parent_id = node.get("parent_node") or (node.get("peer") if node.get("type") == "virtual" else None)
-    if parent_id:
-        parent = nodes.get(parent_id)
-        if parent is None or parent.get("enabled") is False:
-            return False
-    return True
+    return hub_peer.is_routable(node_id, orch=orch)
 
 
 def _default_nodes() -> dict:
-    """orchestration.json hub_nodes 배열에서 기본 노드 목록을 읽어 반환."""
+    """orchestration.json hub_nodes 배열에서 기본 노드 목록을 읽어 반환.
+
+    Applies tree-propagation: virtual nodes whose parent peer is disabled are excluded
+    even if the virtual node itself lacks an explicit enabled:false flag.
+    """
     orch = _load_orchestration()
     nodes = {}
     for entry in orch.get("hub_nodes", []):
-        if entry.get("enabled") is False:
-            continue
         nid = entry.get("node_id")
-        if nid:
+        if nid and is_routable(nid, orch=orch):
             nodes[nid] = {k: v for k, v in entry.items() if k != "node_id"}
-    if not nodes:
-        # orchestration.json 없을 때 최소 fallback (claude만)
+    if not nodes and not orch.get("hub_nodes"):
+        # Only use bootstrap fallback when orchestration is absent, never when
+        # policy intentionally disables every configured node.
         nodes = {"cc": {"type": "peer", "invoke": "claude", "invoke_args": ["-p", "{query}"], "timeout": 0, "memory": "persistent"}}
     return {"version": "2", "nodes": nodes}
 
@@ -469,7 +456,15 @@ def _extract_jsonl_text(raw: str, peer_id: str, ai_root: Path | None) -> str:
 def _get_lock(ai_root: Path, resource: str):
     from filelock import FileLock
     lock_path = ai_root / ".lock" / f"{resource}.lock"
-    os.makedirs(ai_root / ".lock", exist_ok=True)
+    try:
+        os.makedirs(ai_root / ".lock", exist_ok=True)
+        fd = os.open(lock_path, os.O_RDWR | os.O_CREAT)
+        os.close(fd)
+    except PermissionError as exc:
+        raise PermissionError(
+            f"Cannot create or open lock file '{lock_path}'. "
+            "The workspace is read-only; rerun with workspace-write permission."
+        ) from exc
     return FileLock(str(lock_path), timeout=10)
 
 
@@ -781,7 +776,11 @@ def action_broadcast(
     if targets is None:
         state = _read_json(ai_root / "state.json")
         targets = [node for node in state.get("members", {}).keys() if node != from_]
-    targets = [target for target in dict.fromkeys(targets) if target and target != from_]
+    targets = [
+        target
+        for target in dict.fromkeys(targets)
+        if target and target != from_ and is_routable(target)
+    ]
     if not targets:
         print("[HUB] BROADCAST no targets")
         return
@@ -1764,20 +1763,18 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         qf.unlink()
 
     nodes = _load_nodes(ai_root) if ai_root else _default_nodes()["nodes"]
-    disabled_nodes = {
-        entry.get("node_id")
-        for entry in _load_orchestration().get("hub_nodes", [])
-        if entry.get("enabled") is False and entry.get("node_id")
-    }
-    # Resolve aliases
+    _orch_for_gate = _load_orchestration()
+    # Resolve aliases first (is_routable needs the canonical node_id)
     original_to = to
     if to not in nodes:
         for nid, ncfg in nodes.items():
             if to in ncfg.get("aliases", []):
                 to = nid
                 break
-    
-    if to in disabled_nodes:
+
+    # is_routable() is the authoritative gate: checks explicit enabled:false AND
+    # parent-disablement propagation (virtual nodes inherit parent state via 'peer' field)
+    if not is_routable(to, orch=_orch_for_gate):
         print(f"[ERROR] ask target disabled by default: {to}", file=sys.stderr)
         sys.exit(1)
     node = nodes.get(to, {})
@@ -1785,7 +1782,8 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         print(f"[ERROR] unknown ask target: {to}", file=sys.stderr)
         sys.exit(1)
 
-    health_peer = node.get("peer") or to
+    health_peer = hub_peer.root_peer_id(to, orch=_orch_for_gate) if _HUB_PEER_AVAILABLE else None
+    health_peer = health_peer or to
     adapter = hub_peer.get_adapter(node) if _HUB_PEER_AVAILABLE else None
     requires_pty = node.get("requires_pty", False)
     exe_name = node.get("invoke", to)
@@ -1926,6 +1924,25 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         # _ask_with_pty already strips ANSI; apply again as defense-in-depth before adapter
         raw_pty = _strip_ansi(raw_pty)
         output = adapter.parse_output(raw_pty, node) if adapter else raw_pty
+        if not output.strip():
+            reason = "empty_response"
+            detail = f"{to} exited successfully but returned no usable response"
+            _record_ask_failure(health_peer, reason, detail, elapsed, ai_root)
+            _append_ask_history(
+                ai_root, to, saved_query_file_path, output_file, elapsed, False, reason
+            )
+            if ai_root:
+                _record_routing_metric(
+                    ai_root,
+                    "direct_ask",
+                    selected_peer=to,
+                    profile_id=_resolve_profile_id(to),
+                    outcome="failure",
+                    latency_sec=elapsed,
+                    failure_reason=reason,
+                )
+            print(f"[HUB:ERROR] {detail}", file=sys.stderr)
+            sys.exit(1)
         logger = _get_logger()
         if logger:
             logger.log_ipc(peer_id=to, direction="receive", response_preview=output, elapsed_sec=float(elapsed))
@@ -2085,6 +2102,26 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 raw_text = _strip_ansi(_decode_output(raw_out))
                 output = _extract_jsonl_text(raw_text, to, ai_root) if health_peer == "cx" else raw_text
                 is_resume_attempt = False
+                if proc.returncode == 0 and not output.strip():
+                    reason = "empty_response"
+                    lease_status = "failed"
+                    detail = f"{to} exited successfully but returned no usable response"
+                    _record_ask_failure(health_peer, reason, detail, elapsed, ai_root)
+                    _append_ask_history(
+                        ai_root, to, saved_query_file_path, output_file, elapsed, False, reason
+                    )
+                    if ai_root:
+                        _record_routing_metric(
+                            ai_root,
+                            "direct_ask",
+                            selected_peer=to,
+                            profile_id=_resolve_profile_id(to),
+                            outcome="failure",
+                            latency_sec=elapsed,
+                            failure_reason=reason,
+                        )
+                    print(f"[HUB:ERROR] {detail}", file=sys.stderr)
+                    sys.exit(1)
                 if proc.returncode == 0:
                     _record_ask_success(health_peer, elapsed, ai_root)
                     _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
@@ -2122,6 +2159,26 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             if ai_root:
                 _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=elapsed, failure_reason=reason)
             print(f"[HUB:ERROR] {to} exited {proc.returncode}\n{clean_err}", file=sys.stderr)
+            sys.exit(1)
+        elif not output.strip():
+            reason = "empty_response"
+            lease_status = "failed"
+            detail = f"{to} exited successfully but returned no usable response"
+            _record_ask_failure(health_peer, reason, detail, elapsed, ai_root)
+            _append_ask_history(
+                ai_root, to, saved_query_file_path, output_file, elapsed, False, reason
+            )
+            if ai_root:
+                _record_routing_metric(
+                    ai_root,
+                    "direct_ask",
+                    selected_peer=to,
+                    profile_id=_resolve_profile_id(to),
+                    outcome="failure",
+                    latency_sec=elapsed,
+                    failure_reason=reason,
+                )
+            print(f"[HUB:ERROR] {detail}", file=sys.stderr)
             sys.exit(1)
         else:
             _record_ask_success(health_peer, elapsed, ai_root)
@@ -2221,16 +2278,13 @@ def action_ask_all(query: str, query_file: str | None, timeout_sec: int, ai_root
 
     query_text = _read_query_arg(query, query_file)
     orch = _load_orchestration()
-    disabled_ids = {
-        n["node_id"] for n in orch.get("hub_nodes", [])
-        if n.get("enabled") is False and n.get("node_id")
-    }
-    exclude_set = set(exclude or []) | disabled_ids
+    exclude_set = set(exclude or [])
     peers = [
         n["node_id"] for n in orch.get("hub_nodes", [])
         if n.get("node_id")
         and n.get("type", "peer") == "peer"
         and n["node_id"] not in exclude_set
+        and is_routable(n["node_id"], orch=orch)
     ]
     if not peers:
         print("[HUB] ask-all: no active peers found", file=sys.stderr)
@@ -2282,10 +2336,19 @@ def action_ask_coordinator(ai_root: Path, query: str, query_file: str | None, ti
     query_text = _read_query_arg(query, query_file)
     state = _read_json(ai_root / "state.json")
     coordinator = state.get("active_coordinator") or state.get("leader")
+    orch = _load_orchestration()
+    if not coordinator or not is_routable(coordinator, orch=orch) or not _healthy_peer(coordinator, ai_root=ai_root):
+        voters = orch.get("consensus", {}).get("default_voters", [])
+        coordinator = next(
+            (
+                peer
+                for peer in voters
+                if is_routable(peer, orch=orch) and _healthy_peer(peer, ai_root=ai_root)
+            ),
+            None,
+        )
     if not coordinator:
-        coordinator = _load_orchestration().get("consensus", {}).get("default_proposer", "cc")
-    if not _healthy_peer(coordinator, ai_root=ai_root):
-        print(f"[HUB:ERROR] active coordinator {coordinator} is not healthy", file=sys.stderr)
+        print("[HUB:ERROR] no routable healthy coordinator is available", file=sys.stderr)
         sys.exit(2)
     if "ask-coordinator" in query_text.lower():
         print("[HUB:ERROR] nested ask-coordinator forwarding is not allowed", file=sys.stderr)
@@ -4366,6 +4429,7 @@ def _lease_sweep(ai_root: Path | None) -> None:
     if not ai_root or not _leases_path(ai_root).exists():
         return
     now_dt = datetime.fromisoformat(_now())
+    expired: list[tuple[str, dict]] = []
     with _get_lock(ai_root, "leases"):
         data = _read_json(_leases_path(ai_root))
         changed = False
@@ -4377,25 +4441,40 @@ def _lease_sweep(ai_root: Path | None) -> None:
                 continue
             try:
                 if datetime.fromisoformat(expires_str) < now_dt:
-                    pid = entry.get("pid")
-                    if pid:
-                        try:
-                            parent = psutil.Process(pid)
-                            for child in parent.children(recursive=True):
-                                try: child.kill()
-                                except (psutil.NoSuchProcess, psutil.AccessDenied): pass
-                            try: parent.kill()
-                            except (psutil.NoSuchProcess, psutil.AccessDenied): pass
-                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                            pass
                     entry["status"] = "expired"
                     changed = True
-                    _record_ask_failure(peer_id, "lease_expired", f"lease expired at {expires_str}", None, ai_root)
-                    _log_p2p("SWEEP", f"lease expired for {peer_id} pid={pid}", from_node="HUB")
+                    expired.append((peer_id, dict(entry)))
             except Exception:
                 pass
         if changed:
             _write_json(_leases_path(ai_root), data)
+    # Slow operations and operations that may acquire other locks must not run
+    # while leases.lock is held.
+    for peer_id, entry in expired:
+        pid = entry.get("pid")
+        if pid:
+            try:
+                parent = psutil.Process(pid)
+                for child in parent.children(recursive=True):
+                    try:
+                        child.kill()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+                try:
+                    parent.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        expires_str = entry.get("expires_at", "")
+        _record_ask_failure(
+            peer_id,
+            "lease_expired",
+            f"lease expired at {expires_str}",
+            None,
+            ai_root,
+        )
+        _log_p2p("SWEEP", f"lease expired for {peer_id} pid={pid}", from_node="HUB")
 
 
 def _maildir_path(ai_root: Path) -> Path:

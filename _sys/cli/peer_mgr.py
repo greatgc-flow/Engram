@@ -108,18 +108,11 @@ def cmd_suspend(peer_id: str, reason: str, dry_run: bool) -> int:
         print(f"[ERROR] peer {peer_id!r} not found in orchestration.json", file=sys.stderr)
         return 1
 
-    # Disable peer node and its virtual children
-    changed = False
-    for node in nodes:
-        nid = node.get("node_id", "")
-        is_peer = nid == peer_id
-        is_virtual_child = node.get("type") == "virtual" and (
-            node.get("peer") == peer_id or node.get("parent_node") == peer_id
-        )
-        if is_peer or is_virtual_child:
-            node["enabled"] = False
-            print(f"  orchestration.json: {nid}.enabled = false")
-            changed = True
+    # Disable only local peer state. Descendants inherit effective disablement
+    # through parent_node and retain their independent local enabled setting.
+    changed = _orch_set_enabled(nodes, peer_id, False)
+    if changed:
+        print(f"  orchestration.json: {peer_id}.enabled = false")
 
     if not changed:
         print(f"  orchestration.json: {peer_id} already disabled")
@@ -129,7 +122,11 @@ def cmd_suspend(peer_id: str, reason: str, dry_run: bool) -> int:
     peers_data = _load(_PEERS)
     if peers_data:
         for pk, pv in peers_data.get("peers", {}).items():
-            if isinstance(pv, dict) and (pv.get("node_id") == peer_id or pk == peer_id):
+            if isinstance(pv, dict) and (
+                peer_id in pv.get("node_ids", [])
+                or pv.get("node_id") == peer_id
+                or pk == peer_id
+            ):
                 pv["enabled"] = False
                 print(f"  peers.json: {pk}.enabled = false")
         _save(_PEERS, peers_data, dry_run)
@@ -184,6 +181,18 @@ def cmd_resume(peer_id: str, dry_run: bool) -> int:
     node.pop("enabled", None)  # remove enabled:false → defaults to true
     print(f"  orchestration.json: {peer_id}.enabled = true (flag removed)")
     _save(_ORCH, orch, dry_run)
+
+    peers_data = _load(_PEERS)
+    if peers_data:
+        for pk, pv in peers_data.get("peers", {}).items():
+            if isinstance(pv, dict) and (
+                peer_id in pv.get("node_ids", [])
+                or pv.get("node_id") == peer_id
+                or pk == peer_id
+            ):
+                pv["enabled"] = True
+                print(f"  peers.json: {pk}.enabled = true")
+        _save(_PEERS, peers_data, dry_run)
 
     # model_profiles.json — unblock profiles
     mp = _load(_PROFILES)

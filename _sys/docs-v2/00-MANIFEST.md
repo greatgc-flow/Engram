@@ -47,9 +47,9 @@ For human onboarding: `user/manual.md`
 | `general/resource-governance.md` | Model inventory · Node arch (§6) · Role taxonomy (§7) · 5-Layer routing (§8) · Cost/quality (§9) · QUALITY_MODE (§10) · Continuous update (§11) | 2026-06-18 |
 | `general/token-management.md` | Per-peer model inventory (cc/gc/cx) · context/output limits · Extended Thinking API · ContextGate v1.0 design | 2026-06-18 |
 | `specific/cc.md` | Claude Code: dirs, gate, delta flags | 2026-06-16 |
-| `specific/gc.md` | Gemini CLI: dirs, gate, delta flags | 2026-06-16 |
+| `specific/gc.md` | Gemini CLI: SUSPENDED state | 2026-06-19 |
 | `specific/cx.md` | Codex: dirs, entry point, delta flags | 2026-06-16 |
-| `specific/ag.md` | AntiGravity: INACTIVE state + PRO-15 path | 2026-06-16 |
+| `specific/ag.md` | AntiGravity: ACTIVE (gc replacement) | 2026-06-19 |
 | **`ops/impl-plan.md`** | **Implementation blueprint: config layer, workspace arch, hub decomp, check automation, error visibility** | **2026-06-18** |
 | `ops/governance.md` | Garbage/, retention, proposal lifecycle (§5), Doc-as-Code (§6) | 2026-06-18 |
 | `ops/logging.md` | IPC history · console capture · per-node detail · rolling policy · 5-Whys | 2026-06-18 |

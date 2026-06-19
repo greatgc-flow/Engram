@@ -69,6 +69,7 @@ class TestRoutingMetrics:
         with patch("subprocess.Popen", return_value=mock_proc), \
              patch("shutil.which", return_value="/usr/bin/echo"), \
              patch("hub._load_orchestration", return_value={"hub_nodes": []}), \
+             patch("hub.is_routable", return_value=True), \
              patch("hub._load_peers", return_value={}), \
              patch("hub._resolve_profile_id", return_value="mock.default"), \
              patch("hub._ask_health_precheck"), \
@@ -107,6 +108,7 @@ class TestRoutingMetrics:
         with patch("subprocess.Popen", return_value=mock_proc), \
              patch("shutil.which", return_value="/usr/bin/echo"), \
              patch("hub._load_orchestration", return_value={"hub_nodes": []}), \
+             patch("hub.is_routable", return_value=True), \
              patch("hub._load_peers", return_value={}), \
              patch("hub._resolve_profile_id", return_value="mock.default"), \
              patch("hub._ask_health_precheck"), \
@@ -137,6 +139,7 @@ class TestRoutingMetrics:
         with patch("subprocess.Popen", return_value=mock_proc), \
              patch("shutil.which", return_value="/usr/bin/echo"), \
              patch("hub._load_orchestration", return_value={"hub_nodes": []}), \
+             patch("hub.is_routable", return_value=True), \
              patch("hub._default_nodes", return_value={"nodes": mock_nodes}), \
              patch("hub._load_peers", return_value={}), \
              patch("hub._resolve_profile_id", return_value=None), \
@@ -149,6 +152,16 @@ class TestRoutingMetrics:
 # ─── lease helpers ───────────────────────────────────────────────────────────
 
 class TestLease:
+    def test_get_lock_reports_read_only_directory_immediately(self, ai_dir):
+        with patch("hub.os.makedirs", side_effect=PermissionError("read-only")):
+            with pytest.raises(PermissionError, match="workspace is read-only"):
+                hub._get_lock(ai_dir, "leases")
+
+    def test_get_lock_reports_read_only_permission_immediately(self, ai_dir):
+        with patch("hub.os.open", side_effect=PermissionError("read-only")):
+            with pytest.raises(PermissionError, match="workspace is read-only"):
+                hub._get_lock(ai_dir, "leases")
+
     def test_lease_open_creates_entry(self, ai_dir):
         hub._lease_open(ai_dir, "gc", pid=9999, lease_timeout_sec=300, ask_id="ask-test-1")
         data = json.loads((ai_dir / "leases.json").read_text("utf-8"))
@@ -196,6 +209,36 @@ class TestLease:
             hub._lease_sweep(ai_dir)
         swept = json.loads((ai_dir / "leases.json").read_text("utf-8"))
         assert swept["gc"]["status"] == "expired"
+
+    def test_lease_sweep_records_failure_after_releasing_lock(self, ai_dir):
+        import datetime
+        past = (datetime.datetime.now() - datetime.timedelta(seconds=10)).isoformat()[:19]
+        data = {
+            "gc": {
+                "peer_id": "gc",
+                "pid": 0,
+                "expires_at": past,
+                "status": "open",
+            }
+        }
+        (ai_dir / "leases.json").write_text(json.dumps(data), encoding="utf-8")
+        held = {"value": False}
+
+        class TrackingLock:
+            def __enter__(self):
+                held["value"] = True
+                return self
+
+            def __exit__(self, *args):
+                held["value"] = False
+
+        def assert_released(*args, **kwargs):
+            assert held["value"] is False
+
+        with patch("hub._get_lock", return_value=TrackingLock()), \
+             patch("hub._record_ask_failure", side_effect=assert_released), \
+             patch("hub._log_p2p"):
+            hub._lease_sweep(ai_dir)
 
     def test_action_lease_status_prints_status(self, ai_dir, capsys):
         hub._lease_open(ai_dir, "gc", pid=9999, lease_timeout_sec=300, ask_id="ask-status-check")

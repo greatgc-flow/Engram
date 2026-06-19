@@ -1,12 +1,13 @@
 """check_deps.py — Axis-F: Map CALL/INVOKE relationships in _sys/ scripts via Gemini."""
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from _common import (  # noqa: E402
-    _PORTABLE_ROOT, _SYS_DIR, ai_available, archive_file, gemini_call, is_refusal,
-    log_collab, save_raw, update_status_error,
+    _PORTABLE_ROOT, _SYS_DIR, ai_available, archive_file, extract_json_block,
+    gemini_call, is_refusal, log_collab, save_raw, update_status_error,
 )
 
 
@@ -42,8 +43,7 @@ def main() -> None:
     dt = datetime.now().strftime("%Y%m%d%H%M%S")
 
     if not ai_available():
-        print("[script-deps] ERROR: Gemini not available.")
-        print("              Run start.bat first, or check _sys\\gemini\\status.json")
+        print("[script-deps] ERROR: No active AI review peer is available.")
         sys.exit(1)
 
     merged = _merge_target_files(_PORTABLE_ROOT)
@@ -61,22 +61,31 @@ def main() -> None:
         f"Return ONLY valid JSON: {schema}"
     )
 
-    print("[script-deps] Analyzing CALL/INVOKE relationships via Gemini...")
+    print("[script-deps] Analyzing CALL/INVOKE relationships via active peer...")
     result = gemini_call(prompt, stdin=merged)
 
     if result.returncode != 0:
-        print("[script-deps] ERROR: gemini returned non-zero. Check auth or network.")
+        print("[script-deps] ERROR: active peer returned non-zero. Check health or auth.")
         out_file.unlink(missing_ok=True)
         log_collab("Axis-F", "check-deps.py", "FAIL", "Error: api_error")
         update_status_error(dt, "script_deps_failed")
         sys.exit(1)
 
     if is_refusal(result.stdout):
-        log_collab("Axis-F", "check-deps.py", "REFUSED", "Gemini refused request")
+        log_collab("Axis-F", "check-deps.py", "REFUSED", "Active peer refused request")
         out_file.unlink(missing_ok=True)
         sys.exit(1)
 
-    out_file.write_text(result.stdout, encoding="utf-8")
+    structured = extract_json_block(result.stdout)
+    try:
+        json.loads(structured)
+    except json.JSONDecodeError:
+        print("[script-deps] ERROR: active peer returned invalid JSON.")
+        log_collab("Axis-F", "check-deps.py", "FAIL", "Error: invalid_json")
+        out_file.unlink(missing_ok=True)
+        sys.exit(1)
+
+    out_file.write_text(structured, encoding="utf-8")
     save_raw("Axis-F", out_file)
     print(f"[script-deps] Done: {out_file}")
     print("[script-deps] Review edges for unexpected or missing call chains.")

@@ -34,7 +34,8 @@ def test_ask_quiet_and_output_file(ai_dir, tmp_path, capsys):
     mock_proc = _make_mock_proc(stdout=b"mock output response")
     out_file = tmp_path / "ask_response.txt"
 
-    with patch("subprocess.Popen", return_value=mock_proc):
+    with patch("subprocess.Popen", return_value=mock_proc), \
+         patch("hub.is_routable", return_value=True):
         # Test output file with quiet=True
         hub.action_ask("mock_peer", "test query", None, 10, ai_dir, quiet=True, output_file=str(out_file))
         assert out_file.exists()
@@ -45,7 +46,7 @@ def test_ask_quiet_and_output_file(ai_dir, tmp_path, capsys):
         assert captured.out == ""
 
         # Test quiet=True without output file (should print raw output)
-        hub.action_ask("mock_peer", "test query", None, 10, ai_dir, quiet=True, output_file=None)
+        hub.action_ask("mock_peer", "test query", None, 10, ai_dir, quiet=True, output_file=None)  # noqa: E501
         captured2 = capsys.readouterr()
         assert "[HUB] REPLY" not in captured2.out
         assert captured2.out == "mock output response"
