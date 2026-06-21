@@ -12,6 +12,7 @@ DEFAULT_GIT_VERSION = "2.49.0"
 class ConfigManager:
     _instance = None
     _global_config: Dict[str, Any] = None
+    _shared_config: Dict[str, Any] = None
     _ws_config: Dict[str, Any] = None
     _ws_path: Path = None
 
@@ -50,6 +51,20 @@ class ConfigManager:
                 cls._global_config = {}
 
     @classmethod
+    def _lazy_load_shared(cls):
+        if cls._shared_config is None:
+            path = cls.get_base_dir() / "_shared" / "config.json"
+            if path.exists():
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        cls._shared_config = json.load(f)
+                except Exception as e:
+                    print(f"[Warning] Failed to load shared config.json: {e}")
+                    cls._shared_config = {}
+            else:
+                cls._shared_config = {}
+
+    @classmethod
     def _lazy_load_ws(cls):
         if cls._ws_config is None and cls._ws_path:
             # Look for config in workspace/.ai/config.json
@@ -65,10 +80,14 @@ class ConfigManager:
 
     @classmethod
     def get(cls, key: str, default: Any = None) -> Any:
-        """Get config value with layering: Workspace -> Global -> Default."""
+        """Get config value with layering: Workspace -> Shared -> Global -> Default."""
         cls._lazy_load_ws()
         if cls._ws_config and key in cls._ws_config:
             return cls._ws_config[key]
+            
+        cls._lazy_load_shared()
+        if cls._shared_config and key in cls._shared_config:
+            return cls._shared_config[key]
         
         cls._lazy_load_global()
         return cls._global_config.get(key, default)

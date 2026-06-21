@@ -96,7 +96,7 @@ class Finding:
 def _resolve_path(ref: str, doc_dir: Path) -> bool:
     """Try multiple resolution strategies for a path reference. Return True if found."""
     # 1. Root-relative paths (start with _sys/, workspace/, _archive/, etc.)
-    if ref.startswith(("_sys/", "workspace/", "_archive/", "workspace_base/")):
+    if ref.startswith(("_sys/", "workspace/", "_archive/", "workspace-base/")):
         return (_ROOT / ref).exists()
     # 2. Absolute-like (shouldn't happen in docs but handle gracefully)
     if ref.startswith("/"):
@@ -120,7 +120,7 @@ def chk_01_path_existence(exempt_paths: list[str]) -> list[Finding]:
     Only checks paths starting with known root prefixes (_sys/, workspace/, _archive/)
     to avoid false positives from intra-doc relative links.
     """
-    _ROOT_PREFIXES = ("_sys/", "workspace/", "_archive/", "workspace_base/")
+    _ROOT_PREFIXES = ("_sys/", "workspace/", "_archive/", "workspace-base/")
     findings: list[Finding] = []
     for md_file in _DOCS_DIR.rglob("*.md"):
         if _is_exempt(md_file, exempt_paths):

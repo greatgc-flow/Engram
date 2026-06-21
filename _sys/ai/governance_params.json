@@ -61,7 +61,7 @@
   "post_mortem_sla_hours": 48,
   "delivery_retry_limit": 3,
   "lazy_init_enabled": 1,
-  "workspace_template_path": "_sys/templates/workspace_base",
+  "workspace_template_path": "_sys/templates/workspace-base",
   "common_space_path": "_sys/ai/common",
   "workspace_specific_subdir": "specific",
   "workspace_config_file": "specific/config/workspace-config.json",

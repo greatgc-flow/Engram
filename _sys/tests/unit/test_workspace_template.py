@@ -7,7 +7,7 @@ import json
 import pytest
 from pathlib import Path
 
-TEMPLATE_DIR = Path(__file__).parent.parent.parent / "templates" / "workspace_base"
+TEMPLATE_DIR = Path(__file__).parent.parent.parent / "templates" / "workspace-base"
 REQUIRED_FILES = [
     ".gitignore",
     "CLAUDE.md",
