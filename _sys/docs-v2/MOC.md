@@ -1,6 +1,6 @@
 # MOC — Master Index (Map of Content)
 
-> docs-v2 SSOT v1.4 | Updated: 2026-06-18
+> docs-v2 SSOT v1.5 | Updated: 2026-06-21
 > Single navigation root for all peers and human readers.
 > Loading strategy: EAGER for invariants/arch; LAZY (search when needed) for everything else.
 
@@ -195,4 +195,4 @@ _Open gap (EDGE-05): lesson→docs-v2 graduation path not yet automated. See `_e
 
 ---
 
-_MOC v1.4 updated 2026-06-18. cc+gc Round 2 cross-link sync audit (collab_rate:10). 28 findings resolved. EDGE-02 closed, EDGE-05 opened. Covers 30 docs-v2 files + 7 root files + 7 operational config files._
+_MOC v1.5 updated 2026-06-21. cc+ag+cx docs-v2 MECE sync. Invariants and consensus updated. Covers 30 docs-v2 files + 7 root files + 7 operational config files._

@@ -67,6 +67,65 @@ def test_thin_forward_envelope_excludes_full_context(ai_dir):
     assert "HUB CONTEXT" not in envelope
 
 
+def test_ag_completed_room_excludes_room_context(ai_dir):
+    state = {
+        "room_id": "room-complete",
+        "members": {"ag": {}},
+        "mission": "old completed mission",
+        "phase": "complete",
+    }
+    (ai_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    session_dir = ai_dir / "sessions" / state["room_id"]
+    session_dir.mkdir(parents=True, exist_ok=True)
+    (session_dir / "handoff.md").write_text(
+        "## [GOAL]\n- stale goal\n\n"
+        "## [ACTIVE_THREADS]\n- stale IPC task\n",
+        encoding="utf-8",
+    )
+
+    context = hub._build_ask_query_with_context(ai_dir, "fresh task", to_peer="ag")
+
+    assert "[IPC BOUNDARY]" in context
+    assert "[HUB CONTEXT]" not in context
+    assert "[HANDOFF]" not in context
+    assert "old completed mission" not in context
+    assert "stale IPC task" not in context
+    assert "[USER QUERY]\nfresh task" in context
+
+
+def test_ag_active_room_uses_only_core_handoff_sections(ai_dir):
+    state = {
+        "room_id": "room-active",
+        "members": {"ag": {}, "cx": {}},
+        "mission": "current mission",
+        "phase": "implementation",
+    }
+    (ai_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    session_dir = ai_dir / "sessions" / state["room_id"]
+    session_dir.mkdir(parents=True, exist_ok=True)
+    (session_dir / "handoff.md").write_text(
+        "## [GOAL]\n- current goal\n\n"
+        "## [RECENT_COMPLETED]\n- old result\n\n"
+        "## [PENDING_ISSUES]\n- current blocker\n\n"
+        "## [KEY_DECISIONS]\n- current decision\n\n"
+        "## [CONSENSUS_HISTORY]\n- old debate\n\n"
+        "## [ACTIVE_THREADS]\n- stale IPC task\n",
+        encoding="utf-8",
+    )
+
+    context = hub._build_ask_query_with_context(
+        ai_dir, "review this", to_peer="ag.deepthink"
+    )
+
+    assert "[HUB CONTEXT]" in context
+    assert "current goal" in context
+    assert "current blocker" in context
+    assert "current decision" in context
+    assert "old result" not in context
+    assert "old debate" not in context
+    assert "stale IPC task" not in context
+
+
 def test_matching_peers_uses_scores(ai_dir):
     state = {
         "active_coordinator": "cx",

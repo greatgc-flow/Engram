@@ -1,5 +1,5 @@
 # docs-v2 MANIFEST
-> Version: 1.4 | Date: 2026-06-18 | Purpose: Workspace redesign SSOT (Active)
+> Version: 1.5 | Date: 2026-06-21 | Purpose: Workspace redesign SSOT (Active)
 > Language: All docs in English (INV-19). Console output to user: Korean only.
 > Principles: MECE · General-Specific · Lazy-load (token-efficient) · Doc-as-Code (ops/governance.md §6)
 > Status: **ACTIVE SSOT** — `_sys/docs/` archived to `_sys/docs/history/` (Legal Code reference only).
@@ -10,7 +10,7 @@
 
 ```
 EAGER (always):
-  10-invariants.md      ← FIRST: hard rules (INV-01~19, PRO-01~16)
+  10-invariants.md      ← FIRST: hard rules (INV-01~28, PRO-01~18)
   20-architecture.md    ← directory layout, brain layers, connectivity map
 
 LAZY (load when domain needed — see MOC.md for keyword index):
@@ -29,11 +29,11 @@ For human onboarding: `user/manual.md`
 
 | File | Purpose | Updated |
 |------|---------|---------|
-| **`MOC.md`** | **Master Index: navigation by domain (EAGER/LAZY table, taxonomy diagram, feedback loop map)** | 2026-06-18 |
-| `10-invariants.md` | MUST/MUST-NOT hard rules (INV-01~19, PRO-01~16) | 2026-06-18 |
+| **`MOC.md`** | **Master Index: navigation by domain (EAGER/LAZY table, taxonomy diagram, feedback loop map)** | 2026-06-21 |
+| `10-invariants.md` | MUST/MUST-NOT hard rules (INV-01~28, PRO-01~18) | 2026-06-21 |
 | `20-architecture.md` | Physical/logical dir layout + PathMap + Brain layers | 2026-06-16 |
 | `general/protocol.md` | Collaboration model, COLLAB_RATE, feedback loop | 2026-06-16 |
-| `general/consensus.md` | Voting lifecycle, R:10, tiebreak, Final Call | 2026-06-16 |
+| `general/consensus.md` | Voting lifecycle, R:10, tiebreak, Final Call, voting/quorum (§3.1/3.2) | 2026-06-21 |
 | `general/health.md` | Health states, routing gate, recovery | 2026-06-16 |
 | `general/session.md` | Session decision tree, handoff, startup contract | 2026-06-16 |
 | `general/communication.md` | Sync/Async, alerting, send vs thread | 2026-06-16 |

@@ -51,9 +51,12 @@ class TestClaudeAdapter:
         }
 
     def test_build_cmd_substitutes_query(self):
-        cmd, _ = self.adapter.build_cmd(self.node, "hello world")
-        assert "hello world" in cmd
+        cmd, use_stdin = self.adapter.build_cmd(self.node, "hello world")
         assert cmd[0] == "claude"
+        if use_stdin:
+            assert "-" in cmd or "hello world" not in cmd
+        else:
+            assert "hello world" in cmd
 
     def test_parse_output_strips_whitespace(self):
         result = self.adapter.parse_output("  response text  \n", self.node)

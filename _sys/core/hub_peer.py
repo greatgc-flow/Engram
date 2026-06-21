@@ -307,10 +307,23 @@ class ClaudeAdapter(BaseAdapter):
 
     def build_cmd(self, node: dict[str, Any], query: str, session_id: str | None = None) -> tuple[list[str], bool]:
         invoke = node.get("invoke", "claude")
+        invoke_path = Path(invoke)
+        if (
+            not invoke_path.is_absolute()
+            and invoke_path.parts
+            and invoke_path.parts[0].casefold() == "_sys"
+        ):
+            invoke = str((_SYS_DIR.parent / invoke_path).resolve())
         raw_args = node.get("invoke_args", ["-p", "{query}"])
-        # Claude Code currently doesn't use session_id for resume via CLI flags in the same way cx/gc do.
-        # It relies on local state files.
-        return [invoke] + self._substitute_args(raw_args, query) + node.get("profile_args", []), False
+        processed_args = []
+        use_stdin = False
+        for arg in raw_args:
+            if arg == "{query}":
+                processed_args.append("-")
+                use_stdin = True
+            else:
+                processed_args.append(arg)
+        return [invoke] + processed_args + node.get("profile_args", []), use_stdin
 
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
         return stdout.strip()

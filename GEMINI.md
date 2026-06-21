@@ -51,6 +51,7 @@ Full annotated tree: `README.md`
 
 ### 3-3. Zero-Token Symmetric Memory
 - **Blackboard First**: Before starting work, you MUST read `handoff.md` and `summary_*.md` files in `.ai/sessions/room-{uuid}/` to sync project state (**Re-orientation Phase**). Follow the `handoff.md` rolling rule to keep logs compact.
+- **IPC Boundary Exception**: When a hub prompt contains `[IPC BOUNDARY]`, do not run re-orientation or read mailbox, handoff, summary, or prior-session files unless its `[USER QUERY]` explicitly requests them. The context embedded in that prompt is authoritative for the IPC task.
 - **Zero-Token Sharing**: Write detailed analysis or summaries to files. Share only short pointers (paths) in prompts.
 - **Symmetric Persistence**: When running `ctx-save`, record checkpoints in BOTH `CLAUDE.md` and `_sys\gemini\config\GEMINI.md` to symmetrically preserve memory.
 

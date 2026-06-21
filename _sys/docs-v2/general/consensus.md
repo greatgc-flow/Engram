@@ -39,6 +39,20 @@ PROPOSE → VOTE → FINALIZE
 - Any offline/abstaining required voter → escalate to Human for override or policy downgrade
 - PTY peers (ag): write vote directly to `.ai/consensus/{round_id}.json` OR relay via `hub.py send --to cc` (NEVER `hub.py ask` — PTY deadlock risk)
 
+### 3.1 Gate-Based Quorum (D-08g)
+- **Gate-OPEN peers only**: Only peers whose health gate is OPEN at round-start count toward quorum. A gate-CLOSED peer's timeout is gate-closure (availability loss), NEVER silent approval.
+- **At COLLAB_RATE = 10**: Every gate-OPEN registered voter in `protocol.json["consensus"]["r10_voters"]` must explicitly vote `agree` before FINALIZE. A mid-round gate closure without a prior `agree` blocks finalization and escalates to Human (Tier 0). A previously cast `agree` remains valid.
+- **At COLLAB_RATE < 10**: Mix of `agree` + `abstain` permitted if min quorum met. Any explicit `disagree` blocks; requires unanimous active consent or Human override.
+- **Gate state is round-scoped**: Snapshot captured at round-start. Gate closure after snapshot does NOT change N (the quorum denominator). A previously cast vote stands through round close.
+- **Voter set change**: If the effective eligible voter set must change mid-round, the round must restart with a fresh snapshot.
+- **Stale examples updated**: `hub.py consensus-propose --voters cc,ag,cx` (gc SUSPENDED 2026-06-19).
+
+### 3.2 Quorum Authority Principle (INV-28, D-08g unanimous)
+- **Minimum quorum**: `max(2, f(N, risk))` where N = count of gate-OPEN eligible voters at round-start snapshot. f is risk-adjusted (undefined above N=3; default to N).
+- **Non-proposer requirement**: At least one voter from a distinct failure domain from the proposer must actively `agree`. Proposer MUST NOT self-finalize.
+- **Retroactive veto**: NONE for procedurally valid rounds. A peer gate-OPEN at round-start that did not vote `disagree` before FINALIZE cannot retroactively block. Exception: finalization that violates a higher-order invariant (INV-01~19) may be voided by Human.
+- **Mid-round gate closure rule**: Gate closure after snapshot does not change N. At R:10, any required voter with no cast `agree` → blocks finalization. No silent-approval by inaction.
+
 ---
 
 ## 4. Final Call (mandatory at R:8+)

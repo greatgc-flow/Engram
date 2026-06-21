@@ -1373,14 +1373,30 @@ def _build_ask_query_with_context(ai_root: Path | None, query: str, to_peer: str
     room_id = state.get("room_id")
     if not room_id:
         return query
-    lines = [
-        "[HUB CONTEXT]",
-        f"Room ID: {room_id}",
-        f"Members: {', '.join(state.get('members', {}).keys()) or 'none'}",
-        f"Mission: {state.get('mission') or 'none'}",
-        f"Blocked: {state.get('blocked') or 'none'}",
-        f"Phase: {state.get('phase') or 'none'}",
-    ]
+    root_peer = (to_peer or "").split(".", 1)[0]
+    is_ag = root_peer == "ag"
+    phase = str(state.get("phase") or "").strip().casefold()
+    room_complete = phase in {"complete", "completed", "finalized", "closed", "done"}
+
+    lines = []
+    if is_ag:
+        lines.extend([
+            "[IPC BOUNDARY]",
+            "Treat [USER QUERY] as the only task.",
+            "Do not read mailbox, handoff, summary, or prior-session files unless the user query explicitly requests them.",
+            "Use only context included in this prompt.",
+        ])
+
+    # Ephemeral AG calls must not be re-oriented into a room that is already complete.
+    if not (is_ag and room_complete):
+        lines.extend([
+            "[HUB CONTEXT]",
+            f"Room ID: {room_id}",
+            f"Members: {', '.join(state.get('members', {}).keys()) or 'none'}",
+            f"Mission: {state.get('mission') or 'none'}",
+            f"Blocked: {state.get('blocked') or 'none'}",
+            f"Phase: {state.get('phase') or 'none'}",
+        ])
     # ── User Directives 주입 (_sys/ai/user-directives.md) ────────
     directives_path = Path(__file__).parent.parent / "ai" / "user-directives.md"
     if directives_path.exists():
@@ -1416,8 +1432,20 @@ def _build_ask_query_with_context(ai_root: Path | None, query: str, to_peer: str
         if lessons_block:
             lines.extend(["", lessons_block])
     handoff_path = ai_root / "sessions" / room_id / "handoff.md"
-    if handoff_path.exists():
+    if handoff_path.exists() and not (is_ag and room_complete):
         handoff = handoff_path.read_text(encoding="utf-8", errors="replace").strip()
+        if is_ag and handoff:
+            sections = _parse_handoff(handoff)
+            allowed_sections = ("GOAL", "PENDING_ISSUES", "KEY_DECISIONS")
+            filtered_lines = []
+            for section in allowed_sections:
+                items = sections.get(section, [])
+                if not items:
+                    continue
+                filtered_lines.append(f"## [{section}]")
+                filtered_lines.extend(f"- {item}" for item in items)
+                filtered_lines.append("")
+            handoff = "\n".join(filtered_lines).strip()
         if handoff:
             lines.extend(["", "[HANDOFF]", handoff])
     lines.extend(["", "[USER QUERY]", query])
@@ -1707,7 +1735,7 @@ def action_clear_room(ai_root: Path, subject: str) -> None:
     print(f"[HUB] CLEAR-ROOM {new_room} | from={old_room or 'none'} | subject={subject}")
 
 
-def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: dict, quiet: bool = False) -> tuple[str, int]:
+def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: dict, quiet: bool = False, ai_root: Path | None = None, ask_id: str | None = None) -> tuple[str, int]:
     """pywinpty로 pseudo-TTY 실행 — WriteConsole() API 우회 (agy 등 TUI CLI 전용)."""
     try:
         import winpty as _winpty
@@ -1718,10 +1746,18 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
     p = _winpty.PtyProcess.spawn(cmd, env=process_env)
     chunks: list[str] = []
     lease = int(_runtime_cfg().get("pty_lease_sec", 300) or 300)
+    
+    if ai_root:
+        _lease_open(ai_root, node_id, p.pid, lease, ask_id=ask_id)
+
     deadline = time.monotonic() + (timeout_sec if timeout_sec > 0 else lease)
     t0 = time.monotonic()
+    _last_renew = time.monotonic()
 
     while time.monotonic() < deadline:
+        if ai_root and time.monotonic() - _last_renew > 30:
+            _lease_renew(ai_root, node_id, lease)
+            _last_renew = time.monotonic()
         try:
             chunk = p.read(4096)
             if chunk:
@@ -1733,6 +1769,9 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
         p.close()
     except Exception:
         pass
+
+    if ai_root:
+        _lease_close(ai_root, node_id, p.pid, "closed")
 
     elapsed = int(time.monotonic() - t0)
     output = _strip_ansi("".join(chunks))
@@ -2156,17 +2195,108 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 process_env[k] = str((peer_subdir / rel).resolve())
 
     # ── PTY path ───────────────────────────────────────────────
+    if requires_pty:
+        ask_id = _short_id("ask-")
+        query_summary = re.sub(r"[\x00-\x1f\x7f]+", " ", query)
+        query_summary = re.sub(r"\s+", " ", query_summary).strip()[:80] or "(empty query)"
+
     if requires_pty and sys.platform == "win32":
-        raw_pty, elapsed = _ask_with_pty(cmd, to, timeout_sec, process_env, quiet=True)
-        # _ask_with_pty already strips ANSI; apply again as defense-in-depth before adapter
-        raw_pty = _strip_ansi(raw_pty)
-        output = adapter.parse_output(raw_pty, node) if adapter else raw_pty
-        if not output.strip():
-            reason = "empty_response"
-            detail = f"{to} exited successfully but returned no usable response"
-            _record_ask_failure(health_peer, reason, detail, elapsed, ai_root)
+        def _update_pty_thread(status: str) -> None:
+            if not ai_root:
+                return
+            try:
+                _append_handoff_item(
+                    ai_root,
+                    "ACTIVE_THREADS",
+                    (
+                        f"{_now()} system: IPC task {ask_id} {status} "
+                        f"| peer={to} | query={query_summary}"
+                    ),
+                )
+            except Exception:
+                pass
+
+        _update_pty_thread("in progress")
+        pty_failure_reason: str | None = None
+
+        try:
+            raw_pty, elapsed = _ask_with_pty(
+                cmd,
+                to,
+                timeout_sec,
+                process_env,
+                quiet=True,
+                ai_root=ai_root,
+                ask_id=ask_id,
+            )
+            # _ask_with_pty already strips ANSI; apply again as defense-in-depth.
+            raw_pty = _strip_ansi(raw_pty)
+            output = adapter.parse_output(raw_pty, node) if adapter else raw_pty
+
+            if not output.strip():
+                reason = "empty_response"
+                pty_failure_reason = reason
+                detail = f"{to} exited successfully but returned no usable response"
+                _record_ask_failure(
+                    health_peer, reason, detail, elapsed, ai_root
+                )
+                _append_ask_history(
+                    ai_root,
+                    to,
+                    saved_query_file_path,
+                    output_file,
+                    elapsed,
+                    False,
+                    reason,
+                )
+                if ai_root:
+                    _record_routing_metric(
+                        ai_root,
+                        "direct_ask",
+                        selected_peer=to,
+                        profile_id=_resolve_profile_id(to),
+                        outcome="failure",
+                        latency_sec=elapsed,
+                        failure_reason=reason,
+                    )
+                print(f"[HUB:ERROR] {detail}", file=sys.stderr)
+                sys.exit(1)
+
+            logger = _get_logger()
+            if logger:
+                logger.log_ipc(
+                    peer_id=to,
+                    direction="receive",
+                    response_preview=output,
+                    elapsed_sec=float(elapsed),
+                )
+                profile_id = _resolve_profile_id(to)
+                usage: dict = (
+                    adapter.extract_usage(raw_pty, node) if adapter else {}
+                )
+                logger.log_cost(
+                    peer_id=to,
+                    model_id=(
+                        node.get("model_id")
+                        or node.get("runtime_model")
+                        or node.get("invoke", to)
+                    ),
+                    profile_id=profile_id,
+                    latency_sec=float(elapsed),
+                    input_tokens=usage.get("input_tokens"),
+                    output_tokens=usage.get("output_tokens"),
+                    reasoning_tokens=usage.get("reasoning_tokens"),
+                )
+
+            _record_ask_success(health_peer, elapsed, ai_root)
             _append_ask_history(
-                ai_root, to, saved_query_file_path, output_file, elapsed, False, reason
+                ai_root,
+                to,
+                saved_query_file_path,
+                output_file,
+                elapsed,
+                True,
+                None,
             )
             if ai_root:
                 _record_routing_metric(
@@ -2174,45 +2304,42 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                     "direct_ask",
                     selected_peer=to,
                     profile_id=_resolve_profile_id(to),
-                    outcome="failure",
+                    outcome="success",
                     latency_sec=elapsed,
-                    failure_reason=reason,
                 )
-            print(f"[HUB:ERROR] {detail}", file=sys.stderr)
-            sys.exit(1)
-        logger = _get_logger()
-        if logger:
-            logger.log_ipc(peer_id=to, direction="receive", response_preview=output, elapsed_sec=float(elapsed))
-            profile_id = _resolve_profile_id(to)
-            usage: dict = adapter.extract_usage(raw_pty, node) if adapter else {}
-            logger.log_cost(
-                peer_id=to,
-                model_id=node.get("model_id") or node.get("runtime_model") or node.get("invoke", to),
-                profile_id=profile_id,
-                latency_sec=float(elapsed),
-                input_tokens=usage.get("input_tokens"),
-                output_tokens=usage.get("output_tokens"),
-                reasoning_tokens=usage.get("reasoning_tokens"),
-            )
-        _record_ask_success(health_peer, elapsed, ai_root)
-        _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
-        if ai_root:
-            _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="success", latency_sec=elapsed)
-        if output_file:
-            try:
-                base = ai_root if ai_root else Path.cwd()
-                out_path = _portable_state_path(base, output_file)
-                out_path.parent.mkdir(parents=True, exist_ok=True)
-                out_path.write_text(output, encoding="utf-8")
-                if not quiet:
-                    print(f"[HUB] REPLY {to} | chars={len(output)} | elapsed={elapsed}s | output={out_path}")
-            except Exception as e:
-                print(f"[HUB:ERROR] failed to write output file: {e}", file=sys.stderr)
-                sys.exit(1)
-        elif quiet:
-            print(output, end="")
-        else:
-            print(f"[HUB] REPLY {to} | chars={len(output)} | elapsed={elapsed}s\n{output.strip()}")
+
+            if output_file:
+                try:
+                    base = ai_root if ai_root else Path.cwd()
+                    out_path = _portable_state_path(base, output_file)
+                    out_path.parent.mkdir(parents=True, exist_ok=True)
+                    out_path.write_text(output, encoding="utf-8")
+                    if not quiet:
+                        print(
+                            f"[HUB] REPLY {to} | chars={len(output)} "
+                            f"| elapsed={elapsed}s | output={out_path}"
+                        )
+                except Exception as exc:
+                    pty_failure_reason = "output_write_error"
+                    print(
+                        f"[HUB:ERROR] failed to write output file: {exc}",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+            elif quiet:
+                print(output, end="")
+            else:
+                print(
+                    f"[HUB] REPLY {to} | chars={len(output)} "
+                    f"| elapsed={elapsed}s\n{output.strip()}"
+                )
+
+        except BaseException as exc:
+            failure_reason = pty_failure_reason or type(exc).__name__
+            _update_pty_thread(f"failed ({failure_reason})")
+            raise
+
+        _update_pty_thread("completed")
         return
 
     # ── Subprocess path (with optional session-retry) ──────────
@@ -2249,6 +2376,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         # Uses zombie_timeout_sec (separate from lease_timeout_sec) — see communication_policy.
         _MAX_SILENT_HEARTBEATS = max(1, zombie_timeout_sec // heartbeat_sec)
         _silent_beats = 0
+        _last_out_len = 0
 
         while True:
             remaining = deadline - time.monotonic()
@@ -2259,13 +2387,22 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             try:
                 raw_out, raw_err = proc.communicate(input=input_bytes, timeout=min(heartbeat_sec, remaining))
                 break
-            except subprocess.TimeoutExpired:
+            except subprocess.TimeoutExpired as exc:
                 input_bytes = None
                 if proc.poll() is not None:
                     raw_out = proc.stdout.read() if proc.stdout else b""
                     raw_err = proc.stderr.read() if proc.stderr else b""
                     break
-                _silent_beats += 1
+                
+                # BUG-02 fix: Check if the process produced new stdout output during the heartbeat.
+                # If so, reset _silent_beats.
+                current_len = len(exc.output) if exc.output else 0
+                if current_len > _last_out_len:
+                    _silent_beats = 0
+                    _last_out_len = current_len
+                else:
+                    _silent_beats += 1
+
                 _lease_renew(ai_root, to, lease_timeout_sec)
                 if _silent_beats >= _MAX_SILENT_HEARTBEATS:
                     # Process alive but producing no output for lease_timeout_sec total — treat as zombie.
