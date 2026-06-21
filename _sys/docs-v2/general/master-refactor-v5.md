@@ -66,21 +66,26 @@ To satisfy the requirement that users must clearly notice any abnormalities:
 
 ---
 
-## 6. Implementation Roadmap (Iterative Execution)
-We will execute this plan sequentially, repeating validation until perfect:
+## 6. Implementation Roadmap (Strict TDD Execution)
+We will execute this plan sequentially via strict **TDD (Test-Driven Development)**. No code will be written without a failing test first.
 
 * **Phase 1: Configuration Harvesting**
+  * *TDD Step*: Write `test_env_loader.py` asserting that generic paths resolve correctly from JSON.
   * Extract all magic numbers, hardcoded paths, and environment variables from `_sys/*.bat` and `_sys/core/*.py`.
   * Centralize into the planned environment.json file.
 * **Phase 2: Base Templates & Scoping**
+  * *TDD Step*: Write WSB (Windows Sandbox) tests to simulate a fresh workspace initialization.
   * Create `_shared/` and `_sys/templates/workspace-base/`.
   * Update `install.bat` and `hub.py` to recognize local vs. shared scoping via JSON precedence.
 * **Phase 3: The Binding Layer**
+  * *TDD Step*: Write mock tests for `BasePeerAdapter` to ensure JSON bindings produce the exact correct CLI strings before modifying `hub.py`.
   * Create the planned bindings.json file.
   * Strip `hub.py` of all peer-specific `if/else` logic. Refactor into pure polymorphic interfaces driven by JSON.
 * **Phase 4: Error Visibility**
+  * *TDD Step*: Write a test that intentionally throws an exception and asserts the output matches the `[SYSTEM_FATAL_ERROR]` 5-Whys format.
   * Inject the Global Exception Trap.
 * **Phase 5: Lazy Optimization**
+  * *TDD Step*: Write a token-counting test to ensure context load size remains below the threshold for specific tasks.
   * Audit token usage. Ensure context loading is fully lazy and bound to specific JSON-triggered events.
 
 ---
