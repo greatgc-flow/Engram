@@ -4,13 +4,14 @@
       "Bash(codex exec *)"
     ]
   },
+  "model": "opus",
   "statusLine": {
     "type": "command",
     "command": "bash 'P:/_sys/claude/config/statusline-command.sh'"
   },
-  "effortLevel": "medium",
+  "effortLevel": "high",
   "autoUpdatesChannel": "latest",
+  "skipDangerousModePermissionPrompt": true,
   "theme": "auto",
-  "agentPushNotifEnabled": true,
-  "skipDangerousModePermissionPrompt": true
+  "agentPushNotifEnabled": true
 }

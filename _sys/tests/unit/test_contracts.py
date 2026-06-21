@@ -425,3 +425,11 @@ class TestRuntimeDirectivesContract:
             assert rec["status"] in valid, (
                 f"Directive {rec['id']} invalid status: {rec['status']}"
             )
+
+
+class TestContextFillContract:
+    """action_context_fill() parameter contract (DIR-003 / ARCH-07)."""
+    def test_has_frame_param_default_false(self):
+        sig = inspect.signature(hub.action_context_fill)
+        assert "frame" in sig.parameters, "action_context_fill must expose frame param"
+        assert sig.parameters["frame"].default is False, "frame must default False (cc/cx/gc unchanged)"

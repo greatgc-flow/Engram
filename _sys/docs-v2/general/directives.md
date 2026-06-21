@@ -44,10 +44,10 @@ Status: `active` | `resolved` | `expired`
 
 ## 4. Auto-Promote Trigger
 
-Runtime directive auto-created when: same peer fails with same `reason` **2+ consecutive times**.
+Runtime directive auto-created when: same peer fails with same `reason` consecutively exceeding `protocol.json["runtime_directives"]["auto_promote_consecutive_failures"]`.
 
 Logic in `_record_ask_failure()`:
-- If `consecutive_failures ≥ 2` AND `prev_failure_reason == reason` → `_auto_promote_runtime_directive()`
+- If `consecutive_failures ≥ protocol.json["runtime_directives"]["auto_promote_consecutive_failures"]` AND `prev_failure_reason == reason` → `_auto_promote_runtime_directive()`
 - If active directive already exists for peer+reason → bump `trigger_count` (no duplicate)
 
 ---
@@ -61,9 +61,9 @@ Logic: `_record_ask_success()` → `_clear_peer_runtime_directives(peer_id)`.
 
 ## 6. TTL & Expiry
 
-- Default TTL: 6h (adjustable via `--ttl-hours`)
+- Default TTL configurable via `protocol.json["runtime_directives"]["default_ttl_hours"]` (adjustable via `--ttl-hours`)
 - Expired entries stay in file (audit) but never injected
-- Injection cap: max 10 active directives, max 2000 chars; overflow → truncation notice
+- Injection caps configured via `protocol.json["runtime_directives"]["max_active_directives"]` and `max_chars`; overflow → truncation notice
 
 ---
 

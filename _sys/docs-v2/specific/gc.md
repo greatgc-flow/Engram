@@ -46,7 +46,7 @@ references and promotion/ACK contract as every peer.
 - New: `gemini --session-id <uuid> -p - -o text --approval-mode auto_edit --skip-trust`
 - Resume: `gemini --resume <uuid> -p - -o text --approval-mode auto_edit --skip-trust`
 - State: `_sys/gemini/session_state.json`
-- `fill_depth_multiplier = 3` (gc reads 3× more context-fill sections than other peers)
+- `fill_depth_multiplier` is configured by `protocol.json["workload"]["fill_depth_multiplier"]["gc"]`
 - IPC query files: `_sys/ai/ipc/gc-{YYYYMMDDHHMMSS}-{RAND4}.txt` (English only — Korean costs 2-3× tokens)
 
 ---
@@ -61,8 +61,8 @@ CLI probes.
 
 ## Health & Auto-Remediation
 
-- INV-15 triggers SelfHealer when `consecutive_failures ≥ failure_threshold` (default 5, from `protocol.json["health"]`).
-- gc is the **primary large-corpus analyst** (fill_depth_multiplier=3). On gc RED: hub.py routes analysis tasks to cc as fallback (R04 Large Corpus Analyst → cc fallback in resource-governance.md §7).
+- INV-15 triggers SelfHealer when `consecutive_failures ≥ protocol.json["health"]["failure_error"]`.
+- gc is the **primary large-corpus analyst**. On gc RED: hub.py routes analysis tasks to cc as fallback.
 - RED recovery: `hub.py peer-recover --peer gc` (NOT manual health-update). See INV-11.
 - See `general/self-evolution.md §2.1` for full SelfHealer tier description.
 

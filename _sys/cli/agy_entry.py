@@ -59,7 +59,7 @@ def main() -> None:
     env = _env()
     subprocess.run([_PYTHON, str(_HUB), "init-session", "--agent", "ag"],
                    capture_output=True, env=env)
-    fill = subprocess.run([_PYTHON, str(_HUB), "context-fill"],
+    fill = subprocess.run([_PYTHON, str(_HUB), "context-fill", "--frame"],
                           capture_output=True, text=True, env=env)
     if fill.stdout.strip():
         print(fill.stdout)

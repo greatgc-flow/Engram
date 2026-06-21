@@ -7,15 +7,15 @@
 
 ```
 Read .ai/state.json
-  ├─ room_id exists + this peer in members + updated_at < 4h?
+  ├─ room_id exists + this peer in members + updated_at < protocol.json["session"]["resume_window_hours"]?
   │     → RESUME: hub.py init-session (rejoin) + read full handoff.md
   │
-  ├─ room_id exists + 4h ≤ updated_at < 24h?
+  ├─ room_id exists + resume_window_hours ≤ updated_at < protocol.json["session"]["handoff_staleness_hours"]?
   │     → NEW + CONTEXT FILL:
   │       1. hub.py init-session (new join, same room_id)
   │       2. hub.py context-fill → inject into first prompt
   │
-  ├─ room_id exists + updated_at ≥ 24h?
+  ├─ room_id exists + updated_at ≥ handoff_staleness_hours?
   │     → STALE + FULL FILL:
   │       1. hub.py end-session for stale members
   │       2. hub.py init-session (new session)
@@ -58,11 +58,11 @@ Context-fill sections controlled by `protocol.json["session"]["context_fill_sect
 
 ## 4. Session Expiry
 
-| Rule | Value | Config key |
-|------|------:|:-----------|
-| Resume window | 4h | `session.resume_window_hours` |
-| Staleness threshold | 24h | `session.handoff_staleness_hours` |
-| Consensus round timeout | 30m | `consensus.timeout_minutes` |
+| Rule | Config key |
+|------|:-----------|
+| Resume window | `protocol.json["session"]["resume_window_hours"]` |
+| Staleness threshold | `protocol.json["session"]["handoff_staleness_hours"]` |
+| Consensus round timeout | `protocol.json["consensus"]["timeout_minutes"]` |
 
 ---
 

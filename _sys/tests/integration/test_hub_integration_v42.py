@@ -101,7 +101,9 @@ def test_action_ask_integrates_context_gate(ai_dir, monkeypatch):
     # Mock configs to return our test nodes/profiles
     test_nodes_data = {
         "cc": {"peer": "claude", "invoke": "claude"},
-        "gc": {"peer": "gemini", "invoke": "gemini"}
+        "cc.effort": {"peer": "claude", "invoke": "claude"},
+        "gc": {"peer": "gemini", "invoke": "gemini"},
+        "gc.effort": {"peer": "gemini", "invoke": "gemini"}
     }
     test_profiles = {
         "profiles": {
@@ -116,6 +118,11 @@ def test_action_ask_integrates_context_gate(ai_dir, monkeypatch):
             return {"action": "failover", "failover_model": "gc", "ratio": 1.1, "message": "Too large"}
         return {"action": "pass"}
 
+    def mock_select_ask_profile(to_peer, query):
+        if to_peer == "cc":
+            return "cc.effort", {"node_id": "cc.effort", "classifier_triggered": True, "score": 0, "signals": ["ambiguous_default"]}
+        return to_peer, None
+
     # Mock Popen
     mock_proc = MagicMock()
     mock_proc.returncode = 0
@@ -126,6 +133,8 @@ def test_action_ask_integrates_context_gate(ai_dir, monkeypatch):
          patch("hub._load_nodes", return_value=test_nodes_data), \
          patch("hub._default_nodes", return_value={"nodes": test_nodes_data}), \
          patch("hub._load_model_profiles", return_value=test_profiles), \
+         patch("hub._select_ask_profile", side_effect=mock_select_ask_profile), \
+         patch("hub.is_routable", return_value=True), \
          patch("subprocess.Popen", return_value=mock_proc), \
          patch("hub._ask_health_precheck"):
         

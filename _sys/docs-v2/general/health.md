@@ -9,7 +9,7 @@
 |--------|---------|---------------|
 | GREEN | Healthy, recently checked | Routable (preferred) |
 | YELLOW | Degraded but usable | Routable as fallback |
-| STALE | `checked_at` older than `health_stale_minutes` or active PID died | Avoid for leadership/new tasks |
+| STALE | `checked_at` older than `protocol.json["leader_election"]["health_stale_minutes"]` or active PID died | Avoid for leadership/new tasks |
 | RED | Blocked, quarantined, over failure threshold, or `gate_open=false` | NEVER route work |
 | UNKNOWN | health.json missing or unreadable | Do not target until initialized |
 
@@ -32,12 +32,12 @@
 
 ## 3. State Transitions (from `protocol.json["health"]`)
 
-| Transition | Rule |
+| Transition | Rule (thresholds in `protocol.json["health"]`) |
 |------------|------|
-| GREEN | `jsonl_mb < green_mb` AND `consecutive_failures < failure_warn` AND `gate_open != false` |
-| YELLOW | `green_mb ≤ jsonl_mb < yellow_mb` OR `consecutive_failures ≥ failure_warn` |
-| RED | `jsonl_mb ≥ yellow_mb` OR `consecutive_failures ≥ failure_error` OR critical reason OR quarantine |
-| STALE | `checked_at` older than `health_stale_minutes` OR recorded PID no longer alive |
+| GREEN | `jsonl_mb < thresholds.green_mb` AND `consecutive_failures < failure_warn` AND `gate_open != false` |
+| YELLOW | `thresholds.green_mb ≤ jsonl_mb < thresholds.yellow_mb` OR `consecutive_failures ≥ failure_warn` |
+| RED | `jsonl_mb ≥ thresholds.yellow_mb` OR `consecutive_failures ≥ failure_error` OR critical reason OR quarantine |
+| STALE | `checked_at` older than `protocol.json["leader_election"]["health_stale_minutes"]` OR recorded PID no longer alive |
 
 Critical failure reasons (immediate gate close):
 - `sandbox_spawn_eperm` — fix environment → `peer-recover`
@@ -106,15 +106,18 @@ Preference order: GREEN → YELLOW → (avoid STALE) → RED blocked.
 | exit_code≠0, critical marker in stderr | RED (immediate gate close) |
 | exit_code≠0, rate/quota marker | YELLOW → RED after threshold |
 | exit_code≠0, unknown | Threshold-based degradation |
-| Process alive, zero output for 30 min | Zombie-killed → timeout failure |
+| Process alive, zero output | Zombie-killed → timeout failure (configured via `protocol.json["communication_policy"]["zombie_timeout_sec"]`) |
 
 ---
 
 ## 8. Heartbeat / Lease (crash-safety only)
 
 - Purpose: orphan cleanup when hub process dies mid-ask
-- `heartbeat_sec` = 30, `lease_timeout_sec` = 1800 (from `protocol.json`)
-- Zombie guard: 60 consecutive silent heartbeats (30 min) → force-kill
+- Timings configured in `protocol.json["communication_policy"]`:
+  - `heartbeat_sec`
+  - `lease_timeout_sec`
+  - `zombie_timeout_sec`
+- Zombie guard: consecutive silent heartbeats exceeding `zombie_timeout_sec` → force-kill
 - `hub.py lease-status` / `hub.py lease-sweep`
 - Does NOT: auto-replay/retry tasks, trigger directives
 

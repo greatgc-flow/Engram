@@ -222,7 +222,9 @@ class TestAsk:
                 hub.action_ask("gc", "test", None, 120, None)
 
     def test_ask_query_file(self, tmp_path, capsys):
-        qf = tmp_path / "query.txt"
+        ipc_dir = tmp_path / "ipc"
+        ipc_dir.mkdir(parents=True, exist_ok=True)
+        qf = ipc_dir / "cx-20260621223000-ab12.txt"
         qf.write_text("file query content", encoding="utf-8")
         mock_proc = _make_mock_proc(stdout=b"response")
         with patch("shutil.which", return_value="/usr/bin/codex"), \
@@ -1291,3 +1293,59 @@ class TestKnowledgePropagation:
             result = hub._load_active_lessons(workspace_ai_root=None)
         assert len(result) == 1
         assert result[0]["id"] == "LL-OK"
+
+
+class TestContextFillFrame:
+    def _seed_room(self, ai_dir):
+        room = "room-frametest"
+        state = json.loads((ai_dir / "state.json").read_text("utf-8"))
+        state["room_id"] = room
+        (ai_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+        sess = ai_dir / "sessions" / room
+        sess.mkdir(parents=True, exist_ok=True)
+        (sess / "handoff.md").write_text(
+            "## [GOAL]\nResetting blocked consensus and taking over\n", encoding="utf-8")
+
+    def test_bare_output_has_no_neutralizer(self, ai_dir, capsys):
+        self._seed_room(ai_dir)
+        hub.action_context_fill(ai_dir, ["GOAL"])           # frame defaults False
+        bare = capsys.readouterr().out
+        assert "REFERENCE STATE" not in bare
+        assert bare.startswith("<!-- context-fill")
+
+    def test_framed_prepends_neutralizer_only(self, ai_dir, capsys):
+        self._seed_room(ai_dir)
+        hub.action_context_fill(ai_dir, ["GOAL"])
+        bare = capsys.readouterr().out
+        hub.action_context_fill(ai_dir, ["GOAL"], frame=True)
+        framed = capsys.readouterr().out
+        assert framed.startswith("> REFERENCE STATE")
+        neutralizer, _, body = framed.partition("\n")
+        assert body == bare                 # bare path byte-identical
+        assert "NOT a task" in neutralizer
+
+
+class TestEphemeralQueryFile:
+    def _mk(self, d, name):
+        d.mkdir(parents=True, exist_ok=True)
+        f = d / name; f.write_text("x", encoding="utf-8"); return f
+
+    def test_ipc_autoname_is_ephemeral(self, tmp_path):
+        f = self._mk(tmp_path / "ipc", "cc-20260621223000-ab12.txt")
+        assert hub._is_ephemeral_query_file(f) is True
+
+    def test_profile_suffixed_autoname_is_ephemeral(self, tmp_path):
+        f = self._mk(tmp_path / "ipc", "cc.deepthink-20260621223000-ab12.txt")
+        assert hub._is_ephemeral_query_file(f) is True
+
+    def test_ask_all_tempfile_is_ephemeral(self, tmp_path):
+        f = self._mk(tmp_path, "hub-ask-all-cx-deadbeef.txt")
+        assert hub._is_ephemeral_query_file(f) is True
+
+    def test_named_staged_file_is_preserved(self, tmp_path):
+        f = self._mk(tmp_path / "ipc", "cx-ratify-pro19-arch07.txt")
+        assert hub._is_ephemeral_query_file(f) is False
+
+    def test_autoname_outside_ipc_is_preserved(self, tmp_path):
+        f = self._mk(tmp_path / "notipc", "cc-20260621223000-ab12.txt")
+        assert hub._is_ephemeral_query_file(f) is False

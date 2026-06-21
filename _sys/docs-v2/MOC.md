@@ -33,6 +33,7 @@ Peer: search this table first. Load only the file(s) relevant to your current ta
 | Communication patterns | `general/communication.md` | send vs thread, alerting, sync/async |
 | Knowledge propagation | `general/knowledge.md` | lesson lifecycle, pack delivery, active-lessons |
 | Self-evolution | `general/self-evolution.md` | self_care.py, DocsSyncer, SaturationDetector |
+| 5-Whys Feedback Loop | `general/feedback-loop.md` | Root cause analysis, JSON configurations, Virtuous Cycle |
 | Parameter tradeoffs | `general/tradeoffs.md` | COLLAB_RATE/EFFORT/SLIM/SANDBOX tuning |
 | V5 Refactoring Plan | `general/master-refactor-v5.md` | Zero-Code MECE Architecture, JSON-bindings |
 | Proposal lifecycle | `ops/governance.md §5` | proposal states, TTL, voting thresholds, template |
@@ -138,6 +139,7 @@ docs-v2/
 │   ├── communication.md  ← sync/async, send vs thread
 │   ├── knowledge.md      ← lesson propagation
 │   ├── self-evolution.md ← self_care, DocsSyncer, SaturationDetector
+│   ├── feedback-loop.md  ← 5-Whys loop, root cause mitigation, JSON updates
 │   ├── tradeoffs.md      ← parameter registry
 │   ├── master-plan.md    ← unified architecture blueprint
 │   ├── master-refactor-v5.md ← Zero-Code MECE Architecture Plan

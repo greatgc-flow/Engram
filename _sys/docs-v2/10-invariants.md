@@ -111,3 +111,10 @@
 |----|------|
 | PRO-17 | NEVER allow writing side-effects to files or executing commands on target peers during inter-peer routing unless explicitly authorized by a governance write profile. |
 | PRO-18 | NEVER violate 5-channel effect surface isolation (no local temp write, no governance write, no workspace write, no process mutation, no external I/O) when executing under the `--read-only` flag. |
+
+### Transport-Role Enforcement (PRO-19)
+| ID | Rule |
+|----|------|
+| PRO-19 | NEVER allow the terminal/router peer to mutate governance or room state — consensus rounds/votes, `handoff.md`, leader/coordinator claims, directives, `protocol.json`, or any `_sys/` artifact. The terminal is a **mechanical transport**: it relays asks and routes to worker peers; it is NOT an author, voter, or coordinator. All state mutation MUST be performed by an identified worker peer through a governance-write profile. Tier-0 human authority is unaffected (human override remains supreme, INV-03). |
+
+> **PRO-19 implementation note (enforceable floors).** Enforced programmatically in `hub.py` (INV-26), not by peer self-discipline: (1) **Originator identity** — the terminal/router is carried as `originator` in `action_ask` and excluded from voter/proposer rolls. (2) **Decision-tier floor** — governance-mutating hub actions require a peer at ≥`effort` profile tier; the `standard`/routing tier cannot mutate. (3) **Guarded transport** — `ask`/`ask-all` route mutating actions through `_guard_action` so they cannot be invoked on the transport path. Derived from the "Resetting blocked consensus and taking over" incident (autonomous room/consensus takeover by a non-authoring peer).

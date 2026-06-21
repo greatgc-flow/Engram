@@ -104,7 +104,7 @@ Fields set in `state.json`: `leader`, `active_coordinator`, `leadership`.
 | Current time ≥ `challenge_until` AND current leader is RED/STALE | Claim succeeds unconditionally |
 | No current leader | Claim succeeds immediately |
 
-> Default window is 1 minute (`challenge_window_minutes: 1`), chosen for USB-drive latency.
+> Window duration is defined by `protocol.json["leader_election"]["challenge_window_minutes"]`.
 
 ### Handoff Entry
 
@@ -192,19 +192,21 @@ signals, fallback rules, tests, and benchmark.
 
 ### Rule
 
-If a peer has been coordinator for **3 consecutive terms**, it is blocked from claiming leadership again until another peer leads at least once.
+If a peer has been coordinator for a consecutive number of terms exceeding `protocol.json["leader_election"]["yield_failure_threshold"]`, it is blocked from claiming leadership again until another peer leads at least once.
 
 ### Implementation
 
 ```python
-history = state.get("coordinator_history", [])   # last 10 entries kept
-last_3  = [h.get("peer") for h in history[-3:]]
-if len(last_3) == 3 and all(p == agent for p in last_3):
-    print(f"[HUB:ERR] AP-20 Violation: {agent} has been coordinator for 3 consecutive terms.")
+# Threshold configured via protocol.json["leader_election"]["yield_failure_threshold"]
+history = state.get("coordinator_history", [])   # history kept for recent terms
+threshold = get_config("leader_election.yield_failure_threshold")
+recent = [h.get("peer") for h in history[-threshold:]]
+if len(recent) == threshold and all(p == agent for p in recent):
+    print(f"[HUB:ERR] AP-20 Violation: {agent} has been coordinator for {threshold} consecutive terms.")
     sys.exit(1)
 ```
 
-- `coordinator_history` stores up to the last 10 entries: `{"peer": str, "at": ISO8601, "room": str}`.
+- `coordinator_history` stores recent entries: `{"peer": str, "at": ISO8601, "room": str}`.
 - History is appended on every successful claim (after AP-20 passes).
 - The check is **pre-claim** — it runs before the challenge window is opened.
 

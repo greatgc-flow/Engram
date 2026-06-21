@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-19T18:25:03",
+  "generated_at": "2026-06-21T22:50:16",
   "source": "hub.py",
   "count": 81,
   "signatures": {
@@ -522,6 +522,11 @@
           "kind": "POSITIONAL_OR_KEYWORD",
           "default": null,
           "annotation": "list[str] | None"
+        },
+        "frame": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "default": false,
+          "annotation": "bool"
         }
       },
       "return": "None"

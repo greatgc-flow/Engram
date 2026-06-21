@@ -158,9 +158,9 @@ class TestLease:
                 hub._get_lock(ai_dir, "leases")
 
     def test_get_lock_reports_read_only_permission_immediately(self, ai_dir):
-        with patch("hub.os.open", side_effect=PermissionError("read-only")):
+        with patch("pathlib.Path.write_bytes", side_effect=PermissionError("read-only")):
             with pytest.raises(PermissionError, match="workspace is read-only"):
-                hub._get_lock(ai_dir, "leases")
+                hub._get_lock(ai_dir, "test")
 
     def test_lease_open_creates_entry(self, ai_dir):
         hub._lease_open(ai_dir, "gc", pid=9999, lease_timeout_sec=300, ask_id="ask-test-1")

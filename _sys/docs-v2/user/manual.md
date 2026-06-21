@@ -42,14 +42,19 @@ ctx-end      # end-of-day: archive + cleanup
 
 ---
 
-## Peer Reference
+## Peer Reference & Topology
 
-| Peer | Launch | ID | Best for |
-|------|--------|----|----------|
-| Claude Code | `claude.bat` | cc | Code, architecture, memory |
-| Gemini CLI | `gemini.bat` | gc | Large corpus, research, cross-review |
-| Codex | `codex.bat` | cx | Code execution, short tasks |
-| AntiGravity | `agy.bat` | ag | Shell scripts, quick CLI (**INACTIVE**) |
+`_sys/ai/orchestration.json` is the canonical topology source. A peer is a provider-level participant. Its runtime nodes are generated from the profile tree in memory (e.g., standard, effort, deepthink).
+
+| Peer | CLI | State | Standard | Effort | Deepthink |
+|------|-----|-------|----------|--------|-----------|
+| `cc` | Claude Code | Active | Haiku 4.5 / low | Sonnet 4.6 / high | Opus 4.8 / max |
+| `ag` | Antigravity | Active | Gemini 3.5 Flash / low | Gemini 3.5 Flash / high | Gemini 3.1 Pro / high |
+| `cx` | Codex | Active | GPT-5.4-mini / low | GPT-5.5 / high | GPT-5.5 / xhigh |
+| `ca` | Claude alternate | Disabled | Inherited disabled | Inherited disabled | Inherited disabled |
+| `gc` | Gemini CLI | Disabled | Inherited disabled | Inherited disabled | Inherited disabled |
+
+The default profile is deliberately low cost. The hub analyzes each request and can promote or demote it among `standard`, `effort`, and `deepthink`.
 
 ---
 
