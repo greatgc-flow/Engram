@@ -61,8 +61,9 @@ Peer: search this table first. Load only the file(s) relevant to your current ta
 
 | Domain | File | Keywords / When to Load |
 |--------|------|------------------------|
-| Logging architecture | `ops/logging.md` | IPC history, console capture, rolling policy, 5-Whys investigation |
 | Governance & proposals | `ops/governance.md` | Garbage/, retention, proposal lifecycle, Doc-as-Code |
+| Coding & conventions | `ops/conventions.md` | bat, py, naming, shell rules, script safety, WSB tests |
+| Logging architecture | `ops/logging.md` | IPC history, console capture, rolling policy, 5-Whys investigation |
 | Skill system | `ops/skills.md` | hub skills, catalog, invocation, registration |
 | JSON schemas | `ops/schemas.md` | protocol.json, peers.json, model-registry, routing-config, health.json |
 | **Peer architecture decision** | **`ops/peer-debate-2026-06-19.md`** | **Final terminology, topology, lifecycle, context, status, TDD, and benchmarks** |
@@ -148,6 +149,7 @@ docs-v2/
 │
 ├── ops/                  ← operational procedures
 │   ├── governance.md     ← Garbage/, retention, proposals, Doc-as-Code
+│   ├── conventions.md    ← coding conventions, script safety, shell rules, tests
 │   ├── logging.md        ← log taxonomy, rolling policy, 5-Whys
 │   ├── skills.md         ← hub skill catalog + invocation
 │   ├── schemas.md        ← JSON schema reference

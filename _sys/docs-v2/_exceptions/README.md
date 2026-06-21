@@ -60,7 +60,11 @@ Documented in `ops/governance.md §6` as planned. Until it exists, INV-19 and co
 - **Missing:** No automated trigger promotes a high-frequency lesson from `active-lessons.jsonl` into a permanent `docs-v2` rule or `10-invariants.md` entry.
 - **Risk:** Directives expire → lessons bloat context without being synthesized into SSOT architecture. Root fixes remain implicit, not structural.
 **Current state:** DocsSyncer (self-evolution.md §2.2) handles `consensus_finalize` → docs-v2 sync. But there is no lesson-frequency threshold check that triggers a promotion proposal.
-**Resolution:** Extend `self_care.py` to: (1) count lesson occurrence frequency, (2) when a lesson appears ≥ 3 times in 7 days → auto-generate `proposal-add` to graduate it into a docs-v2 rule or invariant. Requires R:10 consensus to apply. Add to Phase 6 of self-evolution.md §5.
+**Resolution:** Implement **Semantic Vector Triage & Automated Doc-as-Code Graduation** in Phase 6 of `self-evolution.md §5`.
+1. **Semantic Clustering**: `self_care.py` calculates embeddings for each new lesson and clusters them by semantic similarity, rather than naive frequency counting.
+2. **Density Threshold**: When a semantic cluster reaches a density threshold (e.g., ≥3 related lessons in 7 days), the system identifies the most relevant `docs-v2` file via cosine similarity.
+3. **Automated Patch Generation**: `self_care.py` automatically spawns an agent to generate a `[PROPOSAL]` diff that refactors the target document to structurally address the root cause (5-Whys application).
+4. **Quorum Vote**: Automatically invoke `hub.py proposal-add` to trigger an R:10 consensus vote. Upon ACK, the diff is applied and the cluster is marked graduated.
 
 ---
 
