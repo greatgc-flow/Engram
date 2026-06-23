@@ -247,7 +247,7 @@ Example: `tools/ripgrep/rg.exe`, `tools/jq/jq.exe`
 
 ## 5. Session Context and State Update Rules
 → Session context: `_sys/docs-v2/general/session.md` (startup contract, handoff, resume rules).
-→ Per-peer config delta: `_sys/docs-v2/specific/cc.md` (cc), `_sys/docs-v2/specific/gc.md` (gc).
+→ Per-peer config delta: `_sys/docs-v2/specific/cc.md` (cc), `_sys/docs-v2/specific/ag.md` (ag).
 → State changes must go through `hub.py update-status`.
 
 ## 6. local.config.bat — Per-PC Configuration Pattern

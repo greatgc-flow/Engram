@@ -2068,12 +2068,6 @@ def _session_reuse_enabled(node: dict, session_policy: str) -> bool:
         raise ValueError(
             f"{node.get('node_id', 'node')} has no configured session-reuse capability"
         )
-    if node.get("requires_pty", False):
-        if mode == "reuse":
-            raise ValueError(
-                f"{node.get('node_id', 'node')} PTY session reuse is unsupported"
-            )
-        return False
     return mode == "reuse"
 
 

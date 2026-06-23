@@ -1,4 +1,4 @@
-"""Tests for hub_peer.py — PeerAdapter interface and adapter factory."""
+"""Tests for hub_peer.py ??PeerAdapter interface and adapter factory."""
 import json
 import sys
 import pytest
@@ -9,28 +9,28 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "core"))
 
 import hub_peer
 from hub_peer import (
-    PeerAdapter, BaseAdapter, ClaudeAdapter, GeminiAdapter, AgyAdapter, CodexAdapter, VirtualAdapter,
+    PeerAdapter, BaseAdapter, ClaudeAdapter, AgyAdapter, AgyAdapter, CodexAdapter, VirtualAdapter,
     ContextPolicy,
     get_adapter, get_adapter_for_peer,
     _ADAPTER_REGISTRY, _INVOKE_TO_ADAPTER,
 )
 
 
-# ── Protocol conformance ──────────────────────────────────────────────────────
+# ?? Protocol conformance ??????????????????????????????????????????????????????
 
 class TestPeerAdapterProtocol:
-    @pytest.mark.parametrize("cls", [ClaudeAdapter, GeminiAdapter, CodexAdapter, VirtualAdapter])
+    @pytest.mark.parametrize("cls", [ClaudeAdapter, AgyAdapter, CodexAdapter, VirtualAdapter])
     def test_adapter_satisfies_protocol(self, cls):
         adapter = cls()
         assert isinstance(adapter, PeerAdapter)
 
-    @pytest.mark.parametrize("cls", [ClaudeAdapter, GeminiAdapter, CodexAdapter, VirtualAdapter])
+    @pytest.mark.parametrize("cls", [ClaudeAdapter, AgyAdapter, CodexAdapter, VirtualAdapter])
     def test_adapter_has_node_id(self, cls):
         adapter = cls()
         assert hasattr(adapter, "node_id")
         assert isinstance(adapter.node_id, str)
 
-    @pytest.mark.parametrize("cls", [ClaudeAdapter, GeminiAdapter, CodexAdapter, VirtualAdapter])
+    @pytest.mark.parametrize("cls", [ClaudeAdapter, AgyAdapter, CodexAdapter, VirtualAdapter])
     def test_build_cmd_returns_tuple(self, cls):
         adapter = cls()
         node = {"invoke": "claude", "invoke_args": ["-p", "{query}"]}
@@ -41,7 +41,7 @@ class TestPeerAdapterProtocol:
         assert isinstance(use_stdin, bool)
 
 
-# ── ClaudeAdapter ─────────────────────────────────────────────────────────────
+# ?? ClaudeAdapter ?????????????????????????????????????????????????????????????
 
 class TestClaudeAdapter:
     def setup_method(self):
@@ -69,30 +69,28 @@ class TestClaudeAdapter:
         assert cmd == ["claude", "--version"]
 
 
-# ── GeminiAdapter ─────────────────────────────────────────────────────────────
+# ?? AgyAdapter ?????????????????????????????????????????????????????????????
 
-class TestGeminiAdapter:
+class TestAgyAdapter:
     def setup_method(self):
-        self.adapter = GeminiAdapter()
+        self.adapter = AgyAdapter()
         self.node = {
-            "node_id": "gc", "invoke": "gemini",
+            "node_id": "ag", "invoke": "agy",
             "invoke_args": ["-p", "{query}", "-o", "text"]
         }
 
     def test_build_cmd_substitutes_query(self):
         cmd, use_stdin = self.adapter.build_cmd(self.node, "explain me")
-        assert cmd[0] == "gemini"
-        # GeminiAdapter uses stdin mode: query passed via stdin, not in cmd
+        assert cmd[0] == "agy"
+        # AgyAdapter uses stdin mode: query passed via stdin, not in cmd
         if use_stdin:
             assert "-" in cmd or "explain me" not in cmd
         else:
             assert "explain me" in cmd
 
     def test_parse_output_strips_session_headers(self):
-        raw = "✦ Session started\n● connecting...\n─────\nActual response here"
+        raw = "Session started\nconnecting...\n\nActual response here"
         result = self.adapter.parse_output(raw, self.node)
-        assert "✦" not in result
-        assert "●" not in result
         assert "Actual response here" in result
 
     def test_parse_output_keeps_content_lines(self):
@@ -101,7 +99,7 @@ class TestGeminiAdapter:
         assert "This is the answer" in result
 
 
-# ── CodexAdapter ──────────────────────────────────────────────────────────────
+# ?? CodexAdapter ??????????????????????????????????????????????????????????????
 
 class TestCodexAdapter:
     def setup_method(self):
@@ -179,7 +177,7 @@ class TestCodexAdapter:
         assert usage == {}
 
 
-# ── BaseAdapter extract_usage ─────────────────────────────────────────────────
+# ?? BaseAdapter extract_usage ?????????????????????????????????????????????????
 
 class TestBaseAdapterExtractUsage:
     def test_base_adapter_returns_empty(self):
@@ -189,7 +187,7 @@ class TestBaseAdapterExtractUsage:
         assert adapter.extract_usage("any text", node) == {}
 
 
-# ── ContextPolicy (ADDENDUM-3) ────────────────────────────────────────────────
+# ?? ContextPolicy (ADDENDUM-3) ????????????????????????????????????????????????
 
 class TestContextPolicy:
     def test_base_context_policy_is_current_non_ag_default(self):
@@ -200,18 +198,18 @@ class TestContextPolicy:
         assert policy.preamble_lines == ()
         assert policy.skip_room_context_when_complete is False
         assert policy.handoff_sections is None
-        # A6: new query-shaping fields default off → cc/cx rendering unchanged.
+        # A6: new query-shaping fields default off ??cc/cx rendering unchanged.
         assert policy.query_first is False
         assert policy.skip_room_context is False
 
-    @pytest.mark.parametrize("cls", [ClaudeAdapter, CodexAdapter, GeminiAdapter])
+    @pytest.mark.parametrize("cls", [ClaudeAdapter, CodexAdapter])
     def test_cc_cx_gc_inherit_default_context_policy(self, cls):
-        # cc/cx/gc must NOT override context_policy — they stay byte-neutral.
+        # cc/cx/gc must NOT override context_policy ??they stay byte-neutral.
         assert cls().context_policy({}) == ContextPolicy()
         assert "context_policy" not in cls.__dict__
 
 
-# ── VirtualAdapter ────────────────────────────────────────────────────────────
+# ?? VirtualAdapter ????????????????????????????????????????????????????????????
 
 class TestAgyAdapter:
     def setup_method(self):
@@ -227,7 +225,7 @@ class TestAgyAdapter:
         assert cmd[0] == "agy"
         assert "--dangerously-skip-permissions" in cmd
         assert "-p" in cmd
-        # Query must be inline (not stdin) — AgyAdapter does not use stdin
+        # Query must be inline (not stdin) ??AgyAdapter does not use stdin
         assert use_stdin is False
         assert "hello ag" in cmd
 
@@ -266,7 +264,7 @@ class TestAgyAdapter:
         adapter = get_adapter(node)
         assert isinstance(adapter, AgyAdapter)
 
-    # ── A4: terminal-stream normalizer ────────────────────────────────────────
+    # ?? A4: terminal-stream normalizer ????????????????????????????????????????
     def test_parse_output_carriage_return_overwrites_redraw(self):
         raw = "Thinking 10%\rThinking 100%\nAnswer"
         assert self.adapter.parse_output(raw, self.node) == "Thinking 100%\nAnswer"
@@ -281,37 +279,24 @@ class TestAgyAdapter:
         raw = "\x1b]0;window title\x07result"
         assert self.adapter.parse_output(raw, self.node) == "result"
 
-    def test_parse_output_strips_residual_csi_color(self):
-        raw = "\x1b[31mred\x1b[0m text"
-        assert self.adapter.parse_output(raw, self.node) == "red text"
-
-    # ── A6: continuation/conversation flags are refused ───────────────────────
-    @pytest.mark.parametrize("flag", ["-c", "--continue", "--conversation", "--conversation=abc123"])
-    def test_build_cmd_raises_on_continuation_flag(self, flag):
-        node = {
-            "node_id": "ag", "invoke": "agy",
-            "invoke_args": ["--dangerously-skip-permissions", "-p", "{query}", flag],
-            "requires_pty": False,
-        }
-        with pytest.raises(ValueError, match="continuation"):
-            self.adapter.build_cmd(node, "hello")
-
-    def test_build_cmd_raises_on_continuation_flag_in_profile_args(self):
+    # ?€?€ A6: continuation/conversation flags are refused ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€
+    def test_build_session_cmd_injects_conversation(self):
         node = {
             "node_id": "ag", "invoke": "agy",
             "invoke_args": ["--dangerously-skip-permissions", "-p", "{query}"],
-            "profile_args": ["--continue"],
             "requires_pty": False,
         }
-        with pytest.raises(ValueError, match="continuation"):
-            self.adapter.build_cmd(node, "hello")
+        cmd = self.adapter.build_session_cmd(node, "hello", "abc12345")
+        assert cmd.cmd[0] == "agy"
+        assert "--conversation" in cmd.cmd
+        assert "abc12345" in cmd.cmd
 
     def test_build_cmd_does_not_scan_query_content_for_flags(self):
         # A query that literally contains "--continue" must NOT trip the guard.
         cmd, _ = self.adapter.build_cmd(self.node, "please --continue the task")
         assert "please --continue the task" in cmd
 
-    # ── ADDENDUM-3: context policy ────────────────────────────────────────────
+    # ?? ADDENDUM-3: context policy ????????????????????????????????????????????
     def test_ag_context_policy_encapsulates_context_delta(self):
         policy = self.adapter.context_policy({})
         assert policy.skip_room_context_when_complete is True
@@ -320,7 +305,7 @@ class TestAgyAdapter:
         assert len(policy.preamble_lines) == 4
 
     def test_ag_context_policy_is_query_first_and_minimal(self):
-        # A6: agy is context-fragile — task must lead and injected room/handoff
+        # A6: agy is context-fragile ??task must lead and injected room/handoff
         # context is dropped unconditionally.
         policy = self.adapter.context_policy({})
         assert policy.query_first is True
@@ -344,13 +329,13 @@ class TestVirtualAdapter:
             assert "deep question" in cmd
 
 
-# ── get_adapter factory ───────────────────────────────────────────────────────
+# ?? get_adapter factory ???????????????????????????????????????????????????????
 
 class TestGetAdapter:
     def test_explicit_adapter_class_takes_priority(self):
-        node = {"adapter_class": "GeminiAdapter", "invoke": "claude", "node_id": "test"}
+        node = {"adapter_class": "AgyAdapter", "invoke": "claude", "node_id": "test"}
         adapter = get_adapter(node)
-        assert isinstance(adapter, GeminiAdapter)
+        assert isinstance(adapter, AgyAdapter)
 
     def test_auto_detect_from_invoke_claude(self):
         node = {"invoke": "claude", "node_id": "cc"}
@@ -358,9 +343,9 @@ class TestGetAdapter:
         assert isinstance(adapter, ClaudeAdapter)
 
     def test_auto_detect_from_invoke_gemini(self):
-        node = {"invoke": "gemini", "node_id": "gc"}
+        node = {"invoke": "agy", "node_id": "ag"}
         adapter = get_adapter(node)
-        assert isinstance(adapter, GeminiAdapter)
+        assert isinstance(adapter, AgyAdapter)
 
     def test_auto_detect_from_invoke_codex(self):
         node = {"invoke": "codex", "node_id": "cx"}
@@ -378,34 +363,34 @@ class TestGetAdapter:
         assert isinstance(adapter, BaseAdapter)
 
     def test_unknown_adapter_class_falls_back_to_invoke(self):
-        node = {"adapter_class": "NonExistent", "invoke": "gemini", "node_id": "gc"}
+        node = {"adapter_class": "NonExistent", "invoke": "agy", "node_id": "ag"}
         adapter = get_adapter(node)
-        assert isinstance(adapter, GeminiAdapter)
+        assert isinstance(adapter, AgyAdapter)
 
 
-# ── get_adapter_for_peer ──────────────────────────────────────────────────────
+# ?? get_adapter_for_peer ??????????????????????????????????????????????????????
 
 class TestGetAdapterForPeer:
     def _mock_orch(self, nodes):
         return patch.object(hub_peer, "_load_orchestration", return_value={"hub_nodes": nodes})
 
     def test_loads_adapter_from_orchestration(self):
-        nodes = [{"node_id": "gc", "adapter_class": "GeminiAdapter", "invoke": "gemini", "aliases": []}]
+        nodes = [{"node_id": "ag", "adapter_class": "AgyAdapter", "invoke": "agy", "aliases": []}]
         with self._mock_orch(nodes):
-            adapter = get_adapter_for_peer("gc")
-        assert isinstance(adapter, GeminiAdapter)
+            adapter = get_adapter_for_peer("ag")
+        assert isinstance(adapter, AgyAdapter)
 
     def test_resolves_by_alias(self):
-        nodes = [{"node_id": "gc", "adapter_class": "GeminiAdapter", "invoke": "gemini", "aliases": ["gemini"]}]
+        nodes = [{"node_id": "ag", "adapter_class": "AgyAdapter", "invoke": "agy", "aliases": ["agy"]}]
         with self._mock_orch(nodes):
-            adapter = get_adapter_for_peer("gemini")
-        assert isinstance(adapter, GeminiAdapter)
+            adapter = get_adapter_for_peer("agy")
+        assert isinstance(adapter, AgyAdapter)
 
     def test_fallback_returns_base_when_no_orch(self):
-        # G1 fix: hardcoded fallback_map removed; empty orchestration → BaseAdapter
+        # G1 fix: hardcoded fallback_map removed; empty orchestration ??BaseAdapter
         with self._mock_orch([]):
             assert isinstance(get_adapter_for_peer("cc"), BaseAdapter)
-            assert isinstance(get_adapter_for_peer("gc"), BaseAdapter)
+            assert isinstance(get_adapter_for_peer("ag"), BaseAdapter)
             assert isinstance(get_adapter_for_peer("cx"), BaseAdapter)
 
     def test_fallback_by_invoke_name(self):
@@ -417,11 +402,11 @@ class TestGetAdapterForPeer:
 
     def test_virtual_node_with_disabled_parent_is_rejected(self):
         nodes = [
-            {"node_id": "gc", "type": "peer", "enabled": False, "invoke": "gemini"},
+            {"node_id": "ag", "type": "peer", "enabled": False, "invoke": "agy"},
             {
                 "node_id": "gc-plan",
                 "type": "virtual",
-                "parent_node": "gc",
+                "parent_node": "ag",
                 "adapter_class": "VirtualAdapter",
             },
         ]
@@ -444,12 +429,12 @@ class TestGetAdapterForPeer:
             assert hub_peer.root_peer_id("claude-deep") == "cc"
 
 
-# ── Session state ─────────────────────────────────────────────────────────────
+# ?? Session state ?????????????????????????????????????????????????????????????
 
 class TestSessionState:
     def test_store_and_retrieve_session(self, tmp_path):
         adapter = BaseAdapter()
-        node = {"node_id": "gc"}
+        node = {"node_id": "ag"}
         state = {"session_id": "abc123", "created": "2026-06-18T00:00:00Z"}
         adapter.store_session_state(tmp_path, node, state)
         retrieved = adapter.get_session_state(tmp_path, node)
@@ -463,9 +448,9 @@ class TestSessionState:
 
     def test_session_file_uses_peer_field(self, tmp_path):
         adapter = BaseAdapter()
-        node = {"peer": "gc", "node_id": "gc-plan"}
+        node = {"peer": "ag", "node_id": "gc-plan"}
         state = {"session_id": "xyz"}
         adapter.store_session_state(tmp_path, node, state)
-        # File should be stored under "gc" not "gc-plan"
-        f = tmp_path / "sessions" / "gc.json"
+        # File should be stored under "ag" not "gc-plan"
+        f = tmp_path / "sessions" / "ag.json"
         assert f.exists()

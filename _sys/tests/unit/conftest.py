@@ -87,8 +87,8 @@ def ai_dir(tmp_path):
                        "invoke_args": ["-p", "{query}"], "timeout": 0, "memory": "persistent"},
                 "ca": {"tier": 2, "type": "agent", "invoke": "claude",
                        "invoke_args": ["-p", "{query}"], "timeout": 0, "memory": "short-term"},
-                "gc": {"tier": 3, "type": "sensor", "invoke": "gemini",
-                       "invoke_args": ["-p", "{query}", "-o", "text", "-y"], "timeout": 0, "memory": "session"},
+                "ag": {"tier": 3, "type": "sensor", "invoke": "agy",
+                       "invoke_args": ["-p", "{query}"], "timeout": 0, "memory": "session"},
             }
         }), encoding="utf-8"
     )

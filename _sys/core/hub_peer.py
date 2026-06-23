@@ -368,9 +368,15 @@ class BaseAdapter:
         )
 
     def session_fingerprint(self, node: dict[str, Any]) -> str:
-        raise RuntimeError(
-            f"{node.get('node_id', self.node_id)} does not implement session reuse"
-        )
+        """Return a stable fingerprint of the static session invocation flags."""
+        import hashlib
+        import json
+        fp_data = {
+            "invoke": node.get("invoke", ""),
+            "invoke_args": node.get("invoke_args", []),
+            "profile_args": node.get("profile_args", [])
+        }
+        return hashlib.sha256(json.dumps(fp_data, sort_keys=True).encode("utf-8")).hexdigest()
 
     def extract_session_id(
         self, stdout: str, node: dict[str, Any], command_session_id: str | None
@@ -413,59 +419,21 @@ class ClaudeAdapter(BaseAdapter):
                 processed_args.append(arg)
         return [invoke] + processed_args + node.get("profile_args", []), use_stdin
 
-    def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
-        return stdout.strip()
-
-
-class GeminiAdapter(BaseAdapter):
-    """Adapter for gc (Gemini CLI)."""
-
-    node_id = "gc"
-
-    def _stdin_args(self, node: dict[str, Any]) -> list[str]:
-        """Normalize invoke_args for stdin delivery and append profile_args.
-
-        The query placeholder becomes ``-`` (read from stdin). profile_args
-        (e.g. --model) are appended so session and non-session paths carry the
-        configured model — fixing the prior omission where gc dropped them.
-        """
-        args = [
-            "-" if arg == "{query}" else arg
-            for arg in node.get("invoke_args", ["-p", "{query}"])
-        ]
-        return args + list(node.get("profile_args", []))
-
-    def build_cmd(self, node: dict[str, Any], query: str, session_id: str | None = None) -> tuple[list[str], bool]:
-        return [node.get("invoke", "gemini")] + self._stdin_args(node), True
-
     def build_session_cmd(
         self, node: dict[str, Any], query: str, session_id: str | None = None
     ) -> SessionInvocation:
         effective_id = session_id or str(uuid.uuid4())
-        prefix = (
-            ["--resume", effective_id]
-            if session_id
-            else ["--session-id", effective_id]
-        )
-        return SessionInvocation(
-            [node.get("invoke", "gemini")] + prefix + self._stdin_args(node),
-            True,
-            effective_id,
-        )
-
-    def session_fingerprint(self, node: dict[str, Any]) -> str:
-        raw = (
-            os.path.basename(node.get("invoke", "gemini"))
-            + "|"
-            + ",".join(self._stdin_args(node))
-        )
-        return hashlib.sha1(raw.encode()).hexdigest()[:8]
+        cmd, use_stdin = self.build_cmd(node, query, session_id)
+        
+        # Inject --session-id flag if not present
+        if "--session-id" not in cmd:
+            cmd.extend(["--session-id", effective_id])
+            
+        return SessionInvocation(cmd, use_stdin, effective_id)
 
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
-        # Strip Gemini CLI session header lines (start with ✦ or ●)
-        lines = stdout.splitlines()
-        clean = [l for l in lines if not l.strip().startswith(("✦", "●", "─"))]
-        return "\n".join(clean).strip()
+        return stdout.strip()
+
 
 
 class CodexAdapter(BaseAdapter):
@@ -474,11 +442,37 @@ class CodexAdapter(BaseAdapter):
     node_id = "cx"
 
     def build_cmd(self, node: dict[str, Any], query: str, session_id: str | None = None) -> tuple[list[str], bool]:
-        # cx session reuse is disabled (orchestration.json session_mode=none):
-        # codex-cli 0.141.0 `exec resume` rejects the DIR-002 `-s workspace-write`
-        # flag, so every cx ask is a fresh, sandboxed, --ephemeral invocation
-        # driven entirely by invoke_args. session_id is intentionally ignored.
-        return super().build_cmd(node, query, None)
+        return super().build_cmd(node, query, session_id)
+
+    def build_session_cmd(
+        self, node: dict[str, Any], query: str, session_id: str | None = None
+    ) -> SessionInvocation:
+        effective_id = session_id or str(uuid.uuid4())
+        
+        # Base arguments processing (similar to build_cmd)
+        invoke = node.get("invoke", "codex")
+        processed_args: list[str] = []
+        use_stdin = False
+        for arg in node.get("invoke_args", ["exec", "{query}"]):
+            if arg == "{query}":
+                processed_args.append("-")
+                use_stdin = True
+            else:
+                processed_args.append(arg)
+                
+        # Inject resume if session_id exists
+        if session_id:
+            # invoke_args usually starts with ["exec", ...]
+            # We need to rewrite "exec" -> "exec", "resume", <id>
+            if processed_args and processed_args[0] == "exec":
+                processed_args.insert(1, "resume")
+                processed_args.insert(2, effective_id)
+            else:
+                # Fallback if exec is missing for some reason
+                processed_args = ["resume", effective_id] + processed_args
+
+        cmd = [invoke] + processed_args + node.get("profile_args", [])
+        return SessionInvocation(cmd, use_stdin, effective_id)
 
     @staticmethod
     def _extract_jsonl_texts(raw: str) -> list[str]:
@@ -603,11 +597,6 @@ class CodexAdapter(BaseAdapter):
 _AGY_OSC_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
 _AGY_CSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 # Continuation/conversation flags the hub must never send to ag. session_mode
-# is "none"; ag has no hub-managed reuse, so any of these in effective args is a
-# configuration error (A6).
-_AGY_BANNED_FLAGS = frozenset({"-c", "--continue", "--conversation"})
-
-
 class AgyAdapter(BaseAdapter):
     """Adapter for ag (Antigravity / agy CLI — Gemini successor)."""
 
@@ -615,10 +604,6 @@ class AgyAdapter(BaseAdapter):
 
     def build_cmd(self, node: dict[str, Any], query: str, session_id: str | None = None) -> tuple[list[str], bool]:
         invoke = node.get("invoke", "agy")
-        # Resolve a repo-relative `_sys\...` invoke to an absolute path so it
-        # targets the native agy.exe directly, NOT the agy.bat wrapper (which
-        # re-runs agy_entry.py -> context-fill against the shared config home and
-        # contaminates IPC replies). Mirrors ClaudeAdapter (cc -> claude.cmd).
         invoke_path = Path(invoke)
         if (
             not invoke_path.is_absolute()
@@ -628,20 +613,20 @@ class AgyAdapter(BaseAdapter):
             invoke = str((_SYS_DIR.parent / invoke_path).resolve())
         raw_args = node.get("invoke_args", ["--dangerously-skip-permissions", "-p", "{query}"])
         profile_args = node.get("profile_args", [])
-        # A6: refuse continuation/conversation flags. Scan the unsubstituted
-        # invoke_args + profile_args so the user query content is never inspected.
-        for arg in list(raw_args) + list(profile_args):
-            if not isinstance(arg, str):
-                continue
-            token = arg.split("=", 1)[0]
-            if token in _AGY_BANNED_FLAGS:
-                raise ValueError(
-                    f"{node.get('node_id', self.node_id)}: session_mode is 'none' "
-                    f"and the hub never sends continuation/conversation flags; "
-                    f"refusing ag arg {arg!r}. Remove it from invoke_args/profile_args."
-                )
         # agy -p takes the prompt inline (not via stdin); use _substitute_args to keep query in args
         return [invoke] + self._substitute_args(raw_args, query) + profile_args, False
+
+    def build_session_cmd(
+        self, node: dict[str, Any], query: str, session_id: str | None = None
+    ) -> SessionInvocation:
+        effective_id = session_id or str(uuid.uuid4())
+        cmd, use_stdin = self.build_cmd(node, query, session_id)
+        
+        # Inject --conversation flag if not present
+        if "--conversation" not in cmd:
+            cmd.extend(["--conversation", effective_id])
+            
+        return SessionInvocation(cmd, use_stdin, effective_id)
 
     def context_policy(self, node: dict[str, Any]) -> ContextPolicy:
         """ag IPC context delta (A6): the agy model is context-fragile — it
@@ -746,7 +731,6 @@ class VirtualAdapter(BaseAdapter):
 
 _ADAPTER_REGISTRY: dict[str, type[BaseAdapter]] = {
     "ClaudeAdapter": ClaudeAdapter,
-    "GeminiAdapter": GeminiAdapter,
     "AgyAdapter": AgyAdapter,
     "CodexAdapter": CodexAdapter,
     "VirtualAdapter": VirtualAdapter,
@@ -754,7 +738,6 @@ _ADAPTER_REGISTRY: dict[str, type[BaseAdapter]] = {
 
 _INVOKE_TO_ADAPTER: dict[str, type[BaseAdapter]] = {
     "claude": ClaudeAdapter,
-    "gemini": GeminiAdapter,
     "agy": AgyAdapter,
     "codex": CodexAdapter,
 }

@@ -45,6 +45,7 @@
 | C-04 | `lessons-activate`: calls `_try_lesson_broadcast()` soft-broadcast to room members | Activation event propagates; no error if room is empty |
 | C-05 | `ctx_save.py`: updates CLAUDE.md + GEMINI.md + AGENTS.md `## Current State` symmetrically | cx session continuity — all 3 files get same checkpoint marker |
 | C-06 | `collab_rate` is read from `protocol.json["collab_rate"]["current"]` | Deprecated `config.json["ratio"]` must NOT be used |
+| C-07 | All CLI peers (`ag`, `cc`, `cx`) use identical `session_mode: reuse` via ID injection | No `session_mode: none` or A6/`ipc_stateless_home` hacks allowed |
 
 ---
 
@@ -75,6 +76,7 @@
 | E-09 | Numeric constants in docs match runtime config values (e.g., `collab_rate:10` in protocol.json) | `check_docs_mece.py --value-sync` → 0 drift (planned: EDGE-04) |
 | E-10 | Root docs (CONVENTION.md, GEMINI.md) contain no normative content duplicated from docs-v2 | Root docs are pointers only; normative content lives in docs-v2 SSOT |
 | E-11 | No Korean text in any file under `_sys/` (except `_archive/`, `_sys/claude/config/CLAUDE.md`) | INV-19 enforcement; `grep -r "[가-힣]" _sys/ --exclude-dir=_archive` → 0 hits |
+| E-12 | Workspace `glue` templates conditionally SKIP reading docs during IPC/continuations | Energy conservation: `NOTE FOR IPC... SKIP THIS ENTIRE SECTION` present |
 
 ---
 
@@ -120,6 +122,7 @@ Run these perspective checks at milestone boundaries (before release, after larg
 | H-08 | **General-Specific** | Is all common logic in general/? Are specific/ files delta-only? |
 | H-09 | **Autonomy Boundary** | Can the system propose without executing? Is human approval required for Tier-2? |
 | H-10 | **Brain Anatomy** | Do Amygdala checks fire before execution? Is Neocortex (docs-v2) consensus-only? |
+| H-11 | **No Hardcoded Peers**| Are specific peer IDs (`ag`, `cc`, `cx`) excluded from core scripts (`hub.py`) and sourced via configs (`orchestration.json`)? |
 
 ### When to Run Perspective Audit
 

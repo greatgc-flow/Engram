@@ -9,20 +9,16 @@
       "shell_preference": "powershell",
       "capabilities": ["file-edit", "bash-tool", "memory", "multi-tool"]
     },
-    "gc": {
-      "search_tool": "grep (native)",
-      "shell_preference": "bash",
-      "capabilities": ["large-context", "web-search", "code-analysis"]
-    },
     "cx": {
       "search_tool": "rg",
       "shell_preference": "bash",
       "capabilities": ["code-gen", "refactor", "repo-local-reasoning", "test-author"]
     },
     "ag": {
+      "search_tool": "grep (native)",
       "shell_preference": "powershell",
-      "capabilities": ["shell-scripts", "file-ops", "system-orchestration", "real-time-feedback"],
-      "note": "active — Windows PTY adapter required"
+      "capabilities": ["large-context", "web-search", "code-analysis", "shell-scripts", "file-ops", "system-orchestration", "real-time-feedback"],
+      "note": "active ??Windows PTY adapter required"
     }
   }
 }

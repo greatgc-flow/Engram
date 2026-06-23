@@ -58,7 +58,8 @@
         "--dangerously-skip-permissions"
       ],
       "requires_pty": false,
-      "memory": "persistent",
+      "memory": "session",
+      "session_mode": "reuse",
       "timeout": 0,
       "default_profile": "standard",
       "capability_class": "trusted_ipc_mutation",
@@ -171,63 +172,6 @@
       }
     },
     {
-      "node_id": "gc",
-      "aliases": [
-        "gemini",
-        "google"
-      ],
-      "type": "peer",
-      "enabled": false,
-      "adapter_class": "GeminiAdapter",
-      "invoke": "gemini",
-      "invoke_args": [
-        "-p",
-        "{query}",
-        "-o",
-        "text",
-        "--approval-mode",
-        "auto_edit",
-        "--skip-trust"
-      ],
-      "memory": "session",
-      "session_mode": "reuse",
-      "timeout": 0,
-      "default_profile": "standard",
-      "capability_class": "trusted_ipc_mutation",
-      "profiles": {
-        "standard": {
-          "model_id": "gemini-3.5-flash",
-          "reasoning_effort": "medium",
-          "cost_tier": "low",
-          "routing_state": "blocked",
-          "profile_args": [
-            "--model",
-            "gemini-3.5-flash"
-          ]
-        },
-        "effort": {
-          "model_id": "gemini-2.5-pro",
-          "reasoning_effort": "high",
-          "cost_tier": "mid",
-          "routing_state": "blocked",
-          "profile_args": [
-            "--model",
-            "gemini-2.5-pro"
-          ]
-        },
-        "deepthink": {
-          "model_id": "gemini-3.1-pro-preview",
-          "reasoning_effort": "high",
-          "cost_tier": "high",
-          "routing_state": "blocked",
-          "profile_args": [
-            "--model",
-            "gemini-3.1-pro-preview"
-          ]
-        }
-      }
-    },
-    {
       "node_id": "ag",
       "aliases": [
         "antigravity",
@@ -245,8 +189,8 @@
         "60m"
       ],
       "requires_pty": true,
-      "memory": "ephemeral",
-      "session_mode": "none",
+      "memory": "session",
+      "session_mode": "reuse",
       "timeout": 300,
       "default_profile": "standard",
       "capability_class": "trusted_ipc_mutation",
@@ -294,18 +238,17 @@
       "type": "peer",
       "enabled": true,
       "adapter_class": "CodexAdapter",
-      "invoke": "codex",
+      "invoke": "_sys\\env\\nodejs\\npm-global\\codex.cmd",
       "invoke_args": [
         "exec",
         "{query}",
         "--json",
-        "--ephemeral",
         "--ignore-rules",
-        "-s",
-        "workspace-write"
+        "-c",
+        "sandbox=\"workspace-write\""
       ],
       "memory": "session",
-      "session_mode": "none",
+      "session_mode": "reuse",
       "timeout": 0,
       "default_profile": "standard",
       "capability_class": "trusted_ipc_mutation",
@@ -368,8 +311,7 @@
       "cx"
     ],
     "inactive_default_voters": [
-      "ca",
-      "gc"
+      "ca"
     ],
     "default_proposer": "rotating"
   },

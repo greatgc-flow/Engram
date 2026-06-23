@@ -8,7 +8,7 @@
   "_peers_voted": [
     "cc",
     "ca",
-    "gc",
+    "ag",
     "ag",
     "cx"
   ],
@@ -283,9 +283,9 @@
     ],
     "inactive_default_voters": [
       "ca",
-      "gc"
+      "ag"
     ],
-    "inactive_default_note": "gc: tier_suspended 2026-06-19 (IneligibleTierError — Gemini Code Assist for individuals discontinued). ca: never activated (cc alias). ag activated 2026-06-19 as gc replacement.",
+    "inactive_default_note": "gc: tier_suspended 2026-06-19 (IneligibleTierError ??Gemini Code Assist for individuals discontinued). ca: never activated (cc alias). ag activated 2026-06-19 as gc replacement.",
     "default_proposer": "rotating",
     "timeout_minutes": 30,
     "offline_auto_abstain_minutes": 30,
@@ -312,7 +312,7 @@
         "cross-check",
         "targeted-implementation"
       ],
-      "gc": [
+      "ag": [
         "architecture",
         "orchestration",
         "documentation",
@@ -351,7 +351,7 @@
       "ag": 1,
       "cc": 1,
       "ca": 1,
-      "gc": 1,
+      "ag": 1,
       "cx": 1
     },
     "routing_rules": [

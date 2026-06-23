@@ -26,22 +26,18 @@ agy --dangerously-skip-permissions -p {query} --print-timeout 60m
 - **`--print-timeout 60m`:** this is the agy *child-process* output ceiling, not the
   hub deadline. The hub-side `timeout: 300` (seconds) remains the authoritative deadline;
   `60m` only prevents agy from self-terminating its print loop before the hub decides.
-- **`session_mode: none`:** ag is not hub-managed for session reuse. The hub never sends
-  `-c` / `--continue` / `--conversation`, so each ask is an independent `agy -p` invocation.
+- **`session_mode: reuse`:** ag is now hub-managed for session reuse to align horizontally with other peers. The hub tracks and injects `--conversation <ID>` to maintain state continuity for background asks.
 
-### Durable conversations (storage ≠ session reuse)
+### Durable conversations (storage → session reuse)
 
-`session_mode: none` is a statement about *hub-managed reuse*, **not** a claim of stateless
-storage. agy itself persists conversation state on disk:
+`session_mode: reuse` ensures that hub-managed IPC asks leverage agy's internal storage explicitly via `--conversation <ID>`:
 
 - `AGY_CONFIG_HOME/conversations/*.db` and the `implicit/` directory are **durable**.
 - A bare `agy -p` invocation **auto-continues ambient/implicit context** from that store
   even with no `-c`/`--conversation` flag (empirically verified 2026-06-23: a fresh
   config home answered a fresh query cleanly; the shared home ignored the query and
   replayed prior session state).
-- Therefore `session_mode: none` must NOT be read as "ag has no memory between calls" — it
-  only means the hub does not orchestrate `-c`/`--continue`/`--conversation` resume flags.
-  Storage-level durability is an agy-internal behavior outside hub control.
+- Therefore, `session_mode: reuse` brings ag into horizontal alignment with other peers, meaning the hub orchestrates `--conversation` resume flags while relying on agy's robust internal `conversations/` `.db` durability.
 
 ### IPC stateless home (A6 contamination fix)
 

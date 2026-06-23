@@ -58,11 +58,7 @@ references and records promoted outputs.
 
 ## Session Policy
 
-cx session reuse is disabled (`session_mode: none`). Codex CLI 0.141.0 accepts
-`exec resume`, but its resume parser rejects the required DIR-002
-`-s workspace-write` flag. Hub asks therefore use fresh `--ephemeral`
-invocations until a permission-equivalent resume command is separately
-validated and ratified.
+cx session reuse is enabled (`session_mode: reuse`). While `codex exec resume` rejects the `-s workspace-write` CLI flag, it accepts the equivalent configuration override via `-c sandbox="workspace-write"`. Hub invocations now use this syntax to maintain context continuity.
 
 ---
 

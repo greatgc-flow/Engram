@@ -17,7 +17,7 @@
     "roles": {
       "human": "admin",
       "cc": "propose",
-      "gc": "propose",
+      "ag": "propose",
       "ag": "propose",
       "cx": "propose"
     }

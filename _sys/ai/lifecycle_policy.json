@@ -5,16 +5,14 @@
     "node_to_peer": {
       "cc": "claude",
       "ca": "claude",
-      "gc": "gemini",
       "ag": "antigravity",
       "cx": "codex"
     },
     "fallback_by_node": {
-      "cc": ["cx", "gc"],
+      "cc": ["cx", "ag"],
       "ca": ["cx", "cc"],
-      "gc": ["cc", "cx"],
       "ag": ["cc", "cx"],
-      "cx": ["cc", "gc"]
+      "cx": ["cc", "ag"]
     }
   },
   "ask_failure_classification": {
@@ -31,7 +29,7 @@
       {
         "reason": "rate_or_session_limit",
         "category": "RESOURCE",
-        "match_any": ["session limit", "rate limit", "quota"],
+        "match_any": ["session limit", "rate limit", "quota", "usage limit"],
         "availability": {"rate_limit_state": "limited"},
         "capture_retry_hint_when_contains": "resets",
         "health_action": "RED_GATE_CLOSED"

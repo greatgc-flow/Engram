@@ -30,8 +30,7 @@ def test_cx_no_dangerously_bypass_flag():
 def test_cx_uses_workspace_write_sandbox():
     node = hub._default_nodes()["nodes"]["cx"]
     args, _ = hub_peer.get_adapter(node).build_cmd(node, "test")
-    assert "-s" in args
-    assert "workspace-write" in args
+    assert 'sandbox="workspace-write"' in args
 
 
 def test_cc_uses_dir002_skip_permissions():

@@ -207,7 +207,7 @@ def test_no_runtime_health_or_status_files_tracked():
 
 
 def test_general_specific_docs_have_common_status_pattern():
-    for peer_id in ("cc", "ag", "cx", "gc"):
+    for peer_id in ("cc", "ag", "cx"):
         content = (SYS / "docs-v2" / "specific" / f"{peer_id}.md").read_text(
             encoding="utf-8"
         )

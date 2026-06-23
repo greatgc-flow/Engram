@@ -1,10 +1,31 @@
 {
   "permissions": {
     "allow": [
-      "Bash(codex exec *)"
-    ]
+      "Bash(codex exec *)",
+      "Bash(_sys/tools/ripgrep/rg.exe *)",
+      "Bash(_sys/tools/fd/fd.exe *)",
+      "PowerShell(python _sys/core/hub.py *)",
+      "Write(.ai/**)",
+      "Write(_sys/**)",
+      "Write(.claude/agents/**)",
+      "Write(.claude/skills/**)",
+      "Write(_archive/**)",
+      "Bash(cmd /c \"P:\\_sys\\cli\\msg.bat\" *)",
+      "PowerShell(cmd /c \"P:\\_sys\\cli\\msg.bat\" *)",
+      "PowerShell(cmd /c \"P:\\_sys\\cli\\msg.bat\" ask *)",
+      "PowerShell(cmd /c \"P:\\_sys\\cli\\claude.bat\" *)",
+      "PowerShell(cmd /c \"P:\\_sys\\cli\\gemini.bat\" *)",
+      "PowerShell(cmd /c \"P:\\_sys\\cli\\codex.bat\" *)",
+      "PowerShell(cmd /c \"P:\\_sys\\cli\\agy.bat\" *)",
+      "PowerShell(Get-ChildItem \"P:\\_sys\\ *)",
+      "PowerShell(Get-Content \"P:\\ *)"
+    ],
+    "defaultMode": "auto"
   },
   "model": "opus",
+  "worktree": {
+    "baseRef": "fresh"
+  },
   "statusLine": {
     "type": "command",
     "command": "bash 'P:/_sys/claude/config/statusline-command.sh'"
@@ -13,5 +34,6 @@
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
   "theme": "auto",
-  "agentPushNotifEnabled": true
+  "agentPushNotifEnabled": true,
+  "remoteControlAtStartup": true
 }

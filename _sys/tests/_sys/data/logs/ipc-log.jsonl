@@ -1,0 +1,49 @@
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "successful output", "elapsed_sec": 2.0, "success": true, "ts": "2026-06-23T11:53:11Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "ok", "elapsed_sec": 1.0, "success": true, "ts": "2026-06-23T11:53:11Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "ok", "elapsed_sec": 1.0, "success": true, "ts": "2026-06-23T11:53:11Z", "_type": "ipc-log"}
+{"direction": "send", "peer_id": "cc", "query_file": null, "query_preview": "hello cc", "response_preview": "", "elapsed_sec": null, "success": true, "ts": "2026-06-23T11:53:11Z", "_type": "ipc-log"}
+{"direction": "send", "peer_id": "cc", "query_file": null, "query_preview": "hello cc", "response_preview": "", "elapsed_sec": null, "success": true, "ts": "2026-06-23T11:53:33Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "successful output", "elapsed_sec": 2.0, "success": true, "ts": "2026-06-23T11:54:47Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "ok", "elapsed_sec": 1.0, "success": true, "ts": "2026-06-23T11:54:47Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "ok", "elapsed_sec": 1.0, "success": true, "ts": "2026-06-23T11:54:47Z", "_type": "ipc-log"}
+{"direction": "send", "peer_id": "cc", "query_file": null, "query_preview": "hello cc", "response_preview": "", "elapsed_sec": null, "success": true, "ts": "2026-06-23T11:54:47Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "successful output", "elapsed_sec": 2.0, "success": true, "ts": "2026-06-23T11:56:15Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "ok", "elapsed_sec": 1.0, "success": true, "ts": "2026-06-23T11:56:15Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "ok", "elapsed_sec": 1.0, "success": true, "ts": "2026-06-23T11:56:15Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "ok", "elapsed_sec": 1.0, "success": true, "ts": "2026-06-23T11:56:15Z", "_type": "ipc-log"}
+{"direction": "send", "peer_id": "cc", "query_file": null, "query_preview": "hello cc", "response_preview": "", "elapsed_sec": null, "success": true, "ts": "2026-06-23T11:56:15Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "cc", "query_file": null, "query_preview": "", "response_preview": "standard response\n", "elapsed_sec": 0.0, "success": true, "ts": "2026-06-23T11:56:15Z", "_type": "ipc-log"}
+{"direction": "send", "peer_id": "cx", "query_file": null, "query_preview": "hello cx", "response_preview": "", "elapsed_sec": null, "success": true, "ts": "2026-06-23T11:56:15Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "cx", "query_file": null, "query_preview": "", "response_preview": "standard response\n", "elapsed_sec": 0.0, "success": true, "ts": "2026-06-23T11:56:15Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "successful output", "elapsed_sec": 2.0, "success": true, "ts": "2026-06-23T11:59:48Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "ok", "elapsed_sec": 1.0, "success": true, "ts": "2026-06-23T11:59:48Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "ok", "elapsed_sec": 1.0, "success": true, "ts": "2026-06-23T11:59:48Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "ok", "elapsed_sec": 1.0, "success": true, "ts": "2026-06-23T11:59:48Z", "_type": "ipc-log"}
+{"direction": "send", "peer_id": "cc", "query_file": null, "query_preview": "hello cc", "response_preview": "", "elapsed_sec": null, "success": true, "ts": "2026-06-23T11:59:48Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "cc", "query_file": null, "query_preview": "", "response_preview": "standard response\n", "elapsed_sec": 0.0, "success": true, "ts": "2026-06-23T11:59:48Z", "_type": "ipc-log"}
+{"direction": "send", "peer_id": "cx", "query_file": null, "query_preview": "hello cx", "response_preview": "", "elapsed_sec": null, "success": true, "ts": "2026-06-23T11:59:48Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "cx", "query_file": null, "query_preview": "", "response_preview": "standard response\n", "elapsed_sec": 0.0, "success": true, "ts": "2026-06-23T11:59:48Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "successful output", "elapsed_sec": 2.0, "success": true, "ts": "2026-06-23T12:02:37Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "ok", "elapsed_sec": 1.0, "success": true, "ts": "2026-06-23T12:02:37Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "ok", "elapsed_sec": 1.0, "success": true, "ts": "2026-06-23T12:02:37Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "ok", "elapsed_sec": 1.0, "success": true, "ts": "2026-06-23T12:02:37Z", "_type": "ipc-log"}
+{"direction": "send", "peer_id": "cc", "query_file": null, "query_preview": "hello cc", "response_preview": "", "elapsed_sec": null, "success": true, "ts": "2026-06-23T12:02:37Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "cc", "query_file": null, "query_preview": "", "response_preview": "standard response\n", "elapsed_sec": 0.0, "success": true, "ts": "2026-06-23T12:02:37Z", "_type": "ipc-log"}
+{"direction": "send", "peer_id": "cx", "query_file": null, "query_preview": "hello cx", "response_preview": "", "elapsed_sec": null, "success": true, "ts": "2026-06-23T12:02:37Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "cx", "query_file": null, "query_preview": "", "response_preview": "standard response\n", "elapsed_sec": 0.0, "success": true, "ts": "2026-06-23T12:02:37Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "successful output", "elapsed_sec": 2.0, "success": true, "ts": "2026-06-23T12:19:53Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "ok", "elapsed_sec": 1.0, "success": true, "ts": "2026-06-23T12:19:53Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "ok", "elapsed_sec": 1.0, "success": true, "ts": "2026-06-23T12:19:53Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "ok", "elapsed_sec": 1.0, "success": true, "ts": "2026-06-23T12:19:53Z", "_type": "ipc-log"}
+{"direction": "send", "peer_id": "cc", "query_file": null, "query_preview": "hello cc", "response_preview": "", "elapsed_sec": null, "success": true, "ts": "2026-06-23T12:19:53Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "cc", "query_file": null, "query_preview": "", "response_preview": "standard response\n", "elapsed_sec": 0.0, "success": true, "ts": "2026-06-23T12:19:53Z", "_type": "ipc-log"}
+{"direction": "send", "peer_id": "cx", "query_file": null, "query_preview": "hello cx", "response_preview": "", "elapsed_sec": null, "success": true, "ts": "2026-06-23T12:19:53Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "cx", "query_file": null, "query_preview": "", "response_preview": "standard response\n", "elapsed_sec": 0.0, "success": true, "ts": "2026-06-23T12:19:53Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "successful output", "elapsed_sec": 2.0, "success": true, "ts": "2026-06-23T12:31:16Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "ok", "elapsed_sec": 1.0, "success": true, "ts": "2026-06-23T12:31:16Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "ok", "elapsed_sec": 1.0, "success": true, "ts": "2026-06-23T12:31:16Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "ag", "query_file": null, "query_preview": "", "response_preview": "ok", "elapsed_sec": 1.0, "success": true, "ts": "2026-06-23T12:31:16Z", "_type": "ipc-log"}
+{"direction": "send", "peer_id": "cc", "query_file": null, "query_preview": "hello cc", "response_preview": "", "elapsed_sec": null, "success": true, "ts": "2026-06-23T12:31:16Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "cc", "query_file": null, "query_preview": "", "response_preview": "standard response\n", "elapsed_sec": 0.0, "success": true, "ts": "2026-06-23T12:31:16Z", "_type": "ipc-log"}
+{"direction": "send", "peer_id": "cx", "query_file": null, "query_preview": "hello cx", "response_preview": "", "elapsed_sec": null, "success": true, "ts": "2026-06-23T12:31:16Z", "_type": "ipc-log"}
+{"direction": "receive", "peer_id": "cx", "query_file": null, "query_preview": "", "response_preview": "standard response\n", "elapsed_sec": 0.0, "success": true, "ts": "2026-06-23T12:31:16Z", "_type": "ipc-log"}

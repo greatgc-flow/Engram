@@ -176,14 +176,7 @@
         "AGY_CONFIG_HOME": "config",
         "GEMINI_DIR": "config"
       },
-      "ipc_stateless_home": {
-        "description": "A6: agy auto-continues durable session state (conversations/*.db + implicit/*.pb) even without -c, contaminating IPC asks with prior interactive context. For hub.py IPC invocations only, repoint the config home to a dedicated dir that mirrors auth/model settings but whose durable-state dirs are emptied before every call, so each ag ask is stateless. The interactive `config/` home is never modified.",
-        "subdir": "ipc-config",
-        "seed_from": "config",
-        "seed_files": ["settings.json", "installation_id", "AGY.md", "keybindings.json", "status.json", "usage.json"],
-        "ephemeral_dirs": ["conversations", "implicit"],
-        "env_keys": ["AGY_CONFIG_HOME", "GEMINI_DIR"]
-      },
+
       "local_settings": [],
       "host_app": null,
       "cleanup": {

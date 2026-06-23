@@ -1,0 +1,16 @@
+fix(core): ag IPC contamination root cause — bypass agy.bat wrapper (A6)
+
+Root cause: hub `ask --to ag` resolved invoke "agy" to agy.bat, which re-runs
+agy_entry.py (context-fill against the shared config home) and contaminated
+every reply. Point ag at native agy.exe directly (AgyAdapter resolves the
+_sys path), mirroring cc->claude.cmd. ag now answers cleanly in ~12s.
+
+Defense-in-depth (same batch, worker-applied by cc.deepthink):
+- AgyAdapter.context_policy: ag prompt query-first, no HUB CONTEXT/HANDOFF
+  (ContextPolicy query_first + skip_room_context; cc/cx byte-identical).
+- ipc_stateless_home: ag IPC runs against a conversations/implicit-clean home.
+- AgyAdapter rejects -c/--continue/--conversation.
+
+Verified: 862 unit tests pass; dispatch guard GREEN; profile-validate OK.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>

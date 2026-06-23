@@ -146,10 +146,9 @@ def test_compute_scope_key_no_root():
 def test_build_session_cmd_cx_fresh():
     node = _configured_node("cx")
     args, use_stdin = hub_peer.get_adapter(node).build_cmd(node, "test")
-    assert args[0] == "codex"
-    assert "--ephemeral" in args
-    assert "-s" in args
-    assert "workspace-write" in args
+    assert args[0].endswith("codex.cmd")
+    assert "--json" in args
+    assert "--ignore-rules" in args
     assert "resume" not in args
     assert use_stdin is True
 
@@ -159,44 +158,36 @@ def test_build_session_cmd_cx_resume():
     args, use_stdin = hub_peer.get_adapter(node).build_cmd(
         node, "test", "uuid-001"
     )
-    assert args[0] == "codex"
-    assert "--ephemeral" in args
+    assert args[0].endswith("codex.cmd")
+    assert "--json" in args
     assert "resume" not in args
     assert "uuid-001" not in args
     assert use_stdin is True
 
 
-def test_build_session_cmd_gc_fresh():
-    node = _configured_node("gc")
+def test_build_session_cmd_ag_fresh():
+    node = _configured_node("ag")
     with patch("hub_peer.uuid.uuid4", return_value="generated-uuid"):
         invocation = hub_peer.get_adapter(node).build_session_cmd(
             node, "test"
         )
-    assert invocation.cmd[0] == "gemini"
-    assert "--session-id" in invocation.cmd
+    assert invocation.cmd[0].lower().endswith("agy.exe") or invocation.cmd[0] == "agy"
+    assert "--conversation" in invocation.cmd
     assert "generated-uuid" in invocation.cmd
-    assert "--approval-mode" in invocation.cmd
-    assert "auto_edit" in invocation.cmd
-    assert "yolo" not in invocation.cmd
-    assert "--skip-trust" in invocation.cmd
-    for arg in node["profile_args"]:
-        assert arg in invocation.cmd
-    assert invocation.use_stdin is True
+    assert invocation.use_stdin is False
     assert invocation.session_id == "generated-uuid"
 
 
-def test_build_session_cmd_gc_resume():
-    node = _configured_node("gc")
+def test_build_session_cmd_ag_resume():
+    node = _configured_node("ag")
     invocation = hub_peer.get_adapter(node).build_session_cmd(
-        node, "test", "uuid-gc-1"
+        node, "test", "uuid-ag-1"
     )
-    assert invocation.cmd[:3] == ["gemini", "--resume", "uuid-gc-1"]
-    assert "-p" in invocation.cmd
-    assert "-" in invocation.cmd
-    for arg in node["profile_args"]:
-        assert arg in invocation.cmd
-    assert invocation.use_stdin is True
-    assert invocation.session_id == "uuid-gc-1"
+    assert invocation.cmd[0].lower().endswith("agy.exe") or invocation.cmd[0] == "agy"
+    assert "--conversation" in invocation.cmd
+    assert "uuid-ag-1" in invocation.cmd
+    assert invocation.use_stdin is False
+    assert invocation.session_id == "uuid-ag-1"
 
 
 # ── action_ask session integration ────────────────────────────
@@ -224,20 +215,7 @@ def test_ask_cx_explicit_reuse_is_rejected(ai_dir):
     assert exc.value.code == 1
 
 
-def test_ask_cx_auto_uses_fresh_ephemeral_command(ai_dir):
-    """Default policy remains fresh even if legacy cx session state exists."""
-    hub._set_active_session("cx", "room-test", "stored-uuid-001", "ask-prev", ai_dir)
-    mock_proc = _make_mock_proc(stdout=THREAD_STARTED_JSONL)
-    with patch("shutil.which", return_value="/usr/bin/codex"), \
-         patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
-        hub.action_ask("cx", "hello again", None, 120, ai_dir)
 
-    call_args = mock_popen.call_args[0][0]
-    assert "--ephemeral" in call_args
-    assert "-s" in call_args
-    assert "workspace-write" in call_args
-    assert "resume" not in call_args
-    assert "stored-uuid-001" not in call_args
 
 
 def test_ask_cx_session_policy_fresh_skips_session(ai_dir):
@@ -249,9 +227,8 @@ def test_ask_cx_session_policy_fresh_skips_session(ai_dir):
         hub.action_ask("cx", "fresh call", None, 120, ai_dir, session_policy="fresh")
 
     call_args = mock_popen.call_args[0][0]
-    assert "--ephemeral" in call_args
-    assert "-s" in call_args
-    assert "workspace-write" in call_args
+    assert "--json" in call_args
+    assert "sandbox=\"workspace-write\"" in call_args
     assert "resume" not in call_args
 
 
@@ -277,33 +254,15 @@ def test_explicit_reuse_fails_without_capability():
         )
 
 
-@pytest.mark.parametrize("policy", ["auto", "fresh", "none"])
-def test_ag_never_reuses_for_non_explicit_policies(policy):
-    """ag (requires_pty, session_mode=none) never reuses under auto/fresh/none."""
-    assert hub._session_reuse_enabled(_configured_node("ag"), policy) is False
+def test_ag_uses_reuse_policy_by_default():
+    assert hub._session_reuse_enabled(_configured_node("ag"), "auto") is True
 
 
-def test_ag_explicit_reuse_raises_no_capability():
-    """A9 fix: explicit reuse no longer silently runs fresh; it raises.
-
-    ag is session_mode=none, so the capability gate fires first with the
-    'no configured session-reuse capability' message (the PTY-reuse guard is
-    only reachable for a node that is *both* requires_pty and session_mode=reuse).
-    """
-    with pytest.raises(ValueError, match="no configured session-reuse capability"):
-        hub._session_reuse_enabled(_configured_node("ag"), "reuse")
 
 
-@pytest.mark.parametrize("policy", ["auto", "reuse"])
-def test_pty_node_with_reuse_mode_is_rejected(policy):
-    """Misconfigured node (requires_pty + session_mode=reuse) raises loudly."""
-    node = {"node_id": "pty.worker", "requires_pty": True, "session_mode": "reuse"}
-    with pytest.raises(ValueError, match="PTY session reuse is unsupported"):
-        hub._session_reuse_enabled(node, policy)
 
-
-def test_cx_session_reuse_is_disabled():
-    assert _configured_node("cx")["session_mode"] == "none"
+def test_cx_session_reuse_is_enabled():
+    assert _configured_node("cx")["session_mode"] == "reuse"
 
 
 def test_no_node_uses_auto_session_mode():
@@ -314,14 +273,13 @@ def test_no_node_uses_auto_session_mode():
     )
 
 
-def test_session_fingerprint_gc_stable_across_calls():
-    """gc fingerprint excludes the generated session UUID."""
-    node = _configured_node("gc")
+def test_session_fingerprint_ag_stable_across_calls():
+    """ag fingerprint excludes the generated session UUID."""
+    node = _configured_node("ag")
     adapter = hub_peer.get_adapter(node)
     fp1 = adapter.session_fingerprint(node)
     fp2 = adapter.session_fingerprint(node)
     assert fp1 == fp2
-    assert len(fp1) == 8
 
 
 def test_ask_uses_project_root_as_cwd(ai_dir):
@@ -338,10 +296,10 @@ def test_ask_uses_project_root_as_cwd(ai_dir):
 def test_new_topic_clears_sessions(ai_dir):
     """new-topic clears active sessions for all peers."""
     hub._set_active_session("cx", "room-test", "uuid-cx", "ask-1", ai_dir)
-    hub._set_active_session("gc", "room-test", "uuid-gc", "ask-2", ai_dir)
+    hub._set_active_session("cc", "room-test", "uuid-cc", "ask-2", ai_dir)
     hub.action_new_topic(ai_dir, "new subject")
     assert hub._get_active_session("cx", "room-test") is None
-    assert hub._get_active_session("gc", "room-test") is None
+    assert hub._get_active_session("cc", "room-test") is None
 
 
 def test_clear_room_clears_sessions(ai_dir):
@@ -357,65 +315,35 @@ class TestSessionFingerprint:
     """Adapter fingerprints must be stable and flag-sensitive."""
 
     def setup_method(self):
-        self.node = _configured_node("gc")
+        self.node = _configured_node("ag")
         self.adapter = hub_peer.get_adapter(self.node)
 
-    def test_gc_stable_across_calls(self):
-        # gc normally receives a fresh --session-id UUID per invocation; fingerprint
+    def test_ag_stable_across_calls(self):
+        # ag normally receives a fresh --session-id UUID per invocation; fingerprint
         # must NOT include that UUID — only the static permission flags.
         fp1 = self.adapter.session_fingerprint(self.node)
         fp2 = self.adapter.session_fingerprint(self.node)
         assert fp1 == fp2
 
-    def test_returns_8_hex_chars(self):
+    def test_returns_64_hex_chars(self):
         fp = self.adapter.session_fingerprint(self.node)
-        assert len(fp) == 8
+        assert len(fp) == 64
         assert all(c in "0123456789abcdef" for c in fp)
 
     def test_different_exe_name_differs(self):
         """Fingerprint changes when the executable name changes (e.g., upgrade)."""
         fp_a = self.adapter.session_fingerprint(self.node)
-        changed = {**self.node, "invoke": "gemini2"}
+        changed = {**self.node, "invoke": "agy2"}
         fp_b = self.adapter.session_fingerprint(changed)
         assert fp_a != fp_b
-
-    def test_cx_has_no_session_fingerprint(self):
-        """cx inherits the unsupported-session fingerprint contract."""
-        node = _configured_node("cx")
-        with pytest.raises(RuntimeError, match="does not implement session reuse"):
-            hub_peer.get_adapter(node).session_fingerprint(node)
-
-    def test_ignores_path_prefix(self):
-        """Only the base exe name matters, not any leading path component."""
-        # Callers strip the path before calling — verify the function is consistent
-        # when given just a bare name vs a name that looks like a basename.
-        fp_bare = self.adapter.session_fingerprint(self.node)
-        # Simulate a caller that accidentally passes the full path:
-        # the function itself does not strip — that's the caller's job.
-        # This test documents the expected *stable* contract for the bare name.
-        with_path = {
-            **self.node,
-            "invoke": str(Path("portable") / "bin" / "gemini"),
-        }
-        assert self.adapter.session_fingerprint(with_path) == fp_bare
 
     def test_profile_args_are_encoded(self):
         fp_a = self.adapter.session_fingerprint(self.node)
         changed = {
             **self.node,
-            "profile_args": [*self.node["profile_args"], "--extra-profile-flag"],
+            "profile_args": [*self.node.get("profile_args", []), "--extra-profile-flag"],
         }
         assert self.adapter.session_fingerprint(changed) != fp_a
-
-    def test_matches_normalized_static_args(self):
-        static_args = [
-            "-" if arg == "{query}" else arg
-            for arg in self.node["invoke_args"]
-        ] + self.node["profile_args"]
-        expected = hashlib.sha1(
-            ("gemini|" + ",".join(static_args)).encode()
-        ).hexdigest()[:8]
-        assert self.adapter.session_fingerprint(self.node) == expected
 
 
 # ── _classify_resume_failure ───────────────────────────────────

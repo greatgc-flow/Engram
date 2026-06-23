@@ -25,15 +25,6 @@
     "ca": {
       "inherits": "cc"
     },
-    "gc": {
-      "safe_checks": [
-        {"id": "gc.version", "class": "version_only", "command": "gemini --version", "effect_class": "read_only"}
-      ],
-      "known_overrides": {
-        "model_flag": "--model",
-        "approval_mode_flag": "--approval-mode"
-      }
-    },
     "ag": {
       "safe_checks": [
         {"id": "ag.version", "class": "version_only", "command": "agy --version", "effect_class": "read_only"},

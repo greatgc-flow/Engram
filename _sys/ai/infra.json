@@ -19,7 +19,6 @@
         "_comment": "Launcher bat files for each peer (relative to BASE_DIR)",
         "cc": "_sys/cli/claude.bat",
         "ca": "_sys/cli/claude.bat",
-        "gc": "_sys/cli/gemini.bat",
         "ag": "_sys/cli/agy.bat",
         "cx": "_sys/cli/codex.bat",
         "hub": "_sys/cli/hub.bat",
@@ -53,11 +52,7 @@
             "health": "_sys/claude/health.json",
             "statusline": "_sys/claude/config/statusline-command.sh"
         },
-        "gc": {
-            "glue": "_sys/gemini/config/GEMINI.md",
-            "health": "_sys/gemini/health.json",
-            "usage": "_sys/gemini/usage.json"
-        },
+
         "ag": {
             "glue": "_sys/antigravity/config/AGY.md",
             "health": "_sys/antigravity/health.json",
@@ -91,10 +86,7 @@
                 "--json"
             ]
         },
-        "gc": {
-            "exe": "gemini",
-            "config_env": "GEMINI_DIR"
-        },
+
         "cc": {
             "exe": "claude",
             "config_env": "CLAUDE_CONFIG_DIR"
