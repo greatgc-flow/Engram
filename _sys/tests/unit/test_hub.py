@@ -19,6 +19,16 @@ def _make_mock_proc(stdout=b"", stderr=b"", returncode=0):
     return mock_proc
 
 
+def _pty_result(text="", elapsed=5, exit_code=0, timed_out=False,
+                timeout_kind=None, pid=4242, transport_error=None):
+    """Build a hub._PtyAskResult for ag PTY-path mocks (replaces the old
+    (text, elapsed) tuple return)."""
+    return hub._PtyAskResult(
+        text=text, elapsed=elapsed, exit_code=exit_code, timed_out=timed_out,
+        timeout_kind=timeout_kind, pid=pid, transport_error=transport_error,
+    )
+
+
 def test_ask_coordinator_falls_back_from_unroutable_stale_leader(ai_dir):
     (ai_dir / "state.json").write_text(
         json.dumps({"room_id": "room-test", "leader": "gc", "members": {}}),
@@ -343,7 +353,7 @@ class TestAsk:
         import subprocess as _sp
         node = self._ag_node()
         monkeypatch.setattr(hub, "_load_orchestration", lambda: {"hub_nodes": [node]})
-        mock_pty = MagicMock(return_value=("ANTIGRAVITY", 16))
+        mock_pty = MagicMock(return_value=_pty_result(text="ANTIGRAVITY", elapsed=16))
         with patch("shutil.which", return_value="/usr/bin/agy"), \
              patch("hub._ask_with_pty", mock_pty), \
              patch("subprocess.Popen") as mock_popen:
@@ -356,7 +366,7 @@ class TestAsk:
         node = self._ag_node()
         monkeypatch.setattr(hub, "_load_orchestration", lambda: {"hub_nodes": [node]})
         with patch("shutil.which", return_value="/usr/bin/agy"), \
-             patch("hub._ask_with_pty", return_value=("  clean response  ", 10)):
+             patch("hub._ask_with_pty", return_value=_pty_result(text="  clean response  ", elapsed=10)):
             hub.action_ask("ag", "test", None, 300, None)
         out, _ = capsys.readouterr()
         assert "clean response" in out
@@ -370,7 +380,7 @@ class TestAsk:
         monkeypatch.setattr(hub, "_load_orchestration", lambda: {"hub_nodes": [node]})
         monkeypatch.setattr(hub, "_peer_sys_dir", lambda _: tmp_path / "antigravity")
         with patch("shutil.which", return_value="/usr/bin/agy"), \
-             patch("hub._ask_with_pty", return_value=("PTY OUTPUT", 5)):
+             patch("hub._ask_with_pty", return_value=_pty_result(text="PTY OUTPUT", elapsed=5)):
             hub.action_ask("ag", "test", None, 300, ai_dir, output_file=str(out_file))
         assert out_file.exists()
         assert "PTY OUTPUT" in out_file.read_text(encoding="utf-8")
@@ -380,7 +390,7 @@ class TestAsk:
         node = self._ag_node()
         monkeypatch.setattr(hub, "_load_orchestration", lambda: {"hub_nodes": [node]})
         with patch("shutil.which", return_value="/usr/bin/agy"), \
-             patch("hub._ask_with_pty", return_value=("quiet reply", 3)):
+             patch("hub._ask_with_pty", return_value=_pty_result(text="quiet reply", elapsed=3)):
             hub.action_ask("ag", "test", None, 300, None, quiet=True)
         out, _ = capsys.readouterr()
         assert "quiet reply" in out
@@ -392,7 +402,7 @@ class TestAsk:
         monkeypatch.setattr(hub, "_load_orchestration", lambda: {"hub_nodes": [node]})
         ansi_output = "\x1b[32mgreen text\x1b[0m"
         with patch("shutil.which", return_value="/usr/bin/agy"), \
-             patch("hub._ask_with_pty", return_value=(ansi_output, 5)):
+             patch("hub._ask_with_pty", return_value=_pty_result(text=ansi_output, elapsed=5)):
             hub.action_ask("ag", "test", None, 300, None)
         out, _ = capsys.readouterr()
         assert "\x1b" not in out
@@ -402,7 +412,7 @@ class TestAsk:
         node = self._ag_node()
         monkeypatch.setattr(hub, "_load_orchestration", lambda: {"hub_nodes": [node]})
         with patch("shutil.which", return_value="/usr/bin/agy"), \
-             patch("hub._ask_with_pty", return_value=("", 5)), \
+             patch("hub._ask_with_pty", return_value=_pty_result(text="", elapsed=5)), \
              pytest.raises(SystemExit) as exc:
             hub.action_ask("ag", "test", None, 300, None)
         assert exc.value.code == 1

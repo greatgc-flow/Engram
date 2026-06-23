@@ -71,6 +71,8 @@ Context-fill sections controlled by `protocol.json["session"]["context_fill_sect
 `hub.py ask` reuses configured CLI sessions across calls (scope_key = room_id).
 The configured reuse-peer list currently contains only gc.
 
+ag runs in PTY/inline mode (`requires_pty=true`, `agy -p` prompt-inline) and is **not** session-reusable: it carries `session_mode: none`, the hub never sends continuation/conversation flags to it (enforced by `AgyAdapter.build_cmd`), and `AgyAdapter` implements no `build_session_cmd`.
+
 Session reuse is governed solely by the `session_mode` field; the descriptive `memory` field in `orchestration.json` does not control reuse (e.g. `cc: memory persistent` still runs each `claude -p` as a separate process).
 
 | Peer | New session flag | Resume flag |

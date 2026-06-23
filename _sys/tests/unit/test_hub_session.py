@@ -277,6 +277,31 @@ def test_explicit_reuse_fails_without_capability():
         )
 
 
+@pytest.mark.parametrize("policy", ["auto", "fresh", "none"])
+def test_ag_never_reuses_for_non_explicit_policies(policy):
+    """ag (requires_pty, session_mode=none) never reuses under auto/fresh/none."""
+    assert hub._session_reuse_enabled(_configured_node("ag"), policy) is False
+
+
+def test_ag_explicit_reuse_raises_no_capability():
+    """A9 fix: explicit reuse no longer silently runs fresh; it raises.
+
+    ag is session_mode=none, so the capability gate fires first with the
+    'no configured session-reuse capability' message (the PTY-reuse guard is
+    only reachable for a node that is *both* requires_pty and session_mode=reuse).
+    """
+    with pytest.raises(ValueError, match="no configured session-reuse capability"):
+        hub._session_reuse_enabled(_configured_node("ag"), "reuse")
+
+
+@pytest.mark.parametrize("policy", ["auto", "reuse"])
+def test_pty_node_with_reuse_mode_is_rejected(policy):
+    """Misconfigured node (requires_pty + session_mode=reuse) raises loudly."""
+    node = {"node_id": "pty.worker", "requires_pty": True, "session_mode": "reuse"}
+    with pytest.raises(ValueError, match="PTY session reuse is unsupported"):
+        hub._session_reuse_enabled(node, policy)
+
+
 def test_cx_session_reuse_is_disabled():
     assert _configured_node("cx")["session_mode"] == "none"
 

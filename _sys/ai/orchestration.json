@@ -240,10 +240,13 @@
       "invoke_args": [
         "--dangerously-skip-permissions",
         "-p",
-        "{query}"
+        "{query}",
+        "--print-timeout",
+        "60m"
       ],
       "requires_pty": true,
       "memory": "ephemeral",
+      "session_mode": "none",
       "timeout": 300,
       "default_profile": "standard",
       "capability_class": "trusted_ipc_mutation",

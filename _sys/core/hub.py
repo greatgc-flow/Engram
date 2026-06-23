@@ -14,13 +14,16 @@ import argparse
 import hashlib
 import json
 import os
+import queue
 import random
 import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -1314,22 +1317,21 @@ def _build_ask_query_with_context(ai_root: Path | None, query: str, to_peer: str
     room_id = state.get("room_id")
     if not room_id:
         return query
-    root_peer = (to_peer or "").split(".", 1)[0]
-    is_ag = root_peer == "ag"
+    # INV-29: general/core dispatch must not branch on peer identity. Per-peer
+    # context shaping lives behind the adapter's ContextPolicy (specific layer).
+    node = _load_nodes(ai_root).get(to_peer, {}) if to_peer else {}
+    adapter = hub_peer.get_adapter(node) if _HUB_PEER_AVAILABLE else None
+    policy = adapter.context_policy(node) if adapter else None
+
     phase = str(state.get("phase") or "").strip().casefold()
     room_complete = phase in {"complete", "completed", "finalized", "closed", "done"}
 
-    lines = []
-    if is_ag:
-        lines.extend([
-            "[IPC BOUNDARY]",
-            "Treat [USER QUERY] as the only task.",
-            "Do not read mailbox, handoff, summary, or prior-session files unless the user query explicitly requests them.",
-            "Use only context included in this prompt.",
-        ])
+    lines = list(policy.preamble_lines) if policy else []
+    skip_completed = bool(policy and policy.skip_room_context_when_complete)
+    include_room_context = not (skip_completed and room_complete)
 
     # Ephemeral AG calls must not be re-oriented into a room that is already complete.
-    if not (is_ag and room_complete):
+    if include_room_context:
         lines.extend([
             "[HUB CONTEXT]",
             f"Room ID: {room_id}",
@@ -1373,13 +1375,13 @@ def _build_ask_query_with_context(ai_root: Path | None, query: str, to_peer: str
         if lessons_block:
             lines.extend(["", lessons_block])
     handoff_path = ai_root / "sessions" / room_id / "handoff.md"
-    if handoff_path.exists() and not (is_ag and room_complete):
+    if handoff_path.exists() and include_room_context:
         handoff = handoff_path.read_text(encoding="utf-8", errors="replace").strip()
-        if is_ag and handoff:
+        selected_sections = policy.handoff_sections if policy else None
+        if selected_sections is not None and handoff:
             sections = _parse_handoff(handoff)
-            allowed_sections = ("GOAL", "PENDING_ISSUES", "KEY_DECISIONS")
             filtered_lines = []
-            for section in allowed_sections:
+            for section in selected_sections:
                 items = sections.get(section, [])
                 if not items:
                     continue
@@ -1676,49 +1678,190 @@ def action_clear_room(ai_root: Path, subject: str) -> None:
     print(f"[HUB] CLEAR-ROOM {new_room} | from={old_room or 'none'} | subject={subject}")
 
 
-def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: dict, quiet: bool = False, ai_root: Path | None = None, ask_id: str | None = None) -> tuple[str, int]:
-    """pywinpty로 pseudo-TTY 실행 — WriteConsole() API 우회 (agy 등 TUI CLI 전용)."""
+# PTY-branch-only oversized-prompt guard. Windows command lines are bounded
+# (~32k UTF-16 code units); stay well under so the child never sees a truncated
+# argv. Prompts above this are staged to a file and replaced by a pointer.
+_PTY_INLINE_COMMAND_LIMIT = 24_000
+
+
+@dataclass(frozen=True)
+class _PtyAskResult:
+    """Result of a single Windows PTY ask. PTY-branch-only; deliberately NOT a
+    shared ExecutionResult so the cc/cx subprocess path stays untouched."""
+    text: str
+    elapsed: int
+    exit_code: int | None
+    timed_out: bool
+    timeout_kind: str | None
+    pid: int
+    transport_error: str | None = None
+
+
+def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: dict, quiet: bool = False, ai_root: Path | None = None, ask_id: str | None = None, cwd: str | None = None) -> "_PtyAskResult":
+    """pywinpty로 pseudo-TTY 실행 — WriteConsole() API 우회 (agy 등 TUI CLI 전용).
+
+    A single daemon reader thread is the ONLY caller of blocking ``p.read``; it
+    pushes chunks / EOF / exceptions onto a queue. The main thread loops on a
+    bounded ``queue.get(timeout=SLICE)`` and independently enforces the
+    execution deadline, renews the lease every heartbeat, and detects a silent
+    zombie — none of which a blocking read could otherwise interrupt.
+
+    The lease is OPENED here but NOT closed (CONDITION-2): the caller's PTY
+    branch closes it exactly once in its ``finally`` using ``result.pid``.
+    """
     try:
         import winpty as _winpty
     except ImportError:
         print(f"[HUB:ERROR] pywinpty not installed (required for {node_id})", file=sys.stderr)
         sys.exit(1)
 
-    p = _winpty.PtyProcess.spawn(cmd, env=process_env)
-    chunks: list[str] = []
+    heartbeat_sec, _lease_timeout_sec, zombie_timeout_sec = _lease_cfg()
     lease = int(_runtime_cfg().get("pty_lease_sec", 300) or 300)
-    
-    if ai_root:
-        _lease_open(ai_root, node_id, p.pid, lease, ask_id=ask_id)
 
-    deadline = time.monotonic() + (timeout_sec if timeout_sec > 0 else lease)
-    t0 = time.monotonic()
-    _last_renew = time.monotonic()
-
-    while time.monotonic() < deadline:
-        if ai_root and time.monotonic() - _last_renew > 30:
-            _lease_renew(ai_root, node_id, lease)
-            _last_renew = time.monotonic()
-        try:
-            chunk = p.read(4096)
-            if chunk:
-                chunks.append(chunk)
-        except EOFError:
-            break
+    # CONDITION-3: the bounded get() slice MUST be <= heartbeat (so lease renewal
+    # fires on cadence) AND <= zombie granularity (so the silent-zombie check can
+    # fire) AND small enough that the execution deadline is honored promptly.
+    # Pin it explicitly rather than inheriting an unbounded read.
+    slice_sec = max(0.05, min(float(heartbeat_sec), float(zombie_timeout_sec), 0.5))
 
     try:
-        p.close()
-    except Exception:
-        pass
+        p = _winpty.PtyProcess.spawn(cmd, cwd=cwd, env=process_env)
+    except Exception as exc:
+        return _PtyAskResult(
+            text="", elapsed=0, exit_code=None, timed_out=False,
+            timeout_kind=None, pid=-1, transport_error=f"pty_spawn_failed: {exc}",
+        )
 
+    pid = p.pid
     if ai_root:
-        _lease_close(ai_root, node_id, p.pid, "closed")
+        _lease_open(ai_root, node_id, pid, lease, ask_id=ask_id)
+
+    out_q: "queue.Queue" = queue.Queue()
+
+    def _reader() -> None:
+        # The ONLY caller of blocking p.read(4096).
+        try:
+            while True:
+                chunk = p.read(4096)
+                if chunk:
+                    out_q.put(("data", chunk))
+                else:
+                    out_q.put(("eof", None))
+                    return
+        except EOFError:
+            out_q.put(("eof", None))
+        except Exception as exc:  # surfaced to main as a transport error
+            out_q.put(("error", exc))
+
+    reader = threading.Thread(target=_reader, name=f"pty-reader-{node_id}", daemon=True)
+    reader.start()
+
+    chunks: list[str] = []
+    t0 = time.monotonic()
+    deadline = t0 + (timeout_sec if timeout_sec > 0 else lease)
+    last_renew = t0
+    last_activity = t0  # any chunk resets the silent-zombie clock
+    timed_out = False
+    timeout_kind: str | None = None
+    transport_error: str | None = None
+    exit_code: int | None = None
+    eof_seen = False
+
+    while True:
+        now = time.monotonic()
+
+        # 1. execution deadline (independent of the blocking read)
+        if now >= deadline:
+            timed_out = True
+            timeout_kind = "deadline"
+            break
+
+        # 2. lease renewal on heartbeat cadence
+        if ai_root and now - last_renew >= heartbeat_sec:
+            _lease_renew(ai_root, node_id, lease)
+            last_renew = now
+
+        # 3. silent-zombie guard (no output for zombie_timeout_sec)
+        if now - last_activity >= zombie_timeout_sec:
+            timed_out = True
+            timeout_kind = "zombie"
+            break
+
+        # 4. liveness backstop
+        try:
+            alive = p.isalive()
+        except Exception:
+            alive = False
+
+        try:
+            kind, payload = out_q.get(timeout=slice_sec)
+        except queue.Empty:
+            if not alive:
+                # Process gone but EOF not yet queued; one short grace slice,
+                # then treat the absence of further data as EOF.
+                try:
+                    kind, payload = out_q.get(timeout=slice_sec)
+                except queue.Empty:
+                    eof_seen = True
+                    break
+            else:
+                continue
+
+        if kind == "data":
+            chunks.append(payload)
+            last_activity = time.monotonic()
+        elif kind == "eof":
+            eof_seen = True
+            break
+        else:  # "error"
+            transport_error = f"pty_read_error: {payload}"
+            break
+
+    if timed_out:
+        try:
+            p.terminate(force=True)
+        except Exception:
+            pass
+        try:
+            p.close(force=True)
+        except Exception:
+            pass
+    else:
+        # Drain anything the reader already queued before EOF/error.
+        while True:
+            try:
+                kind, payload = out_q.get_nowait()
+            except queue.Empty:
+                break
+            if kind == "data":
+                chunks.append(payload)
+            elif kind == "error" and transport_error is None:
+                transport_error = f"pty_read_error: {payload}"
+        if eof_seen:
+            try:
+                exit_code = p.exitstatus
+            except Exception:
+                exit_code = None
+        try:
+            p.close(force=True)
+        except Exception:
+            pass
 
     elapsed = int(time.monotonic() - t0)
+    # Partial text is returned for diagnostics only; timed_out=True must still
+    # prevent the caller from treating it as success.
     output = _strip_ansi("".join(chunks))
     if not quiet:
         print(f"[HUB] REPLY {node_id} | chars={len(output)} | elapsed={elapsed}s\n{output.strip()}")
-    return output, elapsed
+    return _PtyAskResult(
+        text=output,
+        elapsed=elapsed,
+        exit_code=exit_code,
+        timed_out=timed_out,
+        timeout_kind=timeout_kind,
+        pid=pid,
+        transport_error=transport_error,
+    )
 
 
 def _append_ask_history(ai_root: Path | None, peer_id: str, query_file_path: str | None, output_file: str | None, elapsed_sec: int | None, success: bool, failure_reason: str | None) -> None:
@@ -1862,14 +2005,18 @@ def _session_reuse_enabled(node: dict, session_policy: str) -> bool:
     that has no configured session-reuse capability.
     """
     mode = str(node.get("session_mode", "none")).lower()
-    if node.get("requires_pty", False):
-        return False
     if session_policy in ("fresh", "none"):
         return False
     if session_policy == "reuse" and mode != "reuse":
         raise ValueError(
             f"{node.get('node_id', 'node')} has no configured session-reuse capability"
         )
+    if node.get("requires_pty", False):
+        if mode == "reuse":
+            raise ValueError(
+                f"{node.get('node_id', 'node')} PTY session reuse is unsupported"
+            )
+        return False
     return mode == "reuse"
 
 
@@ -2137,10 +2284,68 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 pass
 
         _update_pty_thread("in progress")
-        pty_failure_reason: str | None = None
 
+        # A7 (CONDITION-1): run the child in the project root (one level above
+        # .ai), WITHOUT .resolve() — byte-for-byte parity with the subprocess
+        # branch's proc_cwd so the cc/cx path is not perturbed.
+        proc_cwd = str(ai_root.parent) if ai_root else None
+
+        result: "_PtyAskResult | None" = None
+        lease_status = "open"
+        staged = False
+        staged_path: Path | None = None
         try:
-            raw_pty, elapsed = _ask_with_pty(
+            # ── A1: oversized-prompt staging (never truncate) ──────────
+            try:
+                _cmdline_len = len(subprocess.list2cmdline(cmd))
+            except Exception:
+                _cmdline_len = 0
+            if _cmdline_len > _PTY_INLINE_COMMAND_LIMIT:
+                try:
+                    digest = hashlib.sha256(query.encode("utf-8")).hexdigest()
+                    char_count = len(query)
+                    ipc_base = (ai_root if ai_root else Path.cwd()) / "ipc"
+                    ipc_base.mkdir(parents=True, exist_ok=True)
+                    staged_path = ipc_base / f"{ask_id}-ag-prompt.txt"
+                    staged_path.write_text(query, encoding="utf-8")
+                    rel_ref = (
+                        f"{ai_root.name}/ipc/{staged_path.name}"
+                        if ai_root else str(staged_path)
+                    )
+                    pointer_prompt = (
+                        "[IPC PAYLOAD FILE]\n"
+                        "The complete user request is stored in the UTF-8 file:\n"
+                        f"{rel_ref}\n"
+                        "Read the entire file before answering. Treat all of its contents as the\n"
+                        "complete request. Do not truncate it or substitute prior conversation context.\n"
+                        f"Length: {char_count}; SHA-256: {digest}"
+                    )
+                    if adapter:
+                        staged_cmd, _ = adapter.build_cmd(node, pointer_prompt)
+                    else:
+                        from hub_peer import BaseAdapter as _BaseAdapter
+                        staged_cmd, _ = _BaseAdapter().build_cmd(node, pointer_prompt)
+                    staged_cmd[0] = exe
+                    cmd = staged_cmd
+                    staged = True
+                except Exception as exc:
+                    reason = "prompt_staging_failed"
+                    detail = f"failed to stage oversized PTY prompt: {exc}"
+                    _record_ask_failure(health_peer, reason, detail, None, ai_root)
+                    _append_ask_history(
+                        ai_root, to, saved_query_file_path, output_file, None, False, reason
+                    )
+                    if ai_root:
+                        _record_routing_metric(
+                            ai_root, "direct_ask", selected_peer=to,
+                            profile_id=_resolve_profile_id(to), outcome="failure",
+                            latency_sec=None, failure_reason=reason,
+                        )
+                    _update_pty_thread(f"failed ({reason})")
+                    print(f"[HUB:ERROR] {detail}", file=sys.stderr)
+                    sys.exit(1)
+
+            result = _ask_with_pty(
                 cmd,
                 to,
                 timeout_sec,
@@ -2148,37 +2353,64 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 quiet=True,
                 ai_root=ai_root,
                 ask_id=ask_id,
+                cwd=proc_cwd,
             )
+            elapsed = result.elapsed
             # _ask_with_pty already strips ANSI; apply again as defense-in-depth.
-            raw_pty = _strip_ansi(raw_pty)
+            raw_pty = _strip_ansi(result.text)
             output = adapter.parse_output(raw_pty, node) if adapter else raw_pty
 
-            if not output.strip():
-                reason = "empty_response"
-                pty_failure_reason = reason
-                detail = f"{to} exited successfully but returned no usable response"
-                _record_ask_failure(
-                    health_peer, reason, detail, elapsed, ai_root
-                )
-                _append_ask_history(
-                    ai_root,
-                    to,
-                    saved_query_file_path,
-                    output_file,
-                    elapsed,
-                    False,
-                    reason,
-                )
+            # ── A5 classification order ────────────────────────────────
+            # timed_out → transport_error → exit_code != 0 → empty output →
+            # output-file failure → success.
+            if result.timed_out:
+                lease_status = "timeout"
+                reason = "timeout"
+                detail = f"ask timeout after {elapsed}s (kind={result.timeout_kind})"
+                _record_ask_failure(health_peer, reason, detail, elapsed, ai_root)
+                _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
                 if ai_root:
-                    _record_routing_metric(
-                        ai_root,
-                        "direct_ask",
-                        selected_peer=to,
-                        profile_id=_resolve_profile_id(to),
-                        outcome="failure",
-                        latency_sec=elapsed,
-                        failure_reason=reason,
-                    )
+                    _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=elapsed, failure_reason=reason)
+                _update_pty_thread(f"failed ({reason})")
+                print(f"[HUB:ERROR] {detail}", file=sys.stderr)
+                sys.exit(1)
+
+            if result.transport_error:
+                lease_status = "failed"
+                reason, extra = _classify_ask_failure(result.transport_error)
+                extra["last_invocation_exit_code"] = result.exit_code
+                _record_ask_failure(health_peer, reason, result.transport_error, elapsed, ai_root, extra)
+                _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
+                if ai_root:
+                    _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=elapsed, failure_reason=reason)
+                _update_pty_thread(f"failed ({reason})")
+                print(f"[HUB:ERROR] {result.transport_error}", file=sys.stderr)
+                sys.exit(1)
+
+            # exit_code must be exactly 0 to be eligible for success; None
+            # (undeterminable) and nonzero are both failures (None != 0).
+            if result.exit_code != 0:
+                lease_status = "failed"
+                reason, extra = _classify_ask_failure(output)
+                extra["last_invocation_exit_code"] = result.exit_code
+                ec_label = "unknown" if result.exit_code is None else str(result.exit_code)
+                _record_ask_failure(health_peer, reason, output or f"exit {ec_label}", elapsed, ai_root, extra)
+                _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
+                if ai_root:
+                    _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=elapsed, failure_reason=reason)
+                _update_pty_thread(f"failed ({reason})")
+                print(f"[HUB:ERROR] {requested_to} exited {ec_label}", file=sys.stderr)
+                sys.exit(1)
+
+            if not output.strip():
+                lease_status = "failed"
+                reason = "empty_response"
+                detail = f"{to} exited successfully but returned no usable response"
+                _record_ask_failure(health_peer, reason, detail, elapsed, ai_root)
+                _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
+                if ai_root:
+                    _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=elapsed, failure_reason=reason)
+                _update_pty_thread(f"failed ({reason})")
                 print(f"[HUB:ERROR] {detail}", file=sys.stderr)
                 sys.exit(1)
 
@@ -2208,44 +2440,45 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                     reasoning_tokens=usage.get("reasoning_tokens"),
                 )
 
-            _record_ask_success(health_peer, elapsed, ai_root)
-            _append_ask_history(
-                ai_root,
-                to,
-                saved_query_file_path,
-                output_file,
-                elapsed,
-                True,
-                None,
-            )
-            if ai_root:
-                _record_routing_metric(
-                    ai_root,
-                    "direct_ask",
-                    selected_peer=to,
-                    profile_id=_resolve_profile_id(to),
-                    outcome="success",
-                    latency_sec=elapsed,
-                )
-
+            # output-file failure precedes success in the classification order.
+            out_path = None
             if output_file:
                 try:
                     base = ai_root if ai_root else Path.cwd()
                     out_path = _portable_state_path(base, output_file)
                     out_path.parent.mkdir(parents=True, exist_ok=True)
                     out_path.write_text(output, encoding="utf-8")
-                    if not quiet:
-                        print(
-                            f"[HUB] REPLY {to} | chars={len(output)} "
-                            f"| elapsed={elapsed}s | output={out_path}"
-                        )
                 except Exception as exc:
-                    pty_failure_reason = "output_write_error"
-                    print(
-                        f"[HUB:ERROR] failed to write output file: {exc}",
-                        file=sys.stderr,
-                    )
+                    lease_status = "failed"
+                    reason = "output_write_error"
+                    detail = f"failed to write output file: {exc}"
+                    _record_ask_failure(health_peer, reason, detail, elapsed, ai_root)
+                    _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
+                    if ai_root:
+                        _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=elapsed, failure_reason=reason)
+                    _update_pty_thread(f"failed ({reason})")
+                    print(f"[HUB:ERROR] {detail}", file=sys.stderr)
                     sys.exit(1)
+
+            # ── success: exit 0 + nonempty output + ok output-file ─────
+            lease_status = "closed"
+            _record_ask_success(health_peer, elapsed, ai_root)
+            _append_ask_history(
+                ai_root, to, saved_query_file_path, output_file, elapsed, True, None
+            )
+            if ai_root:
+                _record_routing_metric(
+                    ai_root, "direct_ask", selected_peer=to,
+                    profile_id=_resolve_profile_id(to), outcome="success",
+                    latency_sec=elapsed,
+                )
+
+            if output_file:
+                if not quiet:
+                    print(
+                        f"[HUB] REPLY {to} | chars={len(output)} "
+                        f"| elapsed={elapsed}s | output={out_path}"
+                    )
             elif quiet:
                 print(output, end="")
             else:
@@ -2254,12 +2487,28 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                     f"| elapsed={elapsed}s\n{output.strip()}"
                 )
 
-        except BaseException as exc:
-            failure_reason = pty_failure_reason or type(exc).__name__
-            _update_pty_thread(f"failed ({failure_reason})")
+            _update_pty_thread("completed")
+        except SystemExit:
+            # Failure paths already recorded + updated the thread and set
+            # lease_status; preserve it.
             raise
-
-        _update_pty_thread("completed")
+        except BaseException as exc:
+            lease_status = "failed"
+            _update_pty_thread(f"failed ({type(exc).__name__})")
+            raise
+        finally:
+            # CONDITION-2: close the lease EXACTLY ONCE using result.pid.
+            # If _ask_with_pty never returned (result is None), the lease was
+            # never opened (or its pid is unknown) → skip: no double close, no
+            # wrong/missing pid. _lease_sweep reclaims any orphan.
+            if result is not None and ai_root:
+                _lease_close(ai_root, to, result.pid, lease_status)
+            # Delete the staged prompt file (guarded), regardless of outcome.
+            if staged and staged_path is not None:
+                try:
+                    staged_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
         return
 
     # ── Subprocess path (with optional session-retry) ──────────

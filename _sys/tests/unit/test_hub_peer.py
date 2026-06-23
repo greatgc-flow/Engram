@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "core"))
 import hub_peer
 from hub_peer import (
     PeerAdapter, BaseAdapter, ClaudeAdapter, GeminiAdapter, AgyAdapter, CodexAdapter, VirtualAdapter,
+    ContextPolicy,
     get_adapter, get_adapter_for_peer,
     _ADAPTER_REGISTRY, _INVOKE_TO_ADAPTER,
 )
@@ -188,6 +189,25 @@ class TestBaseAdapterExtractUsage:
         assert adapter.extract_usage("any text", node) == {}
 
 
+# ── ContextPolicy (ADDENDUM-3) ────────────────────────────────────────────────
+
+class TestContextPolicy:
+    def test_base_context_policy_is_current_non_ag_default(self):
+        assert BaseAdapter().context_policy({}) == ContextPolicy()
+
+    def test_default_context_policy_values(self):
+        policy = ContextPolicy()
+        assert policy.preamble_lines == ()
+        assert policy.skip_room_context_when_complete is False
+        assert policy.handoff_sections is None
+
+    @pytest.mark.parametrize("cls", [ClaudeAdapter, CodexAdapter, GeminiAdapter])
+    def test_cc_cx_gc_inherit_default_context_policy(self, cls):
+        # cc/cx/gc must NOT override context_policy — they stay byte-neutral.
+        assert cls().context_policy({}) == ContextPolicy()
+        assert "context_policy" not in cls.__dict__
+
+
 # ── VirtualAdapter ────────────────────────────────────────────────────────────
 
 class TestAgyAdapter:
@@ -242,6 +262,59 @@ class TestAgyAdapter:
         node = {"invoke": "agy", "node_id": "ag"}
         adapter = get_adapter(node)
         assert isinstance(adapter, AgyAdapter)
+
+    # ── A4: terminal-stream normalizer ────────────────────────────────────────
+    def test_parse_output_carriage_return_overwrites_redraw(self):
+        raw = "Thinking 10%\rThinking 100%\nAnswer"
+        assert self.adapter.parse_output(raw, self.node) == "Thinking 100%\nAnswer"
+
+    def test_parse_output_backspace_moves_cursor_left(self):
+        assert self.adapter.parse_output("abc\b\bXY", self.node) == "aXY"
+
+    def test_parse_output_csi_erase_line_clears_to_redraw(self):
+        assert self.adapter.parse_output("old\x1b[2K\rnew", self.node) == "new"
+
+    def test_parse_output_strips_osc_sequence(self):
+        raw = "\x1b]0;window title\x07result"
+        assert self.adapter.parse_output(raw, self.node) == "result"
+
+    def test_parse_output_strips_residual_csi_color(self):
+        raw = "\x1b[31mred\x1b[0m text"
+        assert self.adapter.parse_output(raw, self.node) == "red text"
+
+    # ── A6: continuation/conversation flags are refused ───────────────────────
+    @pytest.mark.parametrize("flag", ["-c", "--continue", "--conversation", "--conversation=abc123"])
+    def test_build_cmd_raises_on_continuation_flag(self, flag):
+        node = {
+            "node_id": "ag", "invoke": "agy",
+            "invoke_args": ["--dangerously-skip-permissions", "-p", "{query}", flag],
+            "requires_pty": False,
+        }
+        with pytest.raises(ValueError, match="continuation"):
+            self.adapter.build_cmd(node, "hello")
+
+    def test_build_cmd_raises_on_continuation_flag_in_profile_args(self):
+        node = {
+            "node_id": "ag", "invoke": "agy",
+            "invoke_args": ["--dangerously-skip-permissions", "-p", "{query}"],
+            "profile_args": ["--continue"],
+            "requires_pty": False,
+        }
+        with pytest.raises(ValueError, match="continuation"):
+            self.adapter.build_cmd(node, "hello")
+
+    def test_build_cmd_does_not_scan_query_content_for_flags(self):
+        # A query that literally contains "--continue" must NOT trip the guard.
+        cmd, _ = self.adapter.build_cmd(self.node, "please --continue the task")
+        assert "please --continue the task" in cmd
+
+    # ── ADDENDUM-3: context policy ────────────────────────────────────────────
+    def test_ag_context_policy_encapsulates_context_delta(self):
+        policy = self.adapter.context_policy({})
+        assert policy.skip_room_context_when_complete is True
+        assert policy.handoff_sections == ("GOAL", "PENDING_ISSUES", "KEY_DECISIONS")
+        assert policy.preamble_lines[0] == "[IPC BOUNDARY]"
+        assert len(policy.preamble_lines) == 4
 
 
 class TestVirtualAdapter:

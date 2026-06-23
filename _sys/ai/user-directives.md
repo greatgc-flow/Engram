@@ -31,6 +31,7 @@
   - `gc`: SUSPENDED — `--approval-mode auto_edit --skip-trust` (reference only; gc is tier_suspended)
   - `cx`: `-s workspace-write`
   - `ag`: PTY mode via AgyAdapter (requires_pty=true on Windows); no --permission-mode flag
+- KNOWN GAP (ag filesystem confinement): `agy --sandbox` does NOT enforce workspace filesystem confinement (empirically verified 2026-06-23: ag wrote outside workspace with --sandbox regardless of cwd/skip-permissions). ag has NO flag-based FS sandbox equivalent to cx `-s workspace-write`; mutation safety relies on trust boundary + read-only review profile + SEC-01 git-diff guard.
 - References:
   - `_sys/ai/orchestration.json`
   - `_sys/docs-v2/general/permissions.md` (authoritative per-peer profiles, updated 2026-06-19)

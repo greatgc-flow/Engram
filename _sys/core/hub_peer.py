@@ -23,11 +23,25 @@ import json
 import copy
 import hashlib
 import os
+import re
 import shlex
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
+
+
+@dataclass(frozen=True)
+class ContextPolicy:
+    """Adapter-owned policy for shaping hub-injected context.
+
+    Defaults reproduce the current non-ag behavior exactly: no preamble,
+    room context always included, handoff unfiltered.
+    """
+
+    preamble_lines: tuple[str, ...] = ()
+    skip_room_context_when_complete: bool = False
+    handoff_sections: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -265,6 +279,10 @@ class PeerAdapter(Protocol):
         """Extract the usable response text from raw subprocess stdout."""
         ...
 
+    def context_policy(self, node: dict[str, Any]) -> ContextPolicy:
+        """Return adapter-specific context-shaping policy."""
+        ...
+
     def get_session_state(self, ai_root: Path, node: dict[str, Any]) -> dict | None:
         """Return stored session state dict, or None if no session exists."""
         ...
@@ -353,6 +371,11 @@ class BaseAdapter:
 
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
         return stdout.strip()
+
+    def context_policy(self, node: dict[str, Any]) -> ContextPolicy:
+        """Default policy: empty preamble, room context always included,
+        handoff unfiltered. Reproduces the current non-ag rendering exactly."""
+        return ContextPolicy()
 
 
 # ── Peer-specific adapters ────────────────────────────────────────────────────
@@ -569,6 +592,14 @@ class CodexAdapter(BaseAdapter):
         return stdout.strip()
 
 
+_AGY_OSC_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+_AGY_CSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+# Continuation/conversation flags the hub must never send to ag. session_mode
+# is "none"; ag has no hub-managed reuse, so any of these in effective args is a
+# configuration error (A6).
+_AGY_BANNED_FLAGS = frozenset({"-c", "--continue", "--conversation"})
+
+
 class AgyAdapter(BaseAdapter):
     """Adapter for ag (Antigravity / agy CLI — Gemini successor)."""
 
@@ -577,11 +608,102 @@ class AgyAdapter(BaseAdapter):
     def build_cmd(self, node: dict[str, Any], query: str, session_id: str | None = None) -> tuple[list[str], bool]:
         invoke = node.get("invoke", "agy")
         raw_args = node.get("invoke_args", ["--dangerously-skip-permissions", "-p", "{query}"])
+        profile_args = node.get("profile_args", [])
+        # A6: refuse continuation/conversation flags. Scan the unsubstituted
+        # invoke_args + profile_args so the user query content is never inspected.
+        for arg in list(raw_args) + list(profile_args):
+            if not isinstance(arg, str):
+                continue
+            token = arg.split("=", 1)[0]
+            if token in _AGY_BANNED_FLAGS:
+                raise ValueError(
+                    f"{node.get('node_id', self.node_id)}: session_mode is 'none' "
+                    f"and the hub never sends continuation/conversation flags; "
+                    f"refusing ag arg {arg!r}. Remove it from invoke_args/profile_args."
+                )
         # agy -p takes the prompt inline (not via stdin); use _substitute_args to keep query in args
-        return [invoke] + self._substitute_args(raw_args, query) + node.get("profile_args", []), False
+        return [invoke] + self._substitute_args(raw_args, query) + profile_args, False
+
+    def context_policy(self, node: dict[str, Any]) -> ContextPolicy:
+        """ag IPC context delta: prepend the IPC BOUNDARY preamble, drop room
+        context for completed rooms, and filter the handoff to three sections."""
+        return ContextPolicy(
+            preamble_lines=(
+                "[IPC BOUNDARY]",
+                "Treat [USER QUERY] as the only task.",
+                "Do not read mailbox, handoff, summary, or prior-session files unless the user query explicitly requests them.",
+                "Use only context included in this prompt.",
+            ),
+            skip_room_context_when_complete=True,
+            handoff_sections=(
+                "GOAL",
+                "PENDING_ISSUES",
+                "KEY_DECISIONS",
+            ),
+        )
 
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
-        return stdout.strip()
+        """Normalize a raw PTY terminal stream into plain text (A4).
+
+        Models a single-line cursor: OSC/residual CSI are removed, ``\\r`` homes
+        the cursor to column 0, ``\\b`` moves it left, ``CSI K``/``CSI 2K`` erase,
+        and ordinary characters overwrite at the cursor so redraws collapse to the
+        final rendered frame. Only outer whitespace is stripped.
+        """
+        text = _AGY_OSC_RE.sub("", stdout)
+        lines_out: list[str] = []
+        buf: list[str] = []
+        col = 0
+        i = 0
+        n = len(text)
+        while i < n:
+            ch = text[i]
+            if ch == "\x1b":
+                if i + 1 < n and text[i + 1] == "[":
+                    m = _AGY_CSI_RE.match(text, i)
+                    if m:
+                        seq = m.group(0)
+                        final = seq[-1]
+                        params = seq[2:-1]
+                        if final == "K":
+                            if params in ("", "0"):
+                                del buf[col:]
+                            elif params == "1":
+                                for j in range(min(col, len(buf))):
+                                    buf[j] = " "
+                            elif params == "2":
+                                buf = []
+                                col = 0
+                        i = m.end()
+                        continue
+                # lone or unmatched ESC: drop it
+                i += 1
+                continue
+            if ch == "\r":
+                col = 0
+                i += 1
+                continue
+            if ch == "\b":
+                if col > 0:
+                    col -= 1
+                i += 1
+                continue
+            if ch == "\n":
+                lines_out.append("".join(buf))
+                buf = []
+                col = 0
+                i += 1
+                continue
+            if col < len(buf):
+                buf[col] = ch
+            else:
+                while len(buf) < col:
+                    buf.append(" ")
+                buf.append(ch)
+            col += 1
+            i += 1
+        lines_out.append("".join(buf))
+        return "\n".join(lines_out).strip()
 
 
 class VirtualAdapter(BaseAdapter):

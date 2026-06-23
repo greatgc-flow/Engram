@@ -61,6 +61,7 @@
 | INV-26 | Hub-Enforced Policy: Governance rules (including COLLAB_RATE and consensus verification) must be enforced programmatically by `hub.py`, not left to peer self-discipline. |
 | INV-27 | Relay Fidelity: Inter-peer message routing must guarantee lossless transcription and zero semantic modification of payloads. |
 | INV-28 | Quorum Authority: Active consensus rounds require quorum = `max(2, f(N, risk))` where N is the count of gate-OPEN eligible voters at round-start, and f is a risk-adjusted function (undefined above N=3; default to N). At least one non-proposing voter from a distinct failure domain must actively `agree`. Proposer MUST NOT self-finalize. |
+| INV-29 | General-to-Specific Dispatch: general/core dispatch MUST NOT branch on peer identity. All peer-specific behavior MUST live behind the adapter, transport, or declared-capability interface in the specific layer. This preserves the general→specific dependency direction. Enforced by `test_general_core_dispatch_has_no_peer_identity_branches`. |
 
 ---
 

@@ -126,6 +126,170 @@ def test_ag_active_room_uses_only_core_handoff_sections(ai_dir):
     assert "stale IPC task" not in context
 
 
+# ── Frozen golden baseline for the general/specific dispatch refactor ─────────
+# Independent reconstruction of the PRE-CHANGE _build_ask_query_with_context
+# rendering (commit 0b92608, the `is_ag` implementation). This helper is the
+# frozen baseline: it hand-codes the OLD algorithm and never calls the
+# refactored function, so the byte-identity assertions are non-circular.
+# Runtime directives and lessons are assumed empty (monkeypatched by callers).
+def _frozen_pre_change_context(query, to_peer, room_id, state, handoff_text):
+    root_peer = (to_peer or "").split(".", 1)[0]
+    is_ag = root_peer == "ag"
+    phase = str(state.get("phase") or "").strip().casefold()
+    room_complete = phase in {"complete", "completed", "finalized", "closed", "done"}
+
+    lines = []
+    if is_ag:
+        lines.extend([
+            "[IPC BOUNDARY]",
+            "Treat [USER QUERY] as the only task.",
+            "Do not read mailbox, handoff, summary, or prior-session files unless the user query explicitly requests them.",
+            "Use only context included in this prompt.",
+        ])
+    if not (is_ag and room_complete):
+        lines.extend([
+            "[HUB CONTEXT]",
+            f"Room ID: {room_id}",
+            f"Members: {', '.join(state.get('members', {}).keys()) or 'none'}",
+            f"Mission: {state.get('mission') or 'none'}",
+            f"Blocked: {state.get('blocked') or 'none'}",
+            f"Phase: {state.get('phase') or 'none'}",
+        ])
+    directives_path = Path(hub.__file__).parent.parent / "ai" / "user-directives.md"
+    if directives_path.exists():
+        directives = directives_path.read_text(encoding="utf-8", errors="replace").strip()
+        if directives:
+            lines.extend(["", "[USER DIRECTIVES]", directives])
+    # runtime directives + lessons: empty by monkeypatch → no lines emitted.
+    if handoff_text is not None and not (is_ag and room_complete):
+        handoff = handoff_text.strip()
+        if is_ag and handoff:
+            sections = hub._parse_handoff(handoff)
+            allowed_sections = ("GOAL", "PENDING_ISSUES", "KEY_DECISIONS")
+            filtered_lines = []
+            for section in allowed_sections:
+                items = sections.get(section, [])
+                if not items:
+                    continue
+                filtered_lines.append(f"## [{section}]")
+                filtered_lines.extend(f"- {item}" for item in items)
+                filtered_lines.append("")
+            handoff = "\n".join(filtered_lines).strip()
+        if handoff:
+            lines.extend(["", "[HANDOFF]", handoff])
+    lines.extend(["", "[USER QUERY]", query])
+    return "\n".join(lines)
+
+
+def _setup_room(ai_dir, room_id, state, handoff_text):
+    (ai_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    session_dir = ai_dir / "sessions" / room_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+    if handoff_text is not None:
+        (session_dir / "handoff.md").write_text(handoff_text, encoding="utf-8")
+
+
+_GOLDEN_HANDOFF = (
+    "## [GOAL]\n- ship the refactor\n\n"
+    "## [RECENT_COMPLETED]\n- batch 1 and 2 landed\n\n"
+    "## [PENDING_ISSUES]\n- wire context policy\n\n"
+    "## [KEY_DECISIONS]\n- adapter owns context policy\n\n"
+    "## [CONSENSUS_HISTORY]\n- N=2 ratified\n\n"
+    "## [ACTIVE_THREADS]\n- stale IPC task\n"
+)
+
+_GOLDEN_NODES = {
+    "cc": {"node_id": "cc", "invoke": "claude", "adapter_class": "ClaudeAdapter"},
+    "cx": {"node_id": "cx", "invoke": "codex", "adapter_class": "CodexAdapter"},
+}
+
+
+@pytest.mark.parametrize("peer", ["cc", "cx"])
+@pytest.mark.parametrize("phase", ["implementation", "complete"])
+def test_cc_cx_context_remains_byte_identical(ai_dir, monkeypatch, peer, phase):
+    """cc/cx context must be byte-for-byte identical to the pre-change non-ag
+    rendering, in BOTH active and completed rooms (4 cases)."""
+    room_id = "room-golden"
+    state = {
+        "room_id": room_id,
+        "members": {"cc": {}, "cx": {}, "ag": {}},
+        "mission": "PRO-19 governance",
+        "blocked": None,
+        "phase": phase,
+    }
+    _setup_room(ai_dir, room_id, state, _GOLDEN_HANDOFF)
+
+    monkeypatch.setattr(hub, "_load_nodes", lambda _: {peer: _GOLDEN_NODES[peer]})
+    monkeypatch.setattr(hub, "_get_active_runtime_directives", lambda _: [])
+    monkeypatch.setattr(hub, "_load_active_lessons", lambda **_: [])
+
+    actual = hub._build_ask_query_with_context(ai_dir, "hello", to_peer=peer)
+    expected = _frozen_pre_change_context(
+        "hello", peer, room_id, state, _GOLDEN_HANDOFF
+    )
+    assert actual.encode("utf-8") == expected.encode("utf-8")
+
+
+def test_ag_active_context_byte_identical_to_old_is_ag(ai_dir, monkeypatch):
+    """ag active room: IPC boundary + HUB CONTEXT + 3 filtered handoff sections,
+    byte-identical to the old is_ag rendering."""
+    room_id = "room-active"
+    state = {
+        "room_id": room_id,
+        "members": {"ag": {}, "cx": {}},
+        "mission": "current mission",
+        "blocked": None,
+        "phase": "implementation",
+    }
+    _setup_room(ai_dir, room_id, state, _GOLDEN_HANDOFF)
+    monkeypatch.setattr(hub, "_get_active_runtime_directives", lambda _: [])
+    monkeypatch.setattr(hub, "_load_active_lessons", lambda **_: [])
+
+    actual = hub._build_ask_query_with_context(
+        ai_dir, "review this", to_peer="ag.deepthink"
+    )
+    expected = _frozen_pre_change_context(
+        "review this", "ag.deepthink", room_id, state, _GOLDEN_HANDOFF
+    )
+    assert actual.encode("utf-8") == expected.encode("utf-8")
+    # Spot-check the frozen shape so the golden itself cannot silently rot.
+    assert actual.startswith("[IPC BOUNDARY]\n")
+    assert "[HUB CONTEXT]" in actual
+    assert "ship the refactor" in actual          # GOAL kept
+    assert "wire context policy" in actual         # PENDING_ISSUES kept
+    assert "adapter owns context policy" in actual  # KEY_DECISIONS kept
+    assert "batch 1 and 2 landed" not in actual     # RECENT_COMPLETED dropped
+    assert "stale IPC task" not in actual           # ACTIVE_THREADS dropped
+
+
+def test_ag_completed_context_byte_identical_to_old_is_ag(ai_dir, monkeypatch):
+    """ag completed room: IPC boundary only, no HUB CONTEXT / no handoff,
+    byte-identical to the old is_ag rendering."""
+    room_id = "room-complete"
+    state = {
+        "room_id": room_id,
+        "members": {"ag": {}},
+        "mission": "old completed mission",
+        "blocked": None,
+        "phase": "complete",
+    }
+    _setup_room(ai_dir, room_id, state, _GOLDEN_HANDOFF)
+    monkeypatch.setattr(hub, "_get_active_runtime_directives", lambda _: [])
+    monkeypatch.setattr(hub, "_load_active_lessons", lambda **_: [])
+
+    actual = hub._build_ask_query_with_context(
+        ai_dir, "fresh task", to_peer="ag"
+    )
+    expected = _frozen_pre_change_context(
+        "fresh task", "ag", room_id, state, _GOLDEN_HANDOFF
+    )
+    assert actual.encode("utf-8") == expected.encode("utf-8")
+    assert actual.startswith("[IPC BOUNDARY]\n")
+    assert "[HUB CONTEXT]" not in actual
+    assert "[HANDOFF]" not in actual
+    assert "old completed mission" not in actual
+
+
 def test_matching_peers_uses_scores(ai_dir):
     state = {
         "active_coordinator": "cx",
