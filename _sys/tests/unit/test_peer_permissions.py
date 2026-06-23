@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "core"))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "cli"))
 import hub
+import hub_peer
 from peer_console import peer_default_args
 
 
@@ -20,14 +21,15 @@ def _mock_proc(stdout=b"ok", stderr=b"", returncode=0):
 
 
 def test_cx_no_dangerously_bypass_flag():
-    args, use_stdin, gc_id = hub._build_session_cmd("cx", None, "codex")
+    node = hub._default_nodes()["nodes"]["cx"]
+    args, use_stdin = hub_peer.get_adapter(node).build_cmd(node, "test")
     assert "--dangerously-bypass-approvals-and-sandbox" not in args
     assert use_stdin is True
-    assert gc_id is None
 
 
 def test_cx_uses_workspace_write_sandbox():
-    args, _, _ = hub._build_session_cmd("cx", None, "codex")
+    node = hub._default_nodes()["nodes"]["cx"]
+    args, _ = hub_peer.get_adapter(node).build_cmd(node, "test")
     assert "-s" in args
     assert "workspace-write" in args
 

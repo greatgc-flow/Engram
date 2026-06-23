@@ -302,7 +302,7 @@
         "workspace-write"
       ],
       "memory": "session",
-      "session_mode": "reuse",
+      "session_mode": "none",
       "timeout": 0,
       "default_profile": "standard",
       "capability_class": "trusted_ipc_mutation",

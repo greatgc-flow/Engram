@@ -1349,3 +1349,36 @@ class TestEphemeralQueryFile:
     def test_autoname_outside_ipc_is_preserved(self, tmp_path):
         f = self._mk(tmp_path / "notipc", "cc-20260621223000-ab12.txt")
         assert hub._is_ephemeral_query_file(f) is False
+
+    def test_custom_multi_profile_autoname_is_ephemeral(self, tmp_path):
+        f = self._mk(
+            tmp_path / "ipc",
+            "cx-worker.review.deep_think-20260621223000-ab12.txt",
+        )
+        assert hub._is_ephemeral_query_file(f) is True
+
+    def test_ask_deletes_custom_profile_autoname(self, tmp_path):
+        ipc_dir = tmp_path / "ipc"
+        ipc_dir.mkdir()
+        qf = ipc_dir / "cx-worker.review.deep_think-20260621223000-ab12.txt"
+        qf.write_text("query", encoding="utf-8")
+        proc = _make_mock_proc(stdout=b"response")
+
+        with patch("shutil.which", return_value="/usr/bin/codex"), \
+             patch("subprocess.Popen", return_value=proc):
+            hub.action_ask("cx", "", str(qf), 120, None)
+
+        assert not qf.exists()
+
+    def test_ask_preserves_named_custom_profile_file(self, tmp_path):
+        ipc_dir = tmp_path / "ipc"
+        ipc_dir.mkdir()
+        qf = ipc_dir / "cx-worker.review.deep_think-ratify-pro19.txt"
+        qf.write_text("query", encoding="utf-8")
+        proc = _make_mock_proc(stdout=b"response")
+
+        with patch("shutil.which", return_value="/usr/bin/codex"), \
+             patch("subprocess.Popen", return_value=proc):
+            hub.action_ask("cx", "", str(qf), 120, None)
+
+        assert qf.exists()

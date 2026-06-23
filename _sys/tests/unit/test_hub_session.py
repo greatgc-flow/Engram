@@ -1,5 +1,4 @@
 """Tests for hub.py session reuse (session_state.json management)."""
-import json
 import hashlib
 import sys
 from pathlib import Path
@@ -9,6 +8,16 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "core"))
 import hub
+import hub_peer
+
+
+def _configured_node(node_id):
+    normalized = hub_peer.normalize_orchestration()
+    return next(
+        node
+        for node in normalized["hub_nodes"]
+        if node.get("node_id") == node_id
+    )
 
 
 # ── Fixtures ──────────────────────────────────────────────────
@@ -99,17 +108,23 @@ def test_set_session_updates_last_used(ai_dir):
 
 def test_extract_thread_id_found():
     raw = '{"type":"thread.started","thread_id":"019ec163-b2fd-7452-b9cb-5538b7b5e83c"}\n{"type":"turn.started"}\n'
-    assert hub._extract_jsonl_thread_id(raw) == "019ec163-b2fd-7452-b9cb-5538b7b5e83c"
+    node = _configured_node("cx")
+    adapter = hub_peer.get_adapter(node)
+    assert adapter.extract_session_id(raw, node, None) == "019ec163-b2fd-7452-b9cb-5538b7b5e83c"
 
 
 def test_extract_thread_id_not_found():
     raw = '{"type":"turn.started"}\n{"type":"item.completed","item":{"text":"hello"}}\n'
-    assert hub._extract_jsonl_thread_id(raw) is None
+    node = _configured_node("cx")
+    adapter = hub_peer.get_adapter(node)
+    assert adapter.extract_session_id(raw, node, None) is None
 
 
 def test_extract_thread_id_malformed_json():
     raw = "not json\n{broken\n"
-    assert hub._extract_jsonl_thread_id(raw) is None
+    node = _configured_node("cx")
+    adapter = hub_peer.get_adapter(node)
+    assert adapter.extract_session_id(raw, node, None) is None
 
 
 # ── compute_scope_key ─────────────────────────────────────────
@@ -129,40 +144,59 @@ def test_compute_scope_key_no_root():
 # ── build_session_cmd ─────────────────────────────────────────
 
 def test_build_session_cmd_cx_fresh():
-    args, use_stdin, gc_id = hub._build_session_cmd("cx", None, "codex")
-    assert args == ["exec", "-", "-s", "workspace-write", "--json", "--ignore-rules"]
+    node = _configured_node("cx")
+    args, use_stdin = hub_peer.get_adapter(node).build_cmd(node, "test")
+    assert args[0] == "codex"
+    assert "--ephemeral" in args
+    assert "-s" in args
+    assert "workspace-write" in args
+    assert "resume" not in args
     assert use_stdin is True
-    assert gc_id is None
 
 
 def test_build_session_cmd_cx_resume():
-    args, use_stdin, gc_id = hub._build_session_cmd("cx", "uuid-001", "codex")
-    assert args == ["exec", "resume", "uuid-001", "-", "-s", "workspace-write", "--json", "--ignore-rules"]
+    node = _configured_node("cx")
+    args, use_stdin = hub_peer.get_adapter(node).build_cmd(
+        node, "test", "uuid-001"
+    )
+    assert args[0] == "codex"
+    assert "--ephemeral" in args
+    assert "resume" not in args
+    assert "uuid-001" not in args
     assert use_stdin is True
-    assert gc_id is None
 
 
 def test_build_session_cmd_gc_fresh():
-    with patch("hub.uuid") as mock_uuid:
-        mock_uuid.uuid4.return_value = MagicMock(__str__=lambda self: "generated-uuid")
-        args, use_stdin, gc_id = hub._build_session_cmd("gc", None, "gemini")
-    assert "--session-id" in args
-    assert "--approval-mode" in args
-    assert "auto_edit" in args
-    assert "yolo" not in args
-    assert "--skip-trust" in args
-    assert use_stdin is True
-    assert gc_id is not None
+    node = _configured_node("gc")
+    with patch("hub_peer.uuid.uuid4", return_value="generated-uuid"):
+        invocation = hub_peer.get_adapter(node).build_session_cmd(
+            node, "test"
+        )
+    assert invocation.cmd[0] == "gemini"
+    assert "--session-id" in invocation.cmd
+    assert "generated-uuid" in invocation.cmd
+    assert "--approval-mode" in invocation.cmd
+    assert "auto_edit" in invocation.cmd
+    assert "yolo" not in invocation.cmd
+    assert "--skip-trust" in invocation.cmd
+    for arg in node["profile_args"]:
+        assert arg in invocation.cmd
+    assert invocation.use_stdin is True
+    assert invocation.session_id == "generated-uuid"
 
 
 def test_build_session_cmd_gc_resume():
-    args, use_stdin, gc_id = hub._build_session_cmd("gc", "uuid-gc-1", "gemini")
-    assert args == [
-        "--resume", "uuid-gc-1", "-p", "-", "-o", "text",
-        "--approval-mode", "auto_edit", "--skip-trust",
-    ]
-    assert use_stdin is True
-    assert gc_id is None
+    node = _configured_node("gc")
+    invocation = hub_peer.get_adapter(node).build_session_cmd(
+        node, "test", "uuid-gc-1"
+    )
+    assert invocation.cmd[:3] == ["gemini", "--resume", "uuid-gc-1"]
+    assert "-p" in invocation.cmd
+    assert "-" in invocation.cmd
+    for arg in node["profile_args"]:
+        assert arg in invocation.cmd
+    assert invocation.use_stdin is True
+    assert invocation.session_id == "uuid-gc-1"
 
 
 # ── action_ask session integration ────────────────────────────
@@ -181,29 +215,29 @@ def _make_mock_proc(stdout=b"", stderr=b"", returncode=0):
 THREAD_STARTED_JSONL = b'{"type":"thread.started","thread_id":"019ec163-test-uuid"}\n{"type":"item.completed","item":{"text":"hello"}}\n'
 
 
-def test_ask_cx_stores_thread_id_on_first_success(ai_dir):
-    """First cx ask stores thread_id in session_state.json."""
-    mock_proc = _make_mock_proc(stdout=THREAD_STARTED_JSONL)
-    with patch("shutil.which", return_value="/usr/bin/codex"), \
-         patch("subprocess.Popen", return_value=mock_proc):
-        hub.action_ask("cx", "hello", None, 120, ai_dir, session_policy="reuse")
-
-    entry = hub._get_active_session("cx", "room-test")
-    assert entry is not None
-    assert entry["session_id"] == "019ec163-test-uuid"
+def test_ask_cx_explicit_reuse_is_rejected(ai_dir):
+    """cx has no configured session-reuse capability."""
+    with pytest.raises(SystemExit) as exc:
+        hub.action_ask(
+            "cx", "hello", None, 120, ai_dir, session_policy="reuse"
+        )
+    assert exc.value.code == 1
 
 
-def test_ask_cx_uses_resume_on_second_call(ai_dir):
-    """Second cx ask uses 'codex exec resume <id>'."""
+def test_ask_cx_auto_uses_fresh_ephemeral_command(ai_dir):
+    """Default policy remains fresh even if legacy cx session state exists."""
     hub._set_active_session("cx", "room-test", "stored-uuid-001", "ask-prev", ai_dir)
     mock_proc = _make_mock_proc(stdout=THREAD_STARTED_JSONL)
     with patch("shutil.which", return_value="/usr/bin/codex"), \
          patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
-        hub.action_ask("cx", "hello again", None, 120, ai_dir, session_policy="reuse")
+        hub.action_ask("cx", "hello again", None, 120, ai_dir)
 
     call_args = mock_popen.call_args[0][0]
-    assert "resume" in call_args
-    assert "stored-uuid-001" in call_args
+    assert "--ephemeral" in call_args
+    assert "-s" in call_args
+    assert "workspace-write" in call_args
+    assert "resume" not in call_args
+    assert "stored-uuid-001" not in call_args
 
 
 def test_ask_cx_session_policy_fresh_skips_session(ai_dir):
@@ -215,71 +249,54 @@ def test_ask_cx_session_policy_fresh_skips_session(ai_dir):
         hub.action_ask("cx", "fresh call", None, 120, ai_dir, session_policy="fresh")
 
     call_args = mock_popen.call_args[0][0]
-    # Should NOT use resume — ephemeral path (original invoke_args)
+    assert "--ephemeral" in call_args
+    assert "-s" in call_args
+    assert "workspace-write" in call_args
     assert "resume" not in call_args
 
 
-def test_ask_cx_resume_failure_retries_fresh(ai_dir):
-    """Resume failure triggers fresh retry; old session retired."""
-    hub._set_active_session("cx", "room-test", "stale-uuid", "ask-old", ai_dir)
-    fail_proc = _make_mock_proc(returncode=1, stderr=b"session not found")
-    ok_proc = _make_mock_proc(stdout=THREAD_STARTED_JSONL, returncode=0)
-    with patch("shutil.which", return_value="/usr/bin/codex"), \
-         patch("subprocess.Popen", side_effect=[fail_proc, ok_proc]):
-        hub.action_ask("cx", "after stale", None, 120, ai_dir, session_policy="reuse")
+def test_session_capability_is_config_driven():
+    node = {
+        "node_id": "custom.worker",
+        "session_mode": "reuse",
+        "requires_pty": False,
+    }
+    assert hub._session_reuse_enabled(node, "auto") is True
 
-    # Old session retired
-    assert hub._get_active_session("cx", "room-test") is not None  # new session created
-    entry = hub._get_active_session("cx", "room-test")
-    assert entry["session_id"] == "019ec163-test-uuid"  # new thread_id stored
+
+def test_session_none_disables_reuse():
+    assert hub._session_reuse_enabled(
+        {"node_id": "cx", "session_mode": "none"}, "auto"
+    ) is False
+
+
+def test_explicit_reuse_fails_without_capability():
+    with pytest.raises(ValueError, match="no configured session-reuse capability"):
+        hub._session_reuse_enabled(
+            {"node_id": "custom", "session_mode": "none"}, "reuse"
+        )
+
+
+def test_cx_session_reuse_is_disabled():
+    assert _configured_node("cx")["session_mode"] == "none"
+
+
+def test_no_node_uses_auto_session_mode():
+    normalized = hub_peer.normalize_orchestration()
+    assert all(
+        node.get("session_mode", "none") != "auto"
+        for node in normalized["hub_nodes"]
+    )
 
 
 def test_session_fingerprint_gc_stable_across_calls():
-    """gc fingerprint must be identical across calls (must not include random UUID)."""
-    fp1 = hub._session_fingerprint("gc", "gemini")
-    fp2 = hub._session_fingerprint("gc", "gemini")
-    assert fp1 == fp2, "gc fingerprint must be stable (no random UUID component)"
+    """gc fingerprint excludes the generated session UUID."""
+    node = _configured_node("gc")
+    adapter = hub_peer.get_adapter(node)
+    fp1 = adapter.session_fingerprint(node)
+    fp2 = adapter.session_fingerprint(node)
+    assert fp1 == fp2
     assert len(fp1) == 8
-
-
-def test_session_fingerprint_stored_on_success(ai_dir):
-    """Successful ask stores session fingerprint in session state."""
-    ok_proc = _make_mock_proc(stdout=THREAD_STARTED_JSONL, returncode=0)
-    with patch("shutil.which", return_value="/usr/bin/codex"), \
-         patch("subprocess.Popen", return_value=ok_proc):
-        hub.action_ask("cx", "hello", None, 120, ai_dir, session_policy="reuse")
-
-    entry = hub._get_active_session("cx", "room-test")
-    assert entry is not None
-    assert entry.get("fingerprint") is not None
-    assert len(entry["fingerprint"]) == 8  # sha1 hexdigest[:8]
-
-
-def test_session_fingerprint_drift_retires_session(ai_dir):
-    """If stored fingerprint differs from current, session is retired before ask."""
-    # Store session with a deliberately different/wrong fingerprint
-    hub._set_active_session("cx", "room-test", "old-uuid", "ask-0", ai_dir, fingerprint="deadbeef")
-
-    ok_proc = _make_mock_proc(stdout=THREAD_STARTED_JSONL, returncode=0)
-    with patch("shutil.which", return_value="/usr/bin/codex"), \
-         patch("subprocess.Popen", return_value=ok_proc):
-        hub.action_ask("cx", "hello", None, 120, ai_dir, session_policy="reuse")
-
-    # Session was retired and a fresh one was created with the real fingerprint
-    entry = hub._get_active_session("cx", "room-test")
-    assert entry is not None
-    assert entry["session_id"] != "old-uuid"
-    base_fp = hub._session_fingerprint("cx", "codex")
-    node = hub._default_nodes()["nodes"]["cx.effort"]
-    profile_data = json.dumps(
-        {
-            "profile_id": node["profile_id"],
-            "profile_args": node["profile_args"],
-        },
-        sort_keys=True,
-    )
-    real_fp = hashlib.sha1(f"{base_fp}|{profile_data}".encode()).hexdigest()[:8]
-    assert entry["fingerprint"] == real_fp
 
 
 def test_ask_uses_project_root_as_cwd(ai_dir):
@@ -309,71 +326,71 @@ def test_clear_room_clears_sessions(ai_dir):
     assert hub._get_active_session("cx", "room-test") is None
 
 
-# ── _session_fingerprint (stability / flag-hashing) ───────────
+# ── adapter session_fingerprint (stability / flag-hashing) ─────
 
 class TestSessionFingerprint:
-    """_session_fingerprint must be stable and flag-sensitive, not path-sensitive."""
+    """Adapter fingerprints must be stable and flag-sensitive."""
 
-    def test_cx_stable_across_calls(self):
-        fp1 = hub._session_fingerprint("cx", "codex")
-        fp2 = hub._session_fingerprint("cx", "codex")
-        assert fp1 == fp2
+    def setup_method(self):
+        self.node = _configured_node("gc")
+        self.adapter = hub_peer.get_adapter(self.node)
 
     def test_gc_stable_across_calls(self):
         # gc normally receives a fresh --session-id UUID per invocation; fingerprint
         # must NOT include that UUID — only the static permission flags.
-        fp1 = hub._session_fingerprint("gc", "gemini")
-        fp2 = hub._session_fingerprint("gc", "gemini")
+        fp1 = self.adapter.session_fingerprint(self.node)
+        fp2 = self.adapter.session_fingerprint(self.node)
         assert fp1 == fp2
 
     def test_returns_8_hex_chars(self):
-        fp = hub._session_fingerprint("cx", "codex")
+        fp = self.adapter.session_fingerprint(self.node)
         assert len(fp) == 8
         assert all(c in "0123456789abcdef" for c in fp)
 
-    def test_different_peers_differ(self):
-        fp_cx = hub._session_fingerprint("cx", "codex")
-        fp_gc = hub._session_fingerprint("gc", "gemini")
-        assert fp_cx != fp_gc
-
     def test_different_exe_name_differs(self):
         """Fingerprint changes when the executable name changes (e.g., upgrade)."""
-        fp_a = hub._session_fingerprint("cx", "codex")
-        fp_b = hub._session_fingerprint("cx", "codex2")
+        fp_a = self.adapter.session_fingerprint(self.node)
+        changed = {**self.node, "invoke": "gemini2"}
+        fp_b = self.adapter.session_fingerprint(changed)
         assert fp_a != fp_b
 
-    def test_unknown_peer_is_stable(self):
-        """Unknown peer uses empty static_flags — still returns stable 8-char hex."""
-        fp1 = hub._session_fingerprint("ag", "some-exe")
-        fp2 = hub._session_fingerprint("ag", "some-exe")
-        assert fp1 == fp2
-        assert len(fp1) == 8
+    def test_cx_has_no_session_fingerprint(self):
+        """cx inherits the unsupported-session fingerprint contract."""
+        node = _configured_node("cx")
+        with pytest.raises(RuntimeError, match="does not implement session reuse"):
+            hub_peer.get_adapter(node).session_fingerprint(node)
 
     def test_ignores_path_prefix(self):
         """Only the base exe name matters, not any leading path component."""
         # Callers strip the path before calling — verify the function is consistent
         # when given just a bare name vs a name that looks like a basename.
-        fp_bare = hub._session_fingerprint("cx", "codex")
+        fp_bare = self.adapter.session_fingerprint(self.node)
         # Simulate a caller that accidentally passes the full path:
         # the function itself does not strip — that's the caller's job.
         # This test documents the expected *stable* contract for the bare name.
-        fp_bare2 = hub._session_fingerprint("cx", "codex")
-        assert fp_bare == fp_bare2
+        with_path = {
+            **self.node,
+            "invoke": str(Path("portable") / "bin" / "gemini"),
+        }
+        assert self.adapter.session_fingerprint(with_path) == fp_bare
 
-    def test_cx_and_gc_flags_are_both_encoded(self):
-        """Changing any static flag must change the fingerprint."""
-        import hashlib
-        # cx: reconstruct expected raw
-        raw_cx = "codex" + "|" + ",".join(["-s", "workspace-write", "--json", "--ignore-rules"])
-        expected_cx = hashlib.sha1(raw_cx.encode()).hexdigest()[:8]
-        assert hub._session_fingerprint("cx", "codex") == expected_cx
+    def test_profile_args_are_encoded(self):
+        fp_a = self.adapter.session_fingerprint(self.node)
+        changed = {
+            **self.node,
+            "profile_args": [*self.node["profile_args"], "--extra-profile-flag"],
+        }
+        assert self.adapter.session_fingerprint(changed) != fp_a
 
-        # gc: exclude --session-id UUID, only stable permission flags
-        raw_gc = "gemini" + "|" + ",".join(
-            ["-p", "-", "-o", "text", "--approval-mode", "auto_edit", "--skip-trust"]
-        )
-        expected_gc = hashlib.sha1(raw_gc.encode()).hexdigest()[:8]
-        assert hub._session_fingerprint("gc", "gemini") == expected_gc
+    def test_matches_normalized_static_args(self):
+        static_args = [
+            "-" if arg == "{query}" else arg
+            for arg in self.node["invoke_args"]
+        ] + self.node["profile_args"]
+        expected = hashlib.sha1(
+            ("gemini|" + ",".join(static_args)).encode()
+        ).hexdigest()[:8]
+        assert self.adapter.session_fingerprint(self.node) == expected
 
 
 # ── _classify_resume_failure ───────────────────────────────────

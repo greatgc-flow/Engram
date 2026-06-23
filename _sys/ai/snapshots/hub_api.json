@@ -1,25 +1,8 @@
 {
-  "generated_at": "2026-06-21T22:50:16",
+  "generated_at": "2026-06-23T10:23:08",
   "source": "hub.py",
-  "count": 81,
+  "count": 80,
   "signatures": {
-    "_build_session_cmd": {
-      "params": {
-        "health_peer": {
-          "kind": "POSITIONAL_OR_KEYWORD",
-          "annotation": "str"
-        },
-        "session_id": {
-          "kind": "POSITIONAL_OR_KEYWORD",
-          "annotation": "str | None"
-        },
-        "exe": {
-          "kind": "POSITIONAL_OR_KEYWORD",
-          "annotation": "str"
-        }
-      },
-      "return": "tuple[list[str], bool, str | None]"
-    },
     "_lease_cfg": {
       "params": {},
       "return": "tuple[int, int, int]"

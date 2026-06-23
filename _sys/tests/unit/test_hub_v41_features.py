@@ -158,9 +158,24 @@ class TestLease:
                 hub._get_lock(ai_dir, "leases")
 
     def test_get_lock_reports_read_only_permission_immediately(self, ai_dir):
-        with patch("pathlib.Path.write_bytes", side_effect=PermissionError("read-only")):
+        with patch("hub.os.open", side_effect=PermissionError("read-only")):
             with pytest.raises(PermissionError, match="workspace is read-only"):
-                hub._get_lock(ai_dir, "test")
+                hub._get_lock(ai_dir, "leases")
+
+    def test_get_lock_does_not_truncate_existing_file(self, ai_dir):
+        lock_dir = ai_dir / ".lock"
+        lock_dir.mkdir(parents=True, exist_ok=True)
+        lock_path = lock_dir / "state.lock"
+        lock_path.write_bytes(b"sentinel")
+
+        hub._get_lock(ai_dir, "state")
+
+        assert lock_path.read_bytes() == b"sentinel"
+
+    def test_get_lock_does_not_misclassify_non_permission_oserror(self, ai_dir):
+        with patch("hub.os.open", side_effect=OSError("disk full")):
+            with pytest.raises(OSError, match="disk full"):
+                hub._get_lock(ai_dir, "state")
 
     def test_lease_open_creates_entry(self, ai_dir):
         hub._lease_open(ai_dir, "gc", pid=9999, lease_timeout_sec=300, ask_id="ask-test-1")

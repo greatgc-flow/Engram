@@ -559,70 +559,11 @@ def _strip_ansi(text: str) -> str:
     return text
 
 
-def _extract_jsonl_text(raw: str, peer_id: str, ai_root: Path | None) -> str:
-    """JSONL 스트림(--json 플래그)에서 텍스트만 추출, .ai/out/<peer>.last.md에 저장.
-
-    지원 이벤트 형식:
-    - codex: {"type":"item.completed","item":{"text":"..."}}
-    - codex delta: {"type":"item.delta","item":{"type":"text","text":"..."}}
-    - codex message: {"type":"message","role":"assistant","content":[{"type":"text","text":"..."}]}
-    - 일반: {"text":"..."} / {"content":"..."} / {"message":"..."}
-    """
-    texts: list[str] = []
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        t = obj.get("type", "")
-        # codex item.completed
-        if t == "item.completed":
-            item = obj.get("item", {})
-            val = item.get("text") or item.get("content", "")
-            if val:
-                texts.append(val)
-        # codex item.delta (streaming)
-        elif t == "item.delta":
-            delta = obj.get("item", {})
-            if delta.get("type") == "text":
-                val = delta.get("text", "")
-                if val:
-                    texts.append(val)
-        # codex / openai message event
-        elif t == "message":
-            role = obj.get("role", "")
-            if role in ("assistant", ""):
-                content = obj.get("content", "")
-                if isinstance(content, str) and content:
-                    texts.append(content)
-                elif isinstance(content, list):
-                    for block in content:
-                        if isinstance(block, dict) and block.get("type") == "text":
-                            val = block.get("text", "")
-                            if val:
-                                texts.append(val)
-        # 일반 플랫 필드
-        elif "text" in obj and obj["text"]:
-            texts.append(obj["text"])
-        elif "content" in obj and isinstance(obj["content"], str) and obj["content"]:
-            texts.append(obj["content"])
-        elif "message" in obj and isinstance(obj["message"], str) and obj["message"]:
-            texts.append(obj["message"])
-
-    # delta 누적은 그대로, completed는 마지막 것만 의미 있으므로 중복 제거
-    seen: set[str] = set()
-    deduped = [t for t in texts if not (t in seen or seen.add(t))]  # type: ignore[func-returns-value]
-    result = "\n\n".join(deduped).strip() or raw.strip()
-
-    # .ai/out/<peer>.last.md 에 저장
-    if ai_root:
-        out_dir = ai_root / "out"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / f"{peer_id}.last.md").write_text(result, encoding="utf-8")
-    return result
+# NOTE: JSONL stream parsing (formerly _extract_jsonl_text) now lives in
+# hub_peer.CodexAdapter.parse_output(); thread-id extraction lives in
+# CodexAdapter.extract_session_id(). The hub no longer owns peer-specific
+# output parsing. The prior `.ai/out/<peer>.last.md` side-effect write was
+# dropped (no programmatic consumer reads it — AMEND-4 audit).
 
 
 # ─────────────────────────────────────────────────────────────
@@ -634,9 +575,9 @@ def _get_lock(ai_root: Path, resource: str):
     lock_path = ai_root / ".lock" / f"{resource}.lock"
     try:
         os.makedirs(ai_root / ".lock", exist_ok=True)
-        if not lock_path.exists():
-            lock_path.write_bytes(b"")
-    except OSError as exc:
+        fd = os.open(lock_path, os.O_RDWR | os.O_CREAT)
+        os.close(fd)
+    except PermissionError as exc:
         raise PermissionError(
             f"Cannot create or open lock file '{lock_path}'. "
             "The workspace is read-only; rerun with workspace-write permission."
@@ -1883,23 +1824,6 @@ def _clear_peer_sessions(peer_id: str, reason: str, ai_root: Path | None = None)
         _retire_session(peer_id, scope_key, reason, ai_root)
 
 
-def _extract_jsonl_thread_id(raw: str) -> str | None:
-    """codex --json JSONL에서 thread.started 이벤트의 thread_id 추출."""
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            obj = json.loads(line)
-            if obj.get("type") == "thread.started":
-                tid = obj.get("thread_id")
-                if tid:
-                    return str(tid)
-        except json.JSONDecodeError:
-            continue
-    return None
-
-
 def _compute_scope_key(ai_root: Path | None, explicit_scope: str | None = None) -> str:
     """세션 스코프 키: explicit_scope > room_id > 'default'."""
     if explicit_scope:
@@ -1909,26 +1833,6 @@ def _compute_scope_key(ai_root: Path | None, explicit_scope: str | None = None) 
         if room_id:
             return room_id
     return "default"
-
-
-def _session_fingerprint(health_peer: str, exe_name: str) -> str:
-    """Compute a short fingerprint of the static peer session invocation flags.
-    Excludes per-session dynamic values (e.g. --session-id <uuid> for gc) so the
-    fingerprint is stable across calls and only changes when permission flags change."""
-    # Ensure only the base executable name is hashed to avoid path-based drift
-    base_exe = os.path.basename(exe_name)
-    
-    if health_peer == "cx":
-        # Static permission flags for Codex
-        static_flags = ["-s", "workspace-write", "--json", "--ignore-rules"]
-    elif health_peer == "gc":
-        # Exclude --session-id <uuid> (dynamic) — only stable permission flags
-        static_flags = ["-p", "-", "-o", "text", "--approval-mode", "auto_edit", "--skip-trust"]
-    else:
-        static_flags = []
-        
-    raw = base_exe + "|" + ",".join(static_flags)
-    return hashlib.sha1(raw.encode()).hexdigest()[:8]
 
 
 def _classify_resume_failure(stderr: str) -> str:
@@ -1950,19 +1854,23 @@ def _classify_resume_failure(stderr: str) -> str:
     return "permanent"
 
 
-def _build_session_cmd(health_peer: str, session_id: str | None, exe: str) -> tuple[list[str], bool, str | None]:
-    """세션 재사용/신규 생성 명령 반환. (cmd_args, use_stdin, gc_new_session_id)"""
-    _CX_BASE = ["-s", "workspace-write", "--json", "--ignore-rules"]
-    if health_peer == "cx":
-        if session_id:
-            return ["exec", "resume", session_id, "-"] + _CX_BASE, True, None
-        return ["exec", "-"] + _CX_BASE, True, None
-    if health_peer == "gc":
-        if session_id:
-            return ["--resume", session_id, "-p", "-", "-o", "text", "--approval-mode", "auto_edit", "--skip-trust"], True, None
-        new_uuid = str(uuid.uuid4())
-        return ["--session-id", new_uuid, "-p", "-", "-o", "text", "--approval-mode", "auto_edit", "--skip-trust"], True, new_uuid
-    return [], False, None
+def _session_reuse_enabled(node: dict, session_policy: str) -> bool:
+    """Decide whether a hub-managed session should be reused for this ask.
+
+    Capability is config-driven (node session_mode), not hardcoded per peer.
+    Raises ValueError when the caller explicitly demands `reuse` from a node
+    that has no configured session-reuse capability.
+    """
+    mode = str(node.get("session_mode", "none")).lower()
+    if node.get("requires_pty", False):
+        return False
+    if session_policy in ("fresh", "none"):
+        return False
+    if session_policy == "reuse" and mode != "reuse":
+        raise ValueError(
+            f"{node.get('node_id', 'node')} has no configured session-reuse capability"
+        )
+    return mode == "reuse"
 
 
 def _is_ephemeral_query_file(path: Path) -> bool:
@@ -1977,7 +1885,7 @@ def _is_ephemeral_query_file(path: Path) -> bool:
     """
     return bool(
         (path.parent.name.lower() == "ipc"
-         and re.fullmatch(r"[a-z][a-z0-9]*(?:\.[a-z0-9_-]+)?-\d{14}-[a-z0-9]{4}\.txt", path.name, re.IGNORECASE))
+         and re.fullmatch(r"[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*-\d{14}-[a-z0-9]{4}\.txt", path.name, re.IGNORECASE))
         or re.fullmatch(r"hub-ask-all-[a-z0-9_.-]+-[0-9a-f]{8}\.txt", path.name, re.IGNORECASE)
     )
 
@@ -2120,28 +2028,21 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 sys.exit(1)
         except Exception:
             pass  # ContextGate failure is non-fatal; proceed with query
-    # ── Session reuse ──────────────────────────────────────────
-    session_mode = node.get("session_mode", "none")
-    # session_policy arg overrides node config; "auto" means use node config
-    effective_policy = session_policy if session_policy != "auto" else session_mode
-    use_session = effective_policy in ("auto", "reuse") and health_peer in ("cx", "gc") and not requires_pty
+    # ── Session reuse (config-driven capability) ───────────────
+    try:
+        use_session = _session_reuse_enabled(node, session_policy)
+    except ValueError as exc:
+        print(f"[HUB:ERROR] {exc}", file=sys.stderr)
+        sys.exit(1)
     scope_key: str | None = None
     existing_session: dict | None = None
-    gc_new_session_id: str | None = None
+    current_fp: str | None = None
 
     if use_session:
         base_scope = _compute_scope_key(ai_root, explicit_scope)
         profile_id = _resolve_profile_id(to) or to
         scope_key = f"{base_scope}:{profile_id}"
-        base_fp = _session_fingerprint(health_peer, exe_name)
-        profile_fp_data = json.dumps(
-            {
-                "profile_id": profile_id,
-                "profile_args": node.get("profile_args", []),
-            },
-            sort_keys=True,
-        )
-        current_fp = hashlib.sha1(f"{base_fp}|{profile_fp_data}".encode()).hexdigest()[:8]
+        current_fp = adapter.session_fingerprint(node)
         existing_session = _get_active_session(health_peer, scope_key)
         if existing_session is None:
             legacy_session = _get_active_session(health_peer, base_scope)
@@ -2158,20 +2059,21 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
 
     # ── Command construction (Adapter-based) ───────────────────
     session_id = None
-    gc_new_session_id = None
     if use_session and existing_session:
         session_id = existing_session.get("session_id")
 
-    if adapter:
-        cmd, use_stdin = adapter.build_cmd(node, query, session_id)
-        # gc special case: legacy hub.py manages session UUIDs for gc
-        if health_peer == "gc" and not session_id:
-            gc_new_session_id = str(uuid.uuid4())
-            cmd = [cmd[0], "--session-id", gc_new_session_id] + cmd[1:]
+    command_session_id: str | None = None
+    if use_session:
+        invocation = adapter.build_session_cmd(node, query, session_id)
+        cmd = invocation.cmd
+        use_stdin = invocation.use_stdin
+        command_session_id = invocation.session_id
+    elif adapter:
+        cmd, use_stdin = adapter.build_cmd(node, query)
     else:
         # Legacy fallback
         from hub_peer import BaseAdapter as _BaseAdapter
-        cmd, use_stdin = _BaseAdapter().build_cmd(node, query, session_id)
+        cmd, use_stdin = _BaseAdapter().build_cmd(node, query)
 
     is_resume_attempt = session_id is not None
     exe = shutil.which(cmd[0])
@@ -2464,27 +2366,25 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 )
 
         # ── Output Parsing (Adapter-based) ────────────────────────
-        if adapter:
-            output = adapter.parse_output(raw_text, node)
-        else:
-            uses_json = use_session and health_peer == "cx" or (node.get("invoke_args") and "--json" in node.get("invoke_args", []))
-            output = _extract_jsonl_text(raw_text, to, ai_root) if uses_json else raw_text
+        output = adapter.parse_output(raw_text, node) if adapter else raw_text
 
         # ── Session resume failure → fallback to fresh ─────────
         if proc.returncode != 0 and is_resume_attempt and scope_key:
             clean_err_r = _strip_ansi(_decode_output(raw_err))
-            fail_type = _classify_resume_failure(clean_err_r)
-            
+            # Classify from both streams: codex/gemini may report the resume
+            # error on stdout (--json) rather than stderr.
+            fail_type = _classify_resume_failure(clean_err_r + "\n" + raw_text)
+
             if fail_type == "permanent":
                 print(f"[HUB:WARN] {to} session resume failed (permanent: {fail_type}), retrying fresh", file=sys.stderr)
                 _retire_session(health_peer, scope_key, "resume_failed", ai_root)
                 _lease_close(ai_root, to, proc.pid, "retry")
 
-                fresh_cmd, fresh_use_stdin = adapter.build_cmd(node, query, None) if adapter else (cmd, use_stdin)
+                fresh = adapter.build_session_cmd(node, query, None)
+                fresh_cmd = fresh.cmd
+                fresh_use_stdin = fresh.use_stdin
+                command_session_id = fresh.session_id
                 fresh_cmd[0] = exe
-                if health_peer == "gc":
-                    gc_new_session_id = str(uuid.uuid4())
-                    fresh_cmd = [fresh_cmd[0], "--session-id", gc_new_session_id] + fresh_cmd[1:]
                 proc = subprocess.Popen(
                     fresh_cmd,
                     stdin=subprocess.PIPE if fresh_use_stdin else None,
@@ -2502,7 +2402,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                     raise
                 elapsed = int(time.monotonic() - t0)
                 raw_text = _strip_ansi(_decode_output(raw_out))
-                output = _extract_jsonl_text(raw_text, to, ai_root) if health_peer == "cx" else raw_text
+                output = adapter.parse_output(raw_text, node) if adapter else raw_text
                 is_resume_attempt = False
                 if proc.returncode == 0 and not output.strip():
                     reason = "empty_response"
@@ -2529,12 +2429,9 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                     _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
                     _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="success", latency_sec=elapsed) if ai_root else None
                     if use_session and scope_key:
-                        if health_peer == "cx":
-                            tid = _extract_jsonl_thread_id(raw_text)
-                            if tid:
-                                _set_active_session(health_peer, scope_key, tid, ask_id + "-r", ai_root, fingerprint=current_fp)
-                        elif health_peer == "gc" and gc_new_session_id:
-                            _set_active_session(health_peer, scope_key, gc_new_session_id, ask_id + "-r", ai_root, fingerprint=current_fp)
+                        resolved_session_id = adapter.extract_session_id(raw_text, node, command_session_id)
+                        if resolved_session_id:
+                            _set_active_session(health_peer, scope_key, resolved_session_id, ask_id + "-r", ai_root, fingerprint=current_fp)
                 else:
                     clean_err = _strip_ansi(_decode_output(raw_err))
                     reason, extra = _classify_ask_failure(clean_err + "\n" + output)
@@ -2588,18 +2485,12 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             if ai_root:
                 _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="success", latency_sec=elapsed)
 
-            # ── Session state update on success ─────────────────
+            # ── Session state update on success (adapter-resolved) ─
             if use_session and scope_key and proc.returncode == 0:
-                if health_peer == "cx":
-                    thread_id = _extract_jsonl_thread_id(raw_text)
-                    if thread_id:
-                        _set_active_session(health_peer, scope_key, thread_id, ask_id, ai_root, fingerprint=current_fp)
-                        _log_p2p("SESSION", f"cx thread stored scope={scope_key} id={thread_id[:8]}...", to_node="cx")
-                elif health_peer == "gc":
-                    sid = gc_new_session_id or (existing_session or {}).get("session_id")
-                    if sid:
-                        _set_active_session(health_peer, scope_key, sid, ask_id, ai_root, fingerprint=current_fp)
-                        _log_p2p("SESSION", f"gc session stored scope={scope_key} id={sid[:8]}...", to_node="gc")
+                resolved_session_id = adapter.extract_session_id(raw_text, node, command_session_id)
+                if resolved_session_id:
+                    _set_active_session(health_peer, scope_key, resolved_session_id, ask_id, ai_root, fingerprint=current_fp)
+                    _log_p2p("SESSION", f"{health_peer} session stored scope={scope_key} id={resolved_session_id[:8]}...", to_node=health_peer)
 
         if output_file:
             try:
@@ -4654,7 +4545,7 @@ def action_proposal_list(ai_root: Path) -> None:
 
 def _api_signature_patterns() -> tuple[str, ...]:
     """Return the patterns for public hub.py APIs to snapshot."""
-    return ("_lease_cfg", "_build_session_cmd")
+    return ("_lease_cfg",)
 
 
 def _extract_hub_signatures() -> dict:
@@ -5248,7 +5139,7 @@ def action_health_sweep(ai_root: Path) -> None:
 
 
 def _check_flag_parity() -> list[str]:
-    """Verify hub._build_session_cmd and peer_console.peer_default_args agree on required security flags."""
+    """Verify live adapter commands and peer_console defaults agree on security flags."""
     import importlib.util
     errors: list[str] = []
 
@@ -5263,11 +5154,12 @@ def _check_flag_parity() -> list[str]:
         return errors
 
     # Flags that MUST appear in both hub and console paths
-    # Note: --json (cx output format) is hub-internal only, excluded intentionally.
+    # Note: --json / --ignore-rules are hub-internal cx execution flags, not
+    # direct-console permission controls, so parity intentionally excludes them.
     REQUIRED: dict[str, set[str]] = {
         "cc": {"--dangerously-skip-permissions"},
         "ag": {"--dangerously-skip-permissions"},
-        "cx": {"-s", "workspace-write", "--ignore-rules"},
+        "cx": {"-s", "workspace-write"},
         "gc": {"--approval-mode", "auto_edit", "--skip-trust"},
     }
     # Flags that must NEVER appear in any managed peer invocation
@@ -5276,20 +5168,35 @@ def _check_flag_parity() -> list[str]:
         "yolo",
         "full-auto",
     }
-    EXE = {"cx": "codex", "gc": "gemini"}
+    normalized = hub_peer.normalize_orchestration(_load_orchestration())
+    nodes = {
+        node.get("node_id"): node
+        for node in normalized.get("hub_nodes", [])
+        if node.get("node_id")
+    }
 
     for peer_id, required in REQUIRED.items():
-        if peer_id in EXE:
-            hub_args, _, _ = _build_session_cmd(peer_id, None, EXE[peer_id])
+        node = nodes.get(peer_id)
+        if not node:
+            errors.append(f"PARITY {peer_id}: no configured orchestration node")
+            continue
+        adapter = hub_peer.get_adapter(node)
+        if node.get("session_mode") == "reuse":
+            hub_args = adapter.build_session_cmd(
+                node, "parity-check", None
+            ).cmd
         else:
-            hub_args = _default_nodes()["nodes"].get(peer_id, {}).get("invoke_args", [])
+            hub_args, _ = adapter.build_cmd(node, "parity-check")
         console_args = peer_default_args(peer_id, [])
         hub_set = set(hub_args)
         console_set = set(console_args)
 
         for flag in required:
             if flag not in hub_set:
-                errors.append(f"PARITY {peer_id}: required flag '{flag}' missing from hub path (_build_session_cmd)")
+                errors.append(
+                    f"PARITY {peer_id}: required flag '{flag}' missing from "
+                    "hub path (live adapter command)"
+                )
             if flag not in console_set:
                 errors.append(f"PARITY {peer_id}: required flag '{flag}' missing from console path (peer_console.py)")
 
@@ -5341,7 +5248,7 @@ def action_validate_profiles(node_id: str | None = None) -> None:
             if expected not in known_overrides:
                 errors.append(f"{target}: invoke_override '{key}' not in status_checks known_overrides.{expected}")
 
-    # Parity check: hub._build_session_cmd vs peer_console.peer_default_args
+    # Parity check: live hub_peer adapter command vs peer_console defaults
     errors.extend(_check_flag_parity())
 
     if errors:

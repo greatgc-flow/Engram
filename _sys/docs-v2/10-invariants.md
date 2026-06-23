@@ -33,7 +33,7 @@
 | ID | Rule |
 |----|------|
 | INV-12 | All peers run with minimum non-interactive permissions (DIR-002). See `general/permissions.md`. |
-| INV-13 | Permission parity between `hub.py _build_session_cmd` and `peer_console.py` MUST be verified via `profile-validate`. |
+| INV-13 | Permission parity between the live `hub_peer.py` adapter command and `peer_console.py` MUST be verified via `profile-validate`. |
 | INV-14 | Session fingerprint MUST be checked on resume. Drift → retire session → fresh start. |
 
 ### Error Handling
@@ -117,4 +117,4 @@
 |----|------|
 | PRO-19 | NEVER allow the terminal/router peer to mutate governance or room state — consensus rounds/votes, `handoff.md`, leader/coordinator claims, directives, `protocol.json`, or any `_sys/` artifact. The terminal is a **mechanical transport**: it relays asks and routes to worker peers; it is NOT an author, voter, or coordinator. All state mutation MUST be performed by an identified worker peer through a governance-write profile. Tier-0 human authority is unaffected (human override remains supreme, INV-03). |
 
-> **PRO-19 implementation note (enforceable floors).** Enforced programmatically in `hub.py` (INV-26), not by peer self-discipline: (1) **Originator identity** — the terminal/router is carried as `originator` in `action_ask` and excluded from voter/proposer rolls. (2) **Decision-tier floor** — governance-mutating hub actions require a peer at ≥`effort` profile tier; the `standard`/routing tier cannot mutate. (3) **Guarded transport** — `ask`/`ask-all` route mutating actions through `_guard_action` so they cannot be invoked on the transport path. Derived from the "Resetting blocked consensus and taking over" incident (autonomous room/consensus takeover by a non-authoring peer).
+> **PRO-19 implementation status (target floors — NOT YET ENFORCED).** The intended controls are: (1) carry an authenticated `originator` identity and exclude terminal/router identities from voter and proposer rolls; (2) require a governance-write profile at or above `effort` for governance mutations; and (3) guard every mutating transport path programmatically. Current `hub.py` does not implement these three controls completely; PRO-19 therefore remains policy-governed pending a dedicated INV-26 enforcement change. Derived from the "Resetting blocked consensus and taking over" incident.

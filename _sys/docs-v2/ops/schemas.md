@@ -44,6 +44,21 @@ Tracked `hub_nodes` contain roots only. Generated children inherit adapter,
 invocation, memory, timeout, and lifecycle. A profile may narrow but not widen its
 parent's lifecycle state.
 
+### `memory` versus `session_mode`
+
+`memory` is descriptive metadata for peer-local persistence available across
+invocations. It does not mean that a hub-managed CLI process or conversation is
+resumed, and hub routing does not currently consume this field.
+
+- `persistent`: durable peer-local files may survive one-shot invocations.
+- `short-term`: local state is bounded or manually managed.
+- `session`: the CLI may support resumable conversation state.
+- `ephemeral`: no peer-local persistence is relied upon.
+
+`session_mode` is the sole runtime control for hub-managed session reuse.
+Therefore `cc` may be `memory: persistent` while every `claude -p` invocation
+remains a separate process.
+
 ## 3. routing-config.json
 
 `auto_profile_routing` defines deterministic root-request classification:

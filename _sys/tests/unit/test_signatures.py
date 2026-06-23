@@ -24,7 +24,6 @@ import core.hub as hub
 # Public API patterns to snapshot
 _API_PATTERNS = (
     "_lease_cfg",
-    "_build_session_cmd",
 )
 _ACTION_PREFIX = "action_"
 

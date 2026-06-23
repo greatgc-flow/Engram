@@ -21,9 +21,27 @@ from __future__ import annotations
 
 import json
 import copy
+import hashlib
+import os
 import shlex
+import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
+
+
+@dataclass(frozen=True)
+class SessionInvocation:
+    """Result of building a session-reuse command.
+
+    cmd          : full subprocess argv (cmd[0] = executable name)
+    use_stdin    : whether the query is delivered via stdin
+    session_id   : the session/thread id this invocation will create or resume,
+                   or None when the adapter cannot predict it ahead of time
+    """
+    cmd: list[str]
+    use_stdin: bool
+    session_id: str | None = None
 
 _CORE_DIR = Path(__file__).parent
 _SYS_DIR = _CORE_DIR.parent
@@ -227,6 +245,22 @@ class PeerAdapter(Protocol):
         """Build the subprocess command list and return (cmd, use_stdin)."""
         ...
 
+    def build_session_cmd(
+        self, node: dict[str, Any], query: str, session_id: str | None = None
+    ) -> SessionInvocation:
+        """Build a session-reuse (resume/new-session) invocation."""
+        ...
+
+    def session_fingerprint(self, node: dict[str, Any]) -> str:
+        """Return a stable fingerprint of the static session invocation flags."""
+        ...
+
+    def extract_session_id(
+        self, stdout: str, node: dict[str, Any], command_session_id: str | None
+    ) -> str | None:
+        """Resolve the session id to persist from stdout / the command id."""
+        ...
+
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
         """Extract the usable response text from raw subprocess stdout."""
         ...
@@ -294,6 +328,29 @@ class BaseAdapter:
         cmd_args.extend(node.get("profile_args", []))
         return [invoke] + cmd_args, use_stdin
 
+    # ── Session reuse contract ────────────────────────────────────────────────
+    # Adapters that support hub-managed session reuse override these three
+    # methods. The base raises so a misconfigured node (session_mode=reuse on a
+    # peer with no reuse implementation) fails loudly instead of silently
+    # dropping session state.
+
+    def build_session_cmd(
+        self, node: dict[str, Any], query: str, session_id: str | None = None
+    ) -> SessionInvocation:
+        raise RuntimeError(
+            f"{node.get('node_id', self.node_id)} does not implement session reuse"
+        )
+
+    def session_fingerprint(self, node: dict[str, Any]) -> str:
+        raise RuntimeError(
+            f"{node.get('node_id', self.node_id)} does not implement session reuse"
+        )
+
+    def extract_session_id(
+        self, stdout: str, node: dict[str, Any], command_session_id: str | None
+    ) -> str | None:
+        return command_session_id
+
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
         return stdout.strip()
 
@@ -334,16 +391,44 @@ class GeminiAdapter(BaseAdapter):
 
     node_id = "gc"
 
+    def _stdin_args(self, node: dict[str, Any]) -> list[str]:
+        """Normalize invoke_args for stdin delivery and append profile_args.
+
+        The query placeholder becomes ``-`` (read from stdin). profile_args
+        (e.g. --model) are appended so session and non-session paths carry the
+        configured model — fixing the prior omission where gc dropped them.
+        """
+        args = [
+            "-" if arg == "{query}" else arg
+            for arg in node.get("invoke_args", ["-p", "{query}"])
+        ]
+        return args + list(node.get("profile_args", []))
+
     def build_cmd(self, node: dict[str, Any], query: str, session_id: str | None = None) -> tuple[list[str], bool]:
-        invoke = node.get("invoke", "gemini")
-        # Legacy hub.py logic for gc:
-        if session_id:
-            return [invoke, "--resume", session_id, "-p", "-", "-o", "text", "--approval-mode", "auto_edit", "--skip-trust"], True
-        
-        # Fresh session: we can't generate the UUID here easily without side effects if we want to be pure, 
-        # but for now we'll match legacy hub.py behavior.
-        # Note: hub.py handles generating the new UUID if session_id is None.
-        return [invoke, "-p", "-", "-o", "text", "--approval-mode", "auto_edit", "--skip-trust"], True
+        return [node.get("invoke", "gemini")] + self._stdin_args(node), True
+
+    def build_session_cmd(
+        self, node: dict[str, Any], query: str, session_id: str | None = None
+    ) -> SessionInvocation:
+        effective_id = session_id or str(uuid.uuid4())
+        prefix = (
+            ["--resume", effective_id]
+            if session_id
+            else ["--session-id", effective_id]
+        )
+        return SessionInvocation(
+            [node.get("invoke", "gemini")] + prefix + self._stdin_args(node),
+            True,
+            effective_id,
+        )
+
+    def session_fingerprint(self, node: dict[str, Any]) -> str:
+        raw = (
+            os.path.basename(node.get("invoke", "gemini"))
+            + "|"
+            + ",".join(self._stdin_args(node))
+        )
+        return hashlib.sha1(raw.encode()).hexdigest()[:8]
 
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
         # Strip Gemini CLI session header lines (start with ✦ or ●)
@@ -358,11 +443,84 @@ class CodexAdapter(BaseAdapter):
     node_id = "cx"
 
     def build_cmd(self, node: dict[str, Any], query: str, session_id: str | None = None) -> tuple[list[str], bool]:
-        invoke = node.get("invoke", "codex")
-        base = ["-s", "workspace-write", "--json", "--ignore-rules"] + node.get("profile_args", [])
-        if session_id:
-            return [invoke, "exec", "resume", session_id, "-"] + base, True
-        return [invoke, "exec", "-"] + base, True
+        # cx session reuse is disabled (orchestration.json session_mode=none):
+        # codex-cli 0.141.0 `exec resume` rejects the DIR-002 `-s workspace-write`
+        # flag, so every cx ask is a fresh, sandboxed, --ephemeral invocation
+        # driven entirely by invoke_args. session_id is intentionally ignored.
+        return super().build_cmd(node, query, None)
+
+    @staticmethod
+    def _extract_jsonl_texts(raw: str) -> list[str]:
+        """Extract assistant text from a codex --json JSONL event stream.
+
+        Supported events:
+          - {"type":"item.completed","item":{"text":"..."}}
+          - {"type":"item.delta","item":{"type":"text","text":"..."}}
+          - {"type":"message","role":"assistant","content":[{"type":"text",...}]}
+          - flat {"text"|"content"|"message":"..."}
+        Returns the deduped list of texts (empty if none parsed).
+        """
+        texts: list[str] = []
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(obj, dict):
+                continue
+            t = obj.get("type", "")
+            if t == "item.completed":
+                item = obj.get("item", {})
+                val = item.get("text") or item.get("content", "")
+                if val:
+                    texts.append(val)
+            elif t == "item.delta":
+                delta = obj.get("item", {})
+                if delta.get("type") == "text":
+                    val = delta.get("text", "")
+                    if val:
+                        texts.append(val)
+            elif t == "message":
+                role = obj.get("role", "")
+                if role in ("assistant", ""):
+                    content = obj.get("content", "")
+                    if isinstance(content, str) and content:
+                        texts.append(content)
+                    elif isinstance(content, list):
+                        for block in content:
+                            if isinstance(block, dict) and block.get("type") == "text":
+                                val = block.get("text", "")
+                                if val:
+                                    texts.append(val)
+            elif "text" in obj and obj["text"]:
+                texts.append(obj["text"])
+            elif "content" in obj and isinstance(obj["content"], str) and obj["content"]:
+                texts.append(obj["content"])
+            elif "message" in obj and isinstance(obj["message"], str) and obj["message"]:
+                texts.append(obj["message"])
+        seen: set[str] = set()
+        return [t for t in texts if not (t in seen or seen.add(t))]  # type: ignore[func-returns-value]
+
+    def extract_session_id(
+        self, stdout: str, node: dict[str, Any], command_session_id: str | None
+    ) -> str | None:
+        """Extract the codex thread_id from the thread.started event."""
+        for line in stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(obj, dict) and obj.get("type") == "thread.started":
+                tid = obj.get("thread_id")
+                if tid:
+                    return str(tid)
+        return command_session_id
 
     def extract_usage(self, stdout: str, node: dict[str, Any]) -> dict[str, Any]:
         """Extract token usage from Codex --json response."""
@@ -381,27 +539,33 @@ class CodexAdapter(BaseAdapter):
             return {}
 
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
-        # Codex --json mode: extract assistant content from JSON response
-        if "--json" in node.get("invoke_args", []):
-            try:
-                data = json.loads(stdout)
-                msgs = data.get("messages") or data.get("output") or []
-                if isinstance(msgs, list):
-                    parts = []
-                    for m in msgs:
-                        if isinstance(m, dict) and m.get("role") == "assistant":
-                            content = m.get("content", "")
-                            if isinstance(content, list):
-                                parts.extend(
-                                    c.get("text", "") for c in content
-                                    if isinstance(c, dict) and c.get("type") == "text"
-                                )
-                            else:
-                                parts.append(str(content))
-                    if parts:
-                        return "\n".join(parts).strip()
-            except (json.JSONDecodeError, KeyError, TypeError):
-                pass
+        # Codex --json mode: adapter-owned parsing (moved from hub._extract_jsonl_text)
+        if "--json" not in node.get("invoke_args", []):
+            return stdout.strip()
+        # 1. JSONL event stream (codex exec --json): item.completed / message events
+        texts = self._extract_jsonl_texts(stdout)
+        if texts:
+            return "\n\n".join(texts).strip()
+        # 2. Single-JSON {"messages":[...]} response shape
+        try:
+            data = json.loads(stdout)
+            msgs = data.get("messages") or data.get("output") or []
+            if isinstance(msgs, list):
+                parts = []
+                for m in msgs:
+                    if isinstance(m, dict) and m.get("role") == "assistant":
+                        content = m.get("content", "")
+                        if isinstance(content, list):
+                            parts.extend(
+                                c.get("text", "") for c in content
+                                if isinstance(c, dict) and c.get("type") == "text"
+                            )
+                        else:
+                            parts.append(str(content))
+                if parts:
+                    return "\n".join(parts).strip()
+        except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
+            pass
         return stdout.strip()
 
 

@@ -1,5 +1,5 @@
 # General — Communication & Decision-Making
-> Status: DESIGN_FINAL (Implementation Pending Phase 2)
+> Status: ACTIVE WITH EXPLICIT PLANNED GAPS
 > Purpose: Defines the MECE framework for peer-to-peer communication, alerting, and state handoff.
 
 ## 1. Communication Matrix (MECE)
@@ -29,10 +29,13 @@ All communication is categorized by Synchronicity, Formality, and Reach.
 - **Convention:** Use `debate-{topic}` naming for formal, blocking architectural or protocol disputes.
 - **Rule:** Requires R:7+ COLLAB_RATE and mandatory unanimous ACK/NACK before closure.
 
-### 2.3. Tier-0 Emergency Alerts
-- **Tool:** `alert-raise` (Proposed)
-- **Severity:** `P0` (Critical) / `P1` (High).
-- **Behavior:** Blocks governed actions across all peers until acknowledged. Escalates to human interface if not resolved within timeout.
+### 2.3 Tier-0 Emergency Alerts
+
+- **Implemented:** `alert-raise`
+- **Current behavior:** records `state.alert_active`, sets the human-readable
+  `state.blocked` marker, and sends CRITICAL mailbox notifications.
+- **PLANNED:** enforced `_guard_action` blocking, per-peer ACK, timeout escalation,
+  and alert-clear lifecycle. The current blocked marker is not an execution guard.
 
 ---
 
@@ -42,9 +45,10 @@ All communication is categorized by Synchronicity, Formality, and Reach.
 - **Purpose:** Human-readable Single Source of Truth for the session state.
 - **Sections:** GOAL, RECENT_COMPLETED, PENDING_ISSUES, KEY_DECISIONS, CONSENSUS_HISTORY, ACTIVE_THREADS.
 
-### 3.2. Structured Handoff (`handoff.json`)
-- **Purpose:** Machine-readable, typed sidecar for efficient context mirroring.
-- **Implementation:** Dual-write system where `hub.py` ensures Markdown and JSON stay synchronized.
+### 3.2 Structured Handoff (`handoff.json`)
+
+Implemented. `_write_handoff()` writes `handoff.md` and `handoff.json`; reads prefer
+the typed JSON sidecar and fall back to Markdown.
 
 ---
 
@@ -61,6 +65,11 @@ To avoid overlap (ME violation), peers must follow this contract:
 
 1. **Inquiry:** `ask` or `sync-thread` for exploration.
 2. **Proposal:** `proposal-add` for formal change.
-3. **Debate:** `debate-thread` if consensus is not immediate.
-4. **Resolution:** `proposal-vote` (Agree/Disagree/Abstain).
-5. **Finalization:** `consensus_finalize` connector (Commits to `handoff.md` and triggers `DocsSyncer`).
+3. **Debate:** `thread-new --topic debate-{topic}` plus `thread-append`.
+4. **Resolution:** `proposal-vote` or `consensus-vote`, depending on the selected
+   governance record.
+5. **Finalization:** `consensus-vote` auto-finalizes when all votes are cast,
+   appends `CONSENSUS_HISTORY`, and emits a Decision Capsule.
+6. **PLANNED automation:** no dedicated `consensus_finalize` hub action currently
+   exists. DocsSyncer exists as `_sys/checks/sync_docs.py`, but self-care invokes
+   it in dry-run mode and finalization does not automatically apply documentation.

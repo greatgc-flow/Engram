@@ -66,16 +66,18 @@ Context-fill sections controlled by `protocol.json["session"]["context_fill_sect
 
 ---
 
-## 5. CLI Session Reuse (cx / gc)
+## 5. CLI Session Reuse (gc)
 
-`hub.py ask` reuses CLI process sessions across calls (scope_key = room_id).
+`hub.py ask` reuses configured CLI sessions across calls (scope_key = room_id).
+The configured reuse-peer list currently contains only gc.
+
+Session reuse is governed solely by the `session_mode` field; the descriptive `memory` field in `orchestration.json` does not control reuse (e.g. `cc: memory persistent` still runs each `claude -p` as a separate process).
 
 | Peer | New session flag | Resume flag |
 |------|-----------------|------------|
-| cx | `codex exec -s workspace-write --json --ignore-rules` | `codex exec resume <thread_id> ...` |
 | gc | `gemini --session-id <uuid> -p - -o text --approval-mode auto_edit --skip-trust` | `gemini --resume <uuid> ...` |
 
-State file: `_sys/{peer_dir}/session_state.json` (gitignored).
+State file: `_sys/gemini/session_state.json` (gitignored).
 On resume failure: retire old session → retry fresh once.
 Topic boundary (`new-topic`, `clear-room`): all peer sessions retired.
 Override: `hub.py ask --session-policy fresh` for independent cross-review calls.
@@ -112,7 +114,7 @@ A read is NOT zero-token if it triggers a model call, network request, or side-e
 
 ## 8. Stable Fingerprint
 
-**Source:** `hub.py:_session_fingerprint(health_peer, exe_name)`
+**Source:** `hub_peer.GeminiAdapter.session_fingerprint(node)`
 
 A short 8-char SHA-1 hash that identifies the *static* invocation flags for a peer session.
 It is **stable across calls** and only changes when permission flags change.
@@ -126,18 +128,16 @@ fingerprint = sha1(raw.encode()).hexdigest()[:8]
 
 - `base_exe = os.path.basename(exe_name)` — filename only, never a full path.
   This prevents drift when the PATH root changes (e.g., USB drive letter change).
-- `static_flags` per peer (hardcoded in `_build_session_cmd`):
+- `static_flags` come from the adapter's normalized stdin arguments:
 
 | Peer | Static flags included | Dynamic values excluded |
 |------|-----------------------|------------------------|
-| `cx` | `-s workspace-write --json --ignore-rules` | *(none dynamic)* |
-| `gc` | `-p - -o text --approval-mode auto_edit --skip-trust` | `--session-id <uuid>` |
-| others | *(empty — no session reuse)* | — |
+| `gc` | `-p - -o text --approval-mode auto_edit --skip-trust` plus configured `profile_args` | `--session-id <uuid>` / `--resume <uuid>` |
 
 ### Drift Detection
 
 On every `hub.py ask` with session reuse:
-1. Compute `current_fp = _session_fingerprint(health_peer, exe_name)`.
+1. Compute `current_fp = adapter.session_fingerprint(node)`.
 2. Load `existing_session = _get_active_session(health_peer, scope_key)`.
 3. If `stored_fp` exists and `stored_fp != current_fp`:
    - Log: `[HUB:WARN] {peer} session fingerprint drift ({old} → {new}), retiring for fresh start`
@@ -171,7 +171,7 @@ Called when a session-resume attempt exits non-zero (`proc.returncode != 0 and i
 ```
 proc.returncode != 0 AND is_resume_attempt AND fail_type == "permanent"
   → _retire_session(peer, scope_key, "resume_failed")
-  → _build_session_cmd(peer, session_id=None, exe)   # fresh
+  → adapter.build_session_cmd(node, query, None)   # fresh
   → subprocess.Popen(fresh_cmd)
   → communicate(query)
   → if success: _set_active_session(new_id, fingerprint=current_fp)

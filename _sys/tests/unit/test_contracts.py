@@ -51,24 +51,6 @@ class TestLeafCfgContract:
         assert zombie >= heartbeat * 2, "zombie_timeout must be >= 2× heartbeat"
 
 
-class TestBuildSessionCmdContract:
-    """_build_session_cmd() → (cmd_list, use_stdin, session_id_or_None)"""
-
-    def test_signature_has_three_params(self):
-        sig = inspect.signature(hub._build_session_cmd)
-        params = list(sig.parameters.keys())
-        assert params == ["health_peer", "session_id", "exe"], (
-            f"_build_session_cmd param contract broken: got {params}"
-        )
-
-    def test_return_annotation(self):
-        sig = inspect.signature(hub._build_session_cmd)
-        ret = str(sig.return_annotation)
-        assert "list" in ret and "bool" in ret, (
-            f"_build_session_cmd must return (list, bool, str|None), got: {ret}"
-        )
-
-
 class TestActionAskContract:
     """action_ask() parameter contract"""
 

@@ -51,17 +51,18 @@ context is intentionally recorded separately from the larger API maximum in
 
 ## Context and Collaboration
 
-Codex session reuse is scoped by room. Local Codex memory is not shared directly;
-the hub injects durable room references and records promoted outputs.
+Local Codex memory is not shared directly; the hub injects durable room
+references and records promoted outputs.
 
 ---
 
-## Session Reuse (delta from general/session.md)
+## Session Policy
 
-- New: `codex exec -s workspace-write --json --ignore-rules`
-- Resume: `codex exec resume <thread_id> -s workspace-write --json --ignore-rules`
-- State: `_sys/codex/session_state.json`
-- `hub.py ask --session-policy fresh` for independent cross-review calls (§14 queries)
+cx session reuse is disabled (`session_mode: none`). Codex CLI 0.141.0 accepts
+`exec resume`, but its resume parser rejects the required DIR-002
+`-s workspace-write` flag. Hub asks therefore use fresh `--ephemeral`
+invocations until a permission-equivalent resume command is separately
+validated and ratified.
 
 ---
 
