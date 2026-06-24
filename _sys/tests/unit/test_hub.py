@@ -880,7 +880,7 @@ class TestOperationalGuard:
         state["phase"] = "discussion_no_code"
         (ai_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
         with pytest.raises(SystemExit) as exc:
-            hub._guard_action(ai_dir, "send")
+            hub._guard_action(ai_dir, "send", origin="worker")
         assert exc.value.code == 3
 
     def test_guard_allows_tier0_force(self, ai_dir):

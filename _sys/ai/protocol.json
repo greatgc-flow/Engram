@@ -602,6 +602,11 @@
         "proposal-list"
       ]
     },
+    "decision_tier_floor": {
+      "enabled": true,
+      "mutating_hub_actions_min_tier": "effort",
+      "binding_vote_risk_8_plus_min_tier": "deepthink"
+    },
     "default_shell": "powershell",
     "no_code_phases": [
       "discussion",

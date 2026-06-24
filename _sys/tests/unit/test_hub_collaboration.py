@@ -442,7 +442,7 @@ def test_collab_rate_guard(ai_dir, capsys):
     with patch("hub._load_protocol_cfg", return_value=proto_cfg):
         # 1. No finalized consensus round exists
         with pytest.raises(SystemExit) as excinfo:
-            hub._guard_action(ai_dir, "update-status", force_tier0=False)
+            hub._guard_action(ai_dir, "update-status", origin="worker")
         assert excinfo.value.code == 3
         captured = capsys.readouterr()
         assert "requires finalized consensus at collab_rate 10" in captured.err

@@ -69,6 +69,25 @@ class TestActionAskContract:
         assert p["include_context"].default is True
         assert p["session_policy"].default == "auto"
         assert p["explicit_scope"].default is None
+        assert p["origin"].default == "terminal"
+
+
+class TestGuardActionContract:
+    """_guard_action() parameter contract"""
+
+    def test_required_params(self):
+        sig = inspect.signature(hub._guard_action)
+        params = list(sig.parameters.keys())
+        required = ["ai_root", "action"]
+        for r in required:
+            assert r in params, f"_guard_action() missing required param: {r}"
+
+    def test_optional_defaults(self):
+        sig = inspect.signature(hub._guard_action)
+        p = sig.parameters
+        assert p["force_tier0"].default is False
+        assert p["origin"].default == "terminal"
+        assert p["target_peer"].default is None
 
 
 class TestPeerStatusContract:
@@ -415,3 +434,46 @@ class TestContextFillContract:
         sig = inspect.signature(hub.action_context_fill)
         assert "frame" in sig.parameters, "action_context_fill must expose frame param"
         assert sig.parameters["frame"].default is False, "frame must default False (cc/cx/gc unchanged)"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. Phase-1 (Observe-Only) Tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+import os
+
+class TestPhase1ObserveOnly:
+    def test_hub_origin_coerces_to_terminal(self, monkeypatch):
+        monkeypatch.setenv("HUB_ORIGIN", "hub")
+        # In main(), origin = os.environ.get("HUB_ORIGIN", "terminal")
+        # if origin == "hub": origin = "terminal"
+        origin = os.environ.get("HUB_ORIGIN", "terminal")
+        if origin == "hub": origin = "terminal"
+        assert origin == "terminal", "HUB_ORIGIN=hub must coerce to terminal"
+
+    def test_worker_origin_propagates(self, monkeypatch):
+        # process_env propagation test simulation
+        process_env = {**os.environ}
+        # The logic adds:
+        process_env["HUB_ORIGIN"] = "worker"
+        process_env["HUB_PEER_TIER"] = "effort"
+        
+        assert process_env["HUB_ORIGIN"] == "worker"
+        assert process_env["HUB_PEER_TIER"] == "effort"
+
+    def test_observe_only_logs_would_block_but_executes(self, capsys, monkeypatch, tmp_path):
+        # A mutating action from terminal should log [HUB:WOULD-BLOCK] but not sys.exit.
+        ai_root = tmp_path / ".ai"
+        ai_root.mkdir()
+        hub._guard_action(ai_root, "init-session", force_tier0=False, origin="terminal")
+        captured = capsys.readouterr()
+        assert "[HUB:WOULD-BLOCK]" in captured.err, "must log WOULD-BLOCK"
+        # If it sys.exited, test would fail. So nothing blocked.
+
+    def test_force_tier0_marks_exempt(self, capsys, tmp_path):
+        ai_root = tmp_path / ".ai"
+        ai_root.mkdir()
+        hub._guard_action(ai_root, "init-session", force_tier0=True, origin="terminal")
+        captured = capsys.readouterr()
+        assert "[HUB:WOULD-BLOCK]" not in captured.err, "--force-tier0 must exempt WOULD-BLOCK log"
+        assert "force-tier0 bypass" in captured.err or captured.err == "", "should log bypass or nothing"

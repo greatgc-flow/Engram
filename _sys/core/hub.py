@@ -2202,7 +2202,7 @@ def _is_ephemeral_query_file(path: Path) -> bool:
     )
 
 
-def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0) -> None:
+def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, origin: str = "terminal") -> None:
     if _depth > 2:
         print(f"[ERROR] action_ask: maximum failover depth reached for {to}", file=sys.stderr)
         sys.exit(1)
@@ -2244,6 +2244,10 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             print(f"[HUB:ERROR] profile routing failed: {exc}", file=sys.stderr)
             sys.exit(1)
         raise
+
+    if ai_root:
+        _guard_action(ai_root, "ask", force_tier0=False, origin=origin, target_peer=to)
+
     if profile_decision:
         if ai_root:
             _record_routing_metric(
@@ -2330,7 +2334,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 else:
                     print(f"[ContextGate] context {gate_result.get('ratio', 0):.0%} full → failover to {failover_model}", file=sys.stderr)
                     # Recursive failover call with increased depth and disabled context inclusion
-                    return action_ask(failover_model, query, None, timeout_sec, ai_root, quiet, output_file, include_context=False, session_policy=session_policy, explicit_scope=explicit_scope, _depth=_depth + 1)
+                    return action_ask(failover_model, query, None, timeout_sec, ai_root, quiet, output_file, include_context=False, session_policy=session_policy, explicit_scope=explicit_scope, _depth=_depth + 1, origin=origin)
             elif action == "reject":
                 msg = gate_result.get("message", "context limit exceeded")
                 if _HUB_ERROR_AVAILABLE and _HubError is not None:
@@ -2397,6 +2401,16 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
 
     # ── Environment Variable Injection ─────────────────────────
     process_env = {**os.environ, "PYTHONUTF8": "1"}
+    
+    tier = "standard"
+    if profile_decision:
+        tier = profile_decision.get("tier", "standard")
+    elif "effort" in to:
+        tier = "effort"
+    elif "deepthink" in to or "-deep" in to:
+        tier = "deepthink"
+    process_env["HUB_ORIGIN"] = "worker"
+    process_env["HUB_PEER_TIER"] = tier
     peers = _load_peers()
     target_peer_id = None
     target_peer_cfg = None
@@ -3041,6 +3055,7 @@ def action_ask_all(query: str, query_file: str | None, timeout_sec: int, ai_root
     lock = threading.Lock()
 
     def _ask_one(peer_id: str) -> None:
+        process_env = {**os.environ, "HUB_ORIGIN": "worker", "HUB_PEER_TIER": "standard"}
         tmp = Path(os.environ.get("TEMP", "/tmp")) / f"hub-ask-all-{peer_id}-{uuid.uuid4().hex[:8]}.txt"
         tmp.write_text(query_text, encoding="utf-8")
         cmd = [py_exe, str(hub_py), "ask", "--to", peer_id, "--query-file", str(tmp)]
@@ -3048,7 +3063,7 @@ def action_ask_all(query: str, query_file: str | None, timeout_sec: int, ai_root
             cmd += ["--timeout", str(timeout_sec)]
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
-                               timeout=(timeout_sec if timeout_sec > 0 else None))
+                               timeout=(timeout_sec if timeout_sec > 0 else None), env=process_env)
             out = (r.stdout or "").strip()
             err = (r.stderr or "").strip()
             combined = out + (f"\n[STDERR] {err}" if err and not quiet else "")
@@ -3861,12 +3876,25 @@ def _has_finalized_consensus(ai_root: Path) -> bool:
     return False
 
 
-def _guard_action(ai_root: Path, action: str, force_tier0: bool = False) -> None:
+def _guard_action(ai_root: Path, action: str, force_tier0: bool = False, origin: str = "terminal", target_peer: str | None = None) -> None:
     cfg = _operational_guard_cfg()
     if not cfg.get("enabled", False) or force_tier0:
         if force_tier0:
             _log_p2p("WARN", f"force-tier0 bypass for action={action}", from_node="TIER0")
         return
+
+    def _block(detail: str, code: int = 3):
+        print(f"[HUB:BLOCK] {detail}", file=sys.stderr)
+        sys.exit(code)
+
+    if origin == "terminal":
+        if _is_mutating_action(action):
+            print(f"[HUB:WOULD-BLOCK] terminal-origin mutating action '{action}'", file=sys.stderr)
+        if action == "ask" and target_peer and ("effort" in target_peer.lower() or "deepthink" in target_peer.lower() or "deep" in target_peer.lower()):
+            print(f"[HUB:WOULD-BLOCK] terminal-origin ask to >=effort target '{target_peer}'", file=sys.stderr)
+        tier_floor = cfg.get("decision_tier_floor", {})
+        if tier_floor.get("enabled", False) and _is_mutating_action(action):
+            print(f"[HUB:WOULD-BLOCK] tier-floor violation for action '{action}'", file=sys.stderr)
     try:
         rate_guard = cfg.get("collab_rate_guard", {})
         current = int(_load_protocol_cfg().get("collab_rate", {}).get("current", 0) or 0)
@@ -3880,8 +3908,7 @@ def _guard_action(ai_root: Path, action: str, force_tier0: bool = False) -> None
             and rate_guard.get("require_finalized_consensus", True)
             and not _has_finalized_consensus(ai_root)
         ):
-            print(f"[HUB:BLOCK] action '{action}' requires finalized consensus at collab_rate {current}. Use --force-tier0 only for Tier0 recovery.", file=sys.stderr)
-            sys.exit(3)
+            _block(f"action '{action}' requires finalized consensus at collab_rate {current}. Use --force-tier0 only for Tier0 recovery.")
     except SystemExit:
         raise
     except Exception as e:
@@ -3893,8 +3920,7 @@ def _guard_action(ai_root: Path, action: str, force_tier0: bool = False) -> None
         peer_state = _current_coordinator_health(ai_root)
         if peer_state not in ("RED", "STALE", "RATE_LIMITED", "MISSING"):
             if rate_guard.get("enabled", False) and current >= threshold and not _has_finalized_consensus(ai_root):
-                print(f"[HUB:BLOCK] action '{action}' is semi-governed and requires finalized consensus when coordinator is {peer_state}.", file=sys.stderr)
-                sys.exit(3)
+                _block(f"action '{action}' is semi-governed and requires finalized consensus when coordinator is {peer_state}.")
         # Always write audit record for semi-governed actions
         _log_p2p("AUDIT", f"semi-governed action={action} coordinator_state={peer_state}", from_node="GUARD")
 
@@ -3903,19 +3929,16 @@ def _guard_action(ai_root: Path, action: str, force_tier0: bool = False) -> None
         if cfg.get("missing_phase_policy") == "allow_with_warning":
             print(f"[HUB:WARN] phase is unset; allowing action '{action}'", file=sys.stderr)
         elif not cfg.get("allow_missing_phase", True):
-            print(f"[HUB:BLOCK] phase is unset; refusing action '{action}'", file=sys.stderr)
-            sys.exit(3)
+            _block(f"phase is unset; refusing action '{action}'")
         return
     matrix = cfg.get("phase_action_matrix", {})
     matrix_key = "no_code" if phase in set(cfg.get("no_code_phases", [])) else "default"
     decision = matrix.get(matrix_key, matrix.get("default", {})).get(group, "allow")
     if decision == "block":
         flag = cfg.get("force_tier0_flag", "--force-tier0")
-        print(f"[HUB:BLOCK] action '{action}' is blocked during phase '{phase}'. Use {flag} only for Tier0 recovery.", file=sys.stderr)
-        sys.exit(3)
+        _block(f"action '{action}' is blocked during phase '{phase}'. Use {flag} only for Tier0 recovery.")
     if decision == "requires_classification":
-        print(f"[HUB:BLOCK] action '{action}' has no phase policy during phase '{phase}'", file=sys.stderr)
-        sys.exit(3)
+        _block(f"action '{action}' has no phase policy during phase '{phase}'")
 
 
 def _regex_match(pattern: str, text: str) -> bool:
@@ -5867,6 +5890,17 @@ def _check_exception_ttl(exception_data: dict) -> tuple[bool, str]:
     return False, ""
 
 def main() -> None:
+    origin = os.environ.get("HUB_ORIGIN", "terminal")
+    if origin == "hub":
+        origin = "terminal"
+
+    # CONDITION A (cc): active-terminal root identity
+    try:
+        peers_cfg = _load_peers()
+        local_terminal = peers_cfg.get("active_terminal_identity", "unknown")
+    except Exception:
+        pass
+
     parser = argparse.ArgumentParser(
         prog="hub",
         description="AI collaboration hub - Protocol v4.2",
@@ -5960,7 +5994,7 @@ def main() -> None:
         except (RuntimeError, OSError): pass
         if ai_root_opt is not None:
             ensure_ai_dir(ai_root_opt)
-        action_ask(args.to_, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file, session_policy=args.session_policy, explicit_scope=args.scope)
+        action_ask(args.to_, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file, session_policy=args.session_policy, explicit_scope=args.scope, origin=origin)
         return
     if args.action == "ask-all":
         ai_root_opt = None
@@ -5975,7 +6009,7 @@ def main() -> None:
     ai_root = find_ai_root()
     ensure_ai_dir(ai_root)
     act = args.action
-    _guard_action(ai_root, act, args.force_tier0)
+    _guard_action(ai_root, act, args.force_tier0, origin=origin)
     if act == "ask-coordinator":
         action_ask_coordinator(ai_root, args.query, args.query_file, args.timeout, args.from_ or args.peer or args.agent or "unknown", quiet=args.quiet, output_file=args.output_file)
         return

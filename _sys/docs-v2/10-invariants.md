@@ -119,3 +119,8 @@
 | PRO-19 | NEVER allow the terminal/router peer to mutate governance or room state — consensus rounds/votes, `handoff.md`, leader/coordinator claims, directives, `protocol.json`, or any `_sys/` artifact. The terminal is a **mechanical transport**: it relays asks and routes to worker peers; it is NOT an author, voter, or coordinator. All state mutation MUST be performed by an identified worker peer through a governance-write profile. Tier-0 human authority is unaffected (human override remains supreme, INV-03). |
 
 > **PRO-19 implementation status (target floors — NOT YET ENFORCED).** The intended controls are: (1) carry an authenticated `originator` identity and exclude terminal/router identities from voter and proposer rolls; (2) require a governance-write profile at or above `effort` for governance mutations; and (3) guard every mutating transport path programmatically. Current `hub.py` does not implement these three controls completely; PRO-19 therefore remains policy-governed pending a dedicated INV-26 enforcement change. Derived from the "Resetting blocked consensus and taking over" incident.
+
+### Peer Equality & Multi-Terminal (INV-30)
+| ID | Rule |
+|----|------|
+| INV-30 | **Peer Equality & Multi-Terminal:** the terminal/router role is a profile+origin property, not a fixed peer identity. All peers (cc, ag, cx, gc) are equal; any may assume the active human-interface terminal role. All topological enforcement, tier floors, and escalation must be peer-agnostic and symmetric; escalation prioritizes the active terminal's own worker tier or routes dynamically, never hardcoding a peer. |
