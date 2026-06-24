@@ -71,6 +71,10 @@ class TestIntegrationP2P:
         """[권한/의사결정] P2P 무제한 합의 및 교차 발의 검증."""
         root, vpy, hub = test_env["root"], test_env["venv_py"], test_env["hub_py"]
 
+        self._run(vpy, hub, ["health-update", "--peer", "gc", "--status", "GREEN"], root)
+        self._run(vpy, hub, ["health-update", "--peer", "cc", "--status", "GREEN"], root)
+        self._run(vpy, hub, ["health-update", "--peer", "ca", "--status", "GREEN"], root)
+
         self._run(vpy, hub, ["consensus-propose", "--subject", "p2p-test", "--voters", "cc,ca,gc", "--from", "gc"], root)
 
         rounds = list((root / ".ai/consensus").glob("*.json"))
@@ -175,6 +179,9 @@ class TestIntegrationP2P:
     def test_scenario_final_call_protocol(self, test_env):
         """[합의] Final Call(FC) 프로토콜 및 다중 노드 분업 시나리오 검증."""
         root, vpy, hub = test_env["root"], test_env["venv_py"], test_env["hub_py"]
+        
+        self._run(vpy, hub, ["health-update", "--peer", "gc", "--status", "GREEN"], root)
+        self._run(vpy, hub, ["health-update", "--peer", "cc", "--status", "GREEN"], root)
 
         self._run(vpy, hub, ["init-session", "--agent", "cc"], root)
         self._run(vpy, hub, ["init-session", "--agent", "gc"], root)

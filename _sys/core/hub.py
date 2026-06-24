@@ -3123,12 +3123,18 @@ def action_ask_coordinator(ai_root: Path, query: str, query_file: str | None, ti
 # ─────────────────────────────────────────────────────────────
 
 def action_consensus_propose(ai_root: Path, subject: str, voters: list[str], proposed_by: str) -> None:
+    snapshot_voters = []
+    for v in voters:
+        st, _ = _peer_effective_health(v, ai_root=ai_root)
+        if st not in ("RED", "STALE"):
+            snapshot_voters.append(v)
+            
     round_id = _short_id("r-")
     data = {"round_id": round_id, "subject": subject, "proposed_by": proposed_by, "proposed_at": _now(), 
-            "status": "voting", "voters": voters, "votes": {v: None for v in voters}}
+            "status": "voting", "voters": snapshot_voters, "votes": {v: None for v in snapshot_voters}}
     _write_json(ai_root / "consensus" / f"{round_id}.json", data)
     _log_p2p("PROPOSE", f"ID={round_id} Subject='{subject}'", from_node=proposed_by)
-    print(f"[HUB] PROPOSE {round_id} | subject={subject} | voters={','.join(voters)}")
+    print(f"[HUB] PROPOSE {round_id} | subject={subject} | voters={','.join(snapshot_voters)}")
 
 
 def action_consensus_vote(ai_root: Path, round_id: str, voter: str, vote_val: str, reason: str) -> None:
@@ -3154,10 +3160,32 @@ def action_consensus_vote(ai_root: Path, round_id: str, voter: str, vote_val: st
         _log_p2p("VOTE", f"ID={round_id} Vote={vote_val} ({cast}/{total})", from_node=voter)
         print(f"[HUB] VOTE {round_id} | voter={voter} {vote_val} | {cast}/{total}")
         
-        if cast == total:
-            has_disagree = any(v["vote"] == "disagree" for v in votes.values())
-            all_agree = all(v["vote"] == "agree" for v in votes.values())
-            if has_disagree:
+        mid_round_closed = False
+        for v in data["voters"]:
+            if votes.get(v) is None:
+                st, _ = _peer_effective_health(v, ai_root=ai_root)
+                if st in ("RED", "STALE"):
+                    mid_round_closed = True
+                    break
+        
+        if cast == total or total < 2 or mid_round_closed:
+            has_disagree = any(v is not None and v["vote"] == "disagree" for v in votes.values())
+            has_agree = any(v is not None and v["vote"] == "agree" for v in votes.values())
+            all_agree = (cast == total) and all(v is not None and v["vote"] == "agree" for v in votes.values())
+            
+            proposer = data.get("proposed_by", "")
+            non_proposer_agrees = sum(1 for v_name, v_dict in votes.items() if v_dict is not None and v_dict["vote"] == "agree" and v_name != proposer)
+            
+            if total < 2:
+                data["status"] = "escalated"
+                data["outcome"] = "human_gate"
+            elif mid_round_closed:
+                data["status"] = "escalated"
+                data["outcome"] = "human_gate"
+            elif has_disagree:
+                data["status"] = "escalated"
+                data["outcome"] = "human_gate"
+            elif has_agree and non_proposer_agrees == 0:
                 data["status"] = "escalated"
                 data["outcome"] = "human_gate"
             elif all_agree:
@@ -4943,7 +4971,12 @@ def action_proposal_add(ai_root: Path, subject: str, from_peer: str, impact: str
             pass
     proposal_id = f"{date_str}-{slug}-{seq:03d}"
     cfg = _load_protocol_cfg()
-    voters = cfg.get("consensus", {}).get("r10_voters", ["cc", "gc", "cx"])
+    all_voters = cfg.get("consensus", {}).get("r10_voters", ["cc", "gc", "cx"])
+    voters = []
+    for v in all_voters:
+        st, _ = _peer_effective_health(v, ai_root=ai_root)
+        if st not in ("RED", "STALE"):
+            voters.append(v)
     votes_block = "\n".join(f"- {v}: PENDING" for v in voters)
     content = f"""[PROPOSAL: {proposal_id}]
 Author: {from_peer}
@@ -4988,15 +5021,75 @@ def action_proposal_vote(ai_root: Path, proposal_id: str, voter: str, vote: str,
     path.write_text(updated, encoding="utf-8")
     print(f"[HUB] PROPOSAL-VOTE {proposal_id} | {voter}:{vote_upper}")
     # Check consensus
-    cfg = _load_protocol_cfg()
-    voters = cfg.get("consensus", {}).get("r10_voters", ["cc", "gc", "cx"])
-    agreed = [v for v in voters if re.search(rf"^- {re.escape(v)}: AGREE", updated, re.MULTILINE)]
-    disagreed = [v for v in voters if re.search(rf"^- {re.escape(v)}: DISAGREE", updated, re.MULTILINE)]
-    if len(agreed) == len(voters):
-        print(f"[HUB] PROPOSAL CONSENSUS_OK {proposal_id} | unanimous agree: {','.join(agreed)}")
-        _append_handoff_item(ai_root, "CONSENSUS_HISTORY", f"{_now()} proposal:{proposal_id} CONSENSUS_OK (agree={','.join(agreed)})")
-    elif disagreed:
-        print(f"[HUB] PROPOSAL NACK {proposal_id} | disagreed: {','.join(disagreed)}")
+    voters_match = re.findall(r"^- (\w+): (PENDING|AGREE|DISAGREE|ABSTAIN|NEED_MORE_INFO)", updated, re.MULTILINE)
+    snapshot_voters = [m[0] for m in voters_match]
+    
+    total = len(snapshot_voters)
+    votes_dict = {v: state for v, state in voters_match}
+    cast = sum(1 for v, state in votes_dict.items() if state != "PENDING")
+    
+    mid_round_closed = False
+    for v in snapshot_voters:
+        if votes_dict[v] == "PENDING":
+            st, _ = _peer_effective_health(v, ai_root=ai_root)
+            if st in ("RED", "STALE"):
+                mid_round_closed = True
+                break
+
+    if cast == total or total < 2 or mid_round_closed:
+        agreed = [v for v in snapshot_voters if votes_dict[v] == "AGREE"]
+        disagreed = [v for v in snapshot_voters if votes_dict[v] == "DISAGREE"]
+        
+        proposer_match = re.search(r"^Author:\s*(.+)$", updated, re.MULTILINE)
+        proposer = proposer_match.group(1).strip() if proposer_match else ""
+        non_proposer_agrees = sum(1 for v in agreed if v != proposer)
+        
+        if total < 2:
+            print(f"[HUB] PROPOSAL ESCALATED {proposal_id} | N < 2 (human_gate)")
+            _append_handoff_item(ai_root, "CONSENSUS_HISTORY", f"{_now()} proposal:{proposal_id} ESCALATED (N<2)")
+        elif mid_round_closed:
+            print(f"[HUB] PROPOSAL ESCALATED {proposal_id} | mid-round gate closure (human_gate)")
+            _append_handoff_item(ai_root, "CONSENSUS_HISTORY", f"{_now()} proposal:{proposal_id} ESCALATED (gate closure)")
+        elif disagreed:
+            print(f"[HUB] PROPOSAL NACK {proposal_id} | disagreed: {','.join(disagreed)}")
+            _append_handoff_item(ai_root, "CONSENSUS_HISTORY", f"{_now()} proposal:{proposal_id} NACK (disagree={','.join(disagreed)})")
+        elif len(agreed) == total:
+            if non_proposer_agrees >= 1:
+                print(f"[HUB] PROPOSAL CONSENSUS_OK {proposal_id} | unanimous agree: {','.join(agreed)}")
+                _append_handoff_item(ai_root, "CONSENSUS_HISTORY", f"{_now()} proposal:{proposal_id} CONSENSUS_OK (agree={','.join(agreed)})")
+                
+                # D-1 Writer
+                import tempfile
+                import os
+                target_doc = "10-invariants.md"
+                target_doc_match = re.search(r"^Target Doc:\s*(.+)$", updated, re.MULTILINE)
+                if target_doc_match: target_doc = target_doc_match.group(1).strip()
+                target_path = ai_root.parent / "docs-v2" / target_doc
+                
+                changes_match = re.search(r"^Changes:\s*\n(.*?)\n\nVotes:", updated, re.DOTALL | re.MULTILINE)
+                if changes_match and target_path.exists():
+                    changes_text = changes_match.group(1).strip().replace("\n", " ")
+                    doc_content = target_path.read_text(encoding="utf-8")
+                    if changes_text and changes_text not in doc_content and f"[Proposal {proposal_id}]" not in doc_content:
+                        max_inv = 0
+                        for match in re.finditer(r"INV-(\d+)", doc_content):
+                            max_inv = max(max_inv, int(match.group(1)))
+                        new_inv_id = f"INV-{max_inv + 1:02d}"
+                        lines = doc_content.splitlines()
+                        last_table_idx = -1
+                        for i, line in enumerate(lines):
+                            if line.strip().startswith("|") and "INV-" in line:
+                                last_table_idx = i
+                        new_row = f"| {new_inv_id} | {changes_text} [Proposal {proposal_id}] |"
+                        if last_table_idx != -1: lines.insert(last_table_idx + 1, new_row)
+                        else: lines.append(new_row)
+                        new_doc_content = "\n".join(lines) + "\n"
+                        fd, tmp_path = tempfile.mkstemp(dir=target_path.parent, text=True)
+                        with os.fdopen(fd, "w", encoding="utf-8") as f: f.write(new_doc_content)
+                        os.replace(tmp_path, target_path)
+            else:
+                print(f"[HUB] PROPOSAL ESCALATED {proposal_id} | proposer self-finalization blocked (human_gate)")
+                _append_handoff_item(ai_root, "CONSENSUS_HISTORY", f"{_now()} proposal:{proposal_id} ESCALATED (self-finalization blocked)")
 
 
 def action_proposal_list(ai_root: Path) -> None:

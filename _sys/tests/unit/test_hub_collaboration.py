@@ -420,7 +420,8 @@ def test_context_fill_prints_parsed_handoff_lists(ai_dir, capsys):
 
 
 # 2. Test collab_rate guard on mutating action
-def test_collab_rate_guard(ai_dir, capsys):
+def test_collab_rate_guard(ai_dir, capsys, monkeypatch):
+    monkeypatch.setattr(hub, "_peer_effective_health", lambda *args, **kwargs: ("GREEN", {}))
     # Initialize a session first so room_id is set
     hub.action_init_session(ai_dir, "cc")
     capsys.readouterr()
@@ -451,7 +452,7 @@ def test_collab_rate_guard(ai_dir, capsys):
         hub._guard_action(ai_dir, "update-status", force_tier0=True) # should not raise
         
         # 3. Create a finalized consensus round
-        hub.action_consensus_propose(ai_dir, "finalize-consensus", ["cc"], "cc")
+        hub.action_consensus_propose(ai_dir, "finalize-consensus", ["cc", "cx"], "cc")
         capsys.readouterr()
         # Find round ID from files
         consensus_files = list((ai_dir / "consensus").glob("*.json"))
@@ -460,6 +461,7 @@ def test_collab_rate_guard(ai_dir, capsys):
         
         # Vote and finalize
         hub.action_consensus_vote(ai_dir, round_id, "cc", "agree", "agreeing")
+        hub.action_consensus_vote(ai_dir, round_id, "cx", "agree", "agreeing")
         capsys.readouterr()
         
         # Now guard should pass since a finalized consensus round exists

@@ -9,6 +9,10 @@ import hub
 
 class TestConsensusAdvanced:
     """N-Node 합의 프로토콜 심화 시나리오."""
+    
+    @pytest.fixture(autouse=True)
+    def mock_health(self, monkeypatch):
+        monkeypatch.setattr(hub, "_peer_effective_health", lambda *args, **kwargs: ("GREEN", {}))
 
     def test_p1_dynamic_node_consensus(self, ai_dir, capsys):
         """노드 동적 확장 후 합의 과정 포함 검증."""

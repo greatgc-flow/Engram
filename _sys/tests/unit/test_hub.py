@@ -636,6 +636,11 @@ class TestMessageEnvelope:
 
 # ─── §P-3 만장일치 협의 프로토콜 ─────────────────────────────
 class TestConsensusProtocol:
+    @pytest.fixture(autouse=True)
+    def mock_health(self, monkeypatch):
+        import hub
+        monkeypatch.setattr(hub, "_peer_effective_health", lambda *args, **kwargs: ("GREEN", {}))
+
     def test_propose_creates_round(self, ai_dir, capsys):
         hub.action_consensus_propose(ai_dir, "Test subject", ["cc", "ca", "gc"], "cc")
         rounds = list((ai_dir / "consensus").glob("*.json"))
