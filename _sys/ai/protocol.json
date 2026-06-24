@@ -668,6 +668,10 @@
       "context-ack"
     ],
     "read_only_hub_actions": [
+      "ask",
+      "ask-all",
+      "ask-stream",
+      "relay",
       "read",
       "mark-read",
       "check",

@@ -100,3 +100,12 @@ def test_cx_parity_still_fails_when_sandbox_absent():
         errors = hub._check_flag_parity()
     assert any("PARITY cx" in e and "workspace-write" in e for e in errors), \
         f"sandbox-absent cx must be flagged, got: {errors}"
+
+
+def test_ask_actions_are_classified_not_unknown():
+    """Regression: ask/ask-all/ask-stream/relay must be classified (read_only),
+    else the phase-policy gate blocks them as 'unknown_actions' when a phase is set
+    (root cause of intermittent [HUB:BLOCK] 'ask has no phase policy during active')."""
+    for action in ("ask", "ask-all", "ask-stream", "relay"):
+        group = hub._action_group(action)
+        assert group == "read_only_hub_actions", f"{action} regressed to group={group}"
