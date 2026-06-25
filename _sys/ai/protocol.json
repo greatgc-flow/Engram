@@ -75,7 +75,6 @@
     "prompt_templates": {
       "compact": {
         "purpose": "Low-tier or short-context peer handoff.",
-        "max_context_chars": 800,
         "fields": [
           "TASK",
           "INPUT_REFS",
@@ -87,7 +86,6 @@
       },
       "standard": {
         "purpose": "Normal coordinator-to-peer routing.",
-        "max_context_chars": 4000,
         "fields": [
           "TASK",
           "BACKGROUND",
@@ -98,7 +96,6 @@
       },
       "deep_review": {
         "purpose": "High-tier review when additional context is justified.",
-        "max_context_chars": 12000,
         "fields": [
           "TASK",
           "DECISION_HISTORY",
@@ -226,6 +223,7 @@
     }
   },
   "health": {
+    "_note_thresholds": "These measure per-peer active context jsonl size, distinct from global autonomous_maintenance limits.",
     "thresholds": {
       "claude": {
         "green_mb": 0.6,
@@ -451,7 +449,6 @@
   "runtime": {
     "ask_default_timeout_sec": 180,
     "pty_lease_sec": 300,
-    "max_inline_response_chars": 4000,
     "quiet_default": false,
     "output_file_policy": {
       "enabled": true,
@@ -470,7 +467,7 @@
     "heartbeat_required_for_long_running": true,
     "heartbeat_sec": 30,
     "lease_timeout_sec": 1800,
-    "large_content_strategy": "file_ref",
+    "_note_large_content": "handoff uses HANDOFF_MAX_* truncation instead of file_ref",
     "out_of_band_direct_writes": {
       "enforceable_by_hub": false,
       "policy": "non_compliant_for_governed_artifacts_without_artifact_workflow"
@@ -923,6 +920,7 @@
       "periodic_minutes": 0
     },
     "health_thresholds": {
+      "_note_health": "These measure total system maintenance/log sizes, distinct from per-peer active context limits.",
       "jsonl_warn_mb": 80,
       "jsonl_fail_mb": 150,
       "consecutive_failure_warn": 3,

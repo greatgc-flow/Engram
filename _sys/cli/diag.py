@@ -23,12 +23,31 @@ def main():
     print(" 📊 PEER DETAILED METRICS")
     print("="*60)
 
-    peers = ["ag", "cc", "cx"]
-    peer_dirs = {
-        "ag": SYS_DIR / "antigravity",
-        "cc": SYS_DIR / "claude",
-        "cx": SYS_DIR / "codex"
-    }
+    peers = []
+    peer_dirs = {}
+    orch_file = SYS_DIR / "ai" / "orchestration.json"
+    if orch_file.exists():
+        try:
+            orch_data = json.loads(orch_file.read_text(encoding="utf-8"))
+            for node in orch_data.get("hub_nodes", []):
+                if node.get("type") == "peer" and node.get("enabled", True):
+                    pid = node.get("node_id")
+                    if pid:
+                        peers.append(pid)
+                        aliases = node.get("aliases", [])
+                        if aliases:
+                            peer_dirs[pid] = SYS_DIR / aliases[0]
+                        else:
+                            peer_dirs[pid] = SYS_DIR / pid
+        except Exception:
+            pass
+    if not peers:
+        peers = ["ag", "cc", "cx"]
+        peer_dirs = {
+            "ag": SYS_DIR / "antigravity",
+            "cc": SYS_DIR / "claude",
+            "cx": SYS_DIR / "codex"
+        }
 
     for peer in peers:
         print(f"\n[{peer.upper()} PEER INFO]")
