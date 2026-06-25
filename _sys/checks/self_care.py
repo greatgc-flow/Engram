@@ -276,14 +276,38 @@ class SelfCare:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Engram self-care pipeline")
     parser.add_argument(
+        "step",
+        nargs="?",
+        default="all",
+        help="Specific step to run (e.g. observe), or 'all'",
+    )
+    parser.add_argument(
         "--trigger",
         choices=["session_end", "error_threshold", "commit_interval", "manual"],
         default="manual",
     )
+    parser.add_argument(
+        "--lesson-grad-only",
+        action="store_true",
+        help="Only run lesson_graduation step",
+    )
     args = parser.parse_args()
 
     sc = SelfCare()
-    sc.run(trigger=args.trigger)
+    if args.lesson_grad_only:
+        try:
+            sc.lesson_graduation()
+        except Exception as exc:
+            sc.state["errors"].append(f"lesson_graduation: {exc}")
+        sc.record(trigger=args.trigger)
+    elif args.step and args.step != "all":
+        try:
+            getattr(sc, args.step)()
+        except Exception as exc:
+            sc.state["errors"].append(f"{args.step}: {exc}")
+        sc.record(trigger=args.trigger)
+    else:
+        sc.run(trigger=args.trigger)
     sys.exit(0)
 
 

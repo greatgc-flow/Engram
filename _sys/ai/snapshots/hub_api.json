@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-24T22:08:46",
+  "generated_at": "2026-06-25T08:08:05",
   "source": "hub.py",
   "count": 80,
   "signatures": {
@@ -744,6 +744,11 @@
           "kind": "POSITIONAL_OR_KEYWORD",
           "default": null,
           "annotation": "str | None"
+        },
+        "ai_root": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "default": null,
+          "annotation": "Path | None"
         }
       },
       "return": "None"

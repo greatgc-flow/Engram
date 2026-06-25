@@ -1599,7 +1599,7 @@ def _parse_compact_ts(value: str | None) -> datetime | None:
     return None
 
 
-def _peer_effective_health(peer_id: str, stale_minutes: int | None = None, ai_root: Path | None = None) -> tuple[str, dict]:
+def _peer_effective_health(peer_id: str, stale_minutes: int | None = None, ai_root: Path | None = None, recover: bool = False) -> tuple[str, dict]:
     if stale_minutes is None:
         stale_minutes = int(_load_protocol_cfg().get("leader_election", {}).get("health_stale_minutes", 120) or 120)
     _, data = _read_peer_health(peer_id)
@@ -1611,7 +1611,7 @@ def _peer_effective_health(peer_id: str, stale_minutes: int | None = None, ai_ro
     
     if is_stale and status != "RED":
         # Proactive Self-Healing: Auto-recover STALE peers
-        if ai_root:
+        if ai_root and recover:
             print(f"[HUB:AUTO] Peer {peer_id} is STALE. Proactively recovering...", file=sys.stderr)
             action_peer_recover(ai_root, peer_id, "proactive_auto_recover")
             _, data = _read_peer_health(peer_id)
@@ -3354,7 +3354,7 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
-def action_health_check(peer_filter: str | None = None) -> None:
+def action_health_check(peer_filter: str | None = None, ai_root: Path | None = None) -> None:
     """전체(또는 특정) 피어 건강 상태 출력. GREEN이지만 PID 종료 시 STALE로 표시."""
     peers_data = _load_peers()
     all_peers_cfg = peers_data.get("peers", peers_data)
@@ -3371,7 +3371,7 @@ def action_health_check(peer_filter: str | None = None) -> None:
             ctx = h.get("context_health", {})
             st = ctx.get("status", "UNKNOWN")
             mb = ctx.get("jsonl_mb", 0.0)
-            effective_st, _ = _peer_effective_health(peer_name)
+            effective_st, _ = _peer_effective_health(peer_name, ai_root=ai_root, recover=True)
             if effective_st == "STALE" and st != "STALE":
                 st = "STALE"
                 h.setdefault("context_health", {})["status"] = "STALE"
@@ -5710,7 +5710,7 @@ def action_health_sweep(ai_root: Path) -> None:
         if node.get("enabled") is False:
             continue
         peer = node.get("node_id")
-        status, data = _peer_effective_health(peer)
+        status, data = _peer_effective_health(peer, ai_root=ai_root, recover=True)
         if status == "STALE":
             was_stale = data.get("context_health", {}).get("status") == "STALE"
             data.setdefault("context_health", {})["status"] = "STALE"
@@ -6187,7 +6187,7 @@ def main() -> None:
     elif act == "health-update":
         action_health_update(args.peer or "cc", args.status_val or "GREEN", args.jsonl_mb, args.failures)
     elif act == "health-check":
-        action_health_check(args.peer)
+        action_health_check(args.peer, ai_root=ai_root)
     elif act == "peer-status":
         action_peer_status(args.peer or None, include_all=bool(args.all))
     elif act == "context-fill":

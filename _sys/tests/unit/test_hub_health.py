@@ -219,3 +219,42 @@ class TestHealthReader:
         reader = self._make_reader(tmp_path, {})
         assert reader.all_states() == {}
         assert reader.eligible_peers() == []
+
+
+def test_peer_health_read_is_nonmutating(tmp_path, monkeypatch):
+    """P0.1: _peer_effective_health with recover=False does not auto-recover STALE peers."""
+    import hub
+    ai_root = tmp_path / "_sys" / "ai"
+    ai_root.mkdir(parents=True)
+    peer_id = "testpeer"
+    peer_sys = tmp_path / "_sys" / peer_id
+    peer_sys.mkdir(parents=True)
+    
+    # Mock paths
+    monkeypatch.setattr(hub, "_node_to_peer_map", lambda: {peer_id: peer_id})
+    monkeypatch.setattr(hub, "_peer_sys_dir", lambda pid: peer_sys)
+    monkeypatch.setattr(hub, "_load_protocol_cfg", lambda: {})
+    
+    health_file = peer_sys / "health.json"
+    from datetime import datetime, timedelta, timezone
+    stale_time = (datetime.now() - timedelta(minutes=130)).strftime("%Y%m%dT%H%M%S")
+    health_data = {
+        "context_health": {
+            "status": "GREEN",
+            "checked_at": stale_time
+        }
+    }
+    health_file.write_text(json.dumps(health_data), encoding="utf-8")
+    
+    mtime_before = health_file.stat().st_mtime
+    bytes_before = health_file.read_bytes()
+    
+    # Act
+    status, data = hub._peer_effective_health(peer_id, ai_root=ai_root)
+    
+    # Assert
+    assert status == "STALE"
+    mtime_after = health_file.stat().st_mtime
+    bytes_after = health_file.read_bytes()
+    assert mtime_before == mtime_after
+    assert bytes_before == bytes_after

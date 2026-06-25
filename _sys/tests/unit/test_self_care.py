@@ -187,3 +187,27 @@ class TestSelfCare:
                         main()
                     except SystemExit as e:
                         assert e.code == 0 or e.code is None
+
+    def test_protocol_session_step_args_accepted(self, mock_env):
+        """P0.4: Check that self_care.py argparse accepts args defined in protocol.json schedule."""
+        from self_care import main
+        
+        # Test observe step args
+        with patch("sys.argv", ["self_care.py", "observe"]):
+            with patch("self_care.SelfCare.observe") as mock_observe:
+                with patch("self_care.SelfCare.record") as mock_record:
+                    try:
+                        main()
+                    except SystemExit as e:
+                        assert e.code == 0 or e.code is None
+                    mock_observe.assert_called_once()
+                    
+        # Test lesson graduation step args
+        with patch("sys.argv", ["self_care.py", "--lesson-grad-only"]):
+            with patch("self_care.SelfCare.lesson_graduation") as mock_lesson_grad:
+                with patch("self_care.SelfCare.record") as mock_record:
+                    try:
+                        main()
+                    except SystemExit as e:
+                        assert e.code == 0 or e.code is None
+                    mock_lesson_grad.assert_called_once()

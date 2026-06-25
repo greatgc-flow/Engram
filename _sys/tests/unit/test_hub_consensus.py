@@ -3,6 +3,7 @@ hub.py N-Node 합의(Consensus) 심화 테스트 — MECE 보완 (P1, P2, P3)
 기권(Abstain), 에스컬레이션(Escalated), 동적 노드 확장 검증
 """
 import json
+import re
 import pytest
 from pathlib import Path
 import hub
@@ -129,4 +130,87 @@ class TestConsensusAdvanced:
         assert "doc_targets" in data
         assert data["status"] == "finalized"
 
-import re
+    def test_consensus_keystone_no_supermajority(self, ai_dir, capsys, monkeypatch):
+        """P0.2: mid-round-closed round where active-but-not-all voters agree must escalate to human_gate (NOT finalize)."""
+        # Propose with 3 voters
+        hub.action_consensus_propose(ai_dir, "Supermajority test", ["cc", "gc", "cx"], "cc")
+        out = capsys.readouterr().out
+        round_id = re.search(r"PROPOSE (r-\w+)", out).group(1)
+        
+        hub.action_consensus_vote(ai_dir, round_id, "cc", "agree", "test")
+        
+        # Make cx STALE
+        monkeypatch.setattr(hub, "_peer_effective_health", lambda pid, **kw: ("STALE", {}) if pid == "cx" else ("GREEN", {}))
+        
+        # gc votes and triggers mid_round_closed evaluation
+        hub.action_consensus_vote(ai_dir, round_id, "gc", "agree", "test")
+        
+        rpath = ai_dir / "consensus" / f"{round_id}.json"
+        data = json.loads(rpath.read_text("utf-8"))
+        assert data["status"] == "escalated"
+        assert data["outcome"] == "human_gate"
+
+    def test_consensus_finalize_requires_unanimous_gateopen_plus_nonproposer(self, ai_dir, capsys):
+        """P0.2: all gate-OPEN voters agree + >=1 non-proposer -> finalized. proposer-only -> escalate."""
+        # 1. Proposer only (N=1)
+        hub.action_consensus_propose(ai_dir, "Proposer only", ["cc"], "cc")
+        out = capsys.readouterr().out
+        round_id = re.search(r"PROPOSE (r-\w+)", out).group(1)
+        hub.action_consensus_vote(ai_dir, round_id, "cc", "agree", "test")
+        rpath = ai_dir / "consensus" / f"{round_id}.json"
+        data = json.loads(rpath.read_text("utf-8"))
+        assert data["status"] == "escalated"
+        assert data["outcome"] == "human_gate"
+
+        # 2. All agree + >=1 nonproposer
+        hub.action_consensus_propose(ai_dir, "Normal", ["cc", "gc"], "cc")
+        out = capsys.readouterr().out
+        round_id = re.search(r"PROPOSE (r-\w+)", out).group(1)
+        hub.action_consensus_vote(ai_dir, round_id, "cc", "agree", "test")
+        hub.action_consensus_vote(ai_dir, round_id, "gc", "agree", "test")
+        rpath = ai_dir / "consensus" / f"{round_id}.json"
+        data = json.loads(rpath.read_text("utf-8"))
+        assert data["status"] == "finalized"
+        assert data["outcome"] == "unanimous"
+
+        # 3. Any disagree
+        hub.action_consensus_propose(ai_dir, "Disagree", ["cc", "gc"], "cc")
+        out = capsys.readouterr().out
+        round_id = re.search(r"PROPOSE (r-\w+)", out).group(1)
+        hub.action_consensus_vote(ai_dir, round_id, "cc", "agree", "test")
+        hub.action_consensus_vote(ai_dir, round_id, "gc", "disagree", "test")
+        rpath = ai_dir / "consensus" / f"{round_id}.json"
+        data = json.loads(rpath.read_text("utf-8"))
+        assert data["status"] == "escalated"
+        assert data["outcome"] == "human_gate"
+
+    def test_consensus_sweep_escalates_on_timeout(self, ai_dir, capsys, monkeypatch):
+        """P0.3: round stalled past timeout -> escalated/timeout."""
+        hub.action_consensus_propose(ai_dir, "Timeout", ["cc", "gc"], "cc")
+        out = capsys.readouterr().out
+        round_id = re.search(r"PROPOSE (r-\w+)", out).group(1)
+        
+        # Fake proposed_at to be older than timeout
+        rpath = ai_dir / "consensus" / f"{round_id}.json"
+        data = json.loads(rpath.read_text("utf-8"))
+        from datetime import datetime, timedelta
+        data["proposed_at"] = (datetime.now() - timedelta(minutes=40)).isoformat()
+        rpath.write_text(json.dumps(data), "utf-8")
+        
+        hub.action_consensus_sweep(ai_dir, timeout_minutes=30)
+        
+        data = json.loads(rpath.read_text("utf-8"))
+        assert data["status"] == "escalated"
+        assert data["outcome"] == "timeout"
+
+    def test_consensus_sweep_ignores_fresh_rounds(self, ai_dir, capsys):
+        """P0.3: round within window is untouched."""
+        hub.action_consensus_propose(ai_dir, "Fresh", ["cc", "gc"], "cc")
+        out = capsys.readouterr().out
+        round_id = re.search(r"PROPOSE (r-\w+)", out).group(1)
+        
+        hub.action_consensus_sweep(ai_dir, timeout_minutes=30)
+        
+        rpath = ai_dir / "consensus" / f"{round_id}.json"
+        data = json.loads(rpath.read_text("utf-8"))
+        assert data["status"] == "voting"

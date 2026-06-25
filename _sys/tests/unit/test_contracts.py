@@ -99,6 +99,17 @@ class TestGuardActionContract:
 class TestPeerStatusContract:
     """action_peer_status() parameter contract."""
 
+class TestActionHealthCheckContract:
+    """action_health_check() parameter contract"""
+    
+    def test_parameter_contract(self):
+        sig = inspect.signature(hub.action_health_check)
+        params = list(sig.parameters.keys())
+        assert "peer_filter" in params
+        assert "ai_root" in params
+        assert sig.parameters["peer_filter"].default is None
+        assert sig.parameters["ai_root"].default is None
+
     def test_optional_defaults(self):
         sig = inspect.signature(hub.action_peer_status)
         p = sig.parameters

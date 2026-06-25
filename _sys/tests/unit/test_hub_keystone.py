@@ -141,3 +141,24 @@ class TestHubKeystone:
         hub.action_proposal_vote(ai_dir, proposal_id, "cc", "agree", "test")
         content2 = inv_file.read_text(encoding="utf-8")
         assert content == content2
+
+    def test_pro19_narrow_enforce_scope(self, ai_dir, capsys, monkeypatch):
+        """P0.2: terminal-origin mutating_hub_actions blocked; terminal-origin ask (any tier incl deepthink) ALLOWED; --force-tier0 bypasses the mutation block."""
+        monkeypatch.setattr(hub, "_load_protocol_cfg", lambda: {
+            "operational_guard": {
+                "enabled": True,
+                "mutating_hub_actions": ["checkpoint"],
+                "decision_tier_floor": {
+                    "enabled": True,
+                    "mutating_hub_actions_min_tier": "effort"
+                }
+            }
+        })
+        # Mock sys.exit to catch block
+        with pytest.raises(SystemExit) as excinfo:
+            hub._guard_action(ai_dir, "checkpoint", force_tier0=False, origin="terminal")
+        assert excinfo.value.code == 3
+        
+        # Should NOT exit
+        hub._guard_action(ai_dir, "ask", force_tier0=False, origin="terminal")
+        hub._guard_action(ai_dir, "checkpoint", force_tier0=True, origin="terminal")
