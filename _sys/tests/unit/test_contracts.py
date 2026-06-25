@@ -107,8 +107,10 @@ class TestActionHealthCheckContract:
         params = list(sig.parameters.keys())
         assert "peer_filter" in params
         assert "ai_root" in params
+        assert "recover" in params
         assert sig.parameters["peer_filter"].default is None
         assert sig.parameters["ai_root"].default is None
+        assert sig.parameters["recover"].default is False
 
     def test_optional_defaults(self):
         sig = inspect.signature(hub.action_peer_status)

@@ -11,11 +11,7 @@ def main() -> None:
     try:
         orch = json.loads((sys_dir / "ai" / "orchestration.json").read_text(encoding="utf-8"))
         gc = next(n for n in orch.get("hub_nodes", []) if n.get("node_id") == "gc")
-        health_path = sys_dir / "gemini" / "health.json"
-        health = json.loads(health_path.read_text(encoding="utf-8")) if health_path.exists() else {}
-        gate_open = health.get("availability", {}).get("gate_open", True)
-        state = health.get("context_health", {}).get("status", "UNKNOWN")
-        if gc.get("enabled") is not False and gate_open and state != "RED":
+        if gc.get("enabled") is not False:
             print("[GATE] gemini=ON")
             sys.exit(0)
     except Exception:

@@ -178,13 +178,6 @@ def _resolve_profile_id(node_id: str) -> str | None:
     return None
 
 
-def _node_to_peer_map() -> dict:
-    policy = _load_lifecycle_policy()
-    configured = policy.get("identity", {}).get("node_to_peer", {})
-    if configured:
-        return configured
-    return {"cc": "claude", "ca": "claude", "gc": "gemini", "ag": "antigravity", "cx": "codex"}
-
 
 def _select_ask_profile(to: str, query: str) -> tuple[str, dict | None]:
     """Resolve a root peer ask to a profile node using zero-token policy."""
@@ -236,17 +229,11 @@ def _select_ask_profile(to: str, query: str) -> tuple[str, dict | None]:
 
 
 def _peer_sys_dir(peer_id: str) -> Path:
-    """peers.json의 sys_subdir로 _sys/{subdir}/ 해석 — 하드코딩 없음.
-
-    node_id(cc, ca, gc, ag, cx) → peers.json key(claude, gemini, antigravity, codex) 매핑 포함.
-    """
-    # node_id → peers.json key 매핑 (orchestration.json 또는 기본값)
-    peers = _load_peers()
-    peer_data = peers.get("peers", peers)
-    peer_key = _node_to_peer_map().get(peer_id, peer_id)
-    cfg = peer_data.get(peer_key, {})
-    subdir = cfg.get("sys_subdir", peer_key)
-    return Path(__file__).parent.parent / subdir
+    """peers.json의 sys_subdir로 _sys/{subdir}/ 해석 — 하드코딩 없음."""
+    subdir = hub_peer.resolve_peer_sys_dir(peer_id)
+    if subdir:
+        return Path(__file__).parent.parent / subdir
+    return Path(__file__).parent.parent / peer_id
 
 
 def _load_peers() -> dict:
@@ -2410,10 +2397,10 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     peers = _load_peers()
     target_peer_id = None
     target_peer_cfg = None
-    mapped_peer = _node_to_peer_map().get(health_peer, health_peer)
-    if mapped_peer in peers:
+    mapped_peer = hub_peer.resolve_peer_sys_dir(health_peer) or health_peer
+    if mapped_peer in peers.get("peers", peers):
         target_peer_id = mapped_peer
-        target_peer_cfg = peers[mapped_peer]
+        target_peer_cfg = peers.get("peers", peers)[mapped_peer]
     else:
         for pid, pcfg in peers.items():
             native = pcfg.get("native_binary")
@@ -3285,6 +3272,15 @@ def action_health_update(peer_id: str, status: str, jsonl_mb: float = 0.0, failu
     availability 딕셔너리가 전달되면 health.json["availability"] 섹션도 병합 갱신.
     GREEN+failures=0 시 entrypoint_ok/authenticated 자동 반영 (cx 버그 픽스).
     """
+    orchestration = _load_orchestration()
+    enabled_peers = {
+        n.get("node_id") for n in orchestration.get("hub_nodes", [])
+        if n.get("type") == "peer" and n.get("enabled") is not False
+    }
+    if peer_id not in enabled_peers:
+        print(f"[HUB] HEALTH-UPDATE REFUSED: {peer_id} is not an enabled peer.")
+        return
+
     peer_dir = _peer_sys_dir(peer_id)
     health_path = peer_dir / "health.json"
     with _get_lock(peer_dir.parent.parent / ".ai", f"health_{peer_id}"):
@@ -3296,7 +3292,7 @@ def action_health_update(peer_id: str, status: str, jsonl_mb: float = 0.0, failu
                 data = {}
         cfg = _load_protocol_cfg()
         thresholds = cfg.get("health", {}).get("thresholds", {})
-        peer_name = _node_to_peer_map().get(peer_id, peer_id)
+        peer_name = hub_peer.resolve_peer_sys_dir(peer_id) or peer_id
         if peer_name not in thresholds:
             peer_name = peer_id
         th = thresholds.get(peer_name, {"green_mb": 0.6, "yellow_mb": 1.2})
@@ -3355,14 +3351,26 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
-def action_health_check(peer_filter: str | None = None, ai_root: Path | None = None) -> None:
+def action_health_check(peer_filter: str | None = None, ai_root: Path | None = None, recover: bool = False) -> None:
     """전체(또는 특정) 피어 건강 상태 출력. GREEN이지만 PID 종료 시 STALE로 표시."""
+    orchestration = _load_orchestration()
+    enabled_peers = {
+        n.get("node_id") for n in orchestration.get("hub_nodes", [])
+        if n.get("type") == "peer" and n.get("enabled") is not False
+    }
+
     peers_data = _load_peers()
     all_peers_cfg = peers_data.get("peers", peers_data)
     results = []
-    targets = [peer_filter] if peer_filter else list(all_peers_cfg.keys())
+    
+    if peer_filter:
+        targets = [peer_filter]
+    else:
+        targets = sorted(list(enabled_peers))
+        
     for peer_name in targets:
-        peer_dir = Path(__file__).parent.parent / all_peers_cfg.get(peer_name, {}).get("sys_subdir", peer_name)
+        subdir = hub_peer.resolve_peer_sys_dir(peer_name) or peer_name
+        peer_dir = Path(__file__).parent.parent / subdir
         health_path = peer_dir / "health.json"
         if not health_path.exists():
             results.append(f"{peer_name}=UNKNOWN")
@@ -3372,20 +3380,35 @@ def action_health_check(peer_filter: str | None = None, ai_root: Path | None = N
             ctx = h.get("context_health", {})
             st = ctx.get("status", "UNKNOWN")
             mb = ctx.get("jsonl_mb", 0.0)
-            effective_st, _ = _peer_effective_health(peer_name, ai_root=ai_root, recover=True)
-            if effective_st == "STALE" and st != "STALE":
-                st = "STALE"
-                h.setdefault("context_health", {})["status"] = "STALE"
-                h["context_health"]["stale_marked_at"] = _now()
-                health_path.write_text(json.dumps(h, ensure_ascii=False, indent=2), encoding="utf-8")
-            # lazy PID 검증: GREEN인데 active_pid가 죽어있으면 STALE로 표시 후 갱신
-            active_pid = h.get("availability", {}).get("active_pid")
-            if st == "GREEN" and active_pid and not _pid_alive(active_pid):
-                st = "STALE"
-                h.setdefault("context_health", {})["status"] = "STALE"
-                h["context_health"]["stale_marked_at"] = _now()
-                h.setdefault("availability", {}).pop("active_pid", None)
-                health_path.write_text(json.dumps(h, ensure_ascii=False, indent=2), encoding="utf-8")
+            
+            effective_st, _ = _peer_effective_health(peer_name, ai_root=ai_root, recover=recover)
+            
+            if recover:
+                changed = False
+                if effective_st == "STALE" and st != "STALE":
+                    st = "STALE"
+                    h.setdefault("context_health", {})["status"] = "STALE"
+                    h["context_health"]["stale_marked_at"] = _now()
+                    changed = True
+                
+                active_pid = h.get("availability", {}).get("active_pid")
+                if st == "GREEN" and active_pid and not _pid_alive(active_pid):
+                    st = "STALE"
+                    h.setdefault("context_health", {})["status"] = "STALE"
+                    h["context_health"]["stale_marked_at"] = _now()
+                    h.setdefault("availability", {}).pop("active_pid", None)
+                    changed = True
+                    
+                if changed:
+                    health_path.write_text(json.dumps(h, ensure_ascii=False, indent=2), encoding="utf-8")
+            else:
+                if effective_st == "STALE":
+                    st = "STALE"
+                else:
+                    active_pid = h.get("availability", {}).get("active_pid")
+                    if st == "GREEN" and active_pid and not _pid_alive(active_pid):
+                        st = "STALE"
+                
             results.append(f"{peer_name}={st}({mb:.1f}MB)")
         except Exception:
             results.append(f"{peer_name}=ERROR")
@@ -3500,8 +3523,8 @@ def action_peer_status(node_id: str | None = None, include_all: bool = False) ->
     print("PEER\tLIFECYCLE\tGATE\tHEALTH\tVERSION\tDETAILS")
     for node in targets:
         peer_id = node["node_id"]
-        installation_id = _node_to_peer_map().get(peer_id, peer_id)
-        installation = installations.get(installation_id, {})
+        installation_id = hub_peer.resolve_peer_sys_dir(peer_id) or peer_id
+        installation = installations.get("peers", installations).get(installation_id, {})
         peer_dir = sys_dir / installation.get("sys_subdir", installation_id)
 
         lifecycle = "enabled" if node.get("enabled") is not False else "disabled"
@@ -6055,6 +6078,7 @@ def main() -> None:
     parser.add_argument("--query", default="")
     parser.add_argument("--query-file")
     parser.add_argument("--target")
+    parser.add_argument("--recover", action="store_true", help="Recover state for health-check")
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--id", type=int)
     parser.add_argument("--axis")
@@ -6188,7 +6212,7 @@ def main() -> None:
     elif act == "health-update":
         action_health_update(args.peer or "cc", args.status_val or "GREEN", args.jsonl_mb, args.failures)
     elif act == "health-check":
-        action_health_check(args.peer, ai_root=ai_root)
+        action_health_check(args.peer, ai_root=ai_root, recover=args.recover)
     elif act == "peer-status":
         action_peer_status(args.peer or None, include_all=bool(args.all))
     elif act == "context-fill":

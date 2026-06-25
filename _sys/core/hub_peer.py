@@ -74,6 +74,40 @@ _ORCHESTRATION_MTIME_NS = -1
 _ORCHESTRATION_CACHE: dict[str, Any] = {}
 _NORMALIZED_CACHE: dict[str, Any] | None = None
 _NORMALIZED_SOURCE: dict[str, Any] | None = None
+_PEERS_PATH = _AI_DIR / "peers.json"
+_PEERS_MTIME_NS = -1
+_PEERS_SYS_DIR_CACHE: dict[str, str] = {}
+
+
+def resolve_peer_sys_dir(peer_id: str, sys_dir: Path | str | None = None) -> str | None:
+    """Resolve peer_id to its sys_subdir based on peers.json.
+    If sys_dir is provided, the path is resolved relative to it, otherwise just the subdir is returned.
+    """
+    global _PEERS_MTIME_NS, _PEERS_SYS_DIR_CACHE
+    base_id = peer_id.split('.')[0]
+    if _PEERS_PATH.exists():
+        try:
+            mtime_ns = _PEERS_PATH.stat().st_mtime_ns
+            if mtime_ns != _PEERS_MTIME_NS:
+                peers_data = json.loads(_PEERS_PATH.read_text(encoding="utf-8")).get("peers", {})
+                new_cache = {}
+                for p_cfg in peers_data.values():
+                    subdir = p_cfg.get("sys_subdir")
+                    if subdir:
+                        for n_id in p_cfg.get("node_ids", []):
+                            new_cache[n_id] = subdir
+                _PEERS_SYS_DIR_CACHE = new_cache
+                _PEERS_MTIME_NS = mtime_ns
+        except Exception:
+            pass
+    
+    subdir = _PEERS_SYS_DIR_CACHE.get(base_id)
+    if not subdir:
+        return None
+        
+    if sys_dir is not None:
+        return str(Path(sys_dir) / subdir)
+    return subdir
 
 
 def _load_orchestration() -> dict:

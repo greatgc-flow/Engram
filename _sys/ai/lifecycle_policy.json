@@ -2,12 +2,6 @@
   "_version": "1.0",
   "_help": "Config-driven peer lifecycle, ask failure handling, room reset, and messaging policy. hub.py reads this file; keep behavior rules here instead of hardcoding them.",
   "identity": {
-    "node_to_peer": {
-      "cc": "claude",
-      "ca": "claude",
-      "ag": "antigravity",
-      "cx": "codex"
-    },
     "fallback_by_node": {
       "cc": ["cx", "ag"],
       "ca": ["cx", "cc"],

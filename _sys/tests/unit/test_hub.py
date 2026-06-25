@@ -765,24 +765,24 @@ class TestNodeManagement:
 
 class TestLifecycleActions:
     def test_health_update_closes_and_reopens_gate(self, tmp_path, monkeypatch):
-        peer_dir = tmp_path / "_sys" / "gemini"
+        peer_dir = tmp_path / "_sys" / "codex"
         peer_dir.mkdir(parents=True)
         monkeypatch.setattr(hub, "_peer_sys_dir", lambda peer_id: peer_dir)
 
-        hub.action_health_update("gc", "RED", 0.0, 0)
+        hub.action_health_update("cx", "RED", 0.0, 0)
         health = json.loads((peer_dir / "health.json").read_text("utf-8"))
         assert health["context_health"]["status"] == "RED"
         assert health["availability"]["gate_open"] is False
         assert health["availability"]["entrypoint_ok"] is False
 
-        hub.action_health_update("gc", "GREEN", 0.0, 0)
+        hub.action_health_update("cx", "GREEN", 0.0, 0)
         health = json.loads((peer_dir / "health.json").read_text("utf-8"))
         assert health["context_health"]["status"] == "GREEN"
         assert health["availability"]["gate_open"] is True
         assert health["availability"]["entrypoint_ok"] is True
 
     def test_health_precheck_fails_explicit_stale_peer(self, ai_dir, tmp_path, monkeypatch):
-        peer_dir = tmp_path / "_sys" / "gemini"
+        peer_dir = tmp_path / "_sys" / "codex"
         peer_dir.mkdir(parents=True)
         (peer_dir / "health.json").write_text(json.dumps({
             "peer_id": "gc",

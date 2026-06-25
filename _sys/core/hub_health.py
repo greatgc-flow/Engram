@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from hub_peer import resolve_peer_sys_dir
+
 _CORE_DIR = Path(__file__).parent
 _SYS_DIR = _CORE_DIR.parent
 _AI_DIR = _SYS_DIR / "ai"
@@ -39,23 +41,18 @@ def _load_json(path: Path) -> dict:
 
 
 def _peer_dirs() -> dict[str, Path]:
-    """Return {peer_id: sys_subdir} from lifecycle_policy.json or defaults."""
-    policy = _load_json(_LIFECYCLE_PATH)
-    node_map = policy.get("identity", {}).get("node_to_peer", {})
+    """Return {node_id: sys_subdir} from orchestration.json."""
     result: dict[str, Path] = {}
-    for node_id, peer_id in node_map.items():
-        candidate = _SYS_DIR / peer_id
-        if candidate.is_dir():
-            result[peer_id] = candidate
-    # Fallback: read peer list from peers.json (data-driven, no hardcoding)
-    peers_path = _AI_DIR / "peers.json"
-    peers_data = _load_json(peers_path)
-    for peer_name, peer_cfg in peers_data.get("peers", {}).items():
-        if peer_name not in result:
-            subdir = peer_cfg.get("sys_subdir", peer_name)
-            p = _SYS_DIR / subdir
-            if p.is_dir():
-                result[peer_name] = p
+    orch_path = _AI_DIR / "orchestration.json"
+    orch_data = _load_json(orch_path)
+    for node in orch_data.get("hub_nodes", []):
+        if node.get("type") == "peer" and node.get("enabled") is not False:
+            node_id = node.get("node_id")
+            if node_id:
+                subdir = resolve_peer_sys_dir(node_id) or node_id
+                p = _SYS_DIR / subdir
+                if p.is_dir():
+                    result[node_id] = p
     return result
 
 

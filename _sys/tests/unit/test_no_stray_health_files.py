@@ -29,14 +29,6 @@ def _node_to_sys_subdir() -> dict[str, str]:
     return mapping
 
 
-@pytest.mark.xfail(
-    reason="Phase B writer fix pending: the node_id->dir resolver (lifecycle_policy "
-    "node_to_peer / health-update) still writes _sys/<node_id>/health.json (e.g. "
-    "_sys/gc, _sys/ag) instead of the sys_subdir, and some hub tests recreate these "
-    "strays against the real tree. Flips to xpass once Phase B routes writes through "
-    "resolve_peer_sys_dir(). See ops/terminal-health-misread-consensus-2026-06-25.md.",
-    strict=False,
-)
 def test_no_stray_node_id_health_files():
     """No `_sys/<node_id>/health.json` may exist when node_id != its sys_subdir."""
     strays = [

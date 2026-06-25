@@ -18,6 +18,8 @@ _PORTABLE_ROOT = _SYS_DIR.parent
 sys.path.insert(0, str(_SYS_DIR / "hooks"))
 from collab_log import log_collab  # noqa: E402
 from raw_log import save_raw  # noqa: E402
+sys.path.insert(0, str(_SYS_DIR / "core"))
+from hub_peer import resolve_peer_sys_dir  # noqa: E402
 
 
 def build_env() -> dict:
@@ -35,18 +37,8 @@ def _active_ai_peer() -> str | None:
         orchestration = json.loads(
             (_SYS_DIR / "ai" / "orchestration.json").read_text(encoding="utf-8")
         )
-        peers = json.loads(
-            (_SYS_DIR / "ai" / "peers.json").read_text(encoding="utf-8")
-        ).get("peers", {})
     except (OSError, json.JSONDecodeError):
         return None
-
-    node_to_sys_dir = {}
-    for peer_cfg in peers.values():
-        if not isinstance(peer_cfg, dict) or peer_cfg.get("enabled") is False:
-            continue
-        for node_id in peer_cfg.get("node_ids", []):
-            node_to_sys_dir[node_id] = peer_cfg.get("sys_subdir")
 
     enabled = {
         node.get("node_id")
@@ -58,7 +50,7 @@ def _active_ai_peer() -> str | None:
     for node_id in ("ag", "cc", "cx"):
         if node_id not in enabled:
             continue
-        sys_subdir = node_to_sys_dir.get(node_id)
+        sys_subdir = resolve_peer_sys_dir(node_id)
         if not sys_subdir:
             continue
         try:
@@ -164,8 +156,12 @@ def write_unknown_json(out_file: Path, task: str, note: str) -> None:
 def update_status_error(dt: str, error_key: str) -> None:
     """Record an active peer failure in its runtime health manifest."""
     peer_id = _active_ai_peer()
-    peer_dirs = {"gc": "gemini", "ag": "antigravity", "cc": "claude", "cx": "codex"}
-    health_file = _SYS_DIR / peer_dirs.get(peer_id, peer_id) / "health.json"
+    if not peer_id:
+        return
+    sys_subdir = resolve_peer_sys_dir(peer_id)
+    if not sys_subdir:
+        return
+    health_file = _SYS_DIR / sys_subdir / "health.json"
     try:
         data = json.loads(health_file.read_text(encoding="utf-8")) if health_file.exists() else {}
         session = data.setdefault("session_health", {})

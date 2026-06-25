@@ -73,19 +73,19 @@ class TestIntegrationP2P:
         """[권한/의사결정] P2P 무제한 합의 및 교차 발의 검증."""
         root, vpy, hub = test_env["root"], test_env["venv_py"], test_env["hub_py"]
 
-        self._run(vpy, hub, ["health-update", "--peer", "gc", "--status", "GREEN"], root)
+        self._run(vpy, hub, ["health-update", "--peer", "ag", "--status", "GREEN"], root)
         self._run(vpy, hub, ["health-update", "--peer", "cc", "--status", "GREEN"], root)
-        self._run(vpy, hub, ["health-update", "--peer", "ca", "--status", "GREEN"], root)
+        self._run(vpy, hub, ["health-update", "--peer", "cx", "--status", "GREEN"], root)
 
-        self._run(vpy, hub, ["consensus-propose", "--subject", "p2p-test", "--voters", "cc,ca,gc", "--from", "gc"], root)
+        self._run(vpy, hub, ["consensus-propose", "--subject", "p2p-test", "--voters", "cc,cx,ag", "--from", "ag"], root)
 
         rounds = list((root / ".ai/consensus").glob("*.json"))
         assert len(rounds) == 1
         rid = json.loads(rounds[0].read_text("utf-8"))["round_id"]
 
         self._run(vpy, hub, ["consensus-vote", "--round-id", rid, "--voter", "cc", "--vote", "disagree", "--reason", "more info req"], root)
-        self._run(vpy, hub, ["consensus-vote", "--round-id", rid, "--voter", "ca", "--vote", "agree"], root)
-        self._run(vpy, hub, ["consensus-vote", "--round-id", rid, "--voter", "gc", "--vote", "agree"], root)
+        self._run(vpy, hub, ["consensus-vote", "--round-id", rid, "--voter", "cx", "--vote", "agree"], root)
+        self._run(vpy, hub, ["consensus-vote", "--round-id", rid, "--voter", "ag", "--vote", "agree"], root)
 
         round_data = json.loads(rounds[0].read_text("utf-8"))
         assert round_data["status"] == "escalated"
@@ -96,10 +96,10 @@ class TestIntegrationP2P:
         root, vpy, hub = test_env["root"], test_env["venv_py"], test_env["hub_py"]
 
         self._run(vpy, hub, ["init-session", "--agent", "cc"], root)
-        self._run(vpy, hub, ["send", "--from", "cc", "--to", "gc", "--msg", "write-doc", "--type", "DIRECTIVE"], root)
-        self._run(vpy, hub, ["send", "--from", "cc", "--to", "ca", "--msg", "write-code", "--type", "DIRECTIVE"], root)
-        self._run(vpy, hub, ["send", "--from", "gc", "--to", "cc", "--msg", "doc-done", "--type", "ARTIFACT"], root)
-        self._run(vpy, hub, ["send", "--from", "ca", "--to", "cc", "--msg", "code-done", "--type", "ARTIFACT"], root)
+        self._run(vpy, hub, ["send", "--from", "cc", "--to", "ag", "--msg", "write-doc", "--type", "DIRECTIVE"], root)
+        self._run(vpy, hub, ["send", "--from", "cc", "--to", "cx", "--msg", "write-code", "--type", "DIRECTIVE"], root)
+        self._run(vpy, hub, ["send", "--from", "ag", "--to", "cc", "--msg", "doc-done", "--type", "ARTIFACT"], root)
+        self._run(vpy, hub, ["send", "--from", "cx", "--to", "cc", "--msg", "code-done", "--type", "ARTIFACT"], root)
 
         inbox = self._out(vpy, hub, ["check", "--target", "cc"], root)
         assert "doc-done" in inbox
@@ -110,13 +110,13 @@ class TestIntegrationP2P:
         root, vpy, hub = test_env["root"], test_env["venv_py"], test_env["hub_py"]
 
         self._run(vpy, hub, ["init-session", "--agent", "cc"], root)
-        self._run(vpy, hub, ["init-session", "--agent", "ca"], root)
-        self._run(vpy, hub, ["init-session", "--agent", "gc"], root)
-        self._run(vpy, hub, ["send", "--from", "ca", "--to", "cc", "--msg", "feat-x", "--type", "ARTIFACT"], root)
-        self._run(vpy, hub, ["send", "--from", "gc", "--to", "ca", "--msg", "PASS: doc aligns", "--type", "VERIFY"], root)
-        self._run(vpy, hub, ["send", "--from", "cc", "--to", "ca", "--msg", "PASS: code logic ok", "--type", "VERIFY"], root)
+        self._run(vpy, hub, ["init-session", "--agent", "cx"], root)
+        self._run(vpy, hub, ["init-session", "--agent", "ag"], root)
+        self._run(vpy, hub, ["send", "--from", "cx", "--to", "cc", "--msg", "feat-x", "--type", "ARTIFACT"], root)
+        self._run(vpy, hub, ["send", "--from", "ag", "--to", "cx", "--msg", "PASS: doc aligns", "--type", "VERIFY"], root)
+        self._run(vpy, hub, ["send", "--from", "cc", "--to", "cx", "--msg", "PASS: code logic ok", "--type", "VERIFY"], root)
 
-        ca_inbox = self._out(vpy, hub, ["check", "--target", "ca"], root)
+        ca_inbox = self._out(vpy, hub, ["check", "--target", "cx"], root)
         assert "doc aligns" in ca_inbox
         assert "code logic ok" in ca_inbox
 
@@ -125,7 +125,7 @@ class TestIntegrationP2P:
         root, vpy, hub = test_env["root"], test_env["venv_py"], test_env["hub_py"]
 
         self._run(vpy, hub, ["init-session", "--agent", "cc"], root)
-        self._run(vpy, hub, ["consensus-propose", "--subject", "high-rate-task", "--voters", "cc,ca,gc"], root)
+        self._run(vpy, hub, ["consensus-propose", "--subject", "high-rate-task", "--voters", "cc,cx,ag"], root)
 
         status = self._out(vpy, hub, ["status"], root)
         assert "high-rate-task" in status
@@ -142,8 +142,8 @@ class TestIntegrationP2P:
         assert (ext_project / ".ai").exists()
         assert (ext_project / ".ai" / "state.json").exists()
 
-        self._run(vpy, hub, ["send", "--from", "cc", "--to", "gc", "--msg", "ext-msg-test"], ext_project)
-        inbox = self._out(vpy, hub, ["check", "--target", "gc"], ext_project)
+        self._run(vpy, hub, ["send", "--from", "cc", "--to", "ag", "--msg", "ext-msg-test"], ext_project)
+        inbox = self._out(vpy, hub, ["check", "--target", "ag"], ext_project)
         assert "ext-msg-test" in inbox
 
         ws_root = test_env["root"]
@@ -163,11 +163,11 @@ class TestIntegrationP2P:
 
         # Project A: cc → gc로 메시지 전송
         self._run(vpy, hub, ["init-session", "--agent", "cc", "--room", "room-proj-a"], proj_a)
-        self._run(vpy, hub, ["send", "--from", "cc", "--to", "gc", "--msg", "secret-for-proj-a"], proj_a)
+        self._run(vpy, hub, ["send", "--from", "cc", "--to", "ag", "--msg", "secret-for-proj-a"], proj_a)
 
         # Project B: 초기화만 (A의 메시지가 없어야 함)
         self._run(vpy, hub, ["init-session", "--agent", "cc", "--room", "room-proj-b"], proj_b)
-        inbox_b = self._out(vpy, hub, ["check", "--target", "gc"], proj_b)
+        inbox_b = self._out(vpy, hub, ["check", "--target", "ag"], proj_b)
 
         assert "secret-for-proj-a" not in inbox_b, \
             "프로젝트 A의 메시지가 프로젝트 B의 inbox에 누출됨"
@@ -182,24 +182,24 @@ class TestIntegrationP2P:
         """[합의] Final Call(FC) 프로토콜 및 다중 노드 분업 시나리오 검증."""
         root, vpy, hub = test_env["root"], test_env["venv_py"], test_env["hub_py"]
         
-        self._run(vpy, hub, ["health-update", "--peer", "gc", "--status", "GREEN"], root)
+        self._run(vpy, hub, ["health-update", "--peer", "ag", "--status", "GREEN"], root)
         self._run(vpy, hub, ["health-update", "--peer", "cc", "--status", "GREEN"], root)
 
         self._run(vpy, hub, ["init-session", "--agent", "cc"], root)
-        self._run(vpy, hub, ["init-session", "--agent", "gc"], root)
+        self._run(vpy, hub, ["init-session", "--agent", "ag"], root)
         
         # 1. 제안 (Propose)
-        self._run(vpy, hub, ["consensus-propose", "--subject", "feat-implementation", "--voters", "cc,gc", "--from", "cc"], root)
+        self._run(vpy, hub, ["consensus-propose", "--subject", "feat-implementation", "--voters", "cc,ag", "--from", "cc"], root)
         
         # 2. Final Call 메시지 전송 (Convention)
         fc_msg = "PLAN:[1.edit, 2.test] RISK:Low FC:r-1234:SUMMARY=Ready to execute. VOTE?"
-        self._run(vpy, hub, ["send", "--from", "cc", "--to", "gc", "--msg", fc_msg, "--type", "DIRECTIVE"], root)
+        self._run(vpy, hub, ["send", "--from", "cc", "--to", "ag", "--msg", fc_msg, "--type", "DIRECTIVE"], root)
         
         # 3. 투표 (Vote)
         rounds = list((root / ".ai/consensus").glob("*.json"))
         rid = json.loads(rounds[0].read_text("utf-8"))["round_id"]
         self._run(vpy, hub, ["consensus-vote", "--round-id", rid, "--voter", "cc", "--vote", "agree"], root)
-        self._run(vpy, hub, ["consensus-vote", "--round-id", rid, "--voter", "gc", "--vote", "agree"], root)
+        self._run(vpy, hub, ["consensus-vote", "--round-id", rid, "--voter", "ag", "--vote", "agree"], root)
         
         # 4. 결과 및 상태 확인
         status = self._out(vpy, hub, ["status"], root)

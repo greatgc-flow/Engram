@@ -2,10 +2,14 @@ import os
 import json
 import subprocess
 from pathlib import Path
+import sys
 
 CLI_DIR = Path(__file__).parent
 SYS_DIR = CLI_DIR.parent
 PORTABLE_ROOT = SYS_DIR.parent
+
+sys.path.insert(0, str(SYS_DIR / "core"))
+from hub_peer import resolve_peer_sys_dir
 
 def main():
     print("="*60)
@@ -34,9 +38,9 @@ def main():
                     pid = node.get("node_id")
                     if pid:
                         peers.append(pid)
-                        aliases = node.get("aliases", [])
-                        if aliases:
-                            peer_dirs[pid] = SYS_DIR / aliases[0]
+                        subdir = resolve_peer_sys_dir(pid)
+                        if subdir:
+                            peer_dirs[pid] = SYS_DIR / subdir
                         else:
                             peer_dirs[pid] = SYS_DIR / pid
         except Exception:

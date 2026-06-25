@@ -231,7 +231,7 @@ def test_peer_health_read_is_nonmutating(tmp_path, monkeypatch):
     peer_sys.mkdir(parents=True)
     
     # Mock paths
-    monkeypatch.setattr(hub, "_node_to_peer_map", lambda: {peer_id: peer_id})
+    monkeypatch.setattr(hub.hub_peer, "resolve_peer_sys_dir", lambda p: peer_id if p == peer_id else None)
     monkeypatch.setattr(hub, "_peer_sys_dir", lambda pid: peer_sys)
     monkeypatch.setattr(hub, "_load_protocol_cfg", lambda: {})
     
@@ -258,3 +258,97 @@ def test_peer_health_read_is_nonmutating(tmp_path, monkeypatch):
     bytes_after = health_file.read_bytes()
     assert mtime_before == mtime_after
     assert bytes_before == bytes_after
+
+
+def test_action_health_check_default_targets(capsys, monkeypatch):
+    """Blocker 1: health-check defaults to enabled orchestration node_ids (cc/ag/cx), omits gc."""
+    import hub
+    
+    monkeypatch.setattr(hub, "_load_orchestration", lambda: {"hub_nodes": [
+        {"node_id": "cc", "type": "peer", "enabled": True},
+        {"node_id": "ag", "type": "peer", "enabled": True},
+        {"node_id": "cx", "type": "peer", "enabled": True},
+        {"node_id": "gc", "type": "peer", "enabled": False},
+    ]})
+    
+    # Provide fake peers data so we don't depend on actual peers.json
+    monkeypatch.setattr(hub, "_load_peers", lambda: {"peers": {"claude": {}, "gemini": {}, "codex": {}, "antigravity": {}}})
+    monkeypatch.setattr(hub.hub_peer, "resolve_peer_sys_dir", lambda peer: {"cc":"claude","ag":"antigravity","cx":"codex","gc":"gemini"}.get(peer, peer))
+    
+    # Prevent actual _peer_effective_health execution which requires physical files
+    monkeypatch.setattr(hub, "_peer_effective_health", lambda pid, ai_root=None, recover=False: ("GREEN", {}))
+    
+    # Create fake health.json for each peer directory so they aren't UNKNOWN
+    import pathlib
+    base_dir = pathlib.Path(__file__).parent.parent.parent.parent / "_sys"
+    
+    # Mocking Path.exists and read_text for the health paths
+    original_exists = pathlib.Path.exists
+    original_read_text = pathlib.Path.read_text
+    
+    def fake_exists(path_obj):
+        if path_obj.name == "health.json":
+            return True
+        return original_exists(path_obj)
+        
+    def fake_read_text(path_obj, encoding=None):
+        if path_obj.name == "health.json":
+            return json.dumps({"context_health": {"status": "GREEN", "jsonl_mb": 1.0}})
+        return original_read_text(path_obj, encoding=encoding)
+        
+    monkeypatch.setattr(pathlib.Path, "exists", fake_exists)
+    monkeypatch.setattr(pathlib.Path, "read_text", fake_read_text)
+
+    hub.action_health_check()
+    
+    captured = capsys.readouterr().out
+    
+    # Ensure cc, ag, cx are listed and gc is omitted
+    assert "cc=" in captured
+    assert "ag=" in captured
+    assert "cx=" in captured
+    assert "gc=" not in captured
+
+
+def test_hub_health_eligible_excludes_disabled_gemini(monkeypatch):
+    """Blocker 2: hub_health.py --eligible respects orchestration ENABLED roots and resolves via node_ids."""
+    monkeypatch.setattr(hub_health, "_load_json", lambda path: {"hub_nodes": [
+        {"node_id": "cc", "type": "peer", "enabled": True},
+        {"node_id": "ag", "type": "peer", "enabled": True},
+        {"node_id": "cx", "type": "peer", "enabled": True},
+        {"node_id": "gc", "type": "peer", "enabled": False},
+    ]} if path.name == "orchestration.json" else {"peers": {"claude": {}, "gemini": {}, "codex": {}, "antigravity": {}}})
+    
+    monkeypatch.setattr(hub_health, "resolve_peer_sys_dir", lambda peer: {"cc":"claude","ag":"antigravity","cx":"codex","gc":"gemini"}.get(peer, peer))
+    
+    import pathlib
+    original_is_dir = pathlib.Path.is_dir
+    def fake_is_dir(path_obj):
+        if path_obj.name in ["claude", "antigravity", "codex", "gemini"]:
+            return True
+        return original_is_dir(path_obj)
+    monkeypatch.setattr(pathlib.Path, "is_dir", fake_is_dir)
+    
+    # Force _load_json within hub_health to return a GREEN state for all health.json to isolate the test to filtering logic
+    original_load_json = hub_health._load_json
+    def fake_load_json(path_obj):
+        if path_obj.name == "health.json":
+            return {
+                "context_health": {"status": "GREEN", "checked_at": "now"},
+                "session_health": {"consecutive_failures": 0},
+                "availability": {"entrypoint_ok": True, "authenticated": True}
+            }
+        return original_load_json(path_obj)
+    monkeypatch.setattr(hub_health, "_load_json", fake_load_json)
+
+    reader = HealthReader()
+    eligible = reader.eligible_peers()
+    
+    # cc, ag, cx should be eligible
+    assert "cc" in eligible
+    assert "ag" in eligible
+    assert "cx" in eligible
+    
+    # gemini (installation name) and gc (disabled) should NOT be eligible
+    assert "gc" not in eligible
+    assert "gemini" not in eligible
