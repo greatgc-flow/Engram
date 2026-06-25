@@ -1,4 +1,4 @@
-"""Tests for hub.py v4.1 features: routing metrics, declarative peer-status engine, profile validation."""
+﻿"""Tests for hub.py v4.1 features: routing metrics, declarative peer-status engine, profile validation."""
 import json
 import subprocess
 import pytest
@@ -556,3 +556,20 @@ class TestResolveProfileId:
              patch("hub._default_nodes", return_value={"nodes": self._mock_nodes()}):
             result = hub._resolve_profile_id("unknown_node")
         assert result is None
+
+
+class TestHealthGuard:
+    def test_disabled_peer_health_not_written(self, ai_dir, tmp_path):
+        from unittest.mock import patch
+        import hub
+        
+        orchestration = {
+            "hub_nodes": [
+                {"node_id": "gc", "type": "peer", "enabled": False}
+            ]
+        }
+        
+        with patch("hub._load_orchestration", return_value=orchestration), \
+             patch("hub._peer_sys_dir", return_value=tmp_path):
+            hub._record_ask_success("gc", 10, ai_dir)
+            assert not (tmp_path / "health.json").exists()

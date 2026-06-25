@@ -1311,6 +1311,14 @@ def _ask_health_precheck(peer_id: str, ai_root: Path | None) -> None:
 def _record_ask_success(peer_id: str, elapsed: int, ai_root: Path | None, health_dir: Path | None = None) -> None:
     if ai_root is None:
         return
+    if health_dir is None:
+        orchestration = _load_orchestration()
+        enabled_peers = {
+            n.get("node_id") for n in orchestration.get("hub_nodes", [])
+            if n.get("type") == "peer" and n.get("enabled") is not False
+        }
+        if peer_id not in enabled_peers:
+            return
     _, data = _read_peer_health(peer_id, health_dir)
     ctx = data.setdefault("context_health", {})
     previous_reason = data.get("session_health", {}).get("last_failure_reason")
@@ -1381,6 +1389,14 @@ def _record_ask_failure(
 ) -> None:
     if ai_root is None:
         return
+    if health_dir is None:
+        orchestration = _load_orchestration()
+        enabled_peers = {
+            n.get("node_id") for n in orchestration.get("hub_nodes", [])
+            if n.get("type") == "peer" and n.get("enabled") is not False
+        }
+        if peer_id not in enabled_peers:
+            return
     _, data = _read_peer_health(peer_id, health_dir)
     sh = data.setdefault("session_health", {})
     prev_failure_reason = sh.get("last_failure_reason")  # capture before overwrite for auto-promote check
