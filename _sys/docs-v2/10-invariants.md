@@ -120,6 +120,8 @@
 
 > **PRO-19 implementation status (ENFORCED).** ENFORCED for mutating_hub_actions; read-only asks/consultation exempt regardless of tier. Programmatically enforced in `hub.py`: mutations are blocked for `terminal` origin, read-only asks and consultations are explicitly exempt regardless of tier, and `--force-tier0` provides the required Tier-0 human override (INV-03). The three intended controls are active: (1) `HUB_ORIGIN=terminal` callers are blocked from all `mutating_hub_actions` (PRO-19/C1); (2) `decision_tier_floor` requires at least `effort` tier for governance mutations (PRO-19/C2); (3) system-automated actions (sweeps, health checks, session lifecycle) are explicitly exempted (PRO-19/C3).
 
+> **PRO-19 analysis-boundary clause (GAP-1, 2026-06-26).** Extends PRO-19 from *state mutation* to *cognitive role*: the human-interface terminal may **frame, route, relay, and summarize** worker outputs, but MUST NOT perform substantive task analysis once a worker is selected (it must not pre-analyze/re-frame the request in a way that biases the worker — enrichment, not analysis). "Coordinator"/"leader" is a **task role assigned by protocol** (see `general/routing.md §3` leader election), NOT an authority the terminal self-assumes. Owner: this index + `general/protocol.md §1.2`.
+
 ### Peer Equality & Multi-Terminal (INV-30)
 | ID | Rule |
 |----|------|
