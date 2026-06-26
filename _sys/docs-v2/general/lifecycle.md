@@ -73,7 +73,7 @@ Session reuse is governed solely by the config-driven `session_mode` field in `o
 
 - `cc`, `ag`, `cx`: Have reuse configured per `orchestration.json`.
 - `gc`: SUSPENDED TOMBSTONE. (tier_suspended).
-- `ag`: Runs in PTY/inline mode (`requires_pty=true`, `agy -p` prompt-inline) and is **not** session-reusable: it carries `session_mode: none`, the hub never sends continuation/conversation flags to it (enforced by `AgyAdapter.build_cmd`), and `AgyAdapter` implements no `build_session_cmd`.
+- `ag`: Reuses via **ambient durable state** (`session_mode: reuse`): `agy -p` natively auto-continues its `conversations/*.db` store WITHOUT continuation/conversation flags (PTY/inline mode, `requires_pty=true`). IPC asks run in a stateless `ipc-config/` home (see `specific/ag.md`) so ambient reuse is scoped, not cross-contaminating.
 
 State file: `_sys/{peer_dir}/session_state.json` (gitignored).
 On resume failure: retire old session → retry fresh once.

@@ -73,7 +73,7 @@ blocked selection     -> same-peer downward fallback
 
 Root peer terminals start at `standard`. Root peer asks through hub.py are classified automatically. Explicit profile nodes are immutable.
 
-See `ops/automatic-profile-routing-2026-06-20.md` for the decision record, signals, fallback rules, tests, and benchmark.
+See `_sys/docs/history/ops/automatic-profile-routing-2026-06-20.md` (archived decision record) for signals, fallback rules, tests, and benchmark.
 
 ## 3. Leader Election & Role Assignment
 
@@ -299,6 +299,6 @@ The lifecycle command synchronizes topology, installation `node_ids`, status pro
 | Active voter/role parity | exact set equality |
 | Disabled descendant routing | 0 |
 
-See `ops/peer-debate-2026-06-19.md` for the full decision record.
+See `_sys/docs/history/ops/peer-debate-2026-06-19.md` (archived) for the full decision record.
 
 

@@ -33,7 +33,7 @@ claude -p {query} --dangerously-skip-permissions
 *(Note: Claude Fable 5 is recognized via `fable`/`claude-fable-5` but not routed if unavailable to the account. Claude Code lacks a zero-token catalog command).*
 
 ## Session & State
-- **No session reuse:** Fresh session per invocation (cc is the primary human interface peer).
+- **Session reuse:** hub IPC asks reuse per `session_mode: reuse` (orchestration.json), scoped by `room_id`. The interactive human-facing cc terminal is a separate fresh session per launch.
 - **Local Memory:** Claude-local memory is not automatically shared with other peers.
 
 ## Gate & Entry

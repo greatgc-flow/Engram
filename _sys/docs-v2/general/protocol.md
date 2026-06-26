@@ -152,7 +152,7 @@ Zero-token local operations (observe/validate/classify) are **exempt** from COLL
 ```
 PROPOSE → VOTE → FINALIZE
 ```
-1. `hub.py consensus-propose --subject "..." --voters cc,gc,cx --from {peer}`
+1. `hub.py consensus-propose --subject "..." --voters cc,ag,cx --from {peer}`
 2. `hub.py consensus-vote --round-id r-XXXX --voter {peer} --vote agree|disagree|abstain`
 3. Auto-finalize when all votes collected:
    - `unanimous`: All agree → Proceed
@@ -168,9 +168,9 @@ PROPOSE → VOTE → FINALIZE
 | `abstain` | Offline auto-abstain after `offline_auto_abstain_minutes` |
 
 ### 4.4 R:10 Rules & Quorum Authority
-- All registered voters MUST explicitly `agree` — no exceptions.
-- Offline auto-abstain does NOT satisfy unanimity at R:10.
-- Any offline/abstaining required voter → escalate to Human for override or policy downgrade.
+- All **gate-OPEN** registered voters (per the round-start snapshot — see Gate-Based Quorum below, D-08g/INV-28) MUST explicitly `agree` before FINALIZE. RED/STALE/quarantined peers are excluded from the snapshot denominator N — NOT counted as silent approval.
+- Offline auto-abstain does NOT satisfy agreement; a gate-OPEN required voter that goes offline mid-round with no prior `agree` blocks finalization → escalate to Human (Tier 0).
+- Any explicit `disagree` from a gate-OPEN voter blocks; requires resolution or Human override.
 - PTY peers (ag): write vote directly to `.ai/consensus/{round_id}.json` OR relay via `hub.py send --to cc` (NEVER `hub.py ask` — PTY deadlock risk).
 
 **Gate-Based Quorum (D-08g)**

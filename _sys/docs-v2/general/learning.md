@@ -191,7 +191,7 @@ Self-care is **event-driven** (not time-based) to save tokens when there is noth
 
 | Component / Subsystem | Status |
 |-----------------------|--------|
-| `protocol.json` autonomous_maintenance section | ⏳ Pending R:10 consensus |
+| `protocol.json` autonomous_maintenance section | ✅ Present/enabled in config (triggers wired); scope of safe Tier-0 actions still bounded — autonomous mutation DROPPED (observe/propose only) |
 | `saturation_scan.py` (Phase 2) | ✅ `_sys/checks/saturation_scan.py` |
 | `sync_docs.py` / DocsSyncer (Phase 3) | ✅ DRY-RUN only via `_sys/checks/sync_docs.py` |
 | `self_care.py` event pipeline + ctx_end wiring | ✅ `_sys/checks/self_care.py` |
