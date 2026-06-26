@@ -216,7 +216,7 @@ check-deps.bat, git-draft.bat, check-risk.bat (risk-scan uses exit /b 0 — non-
 
 ### 3-5. Collaboration Protocol
 → See **`_sys/docs-v2/general/protocol.md`** (P2P model, COLLAB_RATE levels, feedback loop).
-→ Consensus voting rules: **`_sys/docs-v2/general/consensus.md`** (R:10, Final Call, tiebreak).
+→ Consensus voting rules: **`_sys/docs-v2/general/protocol.md`** §4 Collaboration & Consensus (R:10, Final Call, tiebreak).
 → Runtime config (single source of truth): **`_sys/ai/protocol.json`** (`collab_rate.current`, health thresholds, r10_voters).
 → Full SSOT index: **`PROTOCOL.md`** → **`_sys/docs-v2/MOC.md`**.
 
@@ -285,7 +285,7 @@ Hardcoded drive letters are prohibited. Mutual non-interference zone → See **`
 ---
 
 ## §8 — Decision Delegation Policy
-For matters requiring unanimous agreement → See **`_sys/docs-v2/general/consensus.md`** (R:10, Final Call, voter list).
+For matters requiring unanimous agreement → See **`_sys/docs-v2/general/protocol.md`** §4 Collaboration & Consensus (R:10, Final Call, voter list).
 Call Human Gate in case of deadlock → See **`_sys/docs-v2/10-invariants.md`** (INV-07 Human escalation).
 
 ## §9 — Testing Environment Policy (2026-06-01)

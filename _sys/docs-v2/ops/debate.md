@@ -39,13 +39,13 @@ Each round:
 
 ## §5 — Voting
 
-Same consensus rules as `general/consensus.md`. At FULL tier, R:10 rules apply.
+Same consensus rules as `general/protocol.md` §4. At FULL tier, R:10 rules apply.
 
 ---
 
 ## §6 — Tiebreak
 
-Follow `general/consensus.md §5`. Tiebreak escalates to Human (Tier 0).
+Follow `general/protocol.md` §4.6 (Tiebreak). Tiebreak escalates to Human (Tier 0).
 
 ---
 
