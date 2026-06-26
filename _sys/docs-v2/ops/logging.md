@@ -2,7 +2,7 @@
 
 > Status: ACTIVE v1.0 | Created: 2026-06-18
 > Purpose: Full observability — per-peer/model/node detail logging, IPC send/receive history, console output capture, rolling policy, and 5-Whys investigation integration.
-> Cross-ref: `general/resource-governance.md §9` (cost-log), `general/self-evolution.md §4` (self-care triggers)
+> Cross-ref: `general/routing.md §6` (cost-log); `general/learning.md` (self-care triggers, pending Pillar 4)
 
 ---
 
@@ -398,4 +398,4 @@ Debug log retention: 3 days (shorter than normal — typically high volume).
 
 ---
 
-_v1.0 completed 2026-06-18. Covers full log taxonomy (MECE), per-node/model detail capture, IPC send/receive history, 5-Whys root cause integration, rolling policy, and virtuous feedback loop connection to resource-governance.md §8–§9._
+_v1.0 completed 2026-06-18. Covers full log taxonomy (MECE), per-node/model detail capture, IPC send/receive history, 5-Whys root cause integration, rolling policy, and virtuous feedback loop connection to routing.md §6–§7._

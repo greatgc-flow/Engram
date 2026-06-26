@@ -117,11 +117,11 @@ Each core script has a required docs-v2 counterpart. If the script changes, the 
 
 | Script | Required Doc Update |
 |--------|-------------------|
-| `_sys/core/hub.py` | `general/protocol.md` or `general/resource-governance.md` |
+| `_sys/core/hub.py` | `general/protocol.md` or `general/routing.md` |
 | `_sys/checks/self_care.py` | `general/self-evolution.md` |
-| `_sys/checks/check_versions.py` | `general/resource-governance.md §11` |
+| `_sys/checks/check_versions.py` | `general/routing.md §7` |
 | `_sys/checks/saturation_scan.py` | `general/self-evolution.md` |
-| `_sys/ai/peers.json` | `general/resource-governance.md §3` |
+| `_sys/ai/peers.json` | `general/routing.md §2` |
 | `_sys/ai/protocol.json` | `general/protocol.md` |
 
 ### 6.2 Validation (check_docs_mece.py — planned, EDGE-04)

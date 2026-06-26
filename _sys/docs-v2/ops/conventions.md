@@ -221,7 +221,7 @@ check-deps.bat, git-draft.bat, check-risk.bat (risk-scan uses exit /b 0 — non-
 → Full SSOT index: **`PROTOCOL.md`** → **`_sys/docs-v2/MOC.md`**.
 
 ## §3-7 — Gemini-first Analysis Rule
-When gc should be prioritized as an analysis tool (large corpus, cross-repo scan) → See **`_sys/docs-v2/20-architecture.md §6`** (connectivity map) and **`_sys/docs-v2/general/resource-governance.md §7`** (role taxonomy R06 Large Corpus Analyst).
+When gc should be prioritized as an analysis tool (large corpus, cross-repo scan) → See **`_sys/docs-v2/20-architecture.md §6`** (connectivity map) and **`_sys/docs-v2/general/routing.md §3`** (role taxonomy).
 
 ## §3-8 — Collaboration Health Check
 Collaboration health check → **Axis H** (`_sys/checks/check-health.bat`). Token budget: See §3-4-D.
