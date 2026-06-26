@@ -107,40 +107,33 @@ def find_ai_root() -> Path:
         candidate = parent
 
 
+try:
+    from .config import load_strict
+except ImportError:
+    from config import load_strict
+
 def _load_orchestration() -> dict:
     """_sys/ai/orchestration.json 로드 (hub 전용 상수 포함)."""
     path = Path(__file__).parent.parent / "ai" / "orchestration.json"
-    try:
-        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    except Exception:
-        return {}
+    return load_strict(path)
 
 
 def _load_protocol_cfg() -> dict:
     """_sys/ai/protocol.json 로드 (협업 정책 마스터 설정)."""
     path = Path(__file__).parent.parent / "ai" / "protocol.json"
-    try:
-        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    except Exception:
-        return {}
+    return load_strict(path)
 
 
 def _load_lifecycle_policy() -> dict:
     """Load config-driven peer lifecycle policy."""
     path = Path(__file__).parent.parent / "ai" / "lifecycle_policy.json"
-    try:
-        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    except Exception:
-        return {}
+    return load_strict(path)
 
 
 def _load_routing_config() -> dict:
     """Load deterministic routing and quality policy."""
     path = Path(__file__).parent.parent / "ai" / "routing-config.json"
-    try:
-        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    except Exception:
-        return {}
+    return load_strict(path)
 
 
 def _load_model_profiles() -> dict:
@@ -239,10 +232,7 @@ def _peer_sys_dir(peer_id: str) -> Path:
 def _load_peers() -> dict:
     """_sys/ai/peers.json 로드."""
     path = Path(__file__).parent.parent / "ai" / "peers.json"
-    try:
-        return json.loads(path.read_text(encoding="utf-8")).get("peers", {}) if path.exists() else {}
-    except Exception:
-        return {}
+    return load_strict(path).get("peers", {})
 
 
 def _prepare_ipc_stateless_home(peer_subdir: Path, cfg: dict) -> Path:

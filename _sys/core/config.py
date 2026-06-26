@@ -4,6 +4,19 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
+def load_strict(path: Path | str) -> dict:
+    """Strict load a normative config. Raises ValueError if malformed."""
+    p = Path(path)
+    if not p.exists():
+        return {}
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Malformed config at {p}: {e}") from e
+    except Exception as e:
+        raise ValueError(f"Failed to load config {p}: {e}") from e
+
 # Centralized Constants
 DEFAULT_NODEJS_VERSION = "22.22.3"
 DEFAULT_PYTHON_VERSION = "3.13.4"
@@ -145,23 +158,13 @@ class ConfigManager:
     def get_peers_config(cls) -> Dict[str, Any]:
         """Reads _sys/ai/peers.json."""
         peers_path = cls.get_sys_dir() / "ai" / "peers.json"
-        if peers_path.exists():
-            try:
-                with open(peers_path, "r", encoding="utf-8") as f:
-                    return json.load(f).get("peers", {})
-            except Exception: pass
-        return {}
+        return load_strict(peers_path).get("peers", {})
 
     @classmethod
     def get_orchestration_config(cls) -> Dict[str, Any]:
         """Reads _sys/ai/orchestration.json."""
         path = cls.get_sys_dir() / "ai" / "orchestration.json"
-        if path.exists():
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception: pass
-        return {}
+        return load_strict(path)
 
 # Provide a ready-to-use instance/functions for ease of use
 config = ConfigManager()

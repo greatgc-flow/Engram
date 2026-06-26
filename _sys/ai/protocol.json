@@ -313,15 +313,6 @@
         "orchestration",
         "documentation",
         "large-corpus-analysis",
-        "axis-d",
-        "global-dependency-mapping",
-        "zero-shot-tool-integration"
-      ],
-      "ag": [
-        "architecture",
-        "orchestration",
-        "documentation",
-        "large-corpus-analysis",
         "global-dependency-mapping",
         "shell-scripts",
         "quick-cli",
@@ -347,7 +338,6 @@
       "ag": 1,
       "cc": 1,
       "ca": 1,
-      "ag": 1,
       "cx": 1
     },
     "routing_rules": [

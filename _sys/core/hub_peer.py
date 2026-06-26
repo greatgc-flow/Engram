@@ -19,17 +19,25 @@ Adapter selection:
 """
 from __future__ import annotations
 
-import json
 import copy
 import hashlib
+import json
+import logging
 import os
 import re
 import shlex
+import subprocess
+import sys
 import uuid
+from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+try:
+    from .config import load_strict
+except ImportError:
+    from config import load_strict
 
 @dataclass(frozen=True)
 class ContextPolicy:
@@ -86,20 +94,17 @@ def resolve_peer_sys_dir(peer_id: str, sys_dir: Path | str | None = None) -> str
     global _PEERS_MTIME_NS, _PEERS_SYS_DIR_CACHE
     base_id = peer_id.split('.')[0]
     if _PEERS_PATH.exists():
-        try:
-            mtime_ns = _PEERS_PATH.stat().st_mtime_ns
-            if mtime_ns != _PEERS_MTIME_NS:
-                peers_data = json.loads(_PEERS_PATH.read_text(encoding="utf-8")).get("peers", {})
-                new_cache = {}
-                for p_cfg in peers_data.values():
-                    subdir = p_cfg.get("sys_subdir")
-                    if subdir:
-                        for n_id in p_cfg.get("node_ids", []):
-                            new_cache[n_id] = subdir
-                _PEERS_SYS_DIR_CACHE = new_cache
-                _PEERS_MTIME_NS = mtime_ns
-        except Exception:
-            pass
+        mtime_ns = _PEERS_PATH.stat().st_mtime_ns
+        if mtime_ns != _PEERS_MTIME_NS:
+            peers_data = load_strict(_PEERS_PATH).get("peers", {})
+            new_cache = {}
+            for p_cfg in peers_data.values():
+                subdir = p_cfg.get("sys_subdir")
+                if subdir:
+                    for n_id in p_cfg.get("node_ids", []):
+                        new_cache[n_id] = subdir
+            _PEERS_SYS_DIR_CACHE = new_cache
+            _PEERS_MTIME_NS = mtime_ns
     
     subdir = _PEERS_SYS_DIR_CACHE.get(base_id)
     if not subdir:
@@ -114,18 +119,13 @@ def _load_orchestration() -> dict:
     global _ORCHESTRATION_MTIME_NS, _ORCHESTRATION_CACHE
     global _NORMALIZED_CACHE, _NORMALIZED_SOURCE
     if _ORCHESTRATION_PATH.exists():
-        try:
-            mtime_ns = _ORCHESTRATION_PATH.stat().st_mtime_ns
-            if mtime_ns != _ORCHESTRATION_MTIME_NS:
-                _ORCHESTRATION_CACHE = json.loads(
-                    _ORCHESTRATION_PATH.read_text(encoding="utf-8")
-                )
-                _ORCHESTRATION_MTIME_NS = mtime_ns
-                _NORMALIZED_CACHE = None
-                _NORMALIZED_SOURCE = None
-            return _ORCHESTRATION_CACHE
-        except Exception:
-            pass
+        mtime_ns = _ORCHESTRATION_PATH.stat().st_mtime_ns
+        if mtime_ns != _ORCHESTRATION_MTIME_NS:
+            _ORCHESTRATION_CACHE = load_strict(_ORCHESTRATION_PATH)
+            _ORCHESTRATION_MTIME_NS = mtime_ns
+            _NORMALIZED_CACHE = None
+            _NORMALIZED_SOURCE = None
+        return _ORCHESTRATION_CACHE
     return {}
 
 
