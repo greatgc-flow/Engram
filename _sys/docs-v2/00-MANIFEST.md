@@ -67,6 +67,7 @@ For human onboarding: `user/manual.md`
 | `ops/standard-capability-consensus-2026-06-25.md` | Standard/terminal capability + bounded escalation + same-peer fallback — cx/ag consensus (deferred impl) | 2026-06-25 |
 | `ops/terminal-health-misread-consensus-2026-06-25.md` | Terminal mis-reads peer health (stale mirrors) — root cause + fix; peers.json resolver, health-check read-only, command contract — cx/ag consensus | 2026-06-25 |
 | `ops/full-audit-2026-06-26.md` | Full cross-audit (source/config/settings + docs/guidelines + backlog) — ag+cx parallel MECE; P0/P1 ledger + deferred designs | 2026-06-26 |
+| `ops/backlog-5whys-consensus-2026-06-26.md` | **AUTHORITATIVE ROADMAP** — 5-Whys backlog validation + phased Ask Transaction primitive (AT-0..AT-6); KEEP/DROP/DEFER verdicts; cx/ag consensus | 2026-06-26 |
 | `ops/logging.md` | IPC history · console capture · per-node detail · rolling policy · 5-Whys | 2026-06-18 |
 | `ops/skills.md` | Hub skill catalog, invocation, registration | 2026-06-18 |
 | `ops/schemas.md` | JSON schema reference: protocol.json, peers.json, model-registry, health.json | 2026-06-18 |

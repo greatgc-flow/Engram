@@ -1,6 +1,7 @@
 # Full Cross-Audit — Source/Config/Settings + Docs/Guidelines + Backlog (2026-06-26)
 
 > **Method:** parallel MECE audit — ag.deepthink (source/config/settings) + cx (docs/guidelines/backlog), terminal-synthesized + spot-verified. AUDIT ONLY; nothing edited by the audit. Baseline = `consistency-audit-2026-06-24.md` + the 3 consensus docs; reports only NEW/remaining/inconsistent.
+> **Roadmap (2026-06-26):** this audit's findings were 5-Whys-validated against root intent and folded into the phased roadmap `ops/backlog-5whys-consensus-2026-06-26.md` — A-01/A-02/A-03 → AT-0, config P2 → AT-2, A-05/A-06 + doc drift → AT-6. See that doc for KEEP/DROP/DEFER verdicts (several items DROPPED as gold-plating).
 
 ## P0/P1 — actionable correctness (verified)
 | ID | Ref | Problem | Fix |
