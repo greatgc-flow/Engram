@@ -1511,10 +1511,18 @@ def _record_ask_failure(
         if is_transient:
             rls = target_avail.get("rate_limit_state", {})
             if not isinstance(rls, dict) or not rls.get("limited") or not rls.get("reset_at"):
-                from datetime import timedelta
-                backoff_sec = min(300, 2 ** trans_fails)
-                reset_dt = datetime.fromisoformat(_now()) + timedelta(seconds=backoff_sec)
-                target_avail["rate_limit_state"] = {"limited": True, "reset_at": reset_dt.isoformat(), "source_msg": detail[:100]}
+                # Prefer the vendor-parsed reset_at (classifier `extra`) over a synthesized
+                # local backoff — a profile-scoped rate-limit must honor the vendor's real
+                # reset window, not re-open the profile after ~2s (retry churn). Local
+                # exponential backoff only if the vendor gave no reset.
+                vendor_rls = extra.get("rate_limit_state") if isinstance(extra, dict) else None
+                if isinstance(vendor_rls, dict) and vendor_rls.get("reset_at"):
+                    target_avail["rate_limit_state"] = vendor_rls
+                else:
+                    from datetime import timedelta
+                    backoff_sec = min(300, 2 ** trans_fails)
+                    reset_dt = datetime.fromisoformat(_now()) + timedelta(seconds=backoff_sec)
+                    target_avail["rate_limit_state"] = {"limited": True, "reset_at": reset_dt.isoformat(), "source_msg": detail[:100]}
             
     if reason in critical_reasons:
         availability["gate_open"] = False

@@ -72,17 +72,20 @@ def validate_config(ai_dir: Path | str) -> bool:
                         if ref not in valid_refs:
                             log_error(f"routing-config.json: Invalid profile/ref '{ref}' for peer '{peer}' in target '{target}'")
 
-    # 3. Voter-list consistency
-    consensus = orch.get("consensus", {})
-    r10_voters = set(consensus.get("r10_voters", []))
-    inactive_voters = set(consensus.get("inactive_default_voters", []))
-    overlap = r10_voters.intersection(inactive_voters)
-    if overlap:
-        log_error(f"orchestration.json: consensus.r10_voters and inactive_default_voters overlap: {overlap}")
-        
-    for v in r10_voters.union(inactive_voters):
-        if v not in peers and v not in valid_peers:
-            log_error(f"orchestration.json: Voter '{v}' references a non-existent peer")
+    # 3. Voter-list consistency — check BOTH surfaces: orchestration.json AND protocol.json
+    #    (runtime consensus reads protocol.json["consensus"]["r10_voters"], so it must be
+    #    validated too — orchestration alone misses an injected protocol.json overlap).
+    protocol = parsed_configs.get("protocol.json", {})
+    for src_name, src in (("orchestration.json", orch), ("protocol.json", protocol)):
+        consensus = src.get("consensus", {})
+        r10_voters = set(consensus.get("r10_voters", []))
+        inactive_voters = set(consensus.get("inactive_default_voters", []))
+        overlap = r10_voters.intersection(inactive_voters)
+        if overlap:
+            log_error(f"{src_name}: consensus.r10_voters and inactive_default_voters overlap: {overlap}")
+        for v in r10_voters.union(inactive_voters):
+            if v not in peers and v not in valid_peers:
+                log_error(f"{src_name}: Voter '{v}' references a non-existent peer")
 
     # 5. malformed peers.json node_ids/sys_subdir shape
     for peer_id, p_cfg in peers.items():
