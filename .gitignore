@@ -80,6 +80,7 @@ _sys/claude/config/plans/
 _sys/claude/config/plugins/
 _sys/claude/config/projects/
 _sys/claude/config/sessions/
+_sys/claude/config/session-env/
 _sys/claude/config/shell-snapshots/
 _sys/claude/config/stats-cache.json
 _sys/claude/config/tasks/
@@ -141,6 +142,7 @@ _sys/ai/snapshots/*
 !_sys/ai/snapshots/hub_api.json
 _sys/ai/knowledge/logs/*.jsonl
 _sys/ai/ipc/
+_sys/ai/.lock/
 
 # Session plans and dynamic documentation (not tracked)
 /plans/
