@@ -65,11 +65,6 @@ For navigation by domain: `MOC.md`. For human onboarding: `user/manual.md`.
 | `ops/anti-patterns.md` | living | Peer failure modes (AP-01~) | 2026-06-16 |
 | `ops/audit-checklist.md` | living | MECE audit items — bootstrap, SUBST, cleanup, collab, docs | 2026-06-16 |
 | `ops/backlog-5whys-consensus-2026-06-26.md` | design | **AUTHORITATIVE ROADMAP** — Ask Transaction AT-0..AT-6; KEEP/DROP/DEFER verdicts | 2026-06-26 |
-| `ops/docs-restructure-blueprint-2026-06-26.md` | historical | **AUTHORITATIVE docs plan** — 5 pillars + living/archive + gap invariants + doc→config→check map (reconciled under AT-6) | 2026-06-26 |
-| `ops/per-profile-health-b1-design.md` | historical | B1 per-profile health — spec for AT-3 (implemented) | 2026-06-25 |
-| `ops/standard-capability-consensus-2026-06-25.md` | design | Standard/terminal capability — spec for AT-4/AT-5 (AT-4 + AT-5 implemented) | 2026-06-25 |
-| `ops/terminal-health-misread-consensus-2026-06-25.md` | historical | Terminal health-misread fix — residuals fold into AT-2/AT-6 (resolved) | 2026-06-25 |
-| `ops/full-audit-2026-06-26.md` | historical | Full cross-audit — feeds AT-0/AT-2/AT-6 (resolved) | 2026-06-26 |
 | `user/manual.md` | living | Human onboarding, daily workflow, command reference | 2026-06-26 |
 | `user/requirements.md` | living | Root requirement contract (A1-A5...) — source of intent | 2026-06-26 |
 | `_exceptions/README.md` | living | Active ambiguity register (small; not a backlog) | 2026-06-26 |
@@ -78,6 +73,7 @@ For navigation by domain: `MOC.md`. For human onboarding: `user/manual.md`.
 general (merged into pillars): `consensus`,`communication`,`tradeoffs` → protocol.md; `resource-governance` → routing.md; `session`,`health`,`token-management` → lifecycle.md; `self-evolution`,`feedback-loop`,`directives`,`knowledge` → learning.md; `master-plan`,`master-refactor-v5` → dropped (5-Whys).
 specific: `statusline_diag_update` → merged into ops/logging.md §12 + user/manual.md.
 ops (dated/superseded): `peer-debate-2026-06-19`,`automatic-profile-routing-2026-06-20`,`perf-benchmark-2026-06-19(+full)`,`consistency-audit-2026-06-24`,`TDD_PLAN_HUB_V42`,`REMAINING_ACTIONS`,`remaining-items`.
+ops (AT-implemented specs, archived under AT-6): `docs-restructure-blueprint-2026-06-26`,`per-profile-health-b1-design`(→AT-3),`standard-capability-consensus-2026-06-25`(→AT-4/AT-5),`terminal-health-misread-consensus-2026-06-25`(→AT-2/AT-6),`full-audit-2026-06-26`(→AT-0/AT-2/AT-6).
 
 ---
 
