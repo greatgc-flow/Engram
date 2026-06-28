@@ -12,3 +12,4 @@ prefix_rule(pattern=["C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell
 prefix_rule(pattern=["C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "-Command", "Remove-Item -LiteralPath 'P:\\_sys\\ai\\ask_history.jsonl','P:\\_sys\\ai\\leases.json','P:\\_sys\\ai\\routing_metrics.jsonl' -Force -ErrorAction Stop; 'removed=3'"], decision="allow")
 prefix_rule(pattern=["C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "-Command", "git add -- _sys/claude/config/settings.json _sys/codex/config/rules/default.rules && git commit -m \"Cleanup runtime junk and refresh config\""], decision="allow")
 prefix_rule(pattern=["git", "add", "--", "_sys/claude/config/settings.json", "_sys/codex/config/rules/default.rules"], decision="allow")
+prefix_rule(pattern=["git", "push", "origin", "main"], decision="allow")
