@@ -1,6 +1,6 @@
 # Terminal Health-Misread — Root Cause + Fix Consensus (2026-06-25)
 
-> **Status:** CONSENSUS reached + SIGNED (cx + ag deepthink, 2-round converge; cc.deepthink token-constrained, sat out). Phase A pending user approval (deletions); Phases B/C deferred to focused TDD. Terminal (Haiku) relayed only.
+> **Status:** HISTORICAL (RESOLVED) — residuals folded into lifecycle.md/protocol.md via AT-2/AT-6.
 > **Trigger:** a gpt-5.4-low terminal asked "peer status", did NOT run `hub.py peer-status`, manually crawled raw `health.json` files, hit a STALE MIRROR (the gemini health file = GREEN), and wrongly reported the suspended gc peer as alive — then spent many turns reconciling the contradiction.
 
 ## Root cause (agreed) — an ARCH-01 instance

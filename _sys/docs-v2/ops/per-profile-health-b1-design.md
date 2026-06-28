@@ -1,6 +1,6 @@
 # B1 / H-3 — Per-Profile Health (DESIGN, deferred implementation)
 
-> **Date:** 2026-06-25 · **Status:** DESIGN ONLY — banked for a future focused session. NOT implemented.
+> **Date:** 2026-06-25 · **Status:** HISTORICAL (IMPLEMENTED via AT-3) — integrated into lifecycle.md.
 > **Roadmap (2026-06-26):** this design is the spec for slice **AT-3** of the Ask Transaction primitive — see `ops/backlog-5whys-consensus-2026-06-26.md`. It is IMPLEMENTED by AT-3, not replaced.
 > **Authors:** ag.deepthink (design) + terminal (framing). cc review pending.
 > **Why deferred:** a cohesive architectural change to the health core that was just hardened (E1 read-purity, keystone gate-OPEN snapshot). Implementing it at the tail of a very long session risks subtle regression in health/consensus. Implement with fresh focus + cc review.

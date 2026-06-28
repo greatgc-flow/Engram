@@ -1,6 +1,6 @@
 # Standard / Terminal Model Capability — Design Consensus (2026-06-25)
 
-> **Status:** CONSENSUS reached (cx + ag deepthink, 2-round converge-to-consensus; cc.deepthink token-constrained, sat out). DESIGN ONLY — implementation deferred to a focused TDD session. Terminal (Haiku) routed/synthesized only.
+> **Status:** IMPLEMENTED (AT-4 standard terminal slice + AT-5 runtime escalation both landed via feat(hub) AT-4/AT-5).
 > **Roadmap (2026-06-26):** SPLIT into slices **AT-4** (terminal relay frame + explicit-profile immutability + classifier boundary) and **AT-5** (bounded runtime `[ESCALATE]`, deferred behind AT-4) — see `ops/backlog-5whys-consensus-2026-06-26.md`. The `[ESCALATE]` valve stays specced but is NOT in the first slice.
 > **Origin:** a broken `[ESCALATE]` attempt (BUG-03 bundle) was reviewed NO-GO by 3 models and rolled back; this is the corrected design. See the rollback + review in the same session.
 

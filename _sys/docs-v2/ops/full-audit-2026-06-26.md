@@ -1,3 +1,5 @@
+> **Status:** HISTORICAL — findings resolved/incorporated via AT-0/AT-2/AT-6.
+
 # Full Cross-Audit — Source/Config/Settings + Docs/Guidelines + Backlog (2026-06-26)
 
 > **Method:** parallel MECE audit — ag.deepthink (source/config/settings) + cx (docs/guidelines/backlog), terminal-synthesized + spot-verified. AUDIT ONLY; nothing edited by the audit. Baseline = `consistency-audit-2026-06-24.md` + the 3 consensus docs; reports only NEW/remaining/inconsistent.

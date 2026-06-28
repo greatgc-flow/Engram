@@ -1,6 +1,6 @@
 # docs-v2 Restructure Blueprint — 5-Whys Consensus (2026-06-26)
 
-> **Status:** CONSENSUS reached + SIGNED (cx + ag deepthink, 2-round converge over ALL 50 docs; cc.deepthink token-constrained). AUTHORITATIVE plan for the docs-v2 restructure. Execution sequenced below; mechanical steps + MANIFEST land first/last, pillar content-merges are delegated with rule-preservation verification. Terminal relayed only.
+> **Status:** HISTORICAL (IMPLEMENTED) — 5 pillars established; status sync active under AT-6.
 
 ## Why (root-traced)
 Every doc was 5-Whys-validated against `user/requirements.md` (A1 JSON-config/no-code, A2 path-dict, A3 portability, A4 lifecycle, general→specific MECE) + the refined need (thin terminal, predictable routing/health/consensus, durable improvement, trustworthy delegation). Findings: the `general/` layer is **16 fragmented, overlapping docs**; `ops/` mixes living policy with dated point-in-time records; several docs **contradict current code** (Continuity Score, SelfHealer auto-remediation — both DROPPED 2026-06-26) or are **aspirational** ("PENDING pack", "PLANNED alert"); `token-management` hardcodes model facts (violates A1).

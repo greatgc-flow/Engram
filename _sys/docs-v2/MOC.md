@@ -55,11 +55,11 @@
 | Domain | File |
 |--------|------|
 | **Authoritative roadmap** (Ask Transaction AT-0..AT-6) | `ops/backlog-5whys-consensus-2026-06-26.md` |
-| **Docs restructure plan** | `ops/docs-restructure-blueprint-2026-06-26.md` |
-| B1 per-profile health (AT-3 spec) | `ops/per-profile-health-b1-design.md` |
-| Standard capability (AT-4/5 spec) | `ops/standard-capability-consensus-2026-06-25.md` |
-| Terminal health-misread (AT-2/6 residuals) | `ops/terminal-health-misread-consensus-2026-06-25.md` |
-| Full cross-audit (feeds AT-0/2/6) | `ops/full-audit-2026-06-26.md` |
+| **Docs restructure plan** (Historical) | `ops/docs-restructure-blueprint-2026-06-26.md` |
+| B1 per-profile health (Implemented via AT-3) | `ops/per-profile-health-b1-design.md` |
+| Standard capability (AT-4/5 spec; AT-4 + AT-5 implemented) | `ops/standard-capability-consensus-2026-06-25.md` |
+| Terminal health-misread (Historical) | `ops/terminal-health-misread-consensus-2026-06-25.md` |
+| Full cross-audit (Historical) | `ops/full-audit-2026-06-26.md` |
 
 ## Human-facing & exceptions
 

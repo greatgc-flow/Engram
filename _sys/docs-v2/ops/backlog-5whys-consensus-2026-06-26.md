@@ -1,6 +1,6 @@
 # Backlog 5-Whys + Ask-Transaction Roadmap — Consensus (2026-06-26)
 
-> **Status:** CONSENSUS (cx + ag deepthink, 2-round converge; cc.deepthink token-constrained, sat out). Validates the full-audit backlog against ROOT intent via 5-Whys, DROPs gold-plating, and unifies the KEEP items under one phased **Ask Transaction** primitive. This is the authoritative roadmap; supersedes scattered backlog ledgers. Terminal relayed only.
+> **Status:** ACTIVE ROADMAP (AT-0 through AT-5 implemented; AT-6 reconciliation active). Validates the full-audit backlog against ROOT intent via 5-Whys, DROPs gold-plating, and unifies the KEEP items under one phased **Ask Transaction** primitive. This is the authoritative roadmap; supersedes scattered backlog ledgers. Terminal relayed only.
 
 ## Root need (agreed)
 NOT "finish every planned feature." A portable multi-peer AI dev environment where the **terminal stays thin** (routes, never ad-hoc-analyzes), **routing/health/consensus are predictable**, **failures become durable improvements** (not repeated manual archaeology), and the user can **delegate real work and trust the result**. Every item is justified against this; items that don't serve it are dropped.
