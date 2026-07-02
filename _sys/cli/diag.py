@@ -130,8 +130,28 @@ def _fmt_reset(value, rel_seconds=None):
 # Live quota source for Codex (no local persistence)
 # --------------------------------------------------------------------------
 
+_REAL_BINARIES = {
+    "cc": SYS_DIR / "env" / "nodejs" / "npm-global" / "claude.cmd",
+    "cx": SYS_DIR / "env" / "nodejs" / "npm-global" / "codex.cmd",
+    "ag": PORTABLE_ROOT / "tools" / "agy" / "agy.exe",
+}
+
+
+def _real_binary(peer):
+    """Resolve the REAL peer CLI, NEVER our `_sys/cli` wrapper."""
+    cand = _REAL_BINARIES.get(peer)
+    if cand is None:
+        raise ValueError(f"unknown peer binary: {peer}")
+    if not cand.exists():
+        return None
+    resolved = cand.resolve()
+    if resolved == CLI_DIR.resolve() or CLI_DIR.resolve() in resolved.parents:
+        raise RuntimeError(f"refusing wrapper binary for {peer}: {resolved}")
+    return str(resolved)
+
+
 def _codex_binary():
-    """Resolve the REAL codex CLI, NEVER our `_sys/cli` wrapper.
+    """Back-compat alias = real Codex CLI. NEVER our `_sys/cli` wrapper.
 
     `_sys/cli` is first on PATH, so a bare `codex` (incl. Windows `shutil.which`
     matching `codex.bat` via PATHEXT) resolves to our wrapper, which runs the heavy
@@ -626,10 +646,11 @@ def render_card(info):
     if info["quotas"]:
         width = max(len(q["label"]) for q in info["quotas"])
         for q in info["quotas"]:
-            color = _sev_color(q["used_frac"])
-            bar = _c(_bar(q["used_frac"]), color)
-            warn = "  " + _c("WARN", "red", "bold") if q["used_frac"] >= 0.90 else ""
-            print(f" {q['label']:<{width}} : {bar} {q['metric']:<10} resets {q['reset']}{warn}")
+            uf = q.get("used_frac")
+            is_num = isinstance(uf, (int, float))
+            metric = format_quota_bucket(q)
+            warn = "  " + _c("WARN", "red", "bold") if (is_num and uf >= 0.90) else ""
+            print(f" {q['label']:<{width}} : {metric:<24} resets {q['reset']}{warn}")
     elif info.get("cx_quota_unavailable"):
         print(_c(" Quota   : (codex app-server unavailable)", "dim"))
 
@@ -691,6 +712,26 @@ def _fmt_pacing(pacing):
     if not pacing or not pacing.get("indicator"):
         return ""
     return f" {pacing['indicator']} {pacing['ratio']:.2f}x"
+
+
+def format_quota_bucket(bucket):
+    """Render one quota bucket identically everywhere. Unknown/unmeasured buckets
+    are the literal string 'absent' — never 0, blank, or an estimate."""
+    if not isinstance(bucket, dict):
+        return "absent"
+    used_frac = bucket.get("used_frac")
+    if bucket.get("source") == "absent" or used_frac is None:
+        return "absent"
+    try:
+        frac = max(0.0, min(1.0, float(used_frac)))
+    except (TypeError, ValueError):
+        return "absent"
+    emoji = "🔴" if frac >= 0.90 else "🟡" if frac >= 0.75 else "🟢"
+    pacing = _fmt_pacing(bucket.get("pacing"))
+    if not pacing:
+        ratio = bucket.get("pacing_ratio")
+        pacing = f" {emoji} {ratio:.2f}x" if isinstance(ratio, (int, float)) else f" {emoji} 0.00x"
+    return f"{_bar(frac)} {frac * 100:.0f}%{pacing}"
 
 
 def _mask_email(email):
