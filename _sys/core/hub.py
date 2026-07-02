@@ -2543,7 +2543,7 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
         sys.exit(1)
 
     heartbeat_sec, _lease_timeout_sec, zombie_timeout_sec = _lease_cfg(node_id)
-    startup_timeout_sec = _startup_timeout_sec()
+    startup_timeout_sec = _startup_timeout_sec(node_id)
     lease = int(_runtime_cfg().get("pty_lease_sec", 300) or 300)
 
     # CONDITION-3: the bounded get() slice MUST be <= heartbeat (so lease renewal
@@ -3564,7 +3564,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         try:
             raw_out, raw_err = _stream_process_output(
                 proc, cmd, input_bytes, heartbeat_sec, zombie_timeout_sec,
-                _startup_timeout_sec(), timeout_sec, ai_root, to, lease_timeout_sec)
+                _startup_timeout_sec(to), timeout_sec, ai_root, to, lease_timeout_sec)
         except subprocess.TimeoutExpired:
             lease_status = "timeout"
             raise
@@ -6209,13 +6209,24 @@ def _lease_cfg(node_id: str | None = None) -> tuple[int, int, int]:
     return h, l, z
 
 
-def _startup_timeout_sec() -> int:
-    """Pre-first-output stall window (seconds). Until a peer emits its first
-    stdout chunk, silence is bounded by this instead of the full zombie window,
-    so a cold/hung startup fails fast. Kept separate from _lease_cfg to preserve
-    that function's 3-tuple contract."""
+def _startup_timeout_sec(node_id: str | None = None) -> int:
+    """Pre-first-output stall window (seconds), profile-scoped. Until a peer emits
+    its first stdout chunk, silence is bounded by this instead of the full zombie
+    window, so a cold/hung startup fails fast. Deep-reasoning profiles legitimately
+    stay silent longer before their first byte (a buffered `claude -p` flushes the
+    whole turn at completion), so the window scales by profile via startup_profile_map
+    (mirror of zombie_profile_map). This is the backstop for the streaming-transport
+    root fix. Kept separate from _lease_cfg to preserve that function's 3-tuple contract."""
     comm = _load_protocol_cfg().get("communication_policy", {})
-    return max(5, int(comm.get("startup_timeout_sec", 90) or 90))
+    base = int(comm.get("startup_timeout_sec", 90) or 90)
+    if node_id:
+        profile_id = _resolve_profile_id(node_id)
+        if profile_id:
+            profile_name = profile_id.split(".")[-1] if "." in profile_id else profile_id
+            profile_map = comm.get("startup_profile_map", {})
+            if profile_name in profile_map:
+                base = int(profile_map[profile_name])
+    return max(5, base)
 
 
 def _lease_open(ai_root: Path | None, peer_id: str, pid: int, lease_timeout_sec: int, ask_id: str | None = None, ask_query_file: str | None = None) -> None:
