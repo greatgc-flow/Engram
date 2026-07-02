@@ -448,28 +448,25 @@ def gather_peer(peer, peer_dirs):
             q = data["quota"].get(key)
             if not isinstance(q, dict):
                 continue
-            rem = q.get("remaining_fraction", 0) or 0
-            used_frac = max(0.0, 1.0 - rem)
+            rem = q.get("remaining_fraction")
+            used_frac = max(0.0, min(1.0, 1.0 - rem)) if isinstance(rem, (int, float)) else None
             
             import quota as qmgr
             window_hours = 5.0 if "5H" in label else 168.0
             reset_sec = q.get("reset_in_seconds")
             rem_sec = qmgr.get_remaining_seconds(reset_in_seconds=reset_sec)
-            pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours)
-
+            pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours) if used_frac is not None else None
             quotas.append({
-                "label": label, "used_frac": used_frac,
-                "reset": _fmt_reset(q.get("reset_time"), reset_sec),
-                "metric": f"{used_frac * 100:.1f}% used{_fmt_pacing(pacing)}",
-                "pacing_ratio": pacing.get("ratio"), "pacing_status": pacing.get("status"),
+                "label": label, "used_frac": used_frac, "pacing": pacing,
+                "reset": _fmt_reset(q.get("reset_time"), reset_sec), "source": "ag",
             })
     if "rate_limits" in data and isinstance(data["rate_limits"], dict):  # cc
         rl = data["rate_limits"]
         for key, q in rl.items():
             if not isinstance(q, dict):
                 continue
-            used = q.get("used_percentage", 0) or 0
-            used_frac = used / 100.0
+            up = q.get("used_percentage")
+            used_frac = up / 100.0 if isinstance(up, (int, float)) else None
             
             # Dynamically determine the label and window
             prefix = "F-" if "fable" in key else "C-"
@@ -492,13 +489,10 @@ def gather_peer(peer, peer_dirs):
             else:
                 rem_sec = qmgr.get_remaining_seconds(resets_at_iso=resets_at)
                 
-            pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours)
-
+            pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours) if used_frac is not None else None
             quotas.append({
-                "label": label, "used_frac": used_frac,
-                "reset": _fmt_reset(resets_at, reset_sec),
-                "metric": f"{float(used):.1f}% used{_fmt_pacing(pacing)}",
-                "pacing_ratio": pacing.get("ratio"), "pacing_status": pacing.get("status"),
+                "label": label, "used_frac": used_frac, "pacing": pacing,
+                "reset": _fmt_reset(resets_at, reset_sec), "source": "cc",
             })
 
     # Codex: model/tokens/effort from sqlite + live rate limits from app-server
@@ -1000,6 +994,14 @@ def render_profiles(stdout=None):
     profile_args / adapter flags (§6.3)."""
     out = stdout or sys.stdout
     out.write("PEER.PROFILE           MODEL                      EFFORT   CTX      ROUTING\n")
+    measured_ctx = {}
+    try:
+        for peer in collect_snapshot().get("peers", []):
+            cw = (peer.get("raw") or {}).get("ctx_window")
+            if isinstance(cw, (int, float)):
+                measured_ctx[peer.get("peer")] = cw
+    except Exception:
+        measured_ctx = {}
     try:
         orch = json.loads((SYS_DIR / "ai" / "orchestration.json").read_text(encoding="utf-8"))
     except Exception:
@@ -1012,7 +1014,8 @@ def render_profiles(stdout=None):
         for pname, prof in (node.get("profiles") or {}).items():
             model = prof.get("model_id") or prof.get("runtime_model")
             effort = prof.get("reasoning_effort")
-            ctx_val = prof.get("runtime_context_window") or prof.get("context_window")
+            # measured window (live snapshot) is SSOT; declared is capacity-intent fallback
+            ctx_val = measured_ctx.get(pid) or prof.get("runtime_context_window") or prof.get("context_window")
             routing = prof.get("routing_state")
 
             if not ctx_val or not model or not effort:
