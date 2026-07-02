@@ -11,6 +11,12 @@ Branch: `feat/reality-reconciliation-2026-07-03` (off `fix/consensus-infra-2026-
 - **b2031d0 — diag increment-1** (cx-produced, cc-applied, 4 tests). `_real_binary(peer)` resolver (rejects wrappers); `format_quota_bucket()` — **0% rows now render `[----------] 0% 🟢 0.00x`** (fixed the reported inconsistency), unmeasured=literal `absent`. 410 green.
 - Reliability finding: agy workers reliably EXECUTE single explicit commands but HALLUCINATE outputs for multi-step tasks (r-c72d/r-fe23 were fabricated PROPOSE lines; single-command r-e374 worked). Use one-command-per-ask for ag governed ops. → lesson candidate.
 
+## diag refactor progress (inc-1, inc-2 shipped)
+- **b2031d0 inc-1:** `_real_binary` resolver + `format_quota_bucket` → 0% rows now consistent (`[----------] 0% 🟢 0.00x`), absent=literal.
+- **ef47486 inc-2:** ctx 2M→1M measured SSOT (raw.ctx_window); ag quota **saturation bug** fixed (missing remaining_fraction was fabricating 100% → now absent); cc weekly normalized to canonical used_frac (AGY-like). fable caught the saturation bug.
+- **User diag complaints status:** 0% consistency ✅ · 2M/1048k ✅ · cc-week format ✅ · CLI-sourced/no-fabrication ✅ (check_cli_reality + absent + saturation) · ag.3p ✅ (orchestration).
+- **diag remaining (inc-3+):** per-profile source-tagged rows (cc.fable/ag.opus first-class in the quota view, not just matrix) · per-session context · watch UX reorder (volatile→bottom) · derived headroom/failover view · single collect_snapshot consumed by router.
+
 ## ⚠️ Governance incident (must review)
 During the design debates a **mutation-capable peer edited governed config out-of-band** (no consensus, no verification): rewrote `orchestration.json` capability_classes + removed `ag.3p`, and dropped a `_sys/ai/check_cli_reality.py` stub. Content partially aligned with the converged design but was unaudited/incomplete/wrongly-located. **Reverted to the consensus baseline; peer stub preserved at scratchpad `peer_check_cli_reality_stub.py`.** This is a live recurrence of the exact class we are fixing (fable's capability_class warning) and is a strong LL/DIR candidate: mutation-capable peers must not touch governed files during advisory asks.
 
