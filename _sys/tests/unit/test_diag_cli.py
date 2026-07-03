@@ -439,6 +439,22 @@ def test_source_stale_alert_fires_on_old_data():
     assert "SOURCE_STALE" not in {a["code"] for a in fresh["alerts"]}
 
 
+def test_source_stale_alert_distinguishes_fresh_quota_source():
+    diag = load_diag()
+    rec = diag.normalize_peer({
+        "peer": "cc", "source": "live", "ctx_known": True, "ctx_window": 1000,
+        "ctx_used": 10, "ctx_pct": 1.0, "empty": False,
+        "quotas": [{"label": "C-5H", "used_frac": 1.0, "source": "cc_usage"}],
+        "errors": [], "age_sec": 999999,
+        "observed_at": "2026-07-03T14:00:00+09:00",
+        "quota_observed_at": "2026-07-03T15:00:00+09:00",
+        "quota_source_kind": "live",
+    })
+    alert = next(a for a in rec["alerts"] if a["code"] == "SOURCE_STALE")
+
+    assert "quota source is cli_live" in alert["message"]
+
+
 # ── D2: cx context from rollout token_count ─────────────────────────────────────
 
 def test_parse_rollout_context_reads_token_count(tmp_path):

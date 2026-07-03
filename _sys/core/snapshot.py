@@ -1256,8 +1256,14 @@ def _compute_alerts(record):
 
     age = record.get("raw", {}).get("age_sec")
     if isinstance(age, (int, float)) and age > STALE_THRESHOLD_SEC:
-        alerts.append(_alert("warn", "SOURCE_STALE",
-                             f"source data {int(age)}s old (> {STALE_THRESHOLD_SEC}s); may be pre-reset"))
+        msg = f"source data {int(age)}s old (> {STALE_THRESHOLD_SEC}s); may be pre-reset"
+        # DIR-004: distinguish a freshly-measured quota source from stale general
+        # data so the reader does not discard a live quota reading (measured >
+        # declared applies to freshness too).
+        quota_tag = _source_tag(record, "quota")
+        if quota_tag in ("cli_live", "app_server"):
+            msg += f" — but quota source is {quota_tag} (freshly measured)"
+        alerts.append(_alert("warn", "SOURCE_STALE", msg))
 
     ctx = dom.get("context", {})
     util = ctx.get("utilization_pct")

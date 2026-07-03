@@ -43,7 +43,7 @@ Path: `_sys/env/nodejs/npm-global/claude.cmd`. Default = interactive; `-p/--prin
 ### Subcommands (help): `agents`, `mcp`, `config`, `plugin`, `update`, `doctor`, `/skill-name`.
 
 ### Hub usage
-`claude.cmd --safe-mode --append-system-prompt "<IPC frame>" -p {stdin} --dangerously-skip-permissions`
+`claude.cmd --safe-mode --append-system-prompt "<IPC frame>" -p {stdin} --permission-mode default --allowedTools Read Grep Glob Edit Bash(python*) Bash(git status*) Bash(git diff*) Bash(git log*)`
 + profile `--model/--effort`. Reuse now via `--resume` (fixed 2026-07-02). Env:
 `CLAUDE_CONFIG_DIR=_sys/claude/config`.
 
@@ -65,7 +65,7 @@ Path: `_sys/env/nodejs/npm-global/codex.cmd`. Subcommand-based; bare = interacti
 - `--json` — JSONL event stream (`thread.started`, `token_count`, `item.completed`…). **✓run**
 - `-c key=value` — TOML config override (e.g. `-c sandbox="workspace-write"`,
   `-c model_reasoning_effort="high"`). **✓run** (`exec resume` rejects `-s`, needs `-c`)
-- `--ignore-rules`. **✓run** (hub uses)
+- `--ignore-rules`. **✓run** (available, not used by the hub W6 least-privilege path)
 - `app-server` — JSON-RPC daemon; `account/rateLimits/read` returns 5h/weekly quota.
   **✓run** (diag consumes for live quota).
 - `features list` — feature flags (`plugins`, `apps`, `workspace_dependencies` = stable/true…).
@@ -86,7 +86,7 @@ Each `codex exec` loads the plugin/skill marketplace (~605 SKILL.md) → logs
 per-invocation startup overhead. Benign but slows first token. **✓run**
 
 ### Hub usage
-`codex exec - --json --ignore-rules -c sandbox="workspace-write"` (+ profile `--model`,
+`codex exec - --json -c sandbox="workspace-write"` (+ profile `--model`,
 `-c model_reasoning_effort`). Reuse: `exec resume <thread-id> - …`. Env:
 `CODEX_HOME=_sys/codex/config` (must be pinned — see specific/cx.md).
 
@@ -206,8 +206,8 @@ the real root of the `diag --json` stall. **Programmatic/host code must call the
 binary path**, never the bare name. **✓run** (diag fixed to use the real `codex.cmd`).
 
 ### Common non-interactive invocation forms (verified)
-- claude: `claude -p - --resume <id> --dangerously-skip-permissions`
-- codex:  `codex exec resume <id> - --json --ignore-rules -c sandbox="workspace-write"`
+- claude: `claude -p - --resume <id> --permission-mode default --allowedTools Read Grep Glob Edit Bash(python*) Bash(git status*) Bash(git diff*) Bash(git log*)`
+- codex:  `codex exec resume <id> - --json -c sandbox="workspace-write"`
 - agy:    `agy --dangerously-skip-permissions -p "<q>" --print-timeout <t>` — **requires a
   console**: fine interactively / via hub winpty; hangs only in a headless (no-console)
   harness. Not related to the flag or stdout redirect (user-verified).

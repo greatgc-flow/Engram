@@ -22,16 +22,19 @@
 
 ### DIR-002: Minimum Non-Interactive Permissions for All Peers
 
-- Effective: 2026-06-13 | Updated: 2026-06-19
+- Effective: 2026-06-13 | Updated: 2026-07-03
 - Status: ACTIVE
 - Rule: All peers run with minimum non-interactive permissions and must not block on interactive approval prompts during `hub.py ask` or console wrapper invocations.
 - Implementation:
-  - `cc`: `-p {query} --dangerously-skip-permissions` (upgraded from --allowedTools/acceptEdits, 2026-06-19)
+  - `cc`: `-p {query} --permission-mode default --allowedTools Read Grep Glob Edit Bash(python*) Bash(git status*) Bash(git diff*) Bash(git log*)` (least-privilege canary, 2026-07-03)
   - `cc.standard|effort|deepthink`: generated profile nodes inherit the cc DIR-002 mapping; reasoning depth does not independently widen permission scope.
   - `gc`: SUSPENDED — `--approval-mode auto_edit --skip-trust` (reference only; gc is tier_suspended)
-  - `cx`: `-s workspace-write`
+  - `cx`: `-s workspace-write` (hub reuse path uses `-c sandbox="workspace-write"`; no `--ignore-rules`)
   - `ag`: PTY mode via AgyAdapter (requires_pty=true on Windows); no --permission-mode flag
 - KNOWN GAP (ag filesystem confinement): `agy --sandbox` does NOT enforce workspace filesystem confinement (empirically verified 2026-06-23: ag wrote outside workspace with --sandbox regardless of cwd/skip-permissions). ag has NO flag-based FS sandbox equivalent to cx `-s workspace-write`; mutation safety relies on trust boundary + read-only review profile + SEC-01 git-diff guard.
+- Evidence:
+  - `cx` no-`--ignore-rules` canary returned `OK` via real `codex.cmd exec ... -c sandbox="workspace-write"` on 2026-07-03.
+  - `cc` allowlist syntax was accepted by the real `claude.cmd` parser on 2026-07-03, but full response canary is pending until the session limit resets.
 - References:
   - `_sys/ai/orchestration.json`
   - `_sys/docs-v2/general/permissions.md` (authoritative per-peer profiles, updated 2026-06-19)

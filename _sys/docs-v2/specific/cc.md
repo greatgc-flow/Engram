@@ -20,7 +20,7 @@ _sys/claude/
 
 ## Permission Flags
 ```
-claude -p {query} --dangerously-skip-permissions
+claude -p {query} --permission-mode default --allowedTools Read Grep Glob Edit Bash(python*) Bash(git status*) Bash(git diff*) Bash(git log*)
 ```
 
 ## Runtime Profiles

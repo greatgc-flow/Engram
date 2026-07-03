@@ -28,7 +28,7 @@ launch pins the same home via `codex_entry.py`.
 ## Permission Flags (delta from general/permissions.md)
 
 ```
-codex exec -s workspace-write --json --ignore-rules
+codex exec -s workspace-write --json
 ```
 
 FORBIDDEN: `--dangerously-bypass-approvals-and-sandbox`, `-s full-auto`.
