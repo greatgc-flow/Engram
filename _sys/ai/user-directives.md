@@ -34,7 +34,7 @@
 - KNOWN GAP (ag filesystem confinement): `agy --sandbox` does NOT enforce workspace filesystem confinement (empirically verified 2026-06-23: ag wrote outside workspace with --sandbox regardless of cwd/skip-permissions). ag has NO flag-based FS sandbox equivalent to cx `-s workspace-write`; mutation safety relies on trust boundary + read-only review profile + SEC-01 git-diff guard.
 - Evidence:
   - `cx` no-`--ignore-rules` canary returned `OK` via real `codex.cmd exec ... -c sandbox="workspace-write"` on 2026-07-03.
-  - `cc` allowlist syntax was accepted by the real `claude.cmd` parser on 2026-07-03, but full response canary is pending until the session limit resets.
+  - `cc` allowlist canary (2026-07-03): a real `cc.standard` hub ask that invoked a NON-allowlisted `Bash(echo)` completed in 12s with NO hang (refuted the "silent interactive-prompt hang" concern raised in ag pre-merge review). CAVEAT: the non-allowlisted call still executed, so `--permission-mode default` under `-p` does not hard-block in print mode — the allowlist currently prevents hangs but does not strictly confine cc's tools. Hard-confinement enforcement is a follow-up (DIR-004: documented as measured, not assumed).
 - References:
   - `_sys/ai/orchestration.json`
   - `_sys/docs-v2/general/permissions.md` (authoritative per-peer profiles, updated 2026-06-19)
