@@ -3,16 +3,18 @@
   "_updated": "2026-06-19",
   "_help": "QUALITY_MODE dial + task-type → node routing weights. Change QUALITY_MODE: R:3. Change routing_weights: R:5. See ops/schemas.md §4 and resource-governance.md §10.",
   "_note_peer_status": "gc: tier_suspended 2026-06-19 (IneligibleTierError). ag: activated 2026-06-19 as gc replacement. ca: never activated (claude-alt).",
-
   "quality_mode": 5,
   "quality_mode_override": null,
-
   "auto_profile_routing": {
     "enabled": true,
     "scope": "root_peer_asks",
     "explicit_profile_policy": "immutable",
     "ambiguous_default": "effort",
-    "profile_order": ["standard", "effort", "deepthink"],
+    "profile_order": [
+      "standard",
+      "effort",
+      "deepthink"
+    ],
     "thresholds": {
       "effort_score": 3,
       "deepthink_score": 8,
@@ -38,15 +40,37 @@
       "multilingual_simple_weight": 4,
       "multilingual_complex_weight": 8,
       "deepthink_markers": [
-        "architecture", "security", "protocol", "exhaustive", "consensus",
-        "invariant", "threat model", "root cause", "cross-review"
+        "architecture",
+        "security",
+        "protocol",
+        "exhaustive",
+        "consensus",
+        "invariant",
+        "threat model",
+        "root cause",
+        "cross-review"
       ],
       "effort_markers": [
-        "implement", "write", "fix", "refactor", "test", "debug", "migrate",
-        "benchmark", "design", "review", "update"
+        "implement",
+        "write",
+        "fix",
+        "refactor",
+        "test",
+        "debug",
+        "migrate",
+        "benchmark",
+        "design",
+        "review",
+        "update"
       ],
       "standard_markers": [
-        "status", "list", "show", "read", "summarize", "explain", "what is",
+        "status",
+        "list",
+        "show",
+        "read",
+        "summarize",
+        "explain",
+        "what is",
         "health check"
       ]
     },
@@ -67,7 +91,6 @@
       "cross_peer_change": "forbidden"
     }
   },
-
   "task_overrides": {
     "ESCALATION": 10,
     "FAST_QA": 0,
@@ -80,7 +103,6 @@
     "SUMMARIZATION": 3,
     "HEALTH_CHECK": 0
   },
-
   "routing_weights": {
     "R01": {
       "_label": "Router/Triage",
@@ -154,5 +176,18 @@
       "fallback": "cx::gpt-5.5::none::none",
       "weight": 1.0
     }
+  },
+  "token_load_balancing": {
+    "_doc": "Token load balancer (ops/token-load-balancing-design.md). P1 live: capability-filtered peer-level headroom, HARD terminal exclusion, cost tie-break, seeded weighted-random. P1.5/P2/P3 pending.",
+    "enabled": false,
+    "effective_headroom_floor": 0.1,
+    "terminal_hard_exclude": true,
+    "cost_map": {
+      "low": 0.0,
+      "mid": 0.02,
+      "high": 0.04
+    },
+    "select": "seeded_weighted_random",
+    "_phase": "P1 (selector shipped; hub hook + shadow-logging next). enabled=False until shadow-validated."
   }
 }

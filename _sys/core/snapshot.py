@@ -1460,3 +1460,96 @@ def snapshot_failover_target(exclude=None, snapshot=None):
             continue
         return row
     return None
+
+
+def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", rng=None):
+    """Token load balancer — Phase 1 (design: ops/token-load-balancing-design.md).
+
+    Route an ask to the peer that best equalizes token burn-down: peer-level
+    aggregation of headroom, HARD terminal exclusion (the terminal is dropped
+    whenever any non-terminal peer has headroom >= floor — the "terminal tokens
+    always minimal" requirement), numeric cost tie-break, and a DETERMINISTIC
+    seeded weighted-random draw (seed = sha256(snapshot_hash:ask_id)) so every
+    decision is reproducible and auditable. Pure; no I/O. (P1 omits pacing=P2,
+    in-flight deduction/task-size=P1.5, warm-up=P2.)
+
+    Returns an audit dict: selected row/peer, per-peer weights + probabilities,
+    seed, draw, terminal_excluded reason, candidate peers, and a reason code.
+    """
+    import random as _random
+    eps = 0.01
+    cost_map = config.get("cost_map", {}) or {}
+    floor = config.get("effective_headroom_floor", 0.10)
+    hard_exclude = config.get("terminal_hard_exclude", True)
+
+    def _empty(reason):
+        return {"selected": None, "selected_peer": None, "weights": {},
+                "probabilities": {}, "terminal_excluded": None, "seed": None,
+                "draw": None, "candidates": [], "reason": reason}
+
+    # Candidate prefilter (hard): eligible + measured (non-absent) headroom.
+    candidates = [
+        r for r in _derive_headroom_rows(snapshot)
+        if r.get("state") == "eligible" and isinstance(r.get("headroom"), (int, float))
+    ]
+    if not candidates:
+        return _empty("no_eligible_candidate")
+
+    # Peer-level aggregation: each peer's representative = its max-headroom row
+    # (so multiple profiles of one peer are not double-weighted).
+    representatives = {}
+    for r in candidates:
+        peer = r.get("peer")
+        cur = representatives.get(peer)
+        if cur is None or r["headroom"] > cur["headroom"]:
+            representatives[peer] = r
+    peers = list(representatives.keys())
+
+    # Effective headroom (P1: no pacing) minus numeric cost tie-break.
+    raw_weights = {}
+    for peer in peers:
+        rep = representatives[peer]
+        ct = rep.get("cost_tier")
+        cost = cost_map.get(ct, 0.0) if isinstance(ct, str) else 0.0
+        raw_weights[peer] = max(eps, float(rep["headroom"]) - cost)
+
+    # HARD terminal exclusion: if any non-terminal peer is at/above the floor,
+    # the terminal is zeroed out (never a discount — always minimal).
+    terminal_excluded = None
+    if hard_exclude and terminal_peer and terminal_peer in raw_weights:
+        if any(float(representatives[p]["headroom"]) >= floor
+               for p in peers if p != terminal_peer):
+            raw_weights[terminal_peer] = 0.0
+            terminal_excluded = "non_terminal_above_floor"
+
+    total = sum(raw_weights.values())
+    if total <= 0.0:
+        return _empty("no_positive_weight")
+
+    # Deterministic seeded weighted-random over positive-weight peers only
+    # (a zeroed/excluded peer is never drawn, even if draw == 0.0).
+    seed = int(hashlib.sha256(f"{snapshot_hash(snapshot)}:{ask_id}".encode("utf-8")).hexdigest()[:16], 16)
+    rng = rng or _random.Random(seed)
+    draw = rng.random()
+    positive_peers = [p for p in peers if raw_weights[p] > 0.0]
+    selected_peer = None
+    cursor = 0.0
+    for peer in positive_peers:
+        cursor += raw_weights[peer] / total
+        if draw <= cursor:
+            selected_peer = peer
+            break
+    if selected_peer is None:
+        selected_peer = positive_peers[-1]
+
+    return {
+        "selected": representatives[selected_peer],
+        "selected_peer": selected_peer,
+        "weights": {peer: round(raw_weights[peer], 4) for peer in peers},
+        "probabilities": {peer: round(raw_weights[peer] / total, 4) for peer in peers},
+        "terminal_excluded": terminal_excluded,
+        "seed": seed,
+        "draw": draw,
+        "candidates": peers,
+        "reason": "selected",
+    }
