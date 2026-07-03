@@ -5671,6 +5671,80 @@ def action_lessons_propose(
         pass
 
 
+def _path_is_under(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _lesson_pass_marker(data: dict) -> bool:
+    if data.get("passed") is True:
+        return True
+    passed_value = data.get("passed")
+    if isinstance(passed_value, str) and passed_value.strip().lower() == "true":
+        return True
+    for key in ("status", "result", "verdict"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip().lower() in {"pass", "passed", "verified"}:
+            return True
+    return False
+
+
+def _resolve_lesson_artifact(artifact: str, ai_root: Path) -> Path | None:
+    if not artifact or not isinstance(artifact, str):
+        return None
+    raw_path = Path(artifact)
+    roots = [_knowledge_root(), ai_root]
+    candidates = [raw_path] if raw_path.is_absolute() else [root / raw_path for root in roots]
+    for candidate in candidates:
+        if candidate.exists() and any(_path_is_under(candidate, root) for root in roots):
+            return candidate
+    return None
+
+
+def _lesson_enforcement_artifact(item: dict) -> str | None:
+    enforcement = item.get("enforcement")
+    if isinstance(enforcement, dict):
+        artifact = (
+            enforcement.get("artifact")
+            or enforcement.get("artifact_path")
+            or enforcement.get("path")
+        )
+        return artifact if isinstance(artifact, str) else None
+    if isinstance(enforcement, str):
+        return enforcement
+    for key in ("enforcement_artifact", "enforcement_artifact_path"):
+        value = item.get(key)
+        if isinstance(value, str):
+            return value
+    return None
+
+
+def _lesson_activation_blocker(item: dict, ai_root: Path) -> str | None:
+    """Fail closed unless the lesson is enforced, or explicitly temporary advisory."""
+    expires_at = (item.get("retirement") or {}).get("expires_at")
+    if expires_at is not None and str(expires_at).strip() != "":
+        return None
+
+    enforcement = item.get("enforcement")
+    artifact_ref = _lesson_enforcement_artifact(item)
+    artifact_path = _resolve_lesson_artifact(artifact_ref, ai_root) if artifact_ref else None
+    if not artifact_path:
+        return "missing allowed enforcement artifact and advisory expiry"
+
+    if isinstance(enforcement, dict) and _lesson_pass_marker(enforcement):
+        return None
+    try:
+        artifact_data = json.loads(artifact_path.read_text(encoding="utf-8"))
+    except Exception:
+        return "enforcement artifact is not readable JSON with a passing verdict"
+    if isinstance(artifact_data, dict) and _lesson_pass_marker(artifact_data):
+        return None
+    return "enforcement artifact did not report pass or verified"
+
+
 def action_lessons_activate(ai_root: Path, lesson_id: str) -> None:
     """Activate a candidate lesson (coordinator auto-approval)."""
     if not lesson_id:
@@ -5693,6 +5767,10 @@ def action_lessons_activate(ai_root: Path, lesson_id: str) -> None:
             try:
                 item = json.loads(line)
                 if item.get("id") == lesson_id and item.get("status") == "candidate":
+                    blocker = _lesson_activation_blocker(item, ai_root)
+                    if blocker:
+                        print(f"[HUB:ERROR] lesson {lesson_id} activation blocked: {blocker}", file=sys.stderr)
+                        sys.exit(1)
                     item["status"] = "active"
                     item["approval"]["approved_by"] = "coordinator"
                     item["approval"]["approved_at"] = now_str
