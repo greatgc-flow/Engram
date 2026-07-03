@@ -36,7 +36,12 @@ class TestIntegrationP2P:
 
     def _run(self, vpy, hub, args, cwd, **kwargs):
         """subprocess.run wrapper with guaranteed timeout."""
-        sub_env = {**os.environ, "HUB_ORIGIN": "worker"}
+        origin = "cc"
+        if "--from" in args:
+            origin = args[args.index("--from") + 1]
+        elif "--agent" in args:
+            origin = args[args.index("--agent") + 1]
+        sub_env = {**os.environ, "HUB_ORIGIN": origin}
         return subprocess.run(
             [str(vpy), str(hub)] + args, cwd=cwd,
             check=True, timeout=_HUB_TIMEOUT, env=sub_env, **kwargs
@@ -44,7 +49,12 @@ class TestIntegrationP2P:
 
     def _out(self, vpy, hub, args, cwd):
         """subprocess.check_output wrapper with guaranteed timeout."""
-        sub_env = {**os.environ, "HUB_ORIGIN": "worker"}
+        origin = "cc"
+        if "--from" in args:
+            origin = args[args.index("--from") + 1]
+        elif "--agent" in args:
+            origin = args[args.index("--agent") + 1]
+        sub_env = {**os.environ, "HUB_ORIGIN": origin}
         return subprocess.check_output(
             [str(vpy), str(hub)] + args,
             cwd=cwd, text=True, encoding="utf-8", timeout=_HUB_TIMEOUT, env=sub_env

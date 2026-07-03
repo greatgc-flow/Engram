@@ -157,6 +157,9 @@ class TestActionLessonContract:
         required = ["ai_root", "title", "rule", "category"]
         for r in required:
             assert r in params, f"action_lessons_propose() missing: {r}"
+        # W3 (2026-07-03): G-bridge plumbing — both optional, default None
+        assert sig.parameters["enforcement_artifact"].default is None
+        assert sig.parameters["expires_at"].default is None
 
     def test_lessons_activate_params(self):
         sig = inspect.signature(hub.action_lessons_activate)
@@ -292,6 +295,130 @@ class TestProtocolJsonContract:
         assert "broker-status" in guard["read_only_hub_actions"]
         assert "broker-submit" in guard["collab_rate_guard"]["exempt_actions"]
         assert "broker-status" in guard["collab_rate_guard"]["exempt_actions"]
+
+
+def _deny_replace():
+    def deny(_a, _b):
+        err = PermissionError("access denied"); err.winerror = 5
+        raise err
+    return deny
+
+
+def _round():
+    return {
+        "round_id": "r-test", "subject": "s", "proposed_by": "cc",
+        "status": "voting", "voters": ["cc", "ag", "cx"],
+        "votes": {"cc": None, "ag": {"vote": "agree", "reason": "x", "ts": "t"}, "cx": None},
+    }
+
+
+class TestSandboxBrokerFallback:
+    """A sandbox-denied atomic replace (WinError 5) on a broker-whitelisted, NON
+    consensus .ai target must transparently queue a full-file replace to the
+    broker (Option 1) instead of crashing. Consensus rounds defer to vote-merge."""
+
+    def _mailbox(self):
+        return {"messages": [], "unread_count": 0}
+
+    def test_denied_write_queues_to_broker(self, tmp_path, monkeypatch):
+        import os
+        ai = tmp_path / ".ai"; ai.mkdir(parents=True)
+        p = ai / "mailbox.json"; p.write_text(json.dumps(self._mailbox()), encoding="utf-8")
+        monkeypatch.setattr(os, "replace", _deny_replace())
+        hub._write_json(p, {"messages": [], "unread_count": 3})  # must NOT raise
+        pending = list((ai / "broker" / "pending").glob("*.json"))
+        assert len(pending) == 1
+        queued = json.loads(pending[0].read_text(encoding="utf-8"))
+        assert queued["target"] == "mailbox.json"
+        assert queued["operation"] == "json_replace"
+        assert not list(ai.glob("*.tmp"))  # temp cleaned
+
+    def test_serialize_one_inflight_per_target(self, tmp_path, monkeypatch):
+        import os
+        ai = tmp_path / ".ai"; ai.mkdir(parents=True)
+        p = ai / "mailbox.json"; p.write_text(json.dumps(self._mailbox()), encoding="utf-8")
+        monkeypatch.setattr(os, "replace", _deny_replace())
+        hub._write_json(p, {"messages": [], "unread_count": 1})
+        with pytest.raises(hub.SandboxRenameDeniedError):
+            hub._write_json(p, {"messages": [], "unread_count": 2})  # stale, must not double-queue
+        assert len(list((ai / "broker" / "pending").glob("*.json"))) == 1
+
+    def test_recursion_guard_during_commit(self, tmp_path, monkeypatch):
+        import os
+        ai = tmp_path / ".ai"; ai.mkdir(parents=True)
+        p = ai / "mailbox.json"; p.write_text(json.dumps(self._mailbox()), encoding="utf-8")
+        monkeypatch.setattr(os, "replace", _deny_replace())
+        monkeypatch.setattr(hub, "_BROKER_COMMIT_ACTIVE", True)
+        with pytest.raises(hub.SandboxRenameDeniedError):
+            hub._write_json(p, {"messages": [], "unread_count": 9})  # commit must not re-queue
+        assert not list((ai / "broker" / "pending").glob("*.json"))
+
+    def test_non_whitelisted_target_still_raises(self, tmp_path, monkeypatch):
+        import os
+        ai = tmp_path / ".ai"; (ai / "out").mkdir(parents=True)
+        p = ai / "out" / "scratch.json"; p.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr(os, "replace", _deny_replace())
+        with pytest.raises(hub.SandboxRenameDeniedError):
+            hub._write_json(p, {"a": 1})
+
+    def test_consensus_defers_to_vote_merge(self, tmp_path, monkeypatch):
+        import os
+        ai = tmp_path / ".ai"; (ai / "consensus").mkdir(parents=True)
+        rp = ai / "consensus" / "r-test.json"; rp.write_text(json.dumps(_round()), encoding="utf-8")
+        monkeypatch.setattr(os, "replace", _deny_replace())
+        with pytest.raises(hub.SandboxRenameDeniedError):
+            hub._write_json(rp, _round())  # NOT full-replace-queued; vote path handles it
+        assert not list((ai / "broker" / "pending").glob("*.json"))
+
+
+class TestConsensusVoteMerge:
+    """Option 2: single-vote merge is applied host-side against a FRESH read, so
+    concurrent stale-snapshot votes never clobber each other."""
+
+    def test_apply_merge_finalizes(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(hub, "_peer_effective_health", lambda *a, **k: ("GREEN", {}))
+        ai = tmp_path / ".ai"; (ai / "consensus").mkdir(parents=True)
+        rp = ai / "consensus" / "r-test.json"
+        r = _round(); r["votes"]["cx"] = {"vote": "agree", "reason": "x", "ts": "t"}
+        rp.write_text(json.dumps(r), encoding="utf-8")  # cc null, ag+cx agree
+        hub._apply_vote_merge(ai, rp, {"voter": "cc", "vote": "agree", "reason": "r"})
+        out = json.loads(rp.read_text(encoding="utf-8"))
+        assert out["votes"]["cc"]["vote"] == "agree"
+        assert out["status"] == "finalized" and out["outcome"] == "unanimous"
+
+    def test_concurrent_merges_no_clobber(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(hub, "_peer_effective_health", lambda *a, **k: ("GREEN", {}))
+        ai = tmp_path / ".ai"; (ai / "consensus").mkdir(parents=True)
+        rp = ai / "consensus" / "r-test.json"
+        rp.write_text(json.dumps(_round()), encoding="utf-8")  # only ag agree
+        # Two independent stale intents (each unaware of the other) applied in order.
+        hub._apply_vote_merge(ai, rp, {"voter": "cx", "vote": "agree", "reason": "r"})
+        hub._apply_vote_merge(ai, rp, {"voter": "cc", "vote": "agree", "reason": "r"})
+        out = json.loads(rp.read_text(encoding="utf-8"))
+        assert out["votes"]["cx"]["vote"] == "agree"  # not clobbered by cc's merge
+        assert out["votes"]["cc"]["vote"] == "agree"
+        assert out["status"] == "finalized"
+
+    def test_merge_idempotent_on_closed(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(hub, "_peer_effective_health", lambda *a, **k: ("GREEN", {}))
+        ai = tmp_path / ".ai"; (ai / "consensus").mkdir(parents=True)
+        rp = ai / "consensus" / "r-test.json"
+        r = _round(); r["status"] = "rejected"; r["outcome"] = "disagree"
+        rp.write_text(json.dumps(r), encoding="utf-8")
+        hub._apply_vote_merge(ai, rp, {"voter": "cc", "vote": "agree", "reason": "r"})
+        out = json.loads(rp.read_text(encoding="utf-8"))
+        assert out["status"] == "rejected" and out["votes"]["cc"] is None  # unchanged
+
+    def test_request_parsing_roundtrip(self, tmp_path):
+        ai = tmp_path / ".ai"; (ai / "consensus").mkdir(parents=True)
+        req = {
+            "schema_version": 1, "request_id": "br-" + "0" * 20 + "-" + "a" * 8,
+            "operation": "consensus_vote_merge", "target": "consensus/r-x.json",
+            "vote": {"voter": "cx", "vote": "agree", "reason": "r"},
+        }
+        parsed = hub._broker_request_from_dict(ai, req)
+        assert parsed.operation == "consensus_vote_merge"
+        assert parsed.payload["voter"] == "cx"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

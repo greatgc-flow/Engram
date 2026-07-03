@@ -23,7 +23,7 @@ the declared capability class plus DIR-002.
 |------|-----------------|--------|
 | **cc** | `claude -p {query} --dangerously-skip-permissions` | ACTIVE |
 | **ag** | `agy --dangerously-skip-permissions -p {query} --print-timeout 60m` | ACTIVE (gc replacement) |
-| **cx** | `codex exec -s workspace-write --json --ignore-rules` | ACTIVE |
+| **cx** | `codex exec -s workspace-write --json` | ACTIVE |
 | **ca** | `claude -p {query} --dangerously-skip-permissions` | INACTIVE (never activated) |
 | **gc** | `gemini --approval-mode auto_edit --skip-trust` | SUSPENDED (IneligibleTierError 2026-06-19) |
 

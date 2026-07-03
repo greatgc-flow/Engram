@@ -1,0 +1,8 @@
+{
+  "lesson": "LL-009",
+  "check": "model_operand_grammar_r8b3b",
+  "status": "pass",
+  "checked_nodes": 15,
+  "findings": [],
+  "generated_at": "2026-07-03T04:37:10.258425+00:00"
+}

@@ -28,10 +28,20 @@
     "runtime_generation": "in_memory_only"
   },
   "permission_classes": {
-    "trusted_ipc_mutation": {
+    "unsandboxed_trusted_mutation": {
       "governance_weight": 1,
-      "scope": "workspace mutation and declared command execution",
-      "note": "CLI flags differ by adapter; governance equality does not require identical unsafe flags."
+      "scope": "workspace mutation and declared command execution without verified filesystem sandbox",
+      "note": "ag: skip-permissions / no FS confinement; highest risk; OS-confinement pending. Prefer lower privilege at equal capability fit."
+    },
+    "tool_scoped_mutation": {
+      "governance_weight": 1,
+      "scope": "workspace mutation and declared command execution constrained by CLI permission tools",
+      "note": "cc currently runs --dangerously-skip-permissions (trusted-IPC, DIR-002). A CLI-permission-tool allowlist (permission-mode default + allowedTools) is the pending security-phase target — trialed 2026-07-03 and reverted (does not hard-enforce under -p; DIR-004). Prefer lower privilege at equal capability fit."
+    },
+    "sandboxed_mutation": {
+      "governance_weight": 1,
+      "scope": "workspace mutation and broker-mediated .ai writes under workspace-write sandbox",
+      "note": "cx: sandbox=workspace-write; most confined active mutation peer. Prefer lower privilege at equal capability fit."
     },
     "read_only_review": {
       "governance_weight": 1,
@@ -63,7 +73,7 @@
       "session_mode": "reuse",
       "timeout": 0,
       "default_profile": "deepthink",
-      "capability_class": "trusted_ipc_mutation",
+      "capability_class": "tool_scoped_mutation",
       "profiles": {
         "standard": {
           "model_id": "claude-haiku-4-5-20251001",
@@ -114,7 +124,7 @@
           ]
         },
         "fable": {
-          "model_id": "claude-fable-4-9",
+          "model_id": "claude-fable-5",
           "model_availability": "verified_local",
           "runtime_context_window": 200000,
           "validated_at": "2026-07-02",
@@ -124,7 +134,7 @@
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "claude-fable-4-9",
+            "claude-fable-5",
             "--effort",
             "high"
           ]
@@ -151,7 +161,7 @@
       "memory": "short-term",
       "timeout": 0,
       "default_profile": "deepthink",
-      "capability_class": "trusted_ipc_mutation",
+      "capability_class": "tool_scoped_mutation",
       "profiles": {
         "standard": {
           "model_id": "claude-haiku-4-5-20251001",
@@ -213,7 +223,7 @@
       "session_mode": "reuse",
       "timeout": 0,
       "default_profile": "deepthink",
-      "capability_class": "trusted_ipc_mutation",
+      "capability_class": "unsandboxed_trusted_mutation",
       "profiles": {
         "standard": {
           "runtime_model": "Gemini 3.5 Flash (Low)",
@@ -251,16 +261,30 @@
             "Gemini 3.1 Pro (High)"
           ]
         },
-        "3p": {
-          "runtime_model": "GPT-4o (3P)",
-          "model_availability": "verified_local",
-          "runtime_context_window": 128000,
+        "opus": {
+          "runtime_model": "Claude Opus 4.6 (Thinking)",
+          "model_availability": "cli_listed",
+          "runtime_context_window": null,
           "reasoning_effort": "high",
-          "cost_tier": "mid",
-          "routing_state": "eligible",
+          "cost_tier": "high",
+          "routing_state": "manual_only",
+          "source": "check_cli_reality:2026-07-03",
           "profile_args": [
             "--model",
-            "GPT-4o (3P)"
+            "Claude Opus 4.6 (Thinking)"
+          ]
+        },
+        "gptoss": {
+          "runtime_model": "GPT-OSS 120B (Medium)",
+          "model_availability": "cli_listed",
+          "runtime_context_window": null,
+          "reasoning_effort": "medium",
+          "cost_tier": "mid",
+          "routing_state": "manual_only",
+          "source": "check_cli_reality:2026-07-03",
+          "profile_args": [
+            "--model",
+            "GPT-OSS 120B (Medium)"
           ]
         }
       },
@@ -279,7 +303,6 @@
         "exec",
         "{query}",
         "--json",
-        "--ignore-rules",
         "-c",
         "sandbox=\"workspace-write\""
       ],
@@ -287,7 +310,7 @@
       "session_mode": "reuse",
       "timeout": 0,
       "default_profile": "deepthink",
-      "capability_class": "trusted_ipc_mutation",
+      "capability_class": "sandboxed_mutation",
       "profiles": {
         "standard": {
           "model_id": "gpt-5.4-mini",

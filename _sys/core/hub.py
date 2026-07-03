@@ -69,6 +69,15 @@ except ImportError:
     hub_profile_router = None  # type: ignore[assignment]
     _PROFILE_ROUTER_AVAILABLE = False
 
+# r-f291 W4: shared telemetry snapshot (same collect_snapshot the diag renderer
+# uses) — the failover router must not have a private collection path.
+try:
+    import snapshot
+    _SNAPSHOT_AVAILABLE = True
+except ImportError:
+    snapshot = None  # type: ignore[assignment]
+    _SNAPSHOT_AVAILABLE = False
+
 # Global Logger instance (lazy initialized)
 _logger: _HubLogger | None = None
 
@@ -424,10 +433,16 @@ def _normalize_runtime_files(ai_root: Path) -> None:
 
     leases_path = ai_root / "leases.json"
     leases = _read_json(leases_path) if leases_path.exists() else {}
+    # Generic reclaim: keep a lease only if it is a declared node whose ROOT peer is
+    # routable (active). Profile nodes (e.g. cc.fable) are judged by their root (cc).
+    # Retired/legacy/non-routable IDs (e.g. gc, ca) are dropped without hardcoding
+    # names — derived from orchestration routing policy, not a static list.
     filtered_leases = {
         node_id: value
         for node_id, value in leases.items()
-        if node_id not in retired
+        if node_id in configured
+        and node_id.split(".")[0] in active_roots
+        and node_id not in retired
     }
     if leases != filtered_leases:
         _write_json(leases_path, filtered_leases)
@@ -590,6 +605,63 @@ def _spawn_process(cmd, **popen_kwargs):
             raise
 
 
+# Set True only while the host-side broker is committing a validated request, so a
+# denied atomic replace during that commit is NOT recursively re-queued to the broker.
+_BROKER_COMMIT_ACTIVE = False
+
+
+def _try_broker_fallback(path: Path, data: dict) -> bool:
+    """On a sandbox-denied atomic replace, transparently queue the write to the
+    host-side mutation broker.
+
+    A sandboxed peer cannot os.replace an existing tracked file, but it CAN create
+    a new file under .ai/broker/pending (create-new is permitted). So we drop a
+    broker request there; a later host-side `broker-drain` performs the real commit.
+
+    Returns True if the write was queued (caller treats the write as done), or
+    False if it cannot be brokered (caller should raise the original denial).
+    """
+    if _BROKER_COMMIT_ACTIVE:
+        return False  # recursion guard: never re-broker a host-side commit
+    ai_root = next((p for p in [path, *path.parents] if p.name == ".ai"), None)
+    if ai_root is None:
+        return False
+    try:
+        rel, _ = _validate_broker_payload(ai_root, str(path.relative_to(ai_root)), data)
+    except Exception:
+        return False  # target is not broker-whitelisted -> cannot fall back
+    if rel.startswith("consensus/"):
+        # Consensus rounds use the concurrency-safe vote-merge path (Option 2),
+        # not a full-file replace; let the caller route via _queue_vote_merge.
+        return False
+    pending_dir, _, _ = _broker_dirs(ai_root)
+    # Option-3 serialization: at most one in-flight request per target. A second
+    # read-modify-write built from a now-stale read must not clobber the first.
+    try:
+        for req in pending_dir.glob("*.json"):
+            if _read_json(req).get("target") == rel:
+                return False  # a write for this target is already queued
+    except OSError:
+        pass
+    pending_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+    request_id = f"br-{stamp}-{uuid.uuid4().hex[:8]}"
+    request = {
+        "schema_version": 1,
+        "request_id": request_id,
+        "created_at": _now(),
+        "origin": os.environ.get("HUB_ORIGIN", "worker"),
+        "operation": "json_replace",
+        "target": rel,
+        "payload": data,
+    }
+    req_path = pending_dir / f"{stamp}-{request_id}.json"
+    with req_path.open("x", encoding="utf-8") as f:
+        json.dump(request, f, ensure_ascii=False, indent=2)
+    print(f"[HUB] BROKER-QUEUED {request_id} | target={rel} | awaiting host drain", file=sys.stderr)
+    return True
+
+
 def _write_json_atomic(path: Path, data: dict) -> None:
     """Atomic write using a temporary file and os.replace."""
     # Use a unique temporary file to avoid collisions between parallel processes on Windows
@@ -606,6 +678,13 @@ def _write_json_atomic(path: Path, data: dict) -> None:
             except PermissionError as exc:
                 if i == max_retries - 1:
                     if _is_sandbox_rename_denied(exc):
+                        # Transparent broker fallback for sandboxed peers.
+                        if _try_broker_fallback(path, data):
+                            try:
+                                temp_path.unlink()
+                            except (FileNotFoundError, OSError):
+                                pass
+                            return
                         raise SandboxRenameDeniedError(path, temp_path, exc) from exc
                     raise
                 # Exponential backoff: 20ms, 40ms, 80ms, 160ms, 320ms + jitter
@@ -629,6 +708,7 @@ class HubMutationRequest:
     target_path: Path
     payload: dict
     request_id: str
+    operation: str = "json_replace"
 
 
 def _mutation_broker_enabled() -> bool:
@@ -654,6 +734,7 @@ def _enqueue_hub_mutation_request(ai_root: Path, request: HubMutationRequest) ->
 
 def _commit_hub_mutation_request(ai_root: Path, request: HubMutationRequest, force_tier0: bool = False) -> None:
     """Host-side commit primitive: guard, lock, journal, atomic replace."""
+    global _BROKER_COMMIT_ACTIVE
     _guard_action(ai_root, request.action, force_tier0=force_tier0, origin=request.origin)
     with _get_lock(ai_root, f"broker_{request.target_path.name}"):
         _journal_op(ai_root, "hub_mutation_broker", "commit_intent", {
@@ -661,7 +742,14 @@ def _commit_hub_mutation_request(ai_root: Path, request: HubMutationRequest, for
             "action": request.action,
             "target_path": str(request.target_path),
         })
-        _write_json_atomic(request.target_path, request.payload)
+        _BROKER_COMMIT_ACTIVE = True
+        try:
+            if request.operation == "consensus_vote_merge":
+                _apply_vote_merge(ai_root, request.target_path, request.payload)
+            else:
+                _write_json_atomic(request.target_path, request.payload)
+        finally:
+            _BROKER_COMMIT_ACTIVE = False
         _journal_op(ai_root, "hub_mutation_broker", "commit", {
             "request_id": request.request_id,
             "action": request.action,
@@ -753,22 +841,35 @@ def _broker_request_from_dict(ai_root: Path, data: dict, commit_origin: str = "b
         raise ValueError("broker request must be a JSON object")
     if data.get("schema_version") != 1:
         raise ValueError("unsupported broker schema_version")
-    if data.get("operation") != "json_replace":
-        raise ValueError("unsupported broker operation")
     request_id = str(data.get("request_id") or "").strip()
-    origin = str(data.get("origin") or "unknown").strip() or "unknown"
-    target = str(data.get("target") or "").strip()
-    payload = data.get("payload")
     if not re.fullmatch(r"br-[0-9]{20}-[0-9a-f]{8}", request_id):
         raise ValueError("invalid broker request_id")
-    _, target_path = _validate_broker_payload(ai_root, target, payload)
-    return HubMutationRequest(
-        action="broker-drain",
-        origin=commit_origin or "broker",
-        target_path=target_path,
-        payload=payload,
-        request_id=request_id,
-    )
+    op = data.get("operation")
+    if op == "consensus_vote_merge":
+        # Option-2: carry only the single vote intent; the host applies it against
+        # a fresh read at commit time (concurrency-safe, no full-file clobber).
+        rel, target_path = _broker_rel_target(ai_root, str(data.get("target") or ""))
+        if not (rel.startswith("consensus/") and rel.endswith(".json") and len(Path(rel).parts) == 2):
+            raise ValueError("vote_merge target must be a consensus round file")
+        vote = data.get("vote") or {}
+        if not all(k in vote for k in ("voter", "vote", "reason")):
+            raise ValueError("vote_merge requires vote.voter/vote/reason")
+        if vote["vote"] not in {"agree", "disagree", "abstain"}:
+            raise ValueError("invalid vote value in vote_merge")
+        return HubMutationRequest(
+            action="broker-drain", origin=commit_origin or "broker",
+            target_path=target_path, payload=vote, request_id=request_id,
+            operation="consensus_vote_merge",
+        )
+    if op == "json_replace":
+        target = str(data.get("target") or "").strip()
+        payload = data.get("payload")
+        _, target_path = _validate_broker_payload(ai_root, target, payload)
+        return HubMutationRequest(
+            action="broker-drain", origin=commit_origin or "broker",
+            target_path=target_path, payload=payload, request_id=request_id,
+        )
+    raise ValueError("unsupported broker operation")
 
 
 def _broker_archive_request(src: Path, dest_dir: Path) -> Path:
@@ -2170,6 +2271,46 @@ def _role_guard(ai_root: Path, peer: str, action: str, allowed_roles: set[str], 
         sys.exit(3)
 
 
+def _snapshot_failover_choice(ai_root: Path | None, exclude: list[str]) -> tuple[str | None, str | None]:
+    """r-f291 W4: pick the failover target from the SAME snapshot the diag
+    renderer uses (max headroom, eligible, excludes exhausted peers) and log
+    the snapshot hash so every routing decision is auditable. Fails open:
+    (None, None) keeps the existing health-based failover."""
+    if not _SNAPSHOT_AVAILABLE or snapshot is None:
+        return None, None
+    try:
+        snap = snapshot.collect_snapshot(use_cache=True)
+        snap_hash = snapshot.snapshot_hash(snap)
+        row = snapshot.snapshot_failover_target(exclude=exclude, snapshot=snap)
+        if ai_root:
+            _record_routing_metric(
+                ai_root,
+                "snapshot_failover_rank",
+                snapshot_hash=snap_hash,
+                selected_peer=row.get("peer") if row else None,
+                selected_profile=row.get("profile") if row else None,
+                headroom=row.get("headroom") if row else None,
+                exclude=exclude,
+                outcome="selected" if row else "no_target",
+            )
+        return (row.get("profile") if row else None), snap_hash
+    except Exception as exc:
+        if ai_root:
+            _record_routing_metric(
+                ai_root,
+                "snapshot_failover_rank",
+                outcome="fallback_health_based",
+                failure_reason=type(exc).__name__,
+                detail=str(exc)[:200],
+                exclude=exclude,
+            )
+        print(
+            f"[HUB:WARN] snapshot failover ranking unavailable; using health-based failover: {exc}",
+            file=sys.stderr,
+        )
+        return None, None
+
+
 def _matching_peers(needs: str, effort: str = "mid") -> list[dict]:
     proto_cfg = _load_protocol_cfg()
     election_cfg = proto_cfg.get("leader_election", {}).get("election_score", {})
@@ -2196,17 +2337,13 @@ def _matching_peers(needs: str, effort: str = "mid") -> list[dict]:
     console_bonus_max = int(election_cfg.get("console_fit_bonus_max", 1) or 1)
     cold_start_penalty_max = int(election_cfg.get("cold_start_penalty_max", 1) or 1)
     
-    # Get telemetry for Quota Margin Bonus
+    # Get telemetry for Quota Margin Bonus (r-f291: core snapshot module, no CLI import)
     try:
-        cli_dir = Path(__file__).resolve().parent.parent / "cli"
-        if str(cli_dir) not in sys.path:
-            sys.path.insert(0, str(cli_dir))
-        import diag
-        snapshot = diag.collect_snapshot()
-        telemetry = {p["peer"]: p for p in snapshot.get("peers", [])}
+        snap = snapshot.collect_snapshot(use_cache=True) if _SNAPSHOT_AVAILABLE else {}
+        telemetry = {p["peer"]: p for p in snap.get("peers", [])}
     except Exception as e:
         telemetry = {}
-        print(f"[HUB:WARN] Failed to load diag telemetry for quota margin: {e}", file=sys.stderr)
+        print(f"[HUB:WARN] Failed to load snapshot telemetry for quota margin: {e}", file=sys.stderr)
 
     matches: list[dict] = []
     
@@ -2451,7 +2588,7 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
         sys.exit(1)
 
     heartbeat_sec, _lease_timeout_sec, zombie_timeout_sec = _lease_cfg(node_id)
-    startup_timeout_sec = _startup_timeout_sec()
+    startup_timeout_sec = _startup_timeout_sec(node_id)
     lease = int(_runtime_cfg().get("pty_lease_sec", 300) or 300)
 
     # CONDITION-3: the bounded get() slice MUST be <= heartbeat (so lease renewal
@@ -2893,7 +3030,18 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     ipc_protocol_version: int | None = None
     if query_file:
         qf = Path(query_file)
-        if not qf.exists(): sys.exit(1)
+        if not qf.exists():
+            # W1 (consensus 2026-07-03): never die silently. IPC query files are
+            # single-use — the hub unlinks them after the first read — so a retry
+            # with the same path is the most common way to hit this.
+            print(
+                f"[HUB:ERROR] action_ask: query file not found: {query_file} "
+                "(IPC query files are single-use and unlinked after first read; "
+                "write a fresh file per attempt)",
+                file=sys.stderr,
+            )
+            _append_ask_history(ai_root, to, query_file, output_file, None, False, "query_file_missing")
+            sys.exit(1)
         raw_content = qf.read_text(encoding="utf-8")
         # Parse IPC envelope headers (lines starting with "PROTOCOL_")
         lines = raw_content.splitlines()
@@ -3039,6 +3187,13 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                     # If we already tried to failover and it's the same, don't try again
                     pass
                 else:
+                    # r-f291 W4: snapshot-headroom ranking picks the failover
+                    # target when available; falls back to the gate's static
+                    # suggestion (health-based) on any snapshot failure.
+                    ranked_target, _snap_hash = _snapshot_failover_choice(
+                        ai_root, exclude=[to, original_to, health_peer])
+                    if ranked_target:
+                        failover_model = ranked_target
                     print(f"[ContextGate] context {gate_result.get('ratio', 0):.0%} full → failover to {failover_model}", file=sys.stderr)
                     # Recursive failover call with increased depth and disabled context inclusion
                     return action_ask(failover_model, query, None, timeout_sec, ai_root, quiet, output_file, include_context=False, session_policy=session_policy, explicit_scope=explicit_scope, _depth=_depth + 1, _escalation_depth=_escalation_depth, origin=origin)
@@ -3082,6 +3237,15 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 existing_session = None
 
     # ── Command construction (Adapter-based) ───────────────────
+    # r-8b3b grammar (LL-009): refuse to build a command whose model operand
+    # drifts from the orchestration-declared model for this node.
+    from hub_peer import validate_model_operand
+    _model_err = validate_model_operand(node)
+    if _model_err:
+        print(f"[HUB:ERROR] model operand validation failed: {_model_err}", file=sys.stderr)
+        _append_ask_history(ai_root, to, saved_query_file_path, output_file, None, False, "model_operand_invalid")
+        sys.exit(1)
+
     session_id = None
     if use_session and existing_session:
         session_id = existing_session.get("session_id")
@@ -3472,7 +3636,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         try:
             raw_out, raw_err = _stream_process_output(
                 proc, cmd, input_bytes, heartbeat_sec, zombie_timeout_sec,
-                _startup_timeout_sec(), timeout_sec, ai_root, to, lease_timeout_sec)
+                _startup_timeout_sec(to), timeout_sec, ai_root, to, lease_timeout_sec)
         except subprocess.TimeoutExpired:
             lease_status = "timeout"
             raise
@@ -3917,6 +4081,94 @@ def action_consensus_propose(ai_root: Path, subject: str, voters: list[str], pro
     print(f"[HUB] PROPOSE {round_id} | subject={subject} | voters={','.join(snapshot_voters)}")
 
 
+def _decide_consensus(ai_root: Path, data: dict) -> bool:
+    """Apply the close/finalize decision to a round dict whose votes are already
+    set. Mutates data['status']/['outcome'] when the round closes. Returns True
+    if the round is now closed. Single source of decision logic, shared by the
+    direct vote path and the host-side vote-merge commit."""
+    votes = data.get("votes", {})
+    total = len(data.get("voters", []))
+    cast = sum(1 for v in votes.values() if v is not None)
+    has_disagree = any(v is not None and v["vote"] == "disagree" for v in votes.values())
+    mid_round_closed = any(
+        _peer_effective_health(v, ai_root=ai_root)[0] in ("RED", "STALE")
+        for v in data.get("voters", [])
+    )
+    if not (has_disagree or cast == total or total < 2 or mid_round_closed):
+        return False
+    has_agree = any(v is not None and v["vote"] == "agree" for v in votes.values())
+    all_agree = (cast == total) and all(v is not None and v["vote"] == "agree" for v in votes.values())
+    proposer = data.get("proposed_by", "")
+    non_proposer_agrees = sum(
+        1 for n, d in votes.items()
+        if d is not None and d["vote"] == "agree" and n != proposer
+    )
+    current_collab_rate = int(_load_protocol_cfg().get("collab_rate", {}).get("current", 0) or 0)
+    if has_disagree:
+        data["status"], data["outcome"] = "rejected", "disagree"
+    elif total < 2 or mid_round_closed or not has_agree or non_proposer_agrees == 0:
+        data["status"], data["outcome"] = "escalated", "human_gate"
+    elif all_agree:
+        data["status"], data["outcome"] = "finalized", "unanimous"
+    elif current_collab_rate >= 10:
+        data["status"], data["outcome"] = "escalated", "human_gate_unanimity_failed"
+    else:
+        data["status"], data["outcome"] = "finalized", "majority"
+    return True
+
+
+def _finalize_round_side_effects(ai_root: Path, data: dict) -> None:
+    """DECISION log + history + capsule for a just-closed round."""
+    rid = data.get("round_id")
+    _log_p2p("DECISION", f"ID={rid} Status={data['status'].upper()} Outcome={data['outcome']}", from_node="SYSTEM")
+    print(f"[HUB] DECISION {rid} {data['status'].upper()} | {data['outcome']}")
+    _append_consensus_history(ai_root, rid, data.get("subject", ""), data["status"].upper())
+    if data["status"] == "finalized":
+        _emit_decision_capsule(ai_root, data)
+
+
+def _apply_vote_merge(ai_root: Path, rpath: Path, vote: dict) -> None:
+    """Host-side commit for a consensus_vote_merge request: read the round FRESH,
+    apply this single vote, decide, persist. Concurrency-safe — a stale snapshot
+    can never clobber other voters. Idempotent on already-closed rounds."""
+    if not rpath.exists():
+        return
+    data = _read_json(rpath)
+    if data.get("status") in ("finalized", "escalated", "rejected"):
+        return
+    voter = vote["voter"]
+    if voter not in data.get("voters", []):
+        return
+    votes = data.get("votes", {})
+    votes[voter] = {"vote": vote["vote"], "reason": vote.get("reason", ""), "ts": _now()}
+    data["votes"] = votes
+    decided = _decide_consensus(ai_root, data)
+    _write_json_atomic(rpath, data)
+    if decided:
+        _finalize_round_side_effects(ai_root, data)
+
+
+def _queue_vote_merge(ai_root: Path, round_id: str, voter: str, vote_val: str, reason: str) -> str:
+    """Queue a single-vote merge intent to the broker (sandbox-safe create-new).
+    Host drain reads the round fresh, applies this one vote, and decides."""
+    pending_dir, _, _ = _broker_dirs(ai_root)
+    pending_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+    request_id = f"br-{stamp}-{uuid.uuid4().hex[:8]}"
+    request = {
+        "schema_version": 1, "request_id": request_id, "created_at": _now(),
+        "origin": os.environ.get("HUB_ORIGIN", "worker"),
+        "operation": "consensus_vote_merge",
+        "target": f"consensus/{round_id}.json",
+        "vote": {"voter": voter, "vote": vote_val, "reason": reason},
+    }
+    req_path = pending_dir / f"{stamp}-{request_id}.json"
+    with req_path.open("x", encoding="utf-8") as f:
+        json.dump(request, f, ensure_ascii=False, indent=2)
+    print(f"[HUB] BROKER-QUEUED {request_id} | merge vote {voter} -> consensus/{round_id}.json", file=sys.stderr)
+    return request_id
+
+
 def action_consensus_vote(ai_root: Path, round_id: str, voter: str, vote_val: str, reason: str) -> None:
     _VALID_VOTES = {"agree", "disagree", "abstain"}
     if vote_val not in _VALID_VOTES:
@@ -3927,8 +4179,8 @@ def action_consensus_vote(ai_root: Path, round_id: str, voter: str, vote_val: st
     with _get_lock(ai_root, f"consensus_{round_id}"):
         data = _read_json(rpath)
         if data.get("status") in ("finalized", "escalated", "rejected"):
-            print(f"[HUB:ERR] round {round_id} is already closed", file=sys.stderr)
-            sys.exit(1)
+            print(f"[HUB:WARN] round {round_id} is already closed", file=sys.stderr)
+            sys.exit(0)
         if voter not in data.get("voters", []):
             print(f"[HUB:ERR] {voter} is not a registered voter for {round_id}", file=sys.stderr)
             sys.exit(1)
@@ -3936,63 +4188,19 @@ def action_consensus_vote(ai_root: Path, round_id: str, voter: str, vote_val: st
         votes[voter] = {"vote": vote_val, "reason": reason, "ts": _now()}
         data["votes"] = votes
         total, cast = len(data["voters"]), sum(1 for v in votes.values() if v is not None)
-        
         _log_p2p("VOTE", f"ID={round_id} Vote={vote_val} ({cast}/{total})", from_node=voter)
         print(f"[HUB] VOTE {round_id} | voter={voter} {vote_val} | {cast}/{total}")
-        
-        has_disagree_now = any(v is not None and v["vote"] == "disagree" for v in votes.values())
-        
-        mid_round_closed = False
-        quarantined_voters = []
-        for v in data["voters"]:
-            st, _ = _peer_effective_health(v, ai_root=ai_root)
-            if st in ("RED", "STALE"):
-                mid_round_closed = True
-                quarantined_voters.append(v)
-                
-        if has_disagree_now or cast == total or total < 2 or mid_round_closed:
-            has_disagree = has_disagree_now
-            has_agree = any(v is not None and v["vote"] == "agree" for v in votes.values())
-            all_agree = (cast == total) and all(v is not None and v["vote"] == "agree" for v in votes.values())
-            
-            proposer = data.get("proposed_by", "")
-            non_proposer_agrees = sum(1 for v_name, v_dict in votes.items() if v_dict is not None and v_dict["vote"] == "agree" and v_name != proposer)
-            
-            current_collab_rate = int(_load_protocol_cfg().get("collab_rate", {}).get("current", 0) or 0)
-            
-            if has_disagree:
-                data["status"] = "rejected"
-                data["outcome"] = "disagree"
-            elif total < 2:
-                data["status"] = "escalated"
-                data["outcome"] = "human_gate"
-            elif mid_round_closed:
-                data["status"] = "escalated"
-                data["outcome"] = "human_gate"
-            elif not has_agree:
-                data["status"] = "escalated"
-                data["outcome"] = "human_gate"
-            elif has_agree and non_proposer_agrees == 0:
-                data["status"] = "escalated"
-                data["outcome"] = "human_gate"
-            elif all_agree:
-                data["status"] = "finalized"
-                data["outcome"] = "unanimous"
-            else:
-                if current_collab_rate >= 10:
-                    data["status"] = "escalated"
-                    data["outcome"] = "human_gate_unanimity_failed"
-                else:
-                    data["status"] = "finalized"
-                    data["outcome"] = "majority"
+        decided = _decide_consensus(ai_root, data)
+        try:
             _write_json(rpath, data)
-            _log_p2p("DECISION", f"ID={round_id} Status={data['status'].upper()} Outcome={data['outcome']}", from_node="SYSTEM")
-            print(f"[HUB] DECISION {round_id} {data['status'].upper()} | {data['outcome']}")
-            _append_consensus_history(ai_root, round_id, data["subject"], data["status"].upper())
-            
-            if data["status"] == "finalized":
-                _emit_decision_capsule(ai_root, data)
-        else: _write_json(rpath, data)
+        except SandboxRenameDeniedError:
+            # Sandboxed peer: route this single vote via the broker (Option 2).
+            # The host applies + decides at drain against a fresh read.
+            _queue_vote_merge(ai_root, round_id, voter, vote_val, reason)
+            print(f"[HUB] VOTE {round_id} queued via broker (merge); host drain will apply + decide", file=sys.stderr)
+            return
+        if decided:
+            _finalize_round_side_effects(ai_root, data)
 
 
 def _emit_decision_capsule(ai_root: Path, data: dict) -> None:
@@ -4032,8 +4240,19 @@ def action_consensus_check(ai_root: Path, round_id: str | None) -> None:
     for f in files:
         if not f.exists(): continue
         r = _read_json(f)
-        print(f"\n### [{r['round_id']}] {r['status'].upper()} - {r['subject']}")
-        for v, d in r['votes'].items(): print(f"  - {v}: {d['vote'] if d else '(pending)'}")
+        # Schema-defensive: legacy/malformed rounds may lack keys. Never crash a read-only check.
+        round_id_str = r.get("round_id", f.stem)
+        status_str = str(r.get("status", "unknown")).upper()
+        subject_str = r.get("subject", "(no subject)")
+        votes = r.get("votes")
+        if not isinstance(votes, dict):
+            print(f"\n### [{round_id_str}] {status_str} - {subject_str}")
+            print("  - (no votes recorded — malformed/legacy round)")
+            continue
+        print(f"\n### [{round_id_str}] {status_str} - {subject_str}")
+        for v, d in votes.items():
+            vote_val = d.get("vote", "(pending)") if isinstance(d, dict) else "(pending)"
+            print(f"  - {v}: {vote_val}")
 
 
 def action_consensus_sweep(ai_root: Path, timeout_minutes: int = 30) -> None:
@@ -4760,9 +4979,29 @@ def _guard_action(ai_root: Path, action: str, force_tier0: bool = False, origin:
     if action not in _SYSTEM_EXEMPT_ACTIONS:
         tier_floor = cfg.get("decision_tier_floor", {})
         if tier_floor.get("enabled", False) and _is_mutating_action(action):
-            _log_p2p("BLOCK", f"PRO-19/C2: tier-floor violation for action '{action}'", from_node="GUARD")
-            _block(f"PRO-19/C2: action '{action}' requires at least '{tier_floor.get('mutating_hub_actions_min_tier', 'effort')}' profile tier. "
-                   f"[ESCALATE] Use --force-tier0 for Tier-0 human override.")
+            required_tier = tier_floor.get("mutating_hub_actions_min_tier", "effort")
+            tier_order = {"standard": 0, "effort": 1, "deepthink": 2}
+            
+            origin_tier = "standard"
+            if origin and origin != "terminal":
+                if "." in origin:
+                    origin_tier = origin.split(".", 1)[1]
+                elif origin == "worker":
+                    # Peer worker subprocess: the invoking hub carries the resolved
+                    # profile tier in HUB_PEER_TIER (HUB_ORIGIN is the generic "worker").
+                    # Without this, every peer-driven binding vote resolves to
+                    # "standard" and is blocked by the effort/deepthink floor.
+                    origin_tier = os.environ.get("HUB_PEER_TIER", "standard")
+                else:
+                    orch = _load_orchestration()
+                    root = next((n for n in orch.get("hub_nodes", []) if n.get("node_id") == origin), None)
+                    if root:
+                        origin_tier = root.get("default_profile", "standard")
+            
+            if tier_order.get(origin_tier, 0) < tier_order.get(required_tier, 1):
+                _log_p2p("BLOCK", f"PRO-19/C2: tier-floor violation for action '{action}' (origin: {origin_tier} < required: {required_tier})", from_node="GUARD")
+                _block(f"PRO-19/C2: action '{action}' requires at least '{required_tier}' profile tier (origin is '{origin_tier}'). "
+                       f"[ESCALATE] Use --force-tier0 for Tier-0 human override.")
     try:
         rate_guard = cfg.get("collab_rate_guard", {})
         current = int(_load_protocol_cfg().get("collab_rate", {}).get("current", 0) or 0)
@@ -5439,6 +5678,8 @@ def action_lessons_propose(
     severity: str = "medium",
     scope: str = "workspace",
     peer_ids: list | None = None,
+    enforcement_artifact: str | None = None,
+    expires_at: str | None = None,
 ) -> None:
     """Propose a new candidate lesson (pending approval)."""
     if not title or not rule or not category:
@@ -5478,8 +5719,12 @@ def action_lessons_propose(
         },
         "source_refs": [{"type": "user", "id": "manual", "peer": "cc", "ts": now_str}],
         "approval": {"approved_by": None, "approved_at": None, "record_ref": None},
-        "retirement": {"expires_at": None, "superseded_by": None, "review_after": None},
+        "retirement": {"expires_at": expires_at, "superseded_by": None, "review_after": None},
     }
+    # G-bridge: an enforcement artifact ref makes the lesson ACTIVE-eligible;
+    # without one, activation requires an explicit advisory expiry (W3 2026-07-03).
+    if enforcement_artifact:
+        entry["enforcement"] = {"artifact": enforcement_artifact}
 
     target = ws_path if (scope == "workspace" and ws_path) else lesson_path
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -5504,6 +5749,80 @@ def action_lessons_propose(
         pass
 
 
+def _path_is_under(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _lesson_pass_marker(data: dict) -> bool:
+    if data.get("passed") is True:
+        return True
+    passed_value = data.get("passed")
+    if isinstance(passed_value, str) and passed_value.strip().lower() == "true":
+        return True
+    for key in ("status", "result", "verdict"):
+        value = data.get(key)
+        if isinstance(value, str) and value.strip().lower() in {"pass", "passed", "verified"}:
+            return True
+    return False
+
+
+def _resolve_lesson_artifact(artifact: str, ai_root: Path) -> Path | None:
+    if not artifact or not isinstance(artifact, str):
+        return None
+    raw_path = Path(artifact)
+    roots = [_knowledge_root(), ai_root]
+    candidates = [raw_path] if raw_path.is_absolute() else [root / raw_path for root in roots]
+    for candidate in candidates:
+        if candidate.exists() and any(_path_is_under(candidate, root) for root in roots):
+            return candidate
+    return None
+
+
+def _lesson_enforcement_artifact(item: dict) -> str | None:
+    enforcement = item.get("enforcement")
+    if isinstance(enforcement, dict):
+        artifact = (
+            enforcement.get("artifact")
+            or enforcement.get("artifact_path")
+            or enforcement.get("path")
+        )
+        return artifact if isinstance(artifact, str) else None
+    if isinstance(enforcement, str):
+        return enforcement
+    for key in ("enforcement_artifact", "enforcement_artifact_path"):
+        value = item.get(key)
+        if isinstance(value, str):
+            return value
+    return None
+
+
+def _lesson_activation_blocker(item: dict, ai_root: Path) -> str | None:
+    """Fail closed unless the lesson is enforced, or explicitly temporary advisory."""
+    expires_at = (item.get("retirement") or {}).get("expires_at")
+    if expires_at is not None and str(expires_at).strip() != "":
+        return None
+
+    enforcement = item.get("enforcement")
+    artifact_ref = _lesson_enforcement_artifact(item)
+    artifact_path = _resolve_lesson_artifact(artifact_ref, ai_root) if artifact_ref else None
+    if not artifact_path:
+        return "missing allowed enforcement artifact and advisory expiry"
+
+    if isinstance(enforcement, dict) and _lesson_pass_marker(enforcement):
+        return None
+    try:
+        artifact_data = json.loads(artifact_path.read_text(encoding="utf-8"))
+    except Exception:
+        return "enforcement artifact is not readable JSON with a passing verdict"
+    if isinstance(artifact_data, dict) and _lesson_pass_marker(artifact_data):
+        return None
+    return "enforcement artifact did not report pass or verified"
+
+
 def action_lessons_activate(ai_root: Path, lesson_id: str) -> None:
     """Activate a candidate lesson (coordinator auto-approval)."""
     if not lesson_id:
@@ -5526,6 +5845,10 @@ def action_lessons_activate(ai_root: Path, lesson_id: str) -> None:
             try:
                 item = json.loads(line)
                 if item.get("id") == lesson_id and item.get("status") == "candidate":
+                    blocker = _lesson_activation_blocker(item, ai_root)
+                    if blocker:
+                        print(f"[HUB:ERROR] lesson {lesson_id} activation blocked: {blocker}", file=sys.stderr)
+                        sys.exit(1)
                     item["status"] = "active"
                     item["approval"]["approved_by"] = "coordinator"
                     item["approval"]["approved_at"] = now_str
@@ -6042,13 +6365,24 @@ def _lease_cfg(node_id: str | None = None) -> tuple[int, int, int]:
     return h, l, z
 
 
-def _startup_timeout_sec() -> int:
-    """Pre-first-output stall window (seconds). Until a peer emits its first
-    stdout chunk, silence is bounded by this instead of the full zombie window,
-    so a cold/hung startup fails fast. Kept separate from _lease_cfg to preserve
-    that function's 3-tuple contract."""
+def _startup_timeout_sec(node_id: str | None = None) -> int:
+    """Pre-first-output stall window (seconds), profile-scoped. Until a peer emits
+    its first stdout chunk, silence is bounded by this instead of the full zombie
+    window, so a cold/hung startup fails fast. Deep-reasoning profiles legitimately
+    stay silent longer before their first byte (a buffered `claude -p` flushes the
+    whole turn at completion), so the window scales by profile via startup_profile_map
+    (mirror of zombie_profile_map). This is the backstop for the streaming-transport
+    root fix. Kept separate from _lease_cfg to preserve that function's 3-tuple contract."""
     comm = _load_protocol_cfg().get("communication_policy", {})
-    return max(5, int(comm.get("startup_timeout_sec", 90) or 90))
+    base = int(comm.get("startup_timeout_sec", 90) or 90)
+    if node_id:
+        profile_id = _resolve_profile_id(node_id)
+        if profile_id:
+            profile_name = profile_id.split(".")[-1] if "." in profile_id else profile_id
+            profile_map = comm.get("startup_profile_map", {})
+            if profile_name in profile_map:
+                base = int(profile_map[profile_name])
+    return max(5, base)
 
 
 def _lease_open(ai_root: Path | None, peer_id: str, pid: int, lease_timeout_sec: int, ask_id: str | None = None, ask_query_file: str | None = None) -> None:
@@ -6591,7 +6925,7 @@ def _check_flag_parity() -> list[str]:
         return errors
 
     # Flags that MUST appear in both hub and console paths
-    # Note: --json / --ignore-rules are hub-internal cx execution flags, not
+    # Note: --json is a hub-internal cx execution flag, not a
     # direct-console permission controls, so parity intentionally excludes them.
     # cx sandbox is checked semantically below (it is enforced via either
     # `-s workspace-write` or the codex config override `-c sandbox="workspace-write"`).
@@ -6959,6 +7293,10 @@ def main() -> None:
                         choices=["auto", "reuse", "fresh", "none"],
                         help="Session reuse policy: auto=use node config, reuse=always reuse, fresh=always new, none=disable")
     parser.add_argument("--rule")
+    parser.add_argument("--enforcement-artifact", dest="enforcement_artifact",
+                        help="G-bridge artifact path (relative to .ai or knowledge root) whose pass marker gates lesson activation")
+    parser.add_argument("--expires-at", dest="expires_at",
+                        help="Advisory expiry (ISO date) for lessons without an enforcement artifact")
     parser.add_argument("--ttl-hours", dest="ttl_hours", type=int, default=6)
     parser.add_argument("--clear-condition", dest="clear_condition", default="manual")
     parser.add_argument("--lesson-id", dest="lesson_id")
@@ -7155,6 +7493,8 @@ def main() -> None:
             severity=args.severity or "medium",
             scope=args.scope or "workspace",
             peer_ids=peer_ids,
+            enforcement_artifact=args.enforcement_artifact,
+            expires_at=args.expires_at,
         )
     elif act == "lessons-activate":
         action_lessons_activate(ai_root, lesson_id=args.lesson_id or args.round_id or "")

@@ -22,7 +22,11 @@ from pathlib import Path
 _CHECKS_DIR = Path(__file__).parent
 _SYS_DIR = _CHECKS_DIR.parent
 _TESTS_DIR = _SYS_DIR / "tests" / "unit"
-_CONTRACT_TEST = _TESTS_DIR / "test_contracts.py"
+# Contract suite moved under l1_core/; fall back to the legacy flat path so the
+# guard never fails open on a missing file (cx pre-merge review, DIR-003).
+_CONTRACT_TEST = _TESTS_DIR / "l1_core" / "test_contracts.py"
+if not _CONTRACT_TEST.exists():
+    _CONTRACT_TEST = _TESTS_DIR / "test_contracts.py"
 
 # Run contract check whenever any of these files change
 _CORE_PATHS = {

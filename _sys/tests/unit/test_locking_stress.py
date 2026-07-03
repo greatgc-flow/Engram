@@ -37,7 +37,12 @@ class TestLockingStress:
 
     def run_hub_cmd(self, env, args):
         """Run a single hub command synchronously with timeout."""
-        sub_env = {**os.environ, "HUB_ORIGIN": "worker"}
+        origin = "cc"
+        if "--from" in args:
+            origin = args[args.index("--from") + 1]
+        elif "--agent" in args:
+            origin = args[args.index("--agent") + 1]
+        sub_env = {**os.environ, "HUB_ORIGIN": origin}
         return subprocess.run(
             [str(env["venv_py"]), str(env["hub_py"])] + args,
             cwd=env["root"],
@@ -52,17 +57,23 @@ class TestLockingStress:
         """Spawn hub.py subprocesses in parallel via Popen, collect results.
         Avoids ProcessPoolExecutor to prevent double-layer process spawning.
         """
-        sub_env = {**os.environ, "HUB_ORIGIN": "worker"}
-        procs = [
-            subprocess.Popen(
-                [str(env["venv_py"]), str(env["hub_py"])] + args,
-                cwd=env["root"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                env=sub_env,
+        procs = []
+        for args in arg_list:
+            origin = "cc"
+            if "--from" in args:
+                origin = args[args.index("--from") + 1]
+            elif "--agent" in args:
+                origin = args[args.index("--agent") + 1]
+            sub_env = {**os.environ, "HUB_ORIGIN": origin}
+            procs.append(
+                subprocess.Popen(
+                    [str(env["venv_py"]), str(env["hub_py"])] + args,
+                    cwd=env["root"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=sub_env,
+                )
             )
-            for args in arg_list
-        ]
         results = []
         for p in procs:
             try:

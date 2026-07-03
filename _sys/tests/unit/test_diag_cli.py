@@ -23,6 +23,17 @@ def load_diag():
     return module
 
 
+def load_snapshot():
+    """The collection layer lives in _sys/core/snapshot.py since r-f291 (W4).
+    Tests that monkeypatch moved internals (SYS_DIR, gather_peer, source
+    probes, ...) must patch the snapshot module — patching the diag re-export
+    does not reach snapshot-global lookups."""
+    if str(SYS_DIR / "core") not in sys.path:
+        sys.path.insert(0, str(SYS_DIR / "core"))
+    import snapshot
+    return snapshot
+
+
 def test_watch_below_minimum_is_rejected_with_clear_error(capsys):
     diag = load_diag()
 
@@ -122,7 +133,7 @@ def test_codex_rate_limits_are_cached_for_expensive_ttl(monkeypatch):
         calls.append("fetch")
         return {"primary": {"usedPercent": len(calls), "resetsAt": 1}}
 
-    monkeypatch.setattr(diag, "_codex_rate_limits", fetch)
+    monkeypatch.setattr(load_snapshot(), "_codex_rate_limits", fetch)
     diag._CODEX_RATE_LIMIT_CACHE.clear()
 
     first = diag._cached_codex_rate_limits(clock=lambda: 100.0)
@@ -132,6 +143,108 @@ def test_codex_rate_limits_are_cached_for_expensive_ttl(monkeypatch):
     assert first is second
     assert third is not second
     assert len(calls) == 2
+
+def test_parse_claude_usage_inline_output_from_real_cli_shape():
+    diag = load_diag()
+    text = """You are currently using your subscription to power your Claude Code usage
+
+Current session: 100% used · resets Jul 3, 11:30am (Asia/Seoul)
+Current week (all models): 41% used · resets Jul 7, 10pm (Asia/Seoul)
+Current week (Fable): 14% used · resets Jul 7, 10pm (Asia/Seoul)
+"""
+    now = datetime(2026, 7, 3, 10, 30, tzinfo=timezone(timedelta(hours=9)))
+
+    rows = diag._parse_claude_usage(text, now=now)
+
+    by_label = {row["label"]: row for row in rows}
+    assert set(by_label) == {"C-5H", "C-7D", "F-7D"}
+    assert by_label["C-5H"]["used_frac"] == pytest.approx(1.0)
+    assert by_label["C-7D"]["used_frac"] == pytest.approx(0.41)
+    assert by_label["F-7D"]["used_frac"] == pytest.approx(0.14)
+    assert all(row["source"] == "cc_usage" for row in rows)
+    assert all("resets" not in row["reset"].lower() for row in rows)
+
+
+def test_parse_claude_usage_multiline_output_from_terminal_shape():
+    diag = load_diag()
+    text = """
+Current session
+ 100% used
+Resets 11:29am (Asia/Seoul)
+
+Current week (all models)
+ 41% used
+Resets Jul 7, 9:59pm (Asia/Seoul)
+"""
+    now = datetime(2026, 7, 3, 10, 30, tzinfo=timezone(timedelta(hours=9)))
+
+    rows = diag._parse_claude_usage(text, now=now)
+
+    by_label = {row["label"]: row for row in rows}
+    assert set(by_label) == {"C-5H", "C-7D"}
+    assert by_label["C-5H"]["used_frac"] == pytest.approx(1.0)
+    assert by_label["C-7D"]["used_frac"] == pytest.approx(0.41)
+
+
+def test_claude_usage_probe_runs_real_usage_command(monkeypatch):
+    diag = load_diag()
+    calls = []
+
+    class Completed:
+        stdout = "Current session: 100% used · resets Jul 3, 11:30am (Asia/Seoul)\n"
+        stderr = ""
+
+    def fake_run(args, **kwargs):
+        calls.append((args, kwargs))
+        return Completed()
+
+    monkeypatch.setattr(load_snapshot(), "_real_binary", lambda peer: "claude-real.cmd")
+    monkeypatch.setattr(diag.subprocess, "run", fake_run)
+
+    rows = diag._claude_usage_quotas()
+
+    assert rows[0]["label"] == "C-5H"
+    assert calls[0][0] == ["claude-real.cmd", "/usage"]
+    assert calls[0][1]["env"]["CLAUDE_CONFIG_DIR"].endswith(str(Path("_sys/claude/config")))
+
+
+def test_claude_usage_is_cached_for_expensive_ttl(monkeypatch):
+    diag = load_diag()
+    calls = []
+
+    def fetch():
+        calls.append("fetch")
+        return [{"label": "C-5H", "used_frac": len(calls), "source": "cc_usage"}]
+
+    monkeypatch.setattr(load_snapshot(), "_claude_usage_quotas", fetch)
+    diag._CLAUDE_USAGE_CACHE.clear()
+
+    first = diag._cached_claude_usage_quotas(clock=lambda: 100.0)
+    second = diag._cached_claude_usage_quotas(clock=lambda: 159.0)
+    third = diag._cached_claude_usage_quotas(clock=lambda: 161.0)
+
+    assert first is second
+    assert third is not second
+    assert len(calls) == 2
+
+
+def test_cc_usage_quota_source_tag_is_cli_live():
+    diag = load_diag()
+    observed = datetime(2026, 7, 3, 10, 30, tzinfo=timezone(timedelta(hours=9))).isoformat()
+    info = {
+        "peer": "cc", "source": "live", "gate": True, "quarantined": False,
+        "model": "Opus", "ctx_used": 0, "ctx_window": 1000000, "ctx_pct": 0,
+        "ctx_known": True, "cost": 0.0, "agent_state": None, "plan_tier": None,
+        "sessions": 1, "total_tokens": None, "empty": False,
+        "quotas": [{"label": "C-5H", "used_frac": 1.0, "source": "cc_usage"}],
+        "quota_observed_at": observed, "quota_source_kind": "live",
+    }
+
+    rec = diag.normalize_peer(info)
+
+    assert rec["domains"]["quota"]["source"]["ttl_sec"] == 60
+    assert rec["domains"]["quota"]["source"]["observed_at"] == observed
+    assert diag._source_tag(rec, "quota") == "cli_live"
 
 def test_reset_formatter_includes_local_timezone_and_relative_countdown():
     diag = load_diag()
@@ -281,7 +394,7 @@ def test_collect_snapshot_survives_collector_exception(monkeypatch):
 
     def boom(peer, dirs):
         raise RuntimeError("sqlite exploded")
-    monkeypatch.setattr(diag, "gather_peer", boom)
+    monkeypatch.setattr(load_snapshot(), "gather_peer", boom)
 
     snap = diag.collect_snapshot()  # must NOT raise even if every collector throws
     assert snap["peers"], "snapshot should still list peers"
@@ -324,6 +437,22 @@ def test_source_stale_alert_fires_on_old_data():
     })
     assert "SOURCE_STALE" in {a["code"] for a in stale["alerts"]}
     assert "SOURCE_STALE" not in {a["code"] for a in fresh["alerts"]}
+
+
+def test_source_stale_alert_distinguishes_fresh_quota_source():
+    diag = load_diag()
+    rec = diag.normalize_peer({
+        "peer": "cc", "source": "live", "ctx_known": True, "ctx_window": 1000,
+        "ctx_used": 10, "ctx_pct": 1.0, "empty": False,
+        "quotas": [{"label": "C-5H", "used_frac": 1.0, "source": "cc_usage"}],
+        "errors": [], "age_sec": 999999,
+        "observed_at": "2026-07-03T14:00:00+09:00",
+        "quota_observed_at": "2026-07-03T15:00:00+09:00",
+        "quota_source_kind": "live",
+    })
+    alert = next(a for a in rec["alerts"] if a["code"] == "SOURCE_STALE")
+
+    assert "quota source is cli_live" in alert["message"]
 
 
 # ── D2: cx context from rollout token_count ─────────────────────────────────────
@@ -424,7 +553,338 @@ def test_snapshot_records_carry_alerts_list():
         assert isinstance(peer.get("alerts"), list)
 
 
+def test_profile_rows_split_cc_fable_quota_and_context_sources():
+    diag = load_diag()
+    observed = "2026-07-03T00:00:00+00:00"
+    cc_rec = diag.normalize_peer({
+        "peer": "cc", "source": "live", "gate": True, "quarantined": False,
+        "model": "Opus", "ctx_used": 100, "ctx_window": 1000000, "ctx_pct": 0.01,
+        "ctx_known": True, "cost": None, "agent_state": "idle", "plan_tier": "Pro",
+        "sessions": None, "total_tokens": None, "empty": False, "errors": [],
+        "quotas": [
+            {"label": "C-5H", "used_frac": 0.1, "reset": "x"},
+            {"label": "F-5H", "used_frac": 0.2, "reset": "x"},
+        ],
+    })
+    orch = {"hub_nodes": [{
+        "node_id": "cc", "type": "peer", "enabled": True, "default_profile": "deepthink",
+        "profiles": {
+            "deepthink": {"model_id": "claude-opus", "reasoning_effort": "high",
+                          "runtime_context_window": 1000000, "routing_state": "eligible"},
+            "fable": {"model_id": "claude-fable-5", "reasoning_effort": "high",
+                      "runtime_context_window": 200000, "routing_state": "eligible"},
+        },
+    }]}
+
+    rows = {r["profile"]: r for r in diag._build_profile_rows(orch, [cc_rec], observed)}
+
+    assert rows["cc.deepthink"]["context"]["basis"] == "measured_active_profile"
+    assert rows["cc.deepthink"]["sources"]["context"] == "statusline"
+    assert [b["label"] for b in rows["cc.deepthink"]["quota"]["buckets"]] == ["C-5H"]
+    assert rows["cc.fable"]["context"]["window_tokens"] == 200000
+    assert rows["cc.fable"]["sources"]["context"] == "orchestration"
+    assert [b["label"] for b in rows["cc.fable"]["quota"]["buckets"]] == ["F-5H"]
+
+
+def test_profile_rows_assign_ag_manual_profiles_to_3p_quota_pool():
+    diag = load_diag()
+    observed = "2026-07-03T00:00:00+00:00"
+    ag_rec = diag.normalize_peer({
+        "peer": "ag", "source": "live", "gate": True, "quarantined": False,
+        "model": "Gemini", "ctx_used": 0, "ctx_window": 1048576, "ctx_pct": 0,
+        "ctx_known": True, "cost": None, "agent_state": "idle", "plan_tier": "Pro",
+        "sessions": None, "total_tokens": None, "empty": False, "errors": [],
+        "quotas": [
+            {"label": "G-5H", "used_frac": 0.1, "reset": "x"},
+            {"label": "3P-5H", "used_frac": 0.2, "reset": "x"},
+        ],
+    })
+    orch = {"hub_nodes": [{
+        "node_id": "ag", "type": "peer", "enabled": True, "default_profile": "deepthink",
+        "profiles": {
+            "deepthink": {"runtime_model": "Gemini Pro", "reasoning_effort": "high",
+                          "runtime_context_window": 1048576, "routing_state": "eligible"},
+            "opus": {"runtime_model": "Claude Opus", "reasoning_effort": "high",
+                     "runtime_context_window": None, "routing_state": "manual_only"},
+        },
+    }]}
+
+    rows = {r["profile"]: r for r in diag._build_profile_rows(orch, [ag_rec], observed)}
+
+    assert [b["label"] for b in rows["ag.deepthink"]["quota"]["buckets"]] == ["G-5H"]
+    assert [b["label"] for b in rows["ag.opus"]["quota"]["buckets"]] == ["3P-5H"]
+    assert rows["ag.opus"]["state"] == "manual_only"
+
+
+def test_dashboard_uses_one_collected_snapshot_for_profile_render(monkeypatch):
+    diag = load_diag()
+    raw = {
+        "peer": "cc", "source": "live", "gate": True, "quarantined": False,
+        "quarantine_reason": None, "model": "Opus", "ctx_used": 1,
+        "ctx_window": 100, "ctx_pct": 1.0, "ctx_known": True, "cost": None,
+        "agent_state": "idle", "plan_tier": "Pro", "sessions": None,
+        "total_tokens": None, "empty": False, "errors": [], "quotas": [],
+    }
+    rec = diag.normalize_peer(raw)
+    snapshot = {
+        "schema_version": 1,
+        "observed_at": "2026-07-03T00:00:00+00:00",
+        "peers": [rec],
+        "profiles": [{
+            "profile": "cc.deepthink", "model": "Opus", "effort": "high",
+            "context": {"window_tokens": 100},
+            "sources": {"context": "statusline", "quota": "absent"},
+            "state": "eligible",
+        }],
+    }
+    calls = []
+    monkeypatch.setattr(diag, "collect_snapshot", lambda: calls.append("collect") or snapshot)
+    monkeypatch.setattr(diag.subprocess, "run", lambda *args, **kwargs: None)
+
+    out = io.StringIO()
+    diag.render_dashboard(out)
+
+    assert calls == ["collect"]
+
 # ???? TDD slice 5: detail views (吏?.2) ????????????????????????????????????????????????????????????????????????????????????????
+
+def test_dashboard_follows_fp4_section_order(monkeypatch):
+    """FP-4 (unanimous 2026-07-03): PROFILES&QUOTAS → DETAIL → SESSIONS/HEADROOM
+    → ALERTS → SUMMARY, identical in default and watch mode (volatile last)."""
+    diag = load_diag()
+    raw = {
+        "peer": "cc", "source": "live", "gate": True, "quarantined": False,
+        "quarantine_reason": None, "model": "Opus", "ctx_used": 1,
+        "ctx_window": 100, "ctx_pct": 1.0, "ctx_known": True, "cost": None,
+        "agent_state": "idle", "plan_tier": "Pro", "sessions": None,
+        "total_tokens": None, "empty": False, "errors": [], "quotas": [],
+    }
+    rec = diag.normalize_peer(raw)
+    snapshot = {"schema_version": 1, "peers": [rec], "profiles": []}
+    monkeypatch.setattr(diag, "collect_snapshot", lambda: snapshot)
+    monkeypatch.setattr(diag.subprocess, "run", lambda *args, **kwargs: None)
+
+    out = io.StringIO()
+    diag.render_dashboard(out)
+    text = out.getvalue()
+
+    assert (text.index(" PEER PROFILES & QUOTAS")
+            < text.index(" PEER DETAIL")
+            < text.index(" ACTIVE SESSIONS & HEADROOM")
+            < text.index(" ALERTS")
+            < text.index(" SUMMARY"))
+
+
+def test_watch_dashboard_moves_summary_after_detail(monkeypatch):
+    diag = load_diag()
+    raw = {
+        "peer": "cc", "source": "live", "gate": True, "quarantined": False,
+        "quarantine_reason": None, "model": "Opus", "ctx_used": 1,
+        "ctx_window": 100, "ctx_pct": 1.0, "ctx_known": True, "cost": None,
+        "agent_state": "idle", "plan_tier": "Pro", "sessions": None,
+        "total_tokens": None, "empty": False, "errors": [], "quotas": [],
+    }
+    rec = diag.normalize_peer(raw)
+    snapshot = {"schema_version": 1, "peers": [rec], "profiles": []}
+    monkeypatch.setattr(diag, "collect_snapshot", lambda: snapshot)
+    monkeypatch.setattr(diag.subprocess, "run", lambda *args, **kwargs: None)
+
+    out = io.StringIO()
+    diag.render_dashboard(out, watch_mode=True)
+    text = out.getvalue()
+
+    assert text.index(" PEER DETAIL") < text.index(" SUMMARY")
+
+
+def test_headroom_requires_quota_and_context_numeric():
+    diag = load_diag()
+    snapshot = {
+        "profiles": [
+            {
+                "profile": "ag.deepthink",
+                "state": "eligible",
+                "effort": "high",
+                "quota": {"buckets": [{"used_frac": 0.25}]},
+                "context": {"utilization_pct": 40.0},
+                "sources": {"context": "statusline", "quota": "statusline"},
+            },
+            {
+                "profile": "cc.fable",
+                "state": "eligible",
+                "effort": "high",
+                "quota": {"buckets": [{"used_frac": 0.10}]},
+                "context": {"utilization_pct": None},
+                "sources": {"context": "orchestration", "quota": "statusline"},
+            },
+            {
+                "profile": "cx.deepthink",
+                "state": "eligible",
+                "effort": "xhigh",
+                "quota": {"buckets": []},
+                "context": {"utilization_pct": 10.0},
+                "sources": {"context": "health", "quota": "absent"},
+            },
+        ],
+    }
+
+    rows = {row["profile"]: row for row in diag._derive_headroom_rows(snapshot)}
+
+    assert rows["ag.deepthink"]["quota_remaining"] == pytest.approx(0.75)
+    assert rows["ag.deepthink"]["context_remaining"] == pytest.approx(0.60)
+    assert rows["ag.deepthink"]["headroom"] == pytest.approx(0.60)
+    assert rows["cc.fable"]["headroom"] is None
+    assert rows["cx.deepthink"]["headroom"] is None
+
+
+def test_headroom_next_target_marks_weaker_tier_risk():
+    diag = load_diag()
+    snapshot = {
+        "profiles": [
+            {
+                "profile": "ag.standard",
+                "state": "eligible",
+                "effort": "low",
+                "quota": {"buckets": [{"used_frac": 0.05}]},
+                "context": {"utilization_pct": 10.0},
+                "sources": {"context": "statusline", "quota": "statusline"},
+            },
+            {
+                "profile": "cx.deepthink",
+                "state": "eligible",
+                "effort": "xhigh",
+                "quota": {"buckets": [{"used_frac": 0.45}]},
+                "context": {"utilization_pct": 45.0},
+                "sources": {"context": "health", "quota": "app_server"},
+            },
+            {
+                "profile": "ag.opus",
+                "state": "manual_only",
+                "effort": "high",
+                "quota": {"buckets": [{"used_frac": 0.0}]},
+                "context": {"utilization_pct": None},
+                "sources": {"context": "absent", "quota": "statusline"},
+            },
+        ],
+    }
+
+    rows = diag._derive_headroom_rows(snapshot)
+    target = diag._next_headroom_target(rows)
+
+    assert target["profile"] == "ag.standard"
+    assert target["tier_risk"] is True
+
+    out = io.StringIO()
+    diag.render_headroom(out, snapshot=snapshot)
+    text = out.getvalue()
+    assert "NEXT ag.standard headroom 90% TIER RISK" in text
+    assert "ag.opus" in text and "absent" in text
+
+
+def test_session_rows_active_only_with_lease_and_context(tmp_path, monkeypatch):
+    diag = load_diag()
+    # Isolate from the real _sys tree: per-session sources resolve under SYS_DIR.
+    monkeypatch.setattr(load_snapshot(), "SYS_DIR", tmp_path)
+    peer_dir = tmp_path / "codex"
+    peer_dir.mkdir()
+    (peer_dir / "session_state.json").write_text(json.dumps({
+        "active": {
+            "room-x:cx.deepthink": {
+                "session_id": "abcdef123456",
+                "scope_key": "room-x:cx.deepthink",
+                "created_at": "2026-07-03T08:00:00",
+                "last_used_at": "2026-07-03T09:00:00",
+                "last_ask_id": "ask-1",
+                "status": "active",
+            }
+        },
+        "history": [{
+            "session_id": "retired",
+            "scope_key": "room-x:cx.standard",
+            "status": "retired",
+        }],
+    }), encoding="utf-8")
+    leases = {
+        "cx.deepthink": {
+            "status": "closed",
+            "expires_at": "2026-07-03T09:30:00",
+            "heartbeat_at": None,
+        }
+    }
+
+    def read_json_file(path):
+        if str(path).endswith("leases.json"):
+            return leases, "2026-07-03T09:01:00+09:00"
+        return json.loads(Path(path).read_text(encoding="utf-8")), "2026-07-03T09:02:00+09:00"
+
+    monkeypatch.setattr(load_snapshot(), "_read_json_file", read_json_file)
+
+    rows = diag._build_session_rows(
+        ["cx"],
+        {"cx": peer_dir},
+        [{
+            "profile": "cx.deepthink",
+            "context": {
+                "used_tokens": 100,
+                "window_tokens": 1000,
+                "utilization_pct": 10.0,
+                "source_tag": "health",
+            },
+        }],
+        "2026-07-03T09:03:00+09:00",
+    )
+
+    assert [row["profile"] for row in rows] == ["cx.deepthink"]
+    assert rows[0]["lease"]["status"] == "closed"
+    # FP-1: no per-session source exists here, so the profile aggregate (100)
+    # must NOT be copied into the session row — honest value is absent.
+    assert rows[0]["context"]["used_tokens"] is None
+    assert rows[0]["context"]["source_tag"] == "absent"
+    assert rows[0]["scope_key"] == "room-x:cx.deepthink"
+
+
+def test_sessions_view_renders_absent_context(monkeypatch):
+    diag = load_diag()
+    snapshot = {
+        "sessions": [{
+            "profile": "cc.fable",
+            "status": "active",
+            "scope_key": "room-x:cc.fable",
+            "last_used_at": "2026-07-03T09:00:00",
+            "context": {"used_tokens": None, "window_tokens": 200000},
+            "lease": {"status": "failed"},
+        }]
+    }
+    monkeypatch.setattr(diag, "collect_snapshot", lambda: snapshot)
+
+    out = io.StringIO()
+    diag.render_sessions(out)
+    text = out.getvalue()
+
+    assert "cc.fable" in text
+    assert "failed" in text
+    assert "absent" in text
+
+
+def test_sessions_view_can_consume_existing_snapshot(monkeypatch):
+    diag = load_diag()
+    monkeypatch.setattr(diag, "collect_snapshot", lambda: (_ for _ in ()).throw(AssertionError("recollected")))
+    snapshot = {
+        "sessions": [{
+            "profile": "cx.deepthink",
+            "status": "active",
+            "scope_key": "room-x:cx.deepthink",
+            "last_used_at": "2026-07-03T09:00:00",
+            "context": {"used_tokens": 100, "window_tokens": 1000, "utilization_pct": 10.0},
+            "lease": {"status": "closed"},
+        }]
+    }
+
+    out = io.StringIO()
+    diag.render_sessions(out, snapshot=snapshot)
+
+    assert "cx.deepthink" in out.getvalue()
+    assert "100/1k 10%" in out.getvalue()
+
 
 def test_profiles_view_never_leaks_raw_profile_args():
     diag = load_diag()
@@ -484,3 +944,79 @@ def test_codex_binary_skips_sys_cli_wrapper():
     # flow — wrong for a raw app-server RPC. Must resolve the real npm-global binary.
     assert "/_sys/cli/codex" not in p and "/cli/codex" not in p
     assert "npm-global" in p and p.endswith("codex.cmd")
+
+
+# ── FP-1: per-session measured context (unanimous 2026-07-03) ─────────────────
+
+def test_fp1_cx_sqlite_rollout_resolution(tmp_path, monkeypatch):
+    diag = load_diag()
+    monkeypatch.setattr(load_snapshot(), "SYS_DIR", tmp_path)
+    monkeypatch.setattr(load_snapshot(), "_parse_rollout_context",
+                        lambda p: (420, 100000) if str(p) == "my_rollout.jsonl" else (None, None))
+
+    db_dir = tmp_path / "codex" / "config"
+    db_dir.mkdir(parents=True)
+    import sqlite3
+    conn = sqlite3.connect(db_dir / "state_5.sqlite")
+    conn.execute("CREATE TABLE threads (id TEXT, rollout_path TEXT, model TEXT)")
+    conn.execute("INSERT INTO threads VALUES ('sess1', 'my_rollout.jsonl', 'measured-gpt')")
+    conn.commit()
+    conn.close()
+
+    ctx = diag._session_context_measured(
+        "cx", {"session_id": "sess1"}, {"context": {"window_tokens": 128000}},
+        "2026-07-03T00:00:00")
+
+    assert ctx["used_tokens"] == 420
+    assert ctx["window_tokens"] == 100000  # measured window wins over profile
+    assert ctx["source_tag"] == "rollout"
+    assert ctx["measured_model"] == "measured-gpt"
+
+
+def test_fp1_cc_session_jsonl_usage_extraction(tmp_path, monkeypatch):
+    diag = load_diag()
+    monkeypatch.setattr(load_snapshot(), "SYS_DIR", tmp_path)
+
+    proj_dir = tmp_path / "claude" / "config" / "projects" / "my_proj"
+    proj_dir.mkdir(parents=True)
+    (proj_dir / "sess2.jsonl").write_text(
+        '{"message": {"model": "claude-test", "usage": {"input_tokens": 10, "output_tokens": 20}}}\n',
+        encoding="utf-8")
+
+    ctx = diag._session_context_measured(
+        "cc", {"session_id": "sess2"}, {"context": {"window_tokens": 200000}},
+        "2026-07-03T00:00:00")
+
+    assert ctx["used_tokens"] == 30
+    assert ctx["window_tokens"] == 200000
+    assert ctx["source_tag"] == "session_jsonl"
+    assert ctx["measured_model"] == "claude-test"
+
+
+def test_fp1_ag_has_no_per_session_source_so_absent(tmp_path, monkeypatch):
+    diag = load_diag()
+    monkeypatch.setattr(load_snapshot(), "SYS_DIR", tmp_path)
+
+    ctx = diag._session_context_measured(
+        "ag", {"session_id": "sess3"}, {"context": {"window_tokens": 1048576}},
+        "2026-07-03T00:00:00")
+
+    assert ctx["used_tokens"] is None
+    assert ctx["window_tokens"] == 1048576  # capacity may show; usage never fabricated
+    assert ctx["source_tag"] == "absent"
+
+
+def test_fp1_profile_copy_regression(tmp_path, monkeypatch):
+    """cx guard (Final Call): a profile with known aggregate ctx + a session with
+    no per-session source must yield absent — never the aggregate value."""
+    diag = load_diag()
+    monkeypatch.setattr(load_snapshot(), "SYS_DIR", tmp_path)
+
+    profile_row = {"context": {"used_tokens": 9999, "window_tokens": 200000}}
+    ctx = diag._session_context_measured(
+        "cx", {"session_id": "nonexistent"}, profile_row, "2026-07-03T00:00:00")
+
+    assert ctx["used_tokens"] is None
+    assert ctx["used_tokens"] != 9999
+    assert ctx["window_tokens"] == 200000
+    assert ctx["source_tag"] == "absent"

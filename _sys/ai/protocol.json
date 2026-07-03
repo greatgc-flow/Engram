@@ -471,7 +471,13 @@
                                                         },
                                  "_note_zombie_profile_map":  "Silence (no-output) window per profile. Peer comms are UNLIMITED in total time and content ??ANY output chunk resets this clock, so a peer that keeps streaming is never killed. The window only catches a HANG (zero progress). deepthink=900s (15m): streaming reasoning models never idle that long mid-work, so 15m of silence = hung (was 7200s, which let a stalled deepthink hang ~2h).",
                                  "startup_timeout_sec":  90,
-                                 "_note_startup_timeout":  "Pre-first-output stall window. Until a peer emits its first stdout chunk, silence is bounded by this (fast-fail cold stalls); after first output the zombie window applies."
+                                 "startup_profile_map":  {
+                                                             "standard":  90,
+                                                             "effort":  180,
+                                                             "deepthink":  300,
+                                                             "fable":  300
+                                                         },
+                                 "_note_startup_timeout":  "Pre-first-output stall window, profile-scoped (mirror of zombie_profile_map). Until a peer emits its first stdout chunk, silence is bounded by this (fast-fail cold stalls); after first output the zombie window applies. Deep-reasoning profiles legitimately stay silent longer before first byte (buffered `claude -p` flushes whole turn at completion), so effort/deepthink/fable get larger windows. Backstop for the streaming-transport root fix; instruction-heartbeat was empirically falsified (prompts control token order, not time-to-first-byte)."
                              },
     "feedback_loop":  {
                           "enabled":  true,
@@ -606,7 +612,8 @@
                               "decision_tier_floor":  {
                                                           "enabled":  true,
                                                           "mutating_hub_actions_min_tier":  "effort",
-                                                          "binding_vote_risk_8_plus_min_tier":  "deepthink"
+                                                          "binding_vote_risk_8_plus_min_tier":  "deepthink",
+                                                          "tier_floor_fallback":  "if a required voter's minimum-tier profile is rate-gated or unavailable, the vote MAY be cast at that peer's highest currently-available tier; the caveat MUST be recorded in the consensus record; any peer or the human may demand re-ratification at min-tier once available; offline abstain rules unchanged."
                                                       },
                               "default_shell":  "powershell",
                               "no_code_phases":  [

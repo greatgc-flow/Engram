@@ -236,3 +236,38 @@ def test_at1_terminal_timeout_does_not_close_gate(tmp_path):
     # gate must remain open (not False) and status must not be RED.
     assert avail.get("gate_open") is not False, "terminal_timeout wrongly closed the gate (quorum impact)"
     assert data.get("context_health", {}).get("status") != "RED", "terminal_timeout wrongly RED-ed the peer"
+
+
+def test_w1_missing_query_file_fails_loudly(tmp_path, capsys):
+    """W1 (consensus 2026-07-03): a missing --query-file must print a clear
+    stderr error (IPC files are single-use) and record an ask_history failure —
+    never a silent exit 1."""
+    ai_root = tmp_path / ".ai"
+    ai_root.mkdir()
+    hub.ensure_ai_dir(ai_root)
+
+    with patch("_sys.core.hub._append_ask_history") as mock_history:
+        with pytest.raises(SystemExit) as exc:
+            hub.action_ask(
+                to="cc",
+                query="",
+                query_file=str(tmp_path / "nonexistent-ipc-file.txt"),
+                timeout_sec=10,
+                ai_root=ai_root,
+                quiet=True,
+                output_file=None,
+                include_context=False,
+                session_policy="auto",
+                explicit_scope=None,
+                _depth=0,
+                origin="test",
+            )
+
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "query file not found" in err
+    assert "single-use" in err
+    mock_history.assert_called_once()
+    args = mock_history.call_args[0]
+    assert args[5] is False  # success flag
+    assert args[6] == "query_file_missing"
