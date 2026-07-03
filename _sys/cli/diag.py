@@ -201,8 +201,15 @@ def render_card(info):
             uf = q.get("used_frac")
             is_num = isinstance(uf, (int, float))
             metric = format_quota_bucket(q)
+            # Restore severity ANSI color on the bar/pacing (regressed when
+            # format_quota_bucket was introduced in inc-1). Pad BEFORE coloring
+            # so ANSI escapes don't break the fixed-width column; color is a
+            # renderer concern (data layer stays plain), TTY-gated via _c.
+            metric_cell = f"{metric:<24}"
+            if is_num:
+                metric_cell = _c(metric_cell, _sev_color(uf))
             warn = "  " + _c("WARN", "red", "bold") if (is_num and uf >= 0.90) else ""
-            print(f" {q['label']:<{width}} : {metric:<24} resets {q['reset']}{warn}")
+            print(f" {q['label']:<{width}} : {metric_cell} resets {q['reset']}{warn}")
     elif info.get("cx_quota_unavailable"):
         print(_c(" Quota   : (codex app-server unavailable)", "dim"))
 
