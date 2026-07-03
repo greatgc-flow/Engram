@@ -1,0 +1,237 @@
+# Token Load Balancing — Design (pre-TDD)
+
+> Status: DESIGN COMPLETE, pre-TDD. R:10 discussion: ag (primary design) + cx
+> (critical review) + cc (synthesis). Design-only — no code/tests yet.
+> Date: 2026-07-04. Foundation: `_sys/core/snapshot.py` SSOT (W4, r-f291).
+
+## 0. Problem & Goal
+
+Peer asks currently route by capability + reactive ContextGate failover. There
+is no **proactive** distribution of work by token budget, so one peer can
+exhaust a quota window while others sit idle. Goal: route each *routable* ask to
+the peer that best **equalizes total token burn-down**, so budgets deplete
+proportionally rather than one-at-a-time — using the highest-headroom peer most,
+the next-most second, sparing the most-depleted peer, and keeping the
+**terminal's own token use minimal** (the terminal delegates, it does not
+self-answer when a peer can).
+
+Non-goal (this doc): task-quality routing (capability fit stays a hard
+prefilter, unchanged), and the reactive ContextGate failover (stays as-is).
+
+## 1. Requirements (MECE)
+
+### Functional
+- **R-F1 Balance objective.** Distribute routable asks so the *remaining-budget
+  fraction* across peers converges (equalize burn-down), not merely pick the
+  momentary max.
+- **R-F2 Terminal minimization (hard).** The terminal (cc when it is the active
+  coordinator) is **HARD-EXCLUDED** from routing whenever any non-terminal
+  candidate passes capability and has effective headroom above a floor. Terminal
+  participates only when (a) all non-terminal candidates are below floor /
+  unavailable, or (b) it is explicitly targeted, or (c) it is uniquely capable.
+  (cx: a discount alone still burns terminal tokens; the user requirement is
+  "terminal tokens ALWAYS minimal" ⇒ exclusion, not discount.)
+- **R-F3 Capability fit is a hard prefilter.** Fairness never routes to a
+  peer/profile that cannot satisfy task capability, role, sandbox, or an
+  explicit-target/governance constraint.
+- **R-F4 Window awareness.** Respect BOTH the 5h and weekly windows; a peer must
+  not be pushed into premature exhaustion of its most-binding window.
+- **R-F5 Pacing safety.** A peer burning faster than its time-to-reset allows
+  (pacing ratio > 1) is de-weighted proportionally to the overrun.
+- **R-F6 Explicit bypass.** Explicit `--to <peer>`, R:10 governance votes (voters
+  fixed regardless of load), and emergency failover **bypass** balancing.
+
+### Non-functional
+- **R-N1 Determinism & auditability.** Every routing decision is reproducible and
+  logged (snapshot hash, candidate weights, RNG seed + draw, floors applied,
+  terminal-exclusion reason, in-flight deduction). Seed = `snapshot_hash+ask_id`.
+- **R-N2 No thrash / no stampede.** Parallel asks over 60s-cached telemetry must
+  not all pile onto the current max.
+- **R-N3 SSOT.** Consume the same `collect_snapshot()` the renderer + failover
+  use. No private telemetry path.
+- **R-N4 Fail-safe.** Absent/stale telemetry, all-saturated, and single-peer
+  cases degrade predictably, never crash the ask.
+
+### Objective function
+Let each peer *i* have remaining-budget fraction across accounted windows. Define
+per-peer **effective headroom** `H_eff(i)` (below). The balancer approximates
+**proportional fairness**: over N asks, share(i) ∝ `H_eff(i)`. This
+maximizes Σ log(work_i weighted by headroom) — i.e. it favors the peer with most
+slack while never fully starving others, and it equalizes remaining-fraction in
+expectation. Exact convergence requires **in-flight deduction** (§3.5), because
+cached telemetry lags real burn.
+
+## 2. Signals (inputs, all from the snapshot SSOT)
+
+Per candidate profile row (`_derive_headroom_rows` / `_build_profile_rows`,
+`snapshot.py`):
+- `context.utilization_pct` → `ctx_remaining = 1 − util`.
+- `quota.buckets[]` each `{label(5H|7D), used_frac, pacing{ratio,indicator}}` →
+  per-window `remaining = 1 − used_frac`, and `pacing.ratio`.
+- `state` (eligible / manual_only / quarantined), `capability_class`, `cost_tier`.
+- Provenance: `source_tag`, `observed_at` (for stale policy), snapshot hash.
+
+**Per-peer vs per-profile accounting (MECE gap resolved).** Quota windows belong
+to the *peer/account*, not the profile; multiple profiles of one peer share the
+same buckets. The balancer accounts **quota per-peer** (dedupe buckets by
+peer+window) and **context per-profile/session**. A peer's headroom is computed
+once from its shared quota; profile selection within a chosen peer is a separate,
+capability-driven step.
+
+## 3. Algorithm
+
+### 3.1 Capability prefilter (hard)
+Filter candidates to those that satisfy the task's capability/role/sandbox and
+are `state == eligible` with non-absent telemetry. Everything below operates on
+this set. If the set is empty → fall back to existing capability/health routing.
+
+### 3.2 Per-window remaining → base headroom
+For peer *i*: `H_base(i) = min(ctx_remaining_i, min_over_windows(quota_remaining_i))`.
+`min()` is a **hard safety cap** (a tight window must bottleneck). BUT keep the
+per-window vector too (see 3.6) so a fresh 5H window is not hidden by a tight
+weekly when the task fits within 5h.
+
+### 3.3 Pacing penalty
+`P_max(i) = max(pacing.ratio over i's windows)` (worst overrun). 
+`H_eff(i) = H_base(i) / max(1.0, P_max(i))`. Pacing < 1 (safe) → unpenalized;
+pacing 1.64 → headroom cut ~39%.
+
+### 3.4 Terminal exclusion (hard) & warm-up
+- Identify the terminal from `state.json.active_coordinator` (MECE gap: terminal
+  identity source). 
+- **Exclusion rule (R-F2):** let `FLOOR` be a configured effective-headroom
+  floor (e.g. 0.10). If ∃ a non-terminal candidate with `H_eff ≥ FLOOR`, set the
+  terminal's routing probability to **0**. Otherwise the terminal may participate.
+- **Warm-up bonus (capped):** an eligible non-terminal peer unused this window,
+  with valid telemetry + capability, gets a small capped bonus `+b` to `H_eff`
+  (encourages spreading; a cold peer has fresh context). NO bonus for absent-quota
+  peers.
+
+### 3.5 In-flight deduction (P1.5 — cx: too important to defer to P3)
+Before scoring, subtract an estimate of each peer's **in-flight** ask cost from
+its remaining fraction: `H_eff(i) −= inflight_tokens(i)/budget_i`. Track in-flight
+asks in memory (ask start → estimated tokens; clear on completion). This is what
+makes the balancer actually **converge** under 60s-cached telemetry + parallel
+asks, instead of stampeding the momentary max.
+
+### 3.6 Task token-size estimation (cx gap)
+Estimate the ask's token size (query + expected output class: short reply vs
+large-corpus). A huge ask consumes more budget, so it should (a) prefer peers
+with absolute headroom to *absorb* it, and (b) count more in in-flight deduction.
+Minimal first cut: 3 size buckets (S/M/L) from query length + task_type; scale
+the in-flight deduction and optionally gate L-asks to peers above a higher floor.
+
+### 3.7 Cost tie-break
+`Score(i) = max(ε, H_eff(i) − COST_MAP[cost_tier_i])` with an explicit numeric
+`COST_MAP` (e.g. {low:0.0, mid:0.02, high:0.04}); `cost_tier` is data, never
+assume it is numeric. `ε` (floor) guarantees a nonzero draw among *eligible*
+peers **but must NOT** resurrect an excluded terminal, an absent-telemetry peer,
+or a hard-floored candidate (those are already probability 0 before ε).
+
+### 3.8 Selection — deterministic-audited weighted-random (P1)
+`P(i) = Score(i) / Σ Score`. Draw with an RNG **seeded from
+`snapshot_hash + ask_id`** so the decision is reproducible and auditable; log the
+seed, the draw, and all weights. Rationale (cx ACK): stateless weighted-random
+avoids a disk-backed deficit counter (write contention) and self-distributes
+parallel asks; its variance is acceptable **only because** it is paired with
+in-flight deduction (3.5) and logged draws. (A stateful deficit round-robin is a
+possible P3 upgrade if measured fairness variance is too high.)
+
+## 4. Integration
+
+- **Hook:** new `snapshot.select_load_balanced_peer(candidates, task_meta)` (pure,
+  in the SSOT module) + a thin `hub.py` caller used when the ask target is
+  implicit (`auto`), AFTER the capability prefilter, BEFORE profile selection.
+- **Source:** `snapshot.collect_snapshot(use_cache=True)` (router path; 60s TTL).
+- **Independent of reactive failover:** proactive balancer picks the initial
+  target; if it later trips ContextGate mid-generation, the existing
+  `_snapshot_failover_choice` reroutes (unchanged).
+- **Logging (R-N1):** append to `.ai/routing_metrics.jsonl`:
+  `{ts, event:"load_balance_route", snapshot_hash, task_size, candidates:{peer:weight}, seed, draw, selected_peer, selected_profile, terminal_excluded:<reason|null>, inflight_applied}`.
+- **Terminal invocation:** the terminal, when it would otherwise self-answer a
+  delegable task, calls the balancer; if a non-terminal peer is selected it
+  delegates (one-command-per-ask playbook). Self-answer only when balancer
+  returns the terminal (all peers below floor / uniquely capable).
+
+## 5. Config / Policy (`_sys/ai/routing-config.json`)
+
+```json
+"token_load_balancing": {
+  "enabled": true,
+  "effective_headroom_floor": 0.10,
+  "terminal_hard_exclude": true,
+  "warmup_bonus": 0.05,
+  "cost_map": {"low": 0.0, "mid": 0.02, "high": 0.04},
+  "pacing_penalty_enabled": true,
+  "inflight_deduction_enabled": true,
+  "task_size_buckets": {"S": 4000, "M": 32000, "L": 200000},
+  "select": "seeded_weighted_random"
+}
+```
+
+**Governance interaction (R-F6):** balancing is fully bypassed for explicit
+targets and R:10 consensus votes — voter set is fixed by the round, never altered
+by load. Quota fairness must never override consensus integrity. `collab_rate`
+unaffected.
+
+## 6. Edge cases
+
+| Case | Behavior |
+|---|---|
+| All peers saturated (H_eff < floor) | No non-terminal ≥ floor → terminal may participate; among non-terminals, ε-floored near-uniform draw sheds load evenly (no single-peer overload). |
+| Single-peer capability | Prefilter yields one → 100% to it (no weighting). |
+| Governance vote needs a depleted voter | Explicit-target bypass; the voter is used regardless of load. |
+| Terminal is only candidate | Terminal participates (uniquely capable / all others unavailable). |
+| Absent/stale telemetry | Peer with absent quota/context is **non-routable** (probability 0), matching failover's absent policy; STALE (observed_at older than TTL·k) is de-weighted or excluded per policy. |
+| Peer hard rate-limited (429 / tier_floor) | state≠eligible or remaining→0 ⇒ filtered; tier_floor_fallback still governs governed votes. |
+| Capability vs fairness conflict | Capability wins (hard prefilter); fairness only orders within the capable set. |
+
+## 7. MECE gaps (resolved in this doc)
+- Terminal identity source → `state.json.active_coordinator`.
+- Absent/stale telemetry policy → non-routable (absent) / de-weight-or-exclude (stale, by TTL).
+- Per-peer vs per-profile accounting → quota per-peer (dedupe buckets), context per-profile.
+- Audit fields → enumerated in §4 logging.
+- Explicit bypasses → explicit target, R:10 votes, emergency failover (§5).
+- Task token-size estimation → §3.6.
+- Numeric cost map → §5.
+
+## 8. Phasing (bounds the TDD)
+- **P1** capability prefilter → H_base → terminal HARD exclusion → cost tie-break
+  → seeded-audited weighted-random → routing_metrics logging.
+- **P1.5** in-flight deduction + task-size estimate (needed for convergence).
+- **P2** pacing penalty + warm-up bonus + per-window (not just min) awareness.
+- **P3** telemetry age-decay; optional stateful deficit tracker if variance high;
+  predictive cost modeling.
+
+## 9. Worked example (real scenario 2026-07-04)
+
+Remaining fractions: CC ctx .48 / 5H .12 / 7D .41 (pace 1.33); AG ctx .90 / 5H
+.96 / 7D .31 (pace .75); CX ctx .30 / 5H .58 / 7D .20 (pace 1.64).
+
+- H_base: CC .12 (5H-bound), AG .31 (7D-bound), CX .20 (7D-bound).
+- H_eff = H_base/max(1,P_max): CC .12/1.33=.090, AG .31/1.0=.310, CX .20/1.64=.122.
+- Terminal HARD exclude: AG & CX both ≥ FLOOR(.10) ⇒ **CC probability = 0**.
+- Among non-terminals: AG .310, CX .122 → **AG 71.7%, CX 28.3%** (CC 0%).
+- Next ~6 auto asks (expectation): AG, AG, CX, AG, AG, CX.
+
+Result: CC (terminal, tightest 5H, high burn) does ZERO delegable work; AG (huge
+5H headroom, safe pacing) absorbs the bulk; CX takes a minority, held back by its
+RED weekly pacing — exactly the user's intent, with terminal at strict minimum.
+(Under ag's soft 0.25 discount CC would still draw ~5%; the hard-exclusion rule
+enforces the "ALWAYS minimal" requirement.)
+
+## 10. Open decisions for user / TDD entry
+1. FLOOR value (0.10 proposed) and warm-up bonus magnitude — tune with real logs.
+2. Task-size estimator fidelity for P1.5 (heuristic length-based first).
+3. Whether L-asks get a higher floor gate (protect small windows like CX ctx 258k).
+4. Enablement default (opt-in `enabled:true` in routing-config, or shadow-log-only
+   first to validate distribution before it drives routing).
+5. (ag nit) In-flight deduction must handle concurrent + aborted/timed-out asks
+   robustly — deduction is cleared on completion, failure, AND timeout (no leak
+   that permanently under-weights a peer). Bound the in-flight table lifetime.
+6. (ag nit) `routing-config.json` needs schema validation enforcing numeric
+   `cost_map` values / floor ranges (fail-closed to defaults on invalid config).
+
+---
+Design ACK: ag GO + cx GO (2026-07-04, pre-TDD). This doc is the design contract.
+*Next step (on user go): TDD from Phase 1.*
