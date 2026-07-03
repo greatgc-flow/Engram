@@ -434,6 +434,26 @@
                                                              "peers.json edits",
                                                              "protocol.json edits"
                                                          ],
+                               "governed_file_manifest":  {
+                                                              "_doc":  "Machine-readable governed-file set for the LL-20260703-005 mutation guard (hub.py _governed_files). Paths are repo-root-relative. Files here are hashed before/after every peer ask; a change during a peer execution window (not allow_governed_mutation) logs GOVERNED_MUTATION_VIOLATION.",
+                                                              "include":  [
+                                                                              "_sys/ai/orchestration.json",
+                                                                              "_sys/ai/protocol.json",
+                                                                              "_sys/ai/peers.json",
+                                                                              "_sys/ai/user-directives.md",
+                                                                              "_sys/docs-v2",
+                                                                              "_sys/checks",
+                                                                              "_sys/core"
+                                                                          ],
+                                                              "exclude_suffixes":  [
+                                                                                       ".pyc",
+                                                                                       ".pyo"
+                                                                                   ],
+                                                              "exclude_dir_names":  [
+                                                                                        "__pycache__",
+                                                                                        ".pytest_cache"
+                                                                                    ]
+                                                          },
                                "current_collab_rate":  10,
                                "ipc_query_file_naming":  "{peer_id}-{YYYYMMDDHHMMSS}-{rand4}.txt"
                            },

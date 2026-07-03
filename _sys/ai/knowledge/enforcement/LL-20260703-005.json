@@ -1,0 +1,7 @@
+{
+  "lesson": "LL-20260703-005",
+  "check": "governed_mutation_guard",
+  "status": "pass",
+  "findings": [],
+  "generated_at": "2026-07-03T14:42:19.117219+00:00"
+}

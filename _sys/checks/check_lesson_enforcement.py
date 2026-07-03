@@ -86,6 +86,77 @@ def check_ll012(live: bool = True) -> dict:
     }
 
 
+def check_ll20260703_005() -> dict:
+    """LL-20260703-005: no out-of-band mutation of governed files during peer
+    asks. Pass requires BOTH (cx review): (a) AST proof the guard is wired into
+    hub.action_ask (pre-snapshot + finally post-check), and (b) a LIVE self-test
+    that the detector actually fires on a controlled governed-file change. A
+    guard that fired on a REAL violation does not fail this artifact."""
+    import ast as _ast
+    findings = []
+
+    # (a) AST wiring proof: action_ask calls _snapshot_governed_hashes and has a
+    #     finally that calls _governed_post_check.
+    hub_src = (_SYS_DIR / "core" / "hub.py").read_text(encoding="utf-8")
+    try:
+        tree = _ast.parse(hub_src)
+    except SyntaxError as exc:
+        return {"lesson": "LL-20260703-005", "check": "governed_mutation_guard",
+                "status": "fail", "findings": [f"hub.py parse error: {exc}"],
+                "generated_at": _now()}
+    fn = next((n for n in tree.body
+               if isinstance(n, _ast.FunctionDef) and n.name == "action_ask"), None)
+    if fn is None:
+        findings.append("action_ask function not found")
+    else:
+        calls = {n.func.id for n in _ast.walk(fn)
+                 if isinstance(n, _ast.Call) and isinstance(n.func, _ast.Name)}
+        has_finally = any(isinstance(n, _ast.Try) and n.finalbody for n in _ast.walk(fn))
+        if "_snapshot_governed_hashes" not in calls:
+            findings.append("action_ask does not capture a pre-snapshot (_snapshot_governed_hashes)")
+        if "_governed_post_check" not in calls:
+            findings.append("action_ask does not invoke _governed_post_check")
+        if not has_finally:
+            findings.append("action_ask has no finally block wrapping the guard")
+
+    # (b) LIVE self-test: pre-snapshot a temp governed fixture, mutate it,
+    #     confirm _governed_post_check reports the change.
+    try:
+        sys.path.insert(0, str(_SYS_DIR / "core"))
+        import hub
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            tdp = Path(td)
+            fixture = tdp / "governed_fixture.txt"
+            fixture.write_text("original", encoding="utf-8")
+            files = [fixture]
+            monkey = hub._governed_files
+            hub._governed_files = lambda *a, **k: [fixture.resolve()]  # type: ignore
+            try:
+                # pre and post BOTH go through _snapshot_governed_hashes so path
+                # normalization is identical (the real guard's contract).
+                pre = hub._snapshot_governed_hashes()
+                fixture.write_text("mutated-by-peer", encoding="utf-8")
+                changed = hub._governed_post_check(pre, tdp / ".ai", "test-peer", "selftest")
+            finally:
+                hub._governed_files = monkey  # type: ignore
+            if not changed:
+                findings.append("live self-test: detector did NOT report a governed mutation")
+            log = (tdp / ".ai" / "operational_errors.jsonl")
+            if not log.exists() or "GOVERNED_MUTATION_VIOLATION" not in log.read_text(encoding="utf-8"):
+                findings.append("live self-test: violation was not logged to operational_errors.jsonl")
+    except Exception as exc:
+        findings.append(f"live self-test error: {type(exc).__name__}: {exc}")
+
+    return {
+        "lesson": "LL-20260703-005",
+        "check": "governed_mutation_guard",
+        "status": "fail" if findings else "pass",
+        "findings": findings,
+        "generated_at": _now(),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
     live = "--no-live" not in argv
@@ -94,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
         "LL-009": check_ll009(),
         "LL-011": check_ll011(),
         "LL-012": check_ll012(live=live),
+        "LL-20260703-005": check_ll20260703_005(),
     }
     failed = []
     for lesson_id, report in results.items():

@@ -3019,7 +3019,138 @@ def _stream_process_output(proc, cmd, input_bytes, heartbeat_sec, zombie_timeout
         return bytes(out_buf), bytes(err_buf)
 
 
-def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal") -> None:
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _governed_files(protocol_cfg: dict | None = None) -> list[Path]:
+    """Resolve the machine-readable governed-file manifest (protocol.json
+    active_constraints.governed_file_manifest) to an explicit, deterministic
+    list of source files. Directories in `include` are walked; generated files
+    (exclude_suffixes / exclude_dir_names) are dropped. Paths are repo-relative.
+    Enforcement artifact for LL-20260703-005 (out-of-band mutation guard)."""
+    cfg = protocol_cfg if protocol_cfg is not None else _load_protocol_cfg()
+    manifest = (cfg.get("active_constraints", {}) or {}).get("governed_file_manifest", {}) or {}
+    include = manifest.get("include") or []
+    excl_suffix = tuple(manifest.get("exclude_suffixes") or [])
+    excl_dirs = set(manifest.get("exclude_dir_names") or [])
+    out: list[Path] = []
+    seen: set[str] = set()
+
+    def _add(fp: Path) -> None:
+        try:
+            rp = fp.resolve()
+        except OSError:
+            return
+        key = str(rp)
+        if key in seen:
+            return
+        if rp.suffix in excl_suffix:
+            return
+        if any(part in excl_dirs for part in rp.parts):
+            return
+        if rp.is_file():
+            seen.add(key)
+            out.append(rp)
+
+    for rel in include:
+        base = (_REPO_ROOT / rel).resolve()
+        if base.is_file():
+            _add(base)
+        elif base.is_dir():
+            for child in base.rglob("*"):
+                if child.is_file():
+                    _add(child)
+    return sorted(out, key=str)
+
+
+def _snapshot_governed_hashes(protocol_cfg: dict | None = None) -> dict[str, str]:
+    """sha256 of every governed file. Always hashes each file (mtime/size is
+    NOT a skip gate — a peer could size-preserve + mtime-restore to bypass; cx
+    review). Returns {path: sha256hex}; unreadable files map to a sentinel."""
+    import hashlib
+    result: dict[str, str] = {}
+    for fp in _governed_files(protocol_cfg):
+        try:
+            result[str(fp)] = hashlib.sha256(fp.read_bytes()).hexdigest()
+        except OSError:
+            result[str(fp)] = "UNREADABLE"
+    return result
+
+
+def _governed_post_check(pre: dict[str, str], ai_root: Path | None, peer: str,
+                         origin: str, ask_id: str | None = None) -> list[str]:
+    """Compare a post-execution governed-hash snapshot against `pre`. Any
+    changed/added/removed governed file during a peer ask window (when the ask
+    was NOT an authorized governed execution) is an out-of-band mutation
+    (LL-20260703-005). DETECT + LOG + ALERT only — never auto-revert (a
+    concurrent legitimate terminal/human edit must not be clobbered; ag review).
+    Violations are appended directly to .ai/operational_errors.jsonl, bypassing
+    action_report_error so the causality-free detector never auto-quarantines a
+    peer (cx review). Returns the list of changed paths (empty = clean)."""
+    post = _snapshot_governed_hashes()
+    changed = sorted(
+        p for p in set(pre) | set(post)
+        if pre.get(p) != post.get(p)
+    )
+    if not changed:
+        return []
+    rel = [str(Path(p).relative_to(_REPO_ROOT)) if str(p).startswith(str(_REPO_ROOT)) else p
+           for p in changed]
+    msg = (f"[HUB:WARN] GOVERNED_MUTATION_VIOLATION: {len(changed)} governed file(s) "
+           f"changed during peer ask (peer={peer}, origin={origin}): {', '.join(rel[:8])}"
+           f"{' …' if len(rel) > 8 else ''}. LL-20260703-005 — review `git diff`; "
+           f"not auto-reverted.")
+    print(msg, file=sys.stderr)
+    if ai_root:
+        try:
+            rec = {
+                "ts": _now(),
+                "type": "GOVERNED_MUTATION_VIOLATION",
+                "lesson": "LL-20260703-005",
+                "peer": peer,
+                "origin": origin,
+                "ask_id": ask_id,
+                "changed_files": rel,
+            }
+            path = ai_root / "operational_errors.jsonl"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        except Exception as exc:
+            print(f"[HUB:WARN] governed violation log failed: {exc}", file=sys.stderr)
+    return changed
+
+
+def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False) -> None:
+    """Public entry: wraps _action_ask_inner with the LL-20260703-005 governed-
+    mutation guard. Governed files are hashed before the peer executes and re-
+    hashed in a crash-safe finally that covers BOTH the PTY (_ask_with_pty, ag)
+    and non-PTY (_spawn_process, cc/cx) execution paths and all early returns.
+    `allow_governed_mutation=True` (authorized broker/consensus execution) skips
+    the guard. Peers NEVER write governed files during advisory asks in this
+    architecture (delegation returns CONTENT; the terminal writes it), so any
+    change in the window is out-of-band."""
+    gov_pre: dict[str, str] | None = None
+    if not allow_governed_mutation:
+        try:
+            gov_pre = _snapshot_governed_hashes()
+        except Exception:
+            gov_pre = None
+    try:
+        return _action_ask_inner(
+            to, query, query_file, timeout_sec, ai_root, quiet, output_file,
+            include_context, session_policy, explicit_scope, _depth,
+            _escalation_depth, origin, allow_governed_mutation,
+        )
+    finally:
+        if gov_pre is not None:
+            try:
+                _governed_post_check(gov_pre, ai_root, to, origin)
+            except Exception as exc:
+                print(f"[HUB:WARN] governed guard post-check error: {exc}", file=sys.stderr)
+
+
+def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False) -> None:
     if _depth > RUNTIME_ESCALATION_DEPTH_CEILING:
 
         print(f"[ERROR] action_ask: maximum failover depth reached for {to}", file=sys.stderr)
@@ -3196,7 +3327,10 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                         failover_model = ranked_target
                     print(f"[ContextGate] context {gate_result.get('ratio', 0):.0%} full → failover to {failover_model}", file=sys.stderr)
                     # Recursive failover call with increased depth and disabled context inclusion
-                    return action_ask(failover_model, query, None, timeout_sec, ai_root, quiet, output_file, include_context=False, session_policy=session_policy, explicit_scope=explicit_scope, _depth=_depth + 1, _escalation_depth=_escalation_depth, origin=origin)
+                    # Recurse into the inner impl (not the wrapper): the outer
+                    # action_ask guard's single window already covers this whole
+                    # failover chain, so we avoid a nested re-guard / double-log.
+                    return _action_ask_inner(failover_model, query, None, timeout_sec, ai_root, quiet, output_file, include_context=False, session_policy=session_policy, explicit_scope=explicit_scope, _depth=_depth + 1, _escalation_depth=_escalation_depth, origin=origin, allow_governed_mutation=allow_governed_mutation)
 
             elif action == "reject":
                 msg = gate_result.get("message", "context limit exceeded")
@@ -3539,11 +3673,12 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             )
             if escalation_target:
                 print(f"[HUB:ESCALATE] {to} -> {escalation_target}", file=sys.stderr)
-                return action_ask(
+                return _action_ask_inner(
                     escalation_target, user_query_raw, None, timeout_sec, ai_root,
                     quiet, output_file, include_context=include_context,
                     session_policy=session_policy, explicit_scope=explicit_scope,
                     _depth=_depth, _escalation_depth=_escalation_depth + 1, origin=origin,
+                    allow_governed_mutation=allow_governed_mutation,
                 )
 
             # ── success: exit 0 + nonempty output + ok output-file ─────
@@ -3836,11 +3971,12 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             )
             if escalation_target:
                 print(f"[HUB:ESCALATE] {to} -> {escalation_target}", file=sys.stderr)
-                return action_ask(
+                return _action_ask_inner(
                     escalation_target, user_query_raw, None, timeout_sec, ai_root,
                     quiet, output_file, include_context=include_context,
                     session_policy=session_policy, explicit_scope=explicit_scope,
                     _depth=_depth, _escalation_depth=_escalation_depth + 1, origin=origin,
+                    allow_governed_mutation=allow_governed_mutation,
                 )
 
 
@@ -7292,6 +7428,9 @@ def main() -> None:
     parser.add_argument("--session-policy", dest="session_policy", default="auto",
                         choices=["auto", "reuse", "fresh", "none"],
                         help="Session reuse policy: auto=use node config, reuse=always reuse, fresh=always new, none=disable")
+    parser.add_argument("--allow-governed-mutation", dest="allow_governed_mutation",
+                        action="store_true",
+                        help="Authorize a peer to mutate governed files during this ask (broker/consensus execution); skips the LL-20260703-005 out-of-band mutation guard")
     parser.add_argument("--rule")
     parser.add_argument("--enforcement-artifact", dest="enforcement_artifact",
                         help="G-bridge artifact path (relative to .ai or knowledge root) whose pass marker gates lesson activation")
@@ -7320,7 +7459,7 @@ def main() -> None:
         except (RuntimeError, OSError): pass
         if ai_root_opt is not None:
             ensure_ai_dir(ai_root_opt)
-        action_ask(args.to_, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file, session_policy=args.session_policy, explicit_scope=args.scope, origin=origin)
+        action_ask(args.to_, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file, session_policy=args.session_policy, explicit_scope=args.scope, origin=origin, allow_governed_mutation=getattr(args, "allow_governed_mutation", False))
         return
     if args.action == "ask-all":
         ai_root_opt = None
