@@ -69,6 +69,15 @@ except ImportError:
     hub_profile_router = None  # type: ignore[assignment]
     _PROFILE_ROUTER_AVAILABLE = False
 
+# r-f291 W4: shared telemetry snapshot (same collect_snapshot the diag renderer
+# uses) — the failover router must not have a private collection path.
+try:
+    import snapshot
+    _SNAPSHOT_AVAILABLE = True
+except ImportError:
+    snapshot = None  # type: ignore[assignment]
+    _SNAPSHOT_AVAILABLE = False
+
 # Global Logger instance (lazy initialized)
 _logger: _HubLogger | None = None
 
@@ -2262,6 +2271,46 @@ def _role_guard(ai_root: Path, peer: str, action: str, allowed_roles: set[str], 
         sys.exit(3)
 
 
+def _snapshot_failover_choice(ai_root: Path | None, exclude: list[str]) -> tuple[str | None, str | None]:
+    """r-f291 W4: pick the failover target from the SAME snapshot the diag
+    renderer uses (max headroom, eligible, excludes exhausted peers) and log
+    the snapshot hash so every routing decision is auditable. Fails open:
+    (None, None) keeps the existing health-based failover."""
+    if not _SNAPSHOT_AVAILABLE or snapshot is None:
+        return None, None
+    try:
+        snap = snapshot.collect_snapshot(use_cache=True)
+        snap_hash = snapshot.snapshot_hash(snap)
+        row = snapshot.snapshot_failover_target(exclude=exclude, snapshot=snap)
+        if ai_root:
+            _record_routing_metric(
+                ai_root,
+                "snapshot_failover_rank",
+                snapshot_hash=snap_hash,
+                selected_peer=row.get("peer") if row else None,
+                selected_profile=row.get("profile") if row else None,
+                headroom=row.get("headroom") if row else None,
+                exclude=exclude,
+                outcome="selected" if row else "no_target",
+            )
+        return (row.get("profile") if row else None), snap_hash
+    except Exception as exc:
+        if ai_root:
+            _record_routing_metric(
+                ai_root,
+                "snapshot_failover_rank",
+                outcome="fallback_health_based",
+                failure_reason=type(exc).__name__,
+                detail=str(exc)[:200],
+                exclude=exclude,
+            )
+        print(
+            f"[HUB:WARN] snapshot failover ranking unavailable; using health-based failover: {exc}",
+            file=sys.stderr,
+        )
+        return None, None
+
+
 def _matching_peers(needs: str, effort: str = "mid") -> list[dict]:
     proto_cfg = _load_protocol_cfg()
     election_cfg = proto_cfg.get("leader_election", {}).get("election_score", {})
@@ -2288,17 +2337,13 @@ def _matching_peers(needs: str, effort: str = "mid") -> list[dict]:
     console_bonus_max = int(election_cfg.get("console_fit_bonus_max", 1) or 1)
     cold_start_penalty_max = int(election_cfg.get("cold_start_penalty_max", 1) or 1)
     
-    # Get telemetry for Quota Margin Bonus
+    # Get telemetry for Quota Margin Bonus (r-f291: core snapshot module, no CLI import)
     try:
-        cli_dir = Path(__file__).resolve().parent.parent / "cli"
-        if str(cli_dir) not in sys.path:
-            sys.path.insert(0, str(cli_dir))
-        import diag
-        snapshot = diag.collect_snapshot()
-        telemetry = {p["peer"]: p for p in snapshot.get("peers", [])}
+        snap = snapshot.collect_snapshot(use_cache=True) if _SNAPSHOT_AVAILABLE else {}
+        telemetry = {p["peer"]: p for p in snap.get("peers", [])}
     except Exception as e:
         telemetry = {}
-        print(f"[HUB:WARN] Failed to load diag telemetry for quota margin: {e}", file=sys.stderr)
+        print(f"[HUB:WARN] Failed to load snapshot telemetry for quota margin: {e}", file=sys.stderr)
 
     matches: list[dict] = []
     
@@ -3142,6 +3187,13 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                     # If we already tried to failover and it's the same, don't try again
                     pass
                 else:
+                    # r-f291 W4: snapshot-headroom ranking picks the failover
+                    # target when available; falls back to the gate's static
+                    # suggestion (health-based) on any snapshot failure.
+                    ranked_target, _snap_hash = _snapshot_failover_choice(
+                        ai_root, exclude=[to, original_to, health_peer])
+                    if ranked_target:
+                        failover_model = ranked_target
                     print(f"[ContextGate] context {gate_result.get('ratio', 0):.0%} full → failover to {failover_model}", file=sys.stderr)
                     # Recursive failover call with increased depth and disabled context inclusion
                     return action_ask(failover_model, query, None, timeout_sec, ai_root, quiet, output_file, include_context=False, session_policy=session_policy, explicit_scope=explicit_scope, _depth=_depth + 1, _escalation_depth=_escalation_depth, origin=origin)

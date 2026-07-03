@@ -23,6 +23,17 @@ def load_diag():
     return module
 
 
+def load_snapshot():
+    """The collection layer lives in _sys/core/snapshot.py since r-f291 (W4).
+    Tests that monkeypatch moved internals (SYS_DIR, gather_peer, source
+    probes, ...) must patch the snapshot module — patching the diag re-export
+    does not reach snapshot-global lookups."""
+    if str(SYS_DIR / "core") not in sys.path:
+        sys.path.insert(0, str(SYS_DIR / "core"))
+    import snapshot
+    return snapshot
+
+
 def test_watch_below_minimum_is_rejected_with_clear_error(capsys):
     diag = load_diag()
 
@@ -122,7 +133,7 @@ def test_codex_rate_limits_are_cached_for_expensive_ttl(monkeypatch):
         calls.append("fetch")
         return {"primary": {"usedPercent": len(calls), "resetsAt": 1}}
 
-    monkeypatch.setattr(diag, "_codex_rate_limits", fetch)
+    monkeypatch.setattr(load_snapshot(), "_codex_rate_limits", fetch)
     diag._CODEX_RATE_LIMIT_CACHE.clear()
 
     first = diag._cached_codex_rate_limits(clock=lambda: 100.0)
@@ -187,7 +198,7 @@ def test_claude_usage_probe_runs_real_usage_command(monkeypatch):
         calls.append((args, kwargs))
         return Completed()
 
-    monkeypatch.setattr(diag, "_real_binary", lambda peer: "claude-real.cmd")
+    monkeypatch.setattr(load_snapshot(), "_real_binary", lambda peer: "claude-real.cmd")
     monkeypatch.setattr(diag.subprocess, "run", fake_run)
 
     rows = diag._claude_usage_quotas()
@@ -205,7 +216,7 @@ def test_claude_usage_is_cached_for_expensive_ttl(monkeypatch):
         calls.append("fetch")
         return [{"label": "C-5H", "used_frac": len(calls), "source": "cc_usage"}]
 
-    monkeypatch.setattr(diag, "_claude_usage_quotas", fetch)
+    monkeypatch.setattr(load_snapshot(), "_claude_usage_quotas", fetch)
     diag._CLAUDE_USAGE_CACHE.clear()
 
     first = diag._cached_claude_usage_quotas(clock=lambda: 100.0)
@@ -383,7 +394,7 @@ def test_collect_snapshot_survives_collector_exception(monkeypatch):
 
     def boom(peer, dirs):
         raise RuntimeError("sqlite exploded")
-    monkeypatch.setattr(diag, "gather_peer", boom)
+    monkeypatch.setattr(load_snapshot(), "gather_peer", boom)
 
     snap = diag.collect_snapshot()  # must NOT raise even if every collector throws
     assert snap["peers"], "snapshot should still list peers"
@@ -756,7 +767,7 @@ def test_headroom_next_target_marks_weaker_tier_risk():
 def test_session_rows_active_only_with_lease_and_context(tmp_path, monkeypatch):
     diag = load_diag()
     # Isolate from the real _sys tree: per-session sources resolve under SYS_DIR.
-    monkeypatch.setattr(diag, "SYS_DIR", tmp_path)
+    monkeypatch.setattr(load_snapshot(), "SYS_DIR", tmp_path)
     peer_dir = tmp_path / "codex"
     peer_dir.mkdir()
     (peer_dir / "session_state.json").write_text(json.dumps({
@@ -789,7 +800,7 @@ def test_session_rows_active_only_with_lease_and_context(tmp_path, monkeypatch):
             return leases, "2026-07-03T09:01:00+09:00"
         return json.loads(Path(path).read_text(encoding="utf-8")), "2026-07-03T09:02:00+09:00"
 
-    monkeypatch.setattr(diag, "_read_json_file", read_json_file)
+    monkeypatch.setattr(load_snapshot(), "_read_json_file", read_json_file)
 
     rows = diag._build_session_rows(
         ["cx"],
@@ -923,8 +934,8 @@ def test_codex_binary_skips_sys_cli_wrapper():
 
 def test_fp1_cx_sqlite_rollout_resolution(tmp_path, monkeypatch):
     diag = load_diag()
-    monkeypatch.setattr(diag, "SYS_DIR", tmp_path)
-    monkeypatch.setattr(diag, "_parse_rollout_context",
+    monkeypatch.setattr(load_snapshot(), "SYS_DIR", tmp_path)
+    monkeypatch.setattr(load_snapshot(), "_parse_rollout_context",
                         lambda p: (420, 100000) if str(p) == "my_rollout.jsonl" else (None, None))
 
     db_dir = tmp_path / "codex" / "config"
@@ -948,7 +959,7 @@ def test_fp1_cx_sqlite_rollout_resolution(tmp_path, monkeypatch):
 
 def test_fp1_cc_session_jsonl_usage_extraction(tmp_path, monkeypatch):
     diag = load_diag()
-    monkeypatch.setattr(diag, "SYS_DIR", tmp_path)
+    monkeypatch.setattr(load_snapshot(), "SYS_DIR", tmp_path)
 
     proj_dir = tmp_path / "claude" / "config" / "projects" / "my_proj"
     proj_dir.mkdir(parents=True)
@@ -968,7 +979,7 @@ def test_fp1_cc_session_jsonl_usage_extraction(tmp_path, monkeypatch):
 
 def test_fp1_ag_has_no_per_session_source_so_absent(tmp_path, monkeypatch):
     diag = load_diag()
-    monkeypatch.setattr(diag, "SYS_DIR", tmp_path)
+    monkeypatch.setattr(load_snapshot(), "SYS_DIR", tmp_path)
 
     ctx = diag._session_context_measured(
         "ag", {"session_id": "sess3"}, {"context": {"window_tokens": 1048576}},
@@ -983,7 +994,7 @@ def test_fp1_profile_copy_regression(tmp_path, monkeypatch):
     """cx guard (Final Call): a profile with known aggregate ctx + a session with
     no per-session source must yield absent — never the aggregate value."""
     diag = load_diag()
-    monkeypatch.setattr(diag, "SYS_DIR", tmp_path)
+    monkeypatch.setattr(load_snapshot(), "SYS_DIR", tmp_path)
 
     profile_row = {"context": {"used_tokens": 9999, "window_tokens": 200000}}
     ctx = diag._session_context_measured(

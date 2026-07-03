@@ -2,7 +2,7 @@ import pytest
 import sys
 from pathlib import Path
 
-# Add core/ and cli/ to sys.path so we can import hub and diag
+# Add core/ to sys.path so we can import hub and snapshot (r-f291 W4)
 root_dir = Path(__file__).resolve().parent.parent.parent.parent
 core_dir = root_dir / "core"
 cli_dir = root_dir / "cli"
@@ -12,7 +12,7 @@ if str(cli_dir) not in sys.path:
     sys.path.insert(0, str(cli_dir))
 
 import hub
-import diag
+import snapshot
 
 def test_matching_peers_quota_margin_bonus(monkeypatch):
     """
@@ -62,8 +62,8 @@ def test_matching_peers_quota_margin_bonus(monkeypatch):
     # 3. Mock state.json read
     monkeypatch.setattr(hub, "_read_json", lambda p: {})
 
-    # 4. Mock diag.collect_snapshot
-    def mock_collect_snapshot():
+    # 4. Mock snapshot.collect_snapshot
+    def mock_collect_snapshot(use_cache=False, **_kw):
         return {
             "peers": [
                 {"peer": "peerA", "domains": {"quota": {"buckets": [{"used_frac": 0.05}]}}}, # 95% remaining => +3
@@ -74,7 +74,7 @@ def test_matching_peers_quota_margin_bonus(monkeypatch):
                 # We need one exhausted peer to test HARD_CLOSED (0% remaining => excluded)
             ]
         }
-    monkeypatch.setattr(diag, "collect_snapshot", mock_collect_snapshot)
+    monkeypatch.setattr(snapshot, "collect_snapshot", mock_collect_snapshot)
     
     # Actually, we need to mock find_ai_root to not fail
     monkeypatch.setattr(hub, "find_ai_root", lambda: Path("mocked"))
@@ -107,13 +107,13 @@ def test_matching_peers_exhausted(monkeypatch):
     monkeypatch.setattr(hub, "_peer_effective_health", lambda node_id: ("GREEN", {"profile": {"capabilities": ["general"]}, "session_health": {"session_count_today": 1}}))
     monkeypatch.setattr(hub, "_read_json", lambda p: {})
     
-    def mock_collect_snapshot():
+    def mock_collect_snapshot(use_cache=False, **_kw):
         return {
             "peers": [
                 {"peer": "peerA", "domains": {"quota": {"buckets": [{"used_frac": 1.0}]}}}, # 0% remaining => HARD_CLOSED
             ]
         }
-    monkeypatch.setattr(diag, "collect_snapshot", mock_collect_snapshot)
+    monkeypatch.setattr(snapshot, "collect_snapshot", mock_collect_snapshot)
     monkeypatch.setattr(hub, "find_ai_root", lambda: Path("mocked"))
 
     matches = hub._matching_peers("general", "mid")
@@ -136,7 +136,7 @@ def test_matching_peers_ap20_penalty(monkeypatch):
     
     # Mock AP-20 history: peerA was leader twice
     monkeypatch.setattr(hub, "_read_json", lambda p: {"coordinator_history": [{"peer": "peerA"}, {"peer": "peerA"}]})
-    monkeypatch.setattr(diag, "collect_snapshot", lambda: {"peers": [{"peer": "peerA", "domains": {"quota": {"buckets": [{"used_frac": 0.50}]}}}]})
+    monkeypatch.setattr(snapshot, "collect_snapshot", lambda use_cache=False, **_kw: {"peers": [{"peer": "peerA", "domains": {"quota": {"buckets": [{"used_frac": 0.50}]}}}]})
     monkeypatch.setattr(hub, "find_ai_root", lambda: Path("mocked"))
 
     matches = hub._matching_peers("general", "mid")
