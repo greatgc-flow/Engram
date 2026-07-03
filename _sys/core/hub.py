@@ -108,6 +108,17 @@ RUNTIME_ESCALATION_DEPTH_CEILING = 2
 # ─────────────────────────────────────────────────────────────
 
 def find_ai_root() -> Path:
+    """Resolve the runtime .ai root. Precedence (r-<phantom-fix> consensus):
+    1. explicit HUB_AI_ROOT env override (deterministic pin for delegated
+       workers — eliminates the phantom without cwd gymnastics);
+    2. nearest ancestor of CWD with a .ai (then .git) — PRESERVES portability
+       so hub can operate on an external project's own .ai;
+    3. last resort (no .ai/.git anywhere): the canonical portable-root .ai
+       derived from this file's location — NEVER a phantom `cwd/.ai` at a
+       nondeterministic worker cwd (the bug that lost consensus round r-bd7c)."""
+    override = os.environ.get("HUB_AI_ROOT")
+    if override and override.strip():
+        return Path(override).expanduser().resolve()
     cwd = Path.cwd().resolve()
     candidate = cwd
     while True:
@@ -117,7 +128,7 @@ def find_ai_root() -> Path:
             return candidate / ".ai"
         parent = candidate.parent
         if parent == candidate:
-            return cwd / ".ai"
+            return Path(__file__).resolve().parents[2] / ".ai"
         candidate = parent
 
 
@@ -7361,6 +7372,8 @@ def main() -> None:
         description="AI collaboration hub - Protocol v4.2",
     )
     parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-all", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "thread-promote", "alert-raise", "proposal-add", "proposal-vote", "proposal-list", "broker-submit", "broker-drain", "broker-status", "update-signatures"])
+    parser.add_argument("--ai-root", dest="ai_root",
+                        help="Explicit .ai root; pins HUB_AI_ROOT for this process (deterministic; avoids the cwd-phantom bug)")
     parser.add_argument("--needs")
     parser.add_argument("--effort", default="mid")
     parser.add_argument("--agent")
@@ -7453,6 +7466,9 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=50)
 
     args = parser.parse_args()
+    # --ai-root pins HUB_AI_ROOT for every downstream find_ai_root() in this process.
+    if getattr(args, "ai_root", None):
+        os.environ["HUB_AI_ROOT"] = args.ai_root
     if args.action == "ask":
         ai_root_opt = None
         try: ai_root_opt = find_ai_root()
