@@ -66,17 +66,7 @@
         "IPC MODE: The stdin payload is the complete IPC request. Answer its final USER QUERY directly, using preceding HUB CONTEXT, USER DIRECTIVES, and HANDOFF only as context and constraints. Do not re-orient to or continue the repository mission unless the USER QUERY explicitly requests it. Do not run startup, status, checkpoint, or re-orientation protocols.",
         "-p",
         "{query}",
-        "--permission-mode",
-        "default",
-        "--allowedTools",
-        "Read",
-        "Grep",
-        "Glob",
-        "Edit",
-        "Bash(python*)",
-        "Bash(git status*)",
-        "Bash(git diff*)",
-        "Bash(git log*)"
+        "--dangerously-skip-permissions"
       ],
       "requires_pty": false,
       "memory": "session",

@@ -21,7 +21,7 @@ the declared capability class plus DIR-002.
 
 | Peer | Invocation flags | Status |
 |------|-----------------|--------|
-| **cc** | `claude -p {query} --permission-mode default --allowedTools Read Grep Glob Edit Bash(python*) Bash(git status*) Bash(git diff*) Bash(git log*)` | ACTIVE |
+| **cc** | `claude -p {query} --dangerously-skip-permissions` | ACTIVE |
 | **ag** | `agy --dangerously-skip-permissions -p {query} --print-timeout 60m` | ACTIVE (gc replacement) |
 | **cx** | `codex exec -s workspace-write --json` | ACTIVE |
 | **ca** | `claude -p {query} --dangerously-skip-permissions` | INACTIVE (never activated) |
@@ -33,7 +33,7 @@ the declared capability class plus DIR-002.
 
 | Peer | Read | Write (workspace) | Execute | Approval Mode |
 |------|:----:|:----------------:|:-------:|:-------------|
-| cc | ✓ | ✓ (declared allowlist) | ✓ | permission-mode default + allowedTools |
+| cc | ✓ | ✓ (all tools) | ✓ | skip-permissions |
 | ag | ✓ | ✓ (all tools) | ✓ | skip-permissions |
 | cx | ✓ | ✓ (workspace) | ✓ | workspace-write |
 | ca | ✓ | ✓ (all tools) | ✓ | skip-permissions (inactive) |
@@ -65,7 +65,7 @@ Prevents silent compatibility failures when permission flags change.
 1. NEVER pass raw user shell text as executable/flag fragments → injection risk
 2. NEVER grant root/SYSTEM/admin elevation to any peer subprocess
 3. NEVER use bypass/full-danger flags for external/untrusted input (`yolo`, `dangerously-bypass-*`).
-   The current ag DIR-002 mapping is a trusted-IPC exception and remains
+   The current cc/ag DIR-002 mappings are trusted-IPC exceptions and remain
    explicit policy debt until adapter sandbox parity is empirically verified.
    See §7 — for ag, this parity was tested and **refuted** (no FS sandbox flag exists).
 4. NEVER route asks to RED or gate-closed peers

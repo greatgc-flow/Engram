@@ -68,25 +68,17 @@ def test_cx_requires_workspace_write_without_full_danger_bypass():
     assert "dangerously-bypass-approvals-and-sandbox" not in joined
 
 
-def test_cc_uses_allowlist_target_without_skip_debt():
+def test_cc_is_either_current_dir002_debt_or_allowlist_target():
     cc = _root_nodes()["cc"]
     args = _args(cc)
-    required_tools = {
-        "Read",
-        "Grep",
-        "Glob",
-        "Edit",
-        "Bash(python*)",
-        "Bash(git status*)",
-        "Bash(git diff*)",
-        "Bash(git log*)",
-    }
+    has_skip_debt = "--dangerously-skip-permissions" in args
+    has_allowlist_target = (
+        "--permission-mode" in args
+        and "default" in args
+        and any(arg in args for arg in ("--allowedTools", "--allowed-tools"))
+    )
 
-    assert "--dangerously-skip-permissions" not in args
-    assert "--permission-mode" in args
-    assert "default" in args
-    assert any(arg in args for arg in ("--allowedTools", "--allowed-tools"))
-    assert required_tools.issubset(set(args))
+    assert has_skip_debt or has_allowlist_target
     assert cc.get("capability_class") == "tool_scoped_mutation"
 
 

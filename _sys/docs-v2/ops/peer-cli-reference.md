@@ -43,7 +43,7 @@ Path: `_sys/env/nodejs/npm-global/claude.cmd`. Default = interactive; `-p/--prin
 ### Subcommands (help): `agents`, `mcp`, `config`, `plugin`, `update`, `doctor`, `/skill-name`.
 
 ### Hub usage
-`claude.cmd --safe-mode --append-system-prompt "<IPC frame>" -p {stdin} --permission-mode default --allowedTools Read Grep Glob Edit Bash(python*) Bash(git status*) Bash(git diff*) Bash(git log*)`
+`claude.cmd --safe-mode --append-system-prompt "<IPC frame>" -p {stdin} --dangerously-skip-permissions`
 + profile `--model/--effort`. Reuse now via `--resume` (fixed 2026-07-02). Env:
 `CLAUDE_CONFIG_DIR=_sys/claude/config`.
 
@@ -206,7 +206,7 @@ the real root of the `diag --json` stall. **Programmatic/host code must call the
 binary path**, never the bare name. **✓run** (diag fixed to use the real `codex.cmd`).
 
 ### Common non-interactive invocation forms (verified)
-- claude: `claude -p - --resume <id> --permission-mode default --allowedTools Read Grep Glob Edit Bash(python*) Bash(git status*) Bash(git diff*) Bash(git log*)`
+- claude: `claude -p - --resume <id> --dangerously-skip-permissions`
 - codex:  `codex exec resume <id> - --json -c sandbox="workspace-write"`
 - agy:    `agy --dangerously-skip-permissions -p "<q>" --print-timeout <t>` — **requires a
   console**: fine interactively / via hub winpty; hangs only in a headless (no-console)

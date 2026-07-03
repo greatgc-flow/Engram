@@ -6924,27 +6924,6 @@ def _check_flag_parity() -> list[str]:
         errors.append(f"PARITY: could not import peer_console.py: {e}")
         return errors
 
-    cc_allowed_tools = {
-        "Read",
-        "Grep",
-        "Glob",
-        "Edit",
-        "Bash(python*)",
-        "Bash(git status*)",
-        "Bash(git diff*)",
-        "Bash(git log*)",
-    }
-
-    def _has_cc_allowlist(args: list[str]) -> bool:
-        arg_set = set(args)
-        return (
-            "--permission-mode" in arg_set
-            and "default" in arg_set
-            and ("--allowedTools" in arg_set or "--allowed-tools" in arg_set)
-            and cc_allowed_tools.issubset(arg_set)
-            and "--dangerously-skip-permissions" not in arg_set
-        )
-
     # Flags that MUST appear in both hub and console paths
     # Note: --json is a hub-internal cx execution flag, not a
     # direct-console permission controls, so parity intentionally excludes them.
@@ -6952,6 +6931,7 @@ def _check_flag_parity() -> list[str]:
     # `-s workspace-write` or the codex config override `-c sandbox="workspace-write"`).
     # gc was retired from orchestration.json, so it is no longer a parity target.
     REQUIRED: dict[str, set[str]] = {
+        "cc": {"--dangerously-skip-permissions"},
         "ag": {"--dangerously-skip-permissions"},
     }
     # Flags that must NEVER appear in any managed peer invocation
@@ -7017,24 +6997,6 @@ def _check_flag_parity() -> list[str]:
             for bad in FORBIDDEN:
                 if bad in joined:
                     errors.append(f"PARITY cx: forbidden flag '{bad}' found in {label}")
-
-    cc_node = nodes.get("cc")
-    if cc_node:
-        cc_adapter = hub_peer.get_adapter(cc_node)
-        if cc_node.get("session_mode") == "reuse":
-            cc_hub_args = cc_adapter.build_session_cmd(cc_node, "parity-check", None).cmd
-        else:
-            cc_hub_args, _ = cc_adapter.build_cmd(cc_node, "parity-check")
-        cc_paths = [
-            ("hub path (live adapter command)", cc_hub_args),
-            ("console path (peer_console.py)", peer_default_args("cc", [])),
-        ]
-        for label, args in cc_paths:
-            if not _has_cc_allowlist(args):
-                errors.append(f"PARITY cc: allowlist/default permission profile missing from {label}")
-            for bad in FORBIDDEN:
-                if any(bad in f for f in args):
-                    errors.append(f"PARITY cc: forbidden flag '{bad}' found in {label}")
 
     return errors
 

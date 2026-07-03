@@ -26,7 +26,7 @@
 - Status: ACTIVE
 - Rule: All peers run with minimum non-interactive permissions and must not block on interactive approval prompts during `hub.py ask` or console wrapper invocations.
 - Implementation:
-  - `cc`: `-p {query} --permission-mode default --allowedTools Read Grep Glob Edit Bash(python*) Bash(git status*) Bash(git diff*) Bash(git log*)` (least-privilege canary, 2026-07-03)
+  - `cc`: `-p {query} --dangerously-skip-permissions` (least-privilege allowlist was trialed 2026-07-03 but REVERTED pre-merge — see Evidence)
   - `cc.standard|effort|deepthink`: generated profile nodes inherit the cc DIR-002 mapping; reasoning depth does not independently widen permission scope.
   - `gc`: SUSPENDED — `--approval-mode auto_edit --skip-trust` (reference only; gc is tier_suspended)
   - `cx`: `-s workspace-write` (hub reuse path uses `-c sandbox="workspace-write"`; no `--ignore-rules`)
@@ -34,7 +34,7 @@
 - KNOWN GAP (ag filesystem confinement): `agy --sandbox` does NOT enforce workspace filesystem confinement (empirically verified 2026-06-23: ag wrote outside workspace with --sandbox regardless of cwd/skip-permissions). ag has NO flag-based FS sandbox equivalent to cx `-s workspace-write`; mutation safety relies on trust boundary + read-only review profile + SEC-01 git-diff guard.
 - Evidence:
   - `cx` no-`--ignore-rules` canary returned `OK` via real `codex.cmd exec ... -c sandbox="workspace-write"` on 2026-07-03.
-  - `cc` allowlist canary (2026-07-03): a real `cc.standard` hub ask that invoked a NON-allowlisted `Bash(echo)` completed in 12s with NO hang (refuted the "silent interactive-prompt hang" concern raised in ag pre-merge review). CAVEAT: the non-allowlisted call still executed, so `--permission-mode default` under `-p` does not hard-block in print mode — the allowlist currently prevents hangs but does not strictly confine cc's tools. Hard-confinement enforcement is a follow-up (DIR-004: documented as measured, not assumed).
+  - `cc` allowlist (`--permission-mode default --allowedTools …`) was trialed and REVERTED to `--dangerously-skip-permissions` pre-merge (2026-07-03). Findings: (1) no hang — a `cc.standard` ask invoking a NON-allowlisted `Bash(echo)` completed in 12s; but (2) that non-allowlisted call still EXECUTED, proving `--permission-mode default` under `-p` does not hard-confine in print mode; and (3) both ag and cx pre-merge reviews flagged the list as under-scoped/unverified. Per DIR-004 (measured, not assumed) we do not ship a permission control that does not demonstrably enforce. cc least-privilege deferred to a follow-up with a real enforcement mechanism (OS-level or hook) + full canary. See ops/overnight-hardening-2026-07-03.md.
 - References:
   - `_sys/ai/orchestration.json`
   - `_sys/docs-v2/general/permissions.md` (authoritative per-peer profiles, updated 2026-06-19)

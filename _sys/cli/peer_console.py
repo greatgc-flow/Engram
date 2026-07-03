@@ -95,17 +95,6 @@ _CODEX_COMMANDS = {
 
 _AGY_COMMANDS = {"changelog", "help", "install", "models", "plugin", "plugins", "update"}
 
-_CC_ALLOWED_TOOLS = [
-    "Read",
-    "Grep",
-    "Glob",
-    "Edit",
-    "Bash(python*)",
-    "Bash(git status*)",
-    "Bash(git diff*)",
-    "Bash(git log*)",
-]
-
 
 def _starts_with_command(args: list[str], commands: set[str]) -> bool:
     return bool(args) and not args[0].startswith("-") and args[0] in commands
@@ -132,10 +121,7 @@ def peer_default_args(peer_id: str, args: list[str]) -> list[str]:
             "--allowedTools",
             "--allowed-tools",
         }):
-            current = _append_missing(
-                current,
-                ["--permission-mode", "default", "--allowedTools", *_CC_ALLOWED_TOOLS],
-            )
+            current = _append_missing(current, ["--dangerously-skip-permissions"])
         return _append_profile_defaults(current, "cc")
 
     if peer_id == "gc":

@@ -115,7 +115,9 @@ def _fmt_reset(value, rel_seconds=None):
 _REAL_BINARIES = {
     "cc": SYS_DIR / "env" / "nodejs" / "npm-global" / "claude.cmd",
     "cx": SYS_DIR / "env" / "nodejs" / "npm-global" / "codex.cmd",
-    "ag": PORTABLE_ROOT / "tools" / "agy" / "agy.exe",
+    # agy lives under _sys/tools, matching orchestration.json invoke path.
+    # (was PORTABLE_ROOT/tools/agy — a nonexistent path; cx pre-merge review.)
+    "ag": SYS_DIR / "tools" / "agy" / "agy.exe",
 }
 
 
