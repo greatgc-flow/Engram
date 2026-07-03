@@ -36,7 +36,7 @@
     "tool_scoped_mutation": {
       "governance_weight": 1,
       "scope": "workspace mutation and declared command execution constrained by CLI permission tools",
-      "note": "cc target: permission-mode default + allowedTools; pending security phase. Prefer lower privilege at equal capability fit."
+      "note": "cc currently runs --dangerously-skip-permissions (trusted-IPC, DIR-002). A CLI-permission-tool allowlist (permission-mode default + allowedTools) is the pending security-phase target — trialed 2026-07-03 and reverted (does not hard-enforce under -p; DIR-004). Prefer lower privilege at equal capability fit."
     },
     "sandboxed_mutation": {
       "governance_weight": 1,
