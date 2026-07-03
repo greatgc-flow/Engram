@@ -210,6 +210,77 @@ def profile_catalog(orch: dict | None = None) -> dict[str, dict[str, Any]]:
     }
 
 
+def extract_model_operand(args: list) -> str | None:
+    """Return the value following a --model/-m flag (or --model=X) in an args list."""
+    if not args:
+        return None
+    for i, arg in enumerate(args):
+        text = str(arg)
+        if text in ("--model", "-m"):
+            return str(args[i + 1]) if i + 1 < len(args) else ""
+        if text.startswith("--model="):
+            return text.split("=", 1)[1]
+    return None
+
+
+def validate_model_operand(node: dict) -> str | None:
+    """r-8b3b grammar (LL-009, consensus 2026-07-03): the model operand a node
+    would pass to its CLI must match the node's orchestration-declared model.
+    Returns an error string, or None when valid (or nothing to validate).
+
+    Rules:
+    - a model operand in node-level invoke_args is always an error (model
+      selection is profile-scoped);
+    - when model_id/runtime_model is declared, the profile_args operand must
+      equal it exactly (declared-vs-args drift is the LL-009 failure class);
+    - descriptor-style peers (no model_id, e.g. ag) declare THROUGH the operand,
+      so only an empty operand is an error there.
+    """
+    node_id = node.get("node_id") or "?"
+    invoke_operand = extract_model_operand(node.get("invoke_args") or [])
+    if invoke_operand is not None:
+        return (f"{node_id}: model operand {invoke_operand!r} found in invoke_args — "
+                "model selection must live in profile_args")
+    operand = extract_model_operand(node.get("profile_args") or [])
+    if operand is None:
+        return None
+    declared = node.get("model_id") or node.get("runtime_model")
+    if declared:
+        if operand != declared:
+            return (f"{node_id}: model operand {operand!r} != declared model_id "
+                    f"{declared!r} (declared-vs-args drift)")
+        return None
+    if not operand.strip():
+        return f"{node_id}: empty model operand"
+    return None
+
+
+def model_operand_report(orch: dict | None = None) -> dict:
+    """Validate every normalized node and return a G-bridge-compatible report
+    (status pass/fail + findings). This is LL-009's enforcement artifact body."""
+    from datetime import datetime, timezone
+    normalized = normalize_orchestration(orch)
+    findings = []
+    checked = 0
+    for node in normalized.get("hub_nodes", []):
+        if node.get("type") not in ("peer", "profile"):
+            continue
+        if not node.get("enabled", True):
+            continue
+        checked += 1
+        error = validate_model_operand(node)
+        if error:
+            findings.append(error)
+    return {
+        "lesson": "LL-009",
+        "check": "model_operand_grammar_r8b3b",
+        "status": "fail" if findings else "pass",
+        "checked_nodes": checked,
+        "findings": findings,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def resolve_node_id(node_id: str | None, *, orch: dict | None = None) -> str | None:
     """Resolve a node ID, alias, or invoke name to its canonical node ID."""
     if not node_id or not isinstance(node_id, str):

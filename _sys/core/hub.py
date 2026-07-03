@@ -2985,7 +2985,18 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     ipc_protocol_version: int | None = None
     if query_file:
         qf = Path(query_file)
-        if not qf.exists(): sys.exit(1)
+        if not qf.exists():
+            # W1 (consensus 2026-07-03): never die silently. IPC query files are
+            # single-use — the hub unlinks them after the first read — so a retry
+            # with the same path is the most common way to hit this.
+            print(
+                f"[HUB:ERROR] action_ask: query file not found: {query_file} "
+                "(IPC query files are single-use and unlinked after first read; "
+                "write a fresh file per attempt)",
+                file=sys.stderr,
+            )
+            _append_ask_history(ai_root, to, query_file, output_file, None, False, "query_file_missing")
+            sys.exit(1)
         raw_content = qf.read_text(encoding="utf-8")
         # Parse IPC envelope headers (lines starting with "PROTOCOL_")
         lines = raw_content.splitlines()
@@ -3174,6 +3185,15 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 existing_session = None
 
     # ── Command construction (Adapter-based) ───────────────────
+    # r-8b3b grammar (LL-009): refuse to build a command whose model operand
+    # drifts from the orchestration-declared model for this node.
+    from hub_peer import validate_model_operand
+    _model_err = validate_model_operand(node)
+    if _model_err:
+        print(f"[HUB:ERROR] model operand validation failed: {_model_err}", file=sys.stderr)
+        _append_ask_history(ai_root, to, saved_query_file_path, output_file, None, False, "model_operand_invalid")
+        sys.exit(1)
+
     session_id = None
     if use_session and existing_session:
         session_id = existing_session.get("session_id")
@@ -5606,6 +5626,8 @@ def action_lessons_propose(
     severity: str = "medium",
     scope: str = "workspace",
     peer_ids: list | None = None,
+    enforcement_artifact: str | None = None,
+    expires_at: str | None = None,
 ) -> None:
     """Propose a new candidate lesson (pending approval)."""
     if not title or not rule or not category:
@@ -5645,8 +5667,12 @@ def action_lessons_propose(
         },
         "source_refs": [{"type": "user", "id": "manual", "peer": "cc", "ts": now_str}],
         "approval": {"approved_by": None, "approved_at": None, "record_ref": None},
-        "retirement": {"expires_at": None, "superseded_by": None, "review_after": None},
+        "retirement": {"expires_at": expires_at, "superseded_by": None, "review_after": None},
     }
+    # G-bridge: an enforcement artifact ref makes the lesson ACTIVE-eligible;
+    # without one, activation requires an explicit advisory expiry (W3 2026-07-03).
+    if enforcement_artifact:
+        entry["enforcement"] = {"artifact": enforcement_artifact}
 
     target = ws_path if (scope == "workspace" and ws_path) else lesson_path
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -7215,6 +7241,10 @@ def main() -> None:
                         choices=["auto", "reuse", "fresh", "none"],
                         help="Session reuse policy: auto=use node config, reuse=always reuse, fresh=always new, none=disable")
     parser.add_argument("--rule")
+    parser.add_argument("--enforcement-artifact", dest="enforcement_artifact",
+                        help="G-bridge artifact path (relative to .ai or knowledge root) whose pass marker gates lesson activation")
+    parser.add_argument("--expires-at", dest="expires_at",
+                        help="Advisory expiry (ISO date) for lessons without an enforcement artifact")
     parser.add_argument("--ttl-hours", dest="ttl_hours", type=int, default=6)
     parser.add_argument("--clear-condition", dest="clear_condition", default="manual")
     parser.add_argument("--lesson-id", dest="lesson_id")
@@ -7411,6 +7441,8 @@ def main() -> None:
             severity=args.severity or "medium",
             scope=args.scope or "workspace",
             peer_ids=peer_ids,
+            enforcement_artifact=args.enforcement_artifact,
+            expires_at=args.expires_at,
         )
     elif act == "lessons-activate":
         action_lessons_activate(ai_root, lesson_id=args.lesson_id or args.round_id or "")

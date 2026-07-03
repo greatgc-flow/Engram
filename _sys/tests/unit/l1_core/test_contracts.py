@@ -157,6 +157,9 @@ class TestActionLessonContract:
         required = ["ai_root", "title", "rule", "category"]
         for r in required:
             assert r in params, f"action_lessons_propose() missing: {r}"
+        # W3 (2026-07-03): G-bridge plumbing — both optional, default None
+        assert sig.parameters["enforcement_artifact"].default is None
+        assert sig.parameters["expires_at"].default is None
 
     def test_lessons_activate_params(self):
         sig = inspect.signature(hub.action_lessons_activate)

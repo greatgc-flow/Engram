@@ -45,6 +45,15 @@
 - Scope: Applies to all peers (cc, gc, cx). Include contract-update verification in PR checklist for any API change.
 - Source: LL-008 / gc self-evolution audit 2026-06-16.
 
+### DIR-004: Measured-Only Claims — No Guessing, No Estimation
+
+- Effective: 2026-07-03
+- Status: ACTIVE
+- Ratification: proposed during overnight hardening 2026-07-03 (pending_user_approval); ratified 2026-07-03 by the user's standing order to proceed with the full consensus backlog (R:10 unanimous cc+ag+cx, W-batch Final Call).
+- Rule: Any claim about CLI capability, model availability, permissions, behavior, or quota MUST carry a source tag from {cli_live | app_server | statusline | empirical_probe}. Declaration-only sources (orchestration.json, docs, --help) may be relayed only as `declared, unverified`. When no evidence exists, state `absent` or `TEST NEEDED` — never estimate. Only machine-owned fields are trusted; model/permission declaration changes require attached drift_report evidence.
+- Enforcement: `check_cli_reality.py` (P0 drift blocks), diag source tags (`[decl]`/`absent` rendering), lesson LL-20260703-003 (declared-vs-actual reconciliation).
+- Source: user guidance repeated across sessions ("measure before use, never guess"); H-constitution path (user ratifies the rule, peers ratify the artifact).
+
 ## Revoked Directives
 
 None.
