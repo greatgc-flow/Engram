@@ -1,12 +1,14 @@
 import os
 import argparse
 import json
+import re
 import subprocess
 from pathlib import Path
 import sys
 import time
 from contextlib import redirect_stdout
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 CLI_DIR = Path(__file__).parent
 SYS_DIR = CLI_DIR.parent
@@ -235,6 +237,177 @@ def _codex_rate_limits(deadline_sec=12):
     return None
 
 
+_CLAUDE_USAGE_SECTIONS = {
+    "current session": ("C-5H", 5.0),
+    "current week (all models)": ("C-7D", 168.0),
+    "current week (fable)": ("F-7D", 168.0),
+}
+
+_MONTHS = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+
+
+def _parse_claude_usage_reset(text, now=None):
+    """Parse Claude `/usage` reset text into ISO8601 local time.
+
+    Examples observed from the real CLI:
+    - Jul 3, 11:30am (Asia/Seoul)
+    - Jul 7, 10pm (Asia/Seoul)
+    - 11:29am (Asia/Seoul)
+    """
+    if not isinstance(text, str) or not text.strip():
+        return None
+    now = now or datetime.now().astimezone()
+    value = text.strip()
+    tz_name = None
+    m_tz = re.search(r"\(([^)]+)\)\s*$", value)
+    if m_tz:
+        tz_name = m_tz.group(1).strip()
+        value = value[:m_tz.start()].strip()
+    try:
+        tz = ZoneInfo(tz_name) if tz_name else now.tzinfo
+    except Exception:
+        tz = now.tzinfo
+
+    m_date = re.match(
+        r"^(?:(?P<mon>[A-Za-z]+)\s+(?P<day>\d{1,2}),\s*)?"
+        r"(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?\s*(?P<ampm>[ap]m)$",
+        value,
+        re.IGNORECASE,
+    )
+    if not m_date:
+        return None
+    mon_text = m_date.group("mon")
+    if mon_text:
+        month = _MONTHS.get(mon_text.lower())
+        day = int(m_date.group("day"))
+    else:
+        month = now.month
+        day = now.day
+    if not month:
+        return None
+    hour = int(m_date.group("hour"))
+    minute = int(m_date.group("minute") or 0)
+    ampm = m_date.group("ampm").lower()
+    if hour == 12:
+        hour = 0
+    if ampm == "pm":
+        hour += 12
+    try:
+        dt = datetime(now.year, month, day, hour, minute, tzinfo=tz)
+    except ValueError:
+        return None
+    now_in_tz = now.astimezone(tz)
+    if mon_text and dt < now_in_tz - timedelta(days=30):
+        try:
+            dt = datetime(now.year + 1, month, day, hour, minute, tzinfo=tz)
+        except ValueError:
+            pass
+    elif not mon_text and dt < now_in_tz:
+        dt = dt + timedelta(days=1)
+    return dt.astimezone().isoformat()
+
+
+def _claude_usage_emit(section, used_pct, reset_text, now=None):
+    key = str(section or "").strip().lower()
+    spec = _CLAUDE_USAGE_SECTIONS.get(key)
+    if not spec:
+        return None
+    reset_at = _parse_claude_usage_reset(reset_text, now=now)
+    if reset_at is None:
+        return None
+    try:
+        used_frac = max(0.0, min(1.0, float(used_pct) / 100.0))
+    except (TypeError, ValueError):
+        return None
+    label, window_hours = spec
+    import quota as qmgr
+    rem_sec = qmgr.get_remaining_seconds(resets_at_iso=reset_at)
+    pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours)
+    return {
+        "label": label,
+        "used_frac": used_frac,
+        "pacing": pacing,
+        "reset": _fmt_reset(reset_at),
+        "source": "cc_usage",
+        "metric": f"{float(used_pct):.0f}% used{_fmt_pacing(pacing)}",
+        "pacing_ratio": pacing.get("ratio"),
+        "pacing_status": pacing.get("status"),
+    }
+
+
+def _parse_claude_usage(text, now=None):
+    """Parse explicit quota/reset rows from real `claude /usage` output."""
+    if not isinstance(text, str) or not text.strip():
+        return []
+    rows = []
+    current_section = None
+    current_pct = None
+    inline = re.compile(
+        r"^(Current session|Current week \(all models\)|Current week \(Fable\)):"
+        r"\s*([0-9]+(?:\.[0-9]+)?)%\s+used\b.*?\bresets\s+(.+)$",
+        re.IGNORECASE,
+    )
+    section_names = {k.lower(): k for k in _CLAUDE_USAGE_SECTIONS}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        m = inline.match(line)
+        if m:
+            row = _claude_usage_emit(m.group(1), m.group(2), m.group(3), now=now)
+            if row:
+                rows.append(row)
+            current_section = None
+            current_pct = None
+            continue
+        lowered = line.lower().rstrip(":")
+        if lowered in section_names:
+            current_section = section_names[lowered]
+            current_pct = None
+            continue
+        if current_section and current_pct is None:
+            m_pct = re.search(r"([0-9]+(?:\.[0-9]+)?)%\s+used\b", line, re.IGNORECASE)
+            if m_pct:
+                current_pct = m_pct.group(1)
+            continue
+        if current_section and current_pct is not None:
+            m_reset = re.search(r"\bresets?\s+(.+)$", line, re.IGNORECASE)
+            if m_reset:
+                row = _claude_usage_emit(current_section, current_pct, m_reset.group(1), now=now)
+                if row:
+                    rows.append(row)
+                current_section = None
+                current_pct = None
+    return rows
+
+
+def _claude_usage_quotas(deadline_sec=12):
+    """Run the real Claude CLI usage command. No help-output inference."""
+    claude_exe = _real_binary("cc")
+    if not claude_exe:
+        return None
+    env = os.environ.copy()
+    env["CLAUDE_CONFIG_DIR"] = str((SYS_DIR / "claude" / "config").resolve())
+    try:
+        proc = subprocess.run(
+            [claude_exe, "/usage"],
+            cwd=str(PORTABLE_ROOT),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=deadline_sec,
+            errors="replace",
+        )
+    except Exception:
+        return None
+    text = "\n".join(part for part in (proc.stdout, proc.stderr) if part)
+    quotas = _parse_claude_usage(text)
+    return quotas or None
+
+
 def _parse_rollout_context(path):
     """Parse a codex thread rollout JSONL for its last `event_msg/token_count`
     event → (used_tokens, window_tokens). Current occupancy is
@@ -281,6 +454,7 @@ def _codex_context():
 
 EXPENSIVE_SOURCE_TTL_SEC = 60
 _CODEX_RATE_LIMIT_CACHE = {}
+_CLAUDE_USAGE_CACHE = {}
 
 
 def _cached_codex_rate_limits(ttl_sec=EXPENSIVE_SOURCE_TTL_SEC, clock=time.monotonic):
@@ -296,6 +470,19 @@ def _cached_codex_rate_limits(ttl_sec=EXPENSIVE_SOURCE_TTL_SEC, clock=time.monot
     return value
 
 
+def _cached_claude_usage_quotas(ttl_sec=EXPENSIVE_SOURCE_TTL_SEC, clock=time.monotonic):
+    now = clock()
+    cached = _CLAUDE_USAGE_CACHE.get("usage")
+    if cached and now < cached["expires_at"]:
+        return cached["value"]
+    value = _claude_usage_quotas()
+    _CLAUDE_USAGE_CACHE["usage"] = {
+        "value": value,
+        "expires_at": now + ttl_sec,
+    }
+    return value
+
+
 
 # --------------------------------------------------------------------------
 # Per-peer metric gathering
@@ -305,19 +492,17 @@ def _discover_peers():
     """Return (peers, peer_dirs) from orchestration.json, with a static fallback."""
     peers = []
     peer_dirs = {}
-    orch_file = SYS_DIR / "ai" / "orchestration.json"
-    if orch_file.exists():
-        try:
-            orch_data = json.loads(orch_file.read_text(encoding="utf-8"))
-            for node in orch_data.get("hub_nodes", []):
-                if node.get("type") == "peer" and node.get("enabled", True):
-                    pid = node.get("node_id")
-                    if pid:
-                        peers.append(pid)
-                        subdir = resolve_peer_sys_dir(pid)
-                        peer_dirs[pid] = SYS_DIR / (subdir if subdir else pid)
-        except Exception:
-            pass
+    try:
+        orch_data = _read_orchestration()
+        for node in orch_data.get("hub_nodes", []):
+            if node.get("type") == "peer" and node.get("enabled", True):
+                pid = node.get("node_id")
+                if pid:
+                    peers.append(pid)
+                    subdir = resolve_peer_sys_dir(pid)
+                    peer_dirs[pid] = SYS_DIR / (subdir if subdir else pid)
+    except Exception:
+        pass
     if not peers:
         peers = ["ag", "cc", "cx"]
         peer_dirs = {
@@ -327,6 +512,22 @@ def _discover_peers():
         }
     return peers, peer_dirs
 
+
+def _read_orchestration():
+    return json.loads((SYS_DIR / "ai" / "orchestration.json").read_text(encoding="utf-8"))
+
+
+def _read_json_file(path):
+    try:
+        p = Path(path)
+        data = json.loads(p.read_text(encoding="utf-8"))
+        try:
+            observed = datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc).astimezone().isoformat()
+        except OSError:
+            observed = datetime.now().astimezone().isoformat()
+        return data, observed
+    except Exception:
+        return {}, None
 
 # Friendly labels for ag's quota buckets.
 _AG_QUOTA_LABELS = {
@@ -494,6 +695,18 @@ def gather_peer(peer, peer_dirs):
                 "label": label, "used_frac": used_frac, "pacing": pacing,
                 "reset": _fmt_reset(resets_at, reset_sec), "source": "cc",
             })
+    if peer == "cc":
+        usage_quotas = _cached_claude_usage_quotas()
+        if usage_quotas:
+            usage_labels = {q.get("label") for q in usage_quotas}
+            quotas = [
+                q for q in quotas
+                if q.get("label") not in usage_labels and q.get("source") != "cc_usage"
+            ]
+            quotas.extend(usage_quotas)
+            info["quota_observed_at"] = datetime.now().astimezone().isoformat()
+            info["quota_source_kind"] = "live"
+            info["quota_source_tag"] = "cli_live"
 
     # Codex: model/tokens/effort from sqlite + live rate limits from app-server
     if peer == "cx":
@@ -669,6 +882,7 @@ def parse_args(argv=None):
     parser.add_argument("--tokens", action="store_true", help="reserved token detail view")
     parser.add_argument("--sessions", action="store_true", help="reserved session detail view")
     parser.add_argument("--project", action="store_true", help="reserved project detail view")
+    parser.add_argument("--headroom", action="store_true", help="derived routing headroom view")
     args = parser.parse_args(argv)
 
     requested_interval = args.interval if args.interval is not None else args.watch
@@ -743,6 +957,416 @@ def _mask_email(email):
 def _source_meta(kind, observed_at, ttl_sec, confidence):
     """Normalized source-provenance block (§4)."""
     return {"kind": kind, "observed_at": observed_at, "ttl_sec": ttl_sec, "confidence": confidence}
+
+
+def _source_tag(record, domain_name):
+    """Specific source tag for profile rows; missing data stays absent."""
+    if domain_name == "quota":
+        buckets = (((record.get("domains") or {}).get("quota") or {}).get("buckets") or [])
+        bucket_sources = {b.get("source") for b in buckets if isinstance(b, dict)}
+        if "cc_usage" in bucket_sources:
+            return "cli_live"
+    raw_source = (record.get("raw") or {}).get("source")
+    if raw_source == "app-server":
+        return "app_server"
+    if raw_source == "live":
+        return "statusline"
+    if raw_source == "health":
+        return "health"
+    source = (((record.get("domains") or {}).get(domain_name) or {}).get("source") or {}).get("kind")
+    if source == "live":
+        return "cli_live"
+    if source == "cached":
+        return "health"
+    return "absent"
+
+
+def _quota_family_for_profile(peer_id, profile_name):
+    if peer_id == "cc":
+        return "F-" if profile_name == "fable" else "C-"
+    if peer_id == "ag":
+        return "3P-" if profile_name in {"opus", "gptoss", "sonnet"} else "G-"
+    if peer_id == "cx":
+        return "X-"
+    return None
+
+
+def _filter_profile_buckets(peer_id, profile_name, buckets):
+    family = _quota_family_for_profile(peer_id, profile_name)
+    if not family:
+        return list(buckets or [])
+    return [b for b in (buckets or []) if str(b.get("label", "")).startswith(family)]
+
+
+def _profile_source(kind, tag, observed_at, confidence="last_known"):
+    ttl = EXPENSIVE_SOURCE_TTL_SEC if tag == "app_server" else _LOCAL_TTL_SEC
+    return {"source": _source_meta(kind, observed_at, ttl, confidence), "source_tag": tag}
+
+
+def _build_profile_rows(orch, peer_records, observed_at):
+    """First-class per-profile rows derived from one collected peer snapshot."""
+    by_peer = {rec.get("peer"): rec for rec in peer_records or []}
+    rows = []
+    for node in orch.get("hub_nodes", []):
+        if node.get("type") != "peer" or not node.get("enabled", True):
+            continue
+        peer_id = node.get("node_id")
+        if not peer_id:
+            continue
+        peer_rec = by_peer.get(peer_id, {})
+        domains = peer_rec.get("domains") or {}
+        root_ctx = domains.get("context") or {}
+        root_quota = domains.get("quota") or {}
+        default_profile = node.get("default_profile")
+        for profile_name, prof in (node.get("profiles") or {}).items():
+            model = prof.get("model_id") or prof.get("runtime_model")
+            effort = prof.get("reasoning_effort")
+            declared_ctx = prof.get("runtime_context_window") or prof.get("context_window")
+            use_active_ctx = (
+                profile_name == default_profile
+                and isinstance(root_ctx.get("window_tokens"), (int, float))
+            )
+            if use_active_ctx:
+                ctx_tag = _source_tag(peer_rec, "context")
+                context = {
+                    "window_tokens": root_ctx.get("window_tokens"),
+                    "used_tokens": root_ctx.get("used_tokens"),
+                    "utilization_pct": root_ctx.get("utilization_pct"),
+                    "basis": "measured_active_profile",
+                    **_profile_source(root_ctx.get("source", {}).get("kind", "live"), ctx_tag,
+                                      root_ctx.get("source", {}).get("observed_at", observed_at),
+                                      root_ctx.get("source", {}).get("confidence", "exact")),
+                }
+            elif isinstance(declared_ctx, (int, float)):
+                context = {
+                    "window_tokens": declared_ctx,
+                    "used_tokens": None,
+                    "utilization_pct": None,
+                    "basis": "declared_profile_capacity",
+                    **_profile_source("cached", "orchestration", observed_at),
+                }
+            else:
+                context = {
+                    "window_tokens": None,
+                    "used_tokens": None,
+                    "utilization_pct": None,
+                    "basis": "unavailable",
+                    **_profile_source("unknown", "absent", observed_at, "unknown"),
+                }
+
+            buckets = _filter_profile_buckets(peer_id, profile_name, root_quota.get("buckets") or [])
+            if buckets:
+                quota_tag = _source_tag(peer_rec, "quota")
+                quota = {
+                    "buckets": buckets,
+                    **_profile_source(root_quota.get("source", {}).get("kind", "live"), quota_tag,
+                                      root_quota.get("source", {}).get("observed_at", observed_at),
+                                      root_quota.get("source", {}).get("confidence", "exact")),
+                }
+            else:
+                quota = {"buckets": [], **_profile_source("unknown", "absent", observed_at, "unknown")}
+
+            # measured > declared (FP-2): the ACTIVE profile shows the live model
+            # from the peer snapshot, source-tagged; non-active keep the declared
+            # orchestration value (rendered "[decl]" downstream).
+            is_active = profile_name == default_profile
+            measured_model = peer_rec.get("model")
+            if is_active and measured_model and measured_model != "Unknown":
+                model = str(measured_model)
+                raw_source = (peer_rec.get("raw") or {}).get("source")
+                model_tag = {
+                    "app-server": "app_server",
+                    "live": "statusline",
+                    "health": "health",
+                }.get(raw_source, "absent")
+            else:
+                model_tag = "orchestration" if model else "absent"
+            effort_tag = "orchestration" if effort else "absent"
+            routing_tag = "orchestration" if prof.get("routing_state") else "absent"
+            rows.append({
+                "profile": f"{peer_id}.{profile_name}",
+                "peer": peer_id,
+                "profile_name": profile_name,
+                "model": model,
+                "effort": effort,
+                "cost_tier": prof.get("cost_tier"),
+                "routing_state": prof.get("routing_state"),
+                "state": prof.get("routing_state") or "unknown",
+                "context": context,
+                "quota": quota,
+                "sources": {
+                    "model": model_tag,
+                    "effort": effort_tag,
+                    "context": context.get("source_tag"),
+                    "quota": quota.get("source_tag"),
+                    "routing": routing_tag,
+                },
+            })
+    return rows
+
+
+_EFFORT_STRENGTH = {
+    "low": 1,
+    "medium": 2,
+    "mid": 2,
+    "high": 3,
+    "max": 4,
+    "xhigh": 4,
+}
+
+
+def _clamped_remaining_from_used_frac(used_frac):
+    if not isinstance(used_frac, (int, float)):
+        return None
+    return max(0.0, min(1.0, 1.0 - float(used_frac)))
+
+
+def _quota_remaining(profile_row):
+    buckets = ((profile_row.get("quota") or {}).get("buckets") or [])
+    values = []
+    for bucket in buckets:
+        remaining = _clamped_remaining_from_used_frac(bucket.get("used_frac"))
+        if remaining is not None:
+            values.append(remaining)
+    return min(values) if values else None
+
+
+def _context_remaining(profile_row):
+    util = (profile_row.get("context") or {}).get("utilization_pct")
+    if not isinstance(util, (int, float)):
+        return None
+    return max(0.0, min(1.0, 1.0 - (float(util) / 100.0)))
+
+
+def _effort_strength(value):
+    return _EFFORT_STRENGTH.get(str(value or "").lower(), 0)
+
+
+def _derive_headroom_rows(snapshot):
+    """Derived routing headroom. Missing inputs remain absent, never estimated."""
+    rows = []
+    profiles = snapshot.get("profiles") or []
+    max_eligible_strength = max(
+        (_effort_strength(row.get("effort")) for row in profiles if row.get("state") == "eligible"),
+        default=0,
+    )
+    for profile in profiles:
+        quota_remaining = _quota_remaining(profile)
+        context_remaining = _context_remaining(profile)
+        headroom = (
+            min(quota_remaining, context_remaining)
+            if quota_remaining is not None and context_remaining is not None
+            else None
+        )
+        strength = _effort_strength(profile.get("effort"))
+        rows.append({
+            "profile": profile.get("profile"),
+            "peer": profile.get("peer"),
+            "state": profile.get("state") or "unknown",
+            "effort": profile.get("effort"),
+            "cost_tier": profile.get("cost_tier"),
+            "quota_remaining": quota_remaining,
+            "context_remaining": context_remaining,
+            "headroom": headroom,
+            "tier_strength": strength,
+            "tier_risk": (
+                headroom is not None
+                and profile.get("state") == "eligible"
+                and strength < max_eligible_strength
+            ),
+            "sources": profile.get("sources") or {},
+        })
+    rows.sort(key=lambda r: (
+        r.get("headroom") is not None,
+        r.get("state") == "eligible",
+        r.get("headroom") if r.get("headroom") is not None else -1.0,
+        r.get("tier_strength", 0),
+    ), reverse=True)
+    return rows
+
+
+def _next_headroom_target(rows):
+    candidates = [
+        row for row in rows
+        if row.get("state") == "eligible" and isinstance(row.get("headroom"), (int, float))
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda r: (r["headroom"], r.get("tier_strength", 0), r.get("profile") or ""))
+
+
+def _fmt_remaining(value):
+    if not isinstance(value, (int, float)):
+        return "absent"
+    return f"{max(0.0, min(1.0, value)) * 100:.0f}%"
+
+
+def _profile_id_from_scope(scope_key, peer_id):
+    text = str(scope_key or "")
+    if ":" in text:
+        candidate = text.rsplit(":", 1)[1]
+        return candidate or peer_id
+    return peer_id
+
+
+def _session_context_measured(peer_id, entry, profile_row, observed_at):
+    """Per-session context/model read from a REAL per-session source only (FP-1).
+    cx: state_5.sqlite threads(id)->rollout_path; cc: projects/*/<session_id>.jsonl.
+    No per-session source (ag, missing file, unknown id) => absent — a profile
+    aggregate is NEVER copied into a session row (DIR-004)."""
+    session_id = entry.get("session_id")
+    window = ((profile_row or {}).get("context") or {}).get("window_tokens")
+
+    def _absent():
+        return {
+            "used_tokens": None,
+            "window_tokens": window if isinstance(window, (int, float)) else None,
+            "utilization_pct": None,
+            "source": _source_meta("unknown", observed_at, _LOCAL_TTL_SEC, "unknown"),
+            "source_tag": "absent",
+            "measured_model": None,
+        }
+
+    if not session_id:
+        return _absent()
+
+    if peer_id == "cx":
+        db_path = SYS_DIR / "codex" / "config" / "state_5.sqlite"
+        if db_path.exists():
+            try:
+                import sqlite3
+                conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+                row = conn.execute(
+                    "SELECT rollout_path, model FROM threads WHERE id=?",
+                    (session_id,)).fetchone()
+                conn.close()
+                if row and row[0]:
+                    used, win = _parse_rollout_context(row[0])
+                    if isinstance(used, (int, float)):
+                        if not isinstance(win, (int, float)):
+                            win = window if isinstance(window, (int, float)) else None
+                        pct = round(used / win * 100, 1) if isinstance(win, (int, float)) and win else None
+                        return {
+                            "used_tokens": used,
+                            "window_tokens": win,
+                            "utilization_pct": pct,
+                            "source": _source_meta("cached", observed_at, _LOCAL_TTL_SEC, "exact"),
+                            "source_tag": "rollout",
+                            "measured_model": str(row[1]) if row[1] else None,
+                        }
+            except Exception:
+                pass
+        return _absent()
+
+    if peer_id == "cc":
+        base_dir = SYS_DIR / "claude" / "config" / "projects"
+        if base_dir.exists():
+            try:
+                found = sorted(base_dir.glob(f"*/{session_id}.jsonl"))
+                if found:
+                    lines = found[0].read_text(encoding="utf-8").splitlines()
+                    for line in reversed(lines[-100:]):
+                        if '"usage"' not in line:
+                            continue
+                        try:
+                            obj = json.loads(line)
+                        except (json.JSONDecodeError, ValueError):
+                            continue
+                        msg = obj.get("message")
+                        if not isinstance(msg, dict):
+                            continue
+                        usage = msg.get("usage")
+                        if not isinstance(usage, dict):
+                            continue
+                        used = (usage.get("input_tokens", 0)
+                                + usage.get("cache_read_input_tokens", 0)
+                                + usage.get("cache_creation_input_tokens", 0)
+                                + usage.get("output_tokens", 0))
+                        pct = round(used / window * 100, 1) if isinstance(window, (int, float)) and window else None
+                        return {
+                            "used_tokens": used,
+                            "window_tokens": window if isinstance(window, (int, float)) else None,
+                            "utilization_pct": pct,
+                            "source": _source_meta("cached", observed_at, _LOCAL_TTL_SEC, "exact"),
+                            "source_tag": "session_jsonl",
+                            "measured_model": msg.get("model"),
+                        }
+            except Exception:
+                pass
+        return _absent()
+
+    return _absent()
+
+
+def _build_session_rows(peers, peer_dirs, profiles, observed_at):
+    """Active session rows with lease/context attached. History stays out."""
+    leases, lease_observed = _read_json_file(PORTABLE_ROOT / ".ai" / "leases.json")
+    profiles_by_id = {row.get("profile"): row for row in profiles or []}
+    rows = []
+    for peer_id in peers:
+        session_path = peer_dirs.get(peer_id, SYS_DIR / peer_id) / "session_state.json"
+        state, session_observed = _read_json_file(session_path)
+        active = state.get("active") if isinstance(state, dict) else {}
+        if not isinstance(active, dict):
+            continue
+        for scope_key, entry in active.items():
+            if not isinstance(entry, dict):
+                continue
+            profile_id = _profile_id_from_scope(entry.get("scope_key") or scope_key, peer_id)
+            lease = leases.get(profile_id) or leases.get(peer_id) or {}
+            profile_row = profiles_by_id.get(profile_id)
+            ctx = _session_context_measured(peer_id, entry, profile_row, observed_at)
+            measured_model = ctx.pop("measured_model", None)
+            profile_model = (profile_row or {}).get("model")
+            if measured_model:
+                session_model = str(measured_model)
+            elif profile_model:
+                session_model = f"[decl] {profile_model}"
+            else:
+                session_model = "absent"
+            rows.append({
+                "peer": peer_id,
+                "profile": profile_id,
+                "scope_key": entry.get("scope_key") or scope_key,
+                "session_id": entry.get("session_id"),
+                "status": entry.get("status") or "unknown",
+                "created_at": entry.get("created_at"),
+                "last_used_at": entry.get("last_used_at"),
+                "last_ask_id": entry.get("last_ask_id"),
+                "model": session_model,
+                "context": ctx,
+                "lease": {
+                    "status": lease.get("status") if isinstance(lease, dict) else None,
+                    "expires_at": lease.get("expires_at") if isinstance(lease, dict) else None,
+                    "heartbeat_at": lease.get("heartbeat_at") if isinstance(lease, dict) else None,
+                    "source": _source_meta(
+                        "cached" if lease else "unknown",
+                        lease_observed or observed_at,
+                        _LOCAL_TTL_SEC,
+                        "last_known" if lease else "unknown",
+                    ),
+                },
+                "source": _source_meta(
+                    "cached",
+                    session_observed or observed_at,
+                    _LOCAL_TTL_SEC,
+                    "last_known",
+                ),
+            })
+    rows.sort(key=lambda r: (str(r.get("last_used_at") or ""), str(r.get("profile") or "")), reverse=True)
+    return rows
+
+
+def _ctx_session_cell(context):
+    context = context or {}
+    used = context.get("used_tokens")
+    window = context.get("window_tokens")
+    if not isinstance(used, (int, float)):
+        return "absent"
+    pct = context.get("utilization_pct")
+    pct_s = f" {pct:.0f}%" if isinstance(pct, (int, float)) else ""
+    win_s = _short(window) if isinstance(window, (int, float)) else "?"
+    return f"{_short(used)}/{win_s}{pct_s}"
 
 
 # Quota alert thresholds (§7). Context thresholds come from governance_params.json.
@@ -839,10 +1463,15 @@ def normalize_peer(info, now=None):
 
     # Quota (cx quota is fetched from the codex app-server = expensive TTL) --
     quotas = info.get("quotas", [])
-    expensive = info.get("peer") == "cx" or any(q.get("expensive") for q in quotas)
+    expensive = (
+        info.get("peer") == "cx"
+        or any(q.get("expensive") or q.get("source") == "cc_usage" for q in quotas)
+    )
+    quota_kind = info.get("quota_source_kind") or kind
+    quota_observed = info.get("quota_observed_at") or observed
     quota = {
         "buckets": quotas,
-        "source": _source_meta(kind if quotas else "unknown", observed,
+        "source": _source_meta(quota_kind if quotas else "unknown", quota_observed,
                                EXPENSIVE_SOURCE_TTL_SEC if expensive else _LOCAL_TTL_SEC,
                                "exact" if quotas else "unknown"),
     }
@@ -904,24 +1533,40 @@ def normalize_peer(info, now=None):
 def collect_snapshot():
     peers, peer_dirs = _discover_peers()
     now = datetime.now().astimezone()
+    observed_at = now.isoformat()
     records = []
     for p in peers:
         try:
             info = gather_peer(p, peer_dirs)
         except Exception as exc:
-            # Resilience (§11): a broken collector degrades to an unknown record
+            # Resilience: a broken collector degrades to an unknown record
             # with the error surfaced (never crashes the whole snapshot).
             info = {"peer": p, "empty": True, "ctx_known": False, "source": "none",
                     "errors": [f"collector_error: {type(exc).__name__}: {exc}"]}
         records.append(normalize_peer(info, now))
-    return {
+    profile_errors = []
+    try:
+        profiles = _build_profile_rows(_read_orchestration(), records, observed_at)
+    except Exception as exc:
+        profiles = []
+        profile_errors.append(f"profile_rows: {type(exc).__name__}: {exc}")
+    try:
+        sessions = _build_session_rows(peers, peer_dirs, profiles, observed_at)
+    except Exception as exc:
+        sessions = []
+        profile_errors.append(f"session_rows: {type(exc).__name__}: {exc}")
+    snapshot = {
         "schema_version": 1,
-        "observed_at": now.isoformat(),
+        "observed_at": observed_at,
         "peers": records,
+        "profiles": profiles,
+        "sessions": sessions,
     }
+    if profile_errors:
+        snapshot["errors"] = profile_errors
+    return snapshot
 
-
-def render_dashboard(stdout=None):
+def render_dashboard(stdout=None, watch_mode=False):
     out = stdout or sys.stdout
     with redirect_stdout(out):
         print("=" * 60)
@@ -940,18 +1585,43 @@ def render_dashboard(stdout=None):
         snapshot = collect_snapshot()
         infos = [p["raw"] for p in snapshot["peers"]]
 
+        # Section order is the unanimous FP-4 spec (2026-07-03): static first,
+        # volatile nearest the prompt — PROFILES&QUOTAS → DETAIL → SESSIONS/
+        # HEADROOM → ALERTS → SUMMARY, identical in default and watch mode.
         print("\n" + "=" * 60)
-        print(_c(" PEER PROFILES", "bold"))
+        print(_c(" PEER PROFILES & QUOTAS", "bold"))
         print("=" * 60)
-        render_profiles(out)
-
-        render_summary(infos)
+        render_profiles(out, snapshot=snapshot)
 
         print("\n" + "=" * 60)
         print(_c(" PEER DETAIL", "bold"))
         print("=" * 60)
         for info in infos:
             render_card(info)
+
+        print("\n" + "=" * 60)
+        print(_c(" ACTIVE SESSIONS & HEADROOM", "bold"))
+        print("=" * 60)
+        render_sessions(out, snapshot=snapshot)
+        target = _next_headroom_target(_derive_headroom_rows(snapshot))
+        if target:
+            risk = " TIER RISK" if target.get("tier_risk") else ""
+            out.write(f"NEXT FAILOVER TARGET: {target.get('profile')} "
+                      f"headroom {_fmt_remaining(target.get('headroom'))}{risk}\n")
+
+        print("\n" + "=" * 60)
+        print(_c(" ALERTS", "bold"))
+        print("=" * 60)
+        alert_count = 0
+        for rec in snapshot["peers"]:
+            for alert in rec.get("alerts") or []:
+                sev = str(alert.get("severity") or "info").upper()
+                print(f"[{sev}] {rec.get('peer')}: {alert.get('code')} {alert.get('message')}")
+                alert_count += 1
+        if not alert_count:
+            print("(no alerts)")
+
+        render_summary(infos)
 
         print("\n" + "=" * 60)
         print(_c(" Note: run '_sys\\cli\\diag' (or diag.bat) anytime to view this screen.", "dim"))
@@ -974,7 +1644,7 @@ def run_watch(interval=5, json_mode=False, stdout=None, sleep=time.sleep, max_fr
             else:
                 if hasattr(out, "isatty") and out.isatty():
                     out.write("\033[2J\033[H")
-                render_dashboard(out)
+                render_dashboard(out, watch_mode=True)
                 out.flush()
             frames += 1
             if max_frames is not None and frames >= max_frames:
@@ -989,57 +1659,95 @@ def run_watch(interval=5, json_mode=False, stdout=None, sleep=time.sleep, max_fr
 # Detail views (§6.2) — all strictly read-only
 # --------------------------------------------------------------------------
 
-def render_profiles(stdout=None):
-    """Generated-profile matrix from orchestration.json. Never inlines raw
-    profile_args / adapter flags (§6.3)."""
+def render_profiles(stdout=None, snapshot=None):
+    """Generated-profile rows from the normalized snapshot.
+
+    The snapshot owns collection; this renderer only formats profile rows and never
+    exposes raw profile_args / adapter flags (section 6.3).
+    """
     out = stdout or sys.stdout
-    out.write("PEER.PROFILE           MODEL                      EFFORT   CTX      ROUTING\n")
-    measured_ctx = {}
-    try:
-        for peer in collect_snapshot().get("peers", []):
-            cw = (peer.get("raw") or {}).get("ctx_window")
-            if isinstance(cw, (int, float)):
-                measured_ctx[peer.get("peer")] = cw
-    except Exception:
-        measured_ctx = {}
-    try:
-        orch = json.loads((SYS_DIR / "ai" / "orchestration.json").read_text(encoding="utf-8"))
-    except Exception:
-        out.write("(orchestration.json unavailable)\n")
+    if snapshot is None:
+        snapshot = collect_snapshot()
+    rows = snapshot.get("profiles") or []
+    if not rows:
+        out.write("(profile rows unavailable)\n")
         return
-    for node in orch.get("hub_nodes", []):
-        if node.get("type") != "peer" or not node.get("enabled", True):
-            continue
-        pid = node.get("node_id", "?")
-        for pname, prof in (node.get("profiles") or {}).items():
-            model = prof.get("model_id") or prof.get("runtime_model")
-            effort = prof.get("reasoning_effort")
-            # measured window (live snapshot) is SSOT; declared is capacity-intent fallback
-            ctx_val = measured_ctx.get(pid) or prof.get("runtime_context_window") or prof.get("context_window")
-            routing = prof.get("routing_state")
+    out.write(f"{'PEER.PROFILE':<22} {'MODEL':<28} {'EFF':<5} {'CTX(used/cap %)':<18} "
+              f"{'5H(bar % pace)':<26} {'WEEKLY(bar % pace)':<26} {'RESET':<18} {'SRC':<12} STATE\n")
+    for row in rows:
+        sources = row.get("sources") or {}
+        model = row.get("model") or "absent"
+        if sources.get("model") == "orchestration" and model != "absent":
+            model = f"[decl] {model}"
+        effort = str(row.get("effort") or "absent")[:5]
 
-            if not ctx_val or not model or not effort:
-                try:
-                    subdir = resolve_peer_sys_dir(pid)
-                    hfile = SYS_DIR / (subdir if subdir else pid) / "health.json"
-                    if hfile.exists():
-                        hdata = json.loads(hfile.read_text(encoding="utf-8"))
-                        hprof = hdata.get("profile", {})
-                        if not model:
-                            model = hprof.get("model") or hprof.get("model_id") or hprof.get("runtime_model")
-                        if not effort:
-                            effort = hprof.get("reasoning_effort") or hprof.get("effort")
-                        if not ctx_val:
-                            ctx_val = hprof.get("context_window") or hdata.get("context_health", {}).get("context_window")
-                except Exception:
-                    pass
+        ctx = row.get("context") or {}
+        win = ctx.get("window_tokens")
+        used = ctx.get("used_tokens")
+        pct = ctx.get("utilization_pct")
+        if win is None:
+            ctx_str = "absent"
+        elif sources.get("context") == "orchestration":
+            ctx_str = f"[decl] {_short(win)}"
+        else:
+            used_s = _short(used) if used is not None else "?"
+            pct_s = f" {pct:.0f}%" if isinstance(pct, (int, float)) else ""
+            ctx_str = f"{used_s}/{_short(win)}{pct_s}"
 
-            model_str = str(model) if model else "?"
-            effort_str = str(effort) if effort else "?"
-            ctx_str = _short(ctx_val) if ctx_val else "?"
-            routing_str = str(routing) if routing else "?"
-            
-            out.write(f"{pid + '.' + pname:<22} {model_str:<26} {effort_str:<8} {ctx_str:<8} {routing_str}\n")
+        bucket_5h = bucket_weekly = None
+        for b in (row.get("quota") or {}).get("buckets") or []:
+            label = str(b.get("label", ""))
+            if "5H" in label:
+                bucket_5h = b
+            elif "7D" in label:
+                bucket_weekly = b
+        q_5h = format_quota_bucket(bucket_5h) if bucket_5h else "absent"
+        q_weekly = format_quota_bucket(bucket_weekly) if bucket_weekly else "absent"
+
+        reset_str = "absent"
+        for b in (bucket_5h, bucket_weekly):
+            reset = b.get("reset") if b else None
+            if reset and str(reset) not in ("?", "absent"):
+                m = re.search(r"\((in [^)]+)\)", str(reset))
+                reset_str = m.group(1) if m else str(reset)[:18]
+                break
+
+        def _fmt_src(tag):
+            return {"orchestration": "decl", "cli_live": "cliv", "app_server": "app",
+                    "statusline": "live", "health": "hlth", "absent": "-"}.get(tag, str(tag)[:4])
+
+        source_str = f"c:{_fmt_src(sources.get('context'))} q:{_fmt_src(sources.get('quota'))}"
+        state = row.get("state") or "unknown"
+        out.write(f"{str(row.get('profile') or 'absent'):<22} {str(model)[:28]:<28} {effort:<5} "
+                  f"{ctx_str:<18} {q_5h:<26} {q_weekly:<26} {reset_str:<18} {source_str:<12} {state}\n")
+
+
+def render_headroom(stdout=None, snapshot=None):
+    """Derived failover/headroom view. Consumes collect_snapshot only."""
+    out = stdout or sys.stdout
+    if snapshot is None:
+        snapshot = collect_snapshot()
+    rows = _derive_headroom_rows(snapshot)
+    target = _next_headroom_target(rows)
+    if target:
+        risk = " TIER RISK" if target.get("tier_risk") else ""
+        out.write(f"NEXT {target.get('profile')} headroom {_fmt_remaining(target.get('headroom'))}{risk}\n")
+    else:
+        out.write("NEXT absent\n")
+    out.write("PROFILE                HEADROOM QUOTA    CTX      EFFORT   STATE       SOURCE\n")
+    for row in rows:
+        sources = row.get("sources") or {}
+        source_str = f"ctx:{sources.get('context') or '?'} q:{sources.get('quota') or '?'}"
+        risk = " TIER RISK" if row.get("tier_risk") else ""
+        out.write(
+            f"{str(row.get('profile') or '?'):<22} "
+            f"{_fmt_remaining(row.get('headroom')):<8} "
+            f"{_fmt_remaining(row.get('quota_remaining')):<8} "
+            f"{_fmt_remaining(row.get('context_remaining')):<8} "
+            f"{str(row.get('effort') or '?'):<8} "
+            f"{str(row.get('state') or 'unknown'):<11} "
+            f"{source_str}{risk}\n"
+        )
 
 
 def render_accounts(stdout=None):
@@ -1069,15 +1777,28 @@ def render_tokens(stdout=None):
         out.write(f"{str(p.get('peer') or '?'):<6} {cost_s:<12} {used_s + '/' + win_s:<19} {tot_s}\n")
 
 
-def render_sessions(stdout=None):
+def render_sessions(stdout=None, snapshot=None):
     """Session state / continuity view."""
     out = stdout or sys.stdout
-    out.write("PEER   STATE        SESSIONS_TODAY  DATA\n")
-    for p in collect_snapshot()["peers"]:
-        s = p.get("domains", {}).get("session", {})
-        cnt = s.get("sessions_today")
-        out.write(f"{str(p.get('peer') or '?'):<6} {str(s.get('state') or 'unknown'):<12} "
-                  f"{(cnt if cnt is not None else '-'):<15} {s.get('source', {}).get('kind', '?')}\n")
+    if snapshot is None:
+        snapshot = collect_snapshot()
+    rows = snapshot.get("sessions") or []
+    if not rows:
+        out.write("(no active sessions)\n")
+        return
+    out.write("PROFILE                MODEL                      STATUS    LEASE     LAST_USED           CTX             SCOPE\n")
+    for row in rows:
+        lease_status = (row.get("lease") or {}).get("status") or "absent"
+        last_used = str(row.get("last_used_at") or "-")[:19]
+        out.write(
+            f"{str(row.get('profile') or '?'):<22} "
+            f"{str(row.get('model') or 'absent')[:26]:<26} "
+            f"{str(row.get('status') or 'unknown'):<9} "
+            f"{str(lease_status):<9} "
+            f"{last_used:<19} "
+            f"{_ctx_session_cell(row.get('context')):<15} "
+            f"{row.get('scope_key') or '-'}\n"
+        )
 
 
 def _git_project_status():
@@ -1123,6 +1844,8 @@ def main(argv=None, stdout=None):
         render_sessions(out); return 0
     if args.project:
         render_project(out); return 0
+    if args.headroom:
+        render_headroom(out); return 0
     render_dashboard(out)
     return 0
 
