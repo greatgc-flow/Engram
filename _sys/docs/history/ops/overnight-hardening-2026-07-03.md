@@ -54,3 +54,12 @@ During the design debates a **mutation-capable peer edited governed config out-o
 
 ## Remaining tasks (governed — recommend user review + consensus in the morning)
 capability_class re-tier · ag profiles from verified models · diag.py refactor · failover engine · G bridge + lessons activation · security D→E→F' with the TEST-NEEDED matrix.
+
+## Daytime session 2026-07-03 (R:10, user-directed: ag-heavy debate)
+- **diag inc-3 SHIPPED (ca04bf5)** — unanimous FP-1..5 (cc verify + ag 2-round debate/patch draft + cx Final Call ACK; cx.deepthink was rate-gated so the hub routed the vote to cx.effort — tier caveat noted):
+  FP-1 per-session measured ctx (cx sqlite→rollout / cc session-jsonl / ag absent; profile aggregate never copied — DIR-004); FP-2 measured>declared model for active profile; FP-3 profile matrix quota columns (5H/weekly bar+pace+reset); FP-4 binding layout PROFILES&QUOTAS→DETAIL→SESSIONS/HEADROOM→ALERTS→SUMMARY (both modes, volatile last). Live-verified: session rows now show real per-session ctx (cx 50k/258k rollout, cc 45k/200k jsonl) and measured session models.
+- **G-bridge SHIPPED (d4cb67c)** — lessons-activate fails closed without a passing enforcement artifact (advisory requires explicit expiry). +test_lesson_propagation.py.
+- **permission matrix tests SHIPPED (e931a06)** — locks r-e374 capability_class tiers as contract tests.
+- 450 unit tests green (_legacy collection errors pre-existing).
+- **New findings (backlog):** (1) hub.py:2988 `ask --query-file` exits 1 SILENTLY when the file is missing — and IPC query files are ephemeral (unlinked after first use, hub.py:3007), so any retry with the same file dies silently; print an error + document one-file-per-attempt. (2) decision_tier_floor vs rate-gate: a deepthink-gated voter forces either a long wait or an effort-tier vote — policy gap for R:10 Final Calls.
+- **Remaining (unchanged):** failover engine inc-4 (router consumes collect_snapshot + snapshot-hash log) · DIR-004 user ratification · security D-matrix TEST-NEEDED · out-of-band-mutation lesson activation via G-bridge.
