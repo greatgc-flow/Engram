@@ -612,7 +612,8 @@
                               "decision_tier_floor":  {
                                                           "enabled":  true,
                                                           "mutating_hub_actions_min_tier":  "effort",
-                                                          "binding_vote_risk_8_plus_min_tier":  "deepthink"
+                                                          "binding_vote_risk_8_plus_min_tier":  "deepthink",
+                                                          "tier_floor_fallback":  "if a required voter's minimum-tier profile is rate-gated or unavailable, the vote MAY be cast at that peer's highest currently-available tier; the caveat MUST be recorded in the consensus record; any peer or the human may demand re-ratification at min-tier once available; offline abstain rules unchanged."
                                                       },
                               "default_shell":  "powershell",
                               "no_code_phases":  [
