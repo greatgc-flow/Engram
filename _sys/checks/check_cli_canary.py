@@ -413,6 +413,71 @@ def run_canary(
     return verdicts
 
 
+def build_observed_capture(verdicts: list[dict], now: datetime | None = None) -> dict:
+    """CAVEAT: a PASS proves the server ACCEPTED the model string and replied OK, 
+    NOT that the backend executed exactly that model. This is empirical confirmation, not enumeration.
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+    iso_ts = now.isoformat()
+    
+    # Only PASS verdicts create/extend a peer entry. A peer with no PASS is
+    # OMITTED entirely so check_cli_reality.load_observed_models() returns None
+    # (=> ABSENT), NOT a measured empty list (which classify_model would read as
+    # "declared model not in actual set" => false CONTRADICTED on transient
+    # canary failure). Absence of measurement must stay absent (DIR-004).
+    capture: dict[str, dict] = {}
+    for v in verdicts:
+        peer = v.get("peer")
+        if not peer or v.get("status") != "PASS":
+            continue
+        model = v.get("model") or ""
+        if not model:
+            continue
+        if peer not in capture:
+            capture[peer] = {
+                "models": [],
+                "captured_at": iso_ts,
+                "provenance": []
+            }
+        if model not in capture[peer]["models"]:
+            capture[peer]["models"].append(model)
+        capture[peer]["provenance"].append({
+            "model": model,
+            "profile": v.get("profile") or "",
+            "verdict": "PASS",
+            "ts": v.get("ts") or iso_ts
+        })
+
+    # Stable ordering for models list
+    for peer in capture:
+        capture[peer]["models"].sort()
+
+    return capture
+
+
+def emit_observed_capture(orch: dict | None, ai_root: Path | None, invoker: Callable[[str, str, str, str], str] | None = None, now: datetime | None = None) -> dict:
+    if now is None:
+        now = datetime.now(timezone.utc)
+    if ai_root is None:
+        ai_root = _AI_DIR
+    else:
+        ai_root = Path(ai_root)
+        
+    verdicts = run_canary(
+        orch=orch,
+        all_profiles=True,
+        invoker=invoker,
+        ai_root=ai_root,
+    )
+    capture = build_observed_capture(verdicts, now=now)
+    
+    out_file = ai_root / "cli-reality-observed.json"
+    ai_root.mkdir(parents=True, exist_ok=True)
+    out_file.write_text(json.dumps(capture, ensure_ascii=False, indent=2), encoding="utf-8")
+    return capture
+
+
 def print_verdicts_table(verdicts: list[dict]):
     """Print the list of verdicts in a clean aligned table format."""
     headers = ["PEER", "PROFILE", "MODEL", "STATUS", "STAGE", "REPLY/DETAIL"]
@@ -447,6 +512,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--peer", help="Comma-separated list of peer IDs or peer.profile strings (e.g., cc,ag.deepthink)")
     parser.add_argument("--all-profiles", action="store_true", help="Probe all profiles for selected peers instead of cheapest")
     parser.add_argument("--force", action="store_true", help="Bypass cache and force invocation")
+    parser.add_argument("--emit-observed", action="store_true", help="Run canary checks, generate and write observed models JSON")
     args = parser.parse_args(argv)
     
     orch_path = _SYS_DIR / "ai" / "orchestration.json"
@@ -455,6 +521,11 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(f"Error loading orchestration.json: {exc}")
         return 1
+        
+    if args.emit_observed:
+        emit_observed_capture(orch, _AI_DIR)
+        print(str((_AI_DIR / "cli-reality-observed.json").resolve()))
+        return 0
         
     peers_list = None
     if args.peer:
