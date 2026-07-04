@@ -1573,3 +1573,69 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
         "candidates": peers,
         "reason": "selected",
     }
+
+
+# ── Smartest-Model Final Arbiter — decision layer (DIR-005) ──────────────────
+# Pure functions only: pick the arbiter, decide whether to fire, and shape the
+# FINAL_OPINION record. Live invocation (calling the arbiter, applying its
+# verdict, budget persistence) is a later increment.
+
+def select_arbiter(snapshot, config):
+    """Pick the arbiter (premium/smartest model) for a final-opinion pass: the
+    FIRST entry of config.arbiter_models (ordered priority) that is currently
+    usable — an entry is usable if some row in _derive_headroom_rows matches it
+    (by profile id first, else peer id), is state=='eligible', and has non-absent
+    (numeric, incl 0.0) headroom. Deterministic config-order fallback chain;
+    returns the arbiter id or None if none usable (caller degrades to plain peer
+    consensus)."""
+    arbiter_models = config.get("arbiter_models", []) or []
+    usable = {}
+    for r in _derive_headroom_rows(snapshot):
+        if r.get("state") != "eligible" or not isinstance(r.get("headroom"), (int, float)):
+            continue
+        prof, peer = r.get("profile"), r.get("peer")
+        if prof is not None:
+            usable[prof] = True
+        if peer is not None:
+            usable.setdefault(peer, True)
+    for entry in arbiter_models:
+        if usable.get(entry):
+            return entry
+    return None
+
+
+def evaluate_arbiter_trigger(context, config, invocations_this_window=0):
+    """DIR-005 trigger gate: fire the arbiter only for a configured trigger kind
+    within the 5h invocation budget. Authority is 'override' for dissent/high_risk
+    (user-ratified 2026-07-04), else 'advisory'."""
+    kind = (context or {}).get("kind")
+    triggers = config.get("triggers", []) or []
+    authority = "override" if kind in ("dissent", "high_risk") else "advisory"
+    try:
+        budget = int(config.get("invocation_budget_5h", 5))
+    except (TypeError, ValueError):
+        budget = 5
+    try:
+        used = int(invocations_this_window)
+    except (TypeError, ValueError):
+        used = 0
+    if kind not in triggers:
+        return {"fire": False, "reason": "not_a_trigger", "kind": kind, "authority": authority}
+    if used >= budget:
+        return {"fire": False, "reason": "budget_exhausted", "kind": kind, "authority": authority}
+    return {"fire": True, "reason": "triggered", "kind": kind, "authority": authority}
+
+
+def build_final_opinion_record(round_id, arbiter, kind, authority, verdict, dissent_summary=None):
+    """Structured, JSON-serializable FINAL_OPINION record (later persisted to the
+    consensus record / routing_metrics by the live-wiring increment)."""
+    return {
+        "type": "FINAL_OPINION",
+        "round_id": round_id,
+        "arbiter": arbiter,
+        "kind": kind,
+        "authority": authority,
+        "verdict": verdict,
+        "dissent_summary": dissent_summary,
+        "ts": datetime.now().astimezone().isoformat(),
+    }

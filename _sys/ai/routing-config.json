@@ -196,5 +196,17 @@
       "cc.deepthink"
     ],
     "_arbiter_doc": "arbiter_models: premium/smartest profiles (cc.fable=Mythos-tier, cc.deepthink=Opus). Structurally EXCLUDED from bulk routing (whole peer) so the expensive model never does routine work (DIR-005). Also the candidate pool for the final-arbiter pass (later increment)."
+  },
+  "final_arbiter": {
+    "_doc": "Smartest-Model Final Arbiter (DIR-005). Decision layer shipped (snapshot.select_arbiter/evaluate_arbiter_trigger/build_final_opinion_record). Live wiring (invoke arbiter, apply verdict, budget persistence) pending. arbiter_models is the canonical list under token_load_balancing (shared with bulk exclusion).",
+    "enabled": false,
+    "triggers": [
+      "dissent",
+      "high_risk",
+      "r10_final"
+    ],
+    "invocation_budget_5h": 5,
+    "target_decision_pct_cap": 0.05,
+    "authority": "override on dissent/high_risk (user-ratified DIR-005), advisory otherwise"
   }
 }
