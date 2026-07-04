@@ -337,3 +337,108 @@ def test_empty_arbiter_models_preserves_existing_behavior(monkeypatch):
     assert result["weights"]["cc"] == 0.0
     assert result["terminal_excluded"] == "non_terminal_above_floor"
     assert result["premium_excluded"] == []
+
+
+# ── P2: Pacing Penalty Tests (design contract §3.3) ──────────────────────────
+
+def _row_pacing(peer, headroom, state="eligible", profile=None, cost_tier="low", effort="high", pacing_max=1.0):
+    return {
+        "peer": peer,
+        "profile": profile or f"{peer}.effort",
+        "state": state,
+        "effort": effort,
+        "cost_tier": cost_tier,
+        "quota_remaining": headroom,
+        "context_remaining": headroom,
+        "headroom": headroom,
+        "pacing_max": pacing_max,
+        "tier_strength": 2,
+        "tier_risk": False,
+        "sources": {},
+    }
+
+
+def test_pacing_penalty_halves_headroom(monkeypatch):
+    _patch_rows(monkeypatch, [
+        _row_pacing("ag", 0.40, pacing_max=2.0),
+        _row_pacing("cx", 0.20, pacing_max=1.0),
+    ])
+    result = snapshot.select_load_balanced_peer({}, CONFIG, ask_id="pacing-halves")
+    assert result["weights"]["ag"] == pytest.approx(0.20)
+    assert result["weights"]["cx"] == pytest.approx(0.20)
+    assert result["probabilities"]["ag"] == pytest.approx(0.5, abs=0.001)
+    assert result["probabilities"]["cx"] == pytest.approx(0.5, abs=0.001)
+    assert result["pacing_applied"]["ag"] == 2.0
+    assert result["pacing_applied"]["cx"] == 1.0
+
+
+def test_pacing_below_one_has_no_penalty(monkeypatch):
+    _patch_rows(monkeypatch, [
+        _row_pacing("ag", 0.20, pacing_max=0.5),
+        _row_pacing("cx", 0.20, pacing_max=1.0),
+    ])
+    result = snapshot.select_load_balanced_peer({}, CONFIG, ask_id="pacing-below-one")
+    assert result["weights"]["ag"] == pytest.approx(0.20)
+    assert result["weights"]["cx"] == pytest.approx(0.20)
+
+
+def test_absent_pacing_treated_as_one(monkeypatch):
+    r1 = _row_pacing("ag", 0.20)
+    del r1["pacing_max"]
+    _patch_rows(monkeypatch, [
+        r1,
+        _row_pacing("cx", 0.20, pacing_max=1.0),
+    ])
+    result = snapshot.select_load_balanced_peer({}, CONFIG, ask_id="pacing-absent")
+    assert result["weights"]["ag"] == pytest.approx(0.20)
+    assert result["weights"]["cx"] == pytest.approx(0.20)
+    assert result["pacing_applied"]["ag"] == 1.0
+    assert result["pacing_applied"]["cx"] == 1.0
+
+
+def test_pacing_penalty_disabled(monkeypatch):
+    cfg = {**CONFIG, "pacing_penalty_enabled": False}
+    _patch_rows(monkeypatch, [
+        _row_pacing("ag", 0.40, pacing_max=2.0),
+        _row_pacing("cx", 0.20, pacing_max=1.0),
+    ])
+    result = snapshot.select_load_balanced_peer({}, cfg, ask_id="pacing-disabled")
+    assert result["weights"]["ag"] == pytest.approx(0.40)
+    assert result["weights"]["cx"] == pytest.approx(0.20)
+    assert result["probabilities"]["ag"] == pytest.approx(2/3, abs=0.001)
+    assert result["probabilities"]["cx"] == pytest.approx(1/3, abs=0.001)
+
+
+def test_design_worked_example_with_pacing(monkeypatch):
+    _patch_rows(monkeypatch, [
+        _row_pacing("cc", 0.12, pacing_max=1.33),
+        _row_pacing("ag", 0.31, pacing_max=0.75),
+        _row_pacing("cx", 0.20, pacing_max=1.64),
+    ])
+    result = snapshot.select_load_balanced_peer(
+        {"schema_version": 1}, CONFIG, terminal_peer="cc", ask_id="worked-example-pacing")
+    assert result["selected_peer"] != "cc"
+    assert result["weights"]["cc"] == 0.0
+    assert result["probabilities"]["ag"] == pytest.approx(0.31 / 0.432, abs=0.001)
+    assert result["probabilities"]["cx"] == pytest.approx((0.20/1.64) / 0.432, abs=0.001)
+    assert result["terminal_excluded"] == "non_terminal_above_floor"
+    assert result["pacing_applied"]["cc"] == 1.33
+    assert result["pacing_applied"]["ag"] == 0.75
+    assert result["pacing_applied"]["cx"] == 1.64
+
+
+def test_derive_headroom_rows_pacing_extraction():
+    snap = {
+        "profiles": [
+            {"profile": "ag.standard", "peer": "ag", "state": "eligible", "effort": "low",
+             "quota": {"buckets": [{"used_frac": 0.05, "pacing": {"ratio": 1.25}},
+                                    {"used_frac": 0.10, "pacing_ratio": 1.50}]},
+             "context": {"utilization_pct": 10.0}, "sources": {}},
+            {"profile": "cx.deepthink", "peer": "cx", "state": "eligible", "effort": "xhigh",
+             "quota": {"buckets": [{"used_frac": 0.20}]},
+             "context": {"utilization_pct": 20.0}, "sources": {}},
+        ]
+    }
+    rows_by_profile = {r["profile"]: r for r in snapshot._derive_headroom_rows(snap)}
+    assert rows_by_profile["ag.standard"]["pacing_max"] == pytest.approx(1.50)
+    assert rows_by_profile["cx.deepthink"]["pacing_max"] == pytest.approx(1.0)

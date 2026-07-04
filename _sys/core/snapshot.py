@@ -1008,6 +1008,22 @@ def _effort_strength(value):
     return _EFFORT_STRENGTH.get(str(value or "").lower(), 0)
 
 
+def _profile_pacing_max(profile):
+    """Worst (max) pacing ratio across a profile's quota buckets; 1.0 when none is
+    measured (DIR-004: absent pacing is never a penalty and never fabricated)."""
+    ratios = []
+    for b in ((profile.get("quota") or {}).get("buckets") or []):
+        if not isinstance(b, dict):
+            continue
+        pacing = b.get("pacing")
+        r = pacing.get("ratio") if isinstance(pacing, dict) else None
+        if not isinstance(r, (int, float)):
+            r = b.get("pacing_ratio")
+        if isinstance(r, (int, float)):
+            ratios.append(float(r))
+    return max(ratios) if ratios else 1.0
+
+
 def _derive_headroom_rows(snapshot):
     """Derived routing headroom. Missing inputs remain absent, never estimated."""
     rows = []
@@ -1034,6 +1050,7 @@ def _derive_headroom_rows(snapshot):
             "quota_remaining": quota_remaining,
             "context_remaining": context_remaining,
             "headroom": headroom,
+            "pacing_max": _profile_pacing_max(profile),
             "tier_strength": strength,
             "tier_risk": (
                 headroom is not None
@@ -1520,20 +1537,30 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
             representatives[peer] = r
     peers = list(representatives.keys())
 
-    # Effective headroom (P1: no pacing) minus numeric cost tie-break.
+    # Effective headroom = H_base / max(1, pacing) (P2, opt-in), then numeric cost
+    # tie-break. Pacing de-weights a peer burning faster than its reset allows;
+    # absent pacing = 1.0 (no penalty, DIR-004). Terminal exclusion compares H_eff.
+    pacing_enabled = config.get("pacing_penalty_enabled", True)
+    h_eff, pacing_applied = {}, {}
+    for peer in peers:
+        p_max = representatives[peer].get("pacing_max", 1.0)
+        if not isinstance(p_max, (int, float)):
+            p_max = 1.0
+        pacing_applied[peer] = round(float(p_max), 2)
+        base = float(representatives[peer]["headroom"])
+        h_eff[peer] = base / max(1.0, float(p_max)) if pacing_enabled else base
+
     raw_weights = {}
     for peer in peers:
-        rep = representatives[peer]
-        ct = rep.get("cost_tier")
+        ct = representatives[peer].get("cost_tier")
         cost = cost_map.get(ct, 0.0) if isinstance(ct, str) else 0.0
-        raw_weights[peer] = max(eps, float(rep["headroom"]) - cost)
+        raw_weights[peer] = max(eps, h_eff[peer] - cost)
 
-    # HARD terminal exclusion: if any non-terminal peer is at/above the floor,
-    # the terminal is zeroed out (never a discount — always minimal).
+    # HARD terminal exclusion: if any non-terminal peer's H_eff is at/above the
+    # floor, the terminal is zeroed out (never a discount — always minimal).
     terminal_excluded = None
     if hard_exclude and terminal_peer and terminal_peer in raw_weights:
-        if any(float(representatives[p]["headroom"]) >= floor
-               for p in peers if p != terminal_peer):
+        if any(h_eff[p] >= floor for p in peers if p != terminal_peer):
             raw_weights[terminal_peer] = 0.0
             terminal_excluded = "non_terminal_above_floor"
 
@@ -1543,6 +1570,7 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
         out["weights"] = {peer: round(raw_weights[peer], 4) for peer in peers}
         out["candidates"] = peers
         out["terminal_excluded"] = terminal_excluded
+        out["pacing_applied"] = pacing_applied
         return out
 
     # Deterministic seeded weighted-random over positive-weight peers only
@@ -1568,6 +1596,7 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
         "probabilities": {peer: round(raw_weights[peer] / total, 4) for peer in peers},
         "terminal_excluded": terminal_excluded,
         "premium_excluded": sorted(premium_excluded),
+        "pacing_applied": pacing_applied,
         "seed": seed,
         "draw": draw,
         "candidates": peers,
