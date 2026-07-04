@@ -130,7 +130,7 @@
           "validated_at": "2026-07-02",
           "validation_method": "successful_invocation",
           "reasoning_effort": "high",
-          "cost_tier": "mid",
+          "cost_tier": "high",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
