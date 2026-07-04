@@ -3187,6 +3187,89 @@ def _shadow_log_load_balance(ai_root: Path | None, actual_peer: str, origin: str
         pass
 
 
+# ── Smartest-Model Final Arbiter — live wiring step 1: budget + decide ────────
+# Budget persistence (rolling 5h window) + a no-model-call DECIDE orchestrator.
+# The actual arbiter invocation + verdict apply + budget increment is step 2.
+
+_ARBITER_BUDGET_WINDOW_SEC = 5 * 3600
+
+
+def _arbiter_budget_count(ai_root: Path | None, now=None) -> int:
+    """Arbiter invocations in the CURRENT rolling 5h window. 0 when fresh, rolled
+    over, or the file is missing/corrupt. Crash-safe (never raises)."""
+    if now is None:
+        now = datetime.now().astimezone()
+    try:
+        if not ai_root:
+            return 0
+        data = _read_json(ai_root / "arbiter_budget.json") or {}
+        ws = data.get("window_start")
+        if not ws:
+            return 0
+        start = datetime.fromisoformat(ws)
+        if (now - start).total_seconds() >= _ARBITER_BUDGET_WINDOW_SEC:
+            return 0
+        return int(data.get("count", 0))
+    except Exception:
+        return 0
+
+
+def _arbiter_record_invocation(ai_root: Path | None, now=None) -> None:
+    """Increment the arbiter invocation count within the current 5h window (start
+    a fresh window on rollover / absent file). Crash-safe (never raises)."""
+    if now is None:
+        now = datetime.now().astimezone()
+    try:
+        if not ai_root:
+            return
+        data = _read_json(ai_root / "arbiter_budget.json") or {}
+        ws = data.get("window_start")
+        rolled = True
+        if ws:
+            try:
+                rolled = (now - datetime.fromisoformat(ws)).total_seconds() >= _ARBITER_BUDGET_WINDOW_SEC
+            except Exception:
+                rolled = True
+        if rolled:
+            new = {"window_start": now.isoformat(), "count": 1}
+        else:
+            new = {"window_start": ws, "count": int(data.get("count", 0)) + 1}
+        path = ai_root / "arbiter_budget.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(new, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def arbiter_decide(ai_root, context, config, snapshot_obj=None, now=None) -> dict:
+    """Decide whether to fire the arbiter (DIR-005) WITHOUT calling any model or
+    incrementing the budget (that is step 2). Combines the rolling budget count,
+    snapshot.evaluate_arbiter_trigger, and snapshot.select_arbiter. Cache-only
+    snapshot — never a fresh collect in a decision path. Returns the trigger
+    decision augmented with `arbiter` (id or None) + `budget_count`."""
+    kind = (context or {}).get("kind")
+    authority = "override" if kind in ("dissent", "high_risk") else "advisory"
+    if not _SNAPSHOT_AVAILABLE or snapshot is None:
+        return {"fire": False, "reason": "snapshot_unavailable", "kind": kind,
+                "authority": authority, "arbiter": None, "budget_count": 0}
+    count = _arbiter_budget_count(ai_root, now=now)
+    decision = snapshot.evaluate_arbiter_trigger(context, config, invocations_this_window=count)
+    decision["arbiter"] = None
+    decision["budget_count"] = count
+    if not decision.get("fire"):
+        return decision
+    snap = snapshot_obj if snapshot_obj is not None else \
+        (getattr(snapshot, "_SNAPSHOT_CACHE", {}) or {}).get("snapshot")
+    arbiter = snapshot.select_arbiter(snap, config) if snap is not None else None
+    if arbiter is None:
+        decision["fire"] = False
+        decision["reason"] = "no_arbiter_available"
+        decision["arbiter"] = None
+        return decision
+    decision["arbiter"] = arbiter
+    return decision
+
+
 def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False) -> None:
     """Public entry: wraps _action_ask_inner with the LL-20260703-005 governed-
     mutation guard. Governed files are hashed before the peer executes and re-
