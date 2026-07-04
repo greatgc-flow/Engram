@@ -3348,6 +3348,49 @@ def invoke_arbiter(ai_root, decision, context, config, invoker, now=None):
     return record
 
 
+def detect_dissent(consensus_round) -> dict:
+    """Classify a consensus round into an arbiter context (pure; never raises).
+    Our rounds require unanimous 'agree', so dissent = any non-agree CAST vote
+    (disagree/abstain) OR any voter with no cast vote (no_vote → unresolved).
+    Only disagree/abstain (which carry a reason) become blocker lines. Returns a
+    context dict ready for arbiter_decide/invoke_arbiter (kind/round_id/proposal/
+    positions[sorted]/blockers[sorted])."""
+    try:
+        rnd = consensus_round or {}
+        round_id = rnd.get("round_id")
+        proposal = rnd.get("subject") or ""
+        voters = list(rnd.get("voters") or [])
+        votes = rnd.get("votes") or {}
+        if not voters:
+            return {"kind": "routine", "round_id": round_id, "proposal": proposal,
+                    "positions": {}, "blockers": []}
+        positions, blockers = {}, []
+        unanimous_agree = True
+        for peer in sorted(voters):
+            v = votes.get(peer)
+            if not isinstance(v, dict):
+                positions[peer] = "no_vote"
+                unanimous_agree = False
+                continue
+            vote = v.get("vote") or "no_vote"
+            positions[peer] = vote
+            if vote != "agree":
+                unanimous_agree = False
+                if vote in ("disagree", "abstain"):
+                    reason = v.get("reason")
+                    blockers.append(f"{peer}: {reason}" if reason else f"{peer}: {vote}")
+        return {
+            "kind": "routine" if unanimous_agree else "dissent",
+            "round_id": round_id,
+            "proposal": proposal,
+            "positions": positions,
+            "blockers": blockers,
+        }
+    except Exception:
+        return {"kind": "routine", "round_id": None, "proposal": "",
+                "positions": {}, "blockers": []}
+
+
 def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False) -> None:
     """Public entry: wraps _action_ask_inner with the LL-20260703-005 governed-
     mutation guard. Governed files are hashed before the peer executes and re-
