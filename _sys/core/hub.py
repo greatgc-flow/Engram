@@ -3186,6 +3186,42 @@ def _load_balancer_config() -> dict:
         return {}
 
 
+def resolve_auto_target(ai_root, config=None, snapshot_obj=None, now=None) -> dict:
+    """Load-balancer DRIVING path for `--to auto`: resolve the target peer via
+    snapshot.select_load_balanced_peer and log the routing decision. Opt-in (does
+    NOT touch explicit --to routing); gated by token_load_balancing.enabled. Fails
+    to {"target": None, "reason": ...} — never raises, never silently defaults."""
+    try:
+        cfg = config if config is not None else _load_balancer_config()
+        if not cfg.get("enabled"):
+            return {"target": None, "reason": "lb_disabled"}
+        if not _SNAPSHOT_AVAILABLE or snapshot is None:
+            return {"target": None, "reason": "snapshot_unavailable"}
+        snap = snapshot_obj if snapshot_obj is not None else snapshot.collect_snapshot()
+        terminal_peer = None
+        if ai_root:
+            try:
+                terminal_peer = (_read_json(ai_root / "state.json") or {}).get("active_coordinator")
+            except Exception:
+                pass
+        decision = snapshot.select_load_balanced_peer(
+            snap, cfg, terminal_peer=terminal_peer, ask_id=_short_id("lb-"))
+        if decision.get("selected_peer"):
+            target = decision["selected_peer"]
+            snap_hash = snapshot.snapshot_hash(snap)
+            if ai_root:
+                try:
+                    _record_routing_metric(ai_root, "load_balance_route", target=target,
+                                           weights=decision.get("weights"), snapshot_hash=snap_hash)
+                except Exception:
+                    pass
+            return {"target": target, "reason": "load_balanced",
+                    "weights": decision.get("weights"), "snapshot_hash": snap_hash}
+        return {"target": None, "reason": decision.get("reason", "no_selection")}
+    except Exception as e:
+        return {"target": None, "reason": f"error: {e}"}
+
+
 def _shadow_log_load_balance(ai_root: Path | None, actual_peer: str, origin: str) -> None:
     """Token load balancer P1 shadow hook. When shadow_log is on, compute the
     balancer's would-be selection from the shared snapshot and append it to
@@ -7875,7 +7911,19 @@ def main() -> None:
         except (RuntimeError, OSError): pass
         if ai_root_opt is not None:
             ensure_ai_dir(ai_root_opt)
-        action_ask(args.to_, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file, session_policy=args.session_policy, explicit_scope=args.scope, origin=origin, allow_governed_mutation=getattr(args, "allow_governed_mutation", False))
+        effective_target = args.to_
+        # Opt-in load-balanced routing: `--to auto` resolves the target peer via
+        # the balancer (gated by token_load_balancing.enabled). Explicit --to is
+        # untouched. Fail loud if auto can't resolve — never silently default.
+        if effective_target == "auto":
+            res = resolve_auto_target(ai_root_opt)
+            if res.get("target"):
+                effective_target = res["target"]
+                print(f"[HUB] LOAD-BALANCED auto -> {effective_target} (weights {res.get('weights')})")
+            else:
+                print(f"[HUB:WARN] auto routing unavailable ({res.get('reason')}); specify an explicit --to", file=sys.stderr)
+                sys.exit(1)
+        action_ask(effective_target, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file, session_policy=args.session_policy, explicit_scope=args.scope, origin=origin, allow_governed_mutation=getattr(args, "allow_governed_mutation", False))
         return
     if args.action == "ask-all":
         ai_root_opt = None
