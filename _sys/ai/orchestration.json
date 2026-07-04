@@ -57,6 +57,11 @@
       ],
       "type": "peer",
       "enabled": true,
+      "security_contract": {
+        "required_effective_args": ["--dangerously-skip-permissions"],
+        "forbidden_effective_args": ["dangerously-bypass-approvals-and-sandbox", "yolo", "full-auto"],
+        "sandbox_semantics": "skip-permissions"
+      },
       "adapter_class": "ClaudeAdapter",
       "invoke": "_sys\\env\\nodejs\\npm-global\\claude.cmd",
       "invoke_args": [
@@ -209,6 +214,11 @@
       ],
       "type": "peer",
       "enabled": true,
+      "security_contract": {
+        "required_effective_args": ["--dangerously-skip-permissions"],
+        "forbidden_effective_args": ["dangerously-bypass-approvals-and-sandbox", "yolo", "full-auto"],
+        "sandbox_semantics": "skip-permissions"
+      },
       "adapter_class": "AgyAdapter",
       "invoke": "_sys\\tools\\agy\\agy.exe",
       "invoke_args": [
@@ -297,6 +307,11 @@
       ],
       "type": "peer",
       "enabled": true,
+      "security_contract": {
+        "required_effective_args": [],
+        "forbidden_effective_args": ["dangerously-bypass-approvals-and-sandbox", "yolo", "full-auto"],
+        "sandbox_semantics": "workspace-write"
+      },
       "adapter_class": "CodexAdapter",
       "invoke": "_sys\\env\\nodejs\\npm-global\\codex.cmd",
       "invoke_args": [

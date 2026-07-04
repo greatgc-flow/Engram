@@ -7611,39 +7611,31 @@ def _check_flag_parity() -> list[str]:
         errors.append(f"PARITY: could not import peer_console.py: {e}")
         return errors
 
-    # Flags that MUST appear in both hub and console paths
-    # Note: --json is a hub-internal cx execution flag, not a
-    # direct-console permission controls, so parity intentionally excludes them.
-    # cx sandbox is checked semantically below (it is enforced via either
-    # `-s workspace-write` or the codex config override `-c sandbox="workspace-write"`).
-    # gc was retired from orchestration.json, so it is no longer a parity target.
-    REQUIRED: dict[str, set[str]] = {
-        "cc": {"--dangerously-skip-permissions"},
-        "ag": {"--dangerously-skip-permissions"},
-    }
-    # Flags that must NEVER appear in any managed peer invocation
-    FORBIDDEN = {
-        "dangerously-bypass-approvals-and-sandbox",
-        "yolo",
-        "full-auto",
-    }
+    # B7: security expectations are DECLARED per peer in orchestration.json
+    # `security_contract` (required_effective_args / forbidden_effective_args /
+    # sandbox_semantics) rather than hardcoded here. A peer that is DISABLED
+    # (e.g. the ca alias) or has NO contract is skipped — DIR-004: never invent a
+    # policy, and a disabled alias must not false-fail. --json (cx hub-internal)
+    # is not a permission control, so it is not part of any contract.
     normalized = hub_peer.normalize_orchestration(_load_orchestration())
-    nodes = {
-        node.get("node_id"): node
-        for node in normalized.get("hub_nodes", [])
-        if node.get("node_id")
-    }
 
-    for peer_id, required in REQUIRED.items():
-        node = nodes.get(peer_id)
-        if not node:
-            errors.append(f"PARITY {peer_id}: no configured orchestration node")
+    for node in normalized.get("hub_nodes", []):
+        peer_id = node.get("node_id")
+        if not peer_id or node.get("type") != "peer":
             continue
+        if not node.get("enabled", False):
+            continue  # disabled peer (e.g. ca) — not an active invocation surface
+        contract = node.get("security_contract")
+        if not contract:
+            continue  # ABSENT contract => nothing declared to reconcile
+
+        required = contract.get("required_effective_args") or []
+        forbidden = contract.get("forbidden_effective_args") or []
+        sandbox = contract.get("sandbox_semantics")
+
         adapter = hub_peer.get_adapter(node)
         if node.get("session_mode") == "reuse":
-            hub_args = adapter.build_session_cmd(
-                node, "parity-check", None
-            ).cmd
+            hub_args = adapter.build_session_cmd(node, "parity-check", None).cmd
         else:
             hub_args, _ = adapter.build_cmd(node, "parity-check")
         console_args = peer_default_args(peer_id, [])
@@ -7660,30 +7652,22 @@ def _check_flag_parity() -> list[str]:
                 errors.append(f"PARITY {peer_id}: required flag '{flag}' missing from console path (peer_console.py)")
 
         for path_name, flag_set in [("hub", hub_set), ("console", console_set)]:
-            for flag in FORBIDDEN:
+            for flag in forbidden:
                 if any(flag in f for f in flag_set):
                     errors.append(f"PARITY {peer_id}: forbidden flag '{flag}' found in {path_name} path")
 
-    # cx workspace-write sandbox parity — semantic check (accepts `-s workspace-write`
-    # OR `-c sandbox="workspace-write"`). Security intent preserved: fails if NO
-    # workspace-write sandbox is present in either path.
-    cx_node = nodes.get("cx")
-    if cx_node:
-        cx_adapter = hub_peer.get_adapter(cx_node)
-        if cx_node.get("session_mode") == "reuse":
-            cx_hub_args = cx_adapter.build_session_cmd(cx_node, "parity-check", None).cmd
-        else:
-            cx_hub_args, _ = cx_adapter.build_cmd(cx_node, "parity-check")
-        cx_paths = [
-            ("hub path (live adapter command)", " ".join(cx_hub_args)),
-            ("console path (peer_console.py)", " ".join(peer_default_args("cx", []))),
-        ]
-        for label, joined in cx_paths:
-            if "workspace-write" not in joined:
-                errors.append(f"PARITY cx: workspace-write sandbox missing from {label}")
-            for bad in FORBIDDEN:
-                if bad in joined:
-                    errors.append(f"PARITY cx: forbidden flag '{bad}' found in {label}")
+        # sandbox_semantics == "workspace-write" is a SEMANTIC check (satisfied by
+        # `-s workspace-write` OR the codex override `-c sandbox="workspace-write"`),
+        # so it is matched as a substring across the joined command, not an exact
+        # argv token. "skip-permissions" needs no extra check — the flag itself is
+        # already covered by required_effective_args above.
+        if sandbox == "workspace-write":
+            for label, joined in [
+                ("hub path (live adapter command)", " ".join(hub_args)),
+                ("console path (peer_console.py)", " ".join(peer_default_args(peer_id, []))),
+            ]:
+                if "workspace-write" not in joined:
+                    errors.append(f"PARITY {peer_id}: workspace-write sandbox missing from {label}")
 
     return errors
 
