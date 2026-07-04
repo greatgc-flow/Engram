@@ -207,9 +207,9 @@ Before building complex runbooks, we need a script that actually proves the bina
 - Integration: Add an optional `--canary` flag to `check_cli_reality.py` that runs this for all enabled profiles if the binary fingerprint has drifted.
 
 ### Phasing
-- **Phase 1 (Now):** Implement `check_cli_canary.py` for empirical E2E verification.
-- **Phase 2:** Implement post-run assertions in `hub.py` (Config `model_id` == `snapshot.py` observed model).
-- **Phase 3:** Automate the generation of `cli-reality-observed.json` via a trusted sandbox PTY scraper script.
+- **Phase 1 (SHIPPED 2026-07-04, commit `01495b4`):** `check_cli_canary.py` — empirical E2E invocation verification. R:10 `r-958c` unanimous.
+- **Phase 2 (DEFERRED 2026-07-04, R:10 `r-e845` unanimous):** post-run `Config.model_id == Telemetry.observed_model` assertion in `hub.py`. **Deferred — not soundly buildable now (see §10).** Re-scoped onto Phase 3.
+- **Phase 3:** Automate the generation of `cli-reality-observed.json` via a trusted sandbox PTY scraper script. This unblocks the *sound* form of Phase 2 (declared-vs-known-good model, no live-timing dependency).
 
 ---
 **Open Questions for Review (cx):**
@@ -248,3 +248,34 @@ Before building complex runbooks, we need a script that actually proves the bina
 **Verdict:** ag GO (design) + cx GO (after the above edits). Phase 1 =
 `_sys/checks/check_cli_canary.py` (invocation canary, opt-in/cached/budgeted,
 cheapest-profile default). This doc is the design contract.
+
+---
+
+## 10. Phase 2 deferral — measured telemetry-semantics blocker (2026-07-04)
+
+Phase 2 proposed a post-ask assertion `Config.model_id == Telemetry.observed_model`
+in `hub.py`. A first ag implementation claimed all three peers expose a per-peer
+observed model. **Terminal verification against the real files refuted the premise
+(DIR-004 — measured, not assumed):**
+
+| Peer | Declared (`orchestration.json`) | Observed telemetry | Soundness |
+| :--- | :--- | :--- | :--- |
+| `cc` | `model_id` per profile (e.g. deepthink=`claude-opus-4-8`) | `status_input.log` model=`{id:claude-opus-4-8, display_name:'Opus 4.8'}` — but this is the **interactive terminal statusline**, NOT a `claude.cmd -p` peer subprocess (which emits no statusline). | **Unsound** — comparing a cc-peer profile (e.g. standard=haiku) vs the terminal's live model = false DESYNC every ask. |
+| `ag` | `model_id` = **null for all profiles** (runtime-resolved) | `ag_stdin.log` model=`{id:'Gemini 3.1 Pro (High)'}` exists | **No comparison** — nothing declared to assert against; helper early-returns. |
+| `cx` | `model_id` per profile (e.g. deepthink=`gpt-5.5`) | `state_5.sqlite` `threads.model` (table confirmed) | **Fragile** — `ORDER BY updated_at DESC LIMIT 1` is timing-dependent (not guaranteed THIS ask); stored format vs declared id unverified. |
+
+Additional blocker: `cli-reality-observed.json` (the known-good model snapshot) does
+not exist yet (its generation is Phase 3, currently manual).
+
+**Decision (R:10 `r-e845` unanimous — ag, cx, cc):** DEFER the live per-ask
+assertion. Shipping it would violate DIR-004 (false-alarms). The sound form —
+declared `model_id` vs a known-good model set with no live-timing dependency —
+is gated on **Phase 3** (`cli-reality-observed.json`). A weaker interim option
+(declared-vs-declared config-integrity, e.g. enabled profile must declare a
+non-null well-formed `model_id`, skipping runtime-null ag) may be picked up
+independently but is not part of this E2E-desync line.
+
+**Lesson (LL):** per-peer subprocess model is not observable from current
+telemetry. `status_input.log` observes the terminal; `ag` declares null; `cx`
+telemetry is post-hoc/timing-fragile. Any "observed model" claim must name the
+exact source and prove it reflects the invoked subprocess before asserting.
