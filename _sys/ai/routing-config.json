@@ -190,6 +190,11 @@
     "select": "seeded_weighted_random",
     "_phase": "P1 (selector shipped; hub hook + shadow-logging next). enabled=False until shadow-validated.",
     "shadow_log": true,
-    "_shadow_doc": "shadow_log=True logs what the balancer WOULD pick (routing_metrics.jsonl event=load_balance_shadow) without driving routing; enabled=False keeps actual routing unchanged. Validate distribution before flipping enabled."
+    "_shadow_doc": "shadow_log=True logs what the balancer WOULD pick (routing_metrics.jsonl event=load_balance_shadow) without driving routing; enabled=False keeps actual routing unchanged. Validate distribution before flipping enabled.",
+    "arbiter_models": [
+      "cc.fable",
+      "cc.deepthink"
+    ],
+    "_arbiter_doc": "arbiter_models: premium/smartest profiles (cc.fable=Mythos-tier, cc.deepthink=Opus). Structurally EXCLUDED from bulk routing (whole peer) so the expensive model never does routine work (DIR-005). Also the candidate pool for the final-arbiter pass (later increment)."
   }
 }

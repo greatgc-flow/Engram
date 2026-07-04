@@ -1481,19 +1481,34 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
     cost_map = config.get("cost_map", {}) or {}
     floor = config.get("effective_headroom_floor", 0.10)
     hard_exclude = config.get("terminal_hard_exclude", True)
+    arbiter_models = set(config.get("arbiter_models", []) or [])
 
-    def _empty(reason):
+    def _empty(reason, premium=None):
         return {"selected": None, "selected_peer": None, "weights": {},
-                "probabilities": {}, "terminal_excluded": None, "seed": None,
+                "probabilities": {}, "terminal_excluded": None,
+                "premium_excluded": sorted(premium or []), "seed": None,
                 "draw": None, "candidates": [], "reason": reason}
 
     # Candidate prefilter (hard): eligible + measured (non-absent) headroom.
-    candidates = [
+    eligible = [
         r for r in _derive_headroom_rows(snapshot)
         if r.get("state") == "eligible" and isinstance(r.get("headroom"), (int, float))
     ]
-    if not candidates:
+    if not eligible:
         return _empty("no_eligible_candidate")
+
+    # Premium/arbiter structural exclusion from BULK (DIR-005): a peer is excluded
+    # from bulk routing if its peer id OR ANY of its profile ids is listed in
+    # config.arbiter_models — the WHOLE peer, not just the matching profile
+    # (premium models must not do routine bulk work). Independent of the
+    # terminal exclusion; premium ID is structural, not the stale active_coordinator.
+    premium_excluded = {
+        r.get("peer") for r in eligible
+        if r.get("peer") in arbiter_models or r.get("profile") in arbiter_models
+    }
+    candidates = [r for r in eligible if r.get("peer") not in premium_excluded]
+    if not candidates:
+        return _empty("no_eligible_candidate", premium_excluded)
 
     # Peer-level aggregation: each peer's representative = its max-headroom row
     # (so multiple profiles of one peer are not double-weighted).
@@ -1524,7 +1539,11 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
 
     total = sum(raw_weights.values())
     if total <= 0.0:
-        return _empty("no_positive_weight")
+        out = _empty("no_positive_weight", premium_excluded)
+        out["weights"] = {peer: round(raw_weights[peer], 4) for peer in peers}
+        out["candidates"] = peers
+        out["terminal_excluded"] = terminal_excluded
+        return out
 
     # Deterministic seeded weighted-random over positive-weight peers only
     # (a zeroed/excluded peer is never drawn, even if draw == 0.0).
@@ -1548,6 +1567,7 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
         "weights": {peer: round(raw_weights[peer], 4) for peer in peers},
         "probabilities": {peer: round(raw_weights[peer] / total, 4) for peer in peers},
         "terminal_excluded": terminal_excluded,
+        "premium_excluded": sorted(premium_excluded),
         "seed": seed,
         "draw": draw,
         "candidates": peers,

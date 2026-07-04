@@ -265,3 +265,75 @@ def test_shadow_hook_is_crash_safe(monkeypatch, tmp_path):
     monkeypatch.setattr(hub.snapshot, "select_load_balanced_peer", _boom)
     # must NOT raise
     hub._shadow_log_load_balance(tmp_path / ".ai", "cc", "terminal")
+
+
+# ── Arbiter-P1: premium/arbiter structural exclusion from bulk (DIR-005) ──────
+
+def test_premium_profile_is_excluded_from_bulk(monkeypatch):
+    cfg = {**CONFIG, "arbiter_models": ["cc.fable"]}
+    _patch_rows(monkeypatch, [
+        _row("cc", 0.90, profile="cc.fable"),
+        _row("ag", 0.20, profile="ag.deepthink"),
+    ])
+    result = snapshot.select_load_balanced_peer({}, cfg, ask_id="premium-profile")
+    assert result["selected_peer"] == "ag"
+    assert "cc" not in result["candidates"]
+    assert "cc" not in result["weights"]
+    assert result["premium_excluded"] == ["cc"]
+
+
+def test_profile_level_arbiter_entry_excludes_whole_peer(monkeypatch):
+    cfg = {**CONFIG, "arbiter_models": ["cc.deepthink"]}
+    _patch_rows(monkeypatch, [
+        _row("cc", 0.90, profile="cc.deepthink"),
+        _row("cc", 0.80, profile="cc.effort"),
+        _row("ag", 0.20, profile="ag.deepthink"),
+    ])
+    result = snapshot.select_load_balanced_peer({}, cfg, ask_id="whole-peer")
+    assert result["selected_peer"] == "ag"
+    assert result["candidates"] == ["ag"]
+    assert "cc" not in result["weights"]
+    assert result["premium_excluded"] == ["cc"]
+
+
+def test_premium_only_eligible_returns_no_candidate(monkeypatch):
+    cfg = {**CONFIG, "arbiter_models": ["cc.fable"]}
+    _patch_rows(monkeypatch, [
+        _row("cc", 0.90, profile="cc.fable"),
+        _row("ag", None, profile="ag.deepthink"),
+    ])
+    result = snapshot.select_load_balanced_peer({}, cfg, ask_id="premium-only")
+    assert result["selected"] is None
+    assert result["selected_peer"] is None
+    assert result["reason"] == "no_eligible_candidate"
+    assert result["premium_excluded"] == ["cc"]
+
+
+def test_premium_exclusion_and_terminal_exclusion_both_apply(monkeypatch):
+    cfg = {**CONFIG, "arbiter_models": ["ag.deepthink"]}
+    _patch_rows(monkeypatch, [
+        _row("cc", 0.09, profile="cc.effort"),
+        _row("ag", 0.31, profile="ag.deepthink"),
+        _row("cx", 0.12, profile="cx.effort"),
+    ])
+    result = snapshot.select_load_balanced_peer({}, cfg, terminal_peer="cc", ask_id="both")
+    assert result["selected_peer"] == "cx"
+    assert result["premium_excluded"] == ["ag"]
+    assert result["terminal_excluded"] == "non_terminal_above_floor"
+    assert result["weights"]["cc"] == 0.0
+    assert "ag" not in result["weights"]
+    assert result["candidates"] == ["cc", "cx"]
+
+
+def test_empty_arbiter_models_preserves_existing_behavior(monkeypatch):
+    cfg = {**CONFIG, "arbiter_models": []}
+    _patch_rows(monkeypatch, [
+        _row("cc", 0.09, profile="cc.fable"),
+        _row("ag", 0.31, profile="ag.deepthink"),
+    ])
+    result = snapshot.select_load_balanced_peer({}, cfg, terminal_peer="cc", ask_id="empty-arbiter")
+    assert "cc" in result["candidates"]
+    assert "ag" in result["candidates"]
+    assert result["weights"]["cc"] == 0.0
+    assert result["terminal_excluded"] == "non_terminal_above_floor"
+    assert result["premium_excluded"] == []
