@@ -198,7 +198,11 @@ def _load_hub():
 def test_shadow_hook_logs_would_select(monkeypatch, tmp_path):
     hub = _load_hub()
     ai_root = tmp_path / ".ai"; ai_root.mkdir()
-    (ai_root / "state.json").write_text('{"active_coordinator": "cc"}', encoding="utf-8")
+    # Fresh coordinator: a far-future challenge_until proves freshness so the
+    # stale-coordinator guard (_fresh_active_coordinator) returns "cc".
+    (ai_root / "state.json").write_text(
+        '{"active_coordinator": "cc", "leadership": {"challenge_until": "2099-01-01T00:00:00"}}',
+        encoding="utf-8")
     monkeypatch.setattr(hub, "_load_balancer_config",
                         lambda: {"shadow_log": True, "enabled": False,
                                  "effective_headroom_floor": 0.10, "terminal_hard_exclude": True,

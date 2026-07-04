@@ -3186,6 +3186,58 @@ def _load_balancer_config() -> dict:
         return {}
 
 
+def _fresh_active_coordinator(state: dict, now: datetime | None = None) -> str | None:
+    """Return state["active_coordinator"] ONLY if backed by a non-stale signal,
+    else None. Used for terminal identity (LB terminal-exclusion) so a days-old
+    coordinator left in state.json (e.g. from a prior test mission) does not
+    cause the WRONG peer to be terminal-excluded.
+
+    Freshness is proven by either: leadership.challenge_until still in the future,
+    OR role_assignments.coordinator.assigned_at within a 4h TTL (accommodates a
+    normal session while decisively rejecting days-old assignments). No heartbeat
+    is invented; if neither signal proves freshness, the coordinator is treated
+    as VACANT (None).
+    """
+    peer = state.get("active_coordinator")
+    if not peer:
+        return None
+    if now is None:
+        now = datetime.now()
+
+    def _cmp_now(dt):
+        # Align naive/aware so the comparison never raises.
+        n = now
+        if dt.tzinfo is not None and n.tzinfo is None:
+            n = n.astimezone()
+        elif dt.tzinfo is None and n.tzinfo is not None:
+            dt = dt.astimezone()
+        return dt, n
+
+    leadership = state.get("leadership") or {}
+    challenge_until_str = leadership.get("challenge_until")
+    if challenge_until_str:
+        try:
+            cu = datetime.fromisoformat(str(challenge_until_str).replace("Z", ""))
+            cu, n = _cmp_now(cu)
+            if cu > n:
+                return peer
+        except (ValueError, TypeError):
+            pass
+
+    coord = (state.get("role_assignments") or {}).get("coordinator") or {}
+    assigned_at_str = coord.get("assigned_at")
+    if assigned_at_str:
+        try:
+            assigned = datetime.fromisoformat(str(assigned_at_str).replace("Z", ""))
+            assigned, n = _cmp_now(assigned)
+            if n - assigned < timedelta(hours=4):
+                return peer
+        except (ValueError, TypeError):
+            pass
+
+    return None
+
+
 def resolve_auto_target(ai_root, config=None, snapshot_obj=None, now=None) -> dict:
     """Load-balancer DRIVING path for `--to auto`: resolve the target peer via
     snapshot.select_load_balanced_peer and log the routing decision. Opt-in (does
@@ -3201,7 +3253,7 @@ def resolve_auto_target(ai_root, config=None, snapshot_obj=None, now=None) -> di
         terminal_peer = None
         if ai_root:
             try:
-                terminal_peer = (_read_json(ai_root / "state.json") or {}).get("active_coordinator")
+                terminal_peer = _fresh_active_coordinator(_read_json(ai_root / "state.json") or {})
             except Exception:
                 pass
         decision = snapshot.select_load_balanced_peer(
@@ -3244,7 +3296,7 @@ def _shadow_log_load_balance(ai_root: Path | None, actual_peer: str, origin: str
             return
         terminal_peer = None
         try:
-            terminal_peer = (_read_json(ai_root / "state.json") or {}).get("active_coordinator")
+            terminal_peer = _fresh_active_coordinator(_read_json(ai_root / "state.json") or {})
         except Exception:
             pass
         ask_id = _short_id("lb-")
