@@ -200,6 +200,8 @@
   "final_arbiter": {
     "_doc": "Smartest-Model Final Arbiter (DIR-005). Decision layer shipped (snapshot.select_arbiter/evaluate_arbiter_trigger/build_final_opinion_record). Live wiring (invoke arbiter, apply verdict, budget persistence) pending. arbiter_models is the canonical list under token_load_balancing (shared with bulk exclusion).",
     "enabled": true,
+    "auto_wire_on_finalize": false,
+    "_auto_wire_doc": "B6: when true, consensus finalization auto-runs the arbiter on dissent/high_risk (executed OUTSIDE the round lock). Default FALSE so premium cc.fable is never spent implicitly; flip to true to activate auto-review. Manual `hub.py arbiter-review --round-id` works regardless.",
     "triggers": [
       "dissent",
       "high_risk",

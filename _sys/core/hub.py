@@ -3593,6 +3593,36 @@ def run_arbiter_on_round(ai_root, consensus_round, config=None, invoker=None, no
             "detail": (record or {}).get("detail")}
 
 
+def _maybe_run_arbiter_on_finalize(ai_root, data) -> None:
+    """B6 auto-wire: on consensus finalization, optionally run the final arbiter
+    when the round is a dissent/high-risk trigger (DIR-005).
+
+    Gated by final_arbiter.auto_wire_on_finalize (default FALSE) IN ADDITION to
+    final_arbiter.enabled, so premium cc.fable tokens are NEVER spent implicitly
+    until the wiring is deliberately activated. MUST be called OUTSIDE the
+    consensus lock: run_arbiter_on_round may spawn a ~300s arbiter subprocess, and
+    holding the per-round lock for that long would stall the consensus path.
+    Never raises — an arbiter review must not break an already-finalized decision.
+    """
+    try:
+        cfg = _final_arbiter_config()
+        if not (cfg.get("enabled") and cfg.get("auto_wire_on_finalize")):
+            return
+        result = run_arbiter_on_round(ai_root, data, config=cfg)
+        round_id = (data or {}).get("round_id")
+        if result.get("fired"):
+            print(f"[HUB] ARBITER auto-review fired on {round_id} (dissent/high_risk)")
+        else:
+            reason = result.get("reason")
+            # Only surface a note when it was gated ON but did not fire for a
+            # substantive reason (budget/no-trigger/invoke-failed) — not the
+            # routine disabled/unanimous no-op.
+            if reason not in (None, "arbiter_disabled", "routine"):
+                print(f"[HUB] ARBITER auto-review skipped on {round_id}: {reason}", file=sys.stderr)
+    except Exception as exc:
+        print(f"[HUB:WARN] arbiter auto-wire error on finalize: {exc}", file=sys.stderr)
+
+
 def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False) -> None:
     """Public entry: wraps _action_ask_inner with the LL-20260703-005 governed-
     mutation guard. Governed files are hashed before the peer executes and re-
@@ -4836,6 +4866,12 @@ def action_consensus_vote(ai_root: Path, round_id: str, voter: str, vote_val: st
             return
         if decided:
             _finalize_round_side_effects(ai_root, data)
+    # OUTSIDE the consensus lock: the arbiter may spawn a ~300s subprocess, so it
+    # must not run while the per-round lock is held (B6 auto-wire; gated OFF by
+    # default). The SandboxRenameDeniedError branch returned early, so reaching
+    # here means this process owns the finalize.
+    if decided:
+        _maybe_run_arbiter_on_finalize(ai_root, data)
 
 
 def _emit_decision_capsule(ai_root: Path, data: dict) -> None:
