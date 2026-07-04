@@ -444,11 +444,13 @@
                                                                               "_sys/docs-v2",
                                                                               "_sys/docs",
                                                                               "_sys/checks",
-                                                                              "_sys/core"
+                                                                              "_sys/core",
+                                                                              "_sys/cli"
                                                                           ],
                                                               "exclude_suffixes":  [
                                                                                        ".pyc",
-                                                                                       ".pyo"
+                                                                                       ".pyo",
+                                                                                       ".log"
                                                                                    ],
                                                               "exclude_dir_names":  [
                                                                                         "__pycache__",
