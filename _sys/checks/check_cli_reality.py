@@ -46,6 +46,7 @@ VERDICT_MATCH = "MATCH"
 VERDICT_DRIFT = "DRIFT"
 VERDICT_ABSENT = "ABSENT"
 VERDICT_CONTRADICTED = "CONTRADICTED"
+VERDICT_OBSERVED_ONLY = "OBSERVED_ONLY"  # measured but nothing declared => no contract to drift from
 
 
 # ── pure logic (unit-tested; no live CLI) ────────────────────────────────────
@@ -78,7 +79,10 @@ def classify_scalar(declared: Any, observed: Any) -> str:
     if observed is None:
         return VERDICT_ABSENT
     if declared is None:
-        return VERDICT_DRIFT  # measured something not declared
+        # Measured a value, but nothing was declared: there is no contract to
+        # drift FROM, so this is informational, not a drift (DIR-004). CLIs also
+        # auto-update, so declaring a version would churn to DRIFT on every bump.
+        return VERDICT_OBSERVED_ONLY
     return VERDICT_MATCH if str(declared) == str(observed) else VERDICT_DRIFT
 
 
@@ -110,6 +114,7 @@ def _severity(verdict: str) -> str:
         VERDICT_DRIFT: "P1",
         VERDICT_ABSENT: "P2",
         VERDICT_MATCH: "ok",
+        VERDICT_OBSERVED_ONLY: "info",
     }[verdict]
 
 

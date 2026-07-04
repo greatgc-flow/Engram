@@ -52,7 +52,10 @@ class TestClassify:
         assert ccr.classify_scalar("1.0.15", "1.0.15") == "MATCH"
         assert ccr.classify_scalar("1.0.15", "1.0.16") == "DRIFT"
         assert ccr.classify_scalar("1.0.15", None) == "ABSENT"
-        assert ccr.classify_scalar(None, "1.0.16") == "DRIFT"
+        # Undeclared but measured => informational, NOT a drift (there is no
+        # contract to drift from). Keeps the observed value visible without a P1.
+        assert ccr.classify_scalar(None, "1.0.16") == "OBSERVED_ONLY"
+        assert ccr._severity("OBSERVED_ONLY") == "info"
 
 
 class TestFingerprint:
