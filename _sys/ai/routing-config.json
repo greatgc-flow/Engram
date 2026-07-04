@@ -179,7 +179,7 @@
   },
   "token_load_balancing": {
     "_doc": "Token load balancer (ops/token-load-balancing-design.md). P1 live: capability-filtered peer-level headroom, HARD terminal exclusion, cost tie-break, seeded weighted-random. P1.5/P2/P3 pending.",
-    "enabled": false,
+    "enabled": true,
     "effective_headroom_floor": 0.1,
     "terminal_hard_exclude": true,
     "cost_map": {
@@ -199,7 +199,7 @@
   },
   "final_arbiter": {
     "_doc": "Smartest-Model Final Arbiter (DIR-005). Decision layer shipped (snapshot.select_arbiter/evaluate_arbiter_trigger/build_final_opinion_record). Live wiring (invoke arbiter, apply verdict, budget persistence) pending. arbiter_models is the canonical list under token_load_balancing (shared with bulk exclusion).",
-    "enabled": false,
+    "enabled": true,
     "triggers": [
       "dissent",
       "high_risk",
