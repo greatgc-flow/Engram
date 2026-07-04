@@ -3391,6 +3391,75 @@ def detect_dissent(consensus_round) -> dict:
                 "positions": {}, "blockers": []}
 
 
+def _final_arbiter_config() -> dict:
+    """Merged arbiter config: token_load_balancing (arbiter_models/cost_map)
+    overlaid by final_arbiter (enabled/triggers/budget win). {} on error. Note:
+    final_arbiter.enabled overrides token_load_balancing.enabled, so bulk routing
+    can stay disabled while arbiter review is independently gated."""
+    try:
+        path = Path(__file__).resolve().parents[1] / "ai" / "routing-config.json"
+        data = json.loads(path.read_text(encoding="utf-8-sig")) or {}
+        tlb = data.get("token_load_balancing", {}) or {}
+        fa = data.get("final_arbiter", {}) or {}
+        return {**tlb, **fa}
+    except Exception:
+        return {}
+
+
+def _real_arbiter_invoker(ai_root):
+    """Single-shot invoker(arbiter_id, prompt)->str that asks the arbiter via a
+    hub.py SUBPROCESS (avoids action_ask re-entrancy) and returns the reply with
+    hub log lines stripped. Raises RuntimeError on any failure so
+    invoke_arbiter's no-budget-spend path triggers. Production-only — the
+    orchestrator tests always inject a mock, so this never runs under test."""
+    def _invoke(arbiter_id, prompt):
+        import subprocess
+        import uuid
+        try:
+            ipc_dir = Path(__file__).resolve().parents[1] / "ai" / "ipc"
+            ipc_dir.mkdir(parents=True, exist_ok=True)
+            qf = ipc_dir / f"arbiter-{uuid.uuid4().hex[:8]}.txt"
+            qf.write_text(prompt, encoding="utf-8")
+            proc = subprocess.run(
+                [sys.executable, str(Path(__file__).resolve()), "ask",
+                 "--to", str(arbiter_id), "--query-file", str(qf)],
+                capture_output=True, text=True, timeout=300,
+            )
+            out = proc.stdout or ""
+            lines = [ln for ln in out.splitlines()
+                     if not ln.startswith("[HUB")
+                     and not ln.lstrip().startswith("━━")
+                     and not ln.startswith("[OOM")]
+            reply = "\n".join(lines).strip()
+            if not reply:
+                raise RuntimeError(f"arbiter {arbiter_id} returned no usable reply")
+            return reply
+        except Exception as exc:
+            raise RuntimeError(f"arbiter invoke failed: {exc}")
+    return _invoke
+
+
+def run_arbiter_on_round(ai_root, consensus_round, config=None, invoker=None, now=None) -> dict:
+    """Enable-gated arbiter orchestrator (manual entry point; NOT auto-wired into
+    the consensus vote flow). Ties the shipped pieces together: detect_dissent ->
+    arbiter_decide -> invoke_arbiter (real single-shot invoker by default). Spends
+    NO cc.fable token unless final_arbiter.enabled AND the round is a real trigger
+    within budget with a usable arbiter."""
+    cfg = config if config is not None else _final_arbiter_config()
+    if not cfg.get("enabled"):
+        return {"fired": False, "reason": "arbiter_disabled"}
+    context = detect_dissent(consensus_round)
+    decision = arbiter_decide(ai_root, context, cfg, now=now)
+    if not decision.get("fire"):
+        return {"fired": False, "reason": decision.get("reason"), "kind": decision.get("kind")}
+    inv = invoker if invoker is not None else _real_arbiter_invoker(ai_root)
+    record = invoke_arbiter(ai_root, decision, context, cfg, inv, now=now)
+    if record and record.get("type") == "FINAL_OPINION":
+        return {"fired": True, "final_opinion": record}
+    return {"fired": False, "reason": (record or {}).get("error", "invoke_failed"),
+            "detail": (record or {}).get("detail")}
+
+
 def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False) -> None:
     """Public entry: wraps _action_ask_inner with the LL-20260703-005 governed-
     mutation guard. Governed files are hashed before the peer executes and re-
@@ -7635,7 +7704,7 @@ def main() -> None:
         prog="hub",
         description="AI collaboration hub - Protocol v4.2",
     )
-    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-all", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "thread-promote", "alert-raise", "proposal-add", "proposal-vote", "proposal-list", "broker-submit", "broker-drain", "broker-status", "update-signatures"])
+    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-all", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "thread-promote", "alert-raise", "proposal-add", "proposal-vote", "proposal-list", "broker-submit", "broker-drain", "broker-status", "update-signatures", "arbiter-review"])
     parser.add_argument("--ai-root", dest="ai_root",
                         help="Explicit .ai root; pins HUB_AI_ROOT for this process (deterministic; avoids the cwd-phantom bug)")
     parser.add_argument("--needs")
@@ -7960,6 +8029,15 @@ def main() -> None:
         action_broker_status(ai_root)
     elif act == "update-signatures":
         action_update_signatures()
+    elif act == "arbiter-review":
+        rid = args.round_id
+        round_path = (ai_root / "consensus" / f"{rid}.json") if (ai_root and rid) else None
+        if not rid or round_path is None or not round_path.exists():
+            print(f"[HUB:ERROR] arbiter-review: consensus round not found: {rid}", file=sys.stderr)
+            sys.exit(1)
+        rnd = _read_json(round_path)
+        result = run_arbiter_on_round(ai_root, rnd)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
 
 def global_exception_trap(exc_type, exc_value, exc_traceback):
     import traceback

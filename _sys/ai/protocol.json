@@ -626,7 +626,8 @@
                                                                                "proposal-vote",
                                                                                "proposal-list",
                                                                                "broker-submit",
-                                                                               "broker-status"
+                                                                               "broker-status",
+                                                                               "arbiter-review"
                                                                            ]
                                                     },
                               "decision_tier_floor":  {
@@ -737,7 +738,8 @@
                                                             "lessons-list",
                                                             "lesson-inject",
                                                             "proposal-list",
-                                                            "broker-status"
+                                                            "broker-status",
+                                                            "arbiter-review"
                                                         ],
                               "phase_action_matrix":  {
                                                           "default":  {
