@@ -312,3 +312,36 @@ Reconcile these against the adapter-built hub args + `peer_console` args (a new
 check, or a `security` dimension folded into `check_cli_reality`). Do **NOT** parse
 free-text DIR-002 notes into the checker — only the machine-readable contract is
 authoritative. Enforcement-behavior probing is a separate, later step.
+
+### 11a. B7 static arg-parity — IMPLEMENTED (2026-07-05, R:10 `r-f6b5`)
+
+The `security_contract` block is now declared per peer in `orchestration.json`
+(cc/ag `skip-permissions`, cx `workspace-write`; the disabled `ca` alias has
+none). `hub._check_flag_parity()` reads it — skipping non-peer / disabled /
+contract-less nodes (DIR-004: no invented policy, disabled alias must not
+false-fail) — and reconciles `required_effective_args` present + `forbidden_
+effective_args` absent across BOTH the hub adapter command and `peer_console`
+defaults, plus the `workspace-write` semantic (substring, `-s` or `-c sandbox=`).
+The old hardcoded REQUIRED/FORBIDDEN maps were removed. Wired into
+`check_contracts`; live parity is clean. Tests: `test_security_contract_parity.py`.
+
+### 11b. Enforcement-BEHAVIOR probe — DEFERRED (2026-07-05, R:10 `r-f253` unanimous)
+
+Verifying the CLI actually **honors** the sandbox/permission at runtime (not just
+that the flag is present) is **deferred** — measured feasibility (DIR-004):
+- No existing signal observes a PEER CLI's enforcement. The hub's own
+  `_is_sandbox_rename_denied` / `_is_sandbox_spawn_denied` detectors concern the
+  HUB's sandbox, not a peer's.
+- **Attack-probing** (prompt the peer to attempt an out-of-sandbox op and parse
+  blocked/allowed) is real-token, non-deterministic (the model may refuse or
+  describe instead of attempt), and safety-sensitive.
+- **Self-reported effective mode** is only PARTIAL: `ag_stdin.log` carries a
+  `sandbox` field, but a machine-readable effective-sandbox field for cc/cx
+  (e.g. in `codex exec --json`) is unproven.
+
+**Decision:** keep the shipped static arg-parity (§11a) as the automated gate.
+**Unblock condition:** add behavioral verification only once a *proven*
+machine-readable effective-sandbox self-report field exists across the target
+CLIs (then parse-and-assert == declared `sandbox_semantics` — sound, cheap,
+deterministic, no attack). Until then, behavioral enforcement stays a manual/
+ad-hoc step.
