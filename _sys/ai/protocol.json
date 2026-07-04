@@ -442,6 +442,7 @@
                                                                               "_sys/ai/peers.json",
                                                                               "_sys/ai/user-directives.md",
                                                                               "_sys/docs-v2",
+                                                                              "_sys/docs",
                                                                               "_sys/checks",
                                                                               "_sys/core"
                                                                           ],

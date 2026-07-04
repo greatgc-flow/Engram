@@ -3032,6 +3032,51 @@ def _stream_process_output(proc, cmd, input_bytes, heartbeat_sec, zombie_timeout
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# Legit top-level entries; anything else appearing at the repo root or as a NEW
+# _sys/ subdir during a peer ask is a phantom out-of-band write (LL-20260703-005).
+_PHANTOM_ROOT_ALLOW = {
+    ".git", ".ai", "_sys", ".claude", ".vscode", "_archive", "tmp", "workspace",
+    ".gitattributes", ".gitignore", ".pytest_cache",
+    "AGENTS.md", "CLAUDE.md", "CLEANUP.bat", "CONVENTION.md", "GEMINI.md",
+    "INSTALL.bat", "PROTOCOL.md", "README.md", "register.bat", "unregister.bat",
+}
+_PHANTOM_SYS_ALLOW = {
+    "ai", "antigravity", "checks", "claude", "cli", "codex", "config", "core",
+    "data", "docs", "docs-v2", "env", "gemini", "git-config", "hooks",
+    "mock_peer", "pytest_local", "templates", "tests", "tools",
+}
+
+
+def _phantom_scan() -> set[str]:
+    """Cheap (two os.listdir, no tree walk) scan for UNEXPECTED entries at the
+    repo root + NEW dirs directly under _sys. Returns the set of unexpected paths
+    (repo-relative). Compared pre/post a peer ask to catch phantom out-of-band
+    writes the governed-manifest hashing misses (root ops/, scratch dirs, junk
+    files). Crash-safe: any error -> empty set. Also folds in fixed .gitignore
+    entries so standard tooling output is not flagged."""
+    allow = set(_PHANTOM_ROOT_ALLOW)
+    phantoms: set[str] = set()
+    try:
+        gi = _REPO_ROOT / ".gitignore"
+        if gi.exists():
+            for line in gi.read_text(encoding="utf-8").splitlines():
+                name = line.strip().strip("/")
+                if name and not name.startswith("#") and "*" not in name and "?" not in name:
+                    allow.add(name)
+        for entry in os.listdir(_REPO_ROOT):
+            if entry not in allow:
+                phantoms.add(entry)
+        sys_dir = _REPO_ROOT / "_sys"
+        if sys_dir.exists():
+            for entry in os.listdir(sys_dir):
+                if entry.startswith(".") or entry == "__pycache__":
+                    continue  # tooling artifacts (.pytest_cache, __pycache__) are not phantoms
+                if entry not in _PHANTOM_SYS_ALLOW and (sys_dir / entry).is_dir():
+                    phantoms.add(f"_sys/{entry}")
+    except Exception:
+        return set()
+    return phantoms
+
 
 def _governed_files(protocol_cfg: dict | None = None) -> list[Path]:
     """Resolve the machine-readable governed-file manifest (protocol.json
@@ -3470,11 +3515,14 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     architecture (delegation returns CONTENT; the terminal writes it), so any
     change in the window is out-of-band."""
     gov_pre: dict[str, str] | None = None
+    phantom_pre: set[str] | None = None
     if not allow_governed_mutation:
         try:
             gov_pre = _snapshot_governed_hashes()
+            phantom_pre = _phantom_scan()
         except Exception:
             gov_pre = None
+            phantom_pre = None
     try:
         return _action_ask_inner(
             to, query, query_file, timeout_sec, ai_root, quiet, output_file,
@@ -3487,6 +3535,25 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 _governed_post_check(gov_pre, ai_root, to, origin)
             except Exception as exc:
                 print(f"[HUB:WARN] governed guard post-check error: {exc}", file=sys.stderr)
+        if phantom_pre is not None:
+            try:
+                phantom_new = _phantom_scan() - phantom_pre
+                if phantom_new:
+                    print(f"[HUB:WARN] PHANTOM_WRITE VIOLATION: new out-of-tree paths created "
+                          f"during peer ask (peer={to}, origin={origin}): "
+                          f"{', '.join(sorted(phantom_new))} — LL-20260703-005; not auto-removed.",
+                          file=sys.stderr)
+                    if ai_root:
+                        path = ai_root / "operational_errors.jsonl"
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        with path.open("a", encoding="utf-8") as f:
+                            f.write(json.dumps({
+                                "ts": _now(), "type": "PHANTOM_WRITE",
+                                "lesson": "LL-20260703-005", "peer": to, "origin": origin,
+                                "changed_files": sorted(phantom_new),
+                            }, ensure_ascii=False) + "\n")
+            except Exception as exc:
+                print(f"[HUB:WARN] phantom guard post-check error: {exc}", file=sys.stderr)
 
 
 def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False) -> None:
