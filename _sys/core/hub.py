@@ -3270,6 +3270,84 @@ def arbiter_decide(ai_root, context, config, snapshot_obj=None, now=None) -> dic
     return decision
 
 
+def condense_arbiter_input(context) -> str:
+    """Terminal-local, deterministic, bounded (~300-token / ~1200-char) condensed
+    summary of a contested decision for the arbiter's single-shot input. Sections
+    in a stable order (PROPOSAL, POSITIONS[sorted by peer], BLOCKERS, EVIDENCE);
+    missing sections omitted; over-length truncated with a marker. Never raises."""
+    def _s(v):
+        try:
+            return str(v)
+        except Exception:
+            return "<unprintable>"
+
+    ctx = context or {}
+    parts = []
+    if ctx.get("proposal") is not None:
+        parts.append("PROPOSAL: " + _s(ctx.get("proposal")))
+    positions = ctx.get("positions")
+    if positions:
+        lines = ["POSITIONS:"]
+        try:
+            items = sorted(positions.items(), key=lambda kv: _s(kv[0]))
+        except Exception:
+            items = list(positions.items()) if hasattr(positions, "items") else []
+        for k, v in items:
+            lines.append(f"  {_s(k)}: {_s(v)}")
+        parts.append("\n".join(lines))
+    for key, header in (("blockers", "BLOCKERS:"), ("evidence", "EVIDENCE:")):
+        seq = ctx.get(key)
+        if not seq:
+            continue
+        try:
+            items = list(seq)
+        except Exception:
+            items = [seq]
+        parts.append("\n".join([header] + [f"  - {_s(i)}" for i in items]))
+
+    text = "\n".join(parts)
+    cap, marker = 1200, "...<truncated>"
+    if len(text) > cap:
+        text = text[: cap - len(marker)] + marker
+    return text
+
+
+def invoke_arbiter(ai_root, decision, context, config, invoker, now=None):
+    """Arbiter live-wiring step 2: given a FIRE decision, build the condensed
+    input, invoke the arbiter ONCE via the injected `invoker(arbiter_id, prompt)`,
+    persist the FINAL_OPINION to .ai/final_opinions.jsonl, and spend one budget
+    unit. A missing/failed invoker spends NO budget (an expensive call that never
+    completed must not consume the budget). Step 3 supplies the real invoker + the
+    consensus-flow dissent hook."""
+    if not decision or not decision.get("fire"):
+        return None
+    arbiter = decision.get("arbiter")
+    if invoker is None:
+        return {"error": "no_invoker", "arbiter": arbiter}
+    condensed = condense_arbiter_input(context)
+    try:
+        verdict_text = invoker(arbiter, condensed)
+    except Exception as exc:
+        return {"error": "invoker_failed", "detail": str(exc)[:200], "arbiter": arbiter}
+    record = snapshot.build_final_opinion_record(
+        round_id=(context or {}).get("round_id"),
+        arbiter=arbiter,
+        kind=decision.get("kind"),
+        authority=decision.get("authority"),
+        verdict=verdict_text,
+        dissent_summary=condensed,
+    )
+    try:
+        path = ai_root / "final_opinions.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    _arbiter_record_invocation(ai_root, now=now)
+    return record
+
+
 def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False) -> None:
     """Public entry: wraps _action_ask_inner with the LL-20260703-005 governed-
     mutation guard. Governed files are hashed before the peer executes and re-
