@@ -753,6 +753,7 @@ def gather_peer(peer, peer_dirs):
     if effort_val and effort_val.lower() not in model_name.lower() and effort_val != "null":
         model_name = f"{model_name} ({effort_val})"
     info["model"] = model_name
+    quotas.sort(key=lambda q: str(q.get("label", "")))
     info["quotas"] = quotas
 
     # Context percentage fallback (only when occupancy is genuinely known)

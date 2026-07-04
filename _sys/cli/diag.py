@@ -58,6 +58,42 @@ def _c(text, *codes):
     return f"{prefix}{text}{_ANSI['reset']}"
 
 
+def _dw(s):
+    """Display width: emoji/CJK = 2 cols, combining/ZWJ/VS = 0, ANSI stripped."""
+    import unicodedata
+    if not isinstance(s, str):
+        s = str(s)
+    s = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", s)
+    w = 0
+    for ch in s:
+        cp = ord(ch)
+        cat = unicodedata.category(ch)
+        if cat.startswith("M") or cp in (0x200D, 0x200B) or 0xFE00 <= cp <= 0xFE0F or 0xE0100 <= cp <= 0xE01EF:
+            continue
+        if 0x1F300 <= cp <= 0x1FAFF or 0x2600 <= cp <= 0x27BF:
+            w += 2
+        elif unicodedata.east_asian_width(ch) in ("W", "F"):
+            w += 2
+        else:
+            w += 1
+    return w
+
+
+def _pad(s, width, align="left"):
+    """Pad to a target DISPLAY width using _dw (pad RAW text before coloring)."""
+    if not isinstance(s, str):
+        s = str(s)
+    diff = width - _dw(s)
+    if diff <= 0:
+        return s
+    if align == "right":
+        return " " * diff + s
+    if align == "center":
+        return " " * (diff // 2) + s + " " * (diff - diff // 2)
+    return s + " " * diff
+
+
+
 def _sev_color(used_frac):
     """Map a USED fraction (0..1) to a severity color name."""
     if used_frac >= 0.90:
@@ -142,22 +178,41 @@ def _health_label(info):
 
 
 def render_summary(infos):
+    """SUMMARY (nearest prompt): per-peer header + sorted quota continuation rows
+    (label, glyph, pct, pace, reset), WARN>=0.90, glyph=absent(literal)/emoji."""
     print("\n" + "=" * 60)
     print(_c(" SUMMARY", "bold"))
     print("=" * 60)
-    header = f"{'PEER':<5} {'GATE':<6} {'MODEL':<24} {'CONTEXT':<14} {'COST':<9} DATA"
-    print(_c(header, "dim"))
+    headers = [_pad("PEER", 5), _pad("GATE", 6), _pad("MODEL", 24),
+               _pad("CONTEXT(used/win %)", 19), _pad("COST", 9), _pad("SRC", 12)]
+    print(_c(" ".join(headers).rstrip(), "dim"))
     for info in infos:
         peer = info["peer"].upper()
-        model = (info["model"] or "Unknown")
+        model = info["model"] or "Unknown"
         if len(model) > 24:
             model = model[:21] + "..."
         cost = f"${info['cost']:.4f}" if isinstance(info["cost"], (int, float)) else "-"
-        # Pad on the raw cells, then colorize gate separately to keep alignment.
         gate_raw = "OPEN" if info.get("gate") else ("QUAR" if info.get("quarantined")
-                                                    else ("SHUT" if info.get("gate") is False else "n/a"))
-        line = f"{peer:<5} {gate_raw:<6} {model:<24} {_ctx_cell_raw(info):<14} {cost:<9} {info['source']}"
-        print(line)
+                    else ("SHUT" if info.get("gate") is False else "n/a"))
+        gate_cell = _pad(gate_raw, 6)
+        if gate_raw == "OPEN":
+            gate_cell = _c(gate_cell, "green")
+        elif gate_raw == "QUAR":
+            gate_cell = _c(gate_cell, "red", "bold")
+        elif gate_raw == "SHUT":
+            gate_cell = _c(gate_cell, "yellow")
+        print(f"{_pad(peer, 5)} {gate_cell} {_pad(model, 24)} "
+              f"{_pad(_ctx_cell_raw(info), 19)} {_pad(cost, 9)} {_pad(info.get('source', 'none'), 12)}")
+        for q in sorted(info.get("quotas") or [], key=lambda x: str(x.get("label", ""))):
+            uf = q.get("used_frac")
+            if uf is None:
+                continue
+            glyph = "🚫" if uf >= 1.0 else ("🔴" if uf >= 0.90
+                    else ("🟡" if uf >= 0.75 else "🟢"))
+            pct = _pad(f"{uf * 100:.0f}%", 4, align="right")
+            pace = _pad(_fmt_pacing(q.get("pacing")), 10)
+            warn = "  " + _c("WARN", "red", "bold") if uf >= 0.90 else ""
+            print(f"  ↳ {_pad(q.get('label', ''), 6)} {_pad(glyph, 2)} {pct} {pace} resets {q.get('reset') or '?'}{warn}")
 
 
 def _ctx_cell_raw(info):
@@ -175,7 +230,6 @@ def render_card(info):
     if info["empty"]:
         print(f"[ {peer} ] " + _c("(no data found)", "dim"))
         return
-
     head_bits = [info["model"] or "Unknown", _health_label(info)]
     if info.get("agent_state"):
         head_bits.append(str(info["agent_state"]).upper())
@@ -185,34 +239,12 @@ def render_card(info):
     if info.get("plan_tier"):
         print(_c(f"   Plan: {info['plan_tier']}", "dim"))
     print("-" * 60)
-
-    # Context bar
     if not info.get("ctx_known"):
         print(f" Context : (current occupancy n/a)  window {_short(info['ctx_window'])}")
     else:
         cpct = info["ctx_pct"] if isinstance(info["ctx_pct"], (int, float)) else 0
         bar = _bar(cpct / 100.0)
         print(f" Context : {bar} {cpct:>4.0f}% ({_short(info['ctx_used'])}/{_short(info['ctx_window'])})")
-
-    # Quota bars
-    if info["quotas"]:
-        width = max(len(q["label"]) for q in info["quotas"])
-        for q in info["quotas"]:
-            uf = q.get("used_frac")
-            is_num = isinstance(uf, (int, float))
-            metric = format_quota_bucket(q)
-            # Restore severity ANSI color on the bar/pacing (regressed when
-            # format_quota_bucket was introduced in inc-1). Pad BEFORE coloring
-            # so ANSI escapes don't break the fixed-width column; color is a
-            # renderer concern (data layer stays plain), TTY-gated via _c.
-            metric_cell = f"{metric:<24}"
-            if is_num:
-                metric_cell = _c(metric_cell, _sev_color(uf))
-            warn = "  " + _c("WARN", "red", "bold") if (is_num and uf >= 0.90) else ""
-            print(f" {q['label']:<{width}} : {metric_cell} resets {q['reset']}{warn}")
-    elif info.get("cx_quota_unavailable"):
-        print(_c(" Quota   : (codex app-server unavailable)", "dim"))
-
     if info.get("quarantine_reason"):
         print(_c(f" Quarantine reason: {info['quarantine_reason']}", "red"))
     if info.get("total_tokens"):
@@ -343,7 +375,7 @@ def render_dashboard(stdout=None, watch_mode=False):
         # volatile nearest the prompt — PROFILES&QUOTAS → DETAIL → SESSIONS/
         # HEADROOM → ALERTS → SUMMARY, identical in default and watch mode.
         print("\n" + "=" * 60)
-        print(_c(" PEER PROFILES & QUOTAS", "bold"))
+        print(_c(" PROFILES & ROUTING", "bold"))
         print("=" * 60)
         render_profiles(out, snapshot=snapshot)
 
@@ -414,11 +446,8 @@ def run_watch(interval=5, json_mode=False, stdout=None, sleep=time.sleep, max_fr
 # --------------------------------------------------------------------------
 
 def render_profiles(stdout=None, snapshot=None):
-    """Generated-profile rows from the normalized snapshot.
-
-    The snapshot owns collection; this renderer only formats profile rows and never
-    exposes raw profile_args / adapter flags (section 6.3).
-    """
+    """PROFILES & ROUTING (MECE topology only): profile | model | eff | tier |
+    ctx(declared window) | state | src. No quota (quota lives in SUMMARY)."""
     out = stdout or sys.stdout
     if snapshot is None:
         snapshot = collect_snapshot()
@@ -426,54 +455,34 @@ def render_profiles(stdout=None, snapshot=None):
     if not rows:
         out.write("(profile rows unavailable)\n")
         return
-    out.write(f"{'PEER.PROFILE':<22} {'MODEL':<28} {'EFF':<5} {'CTX(used/cap %)':<18} "
-              f"{'5H(bar % pace)':<26} {'WEEKLY(bar % pace)':<26} {'RESET':<18} {'SRC':<12} STATE\n")
+    headers = [_pad("PROFILE", 22), _pad("MODEL", 28), _pad("EFF", 5),
+               _pad("TIER", 5), _pad("CTX", 12), _pad("STATE", 12), _pad("SRC", 13)]
+    out.write(" ".join(headers).rstrip() + "\n")
+
+    def _fmt_src(tag):
+        return {"orchestration": "decl", "cli_live": "cliv", "app_server": "app",
+                "statusline": "live", "health": "hlth", "absent": "-"}.get(tag, str(tag)[:4])
+
     for row in rows:
         sources = row.get("sources") or {}
         model = row.get("model") or "absent"
         if sources.get("model") == "orchestration" and model != "absent":
             model = f"[decl] {model}"
         effort = str(row.get("effort") or "absent")[:5]
-
+        tier = str(row.get("cost_tier") or "absent")[:5]
         ctx = row.get("context") or {}
         win = ctx.get("window_tokens")
-        used = ctx.get("used_tokens")
-        pct = ctx.get("utilization_pct")
-        if win is None:
-            ctx_str = "absent"
-        elif sources.get("context") == "orchestration":
-            ctx_str = f"[decl] {_short(win)}"
-        else:
-            used_s = _short(used) if used is not None else "?"
-            pct_s = f" {pct:.0f}%" if isinstance(pct, (int, float)) else ""
-            ctx_str = f"{used_s}/{_short(win)}{pct_s}"
-
-        bucket_5h = bucket_weekly = None
-        for b in (row.get("quota") or {}).get("buckets") or []:
-            label = str(b.get("label", ""))
-            if "5H" in label:
-                bucket_5h = b
-            elif "7D" in label:
-                bucket_weekly = b
-        q_5h = format_quota_bucket(bucket_5h) if bucket_5h else "absent"
-        q_weekly = format_quota_bucket(bucket_weekly) if bucket_weekly else "absent"
-
-        reset_str = "absent"
-        for b in (bucket_5h, bucket_weekly):
-            reset = b.get("reset") if b else None
-            if reset and str(reset) not in ("?", "absent"):
-                m = re.search(r"\((in [^)]+)\)", str(reset))
-                reset_str = m.group(1) if m else str(reset)[:18]
-                break
-
-        def _fmt_src(tag):
-            return {"orchestration": "decl", "cli_live": "cliv", "app_server": "app",
-                    "statusline": "live", "health": "hlth", "absent": "-"}.get(tag, str(tag)[:4])
-
-        source_str = f"c:{_fmt_src(sources.get('context'))} q:{_fmt_src(sources.get('quota'))}"
+        ctx_val = _short(win) if win is not None else "absent"
         state = row.get("state") or "unknown"
-        out.write(f"{str(row.get('profile') or 'absent'):<22} {str(model)[:28]:<28} {effort:<5} "
-                  f"{ctx_str:<18} {q_5h:<26} {q_weekly:<26} {reset_str:<18} {source_str:<12} {state}\n")
+        src = f"c:{_fmt_src(sources.get('context'))} q:{_fmt_src(sources.get('quota'))}"
+
+        c_state = _pad(state, 12)
+        if state == "eligible":
+            c_state = _c(c_state, "green")
+        elif state == "manual_only":
+            c_state = _c(c_state, "yellow")
+        out.write(f"{_pad(str(row.get('profile') or 'absent'), 22)} {_pad(str(model)[:28], 28)} "
+                  f"{_pad(effort, 5)} {_pad(tier, 5)} {_pad(ctx_val, 12)} {c_state} {_pad(src, 13)}\n")
 
 
 def render_headroom(stdout=None, snapshot=None):

@@ -668,7 +668,7 @@ def test_dashboard_follows_fp4_section_order(monkeypatch):
     diag.render_dashboard(out)
     text = out.getvalue()
 
-    assert (text.index(" PEER PROFILES & QUOTAS")
+    assert (text.index(" PROFILES & ROUTING")
             < text.index(" PEER DETAIL")
             < text.index(" ACTIVE SESSIONS & HEADROOM")
             < text.index(" ALERTS")

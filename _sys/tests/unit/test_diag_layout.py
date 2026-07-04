@@ -1,0 +1,95 @@
+"""Tests for the diag MECE redesign — display width + section field ownership.
+
+Design: _sys/docs/history/ops/diag-redesign-design.md (ag impl, cx-GO). Quota
+lives ONLY in SUMMARY; PROFILES is topology-only; emoji cells use _dw/_pad.
+"""
+import io
+import sys
+from pathlib import Path
+
+SYS_DIR = Path(__file__).resolve().parents[2]
+
+
+def load_diag():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("diag_layout_under_test", SYS_DIR / "cli" / "diag.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_snapshot():
+    if str(SYS_DIR / "core") not in sys.path:
+        sys.path.insert(0, str(SYS_DIR / "core"))
+    import snapshot
+    return snapshot
+
+
+def test_dw_widths():
+    diag = load_diag()
+    assert diag._dw("🟢") == 2
+    assert diag._dw("🚫") == 2
+    assert diag._dw("text 🟢") == 7
+    assert diag._dw("中文") == 4
+    assert diag._dw(diag._c("text", "green")) == 4   # ANSI stripped
+    assert diag._dw("ö") == 1                    # combining mark = 0
+    assert diag._dw("absent") == 6
+
+
+def test_pad_display_width():
+    diag = load_diag()
+    assert diag._pad("🟢", 4) == "🟢  "
+    assert diag._pad("中文", 6, align="right") == "  中文"
+    colored = diag._c("text", "green")
+    assert diag._pad(colored, 6) == colored + "  "     # pad after color, width by _dw
+
+
+def test_render_profiles_has_no_quota_columns():
+    diag = load_diag()
+    snap = {"profiles": [{
+        "profile": "cc.deepthink", "peer": "cc", "model": "Opus", "effort": "high",
+        "cost_tier": "high", "context": {"window_tokens": 1000},
+        "quota": {"buckets": [{"label": "C-5H", "used_frac": 0.5}]},
+        "sources": {"model": "orchestration", "context": "cli_live", "quota": "cli_live"},
+        "state": "eligible",
+    }]}
+    out = io.StringIO()
+    diag.render_profiles(out, snapshot=snap)
+    text = out.getvalue()
+    assert "PROFILE" in text and "TIER" in text and "STATE" in text
+    assert "5H" not in text and "WEEKLY" not in text and "resets" not in text
+    assert "[decl] Opus" in text  # orchestration-sourced model prefixed
+
+
+def test_render_summary_sorted_continuation_rows_and_glyphs():
+    diag = load_diag()
+    infos = [{
+        "peer": "cc", "model": "Opus", "cost": 0.5, "source": "cli_live",
+        "ctx_window": 1000, "ctx_used": 100, "ctx_pct": 10.0, "ctx_known": True,
+        "gate": True, "empty": False,
+        "quotas": [
+            {"label": "C-7D", "used_frac": 0.95, "reset": "tomorrow", "pacing": None},
+            {"label": "C-5H", "used_frac": 1.0, "reset": "in 1h", "pacing": None},
+            {"label": "F-5H", "used_frac": 0.0, "reset": "in 2h", "pacing": None},
+        ],
+    }]
+    out = io.StringIO()
+    old = sys.stdout
+    sys.stdout = out
+    try:
+        diag.render_summary(infos)
+    finally:
+        sys.stdout = old
+    text = out.getvalue()
+    assert text.index("C-5H") < text.index("C-7D") < text.index("F-5H")  # sorted
+    assert "\U0001F6AB" in text   # 🚫 saturated (>=1.0)
+    assert "\U0001F534" in text   # 🔴 (>=0.90)
+    assert "\U0001F7E2" in text   # 🟢 (0%)
+    assert "WARN" in text         # >=0.90
+
+
+def test_snapshot_absent_stays_literal():
+    snapshot = load_snapshot()
+    assert snapshot.format_quota_bucket({"used_frac": None}) == "absent"
+    assert snapshot.format_quota_bucket("not-a-dict") == "absent"
+    assert "[----------] 0%" in snapshot.format_quota_bucket({"used_frac": 0.0})
