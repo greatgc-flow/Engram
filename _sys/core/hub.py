@@ -7128,9 +7128,11 @@ def _kill_tree_no_psutil(pid: int) -> None:
 
 
 def _kill_process_tree(proc) -> None:
-    """Kill process tree (children first, then parent). Windows-safe. Falls back
-    to taskkill/os.kill when psutil is unavailable, so the tree is reaped either
-    way (LL: a timed-out ask must not leak an orphaned subprocess)."""
+    """Kill process tree (children first, then parent). Windows-safe. When psutil
+    is unavailable it falls back to _kill_tree_no_psutil: on Windows `taskkill /T`
+    still reaps the whole tree, but on POSIX only the target pid is killed (killpg
+    would hit the hub's own group). LL: a timed-out ask must not leak an orphaned
+    subprocess."""
     if proc is None: return
     pid = proc if isinstance(proc, int) else proc.pid
     if pid is None or pid < 0: return

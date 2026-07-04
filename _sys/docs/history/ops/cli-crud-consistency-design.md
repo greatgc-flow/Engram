@@ -181,7 +181,7 @@ Introduce a cross-check comparing the active session's requested profile against
 | **CLI** | ADD Binary | `check_cli_reality.py` (fingerprint), `validate_peer_config.py` | None | ok |
 | **CLI** | UPDATE Version | `check_cli_reality.py` (version parsing) | **No execution validation on new binaries.** | HIGH |
 | **CLI** | DELETE Binary | `validate_peer_config.py` (catches disabled routes) | None | ok |
-| **Model** | ADD Model | `check_cli_reality.py` (matches against observed json) | **`cli-reality-observed.json` generation is manual.** | MED |
+| **Model** | ADD Model | `check_cli_reality.py` (matches against observed json) | ~~generation is manual~~ RESOLVED — automated via `check_cli_canary --emit-observed` (Phase 3', §8). | ok |
 | **Model** | CHANGE Model | `check_cli_reality.py` (CONTRADICTED P0 block) | None | ok |
 | **Model** | DELETE Model | `check_cli_reality.py` (CONTRADICTED P0 block) | None | ok |
 | **Quota** | ADD Window | `snapshot.py` (parses some dynamically) | Strict Regex (`_CLAUDE_USAGE_SECTIONS`) ignores unknown buckets. | MED |
@@ -200,16 +200,16 @@ Before building complex runbooks, we need a script that actually proves the bina
 
 **Increment 1: `_sys/checks/check_cli_canary.py`**
 - Input: Takes a peer and profile (e.g., `cc deepthink`).
-- Action: Reads the `invoke_args` from `orchestration.json`, fires the real binary with `Respond with OK`, captures the output.
-- Assertions:
-  - Return code == 0.
-  - Output contains "OK".
+- Action: Reads the `invoke_args` from `orchestration.json`, fires the real binary with `Respond with exactly: OK`, captures the output.
+- Assertions (as SHIPPED):
+  - Return code == 0 (invoker raises => FAIL stage=launch).
+  - Reply is an EXACT normalized `OK` (`reply.strip().upper() == "OK"`) — a substring test would false-PASS `NOT OK` (cx-caught, fixed pre-ship).
 - Integration: Add an optional `--canary` flag to `check_cli_reality.py` that runs this for all enabled profiles if the binary fingerprint has drifted.
 
 ### Phasing
 - **Phase 1 (SHIPPED 2026-07-04, commit `01495b4`):** `check_cli_canary.py` — empirical E2E invocation verification. R:10 `r-958c` unanimous.
 - **Phase 2 (DEFERRED 2026-07-04, R:10 `r-e845` unanimous):** post-run `Config.model_id == Telemetry.observed_model` assertion in `hub.py`. **Deferred — not soundly buildable now (see §10).** Re-scoped onto Phase 3.
-- **Phase 3:** Automate the generation of `cli-reality-observed.json` via a trusted sandbox PTY scraper script. This unblocks the *sound* form of Phase 2 (declared-vs-known-good model, no live-timing dependency).
+- **Phase 3' (SHIPPED 2026-07-04, commit `413bc22`, R:10 `r-f6b5`/`r-7929`):** the "PTY scraper that enumerates the model list" premise was measured INFEASIBLE (no CLI enumerates its models non-interactively — see §10). REPLACED by a **canary-driven generator**: `check_cli_canary --emit-observed` runs the Phase-1 canary across declared profiles and writes `cli-reality-observed.json` from the PASS set (empirical confirmation, not enumeration). This unblocks the *sound* form of Phase 2 (declared-vs-known-good model, no live-timing dependency); live capture reports `check_cli_reality` P0=0.
 
 ---
 **Open Questions for Review (cx):**
@@ -265,7 +265,7 @@ observed model. **Terminal verification against the real files refuted the premi
 | `cx` | `model_id` per profile (e.g. deepthink=`gpt-5.5`) | `state_5.sqlite` `threads.model` (table confirmed) | **Fragile** — `ORDER BY updated_at DESC LIMIT 1` is timing-dependent (not guaranteed THIS ask); stored format vs declared id unverified. |
 
 Additional blocker: `cli-reality-observed.json` (the known-good model snapshot) does
-not exist yet (its generation is Phase 3, currently manual).
+not exist yet (its generation is Phase 3). *(Update: Phase 3' since SHIPPED a canary-driven generator, `check_cli_canary --emit-observed`, and the file has been populated — §8.)*
 
 **Decision (R:10 `r-e845` unanimous — ag, cx, cc):** DEFER the live per-ask
 assertion. Shipping it would violate DIR-004 (false-alarms). The sound form —
@@ -282,9 +282,14 @@ exact source and prove it reflects the invoked subprocess before asserting.
 
 ---
 
-## 11. B7 spec — security invocation contract drift (DEFINE-ONLY, 2026-07-04)
+## 11. B7 spec — security invocation contract drift
 
-B7 (R:10 `r-395f` unanimous — ag, cx, cc): **DEFINE-ONLY**, no implementation now.
+> **Status:** the DEFINE-ONLY spec below (2026-07-04, `r-395f`) has since been
+> IMPLEMENTED for the static arg-parity layer — see **§11a** (`r-f6b5`,
+> 2026-07-05). The enforcement-behavior layer remains deferred — see **§11b**
+> (`r-f253`). This section is retained as the originating spec.
+
+B7 originating spec (R:10 `r-395f` unanimous — ag, cx, cc): DEFINE-ONLY at the time.
 `check_cli_reality` today reconciles only model / version / fingerprint. It does
 NOT reconcile the **security invocation contract** — the permission/sandbox flags
 that must (or must not) reach the real CLI.

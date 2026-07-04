@@ -199,8 +199,10 @@ def probe_version(peer: str, timeout: int = 20) -> str | None:
 def load_observed_models(peer: str) -> list[str] | None:
     """Load a provenance-tagged verified capture of a peer's real model list from
     `.ai/cli-reality-observed.json` if present, else None (=> ABSENT). We do NOT
-    guess a model list — some CLIs (agy) require a PTY to enumerate, so the list
-    is populated out-of-band by a verified capture and only trusted from that file.
+    guess a model list — no CLI enumerates its models non-interactively. The file
+    is produced empirically by `check_cli_canary --emit-observed` (the canary
+    confirms each declared model by real invocation) and is only ever trusted from
+    that file at read time.
     """
     path = _AI_DIR / "cli-reality-observed.json"
     if not path.exists():
