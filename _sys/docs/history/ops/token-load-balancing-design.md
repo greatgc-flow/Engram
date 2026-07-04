@@ -352,3 +352,11 @@ Introduce the explicit `arbiter_models` config and the concrete cost metadata to
   at unexpected paths.
 - Terminal identity: `active_coordinator` in state.json is STALE (=cx). Premium/
   terminal identification must not depend on it (use arbiter_models + real cost).
+
+### AUTHORITY RATIFIED (user, 2026-07-04) → DIR-005
+The user ratified (Tier-0) the **scoped override** model: the arbiter OVERRIDES
+cheap-peer consensus (canonical FINAL_OPINION) ONLY on (a) unresolved cheap-peer
+dissent/tie and (b) high-risk/irreversible decisions; ADVISORY-recorded-only
+everywhere else. Codified as DIR-005 (user-directives.md). This unblocks arbiter
+TDD with the scoped-override authority. Premium models structurally excluded
+from bulk; arbiter used sparingly (budget 5/5h, ≤5% of decisions).

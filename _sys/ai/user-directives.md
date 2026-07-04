@@ -57,6 +57,16 @@
 - Enforcement: `check_cli_reality.py` (P0 drift blocks), diag source tags (`[decl]`/`absent` rendering), lesson LL-20260703-003 (declared-vs-actual reconciliation).
 - Source: user guidance repeated across sessions ("measure before use, never guess"); H-constitution path (user ratifies the rule, peers ratify the artifact).
 
+### DIR-005: Smartest-Model Final Arbiter — scoped peer-equality exception
+
+- Effective: 2026-07-04
+- Status: ACTIVE
+- Ratification: user-ratified 2026-07-04 (Tier-0) via explicit choice "override on dissent/high-risk" after the R:10 arbiter design discussion (ag design + cx review).
+- Rule: The designated arbiter (the premium/smartest model, e.g. `cc.fable`, selected via a config `arbiter_models` list, NOT the stale active_coordinator) MAY **override** cheap-peer consensus and be recorded as the canonical `FINAL_OPINION` ONLY on (a) unresolved cheap-peer dissent/tie, and (b) high-risk / irreversible decisions. On ALL other decisions the arbiter is **advisory-recorded-only** (peer-equality preserved). This is a bounded, user-ratified exception to strict peer-equality — the arbiter is invoked sparingly (rare triggers, budget 5/5h window, target ≤5% of decisions, condensed single-shot input) and premium models are structurally excluded from bulk load-balancing.
+- Enforcement (pending TDD): routing-config `final_arbiter` block; structured dissent-detection + high-risk classifier + budget guard; the arbiter returns advisory text and the terminal applies it (LL-20260703-005).
+- Design: `_sys/docs/history/ops/token-load-balancing-design.md` (Smartest-Model Final Arbiter section).
+- Reconciles with the peer-equality protocol clause as an explicit, scoped, human-ratified carve-out.
+
 ## Revoked Directives
 
 None.
