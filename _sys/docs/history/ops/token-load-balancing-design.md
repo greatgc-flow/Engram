@@ -235,3 +235,120 @@ enforces the "ALWAYS minimal" requirement.)
 ---
 Design ACK: ag GO + cx GO (2026-07-04, pre-TDD). This doc is the design contract.
 *Next step (on user go): TDD from Phase 1.*
+
+---
+
+# Smartest-Model Final Arbiter — design addendum
+
+> Added 2026-07-04 (R:10). ag designed this section; terminal integrated it
+> here (ag first wrote it out-of-band to a phantom root path — reverted;
+> the LL-005 governed manifest does not yet cover _sys/docs/history, a
+> coverage gap now on the backlog). Grounded in the live P1 shadow finding:
+> the balancer would have picked expensive cc because active_coordinator was
+> stale and cost_tier under-represents cc.fable — so premium identification
+> must be structural (arbiter_models + real cost metadata), not terminal-based.
+> **AUTHORITY MODEL NEEDS USER RATIFICATION** (peer-equality override — see §4).
+
+## Smartest-Model Final Arbiter (+ premium-tier bulk de-weighting)
+
+**Objective**: Ensure bulk background work is routed exclusively to cheap, high-headroom peers, while reserving the most capable, expensive model (e.g., `cc.fable`) strictly for authoritative, final-pass judgments on high-stakes or contested decisions.
+
+### 1. Requirements (Q1)
+*   **Reliable Premium Identification**: Stop relying on stale `active_coordinator` status for exclusion. Identify premium models structurally via explicit configuration (`arbiter_models` list) and real metadata (e.g., exact cost per 1k tokens), superseding coarse `cost_tier` metrics.
+*   **Bulk De-weighting**: The bulk load balancer must actively exclude or heavily penalize the designated premium tier to prevent it from absorbing routine "cheap" asks.
+*   **Arbiter Final Opinion**: The smartest model must synthesize and render a final judgment on qualifying decisions, serving as the definitive voice.
+*   **Minimize Spend**: The arbiter must only be invoked when truly necessary, utilizing summarized contexts.
+*   **Authority Semantics**: Define precisely how the arbiter's opinion interacts with peer-consensus.
+
+### 2. Identifying the Premium/Smartest Model (Q2)
+*   **Explicit Designation**: Maintain an explicit `arbiter_models` list in the routing configuration (e.g., `["cc.fable", "ag.deepthink"]`). 
+*   **Real Cost Signal**: Add strict cost metadata to `_sys/ai/orchestration.json` (e.g., `$15.00/1M in`, `$75.00/1M out`). The balancer uses this concrete cost metric to exclude premium models from bulk rather than relying on a weak `0.04` tie-breaker.
+*   **Deterministic Pick & Fallback**: The arbiter is deterministically chosen by ranking the `arbiter_models` list by `capability_class`. If the primary arbiter (e.g., `cc.fable`) is RED/rate-limited, routing falls back down the chain. 
+
+### 3. Triggers for Arbiter Invocation (Q3)
+To strictly control costs, the arbiter is **NOT** invoked on every ask. Triggers are bounded and rare:
+*   **Consensus Dissent / Tie**: When cheap peers exploring a solution cannot reach a unanimous agreement.
+*   **High-Risk / Irreversible Action**: Decisions involving irreversible mutations (e.g., structural DB drops) or major security boundaries.
+*   **Final Synthesis**: On `R:10` governed decisions, before generating the final report or committing to the user.
+*   *Skip Condition*: If cheap peers reach a unanimous, uncontested consensus on a standard task, the arbiter pass is entirely skipped.
+
+### 4. Authority Semantics (Q4)
+*   **Role**: The arbiter functions as the `recorded-advisory` final-synthesis-author. 
+*   **Binding vs. Peer Consensus**: If the arbiter dissents from a cheap-peer consensus, the arbiter's opinion is recorded as the authoritative `FINAL_OPINION`. 
+*   **WARNING - Protocol Ratification Needed**: The core protocol defines all peers as equal. Elevating one model to an "Arbiter" with override or final-synthesis authority violates strict peer-equality. **This authority imbalance MUST require explicit USER RATIFICATION before enactment.**
+
+### 5. Token Minimization & Constraints (Q5)
+*   **Condensed Input**: The arbiter never receives the raw conversational history. It receives a strictly condensed summary of the cheap peers' findings, the dissent/problem statement, and the proposed actions.
+*   **Single-Shot**: Arbiter invocations are `no-iteration`. It fires once, yields its verdict, and terminates.
+*   **Invocation Budget**: Implement a strict per-window budget (e.g., max 5 arbiter invocations per 5H window).
+*   **Target KPI**: The arbiter should be invoked in `<= 5%` of total daily routing decisions.
+
+### 6. Integration & Flow Position (Q6)
+*   **Flow Position**: Fires *after* the bulk cheap-peer exploration/review phase, but *before* the LL-005 governed-mutation commit or final user report.
+*   **Reconciliation with LL-005**: The arbiter does not mutate directly. It returns structured advisory text. The current active terminal applies the mutation based on the arbiter's verdict.
+*   **Bypassing the Balancer**: Arbiter invocations explicitly target the designated model (e.g., `targets=["cc.fable"]`), completely bypassing the standard bulk load balancer.
+*   **Record**: The decision is permanently logged in the consensus record via a dedicated `FINAL_OPINION` field and tracked in `routing_metrics.jsonl`.
+
+### 7. Edge Cases (Q7)
+*   **Arbiter Unavailable / Fallback**: If all defined arbiters are exhausted/RED, the system gracefully degrades to standard unanimous cheap-peer consensus.
+*   **Arbiter Disagrees with Unanimous Cheap Peers**: The arbiter's verdict wins and is recorded as the canonical path forward, but the cheap peers' original consensus is archived in the telemetry for review.
+*   **Arbiter == Terminal**: If the premium model is currently acting as the terminal, it executes the final arbiter pass internally (self-reflection) but still adheres to the summarized-input and single-shot constraints.
+*   **Budget Exhausted**: The trigger automatically evaluates to `false`, and the system falls back to standard peer consensus.
+*   **Trivial Decision**: Bypassed entirely based on the Trigger rules (Q3).
+*   **Stale Terminal Identity**: Ignored. Premium exclusion relies on the static cost metadata and `arbiter_models` list, rendering stale `state.json` status irrelevant.
+
+### 8. Config & Phasing (Q8)
+**Configuration Structure (`routing-config.json`)**:
+```json
+"final_arbiter": {
+  "enabled": true,
+  "arbiter_models": ["cc.fable", "ag.deepthink"],
+  "triggers": ["dissent", "high_risk", "r10_final"],
+  "invocation_budget_5h": 5,
+  "target_decision_pct_cap": 0.05
+}
+```
+**Phase 1 (Minimal Increment)**:
+Introduce the explicit `arbiter_models` config and the concrete cost metadata to orchestration profiles. Update the bulk load balancer to unconditionally filter/exclude any model in `arbiter_models` from implicit `auto` bulk routing. (This solves the immediate bleeding cost issue).
+
+---
+
+### Worked Example
+
+**Scenario**: A design change is proposed for the `hub.py` state machine.
+1.  **Cheap Peers Explore**: `ag` and `cx` (cheap peers) are selected by the bulk balancer to evaluate the change.
+2.  **Dissent Detected**: `ag` approves the state mutation, but `cx` flags a potential race condition. They fail to reach unanimous consensus.
+3.  **Arbiter Triggered**: The routing engine detects a `dissent` trigger.
+4.  **Condensed Input Generation**: The terminal synthesizes a 300-token summary of the `ag` vs. `cx` positions and sends a single-shot query to `cc.fable` (the designated arbiter).
+5.  **Arbiter Verdict**: `cc.fable` reviews the condensed state and sides with `cx`, providing a structural fix to the race condition.
+6.  **Recorded & Applied**: The verdict is written to the `FINAL_OPINION` log. The terminal (e.g., `ag`) applies the structural fix dictated by `cc.fable` per LL-005 mutation rules, without re-engaging `cc.fable` in the iteration loop.
+
+---
+
+
+### cx review resolution (2026-07-04)
+- **Condensation engine (Q-A):** TERMINAL-LOCAL — a deterministic ~300-token
+  template over {votes, blockers, evidence}. Cheaper, faster, no second routing
+  decision (no extra model call).
+- **Authority (Q-B, binding default):** the arbiter is **ADVISORY-RECORDED-ONLY**
+  by default (its FINAL_OPINION is logged + surfaced, peers stay equal). The
+  "arbiter verdict OVERRIDES peer consensus" semantics are **GATED behind explicit
+  USER RATIFICATION** — not enabled until the user ratifies the peer-equality
+  exception. (cx: GO for advisory-recorded contract; NO-GO for auto-override pre-ratification.)
+- **Pre-TDD gaps to pin (Q-C):** (1) a STRUCTURED dissent-detection mechanism
+  (what counts as unresolved dissent among cheap peers); (2) an explicit HIGH-RISK
+  classifier (which actions qualify); (3) HARD enforcement of the 5H invocation
+  budget + the <=5% target; (4) REAL per-model cost metadata (cc.fable is still
+  cost_tier:"mid" in orchestration.json — must be corrected so bulk actually
+  de-weights it).
+- **Verdict:** GO as pre-TDD design contract with authority = advisory-recorded
+  until user ratifies override. ag GO + cx GO.
+
+### Backlog surfaced this round
+- LL-005 governed-manifest COVERAGE GAP: peers wrote out-of-band to phantom paths
+  (root `ops/`, `_sys/docs-v2/scratch/`) this session — the manifest does not cover
+  `_sys/docs/history` nor detect writes to NEW files outside the tree. Extend the
+  guard to (a) include docs/history, (b) flag creation of governed-adjacent files
+  at unexpected paths.
+- Terminal identity: `active_coordinator` in state.json is STALE (=cx). Premium/
+  terminal identification must not depend on it (use arbiter_models + real cost).
