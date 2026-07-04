@@ -183,3 +183,85 @@ def test_worked_example_probabilities_match_design_doc(monkeypatch):
     assert result["probabilities"]["ag"] == pytest.approx(0.7176, abs=0.001)
     assert result["probabilities"]["cx"] == pytest.approx(0.2824, abs=0.001)
     assert result["terminal_excluded"] == "non_terminal_above_floor"
+
+
+# ── P1 shadow hook (hub._shadow_log_load_balance) ────────────────────────────
+
+def _load_hub():
+    import importlib
+    if str(CORE_DIR) not in sys.path:
+        sys.path.insert(0, str(CORE_DIR))
+    import hub
+    return hub
+
+
+def test_shadow_hook_logs_would_select(monkeypatch, tmp_path):
+    hub = _load_hub()
+    ai_root = tmp_path / ".ai"; ai_root.mkdir()
+    (ai_root / "state.json").write_text('{"active_coordinator": "cc"}', encoding="utf-8")
+    monkeypatch.setattr(hub, "_load_balancer_config",
+                        lambda: {"shadow_log": True, "enabled": False,
+                                 "effective_headroom_floor": 0.10, "terminal_hard_exclude": True,
+                                 "cost_map": {}})
+    monkeypatch.setattr(hub, "_SNAPSHOT_AVAILABLE", True)
+    # Cache-only: the hook reads an already-warm snapshot, never re-collects.
+    monkeypatch.setattr(hub.snapshot, "_SNAPSHOT_CACHE", {"snapshot": {"schema_version": 1}})
+    monkeypatch.setattr(hub.snapshot, "select_load_balanced_peer",
+                        lambda *a, **k: {"selected_peer": "ag", "weights": {"ag": 0.31, "cc": 0.0},
+                                         "probabilities": {"ag": 1.0}, "terminal_excluded": "non_terminal_above_floor",
+                                         "reason": "selected"})
+    logged = {}
+    monkeypatch.setattr(hub, "_record_routing_metric",
+                        lambda ai, event, **f: logged.update({"event": event, **f}))
+
+    hub._shadow_log_load_balance(ai_root, "cc", "terminal")
+
+    assert logged["event"] == "load_balance_shadow"
+    assert logged["actual_peer"] == "cc"
+    assert logged["would_select"] == "ag"
+    assert logged["driving"] is False
+    assert logged["terminal_peer"] == "cc"
+
+
+def test_shadow_hook_skips_non_terminal_origin(monkeypatch, tmp_path):
+    """Peer-worker asks (origin != terminal) never shadow-log — no snapshot work."""
+    hub = _load_hub()
+    called = {"cfg": 0}
+    monkeypatch.setattr(hub, "_load_balancer_config",
+                        lambda: called.__setitem__("cfg", called["cfg"] + 1) or {"shadow_log": True})
+    hub._shadow_log_load_balance(tmp_path / ".ai", "cc", "worker")
+    assert called["cfg"] == 0  # returned before even reading config
+
+
+def test_shadow_hook_skips_on_cold_cache(monkeypatch, tmp_path):
+    """Cold snapshot cache -> skip (never triggers a fresh probe in the hot path)."""
+    hub = _load_hub()
+    ai_root = tmp_path / ".ai"; ai_root.mkdir()
+    monkeypatch.setattr(hub, "_load_balancer_config", lambda: {"shadow_log": True})
+    monkeypatch.setattr(hub, "_SNAPSHOT_AVAILABLE", True)
+    monkeypatch.setattr(hub.snapshot, "_SNAPSHOT_CACHE", {"snapshot": None})
+    logged = {"n": 0}
+    monkeypatch.setattr(hub, "_record_routing_metric", lambda *a, **k: logged.__setitem__("n", logged["n"] + 1))
+    hub._shadow_log_load_balance(ai_root, "cc", "terminal")
+    assert logged["n"] == 0
+
+
+def test_shadow_hook_off_when_disabled(monkeypatch, tmp_path):
+    hub = _load_hub()
+    monkeypatch.setattr(hub, "_load_balancer_config", lambda: {"shadow_log": False, "enabled": False})
+    called = {"n": 0}
+    monkeypatch.setattr(hub, "_record_routing_metric", lambda *a, **k: called.__setitem__("n", called["n"] + 1))
+    hub._shadow_log_load_balance(tmp_path / ".ai", "cc", "terminal")
+    assert called["n"] == 0
+
+
+def test_shadow_hook_is_crash_safe(monkeypatch, tmp_path):
+    hub = _load_hub()
+    monkeypatch.setattr(hub, "_load_balancer_config", lambda: {"shadow_log": True})
+    monkeypatch.setattr(hub, "_SNAPSHOT_AVAILABLE", True)
+    monkeypatch.setattr(hub.snapshot, "_SNAPSHOT_CACHE", {"snapshot": {"schema_version": 1}})
+    def _boom(*a, **k):
+        raise RuntimeError("selector exploded")
+    monkeypatch.setattr(hub.snapshot, "select_load_balanced_peer", _boom)
+    # must NOT raise
+    hub._shadow_log_load_balance(tmp_path / ".ai", "cc", "terminal")

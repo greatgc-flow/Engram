@@ -188,6 +188,8 @@
       "high": 0.04
     },
     "select": "seeded_weighted_random",
-    "_phase": "P1 (selector shipped; hub hook + shadow-logging next). enabled=False until shadow-validated."
+    "_phase": "P1 (selector shipped; hub hook + shadow-logging next). enabled=False until shadow-validated.",
+    "shadow_log": true,
+    "_shadow_doc": "shadow_log=True logs what the balancer WOULD pick (routing_metrics.jsonl event=load_balance_shadow) without driving routing; enabled=False keeps actual routing unchanged. Validate distribution before flipping enabled."
   }
 }

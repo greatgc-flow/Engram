@@ -3132,6 +3132,61 @@ def _governed_post_check(pre: dict[str, str], ai_root: Path | None, peer: str,
     return changed
 
 
+def _load_balancer_config() -> dict:
+    """Read routing-config.json token_load_balancing block (empty if absent)."""
+    try:
+        path = Path(__file__).resolve().parents[1] / "ai" / "routing-config.json"
+        return (json.loads(path.read_text(encoding="utf-8-sig")) or {}).get("token_load_balancing", {}) or {}
+    except Exception:
+        return {}
+
+
+def _shadow_log_load_balance(ai_root: Path | None, actual_peer: str, origin: str) -> None:
+    """Token load balancer P1 shadow hook. When shadow_log is on, compute the
+    balancer's would-be selection from the shared snapshot and append it to
+    routing_metrics.jsonl for offline distribution validation — WITHOUT changing
+    routing. Crash-safe: any failure is swallowed so the ask is never affected."""
+    try:
+        # Only the terminal's outbound routing is balanced; peer-worker asks do
+        # not route, so they never shadow-log (avoids nested/subprocess churn).
+        if origin != "terminal":
+            return
+        cfg = _load_balancer_config()
+        if not (cfg.get("shadow_log") or cfg.get("enabled")):
+            return
+        if not _SNAPSHOT_AVAILABLE or snapshot is None or not ai_root:
+            return
+        # Cache-ONLY: use an already-warm snapshot; NEVER trigger a fresh probe in
+        # the ask hot path (real-binary probes can be slow/hang). Cold cache -> skip.
+        snap = (getattr(snapshot, "_SNAPSHOT_CACHE", {}) or {}).get("snapshot")
+        if snap is None:
+            return
+        terminal_peer = None
+        try:
+            terminal_peer = (_read_json(ai_root / "state.json") or {}).get("active_coordinator")
+        except Exception:
+            pass
+        ask_id = _short_id("lb-")
+        decision = snapshot.select_load_balanced_peer(
+            snap, cfg, terminal_peer=terminal_peer, ask_id=ask_id)
+        _record_routing_metric(
+            ai_root,
+            "load_balance_shadow",
+            ask_id=ask_id,
+            actual_peer=actual_peer,
+            would_select=decision.get("selected_peer"),
+            weights=decision.get("weights"),
+            probabilities=decision.get("probabilities"),
+            terminal_excluded=decision.get("terminal_excluded"),
+            terminal_peer=terminal_peer,
+            reason=decision.get("reason"),
+            origin=origin,
+            driving=bool(cfg.get("enabled")),
+        )
+    except Exception:
+        pass
+
+
 def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False) -> None:
     """Public entry: wraps _action_ask_inner with the LL-20260703-005 governed-
     mutation guard. Governed files are hashed before the peer executes and re-
@@ -3390,6 +3445,11 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         print(f"[HUB:ERROR] model operand validation failed: {_model_err}", file=sys.stderr)
         _append_ask_history(ai_root, to, saved_query_file_path, output_file, None, False, "model_operand_invalid")
         sys.exit(1)
+
+    # Token load balancer — P1 SHADOW: log what the balancer WOULD pick vs the
+    # actual target, without changing routing (config enabled=False). Fully
+    # crash-safe; never affects the ask.
+    _shadow_log_load_balance(ai_root, to, origin)
 
     session_id = None
     if use_session and existing_session:
