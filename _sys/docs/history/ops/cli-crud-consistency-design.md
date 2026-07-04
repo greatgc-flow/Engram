@@ -279,3 +279,36 @@ independently but is not part of this E2E-desync line.
 telemetry. `status_input.log` observes the terminal; `ag` declares null; `cx`
 telemetry is post-hoc/timing-fragile. Any "observed model" claim must name the
 exact source and prove it reflects the invoked subprocess before asserting.
+
+---
+
+## 11. B7 spec — security invocation contract drift (DEFINE-ONLY, 2026-07-04)
+
+B7 (R:10 `r-395f` unanimous — ag, cx, cc): **DEFINE-ONLY**, no implementation now.
+`check_cli_reality` today reconciles only model / version / fingerprint. It does
+NOT reconcile the **security invocation contract** — the permission/sandbox flags
+that must (or must not) reach the real CLI.
+
+**Scope (concrete):** cc/ag `--dangerously-skip-permissions`, cx `workspace-write`
+sandbox policy, forbidden unsafe flags, and absence of stale allowlist /
+`--ignore-rules` claims. Declared today in `orchestration.json` `invoke_args`
+(machine-readable) plus free-text DIR-002/permission notes (NOT a reliable
+contract). Observable as the effective hub/console command args produced by the
+adapters.
+
+**Measurability:** PARTIAL. Arg *presence/parity* is measurable statically today
+(and already partly covered by `hub._check_flag_parity()`); actual *enforcement
+behavior* is blocked — it needs empirical probes, not static reconciliation, and
+must not be faked (DIR-004).
+
+**Backlog spec (for a later increment):** add a machine-readable per-peer
+`security_contract` block with:
+- `required_effective_args` — flags that MUST appear in the adapter-built command,
+- `forbidden_effective_args` — flags that MUST NOT appear (e.g. an over-broad
+  permission or a stale `--ignore-rules`),
+- `sandbox_semantics` — the expected sandbox/permission mode (e.g. cx
+  `workspace-write`).
+Reconcile these against the adapter-built hub args + `peer_console` args (a new
+check, or a `security` dimension folded into `check_cli_reality`). Do **NOT** parse
+free-text DIR-002 notes into the checker — only the machine-readable contract is
+authoritative. Enforcement-behavior probing is a separate, later step.
