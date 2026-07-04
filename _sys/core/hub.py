@@ -7105,8 +7105,32 @@ def _lease_close(ai_root: Path | None, peer_id: str, pid: int, status: str) -> N
             _write_json(_leases_path(ai_root), data)
 
 
+def _kill_tree_no_psutil(pid: int) -> None:
+    """Best-effort process-tree kill WITHOUT psutil (defensive fallback so a
+    timed-out ask never leaks an orphaned agy/node subprocess when psutil is
+    unavailable). Windows: `taskkill /F /T` reaps the whole tree. POSIX: kill
+    ONLY the target pid (children are not in a new session/group, so killpg would
+    hit the hub's own group); full-tree reap on POSIX relies on psutil."""
+    try:
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                           capture_output=True, timeout=10)
+        else:
+            # POSIX: kill ONLY the target pid. We must NOT killpg here — spawned
+            # children are not started in a new session/group, so their process
+            # group is the HUB's; killpg would kill the hub itself. Full-tree
+            # reaping on POSIX relies on psutil (present in this env); this
+            # fallback is best-effort (direct child only) and never self-harms.
+            import signal as _signal
+            os.kill(pid, _signal.SIGKILL)
+    except Exception:
+        pass
+
+
 def _kill_process_tree(proc) -> None:
-    """Kill process tree (children first, then parent). Windows-safe."""
+    """Kill process tree (children first, then parent). Windows-safe. Falls back
+    to taskkill/os.kill when psutil is unavailable, so the tree is reaped either
+    way (LL: a timed-out ask must not leak an orphaned subprocess)."""
     if proc is None: return
     pid = proc if isinstance(proc, int) else proc.pid
     if pid is None or pid < 0: return
@@ -7123,6 +7147,8 @@ def _kill_process_tree(proc) -> None:
                 parent.kill()
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
+        else:
+            _kill_tree_no_psutil(pid)
     except Exception:
         pass
     if not isinstance(proc, int):
@@ -7161,19 +7187,9 @@ def _lease_sweep(ai_root: Path | None) -> None:
     for peer_id, entry in expired:
         pid = entry.get("pid")
         if pid:
-            try:
-                parent = psutil.Process(pid)
-                for child in parent.children(recursive=True):
-                    try:
-                        child.kill()
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
-                try:
-                    parent.kill()
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
+            # Reuse the shared tree-killer: it is psutil-None safe (crashes were
+            # possible here when psutil was unavailable) and reaps the whole tree.
+            _kill_process_tree(pid)
         expires_str = entry.get("expires_at", "")
         _record_ask_failure(
             peer_id,
