@@ -1479,7 +1479,7 @@ def snapshot_failover_target(exclude=None, snapshot=None):
     return None
 
 
-def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", rng=None):
+def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", rng=None, inflight=None):
     """Token load balancer — Phase 1 (design: ops/token-load-balancing-design.md).
 
     Route an ask to the peer that best equalizes token burn-down: peer-level
@@ -1550,6 +1550,20 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
         base = float(representatives[peer]["headroom"])
         h_eff[peer] = base / max(1.0, float(p_max)) if pacing_enabled else base
 
+    # P1.5 in-flight deduction: subtract budget already committed by dispatched-
+    # but-not-yet-reflected asks (convergence under 60s-cached telemetry). Applied
+    # after pacing, before cost; clamped at 0; opt-in. Absent/non-numeric = 0
+    # (DIR-004: no fabrication). Recorded regardless of enable for audit.
+    inflight = inflight or {}
+    inflight_enabled = config.get("inflight_deduction_enabled", True)
+    inflight_applied = {}
+    for peer in peers:
+        v = inflight.get(peer, 0.0)
+        amt = float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0.0
+        inflight_applied[peer] = round(amt, 4)
+        if inflight_enabled and amt:
+            h_eff[peer] = max(0.0, h_eff[peer] - amt)
+
     raw_weights = {}
     for peer in peers:
         ct = representatives[peer].get("cost_tier")
@@ -1571,6 +1585,7 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
         out["candidates"] = peers
         out["terminal_excluded"] = terminal_excluded
         out["pacing_applied"] = pacing_applied
+        out["inflight_applied"] = inflight_applied
         return out
 
     # Deterministic seeded weighted-random over positive-weight peers only
@@ -1597,6 +1612,7 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
         "terminal_excluded": terminal_excluded,
         "premium_excluded": sorted(premium_excluded),
         "pacing_applied": pacing_applied,
+        "inflight_applied": inflight_applied,
         "seed": seed,
         "draw": draw,
         "candidates": peers,

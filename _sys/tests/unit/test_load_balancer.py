@@ -442,3 +442,69 @@ def test_derive_headroom_rows_pacing_extraction():
     rows_by_profile = {r["profile"]: r for r in snapshot._derive_headroom_rows(snap)}
     assert rows_by_profile["ag.standard"]["pacing_max"] == pytest.approx(1.50)
     assert rows_by_profile["cx.deepthink"]["pacing_max"] == pytest.approx(1.0)
+
+
+# ── P1.5 In-flight load deduction tests ─────────────────────────────────────
+
+def test_inflight_reduces_headroom_by_deduction(monkeypatch):
+    _patch_rows(monkeypatch, [_row("ag", 0.40), _row("cx", 0.30)])
+    res_none = snapshot.select_load_balanced_peer({}, CONFIG, ask_id="no-inflight")
+    res_inflight = snapshot.select_load_balanced_peer({}, CONFIG, ask_id="inflight", inflight={"ag": 0.15})
+    assert res_inflight["weights"]["ag"] == pytest.approx(res_none["weights"]["ag"] - 0.15)
+    assert res_inflight["weights"]["cx"] == pytest.approx(res_none["weights"]["cx"])
+    assert res_inflight["inflight_applied"]["ag"] == 0.15
+    assert res_inflight["inflight_applied"]["cx"] == 0.0
+
+
+def test_two_equal_headroom_peers_one_with_inflight_prefers_other(monkeypatch):
+    _patch_rows(monkeypatch, [_row("ag", 0.30), _row("cx", 0.30)])
+    result = snapshot.select_load_balanced_peer({}, CONFIG, ask_id="equal-headroom", inflight={"ag": 0.10})
+    assert result["weights"]["ag"] == pytest.approx(0.20)
+    assert result["weights"]["cx"] == pytest.approx(0.30)
+    assert result["probabilities"]["cx"] == pytest.approx(0.60)
+    assert result["probabilities"]["ag"] == pytest.approx(0.40)
+
+
+def test_inflight_pushing_below_floor_restores_terminal(monkeypatch):
+    _patch_rows(monkeypatch, [_row("cc", 0.05), _row("ag", 0.15), _row("cx", 0.05)])
+    res_no = snapshot.select_load_balanced_peer({}, CONFIG, terminal_peer="cc", ask_id="no-inflight-floor")
+    assert res_no["terminal_excluded"] == "non_terminal_above_floor"
+    assert res_no["weights"]["cc"] == 0.0
+    res_with = snapshot.select_load_balanced_peer({}, CONFIG, terminal_peer="cc", ask_id="inflight-floor", inflight={"ag": 0.06})
+    assert res_with["terminal_excluded"] is None
+    assert res_with["weights"]["cc"] > 0.0
+
+
+def test_inflight_deduction_disabled_ignores_inflight(monkeypatch):
+    _patch_rows(monkeypatch, [_row("ag", 0.40), _row("cx", 0.20)])
+    cfg = {**CONFIG, "inflight_deduction_enabled": False}
+    result = snapshot.select_load_balanced_peer({}, cfg, ask_id="disabled", inflight={"ag": 0.15})
+    assert result["weights"]["ag"] == pytest.approx(0.40)
+    assert result["weights"]["cx"] == pytest.approx(0.20)
+    assert result["inflight_applied"]["ag"] == 0.15
+
+
+def test_absent_or_empty_inflight_behaves_normally(monkeypatch):
+    _patch_rows(monkeypatch, [_row("cc", 0.090), _row("ag", 0.310), _row("cx", 0.122)])
+    res_none = snapshot.select_load_balanced_peer({"schema_version": 1}, CONFIG, terminal_peer="cc", ask_id="wx-none")
+    assert res_none["weights"]["cc"] == 0.0
+    assert res_none["probabilities"]["ag"] == pytest.approx(0.7176, abs=0.001)
+    assert res_none["inflight_applied"]["ag"] == 0.0
+    res_empty = snapshot.select_load_balanced_peer({"schema_version": 1}, CONFIG, terminal_peer="cc", ask_id="wx-empty", inflight={})
+    assert res_empty["probabilities"]["cx"] == pytest.approx(0.2824, abs=0.001)
+
+
+def test_non_numeric_inflight_coerced_to_zero(monkeypatch):
+    _patch_rows(monkeypatch, [_row("ag", 0.40), _row("cx", 0.30)])
+    result = snapshot.select_load_balanced_peer({}, CONFIG, ask_id="non-numeric", inflight={"ag": "invalid", "cx": None, "cc": True})
+    assert result["weights"]["ag"] == pytest.approx(0.40)
+    assert result["weights"]["cx"] == pytest.approx(0.30)
+    assert result["inflight_applied"]["ag"] == 0.0
+    assert result["inflight_applied"]["cx"] == 0.0
+
+
+def test_inflight_clamping_floors_headroom_at_zero(monkeypatch):
+    _patch_rows(monkeypatch, [_row("ag", 0.40), _row("cx", 0.30)])
+    result = snapshot.select_load_balanced_peer({}, CONFIG, ask_id="clamped", inflight={"ag": 0.50})
+    assert result["weights"]["ag"] == pytest.approx(0.01)
+    assert result["weights"]["cx"] == pytest.approx(0.30)
