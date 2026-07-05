@@ -20,7 +20,7 @@
 | Domain | Pillar | Keywords / When to Load |
 |--------|--------|------------------------|
 | Governance · consensus · communication · command contract | `general/protocol.md` | COLLAB_RATE, R:10/tiebreak/Final Call (INV-28/02), terminal-transport (GAP-1/PRO-19), zero-token IPC, terminal command contract (GAP-3), tunable params |
-| Routing · leader election · resource governance | `general/routing.md` | peer/model routing, elect-leader, failover, AP-20, same-peer fallback, node arch, cost/quality, QUALITY_MODE |
+| Routing · leader election · resource governance | `general/routing.md` | peer/model routing, elect-leader, failover, AP-20, same-peer fallback, node arch, cost/capability policy |
 | Session · health · ContextGate | `general/lifecycle.md` | startup (INV-05), resume/handoff, health states/gate (INV-08/PRO-07/08), peer-status vs health-check, heartbeat/lease, ContextGate policy |
 | Learning loop · directives · knowledge | `general/learning.md` | 5-Whys virtuous cycle, directives + TTL (PRO-09), lesson schema/propagation, self-care & autonomy bounds (SelfHealer=observe/propose only) |
 | Permissions | `general/permissions.md` | minimum permissions, DIR-002, tool restrictions |

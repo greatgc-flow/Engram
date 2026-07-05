@@ -125,7 +125,7 @@ specific/{id}.md  (delta only — lists ONLY what differs from general)
 | `_sys/ai/peers.json` | installation/provider registry; node_ids→sys_subdir (SSOT resolver) | R:5 |
 | `_sys/ai/orchestration.json` | logical peers + nested runtime profiles | R:8 |
 | `_sys/ai/model-registry.json` | model measured specs SSOT (model FACTS per A1) | R:8 |
-| `_sys/ai/routing-config.json` | QUALITY_MODE + automatic profile routing + role weights | R:3/R:5 |
+| `_sys/ai/routing-config.json` | automatic profile routing, role weights, token load balancing, final arbiter policy | R:3/R:5 |
 | `_sys/ai/user-directives.md` | human-authored standing rules (DIR-001~003); PRO-09: no auto-rules | Human only |
 | `_sys/ai/runtime-directives.jsonl` | TTL-bound auto-promoted corrections | hub.py auto |
 | `_sys/ai/knowledge/general/active-lessons.jsonl` | shared lesson store (all peers) | hub.py auto |

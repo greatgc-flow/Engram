@@ -130,7 +130,7 @@ def _log_ipc_response(entry, response_text, exit_code, latency_ms, usage):
 | message_type | When Written |
 |-------------|--------------|
 | `RESPONSE` | After every peer response delivered to user |
-| `STATUS` | Health checks, QUALITY_MODE changes, peer status |
+| `STATUS` | Health checks, routing policy changes, peer status |
 | `ERROR` | Errors shown to user (not internal-only errors) |
 | `GATE_EVENT` | ContextGate fires (reroute, prune, block) |
 | `ROI_REPORT` | Session ROI summary at ctx_end |

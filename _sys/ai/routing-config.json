@@ -1,10 +1,8 @@
 {
   "_version": "1.1",
   "_updated": "2026-06-19",
-  "_help": "QUALITY_MODE dial + task-type → node routing weights. Change QUALITY_MODE: R:3. Change routing_weights: R:5. See ops/schemas.md §4 and resource-governance.md §10.",
+  "_help": "Automatic profile routing, role routing weights, token load balancing, and final arbiter policy. Change routing_weights: R:5. See docs-v2/ops/schemas.md.",
   "_note_peer_status": "gc: tier_suspended 2026-06-19 (IneligibleTierError). ag: activated 2026-06-19 as gc replacement. ca: never activated (claude-alt).",
-  "quality_mode": 5,
-  "quality_mode_override": null,
   "auto_profile_routing": {
     "enabled": true,
     "scope": "root_peer_asks",
@@ -90,18 +88,6 @@
       "all_blocked": "fail_closed",
       "cross_peer_change": "forbidden"
     }
-  },
-  "task_overrides": {
-    "ESCALATION": 10,
-    "FAST_QA": 0,
-    "IMPLEMENT": 5,
-    "LARGE_CORPUS": 8,
-    "COST_SENSITIVE": 2,
-    "SECURITY_SENSITIVE": 10,
-    "CODE_MUTATION": 5,
-    "VERIFICATION": 5,
-    "SUMMARIZATION": 3,
-    "HEALTH_CHECK": 0
   },
   "routing_weights": {
     "R01": {

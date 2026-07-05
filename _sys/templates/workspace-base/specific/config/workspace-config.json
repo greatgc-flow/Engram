@@ -7,7 +7,6 @@
 
   "overrides": {
     "collaboration_depth": null,
-    "quality_mode": null,
     "task_delegation_threshold": null,
     "consensus_timeout": null
   },
@@ -23,8 +22,7 @@
   },
 
   "routing": {
-    "preferred_peer": null,
-    "task_overrides": {}
+    "preferred_peer": null
   },
 
   "logging": {
