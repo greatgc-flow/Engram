@@ -227,3 +227,6 @@ __pycache__/
 
 # Test sandbox run-logs (E2 — were tracked + dirtied every test run)
 _sys/tests/_sys/data/logs/*.jsonl
+_sys/antigravity/config/*.db
+_sys/antigravity/config/*.db-shm
+_sys/antigravity/config/*.db-wal

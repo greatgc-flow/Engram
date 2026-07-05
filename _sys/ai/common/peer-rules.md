@@ -24,4 +24,4 @@ These apply to every peer (cc, ag, cx). Peer-specific deltas live in `_sys/docs-
 
 - **Do NOT pass a hard `--timeout` to `hub.py ask` for normal collaboration.** Every peer is configured `timeout: 0` (orchestration.json); the hub's heartbeat + zombie guard governs liveness (`protocol.json["communication_policy"]`).
 - `--timeout N` is a **hard wall-clock cap** that kills the peer *even while it is actively producing output* — it is NOT a silence/idle timeout. Use it only for a deliberately bounded probe.
-- If you must cap, set `N >= runtime.ask_default_timeout_sec` (180) and **never below the target profile's `zombie_timeout_sec`**: `standard`/`effort` = 600s, `deepthink` = 7200s. A 120s cap prematurely kills deepthink replies (observed ~115s latency).
+- If you must cap, set `N >= runtime.ask_default_timeout_sec` (180) and **never below the target profile's `zombie_timeout_sec`**: `standard`/`effort` = 600s, `deepthink` = 900s (SSOT: `protocol.json` zombie_profile_map; was 7200s, which let a stalled deepthink hang ~2h). A 120s cap prematurely kills deepthink replies (observed ~115s latency).

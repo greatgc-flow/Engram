@@ -561,7 +561,7 @@
                                                     ],
                                 "source_of_truth":  [
                                                         "_sys/ai/orchestration.json",
-                                                        "_sys/docs/workspace-environment.md"
+                                                        "_sys/docs-v2/20-architecture.md"
                                                     ],
                                 "audit_action":  "Classify volatile generated drift as informational; review the source of truth and stable wrapper before proposing source edits."
                             },
