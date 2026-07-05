@@ -743,10 +743,11 @@ def _enqueue_hub_mutation_request(ai_root: Path, request: HubMutationRequest) ->
     raise NotImplementedError("host-side mutation broker consumer is not implemented")
 
 
-def _commit_hub_mutation_request(ai_root: Path, request: HubMutationRequest, force_tier0: bool = False) -> None:
+def _commit_hub_mutation_request(ai_root: Path, request: HubMutationRequest, force_tier0: bool = False) -> dict | None:
     """Host-side commit primitive: guard, lock, journal, atomic replace."""
     global _BROKER_COMMIT_ACTIVE
     _guard_action(ai_root, request.action, force_tier0=force_tier0, origin=request.origin)
+    res = None
     with _get_lock(ai_root, f"broker_{request.target_path.name}"):
         _journal_op(ai_root, "hub_mutation_broker", "commit_intent", {
             "request_id": request.request_id,
@@ -756,7 +757,7 @@ def _commit_hub_mutation_request(ai_root: Path, request: HubMutationRequest, for
         _BROKER_COMMIT_ACTIVE = True
         try:
             if request.operation == "consensus_vote_merge":
-                _apply_vote_merge(ai_root, request.target_path, request.payload)
+                res = _apply_vote_merge(ai_root, request.target_path, request.payload)
             else:
                 _write_json_atomic(request.target_path, request.payload)
         finally:
@@ -766,6 +767,8 @@ def _commit_hub_mutation_request(ai_root: Path, request: HubMutationRequest, for
             "action": request.action,
             "target_path": str(request.target_path),
         })
+    return res
+
 
 
 def _broker_dirs(ai_root: Path) -> tuple[Path, Path, Path]:
@@ -919,13 +922,16 @@ def action_broker_drain(ai_root: Path, limit: int = 50, origin: str = "broker", 
     """Drain pending broker requests in deterministic filename order."""
     pending_dir, done_dir, error_dir = _ensure_broker_dirs(ai_root)
     processed = committed = failed = 0
+    finalized_rounds = []
     with _get_lock(ai_root, "broker_drain"):
         for req_path in sorted(pending_dir.glob("*.json"))[:max(0, int(limit or 0))]:
             processed += 1
             try:
                 raw = _read_json(req_path)
                 request = _broker_request_from_dict(ai_root, raw, commit_origin=origin or "broker")
-                _commit_hub_mutation_request(ai_root, request, force_tier0=force_tier0)
+                finalized = _commit_hub_mutation_request(ai_root, request, force_tier0=force_tier0)
+                if finalized:
+                    finalized_rounds.append(finalized)
                 archived = _broker_archive_request(req_path, done_dir)
                 committed += 1
                 print(f"[HUB] BROKER-COMMIT {request.request_id} | done={archived.name}")
@@ -942,6 +948,8 @@ def action_broker_drain(ai_root: Path, limit: int = 50, origin: str = "broker", 
                     print(f"[HUB] BROKER-ERROR {req_path.name} | error={type(exc).__name__}", file=sys.stderr)
                     raise
     print(f"[HUB] BROKER-DRAIN processed={processed} committed={committed} failed={failed}")
+    for data in finalized_rounds:
+        _maybe_run_arbiter_on_finalize(ai_root, data)
 
 
 def action_broker_status(ai_root: Path) -> None:
@@ -4809,18 +4817,18 @@ def _finalize_round_side_effects(ai_root: Path, data: dict) -> None:
         _emit_decision_capsule(ai_root, data)
 
 
-def _apply_vote_merge(ai_root: Path, rpath: Path, vote: dict) -> None:
+def _apply_vote_merge(ai_root: Path, rpath: Path, vote: dict) -> dict | None:
     """Host-side commit for a consensus_vote_merge request: read the round FRESH,
     apply this single vote, decide, persist. Concurrency-safe — a stale snapshot
     can never clobber other voters. Idempotent on already-closed rounds."""
     if not rpath.exists():
-        return
+        return None
     data = _read_json(rpath)
     if data.get("status") in ("finalized", "escalated", "rejected"):
-        return
+        return None
     voter = vote["voter"]
     if voter not in data.get("voters", []):
-        return
+        return None
     votes = data.get("votes", {})
     votes[voter] = {"vote": vote["vote"], "reason": vote.get("reason", ""), "ts": _now()}
     data["votes"] = votes
@@ -4828,6 +4836,8 @@ def _apply_vote_merge(ai_root: Path, rpath: Path, vote: dict) -> None:
     _write_json_atomic(rpath, data)
     if decided:
         _finalize_round_side_effects(ai_root, data)
+        return data
+    return None
 
 
 def _queue_vote_merge(ai_root: Path, round_id: str, voter: str, vote_val: str, reason: str) -> str:
