@@ -40,3 +40,27 @@ def test_green_included_in_both_modes(monkeypatch):
 def test_closed_gate_excluded_even_when_stale_allowed(monkeypatch):
     monkeypatch.setattr(hub, "_peer_effective_health", _fake_health("STALE", gate_open=False))
     assert hub._healthy_peer("testpeer", allow_stale=True) is False
+
+
+def _all_agree_round():
+    return {"round_id": "r-x", "proposed_by": "cc", "voters": ["cc", "ag", "cx"],
+            "votes": {"cc": {"vote": "agree"}, "ag": {"vote": "agree"}, "cx": {"vote": "agree"}}}
+
+
+def test_decide_consensus_stale_voter_finalizes(monkeypatch, tmp_path):
+    # Completes the r-34dc fix: a STALE voter must NOT force human_gate escalation;
+    # a fully-agreed round finalizes normally.
+    monkeypatch.setattr(hub, "_peer_effective_health", lambda v, ai_root=None: ("STALE", {}))
+    monkeypatch.setattr(hub, "_load_protocol_cfg", lambda: {"collab_rate": {"current": 10}})
+    data = _all_agree_round()
+    assert hub._decide_consensus(tmp_path, data) is True
+    assert (data["status"], data["outcome"]) == ("finalized", "unanimous")
+
+
+def test_decide_consensus_red_voter_escalates(monkeypatch, tmp_path):
+    # A RED voter (genuinely unavailable) still forces human_gate escalation.
+    monkeypatch.setattr(hub, "_peer_effective_health", lambda v, ai_root=None: ("RED", {}))
+    monkeypatch.setattr(hub, "_load_protocol_cfg", lambda: {"collab_rate": {"current": 10}})
+    data = _all_agree_round()
+    assert hub._decide_consensus(tmp_path, data) is True
+    assert data["status"] == "escalated"

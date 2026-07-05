@@ -4767,8 +4767,13 @@ def _decide_consensus(ai_root: Path, data: dict) -> bool:
     total = len(data.get("voters", []))
     cast = sum(1 for v in votes.values() if v is not None)
     has_disagree = any(v is not None and v["vote"] == "disagree" for v in votes.values())
+    # Only a RED voter (genuinely unavailable) forces mid-round escalation. STALE
+    # is aged bookkeeping, not a failure — STALE voters are eligible to vote
+    # (see _healthy_peer allow_stale), so their presence must NOT force human_gate;
+    # let the normal cast==total path finalize. Completes the r-34dc STALE-voter
+    # fix (voter derivation alone was insufficient — the decision logic escalated).
     mid_round_closed = any(
-        _peer_effective_health(v, ai_root=ai_root)[0] in ("RED", "STALE")
+        _peer_effective_health(v, ai_root=ai_root)[0] == "RED"
         for v in data.get("voters", [])
     )
     if not (has_disagree or cast == total or total < 2 or mid_round_closed):
