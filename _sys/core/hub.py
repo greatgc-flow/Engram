@@ -2236,10 +2236,18 @@ def _peer_effective_health(peer_id: str, stale_minutes: int | None = None, ai_ro
     return status, data
 
 
-def _healthy_peer(peer_id: str, ai_root: Path | None = None) -> bool:
+def _healthy_peer(peer_id: str, ai_root: Path | None = None, allow_stale: bool = False) -> bool:
+    """True if the peer is eligible for the caller's purpose. By default STALE
+    counts as ineligible (routing must not send work to a peer whose health is
+    unknown/aged). `allow_stale=True` (consensus VOTING) treats STALE as eligible:
+    stale health is aged bookkeeping, not a failure, and excluding it silently
+    empties the voter list after an idle period — a stalled round is recoverable
+    (sweep / Tier-0 drain), an empty one is a confusing failure. RED and a closed
+    gate are ineligible in both modes."""
     status, data = _peer_effective_health(peer_id, ai_root=ai_root)
     avail = data.get("availability", {})
-    if status in {"RED", "STALE"} or avail.get("gate_open") is False:
+    blocked_statuses = {"RED"} if allow_stale else {"RED", "STALE"}
+    if status in blocked_statuses or avail.get("gate_open") is False:
         return False
         
     orchestration = _load_orchestration()
@@ -4735,7 +4743,11 @@ def action_consensus_propose(ai_root: Path, subject: str, voters: list[str], pro
             
         snapshot_voters = []
         for v in voters:
-            if _healthy_peer(v, ai_root=ai_root):
+            # allow_stale=True: a peer idling to STALE (aged health, not RED) must
+            # still be a valid voter — otherwise a long session silently empties
+            # the voter list and consensus cannot run (peer-recover was the manual
+            # workaround). RED / gate-closed peers are still excluded.
+            if _healthy_peer(v, ai_root=ai_root, allow_stale=True):
                 snapshot_voters.append(v)
             
     round_id = _short_id("r-")
