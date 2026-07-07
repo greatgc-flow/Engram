@@ -26,9 +26,49 @@ if str(CORE_DIR) not in sys.path:
 
 from hub_peer import resolve_peer_sys_dir
 
+# ── Telemetry config (MECE constants; token-session-policy-design-2026-07-08) ──
+# Operational constants live in _sys/ai/telemetry-config.json; a missing/invalid
+# key degrades to the documented default here (never crashes). Vendor facts
+# (quota window_hours 5/168) and math invariants stay in code.
+_TELEMETRY_DEFAULTS = {
+    "ttl": {"snapshot_sec": 60, "expensive_source_sec": 60, "local_sec": 5},
+    "probe": {"deadline_sec": 12},
+    "display": {"warn_frac": 0.75, "crit_frac": 0.90},
+    "watch": {"default_interval_sec": 5, "min_interval_sec": 2, "sync_output": "auto"},
+}
+_TELEMETRY_CACHE = {"cfg": None}
+
+
+def telemetry_config():
+    """Load _sys/ai/telemetry-config.json merged over defaults (cached).
+
+    Provenance for the diag POLICY panel: (value, "telemetry-config.json:<path>").
+    """
+    if _TELEMETRY_CACHE["cfg"] is not None:
+        return _TELEMETRY_CACHE["cfg"]
+    cfg = {k: dict(v) for k, v in _TELEMETRY_DEFAULTS.items()}
+    try:
+        raw = json.loads((SYS_DIR / "ai" / "telemetry-config.json").read_text(encoding="utf-8"))
+        for section, defaults in _TELEMETRY_DEFAULTS.items():
+            got = raw.get(section)
+            if isinstance(got, dict):
+                for key, dflt in defaults.items():
+                    val = got.get(key, dflt)
+                    # type-guard: keep the default if the override is the wrong type
+                    cfg[section][key] = val if isinstance(val, type(dflt)) else dflt
+    except Exception:
+        pass  # any read/parse failure -> documented defaults
+    _TELEMETRY_CACHE["cfg"] = cfg
+    return cfg
+
+
+def _tcfg(section, key):
+    return telemetry_config()[section][key]
+
+
 # In-process snapshot cache for router consumers (hub). CLI renderers collect
-# fresh by default so --watch never freezes on a 60s-old frame.
-SNAPSHOT_TTL_SEC = 60
+# fresh by default so --watch never freezes on a stale frame.
+SNAPSHOT_TTL_SEC = telemetry_config()["ttl"]["snapshot_sec"]
 _SNAPSHOT_CACHE = {"expires_at": 0.0, "snapshot": None}
 
 def _bar(frac, width=10):
@@ -149,7 +189,7 @@ def _codex_binary():
     return shutil.which("codex.cmd")  # real .cmd; our wrapper is codex.bat / codex
 
 
-def _codex_rate_limits(deadline_sec=12):
+def _codex_rate_limits(deadline_sec=None):
     """Query the codex app-server (initialize -> account/rateLimits/read) for live
     5h/weekly rate-limit reset times. Codex does not persist these locally.
 
@@ -157,6 +197,8 @@ def _codex_rate_limits(deadline_sec=12):
     EVEN IF proc.stdout.readline() blocks (the app-server is a daemon and, under a
     denied sandbox, can spawn-EPERM and never emit — which previously hung diag for
     tens of minutes). Returns the rateLimits dict or None."""
+    if deadline_sec is None:
+        deadline_sec = _tcfg("probe", "deadline_sec")
     import threading, queue
     msgs = (
         '{"jsonrpc":"2.0","id":0,"method":"initialize","params":'
@@ -367,8 +409,10 @@ def _parse_claude_usage(text, now=None):
     return rows
 
 
-def _claude_usage_quotas(deadline_sec=12):
+def _claude_usage_quotas(deadline_sec=None):
     """Run the real Claude CLI usage command. No help-output inference."""
+    if deadline_sec is None:
+        deadline_sec = _tcfg("probe", "deadline_sec")
     claude_exe = _real_binary("cc")
     if not claude_exe:
         return None
@@ -435,7 +479,7 @@ def _codex_context():
     return _parse_rollout_context(row[0])
 
 
-EXPENSIVE_SOURCE_TTL_SEC = 60
+EXPENSIVE_SOURCE_TTL_SEC = telemetry_config()["ttl"]["expensive_source_sec"]
 
 
 _CODEX_RATE_LIMIT_CACHE = {}
@@ -764,7 +808,7 @@ def gather_peer(peer, peer_dirs):
     return info
 
 
-_LOCAL_TTL_SEC = 5
+_LOCAL_TTL_SEC = telemetry_config()["ttl"]["local_sec"]
 
 
 _SYNTHETIC_PEERS = {"testpeer"}
@@ -802,7 +846,7 @@ def format_quota_bucket(bucket):
         frac = max(0.0, min(1.0, float(used_frac)))
     except (TypeError, ValueError):
         return "absent"
-    emoji = "🔴" if frac >= 0.90 else "🟡" if frac >= 0.75 else "🟢"
+    emoji = "🔴" if frac >= QUOTA_CRIT_FRAC else "🟡" if frac >= QUOTA_WARN_FRAC else "🟢"
     pacing = _fmt_pacing(bucket.get("pacing"))
     if not pacing:
         ratio = bucket.get("pacing_ratio")
@@ -1250,10 +1294,10 @@ def _build_session_rows(peers, peer_dirs, profiles, observed_at):
     return rows
 
 
-QUOTA_WARN_FRAC = 0.75
+QUOTA_WARN_FRAC = telemetry_config()["display"]["warn_frac"]
 
 
-QUOTA_CRIT_FRAC = 0.90
+QUOTA_CRIT_FRAC = telemetry_config()["display"]["crit_frac"]
 
 
 STALE_THRESHOLD_SEC = 300

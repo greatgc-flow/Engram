@@ -1,5 +1,6 @@
 import os
 import argparse
+import io
 import json
 import re
 import subprocess
@@ -17,6 +18,7 @@ PORTABLE_ROOT = SYS_DIR.parent
 sys.path.insert(0, str(SYS_DIR / "core"))
 import snapshot as _snapshot
 from snapshot import (
+    telemetry_config,
     SNAPSHOT_TTL_SEC, _SNAPSHOT_CACHE,
     _REAL_BINARIES, EXPENSIVE_SOURCE_TTL_SEC, _CODEX_RATE_LIMIT_CACHE,
     _CLAUDE_USAGE_CACHE, _LOCAL_TTL_SEC, _SYNTHETIC_PEERS, _EFFORT_STRENGTH,
@@ -257,8 +259,8 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(prog="diag")
     parser.add_argument("--json", dest="json_mode", action="store_true",
                         help="emit normalized telemetry JSON")
-    parser.add_argument("--watch", nargs="?", const=5, type=float, metavar="SECONDS",
-                        help="refresh repeatedly; defaults to 5 seconds")
+    parser.add_argument("--watch", nargs="?", const=-1.0, type=float, metavar="SECONDS",
+                        help="refresh repeatedly; interval defaults to telemetry-config watch.default_interval_sec")
     parser.add_argument("--interval", type=float, metavar="SECONDS",
                         help="alias for --watch SECONDS")
     parser.add_argument("--profiles", action="store_true", help="reserved profile detail view")
@@ -271,10 +273,12 @@ def parse_args(argv=None):
 
     requested_interval = args.interval if args.interval is not None else args.watch
     args.watch = requested_interval is not None
-    args.interval = requested_interval
-    if args.watch:
-        if args.interval < 2:
-            parser.error("minimum interval is 2 seconds")
+    # const sentinel (-1.0) = bare --watch -> use config default interval (None).
+    args.interval = None if requested_interval == -1.0 else requested_interval
+    if args.watch and args.interval is not None:
+        min_iv = telemetry_config()["watch"]["min_interval_sec"]
+        if args.interval < min_iv:
+            parser.error(f"minimum interval is {min_iv} seconds")
         if float(args.interval).is_integer():
             args.interval = int(args.interval)
     return args
@@ -361,10 +365,17 @@ def render_dashboard(stdout=None, watch_mode=False):
         print(_c(" Reset times shown in local time. Set NO_COLOR=1 to disable color.", "dim"))
 
         print("\n[ROOM & HUB STATUS]")
-        out.flush()
         hub_py = SYS_DIR / "core" / "hub.py"
         if hub_py.exists():
-            subprocess.run(["python", str(hub_py), "status"], stdout=out)
+            # Capture (not stream) so watch-mode double-buffering can blit the
+            # whole frame in one write; direct stdout= would bypass the buffer.
+            if watch_mode:
+                res = subprocess.run(["python", str(hub_py), "status"],
+                                     capture_output=True, text=True)
+                print(getattr(res, "stdout", "") or "", end="")
+            else:
+                out.flush()
+                subprocess.run(["python", str(hub_py), "status"], stdout=out)
         else:
             print("hub.py not found.")
 
@@ -410,8 +421,49 @@ def render_dashboard(stdout=None, watch_mode=False):
         render_summary(infos)
 
         print("\n" + "=" * 60)
+        print(_c(" POLICY", "bold"))
+        print("=" * 60)
+        render_policy(out)
+
+        print("\n" + "=" * 60)
         print(_c(" Note: run '_sys\\cli\\diag' (or diag.bat) anytime to view this screen.", "dim"))
         print("=" * 60)
+
+
+def _load_routing_cfg():
+    try:
+        return json.loads((SYS_DIR / "ai" / "routing-config.json").read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def render_policy(stdout=None):
+    """POLICY (MECE §6): effective operational knobs + their config source path.
+    'what is happening' (other panels) vs 'why' (the policy that governs it).
+    Operational knobs only — not a full config dump (design 2026-07-08 §3)."""
+    out = stdout or sys.stdout
+    tc = telemetry_config()
+    rc = _load_routing_cfg()
+    tlb = rc.get("token_load_balancing", {}) or {}
+    hb = tlb.get("headroom_bias", {}) or {}
+    ca = tlb.get("context_affinity", {}) or {}
+    rows = [
+        ("snapshot TTL", f"{tc['ttl']['snapshot_sec']}s", "telemetry-config.json:ttl.snapshot_sec"),
+        ("expensive-source TTL", f"{tc['ttl']['expensive_source_sec']}s", "telemetry-config.json:ttl.expensive_source_sec"),
+        ("local TTL", f"{tc['ttl']['local_sec']}s", "telemetry-config.json:ttl.local_sec"),
+        ("probe deadline", f"{tc['probe']['deadline_sec']}s", "telemetry-config.json:probe.deadline_sec"),
+        ("quota warn / crit", f"{tc['display']['warn_frac']:.0%} / {tc['display']['crit_frac']:.0%}", "telemetry-config.json:display"),
+        ("watch interval / min", f"{tc['watch']['default_interval_sec']}s / {tc['watch']['min_interval_sec']}s", "telemetry-config.json:watch"),
+        ("watch sync-output", str(tc['watch']['sync_output']), "telemetry-config.json:watch.sync_output"),
+        ("headroom floor", str(tlb.get("effective_headroom_floor", "-")), "routing-config.json:token_load_balancing.effective_headroom_floor"),
+        ("headroom bias band", f"{hb.get('min','-')}..{hb.get('max','-')}", "routing-config.json:token_load_balancing.headroom_bias"),
+        ("bulk-exclude profiles", ",".join(tlb.get("bulk_exclude_profiles", []) or []) or "(none)", "routing-config.json:token_load_balancing.bulk_exclude_profiles"),
+        ("context affinity", ("on" if ca.get("enabled") else "off") if ca else "unset", "routing-config.json:token_load_balancing.context_affinity"),
+        ("LB enabled", str(tlb.get("enabled", "-")), "routing-config.json:token_load_balancing.enabled"),
+    ]
+    out.write(f"{_pad('KNOB', 22)} {_pad('VALUE', 16)} {_c('SOURCE', 'dim')}\n")
+    for knob, val, src in rows:
+        out.write(f"{_pad(knob, 22)} {_pad(val, 16)} {_c(src, 'dim')}\n")
 
 
 def emit_json_snapshot(stdout=None):
@@ -420,17 +472,46 @@ def emit_json_snapshot(stdout=None):
     out.flush()
 
 
-def run_watch(interval=5, json_mode=False, stdout=None, sleep=time.sleep, max_frames=None):
+def _blit_frame(out, text, sync):
+    """Double-buffered in-place repaint (token-session-policy-design-2026-07-08 §4).
+
+    No alt-screen (scrollback preserved). Build the whole frame off-screen, then
+    blit: optional synchronized-output wrapper (?2026h/l — ignored by terminals
+    that don't support it), cursor-home (\\033[H), each line cleared to EOL
+    (\\033[K) so it overwrites in place, and a final erase-to-end-of-screen
+    (\\033[J) so a shorter frame leaves no stale tail. Replaces the old
+    \\033[2J full-clear that caused flicker.
+    """
+    lines = text.split("\n")
+    body = "\r\n".join(line + "\033[K" for line in lines)
+    seq = ("\033[?2026h" if sync else "") + "\033[H" + body + "\033[J" + \
+          ("\033[?2026l" if sync else "")
+    out.write(seq)
+    out.flush()
+
+
+def run_watch(interval=None, json_mode=False, stdout=None, sleep=time.sleep, max_frames=None):
     out = stdout or sys.stdout
+    wcfg = telemetry_config()["watch"]
+    if interval is None:
+        interval = wcfg.get("default_interval_sec", 5)
+    interval = max(interval, wcfg.get("min_interval_sec", 2))
+    is_tty = bool(getattr(out, "isatty", lambda: False)())
+    sync_mode = wcfg.get("sync_output", "auto")
+    sync = is_tty and (sync_mode == "on" or (sync_mode == "auto"))
     frames = 0
     try:
+        if is_tty and not json_mode:
+            out.write("\033[2J\033[H")  # one-time clear to start from a clean screen
         while max_frames is None or frames < max_frames:
             if json_mode:
                 emit_json_snapshot(out)
+            elif is_tty:
+                buf = io.StringIO()
+                render_dashboard(buf, watch_mode=True)
+                _blit_frame(out, buf.getvalue(), sync)
             else:
-                if hasattr(out, "isatty") and out.isatty():
-                    out.write("\033[2J\033[H")
-                render_dashboard(out, watch_mode=True)
+                render_dashboard(out, watch_mode=True)  # non-TTY: plain frames
                 out.flush()
             frames += 1
             if max_frames is not None and frames >= max_frames:

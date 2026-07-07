@@ -1,0 +1,22 @@
+{
+  "_version": "1.0",
+  "_updated": "2026-07-08",
+  "_help": "Telemetry/diag operational constants (MECE per token-session-policy-design-2026-07-08). Loaded via snapshot.telemetry_config() with defaults; a missing/invalid key degrades to the documented default. Vendor facts (quota window_hours 5/168) and math invariants stay in code. Every value here is surfaced in diag POLICY panel with this file as provenance.",
+  "ttl": {
+    "snapshot_sec": 60,
+    "expensive_source_sec": 60,
+    "local_sec": 5
+  },
+  "probe": {
+    "deadline_sec": 12
+  },
+  "display": {
+    "warn_frac": 0.75,
+    "crit_frac": 0.90
+  },
+  "watch": {
+    "default_interval_sec": 5,
+    "min_interval_sec": 2,
+    "sync_output": "auto"
+  }
+}
