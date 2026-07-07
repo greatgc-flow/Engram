@@ -14,6 +14,9 @@
     "leader_election":  {
                             "enabled":  true,
                             "human_interface_peer_stays_fixed":  true,
+                            "human_interface_peer":  "cc",
+                            "human_interface_peer_freshness_minutes":  30,
+                            "_human_interface_peer_note":  "Pinned terminal = cc (encoding-safe Edit/Write tooling). Identity is honored only if its health/statusline was observed within human_interface_peer_freshness_minutes; a stale terminal identity is a separate failure class (re-elect if stale). Rationale: incident 2026-07-07 where cx.standard (low tier) as terminal wrote docs and corrupted UTF-8 -> '?'.",
                             "active_coordinator_field":  "active_coordinator",
                             "yield_context_threshold_percent":  80,
                             "yield_failure_threshold":  3,
@@ -637,6 +640,8 @@
                                                           "enabled":  true,
                                                           "mutating_hub_actions_min_tier":  "effort",
                                                           "binding_vote_risk_8_plus_min_tier":  "deepthink",
+                                                          "terminal_file_write_min_tier":  "effort",
+                                                          "_terminal_file_write_note":  "A peer acting as terminal (human_interface_peer) MUST be at >= effort tier to perform direct file writes/edits. A *.standard / low-tier terminal is a thin router only: it routes, reviews, and delegates edits to an effort+ peer that applies them via encoding-safe Write. Enforces the thin-router rule (PRO-19). Incident 2026-07-07: cx.standard low-tier terminal corrupted UTF-8 docs.",
                                                           "tier_floor_fallback":  "if a required voter's minimum-tier profile is rate-gated or unavailable, the vote MAY be cast at that peer's highest currently-available tier; the caveat MUST be recorded in the consensus record; any peer or the human may demand re-ratification at min-tier once available; offline abstain rules unchanged."
                                                       },
                               "default_shell":  "powershell",

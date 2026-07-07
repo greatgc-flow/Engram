@@ -207,6 +207,13 @@ cx    OK gpt-5.4-mini low 272k C OK gpt-5.5 high 272k C    OK gpt-5.5 xhigh 272k
 
 The default row shows only status, model, effort, context, and freshness. Full `profile_args`, validation method, and adapter flags belong in drill-down.
 
+#### 6.3.1 Quota-family coverage & "why is there no quota row?" (2026-07-07)
+
+A profile's SUMMARY quota rows are filtered by its quota family (`snapshot._quota_family_for_profile`): `cc.fable`→`F-`, other `cc`→`C-`, `ag.{opus,gptoss,sonnet}`→`3P-`, other `ag`→`G-`, `cx`→`X-`. A profile shows **no** quota row when no bucket of its family was captured. This is expected, not a bug, in two cases:
+
+- **`cc.fable`** (claude-fable-5, arbiter-only): the Claude CLI statusline emits only `five_hour`/`seven_day` (→ `C-5H`/`C-7D`); it exposes **no fable-specific bucket**, and `cc.fable` rarely renders a statusline. Per unanimous consensus (2026-07-07) diag does **not** fabricate empty `F-*` rows: **fable usage is accounted under the account-wide `C-5H`/`C-7D` shown on the CC row.** If a future statusline surfaces a fable-specific bucket, add `F-*` then, with `[statusline]` evidence.
+- **`ag.opus` / `ag.gptoss`** (3P family) when ag is idle/quarantined: ag only emits a `context_window`-only init frame with no `quota` block, so `3P-*` rows are absent until ag processes a real turn (which makes antigravity render a full quota-bearing frame). See §11.2.
+
 ### 6.4 Watch / Refresh Contract
 
 Final peer consensus (`cc.deepthink`, `ag.deepthink`, `cx.deepthink`) uses this contract:

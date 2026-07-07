@@ -279,6 +279,7 @@
           "cost_tier": "high",
           "routing_state": "manual_only",
           "source": "check_cli_reality:2026-07-03",
+          "_routing_note": "PREMIUM — stays manual_only AND is profile-bulk-excluded via routing-config token_load_balancing.bulk_exclude_profiles=['ag.opus'] (DIR-005). Manual/arbiter/escalation only; never auto/bulk. Shares the 3P quota family with ag.gptoss.",
           "profile_args": [
             "--model",
             "Claude Opus 4.6 (Thinking)"
@@ -292,6 +293,7 @@
           "cost_tier": "mid",
           "routing_state": "manual_only",
           "source": "check_cli_reality:2026-07-03",
+          "_routing_note": "BULK CANDIDATE (cheap, mid tier). Enablement path (unanimous ag+cx 2026-07-07): (1) run check_cli_reality to VERIFY the model works and POPULATE runtime_context_window (no guessed window — DIR-004); (2) implement routing-config token_load_balancing.shared_quota_reserve enforcement so bulk cannot starve ag.opus on the shared 3P weekly pool; (3) THEN flip routing_state to 'eligible'. It then self-gates on 3P quota (won't be picked while 3P-7D is exhausted). Blocked now: 3P-7D at 100% until 2026-07-10.",
           "profile_args": [
             "--model",
             "GPT-OSS 120B (Medium)"

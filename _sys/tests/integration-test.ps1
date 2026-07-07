@@ -9,6 +9,10 @@
 
 $ErrorActionPreference = "SilentlyContinue"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+# Force UTF-8 (no BOM) for all file writes — prevents cp1252/UTF-16 mojibake (2026-07-07 incident)
+$PSDefaultParameterValues['Set-Content:Encoding'] = 'utf8'
+$PSDefaultParameterValues['Add-Content:Encoding'] = 'utf8'
+$PSDefaultParameterValues['Out-File:Encoding']    = 'utf8'
 
 # ── Resolve base dir ────────────────────────────────────────────
 if ($env:BASE_DIR) { $BASE = $env:BASE_DIR }

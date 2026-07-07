@@ -73,6 +73,37 @@ def test_terminal_participates_when_all_non_terminals_below_floor(monkeypatch):
     assert "cc" in result["candidates"]
 
 
+def test_bulk_exclude_profile_drops_only_that_profile_not_whole_peer(monkeypatch):
+    # ag.opus (premium) is profile-excluded; ag's Gemini bulk profile stays eligible.
+    _patch_rows(monkeypatch, [
+        _row("ag", 0.40, profile="ag.opus", cost_tier="high"),
+        _row("ag", 0.30, profile="ag.deepthink"),
+        _row("cx", 0.12, profile="cx.effort"),
+    ])
+    cfg = {**CONFIG, "bulk_exclude_profiles": ["ag.opus"]}
+
+    result = snapshot.select_load_balanced_peer({}, cfg, ask_id="bx1")
+
+    assert "ag" in result["weights"]          # peer 'ag' still bulk-eligible
+    assert result["weights"]["ag"] > 0.0
+    # ag's representative must be the non-excluded profile, never ag.opus
+    ag_rows = [c for c in result["candidates"] if c == "ag"]
+    assert ag_rows, "ag should remain a candidate via ag.deepthink"
+
+
+def test_bulk_exclude_profile_removes_peer_when_it_is_the_only_row(monkeypatch):
+    _patch_rows(monkeypatch, [
+        _row("ag", 0.40, profile="ag.opus", cost_tier="high"),
+        _row("cx", 0.20, profile="cx.effort"),
+    ])
+    cfg = {**CONFIG, "bulk_exclude_profiles": ["ag.opus"]}
+
+    result = snapshot.select_load_balanced_peer({}, cfg, ask_id="bx2")
+
+    assert result["selected_peer"] == "cx"
+    assert "ag" not in result["weights"]
+
+
 def test_seeded_selection_is_deterministic_for_same_snapshot_and_ask(monkeypatch):
     _patch_rows(monkeypatch, [
         _row("ag", 0.31),

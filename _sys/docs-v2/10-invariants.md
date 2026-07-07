@@ -122,6 +122,8 @@
 
 > **PRO-19 analysis-boundary clause (GAP-1, 2026-06-26).** Extends PRO-19 from *state mutation* to *cognitive role*: the human-interface terminal may **frame, route, relay, and summarize** worker outputs, but MUST NOT perform substantive task analysis once a worker is selected (it must not pre-analyze/re-frame the request in a way that biases the worker — enrichment, not analysis). "Coordinator"/"leader" is a **task role assigned by protocol** (see `general/routing.md §3` leader election), NOT an authority the terminal self-assumes. Owner: this index + `general/protocol.md §1.2`.
 
+> **PRO-19 direct-file-write clause (GAP-2, 2026-07-07).** Closes the gap where a terminal edits `_sys/` files with its **own** file-write tool (not a `mutating_hub_action`, so `hub.py` origin-blocking did not fire). Controls: (1) `protocol.json → decision_tier_floor.terminal_file_write_min_tier = "effort"` — a `*.standard`/low-tier terminal is a thin router only and MUST delegate edits to an effort+ peer that applies them via encoding-safe `Write`; (2) `leader_election.human_interface_peer = "cc"` (honored only within `human_interface_peer_freshness_minutes`; a stale terminal identity re-elects); (3) mechanical backstop `check_encoding.py` (CHK-ENC) in the pre-commit hook catches UTF-8/mojibake corruption before it lands, regardless of author. Trigger incident: `cx.standard` (gpt-5.4-mini, low tier) as terminal re-saved `docs-v2/*.md` and destroyed all non-ASCII into `?`. Owner: this index + `ops/logging.md`.
+
 ### Peer Equality & Multi-Terminal (INV-30)
 | ID | Rule |
 |----|------|

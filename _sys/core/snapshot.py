@@ -1515,6 +1515,17 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
     if not eligible:
         return _empty("no_eligible_candidate")
 
+    # Profile-level bulk exclusion (distinct from the peer-level arbiter_models
+    # exclusion below): drop ONLY the listed profile rows, keeping the rest of
+    # their peer's profiles bulk-eligible. Used for a premium model that shares a
+    # peer with cheap bulk workers (e.g. ag.opus shares peer 'ag' with the Gemini
+    # bulk profiles). Forward-looking guard even if routing_state is later flipped.
+    bulk_exclude_profiles = set(config.get("bulk_exclude_profiles", []) or [])
+    if bulk_exclude_profiles:
+        eligible = [r for r in eligible if r.get("profile") not in bulk_exclude_profiles]
+        if not eligible:
+            return _empty("no_eligible_candidate")
+
     # Premium/arbiter structural exclusion from BULK (DIR-005): a peer is excluded
     # from bulk routing if its peer id OR ANY of its profile ids is listed in
     # config.arbiter_models — the WHOLE peer, not just the matching profile

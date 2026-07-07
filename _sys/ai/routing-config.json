@@ -181,7 +181,21 @@
       "cc.fable",
       "cc.deepthink"
     ],
-    "_arbiter_doc": "arbiter_models: premium/smartest profiles (cc.fable=Mythos-tier, cc.deepthink=Opus). Structurally EXCLUDED from bulk routing (whole peer) so the expensive model never does routine work (DIR-005). Also the candidate pool for the final-arbiter pass (later increment)."
+    "_arbiter_doc": "arbiter_models: premium/smartest profiles (cc.fable=Mythos-tier, cc.deepthink=Opus). Structurally EXCLUDED from bulk routing (whole peer) so the expensive model never does routine work (DIR-005). Also the candidate pool for the final-arbiter pass (later increment).",
+    "bulk_exclude_profiles": [
+      "ag.opus"
+    ],
+    "_bulk_exclude_profiles_doc": "PROFILE-level bulk exclusion (distinct from arbiter_models which is PEER-level). A profile listed here is dropped from bulk/auto load-balancing WITHOUT excluding the rest of its peer's profiles. Use for a premium model that shares a peer with cheap bulk workers, e.g. ag.opus (Claude Opus 4.6, premium) which shares peer 'ag' with the Gemini bulk profiles. Forward-looking guard: keeps ag.opus bulk-excluded even if its routing_state is later flipped from manual_only (cx 2026-07-07).",
+    "shared_quota_reserve": {
+      "_doc": "Reserve floor for premium/manual profiles within a SHARED quota family, so bulk workers cannot starve them (ag 2026-07-07: ag.gptoss bulk could exhaust the 3P weekly pool shared with ag.opus arbiter/escalation). ENFORCEMENT PENDING: this is a declared requirement that GATES ag.gptoss bulk activation — do not flip ag.gptoss routing_state to 'eligible' until the load balancer honors this reserve. family '3P' reserves reserve_fraction of remaining headroom for non-bulk profiles.",
+      "enabled": false,
+      "families": {
+        "3P": {
+          "reserve_for": ["ag.opus"],
+          "reserve_fraction": 0.25
+        }
+      }
+    }
   },
   "final_arbiter": {
     "_doc": "Smartest-Model Final Arbiter (DIR-005). Decision layer shipped (snapshot.select_arbiter/evaluate_arbiter_trigger/build_final_opinion_record). Live wiring (invoke arbiter, apply verdict, budget persistence) pending. arbiter_models is the canonical list under token_load_balancing (shared with bulk exclusion).",
