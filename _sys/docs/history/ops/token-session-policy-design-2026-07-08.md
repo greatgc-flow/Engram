@@ -118,12 +118,15 @@ Config: telemetry-config `watch.sync_output: "auto|on|off"` (auto = probe).
 
 ---
 
-## 5. Rollout order
+## 5. Rollout order — ALL SHIPPED (2026-07-08)
 
-1. `telemetry-config.json` + loader + wire the 8 telemetry/display constants (§2).
-2. `--watch` double-buffer (§4) — self-contained, immediate UX win.
-3. diag POLICY panel (§3) + provenance map.
-4. `context_affinity` routing + session-reuse hysteresis (§1).
-5. CHK-CONST guard + policy-drift test (§2 enforcement).
+1. ✅ `telemetry-config.json` + loader + wired constants (§2) — commit 04f1300.
+2. ✅ `--watch` double-buffer (§4) — commit 04f1300.
+3. ✅ diag POLICY panel (§3) — commit 04f1300.
+4. ✅ `context_affinity` routing + `should_switch_session_peer` hysteresis (§1) — commit a25b34a.
+5. ✅ CHK-CONST guard (`check_policy_constants.py`) + tests, wired to pre-commit (§2).
 
-Each increment: tests + pre-commit green + diag renders.
+Each increment: tests + pre-commit green + diag renders. Remaining follow-up
+(optional): wire `should_switch_session_peer` into the hub session-lifecycle
+decision (currently exposed + tested as a pure helper; `_session_reuse_enabled`
+stays capability-based until then).
