@@ -119,16 +119,27 @@ def find_ai_root() -> Path:
     override = os.environ.get("HUB_AI_ROOT")
     if override and override.strip():
         return Path(override).expanduser().resolve()
+    canonical_root = Path(__file__).resolve().parents[2]
+    sys_tree = canonical_root / "_sys"
+
+    def _is_phantom(cand: Path) -> bool:
+        # A .ai/.git discovered INSIDE our own _sys/ tree (e.g. a peer's
+        # scratch/sandbox that grew a stray .ai) is machinery debris, never a
+        # legit external-project root. Resolve first: a worker's CWD can reach
+        # the phantom via a junction, so an unresolved compare would miss it.
+        c = cand.resolve()
+        return c != canonical_root and sys_tree in c.parents
+
     cwd = Path.cwd().resolve()
     candidate = cwd
     while True:
-        if (candidate / ".ai").exists():
+        if (candidate / ".ai").exists() and not _is_phantom(candidate):
             return candidate / ".ai"
-        if (candidate / ".git").exists():
+        if (candidate / ".git").exists() and not _is_phantom(candidate):
             return candidate / ".ai"
         parent = candidate.parent
         if parent == candidate:
-            return Path(__file__).resolve().parents[2] / ".ai"
+            return canonical_root / ".ai"
         candidate = parent
 
 
@@ -4867,7 +4878,9 @@ def action_consensus_vote(ai_root: Path, round_id: str, voter: str, vote_val: st
         print(f"[HUB:ERROR] invalid vote value '{vote_val}'; must be one of {sorted(_VALID_VOTES)}", file=sys.stderr)
         sys.exit(1)
     rpath = ai_root / "consensus" / f"{round_id}.json"
-    if not rpath.exists(): sys.exit(1)
+    if not rpath.exists():
+        print(f"[HUB:ERR] round file not found: {rpath} (ai_root={ai_root}, cwd={Path.cwd()})", file=sys.stderr)
+        sys.exit(1)
     with _get_lock(ai_root, f"consensus_{round_id}"):
         data = _read_json(rpath)
         if data.get("status") in ("finalized", "escalated", "rejected"):
