@@ -18,7 +18,7 @@ PORTABLE_ROOT = SYS_DIR.parent
 sys.path.insert(0, str(SYS_DIR / "core"))
 import snapshot as _snapshot
 from snapshot import (
-    telemetry_config,
+    telemetry_config, clear_expensive_cache, expensive_source_age_sec,
     SNAPSHOT_TTL_SEC, _SNAPSHOT_CACHE,
     _REAL_BINARIES, EXPENSIVE_SOURCE_TTL_SEC, _CODEX_RATE_LIMIT_CACHE,
     _CLAUDE_USAGE_CACHE, _LOCAL_TTL_SEC, _SYNTHETIC_PEERS, _EFFORT_STRENGTH,
@@ -263,6 +263,8 @@ def parse_args(argv=None):
                         help="refresh repeatedly; interval defaults to telemetry-config watch.default_interval_sec")
     parser.add_argument("--interval", type=float, metavar="SECONDS",
                         help="alias for --watch SECONDS")
+    parser.add_argument("--fresh", action="store_true",
+                        help="force one bypass of the 60s expensive-source cache (quota/rate-limits)")
     parser.add_argument("--profiles", action="store_true", help="reserved profile detail view")
     parser.add_argument("--accounts", action="store_true", help="reserved account detail view")
     parser.add_argument("--tokens", action="store_true", help="reserved token detail view")
@@ -464,6 +466,12 @@ def render_policy(stdout=None):
     out.write(f"{_pad('KNOB', 22)} {_pad('VALUE', 16)} {_c('SOURCE', 'dim')}\n")
     for knob, val, src in rows:
         out.write(f"{_pad(knob, 22)} {_pad(val, 16)} {_c(src, 'dim')}\n")
+    # Transparency (peers unanimous): show how old the cached quota probe is, so a
+    # --watch frame's quota/pacing isn't mistaken for real-time. --fresh forces a bypass.
+    age = expensive_source_age_sec()
+    age_txt = f"cached {age}s ago (TTL {tc['ttl']['expensive_source_sec']}s; --fresh to bypass)" \
+        if isinstance(age, int) else "not yet probed"
+    out.write(f"{_pad('quota probe age', 22)} {_c(age_txt, 'dim')}\n")
 
 
 def emit_json_snapshot(stdout=None):
@@ -673,6 +681,8 @@ def render_project(stdout=None):
 def main(argv=None, stdout=None):
     args = parse_args(argv)
     out = stdout or sys.stdout
+    if getattr(args, "fresh", False):
+        clear_expensive_cache()  # opt-in: force one bypass of the 60s quota cache
     if args.watch:
         return run_watch(interval=args.interval, json_mode=args.json_mode, stdout=out)
     if args.json_mode:

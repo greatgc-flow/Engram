@@ -238,6 +238,22 @@ Final peer consensus (`cc.deepthink`, `ag.deepthink`, `cx.deepthink`) uses this 
 - Peer initial instruction files are provenance, not main summary content. Show path, exists/missing, modified time, size, and optional hash in detail/profile views.
 - Never inline instruction file contents or raw account identifiers in the default dashboard.
 
+### 6.6 Constants, POLICY panel & freshness (2026-07-08)
+
+- **Constants are config, not code** (design 2026-07-08 §2 / DIR-004): TTLs, probe
+  deadline, `warn/crit` display thresholds and watch interval live in
+  `_sys/ai/telemetry-config.json`, loaded via `snapshot.telemetry_config()` (defaults
+  on missing/typo). Vendor facts (`window_hours` 5/168) stay in code. Enforced by
+  `check_policy_constants.py` (CHK-CONST) in pre-commit.
+- **POLICY panel**: the default dashboard ends with a POLICY panel mapping each live
+  operational knob to its config source path — operational knobs only, not a full dump.
+- **`--watch` double-buffering**: no alt-screen (scrollback preserved); frame built
+  off-screen then blitted with synchronized-output (`?2026h/l`, TTY-gated) + cursor-home
+  + per-line `\033[K` + final `\033[J`, replacing the flickering `\033[2J`.
+- **Freshness**: expensive sources (claude `/usage`, codex rate-limits) are cached
+  `ttl.expensive_source_sec` (60s) to avoid per-frame subprocess hang. POLICY shows
+  `quota probe age: cached Ns ago`; `diag --fresh` forces one bypass. TTL stays 60s.
+
 ---
 
 ## 7. Alert Semantics

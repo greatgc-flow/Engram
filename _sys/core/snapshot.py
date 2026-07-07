@@ -488,6 +488,27 @@ _CODEX_RATE_LIMIT_CACHE = {}
 _CLAUDE_USAGE_CACHE = {}
 
 
+def clear_expensive_cache():
+    """Drop the in-process expensive-source caches (codex rate-limits, claude
+    /usage) so the next collect re-probes. Backs diag `--fresh` (design 2026-07-08
+    freshness §): watch keeps the 60s TTL by default; --fresh forces one bypass."""
+    _CODEX_RATE_LIMIT_CACHE.clear()
+    _CLAUDE_USAGE_CACHE.clear()
+
+
+def expensive_source_age_sec(clock=time.monotonic):
+    """Age (seconds) of the OLDEST live expensive-source cache entry, or None if
+    nothing is cached. Surfaced so the UI can show 'quota cached Ns ago' instead
+    of implying the value is real-time (peers: transparency default)."""
+    ttl = EXPENSIVE_SOURCE_TTL_SEC
+    ages = []
+    for cache, key in ((_CODEX_RATE_LIMIT_CACHE, "rate_limits"), (_CLAUDE_USAGE_CACHE, "usage")):
+        entry = cache.get(key)
+        if entry and "expires_at" in entry:
+            ages.append(max(0, int(ttl - (float(entry["expires_at"]) - clock()))))
+    return max(ages) if ages else None
+
+
 def _cached_codex_rate_limits(ttl_sec=EXPENSIVE_SOURCE_TTL_SEC, clock=time.monotonic):
     now = clock()
     cached = _CODEX_RATE_LIMIT_CACHE.get("rate_limits")

@@ -302,3 +302,16 @@ The lifecycle command synchronizes topology, installation `node_ids`, status pro
 See `_sys/docs/history/ops/peer-debate-2026-06-19.md` (archived) for the full decision record.
 
 
+
+## AUTO Routing Knobs (token load balancing, 2026-07-08)
+
+`--to auto` resolves the target via `snapshot.select_load_balanced_peer`. All knobs
+live in `routing-config.json:token_load_balancing` (no hardcoded per-peer values —
+DIR-004; enforced by CHK-CONST):
+
+- **headroom_bias** — DERIVED `sqrt(abs_headroom/mean)`, `abs_headroom = window_tokens*ctx_remaining`; clamped to safety band `min/max`; over-pacing peers not amplified. Steers share toward large-window peers (ag).
+- **context_affinity** — heavy asks (`>= heavy_task_tokens`) lift the max-abs-headroom peer by `max_lift`; `switch_ratio` drives session-reuse hysteresis (`hub._session_hysteresis_target`) so a context chain stays on one peer.
+- **bulk_exclude_profiles** — profile-level bulk exclusion (e.g. `ag.opus` premium) without excluding its peer's other profiles; distinct from PEER-level `arbiter_models` (DIR-005).
+- **peer_weight_bias** — optional manual override (empty default).
+
+Design record: `_sys/docs/history/ops/token-session-policy-design-2026-07-08.md`.
