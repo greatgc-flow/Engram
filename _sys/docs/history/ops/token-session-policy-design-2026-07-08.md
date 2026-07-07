@@ -126,7 +126,10 @@ Config: telemetry-config `watch.sync_output: "auto|on|off"` (auto = probe).
 4. ✅ `context_affinity` routing + `should_switch_session_peer` hysteresis (§1) — commit a25b34a.
 5. ✅ CHK-CONST guard (`check_policy_constants.py`) + tests, wired to pre-commit (§2).
 
-Each increment: tests + pre-commit green + diag renders. Remaining follow-up
-(optional): wire `should_switch_session_peer` into the hub session-lifecycle
-decision (currently exposed + tested as a pure helper; `_session_reuse_enabled`
-stays capability-based until then).
+Each increment: tests + pre-commit green + diag renders.
+
+Follow-up DONE: `should_switch_session_peer` is now wired into `--to auto` via
+`hub._session_hysteresis_target` — the balancer's pick is overridden back to the
+room's incumbent active-session peer unless the challenger clears switch_ratio
+(or the incumbent is stale / near-floor / the terminal). Logged as
+`hysteresis=session_hysteresis_kept` in the route metric.

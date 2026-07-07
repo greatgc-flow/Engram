@@ -3265,6 +3265,47 @@ def _fresh_active_coordinator(state: dict, now: datetime | None = None) -> str |
     return None
 
 
+def _session_hysteresis_target(snap, ai_root, selected, terminal_peer, cfg):
+    """Session-reuse HYSTERESIS wiring (design 2026-07-08 §1). Keep the room's
+    incumbent active-session peer instead of the freshly-selected one UNLESS the
+    challenger clears switch_ratio, or the incumbent is stale/near-floor/terminal.
+    Prevents a long context chain from bouncing between peers. Returns the final
+    target and an optional reason suffix. Never raises."""
+    try:
+        ca = (cfg or {}).get("context_affinity", {}) or {}
+        if not ca.get("enabled"):
+            return selected, None
+        state = (_read_json(ai_root / "state.json") or {}) if ai_root else {}
+        room = state.get("room_id")
+        if not room:
+            return selected, None
+        incumbent = None  # sessions are pre-sorted most-recent-first
+        for s in snap.get("sessions", []) or []:
+            if str(s.get("scope_key", "")).startswith(f"{room}:") \
+                    and str(s.get("status", "")).lower() in ("active", "open"):
+                incumbent = s.get("peer")
+                break
+        if not incumbent or incumbent == selected or incumbent == terminal_peer:
+            return selected, None
+        floor = cfg.get("effective_headroom_floor", 0.10)
+        abs_by, frac_by = {}, {}
+        for r in snapshot._derive_headroom_rows(snap):
+            if r.get("state") != "eligible":
+                continue
+            a, p = r.get("abs_headroom"), r.get("peer")
+            if isinstance(a, (int, float)) and a > abs_by.get(p, -1.0):
+                abs_by[p], frac_by[p] = a, r.get("headroom")
+        near_floor = isinstance(frac_by.get(incumbent), (int, float)) and frac_by[incumbent] < floor
+        switch = snapshot.should_switch_session_peer(
+            abs_by.get(incumbent), abs_by.get(selected),
+            switch_ratio=ca.get("switch_ratio", 2.0), incumbent_near_floor=near_floor)
+        if not switch and incumbent in abs_by:
+            return incumbent, "session_hysteresis_kept"
+        return selected, None
+    except Exception:
+        return selected, None
+
+
 def resolve_auto_target(ai_root, config=None, snapshot_obj=None, now=None, task_tokens=0) -> dict:
     """Load-balancer DRIVING path for `--to auto`: resolve the target peer via
     snapshot.select_load_balanced_peer and log the routing decision. Opt-in (does
@@ -3288,16 +3329,17 @@ def resolve_auto_target(ai_root, config=None, snapshot_obj=None, now=None, task_
             task_tokens=task_tokens)
         if decision.get("selected_peer"):
             target = decision["selected_peer"]
+            target, hyst = _session_hysteresis_target(snap, ai_root, target, terminal_peer, cfg)
             snap_hash = snapshot.snapshot_hash(snap)
             if ai_root:
                 try:
                     _record_routing_metric(ai_root, "load_balance_route", target=target,
                                            weights=decision.get("weights"),
                                            affinity=decision.get("affinity_applied"),
-                                           snapshot_hash=snap_hash)
+                                           hysteresis=hyst, snapshot_hash=snap_hash)
                 except Exception:
                     pass
-            return {"target": target, "reason": "load_balanced",
+            return {"target": target, "reason": hyst or "load_balanced",
                     "weights": decision.get("weights"), "snapshot_hash": snap_hash}
         return {"target": None, "reason": decision.get("reason", "no_selection")}
     except Exception as e:
