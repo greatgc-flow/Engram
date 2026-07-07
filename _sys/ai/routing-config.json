@@ -174,10 +174,14 @@
       "high": 0.04
     },
     "select": "seeded_weighted_random",
-    "peer_weight_bias": {
-      "ag": 1.5
+    "headroom_bias": {
+      "enabled": true,
+      "min": 0.75,
+      "max": 1.5
     },
-    "_peer_weight_bias_doc": "Per-peer AUTO-routing weight multiplier (default 1.0 / absent = no bias). ag=1.5: ag has the most headroom (1M ctx) and lowest quota burn, but fraction-based h_eff hides its window edge — this steers a larger AUTO share onto ag to offload the premium terminal (cc). Safety (cx 2026-07-07): an amplifying bias (>1) is CLAMPED to 1.0 for any peer that is over-pacing (pacing_max>1.0), so a bias can never pull bulk work onto a rate-danger peer. Terminal is hard-excluded regardless. NOTE: only affects `--to auto`; direct `--to <peer>` is an explicit override and is unaffected — to actually offload cc, route ambiguous/bulk asks via `--to auto`.",
+    "_headroom_bias_doc": "DERIVED AUTO-routing bias (no hardcoded per-peer multiplier — DIR-004). bias = sqrt(peer_abs_headroom / mean_abs_headroom), where abs_headroom = context_window_tokens * context_remaining (measured free capacity). sqrt DAMPENS the raw ratio so a large-window peer (ag ~1M) earns a larger share than a small one (cx 258k) without starving it (linear ~3.9x -> ~1.4x). `min`/`max` are safety RAILS (not capacity claims) clamping the derived value. Gates: a peer with no measured abs_headroom gets no bias (never fabricated); an amplifying bias is clamped to 1.0 for an over-pacing peer (pacing_max>1.0). Self-adjusts as quotas/context change; recomputed every routing decision. Only affects `--to auto`; direct `--to` is unaffected.",
+    "peer_weight_bias": {},
+    "_peer_weight_bias_doc": "OPTIONAL manual override map {peer: multiplier}. Empty by default — the derived headroom_bias above is used instead. Set an entry only to deliberately pin a peer's AUTO multiplier (takes precedence over the derived value for that peer); still subject to the over-pacing clamp.",
     "_phase": "P1 (selector shipped; hub hook + shadow-logging next). enabled=False until shadow-validated.",
     "shadow_log": true,
     "_shadow_doc": "shadow_log=True logs what the balancer WOULD pick (routing_metrics.jsonl event=load_balance_shadow) without driving routing; enabled=False keeps actual routing unchanged. Validate distribution before flipping enabled.",

@@ -1043,6 +1043,12 @@ def _derive_headroom_rows(snapshot):
             else None
         )
         strength = _effort_strength(profile.get("effort"))
+        window_tokens = (profile.get("context") or {}).get("window_tokens")
+        abs_headroom = (
+            float(window_tokens) * float(context_remaining)
+            if isinstance(window_tokens, (int, float)) and context_remaining is not None
+            else None
+        )
         rows.append({
             "profile": profile.get("profile"),
             "peer": profile.get("peer"),
@@ -1052,6 +1058,8 @@ def _derive_headroom_rows(snapshot):
             "quota_remaining": quota_remaining,
             "context_remaining": context_remaining,
             "headroom": headroom,
+            "context_window_tokens": window_tokens if isinstance(window_tokens, (int, float)) else None,
+            "abs_headroom": abs_headroom,
             "pacing_max": _profile_pacing_max(profile),
             "tier_strength": strength,
             "tier_risk": (
@@ -1583,19 +1591,34 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
         cost = cost_map.get(ct, 0.0) if isinstance(ct, str) else 0.0
         raw_weights[peer] = max(eps, h_eff[peer] - cost)
 
-    # Per-peer weight bias (opt-in): multiply a peer's weight to deliberately
-    # steer more/less AUTO share onto it (e.g. ag=1.5 — it has the most headroom
-    # and lowest quota burn, but fraction-based h_eff hides its 1M-window edge).
-    # Safety gate (cx): an amplifying bias (>1) is CLAMPED to 1.0 for a peer that
-    # is over-pacing (pacing_max > 1.0), so a bias can never pull bulk work onto a
-    # rate-danger peer. De-boosts (<=1) always apply. Terminal is untouched (it is
-    # hard-excluded below). Default {} = no bias (backward-compatible).
-    bias_cfg = config.get("peer_weight_bias", {}) or {}
+    # Headroom bias — DERIVED from measured absolute free capacity (no magic
+    # multiplier, DIR-004). A peer with a much larger absolute headroom (e.g. ag's
+    # ~1M-token window vs cx's 258k) should absorb a larger AUTO share, but the
+    # fraction-based h_eff hides window size. bias = sqrt(abs_headroom / mean) —
+    # sqrt DAMPENS the raw ratio (linear ~3.9x -> ~1.4x) so a big-window peer can
+    # never starve a smaller one; then clamped to a safety band [min,max]. Gates:
+    # (a) a peer with no MEASURED abs_headroom gets no bias (never fabricated);
+    # (b) an amplifying bias (>1) is clamped to 1.0 for an over-pacing peer
+    # (pacing_max>1.0) so bias can't pull bulk onto a rate-danger peer (cx). An
+    # explicit peer_weight_bias entry is a MANUAL override and takes precedence.
+    hb = config.get("headroom_bias", {}) or {}
+    hb_enabled = hb.get("enabled", True)
+    hb_min, hb_max = float(hb.get("min", 0.75)), float(hb.get("max", 1.5))
+    manual_bias = config.get("peer_weight_bias", {}) or {}
+    _abs = [representatives[p].get("abs_headroom") for p in peers]
+    _abs = [a for a in _abs if isinstance(a, (int, float)) and not isinstance(a, bool) and a > 0]
+    mean_abs = (sum(_abs) / len(_abs)) if _abs else None
     bias_applied = {}
     for peer in peers:
-        b = bias_cfg.get(peer)
-        if not isinstance(b, (int, float)) or isinstance(b, bool) or b <= 0:
-            continue
+        mb = manual_bias.get(peer)
+        ah = representatives[peer].get("abs_headroom")
+        if isinstance(mb, (int, float)) and not isinstance(mb, bool) and mb > 0:
+            b = float(mb)  # manual override wins
+        elif hb_enabled and mean_abs and isinstance(ah, (int, float)) and not isinstance(ah, bool) and ah > 0:
+            b = (float(ah) / mean_abs) ** 0.5           # sqrt-dampened ratio
+            b = max(hb_min, min(hb_max, b))             # safety band (anti-starvation)
+        else:
+            continue  # no measured abs headroom -> no bias (DIR-004)
         if b > 1.0 and float(pacing_applied.get(peer, 1.0)) > 1.0:
             b = 1.0  # rate-danger gate: never amplify onto an over-pacing peer
         bias_applied[peer] = round(float(b), 3)

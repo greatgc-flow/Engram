@@ -104,6 +104,55 @@ def test_peer_weight_bias_clamped_for_over_pacing_peer(monkeypatch):
     assert res["probabilities"]["ag"] == pytest.approx(0.5, abs=0.02)
 
 
+def test_derived_headroom_bias_favors_larger_absolute_window(monkeypatch):
+    # ag has a much larger absolute free capacity than cx -> derived (sqrt-damped)
+    # bias steers more share to ag, but cx is clamped at the band floor (not starved).
+    ag_row = _row("ag", 0.40); ag_row["abs_headroom"] = 1_045_000
+    cx_row = _row("cx", 0.40); cx_row["abs_headroom"] = 223_000
+    _patch_rows(monkeypatch, [ag_row, cx_row])
+    cfg = {**CONFIG, "headroom_bias": {"enabled": True, "min": 0.75, "max": 1.5}}
+
+    res = snapshot.select_load_balanced_peer({}, cfg, ask_id="d0")
+
+    assert res["bias_applied"]["ag"] > 1.0
+    assert res["bias_applied"]["cx"] == 0.75          # clamped at floor, not 0.59
+    assert res["probabilities"]["ag"] > res["probabilities"]["cx"]
+    assert res["bias_applied"]["ag"] == pytest.approx(1.28, abs=0.05)  # sqrt-damped, not 4.7x
+
+
+def test_derived_bias_absent_without_measured_abs_headroom(monkeypatch):
+    # No abs_headroom on any row -> no bias fabricated (DIR-004).
+    _patch_rows(monkeypatch, [_row("ag", 0.40), _row("cx", 0.40)])
+    cfg = {**CONFIG, "headroom_bias": {"enabled": True}}
+
+    res = snapshot.select_load_balanced_peer({}, cfg, ask_id="d1")
+
+    assert res["bias_applied"] == {}
+    assert res["probabilities"]["ag"] == pytest.approx(0.5, abs=0.02)
+
+
+def test_derived_bias_clamped_for_over_pacing_peer(monkeypatch):
+    ag_row = _row("ag", 0.40); ag_row["abs_headroom"] = 1_045_000; ag_row["pacing_max"] = 2.0
+    cx_row = _row("cx", 0.40); cx_row["abs_headroom"] = 223_000
+    _patch_rows(monkeypatch, [ag_row, cx_row])
+    cfg = {**CONFIG, "headroom_bias": {"enabled": True}, "pacing_penalty_enabled": False}
+
+    res = snapshot.select_load_balanced_peer({}, cfg, ask_id="d2")
+
+    assert res["bias_applied"]["ag"] == 1.0            # amplification gated by pacing danger
+
+
+def test_manual_bias_overrides_derived(monkeypatch):
+    ag_row = _row("ag", 0.40); ag_row["abs_headroom"] = 1_045_000
+    cx_row = _row("cx", 0.40); cx_row["abs_headroom"] = 223_000
+    _patch_rows(monkeypatch, [ag_row, cx_row])
+    cfg = {**CONFIG, "headroom_bias": {"enabled": True}, "peer_weight_bias": {"ag": 1.1}}
+
+    res = snapshot.select_load_balanced_peer({}, cfg, ask_id="d3")
+
+    assert res["bias_applied"]["ag"] == 1.1            # manual pin wins over derived 1.28
+
+
 def test_bulk_exclude_profile_drops_only_that_profile_not_whole_peer(monkeypatch):
     # ag.opus (premium) is profile-excluded; ag's Gemini bulk profile stays eligible.
     _patch_rows(monkeypatch, [
