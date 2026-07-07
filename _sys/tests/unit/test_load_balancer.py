@@ -73,6 +73,37 @@ def test_terminal_participates_when_all_non_terminals_below_floor(monkeypatch):
     assert "cc" in result["candidates"]
 
 
+def test_peer_weight_bias_shifts_share_toward_biased_peer(monkeypatch):
+    _patch_rows(monkeypatch, [
+        _row("ag", 0.40),
+        _row("cx", 0.40),
+    ])
+    base = snapshot.select_load_balanced_peer({}, CONFIG, ask_id="b0")
+    biased = snapshot.select_load_balanced_peer(
+        {}, {**CONFIG, "peer_weight_bias": {"ag": 1.5}}, ask_id="b0")
+
+    assert base["probabilities"]["ag"] == pytest.approx(0.5, abs=0.02)
+    assert biased["probabilities"]["ag"] > base["probabilities"]["ag"]
+    assert biased["bias_applied"] == {"ag": 1.5}
+    assert biased["probabilities"]["ag"] == pytest.approx(0.6, abs=0.02)
+
+
+def test_peer_weight_bias_clamped_for_over_pacing_peer(monkeypatch):
+    # ag is over-pacing (pacing_max=2.0): an amplifying bias must be clamped to 1.0
+    # so it cannot pull more bulk work onto a rate-danger peer.
+    ag_row = _row("ag", 0.40)
+    ag_row["pacing_max"] = 2.0
+    _patch_rows(monkeypatch, [ag_row, _row("cx", 0.40)])
+
+    res = snapshot.select_load_balanced_peer(
+        {}, {**CONFIG, "peer_weight_bias": {"ag": 1.5}, "pacing_penalty_enabled": False},
+        ask_id="b1")
+
+    # bias clamped to 1.0 (recorded as such for audit); ag not amplified
+    assert res["bias_applied"].get("ag") == 1.0
+    assert res["probabilities"]["ag"] == pytest.approx(0.5, abs=0.02)
+
+
 def test_bulk_exclude_profile_drops_only_that_profile_not_whole_peer(monkeypatch):
     # ag.opus (premium) is profile-excluded; ag's Gemini bulk profile stays eligible.
     _patch_rows(monkeypatch, [

@@ -744,6 +744,7 @@ def gather_peer(peer, peer_dirs):
                 quotas.append({
                     "label": label, "used_frac": used_frac,
                     "reset": _fmt_reset(resets_at),
+                    "pacing": pacing,
                     "metric": f"{float(used):.1f}% used{_fmt_pacing(pacing)}",
                     "pacing_ratio": pacing.get("ratio"), "pacing_status": pacing.get("status"),
                 })
@@ -1582,6 +1583,24 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
         cost = cost_map.get(ct, 0.0) if isinstance(ct, str) else 0.0
         raw_weights[peer] = max(eps, h_eff[peer] - cost)
 
+    # Per-peer weight bias (opt-in): multiply a peer's weight to deliberately
+    # steer more/less AUTO share onto it (e.g. ag=1.5 — it has the most headroom
+    # and lowest quota burn, but fraction-based h_eff hides its 1M-window edge).
+    # Safety gate (cx): an amplifying bias (>1) is CLAMPED to 1.0 for a peer that
+    # is over-pacing (pacing_max > 1.0), so a bias can never pull bulk work onto a
+    # rate-danger peer. De-boosts (<=1) always apply. Terminal is untouched (it is
+    # hard-excluded below). Default {} = no bias (backward-compatible).
+    bias_cfg = config.get("peer_weight_bias", {}) or {}
+    bias_applied = {}
+    for peer in peers:
+        b = bias_cfg.get(peer)
+        if not isinstance(b, (int, float)) or isinstance(b, bool) or b <= 0:
+            continue
+        if b > 1.0 and float(pacing_applied.get(peer, 1.0)) > 1.0:
+            b = 1.0  # rate-danger gate: never amplify onto an over-pacing peer
+        bias_applied[peer] = round(float(b), 3)
+        raw_weights[peer] = max(eps, raw_weights[peer] * float(b))
+
     # HARD terminal exclusion: if any non-terminal peer's H_eff is at/above the
     # floor, the terminal is zeroed out (never a discount — always minimal).
     terminal_excluded = None
@@ -1625,6 +1644,7 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
         "premium_excluded": sorted(premium_excluded),
         "pacing_applied": pacing_applied,
         "inflight_applied": inflight_applied,
+        "bias_applied": bias_applied,
         "seed": seed,
         "draw": draw,
         "candidates": peers,
