@@ -182,6 +182,13 @@
     "_headroom_bias_doc": "DERIVED AUTO-routing bias (no hardcoded per-peer multiplier — DIR-004). bias = sqrt(peer_abs_headroom / mean_abs_headroom), where abs_headroom = context_window_tokens * context_remaining (measured free capacity). sqrt DAMPENS the raw ratio so a large-window peer (ag ~1M) earns a larger share than a small one (cx 258k) without starving it (linear ~3.9x -> ~1.4x). `min`/`max` are safety RAILS (not capacity claims) clamping the derived value. Gates: a peer with no measured abs_headroom gets no bias (never fabricated); an amplifying bias is clamped to 1.0 for an over-pacing peer (pacing_max>1.0). Self-adjusts as quotas/context change; recomputed every routing decision. Only affects `--to auto`; direct `--to` is unaffected.",
     "peer_weight_bias": {},
     "_peer_weight_bias_doc": "OPTIONAL manual override map {peer: multiplier}. Empty by default — the derived headroom_bias above is used instead. Set an entry only to deliberately pin a peer's AUTO multiplier (takes precedence over the derived value for that peer); still subject to the over-pacing clamp.",
+    "context_affinity": {
+      "enabled": true,
+      "heavy_task_tokens": 32000,
+      "switch_ratio": 2.0,
+      "max_lift": 1.5
+    },
+    "_context_affinity_doc": "Heavy-task steering onto the peer with the most ABSOLUTE free context (design 2026-07-08 §1). When an AUTO ask's estimated size >= heavy_task_tokens, the candidate with the largest measured abs_headroom (=window_tokens*ctx_remaining, e.g. ag's ~1M window) gets a bounded weight lift (<= max_lift) beyond the routine sqrt headroom_bias — so large/multi-turn chains land where the context fits. Over-pacing peers are not amplified. `switch_ratio` is the session-reuse HYSTERESIS: keep an incumbent session unless a challenger has >= switch_ratio x its absolute free headroom (or the incumbent is stale / within effective_headroom_floor) — prevents oscillation and permanent pinning. Only affects `--to auto`.",
     "_phase": "P1 (selector shipped; hub hook + shadow-logging next). enabled=False until shadow-validated.",
     "shadow_log": true,
     "_shadow_doc": "shadow_log=True logs what the balancer WOULD pick (routing_metrics.jsonl event=load_balance_shadow) without driving routing; enabled=False keeps actual routing unchanged. Validate distribution before flipping enabled.",

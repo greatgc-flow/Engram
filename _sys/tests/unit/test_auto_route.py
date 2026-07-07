@@ -39,7 +39,7 @@ def test_enabled_selector_returns_ag_and_logs(monkeypatch, tmp_path):
     class DummySnapshot:
         def collect_snapshot(self, *a, **k):
             return {"nodes": {}}
-        def select_load_balanced_peer(self, snap, cfg, terminal_peer=None, ask_id=""):
+        def select_load_balanced_peer(self, snap, cfg, terminal_peer=None, ask_id="", **kw):
             return {"selected_peer": "ag", "weights": {"ag": 10}, "reason": "selected"}
         def snapshot_hash(self, snap):
             return "hash123"
@@ -66,7 +66,7 @@ def test_enabled_selector_returns_none(monkeypatch, tmp_path):
     class DummySnapshot:
         def collect_snapshot(self, *a, **k):
             return {}
-        def select_load_balanced_peer(self, snap, cfg, terminal_peer=None, ask_id=""):
+        def select_load_balanced_peer(self, snap, cfg, terminal_peer=None, ask_id="", **kw):
             return {"selected_peer": None, "reason": "no_eligible_candidate"}
 
     monkeypatch.setattr(hub, "snapshot", DummySnapshot())

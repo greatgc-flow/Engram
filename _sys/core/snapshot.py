@@ -1533,7 +1533,23 @@ def snapshot_failover_target(exclude=None, snapshot=None):
     return None
 
 
-def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", rng=None, inflight=None):
+def should_switch_session_peer(incumbent_abs, challenger_abs, switch_ratio=2.0,
+                               incumbent_stale=False, incumbent_near_floor=False):
+    """Session-reuse HYSTERESIS (design 2026-07-08 §1). Keep the incumbent session
+    peer unless: it is stale, or within the headroom floor, or a challenger has
+    >= switch_ratio times its ABSOLUTE free context headroom. Prevents oscillation
+    and permanent pinning of long chains to one peer. Pure/testable.
+    """
+    if incumbent_stale or incumbent_near_floor:
+        return True
+    if not isinstance(incumbent_abs, (int, float)) or incumbent_abs <= 0:
+        return True  # unknown/exhausted incumbent -> allow switch
+    if not isinstance(challenger_abs, (int, float)) or challenger_abs <= 0:
+        return False
+    return challenger_abs >= switch_ratio * incumbent_abs
+
+
+def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", rng=None, inflight=None, task_tokens=0):
     """Token load balancer — Phase 1 (design: ops/token-load-balancing-design.md).
 
     Route an ask to the peer that best equalizes token burn-down: peer-level
@@ -1668,6 +1684,25 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
         bias_applied[peer] = round(float(b), 3)
         raw_weights[peer] = max(eps, raw_weights[peer] * float(b))
 
+    # Context affinity (design 2026-07-08 §1): a HEAVY task (estimated size >=
+    # heavy_task_tokens) is steered onto the candidate with the most ABSOLUTE free
+    # context (ag's ~1M window) beyond the routine bias, so large/multi-turn chains
+    # land where the context fits. Bounded by max_lift; over-pacing peers not
+    # amplified; needs a measured abs_headroom. Only fires when task_tokens is given.
+    ca = config.get("context_affinity", {}) or {}
+    affinity_applied = None
+    if ca.get("enabled", False) and task_tokens and task_tokens >= ca.get("heavy_task_tokens", 32000):
+        cand_abs = {p: representatives[p].get("abs_headroom") for p in peers
+                    if isinstance(representatives[p].get("abs_headroom"), (int, float))
+                    and not isinstance(representatives[p].get("abs_headroom"), bool)
+                    and representatives[p].get("abs_headroom") > 0}
+        if cand_abs:
+            top = max(cand_abs, key=cand_abs.get)
+            if float(pacing_applied.get(top, 1.0)) <= 1.0:  # skip over-pacing peer
+                lift = float(ca.get("max_lift", 1.5))
+                raw_weights[top] = max(eps, raw_weights[top] * lift)
+                affinity_applied = {"peer": top, "lift": round(lift, 3), "task_tokens": int(task_tokens)}
+
     # HARD terminal exclusion: if any non-terminal peer's H_eff is at/above the
     # floor, the terminal is zeroed out (never a discount — always minimal).
     terminal_excluded = None
@@ -1684,6 +1719,8 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
         out["terminal_excluded"] = terminal_excluded
         out["pacing_applied"] = pacing_applied
         out["inflight_applied"] = inflight_applied
+        out["bias_applied"] = bias_applied
+        out["affinity_applied"] = affinity_applied
         return out
 
     # Deterministic seeded weighted-random over positive-weight peers only
@@ -1712,6 +1749,7 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
         "pacing_applied": pacing_applied,
         "inflight_applied": inflight_applied,
         "bias_applied": bias_applied,
+        "affinity_applied": affinity_applied,
         "seed": seed,
         "draw": draw,
         "candidates": peers,

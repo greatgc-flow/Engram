@@ -153,6 +153,42 @@ def test_manual_bias_overrides_derived(monkeypatch):
     assert res["bias_applied"]["ag"] == 1.1            # manual pin wins over derived 1.28
 
 
+def test_context_affinity_lifts_biggest_window_only_for_heavy_tasks(monkeypatch):
+    ag_row = _row("ag", 0.40); ag_row["abs_headroom"] = 1_045_000
+    cx_row = _row("cx", 0.40); cx_row["abs_headroom"] = 223_000
+    _patch_rows(monkeypatch, [ag_row, cx_row])
+    cfg = {**CONFIG, "context_affinity": {
+        "enabled": True, "heavy_task_tokens": 32000, "max_lift": 1.5}}
+
+    light = snapshot.select_load_balanced_peer({}, cfg, ask_id="c0", task_tokens=500)
+    heavy = snapshot.select_load_balanced_peer({}, cfg, ask_id="c0", task_tokens=100000)
+
+    assert light["affinity_applied"] is None
+    assert heavy["affinity_applied"]["peer"] == "ag"
+    assert heavy["affinity_applied"]["lift"] == 1.5
+    assert heavy["probabilities"]["ag"] > light["probabilities"]["ag"]
+
+
+def test_context_affinity_skips_over_pacing_top_peer(monkeypatch):
+    ag_row = _row("ag", 0.40); ag_row["abs_headroom"] = 1_045_000; ag_row["pacing_max"] = 2.0
+    cx_row = _row("cx", 0.40); cx_row["abs_headroom"] = 223_000
+    _patch_rows(monkeypatch, [ag_row, cx_row])
+    cfg = {**CONFIG, "context_affinity": {"enabled": True, "heavy_task_tokens": 1000, "max_lift": 1.5},
+           "pacing_penalty_enabled": False}
+
+    res = snapshot.select_load_balanced_peer({}, cfg, ask_id="c1", task_tokens=50000)
+    assert res["affinity_applied"] is None       # ag is over-pacing -> not lifted
+
+
+def test_should_switch_session_peer_hysteresis():
+    # keep incumbent unless challenger has >= switch_ratio x its abs headroom
+    assert snapshot.should_switch_session_peer(100_000, 150_000, switch_ratio=2.0) is False
+    assert snapshot.should_switch_session_peer(100_000, 210_000, switch_ratio=2.0) is True
+    assert snapshot.should_switch_session_peer(100_000, 0, incumbent_stale=True) is True
+    assert snapshot.should_switch_session_peer(100_000, 50_000, incumbent_near_floor=True) is True
+    assert snapshot.should_switch_session_peer(0, 10_000) is True   # exhausted incumbent
+
+
 def test_bulk_exclude_profile_drops_only_that_profile_not_whole_peer(monkeypatch):
     # ag.opus (premium) is profile-excluded; ag's Gemini bulk profile stays eligible.
     _patch_rows(monkeypatch, [

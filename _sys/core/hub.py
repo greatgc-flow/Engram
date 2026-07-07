@@ -3265,7 +3265,7 @@ def _fresh_active_coordinator(state: dict, now: datetime | None = None) -> str |
     return None
 
 
-def resolve_auto_target(ai_root, config=None, snapshot_obj=None, now=None) -> dict:
+def resolve_auto_target(ai_root, config=None, snapshot_obj=None, now=None, task_tokens=0) -> dict:
     """Load-balancer DRIVING path for `--to auto`: resolve the target peer via
     snapshot.select_load_balanced_peer and log the routing decision. Opt-in (does
     NOT touch explicit --to routing); gated by token_load_balancing.enabled. Fails
@@ -3284,14 +3284,17 @@ def resolve_auto_target(ai_root, config=None, snapshot_obj=None, now=None) -> di
             except Exception:
                 pass
         decision = snapshot.select_load_balanced_peer(
-            snap, cfg, terminal_peer=terminal_peer, ask_id=_short_id("lb-"))
+            snap, cfg, terminal_peer=terminal_peer, ask_id=_short_id("lb-"),
+            task_tokens=task_tokens)
         if decision.get("selected_peer"):
             target = decision["selected_peer"]
             snap_hash = snapshot.snapshot_hash(snap)
             if ai_root:
                 try:
                     _record_routing_metric(ai_root, "load_balance_route", target=target,
-                                           weights=decision.get("weights"), snapshot_hash=snap_hash)
+                                           weights=decision.get("weights"),
+                                           affinity=decision.get("affinity_applied"),
+                                           snapshot_hash=snap_hash)
                 except Exception:
                     pass
             return {"target": target, "reason": "load_balanced",
@@ -8046,7 +8049,15 @@ def main() -> None:
         # the balancer (gated by token_load_balancing.enabled). Explicit --to is
         # untouched. Fail loud if auto can't resolve — never silently default.
         if effective_target == "auto":
-            res = resolve_auto_target(ai_root_opt)
+            # Estimate task size (~4 chars/token) for context_affinity heavy-task
+            # steering: a large query/payload prefers the biggest-window peer.
+            _chars = len(args.query or "")
+            if args.query_file:
+                try:
+                    _chars += len(Path(args.query_file).read_text(encoding="utf-8", errors="ignore"))
+                except OSError:
+                    pass
+            res = resolve_auto_target(ai_root_opt, task_tokens=_chars // 4)
             if res.get("target"):
                 effective_target = res["target"]
                 print(f"[HUB] LOAD-BALANCED auto -> {effective_target} (weights {res.get('weights')})")
