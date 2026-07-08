@@ -2898,6 +2898,16 @@ def _store_session_from_result(adapter, node, raw_text, command_session_id, scop
         _log_p2p("SESSION", f"{health_peer} session stored scope={scope_key} id={resolved[:8]}...", to_node=health_peer)
 
 
+def _resolve_usage_session_id(adapter, node, raw_text, command_session_id) -> str | None:
+    """Resolve the exact session id for post-close token extraction."""
+    if not adapter:
+        return None
+    try:
+        return adapter.extract_session_id(raw_text, node, command_session_id) or command_session_id
+    except Exception:
+        return command_session_id
+
+
 def _retire_session(peer_id: str, scope_key: str, reason: str, ai_root: Path | None = None) -> None:
     data = _load_session_state(peer_id)
     entry = data.get("active", {}).pop(scope_key, None)
@@ -4245,8 +4255,11 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     elapsed_sec=float(elapsed),
                 )
                 profile_id = _resolve_profile_id(to)
+                usage_session_id = _resolve_usage_session_id(
+                    adapter, node, raw_pty, command_session_id
+                )
                 usage: dict = (
-                    adapter.extract_usage(raw_pty, node) if adapter else {}
+                    adapter.extract_usage(raw_pty, node, session_id=usage_session_id) if adapter else {}
                 )
                 logger.log_cost(
                     peer_id=to,
@@ -4403,7 +4416,14 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         if logger:
             logger.log_ipc(peer_id=to, direction="receive", response_preview=raw_text, elapsed_sec=float(elapsed))
             profile_id = _resolve_profile_id(to)
-            usage: dict = adapter.extract_usage(raw_text, node) if adapter else {}
+            usage_session_id = (
+                _resolve_usage_session_id(adapter, node, raw_text, command_session_id)
+                if proc.returncode == 0
+                else None
+            )
+            usage: dict = (
+                adapter.extract_usage(raw_text, node, session_id=usage_session_id) if adapter else {}
+            )
             logger.log_cost(
                 peer_id=to,
                 model_id=node.get("model_id") or node.get("runtime_model") or node.get("invoke", to),

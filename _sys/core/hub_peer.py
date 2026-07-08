@@ -87,6 +87,94 @@ _PEERS_MTIME_NS = -1
 _PEERS_SYS_DIR_CACHE: dict[str, str] = {}
 
 
+def _token_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
+
+
+def _first_token_value(data: dict[str, Any], names: tuple[str, ...]) -> int | None:
+    for name in names:
+        val = _token_int(data.get(name))
+        if val is not None:
+            return val
+    return None
+
+
+def _normalize_usage(usage: dict[str, Any]) -> dict[str, Any]:
+    input_base = _first_token_value(
+        usage,
+        ("input_tokens", "prompt_tokens", "inputTokenCount", "promptTokenCount"),
+    )
+    cache_read = _first_token_value(
+        usage,
+        ("cache_read_input_tokens", "cached_input_tokens", "cacheReadInputTokens"),
+    )
+    cache_create = _first_token_value(
+        usage,
+        ("cache_creation_input_tokens", "cacheCreationInputTokens"),
+    )
+    output_tokens = _first_token_value(
+        usage,
+        ("output_tokens", "completion_tokens", "outputTokenCount", "completionTokenCount"),
+    )
+
+    details = usage.get("output_tokens_details") or usage.get("completion_tokens_details") or {}
+    reasoning_tokens = _first_token_value(usage, ("reasoning_tokens", "thinking_tokens", "thoughtsTokenCount"))
+    if reasoning_tokens is None and isinstance(details, dict):
+        reasoning_tokens = _first_token_value(details, ("reasoning_tokens", "thinking_tokens"))
+
+    input_parts = [v for v in (input_base, cache_read, cache_create) if v is not None]
+    input_tokens = sum(input_parts) if input_parts else None
+
+    if input_tokens is None and output_tokens is None and reasoning_tokens is None:
+        return {}
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "reasoning_tokens": reasoning_tokens,
+    }
+
+
+def _usage_from_obj(obj: dict[str, Any]) -> dict[str, Any]:
+    candidates: list[dict[str, Any]] = []
+    usage = obj.get("usage")
+    if isinstance(usage, dict):
+        candidates.append(usage)
+    for key in ("message", "response", "result", "data", "stats", "metadata"):
+        nested = obj.get(key)
+        if not isinstance(nested, dict):
+            continue
+        nested_usage = nested.get("usage")
+        if isinstance(nested_usage, dict):
+            candidates.append(nested_usage)
+    candidates.append(obj)
+
+    for candidate in candidates:
+        normalized = _normalize_usage(candidate)
+        if normalized:
+            return normalized
+    return {}
+
+
+def _claude_projects_dir() -> Path:
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    if config_dir:
+        return Path(config_dir) / "projects"
+    return _SYS_DIR / "claude" / "config" / "projects"
+
+
+def _agy_brain_dir() -> Path:
+    config_dir = os.environ.get("AGY_CONFIG_HOME") or os.environ.get("GEMINI_DIR")
+    if config_dir:
+        return Path(config_dir) / "brain"
+    return _SYS_DIR / "antigravity" / "config" / "brain"
+
+
 def resolve_peer_sys_dir(peer_id: str, sys_dir: Path | str | None = None) -> str | None:
     """Resolve peer_id to its sys_subdir based on peers.json.
     If sys_dir is provided, the path is resolved relative to it, otherwise just the subdir is returned.
@@ -388,6 +476,12 @@ class PeerAdapter(Protocol):
         """Resolve the session id to persist from stdout / the command id."""
         ...
 
+    def extract_usage(
+        self, stdout: str, node: dict[str, Any], session_id: str | None = None
+    ) -> dict[str, Any]:
+        """Extract token usage metadata from a completed invocation."""
+        ...
+
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
         """Extract the usable response text from raw subprocess stdout."""
         ...
@@ -438,7 +532,7 @@ class BaseAdapter:
         """Replace {query} placeholder in invoke_args with actual query."""
         return [a.replace("{query}", query) for a in raw_args]
 
-    def extract_usage(self, stdout: str, node: dict[str, Any]) -> dict[str, Any]:
+    def extract_usage(self, stdout: str, node: dict[str, Any], session_id: str | None = None) -> dict[str, Any]:
         """Extract token usage metadata from raw subprocess stdout. Override per adapter."""
         return {}
 
@@ -543,6 +637,38 @@ class ClaudeAdapter(BaseAdapter):
 
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
         return stdout.strip()
+
+    def extract_usage(self, stdout: str, node: dict[str, Any], session_id: str | None = None) -> dict[str, Any]:
+        if not session_id:
+            return {}
+        try:
+            base_dir = _claude_projects_dir()
+            if not base_dir.exists():
+                return {}
+            matches = sorted(base_dir.glob(f"*/{session_id}.jsonl"))
+            if len(matches) != 1:
+                return {}
+            for line in reversed(matches[0].read_text(encoding="utf-8").splitlines()):
+                if '"usage"' not in line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                if obj.get("sessionId") != session_id:
+                    continue
+                if obj.get("type") != "assistant":
+                    continue
+                message = obj.get("message")
+                if not isinstance(message, dict):
+                    continue
+                usage = message.get("usage")
+                if not isinstance(usage, dict):
+                    continue
+                return _normalize_usage(usage)
+        except Exception:
+            return {}
+        return {}
 
 
 
@@ -657,21 +783,37 @@ class CodexAdapter(BaseAdapter):
                     return str(tid)
         return command_session_id
 
-    def extract_usage(self, stdout: str, node: dict[str, Any]) -> dict[str, Any]:
-        """Extract token usage from Codex --json response."""
+    def extract_usage(self, stdout: str, node: dict[str, Any], session_id: str | None = None) -> dict[str, Any]:
+        """Extract token usage from a Codex --json JSONL event stream."""
         if "--json" not in node.get("invoke_args", []):
             return {}
+        stream_session_id = None
+        latest: dict[str, Any] = {}
         try:
-            data = json.loads(stdout)
-            usage = data.get("usage", {})
-            details = usage.get("output_tokens_details", {})
-            return {
-                "input_tokens": usage.get("input_tokens"),
-                "output_tokens": usage.get("output_tokens"),
-                "reasoning_tokens": details.get("reasoning_tokens"),
-            }
-        except (json.JSONDecodeError, KeyError, TypeError):
+            for line in stdout.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(obj, dict):
+                    continue
+                if obj.get("thread_id"):
+                    stream_session_id = str(obj.get("thread_id"))
+                elif obj.get("session_id"):
+                    stream_session_id = str(obj.get("session_id"))
+                elif obj.get("sessionId"):
+                    stream_session_id = str(obj.get("sessionId"))
+                parsed = _usage_from_obj(obj)
+                if parsed:
+                    latest = parsed
+        except Exception:
             return {}
+        if session_id and stream_session_id and stream_session_id != session_id:
+            return {}
+        return latest
 
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
         # Codex --json mode: adapter-owned parsing (moved from hub._extract_jsonl_text)
@@ -711,6 +853,13 @@ def _agy_conversations_dir() -> Path:
     """agy's durable conversation store (id = <id>.db filename). Module-level so
     tests can monkeypatch it."""
     return _SYS_DIR / "antigravity" / "config" / "conversations"
+
+
+def _agy_transcript_candidates(session_id: str) -> list[Path]:
+    return [
+        _agy_brain_dir() / session_id / ".system_generated" / "logs" / "transcript.jsonl",
+        _agy_conversations_dir() / session_id / "transcript.jsonl",
+    ]
 
 
 class AgyAdapter(BaseAdapter):
@@ -757,6 +906,35 @@ class AgyAdapter(BaseAdapter):
             return match.group(1)
 
         return None
+
+    def extract_usage(self, stdout: str, node: dict[str, Any], session_id: str | None = None) -> dict[str, Any]:
+        if not session_id:
+            return {}
+        try:
+            matches = [p for p in _agy_transcript_candidates(session_id) if p.exists()]
+            if len(matches) != 1:
+                return {}
+            for line in reversed(matches[0].read_text(encoding="utf-8").splitlines()):
+                if "usage" not in line and "token" not in line.lower():
+                    continue
+                try:
+                    obj = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                obj_session_id = (
+                    obj.get("session_id")
+                    or obj.get("sessionId")
+                    or obj.get("conversation_id")
+                    or obj.get("conversationId")
+                )
+                if obj_session_id is not None and str(obj_session_id) != session_id:
+                    continue
+                parsed = _usage_from_obj(obj)
+                if parsed:
+                    return parsed
+        except Exception:
+            return {}
+        return {}
 
     def context_policy(self, node: dict[str, Any]) -> ContextPolicy:
         """ag IPC context delta (A6): the agy model is context-fragile — it

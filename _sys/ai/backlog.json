@@ -1,7 +1,22 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-08T21:15:00+09:00",
+  "updated_at": "2026-07-08T21:26:00+09:00",
   "items": [
+    {
+      "id": "T7",
+      "title": "cost-log.jsonl token fields always null - extract_usage() missing/broken on all 3 adapters",
+      "status": "active",
+      "priority": "medium",
+      "category": "ops",
+      "owner": "cx",
+      "blocker": "pending commit",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": ["turn-logging-proposal-2026-07-08.md"],
+      "next_action": "IMPLEMENTED 2026-07-08 (cx, TDD): extract_usage() gained a session_id parameter (backward-compatible default None). ClaudeAdapter/AgyAdapter now read their respective session/transcript JSONL keyed to the EXACT passed session_id (glob must resolve to exactly one file; any ambiguity, missing file, or sessionId mismatch returns {} - never guesses). CodexAdapter's broken whole-blob json.loads replaced with line-by-line JSONL event parsing plus a thread/session-id mismatch guard. New hub.py helper _resolve_usage_session_id() wraps adapter.extract_session_id() safely; both cost-log call sites now pass the correct session id (subprocess path only resolves it on returncode==0, so failed asks never misattribute). New test_adapter_usage.py covers success/missing/mismatch for all 3 adapters (9 tests). 667/667 tests green (independently re-verified by cc, not just cx's claim - cx's sandbox again hit its known tempfile issue, T5). Only remaining step is committing this.",
+      "risk": null,
+      "last_verified_at": "2026-07-08T22:00:00+09:00"
+    },
     {
       "id": "T5",
       "title": "cx sandbox tempfile create-but-cannot-delete, causes repeated large stray-file dumps",
