@@ -245,17 +245,17 @@
     {
       "id": "P1",
       "title": "phantom config residue (instance of source-tree/scratchpad boundary collapse)",
-      "status": "proposed",
+      "status": "active",
       "priority": "medium",
       "category": "config",
-      "owner": "unassigned",
-      "blocker": null,
+      "owner": "ag",
+      "blocker": "pending commit",
       "evidence_commit": [],
       "supersedes": [],
       "source_refs": ["backlog_reorg_2026_07_04.md", "backlog-5whys-consensus-2026-07-08-round3.md", "pretdd-prep-2026-07-08-round2.md", "remaining-items-pretdd-2026-07-08.md"],
-      "next_action": "FULLY SPEC'D, READY FOR TDD (cx sharpened against live repo state, cc.fable confirms ready as-is): new _sys/checks/check_root_hygiene.py (not extending check_docs_mece.py). Allowlist = verified live root entries (.agents .ai .claude .git .gitattributes .gitignore .pytest_cache .vscode _archive _sys AGENTS.md CLAUDE.md CLEANUP.bat CONVENTION.md Engram.exe GEMINI.md INSTALL.bat PROTOCOL.md README.md register.bat tmp unregister.bat workspace wrapper.cs). Default mode scans root children only, exits 2 on unexpected entries; --closure mode also runs git status --short + git diff --check + check_backlog.py. NOT pre-commit-blocking on day one (legitimate root additions need an allowlist-update path first). Confirmed: would have caught every root-level stray-file incident today; would NOT catch gitignored _sys/data/temp buildup (separate, lower-priority, different consumer - git history vs disk) - accepted as correct scoping for this item.",
+      "next_action": "IMPLEMENTED 2026-07-08 (ag, TDD): _sys/checks/check_root_hygiene.py per spec - default mode scans root children only, exits 2 on unexpected entries; --closure mode also runs git status/diff-check/check_backlog. Live-verified against the real repo root (clean/ok) and --closure mode (correctly flags uncommitted new files as not-clean). Notable: T4's brand-new auto-revert mechanism fired for real during this implementation - ag wrote the check script directly to _sys/checks/ (a governed dir) despite instructions, and hub.py auto-quarantined+deleted it since it was a new file absent from HEAD (safe-to-revert case); cc re-applied the quarantined content properly via Write after confirming it matched ag's reported text exactly. 679/679 tests green (independently re-verified by cc). Only remaining step is committing this.",
       "risk": null,
-      "last_verified_at": "2026-07-08T22:19:00+09:00"
+      "last_verified_at": "2026-07-08T23:14:00+09:00"
     },
     {
       "id": "P2",
