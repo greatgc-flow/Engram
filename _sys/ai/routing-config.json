@@ -2,7 +2,7 @@
   "_version": "1.1",
   "_updated": "2026-06-19",
   "_help": "Automatic profile routing, role routing weights, token load balancing, and final arbiter policy. Change routing_weights: R:5. See docs-v2/ops/schemas.md.",
-  "_note_peer_status": "gc: tier_suspended 2026-06-19 (IneligibleTierError). ag: activated 2026-06-19 as gc replacement. ca: never activated (claude-alt).",
+  "_note_peer_status": "ag: active. ca: never activated (claude-alt).",
   "auto_profile_routing": {
     "enabled": true,
     "scope": "root_peer_asks",

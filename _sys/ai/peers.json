@@ -36,7 +36,6 @@
                 "PowerShell(cmd /c \"{DRIVE}:\\_sys\\cli\\msg.bat\" *)",
                 "PowerShell(cmd /c \"{DRIVE}:\\_sys\\cli\\msg.bat\" ask *)",
                 "PowerShell(cmd /c \"{DRIVE}:\\_sys\\cli\\claude.bat\" *)",
-                "PowerShell(cmd /c \"{DRIVE}:\\_sys\\cli\\gemini.bat\" *)",
                 "PowerShell(cmd /c \"{DRIVE}:\\_sys\\cli\\codex.bat\" *)",
                 "PowerShell(cmd /c \"{DRIVE}:\\_sys\\cli\\agy.bat\" *)",
                 "PowerShell(Get-ChildItem \"{DRIVE}:\\_sys\\ *)",
@@ -75,50 +74,6 @@
         "ca"
       ]
     },
-    "gemini": {
-      "enabled": false,
-      "description": "Google Gemini CLI",
-      "gate": null,
-      "npm_package": "@google/gemini-cli",
-      "root_dir": ".gemini",
-      "sys_subdir": "gemini",
-      "host_junction": {
-        "host_env": "USERPROFILE",
-        "host_dirname": ".gemini",
-        "portable_subpath": "config"
-      },
-      "project_junction": {
-        "portable_subpath": "project"
-      },
-      "workspace": {
-        "shadow_subdir": ".ai/gemini",
-        "junction_name": ".gemini",
-        "glue_file": "GEMINI.md",
-        "glue_template": "templates/workspace.md"
-      },
-      "env_vars": {
-        "GEMINI_CLI_TRUST_WORKSPACE": true
-      },
-      "local_settings": [],
-      "host_app": null,
-      "cleanup": {
-        "peer_paths": [
-          "usage.json",
-          "session-map.json",
-          "session.lock",
-          "session-id.txt"
-        ],
-        "peer_globs": [
-          "cq-*.txt"
-        ],
-        "config_paths": [
-          "tmp/"
-        ]
-      },
-      "node_ids": [
-        "gc"
-      ]
-    },
     "codex": {
       "enabled": true,
       "description": "OpenAI Codex CLI",
@@ -150,7 +105,7 @@
     },
     "antigravity": {
       "enabled": true,
-      "description": "Google Antigravity CLI (agy) — Gemini CLI successor",
+      "description": "Google Antigravity CLI (agy)",
       "gate": null,
       "npm_package": null,
       "native_binary": {

@@ -396,6 +396,46 @@ def _runtime_node_policy() -> tuple[set[str], set[str], set[str]]:
     return configured, active_roots, retired
 
 
+def _routable_root_peer_ids(orch: dict | None = None) -> list[str]:
+    """Return routable root peer IDs, in orchestration order (deterministic
+    'first enabled peer' fallback semantics — unlike _runtime_node_policy's
+    unordered set, callers here need a stable pick)."""
+    raw = orch or _load_orchestration()
+    normalized = hub_peer.normalize_orchestration(raw) if _HUB_PEER_AVAILABLE else raw
+    peers: list[str] = []
+    for node in raw.get("hub_nodes", []):
+        node_id = node.get("node_id")
+        if not node_id or node.get("type", "peer") != "peer":
+            continue
+        node_id = str(node_id)
+        if _HUB_PEER_AVAILABLE:
+            if not is_routable(node_id, orch=normalized):
+                continue
+        elif node.get("enabled") is False:
+            continue
+        peers.append(node_id)
+    return peers
+
+
+def _default_routable_peer_id(
+    exclude: list[str] | tuple[str, ...] | set[str] | None = None,
+    orch: dict | None = None,
+) -> str | None:
+    excluded = {str(item) for item in (exclude or []) if item}
+    for peer_id in _routable_root_peer_ids(orch=orch):
+        if peer_id not in excluded:
+            return peer_id
+    return None
+
+
+def _configured_consensus_voters() -> list[str]:
+    consensus_cfg = _load_protocol_cfg().get("consensus", {})
+    configured = consensus_cfg.get("r10_voters") or consensus_cfg.get("default_voters") or []
+    active = set(_routable_root_peer_ids())
+    voters = [str(v) for v in configured if str(v) in active]
+    return voters or _routable_root_peer_ids()
+
+
 def _normalize_runtime_files(ai_root: Path) -> None:
     """Remove canonical/retired node copies and invalid peers from runtime state."""
     configured, active_roots, retired = _runtime_node_policy()
@@ -2560,7 +2600,7 @@ def action_new_topic(ai_root: Path, subject: str) -> None:
     new_dir.mkdir(parents=True, exist_ok=True)
     _write_handoff(new_dir, carried)
     # Clear peer sessions on topic change (old scope_key = old room no longer valid)
-    for pid in ("cx", "gc", "cc", "ag"):
+    for pid in _routable_root_peer_ids():
         _clear_peer_sessions(pid, f"new-topic:{new_room}", ai_root)
     print(f"[HUB] NEW-TOPIC {new_room} | from={old_room or 'none'} | subject={subject}")
 
@@ -2591,7 +2631,7 @@ def action_clear_room(ai_root: Path, subject: str) -> None:
     new_dir = ai_root / "sessions" / new_room
     new_dir.mkdir(parents=True, exist_ok=True)
     _write_handoff(new_dir, sections)
-    for pid in ("cx", "gc", "cc", "ag"):
+    for pid in _routable_root_peer_ids():
         _clear_peer_sessions(pid, f"clear-room:{new_room}", ai_root)
     print(f"[HUB] CLEAR-ROOM {new_room} | from={old_room or 'none'} | subject={subject}")
 
@@ -3178,16 +3218,43 @@ def _snapshot_governed_hashes(protocol_cfg: dict | None = None) -> dict[str, str
     return result
 
 
+def _get_head_committed_hash(rel_path: str) -> str:
+    import hashlib
+    git_path = rel_path.replace("\\", "/")
+    try:
+        res = subprocess.run(
+            ["git", f"show", f"HEAD:{git_path}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True
+        )
+        return hashlib.sha256(res.stdout).hexdigest()
+    except subprocess.CalledProcessError:
+        return "ABSENT"
+
+
+def _is_tracked_by_git(rel_path: str) -> bool:
+    git_path = rel_path.replace("\\", "/")
+    try:
+        res = subprocess.run(
+            ["git", "ls-files", "--", git_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True
+        )
+        return bool(res.stdout.strip())
+    except subprocess.CalledProcessError:
+        return False
+
+
 def _governed_post_check(pre: dict[str, str], ai_root: Path | None, peer: str,
                          origin: str, ask_id: str | None = None) -> list[str]:
     """Compare a post-execution governed-hash snapshot against `pre`. Any
     changed/added/removed governed file during a peer ask window (when the ask
     was NOT an authorized governed execution) is an out-of-band mutation
-    (LL-20260703-005). DETECT + LOG + ALERT only — never auto-revert (a
-    concurrent legitimate terminal/human edit must not be clobbered; ag review).
-    Violations are appended directly to .ai/operational_errors.jsonl, bypassing
-    action_report_error so the causality-free detector never auto-quarantines a
-    peer (cx review). Returns the list of changed paths (empty = clean)."""
+    (LL-20260703-005). Capture-then-quarantine-then-conditional-revert for
+    GOVERNED_MUTATION_VIOLATION.
+    Returns the list of changed paths (empty = clean)."""
     post = _snapshot_governed_hashes()
     changed = sorted(
         p for p in set(pre) | set(post)
@@ -3197,11 +3264,27 @@ def _governed_post_check(pre: dict[str, str], ai_root: Path | None, peer: str,
         return []
     rel = [str(Path(p).relative_to(_REPO_ROOT)) if str(p).startswith(str(_REPO_ROOT)) else p
            for p in changed]
-    msg = (f"[HUB:WARN] GOVERNED_MUTATION_VIOLATION: {len(changed)} governed file(s) "
-           f"changed during peer ask (peer={peer}, origin={origin}): {', '.join(rel[:8])}"
-           f"{' …' if len(rel) > 8 else ''}. LL-20260703-005 — review `git diff`; "
-           f"not auto-reverted.")
-    print(msg, file=sys.stderr)
+
+    # 1. Capture first (Quarantine)
+    effective_ask_id = ask_id or "unknown-ask"
+    effective_ai_root = ai_root or (_REPO_ROOT / ".ai")
+
+    for p, r in zip(changed, rel):
+        try:
+            safe_rel = r.replace("/", "_").replace("\\", "_")
+            quarantine_dir = effective_ai_root / "quarantine" / effective_ask_id
+            quarantine_dir.mkdir(parents=True, exist_ok=True)
+            quarantine_file = quarantine_dir / safe_rel
+
+            if Path(p).is_file():
+                quarantine_file.write_bytes(Path(p).read_bytes())
+            else:
+                # File deleted in the worktree
+                quarantine_file.write_bytes(b"")
+        except Exception as exc:
+            print(f"[HUB:WARN] governed quarantine failed for {r}: {exc}", file=sys.stderr)
+
+    # Write to operational_errors.jsonl
     if ai_root:
         try:
             rec = {
@@ -3219,6 +3302,69 @@ def _governed_post_check(pre: dict[str, str], ai_root: Path | None, peer: str,
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         except Exception as exc:
             print(f"[HUB:WARN] governed violation log failed: {exc}", file=sys.stderr)
+
+    # 2 & 3. Revert only when safe, and guard the race
+    reverted_files = []
+    quarantined_files = []
+    race_aborted_files = []
+
+    import hashlib
+
+    for p, r in zip(changed, rel):
+        pre_hash = pre.get(p, "ABSENT")
+        head_hash = _get_head_committed_hash(r)
+
+        if pre_hash == head_hash:
+            # Guard the race: re-read and re-hash right before revert
+            try:
+                if Path(p).is_file():
+                    current_hash = hashlib.sha256(Path(p).read_bytes()).hexdigest()
+                else:
+                    current_hash = "ABSENT"
+            except OSError:
+                current_hash = "UNREADABLE"
+
+            post_hash = post.get(p, "UNREADABLE")
+            if current_hash != post_hash:
+                print(f"[HUB:WARN] CONCURRENT_WRITE_DETECTED: {r} changed again. Aborting revert.", file=sys.stderr)
+                race_aborted_files.append(r)
+                quarantined_files.append(r)
+                continue
+
+            # Revert!
+            if _is_tracked_by_git(r):
+                try:
+                    subprocess.run(
+                        ["git", "checkout", "--", r.replace("\\", "/")],
+                        cwd=str(_REPO_ROOT),
+                        check=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE
+                    )
+                    reverted_files.append(r)
+                except Exception as exc:
+                    print(f"[HUB:WARN] Failed to revert tracked file {r} via git: {exc}", file=sys.stderr)
+                    quarantined_files.append(r)
+            else:
+                try:
+                    Path(p).unlink(missing_ok=True)
+                    reverted_files.append(r)
+                except Exception as exc:
+                    print(f"[HUB:WARN] Failed to delete untracked file {r}: {exc}", file=sys.stderr)
+                    quarantined_files.append(r)
+        else:
+            # Dirty at dispatch: quarantine only
+            quarantined_files.append(r)
+
+    msg = (f"[HUB:WARN] GOVERNED_MUTATION_VIOLATION: {len(changed)} governed file(s) "
+           f"changed during peer ask (peer={peer}, origin={origin}): {', '.join(rel[:8])}"
+           f"{' …' if len(rel) > 8 else ''}. LL-20260703-005. "
+           f"Reverted: {', '.join(reverted_files) if reverted_files else 'none'}. "
+           f"Quarantined/Not reverted: {', '.join(quarantined_files) if quarantined_files else 'none'}.")
+    if race_aborted_files:
+        msg += f" Concurrent race aborted revert for: {', '.join(race_aborted_files)}."
+    print(msg, file=sys.stderr)
+
     return changed
 
 
@@ -3742,16 +3888,28 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         except Exception:
             gov_pre = None
             phantom_pre = None
+    ask_id = _short_id("ask-")
+    t0 = time.monotonic()
+    inner_exc = None
     try:
         return _action_ask_inner(
             to, query, query_file, timeout_sec, ai_root, quiet, output_file,
             include_context, session_policy, explicit_scope, _depth,
             _escalation_depth, origin, allow_governed_mutation,
+            ask_id=ask_id,
         )
+    except BaseException as exc:
+        inner_exc = exc
+        raise
     finally:
+        elapsed = int(time.monotonic() - t0)
+        violation = False
+        changed_paths = []
         if gov_pre is not None:
             try:
-                _governed_post_check(gov_pre, ai_root, to, origin)
+                changed_paths = _governed_post_check(gov_pre, ai_root, to, origin, ask_id=ask_id)
+                if changed_paths:
+                    violation = True
             except Exception as exc:
                 print(f"[HUB:WARN] governed guard post-check error: {exc}", file=sys.stderr)
         if phantom_pre is not None:
@@ -3773,9 +3931,23 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                             }, ensure_ascii=False) + "\n")
             except Exception as exc:
                 print(f"[HUB:WARN] phantom guard post-check error: {exc}", file=sys.stderr)
+        if violation:
+            health_peer = to
+            if _HUB_PEER_AVAILABLE:
+                try:
+                    health_peer = hub_peer.root_peer_id(to, orch=_orch_for_gate) or to
+                except Exception:
+                    pass
+            profile_key = _resolve_profile_id(to)
+            detail = (f"GOVERNED_MUTATION_VIOLATION: {len(changed_paths)} governed file(s) "
+                      f"changed during peer ask (peer={to}, origin={origin}): {', '.join(changed_paths)}")
+            _record_ask_failure(health_peer, "GOVERNED_MUTATION_VIOLATION", detail, elapsed, ai_root, profile_key=profile_key)
+            _append_ask_history(ai_root, to, query_file, output_file, elapsed, False, "GOVERNED_MUTATION_VIOLATION")
+            if inner_exc is None:
+                sys.exit(1)
 
 
-def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False) -> None:
+def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False, ask_id: str | None = None) -> None:
     if _depth > RUNTIME_ESCALATION_DEPTH_CEILING:
 
         print(f"[ERROR] action_ask: maximum failover depth reached for {to}", file=sys.stderr)
@@ -3931,7 +4103,11 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                 util = gate_result.get("utilization", 0)
                 print(f"[ContextGate] context {util:.0%} full → prune applied", file=sys.stderr)
             elif action == "failover":
-                failover_model = gate_result.get("failover_model", "gc")
+                failover_model = gate_result.get("failover_model") or _default_routable_peer_id(
+                    exclude=[to, original_to, health_peer])
+                if not failover_model:
+                    print("[HUB:ERROR] ContextGate requested failover but no routable fallback peer is available", file=sys.stderr)
+                    sys.exit(1)
                 if explicit_profile:
                     print(
                         f"[HUB:ERROR] explicit profile immutable; ContextGate requested failover from {to} to {failover_model}",
@@ -3955,7 +4131,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     # Recurse into the inner impl (not the wrapper): the outer
                     # action_ask guard's single window already covers this whole
                     # failover chain, so we avoid a nested re-guard / double-log.
-                    return _action_ask_inner(failover_model, query, None, timeout_sec, ai_root, quiet, output_file, include_context=False, session_policy=session_policy, explicit_scope=explicit_scope, _depth=_depth + 1, _escalation_depth=_escalation_depth, origin=origin, allow_governed_mutation=allow_governed_mutation)
+                    return _action_ask_inner(failover_model, query, None, timeout_sec, ai_root, quiet, output_file, include_context=False, session_policy=session_policy, explicit_scope=explicit_scope, _depth=_depth + 1, _escalation_depth=_escalation_depth, origin=origin, allow_governed_mutation=allow_governed_mutation, ask_id=ask_id)
 
             elif action == "reject":
                 msg = gate_result.get("message", "context limit exceeded")
@@ -4090,7 +4266,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
 
     # ── PTY path ───────────────────────────────────────────────
     if requires_pty:
-        ask_id = _short_id("ask-")
+        ask_id = ask_id or _short_id("ask-")
         query_summary = re.sub(r"[\x00-\x1f\x7f]+", " ", query)
         query_summary = re.sub(r"\s+", " ", query_summary).strip()[:80] or "(empty query)"
 
@@ -4373,7 +4549,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
 
     # ── Subprocess path (with optional session-retry) ──────────
     heartbeat_sec, lease_timeout_sec, zombie_timeout_sec = _lease_cfg()
-    ask_id = _short_id("ask-")
+    ask_id = ask_id or _short_id("ask-")
     lease_status = "open"
     t0 = time.monotonic()
     proc = None  # ensure defined for finally
@@ -7048,7 +7224,7 @@ def action_proposal_add(ai_root: Path, subject: str, from_peer: str, impact: str
             pass
     proposal_id = f"{date_str}-{slug}-{seq:03d}"
     cfg = _load_protocol_cfg()
-    all_voters = cfg.get("consensus", {}).get("r10_voters", ["cc", "gc", "cx"])
+    all_voters = cfg.get("consensus", {}).get("r10_voters") or _configured_consensus_voters()
     voters = []
     for v in all_voters:
         st, _ = _peer_effective_health(v, ai_root=ai_root)
@@ -7176,7 +7352,7 @@ def action_proposal_list(ai_root: Path) -> None:
     if not proposals:
         print("No proposals found."); return
     cfg = _load_protocol_cfg()
-    voters = cfg.get("consensus", {}).get("r10_voters", ["cc", "gc", "cx"])
+    voters = cfg.get("consensus", {}).get("r10_voters") or _configured_consensus_voters()
     print(f"{'Proposal':<45} {'Status':<15} Votes")
     print("-" * 80)
     for path in proposals:
@@ -8294,12 +8470,16 @@ def main() -> None:
     elif act == "status": action_status(ai_root)
     elif act == "check-gate":
         orch = _load_orchestration()
-        default_gate_agent = orch.get("check_gate", {}).get("default_agent", "gc")
+        default_gate_agent = (
+            orch.get("check_gate", {}).get("default_agent")
+            or _default_routable_peer_id(orch=orch)
+            or "cx"
+        )
         action_check_gate(ai_root, args.agent or default_gate_agent)
     elif act == "consensus-propose":
         proto_cfg = _load_protocol_cfg()
         consensus_cfg = proto_cfg.get("consensus", {})
-        canonical_voters = consensus_cfg.get("r10_voters", ["cc", "ca", "gc", "ag", "cx"])
+        canonical_voters = consensus_cfg.get("r10_voters") or _configured_consensus_voters()
         default_proposer = consensus_cfg.get("default_proposer", "cc")
         if args.voters:
             voters = [v.strip() for v in args.voters.split(",") if v.strip()]

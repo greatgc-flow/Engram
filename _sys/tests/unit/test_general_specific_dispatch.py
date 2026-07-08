@@ -3,7 +3,7 @@ import ast
 from pathlib import Path
 
 HUB_PATH = Path(__file__).parents[2] / "core" / "hub.py"
-PEER_IDS = frozenset({"ag", "cc", "cx", "gc"})
+PEER_IDS = frozenset({"ag", "cc", "cx"})
 
 # Exact dispatch/execution boundary. Config loaders, maps, health management,
 # CLI parsing, defaults, and parity sets are intentionally outside this scope.

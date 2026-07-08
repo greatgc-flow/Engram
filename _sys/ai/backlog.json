@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-08T21:26:00+09:00",
+  "updated_at": "2026-07-08T22:19:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -27,10 +27,10 @@
       "blocker": null,
       "evidence_commit": [],
       "supersedes": [],
-      "source_refs": ["d6-activation-taxonomy-2026-07-08.md"],
-      "next_action": "Observed twice 2026-07-08: cx's sandbox can CREATE files under its temp paths but cannot DELETE them, so Python's tempfile module rejects every candidate directory (create+delete probe fails) and pytest cannot even start. cx's own diagnostic attempts to work around this (probing different TEMP/TMP paths, trying to isolate to a single file) leave dozens to 1000+ stray root-level scratch files per occurrence (cleaned up manually both times, no git-tracked pollution). cx worked around it by running direct assertion scripts instead of pytest, which cc then independently re-verified via full pytest run in a working environment - so no correctness harm, but this blocks cx's own ability to self-verify and generates significant cleanup overhead each time. Investigate cx's sandbox/environment temp-dir permissions; consider whether cx's ask invocation should set TEMP/TMP to a known-good, delete-capable path before cx starts, rather than letting cx discover the problem mid-task.",
+      "source_refs": ["d6-activation-taxonomy-2026-07-08.md", "remaining-items-pretdd-2026-07-08.md"],
+      "next_action": "READY FOR TDD (ag spec, cc.fable confirms mechanism reasoning with one condition): hub.py should create a dedicated writable/deletable dir under _sys/data/temp/cx_session_<id> before invoking cx, inject via TEMP/TMP/TMPDIR, tear down after. Mandatory: TDD must include an empirical probe (create+delete inside the injected TEMP under the real cx sandbox) before claiming fixed - this is reasoned-declared, not yet measured.",
       "risk": null,
-      "last_verified_at": "2026-07-08T21:15:00+09:00"
+      "last_verified_at": "2026-07-08T22:19:00+09:00"
     },
     {
       "id": "T6",
@@ -49,22 +49,22 @@
     },
     {
       "id": "T4",
-      "title": "peers write governed files directly during report-only design asks (LL-20260703-005) - consistent pattern, not a one-off",
-      "status": "proposed",
-      "priority": "low",
+      "title": "governed-mutation enforcement is warn-only despite 7 real violations today (LL-20260703-005)",
+      "status": "active",
+      "priority": "medium",
       "category": "ops",
-      "owner": "unassigned",
-      "blocker": null,
+      "owner": "ag",
+      "blocker": "pending commit",
       "evidence_commit": [],
       "supersedes": [],
-      "source_refs": ["pretdd-prep-2026-07-08-round2.md"],
-      "next_action": "2026-07-08: observed TWICE in one session - ag on T2 (wrote _sys/core/snapshot.py) and, in the very next round, BOTH ag on D6 (_sys/core/hub.py + snapshot.py) AND cx on D2 (_sys/core/hub.py) wrote directly despite explicit 'DO_NOT edit files yourself' instructions in the IPC query text. hub.py's GOVERNED_MUTATION_VIOLATION detector caught all of it (LL-20260703-005); a PHANTOM_WRITE violation with ~360 stray root-level scratch files also accompanied the D6/D2 round (cleaned up manually, no git-tracked pollution). Content matched what each peer reported verbatim every time, so no correctness harm so far - but the instruction is clearly NOT reliably honored by peers, twice in a row from two different peers. Investigate: 'DO_NOT edit files' in IPC query text is prompt-only, not a technical control, and peers are ignoring it consistently. Either (a) accept direct peer writes as normal operating mode for implementation asks (stop instructing report-only for code changes, just always independently re-verify via full test suite + git diff review before committing, which is already cc's practice), or (b) add a real enforcement mechanism (read-only filesystem view for peer subprocesses under _sys, or auto-revert-and-fail instead of warn-only on GOVERNED_MUTATION_VIOLATION).",
+      "source_refs": ["pretdd-prep-2026-07-08-round2.md", "remaining-items-pretdd-2026-07-08.md"],
+      "next_action": "IMPLEMENTED 2026-07-08 (ag, TDD): _governed_post_check now (1) quarantines every changed file's content to .ai/quarantine/<ask_id>/ before anything else; (2) auto-reverts (git checkout -- for tracked, unlink for untracked) ONLY when pre-ask hash == HEAD-committed hash (_get_head_committed_hash via git show HEAD:<path>) i.e. file was clean at dispatch - otherwise quarantine-only, no revert; (3) re-hashes immediately before reverting and aborts+warns on a concurrent-write race; (4) action_ask's finally block now marks the ask as GOVERNED_MUTATION_VIOLATION failure (_record_ask_failure + _append_ask_history) while the peer's already-emitted report is not discarded. 5 new tests (clean/tracked-reverted, clean/untracked-deleted, dirty-not-reverted, concurrent-race-aborts, ask-marked-violation). 672/672 tests green (independently re-verified by cc). Only remaining step is committing this.",
       "risk": null,
-      "last_verified_at": "2026-07-08T20:35:00+09:00"
+      "last_verified_at": "2026-07-08T22:45:00+09:00"
     },
     {
       "id": "T3",
-      "title": "ag zombie-timeout at 900s on a 7-item design ask (root cause unknown)",
+      "title": "ag zombie-timeout at 900s on a 7-item design ask - root cause self-diagnosed",
       "status": "proposed",
       "priority": "low",
       "category": "ops",
@@ -72,10 +72,10 @@
       "blocker": null,
       "evidence_commit": [],
       "supersedes": [],
-      "source_refs": ["pretdd-prep-2026-07-08-round2.md"],
-      "next_action": "2026-07-08: a single ag.deepthink ask covering 7 backlog items (T2/C/D4/D6/D7/P1/G2) hit the 900s zombie timeout with zero output. Splitting into two smaller batches (4 items, 3 items) both succeeded normally (ag.effort ~291s, ag.deepthink ~133s) with no other changes. Root cause not investigated - candidates: prompt/scope size alone, a specific sub-task inside the 7-item batch stalling (e.g. a slow search), or an ag-side tool-call loop. Investigate later: reproduce with the original 7-item query file (already consumed, would need to reconstruct) or instrument ag's own tool-call log for the failed attempt if still retained.",
+      "source_refs": ["pretdd-prep-2026-07-08-round2.md", "remaining-items-pretdd-2026-07-08.md"],
+      "next_action": "READY FOR TDD (ag self-assessment + cc.fable refinement): ag's tool-calling loop doesn't flush partial output, so a large multi-item ask that exceeds 900s combined yields zero output. Fix: hub.py pre-dispatch fail-fast heuristic (task-count/token-size threshold, config-declared per DIR-004) warning 'split this' by default. cc.fable REJECTS silent auto-split of free-text queries (parsing task structure out of prose is brittle and breaks cross-item context) - auto-split only when the caller passes an explicit structured task list, not prose.",
       "risk": null,
-      "last_verified_at": "2026-07-08T20:05:00+09:00"
+      "last_verified_at": "2026-07-08T22:19:00+09:00"
     },
     {
       "id": "T2",
@@ -117,10 +117,10 @@
       "blocker": null,
       "evidence_commit": [],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md"],
-      "next_action": "READY FOR TDD as a narrower behavioral probe (cx spec, cc.fable no objection) - don't block on a cross-CLI self-report field (still not achievable without upstream CLI support). Instead: opt-in BEHAVIORAL probe under _sys/data/temp/sandbox-probe/<id>/{workspace,outside} - invoke each real CLI in the workspace, ask it to write a sentinel outside the workspace, classify by actual filesystem result (inspect the sentinel file, never trust reply text - model refusal != sandbox denial). Expected cx: denied. Expected cc/ag: may be UNENFORCED/NO_SANDBOX under declared trusted/skip-permissions policy, not automatically a failure. Tag results empirical_probe vs declared/unverified; cleanup confined to _sys/data/temp.",
+      "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md", "remaining-items-pretdd-2026-07-08.md"],
+      "next_action": "FULLY SPEC'D, READY FOR TDD (cx sharpened, cc.fable found one gap now folded in): new _sys/checks/check_sandbox_behavior.py, reusing check_cli_reality.py/check_cli_canary.py precedent. Creates _sys/data/temp/sandbox-probe/<probe_id>/{workspace,outside}, sends an exact unambiguous prompt asking for one write outside the workspace, classifies by actual sentinel-file existence (never trust the printed marker alone). cc.fable gap: use TWO outside targets (outside-cwd-but-inside-repo, and a disposable outside-repo path) to disambiguate whether a CLI's sandbox scopes to cwd or to the whole repo - a single _sys/data/temp target can't tell those apart. Add per-invocation timeout+budget guard mirroring check_cli_canary; cleanup must run even on classification=error. Manual/opt-in only, no default hook.",
       "risk": null,
-      "last_verified_at": "2026-07-08T17:00:00+09:00"
+      "last_verified_at": "2026-07-08T22:19:00+09:00"
     },
     {
       "id": "C",
@@ -159,13 +159,13 @@
       "priority": "low",
       "category": "security",
       "owner": "cx",
-      "blocker": "policy promotion (actually flipping to fail-closed) still needs a larger soak run beyond the initial 20-pass matrix",
+      "blocker": "policy promotion needs the full 3-gate soak (static exhaustive matrix + 100-shuffle + >=24h/100-action live shadow) to actually run and pass",
       "evidence_commit": ["feadb3b"],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md"],
-      "next_action": "IMPLEMENTED 2026-07-08 (cx, TDD): added _guard_decision()/_guard_action_dry_run() in hub.py; _guard_action() refactored to consume the dry-run decision while preserving all existing enforcement side effects (logging, stderr, sys.exit) unchanged - cx caught and fixed a behavior-preservation regression in its own refactor (malformed collab_rate_guard.threshold parsing) before finishing. New _sys/tests/unit/test_guard_dry_run.py covers read-only allow, terminal-mutating block, collab-rate block, exemption allow, plus a 20-pass randomized soak with zero mismatches. cx's own sandbox couldn't run the full suite (local tempfile/pytest environment issue, unrelated to the code), but cc independently ran the full suite: 656/656 green. Next: a larger/longer soak run (more than 20 passes, ideally continuous over real usage) before actually promoting to fail-closed policy.",
+      "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md", "remaining-items-pretdd-2026-07-08.md"],
+      "next_action": "Dry-run helper + 20-pass matrix shipped (feadb3b). cc.fable confirms the promotion bar (\"right, not overkill\") is 3 gates, all required: (1) static EXHAUSTIVE matrix generated from live protocol.json (action groups x phase_action_matrix x collab_rate_guard.exempt_actions x origins) - zero false pos/neg; (2) 100-pass deterministic shuffle over that matrix, fixed seed, zero mismatches; (3) live shadow >=24h and >=100 real _guard_action evaluations, dry-run vs actual, zero mismatches. cc.fable addition: if the live shadow sees an action shape absent from the static matrix, that's a coverage gap requiring the soak to EXTEND (add case, rerun gates 1-2), not silently pass gate 3. READY FOR TDD on the exhaustive-matrix generator + live-shadow logger; NOT ready to promote fail-closed until the soak itself runs and passes.",
       "risk": null,
-      "last_verified_at": "2026-07-08T20:35:00+09:00"
+      "last_verified_at": "2026-07-08T22:19:00+09:00"
     },
     {
       "id": "D3",
@@ -252,10 +252,10 @@
       "blocker": null,
       "evidence_commit": [],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md", "backlog-5whys-consensus-2026-07-08-round3.md", "pretdd-prep-2026-07-08-round2.md"],
-      "next_action": "RE-SCOPED (ag+cc.fable agree, 2026-07-08): this is a direct instance of round-3's 'source-tree vs scratchpad boundary collapse' root cause, not an isolated issue - kept as a cross-referenced item rather than silently merged so it stays traceable. 'Reduce config drift' concretely means: a root-artifact gate (fail if unexpected files appear at repo root outside an allowlist) + the closure-hygiene check already recommended in round 3 (git status --short + git diff --check + check_backlog.py before declaring work done). Edge case: must not falsely flag legitimate user-driven config changes as phantom residue.",
+      "source_refs": ["backlog_reorg_2026_07_04.md", "backlog-5whys-consensus-2026-07-08-round3.md", "pretdd-prep-2026-07-08-round2.md", "remaining-items-pretdd-2026-07-08.md"],
+      "next_action": "FULLY SPEC'D, READY FOR TDD (cx sharpened against live repo state, cc.fable confirms ready as-is): new _sys/checks/check_root_hygiene.py (not extending check_docs_mece.py). Allowlist = verified live root entries (.agents .ai .claude .git .gitattributes .gitignore .pytest_cache .vscode _archive _sys AGENTS.md CLAUDE.md CLEANUP.bat CONVENTION.md Engram.exe GEMINI.md INSTALL.bat PROTOCOL.md README.md register.bat tmp unregister.bat workspace wrapper.cs). Default mode scans root children only, exits 2 on unexpected entries; --closure mode also runs git status --short + git diff --check + check_backlog.py. NOT pre-commit-blocking on day one (legitimate root additions need an allowlist-update path first). Confirmed: would have caught every root-level stray-file incident today; would NOT catch gitignored _sys/data/temp buildup (separate, lower-priority, different consumer - git history vs disk) - accepted as correct scoping for this item.",
       "risk": null,
-      "last_verified_at": "2026-07-08T17:00:00+09:00"
+      "last_verified_at": "2026-07-08T22:19:00+09:00"
     },
     {
       "id": "P2",

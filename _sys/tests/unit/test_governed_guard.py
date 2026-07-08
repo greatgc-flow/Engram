@@ -120,3 +120,182 @@ def test_guard_post_check_error_never_breaks_ask(monkeypatch, tmp_path):
     monkeypatch.setattr(hub, "_action_ask_inner", lambda *a, **k: None)
     # must return cleanly despite the guard error
     hub.action_ask("cc", "q", None, 10, tmp_path / ".ai")
+
+
+def test_clean_at_dispatch_tracked_auto_reverted(monkeypatch, tmp_path):
+    f = _make_governed(tmp_path, monkeypatch, name="clean_tracked.json", body="original")
+    import hashlib
+    h_original = hashlib.sha256(b"original").hexdigest()
+    
+    # Pre-ask hash
+    pre = {str(f.resolve()): h_original}
+    
+    # Mutated by peer during ask
+    f.write_text("mutated", encoding="utf-8")
+    
+    # Mock Git helpers
+    monkeypatch.setattr(hub, "_get_head_committed_hash", lambda rel: h_original)
+    monkeypatch.setattr(hub, "_is_tracked_by_git", lambda rel: True)
+    
+    import subprocess
+    git_calls = []
+    def mock_run(cmd, *a, **kw):
+        git_calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout=b"", stderr=b"")
+    monkeypatch.setattr(subprocess, "run", mock_run)
+    
+    ai_root = tmp_path / ".ai"
+    changed = hub._governed_post_check(pre, ai_root, "ag", "worker", ask_id="ask-123")
+    
+    # Verify it was detected as changed
+    assert changed == [str(f.resolve())]
+    
+    # Verify git checkout was called
+    assert any("checkout" in cmd for cmd in git_calls)
+    
+    # Verify quarantine file was written with the mutated content
+    r = str(Path(f).relative_to(hub._REPO_ROOT))
+    safe_rel = r.replace("/", "_").replace("\\", "_")
+    quarantine_file = ai_root / "quarantine" / "ask-123" / safe_rel
+    assert quarantine_file.exists()
+    assert quarantine_file.read_text(encoding="utf-8") == "mutated"
+
+
+def test_clean_at_dispatch_untracked_deleted(monkeypatch, tmp_path):
+    f = _make_governed(tmp_path, monkeypatch, name="clean_untracked.json", body="original")
+    pre = {}
+    
+    # Mutated/created by peer during ask
+    f.write_text("created-new", encoding="utf-8")
+    
+    monkeypatch.setattr(hub, "_get_head_committed_hash", lambda rel: "ABSENT")
+    monkeypatch.setattr(hub, "_is_tracked_by_git", lambda rel: False)
+    
+    ai_root = tmp_path / ".ai"
+    changed = hub._governed_post_check(pre, ai_root, "ag", "worker", ask_id="ask-456")
+    
+    assert changed == [str(f.resolve())]
+    
+    # Verify file was deleted (reverted)
+    assert not f.exists()
+    
+    # Verify quarantine file exists with post-execution content
+    r = str(Path(f).relative_to(hub._REPO_ROOT))
+    safe_rel = r.replace("/", "_").replace("\\", "_")
+    quarantine_file = ai_root / "quarantine" / "ask-456" / safe_rel
+    assert quarantine_file.exists()
+    assert quarantine_file.read_text(encoding="utf-8") == "created-new"
+
+
+def test_dirty_at_dispatch_not_reverted(monkeypatch, tmp_path):
+    f = _make_governed(tmp_path, monkeypatch, name="dirty.json", body="pre_ask_modified")
+    import hashlib
+    h_pre = hashlib.sha256(b"pre_ask_modified").hexdigest()
+    h_head = hashlib.sha256(b"committed_in_head").hexdigest()
+    
+    pre = {str(f.resolve()): h_pre}
+    
+    # Mutated by peer during ask
+    f.write_text("mutated_again", encoding="utf-8")
+    
+    monkeypatch.setattr(hub, "_get_head_committed_hash", lambda rel: h_head)
+    monkeypatch.setattr(hub, "_is_tracked_by_git", lambda rel: True)
+    
+    import subprocess
+    git_calls = []
+    def mock_run(cmd, *a, **kw):
+        git_calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout=b"", stderr=b"")
+    monkeypatch.setattr(subprocess, "run", mock_run)
+    
+    ai_root = tmp_path / ".ai"
+    changed = hub._governed_post_check(pre, ai_root, "ag", "worker", ask_id="ask-dirty")
+    
+    assert changed == [str(f.resolve())]
+    
+    # Verify git checkout was NOT called (skipped revert)
+    assert not any("checkout" in cmd for cmd in git_calls)
+    
+    # Verify file content on disk is still the mutated one
+    assert f.read_text(encoding="utf-8") == "mutated_again"
+    
+    # Verify quarantine file was written
+    r = str(Path(f).relative_to(hub._REPO_ROOT))
+    safe_rel = r.replace("/", "_").replace("\\", "_")
+    quarantine_file = ai_root / "quarantine" / "ask-dirty" / safe_rel
+    assert quarantine_file.exists()
+    assert quarantine_file.read_text(encoding="utf-8") == "mutated_again"
+
+
+def test_concurrent_race_aborts_revert(monkeypatch, tmp_path):
+    f = _make_governed(tmp_path, monkeypatch, name="race.json", body="original")
+    import hashlib
+    h_original = hashlib.sha256(b"original").hexdigest()
+    
+    pre = {str(f.resolve()): h_original}
+    
+    # Mutated by peer during ask
+    f.write_text("mutated", encoding="utf-8")
+    
+    monkeypatch.setattr(hub, "_is_tracked_by_git", lambda rel: True)
+    
+    import subprocess
+    git_calls = []
+    def mock_run(cmd, *a, **kw):
+        git_calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout=b"", stderr=b"")
+    monkeypatch.setattr(subprocess, "run", mock_run)
+    
+    def mock_get_head_hash(rel):
+        f.write_text("concurrent_written", encoding="utf-8")
+        return h_original
+        
+    monkeypatch.setattr(hub, "_get_head_committed_hash", mock_get_head_hash)
+    
+    ai_root = tmp_path / ".ai"
+    changed = hub._governed_post_check(pre, ai_root, "ag", "worker", ask_id="ask-race")
+    
+    assert changed == [str(f.resolve())]
+    
+    # Verify git checkout was NOT called due to the race abort
+    assert not any("checkout" in cmd for cmd in git_calls)
+    
+    # Verify file content on disk remains the concurrent one
+    assert f.read_text(encoding="utf-8") == "concurrent_written"
+    
+    # Verify quarantine file was written with "mutated"
+    r = str(Path(f).relative_to(hub._REPO_ROOT))
+    safe_rel = r.replace("/", "_").replace("\\", "_")
+    quarantine_file = ai_root / "quarantine" / "ask-race" / safe_rel
+    assert quarantine_file.exists()
+    assert quarantine_file.read_text(encoding="utf-8") == "mutated"
+
+
+def test_action_ask_marked_as_violation_and_fails(monkeypatch, tmp_path):
+    f = _make_governed(tmp_path, monkeypatch, name="action_gov.json", body="original")
+    
+    def stub_inner(*a, **k):
+        f.write_text("mutated", encoding="utf-8")
+        
+    monkeypatch.setattr(hub, "_action_ask_inner", stub_inner)
+    monkeypatch.setattr(hub, "_get_head_committed_hash", lambda rel: "original_hash_mock")
+    monkeypatch.setattr(hub, "_is_tracked_by_git", lambda rel: True)
+    
+    import sys
+    exits = []
+    monkeypatch.setattr(sys, "exit", lambda code: exits.append(code))
+    
+    recorded_failures = []
+    recorded_history = []
+    
+    monkeypatch.setattr(hub, "_record_ask_failure", lambda *a, **k: recorded_failures.append((a, k)))
+    monkeypatch.setattr(hub, "_append_ask_history", lambda *a, **k: recorded_history.append((a, k)))
+    
+    ai_root = tmp_path / ".ai"
+    hub.action_ask("cc", "q", None, 10, ai_root)
+    
+    assert exits == [1]
+    assert len(recorded_failures) == 1
+    assert recorded_failures[0][0][1] == "GOVERNED_MUTATION_VIOLATION"
+    assert len(recorded_history) == 1
+    assert recorded_history[0][0][6] == "GOVERNED_MUTATION_VIOLATION"

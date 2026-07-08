@@ -551,7 +551,7 @@ class TestToolRegistryContract:
 # ─────────────────────────────────────────────────────────────────────────────
 
 PEERS_PATH = SYS_DIR / "ai" / "peers.json"
-REQUIRED_PEERS = {"claude", "gemini", "codex", "antigravity"}
+REQUIRED_PEERS = {"claude", "codex", "antigravity"}
 REQUIRED_PEER_KEYS = {"enabled", "description", "root_dir", "sys_subdir"}
 
 

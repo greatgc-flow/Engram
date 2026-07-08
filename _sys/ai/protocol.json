@@ -233,11 +233,6 @@
                                                      "yellow_mb":  1.2,
                                                      "unit":  "jsonl_mb"
                                                  },
-                                      "gemini":  {
-                                                     "green_mb":  0.6,
-                                                     "yellow_mb":  1.2,
-                                                     "unit":  "jsonl_mb"
-                                                 },
                                       "antigravity":  {
                                                           "green_mb":  0.6,
                                                           "yellow_mb":  1.2,
@@ -284,7 +279,7 @@
                       "inactive_default_voters":  [
                                                       "ca"
                                                   ],
-                      "inactive_default_note":  "gc: tier_suspended 2026-06-19 (IneligibleTierError ??Gemini Code Assist for individuals discontinued). ca: never activated (cc alias). ag activated 2026-06-19 as gc replacement.",
+                      "inactive_default_note":  "ca: never activated (cc alias).",
                       "default_proposer":  "rotating",
                       "timeout_minutes":  30,
                       "offline_auto_abstain_minutes":  30,
@@ -352,7 +347,7 @@
                                                                  "cx"
                                                              ],
                                                "fallback":  "first_healthy",
-                                               "_note":  "ag: large-context drafting (gc successor); cc/cx: structured doc generation"
+                                               "_note":  "ag: large-context drafting; cc/cx: structured doc generation"
                                            },
                                            {
                                                "task_type":  "script",
@@ -372,7 +367,7 @@
                                                                  "cx"
                                                              ],
                                                "fallback":  "first_healthy",
-                                               "_note":  "ag: large-corpus verification (gc successor); cc/cx: contract and test verification"
+                                               "_note":  "ag: large-corpus verification; cc/cx: contract and test verification"
                                            },
                                            {
                                                "task_type":  "code",
@@ -392,7 +387,7 @@
                                                                  "cc"
                                                              ],
                                                "fallback":  "first_healthy",
-                                               "_note":  "cx: diff-level review; ag: cross-file consistency (gc successor); cc: invariant checks"
+                                               "_note":  "cx: diff-level review; ag: cross-file consistency; cc: invariant checks"
                                            },
                                            {
                                                "task_type":  "large-corpus",
@@ -402,7 +397,7 @@
                                                                  "cx"
                                                              ],
                                                "fallback":  "first_healthy",
-                                               "_note":  "ag: 1M-token context (gc successor); cc/cx: supplemental deep-dive"
+                                               "_note":  "ag: 1M-token context; cc/cx: supplemental deep-dive"
                                            },
                                            {
                                                "task_type":  "shell-ops",
