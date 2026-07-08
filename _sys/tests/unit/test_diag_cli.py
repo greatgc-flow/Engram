@@ -583,7 +583,7 @@ def test_profile_rows_split_cc_fable_quota_and_context_sources():
     assert [b["label"] for b in rows["cc.deepthink"]["quota"]["buckets"]] == ["C-5H"]
     assert rows["cc.fable"]["context"]["window_tokens"] == 200000
     assert rows["cc.fable"]["sources"]["context"] == "orchestration"
-    assert [b["label"] for b in rows["cc.fable"]["quota"]["buckets"]] == ["F-5H"]
+    assert [b["label"] for b in rows["cc.fable"]["quota"]["buckets"]] == ["C-5H", "F-5H"]
 
 
 def test_profile_rows_assign_ag_manual_profiles_to_3p_quota_pool():

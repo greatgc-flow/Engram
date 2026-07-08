@@ -784,3 +784,12 @@ def test_inflight_clamping_floors_headroom_at_zero(monkeypatch):
     result = snapshot.select_load_balanced_peer({}, CONFIG, ask_id="clamped", inflight={"ag": 0.50})
     assert result["weights"]["ag"] == pytest.approx(0.01)
     assert result["weights"]["cx"] == pytest.approx(0.30)
+
+
+def test_filter_profile_buckets_fable_includes_c_buckets():
+    buckets = [{"label": "C-5H"}, {"label": "C-7D"}, {"label": "F-7D"}, {"label": "X-5H"}]
+    fable_buckets = snapshot._filter_profile_buckets("cc", "fable", buckets)
+    assert [b.get("label") for b in fable_buckets] == ["C-5H", "C-7D", "F-7D"]
+
+    standard_buckets = snapshot._filter_profile_buckets("cc", "standard", buckets)
+    assert [b.get("label") for b in standard_buckets] == ["C-5H", "C-7D"]

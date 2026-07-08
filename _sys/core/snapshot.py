@@ -929,11 +929,11 @@ def _source_tag(record, domain_name):
 
 def _quota_family_for_profile(peer_id, profile_name):
     if peer_id == "cc":
-        return "F-" if profile_name == "fable" else "C-"
+        return ("F-", "C-") if profile_name == "fable" else ("C-",)
     if peer_id == "ag":
-        return "3P-" if profile_name in {"opus", "gptoss", "sonnet"} else "G-"
+        return ("3P-",) if profile_name in {"opus", "gptoss", "sonnet"} else ("G-",)
     if peer_id == "cx":
-        return "X-"
+        return ("X-",)
     return None
 
 
