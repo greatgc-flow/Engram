@@ -249,8 +249,110 @@ def run(orch: dict | None = None, live: bool = True) -> dict[str, Any]:
     return build_report(reports)
 
 
+def auto_refresh_observed(
+    orch: dict | None = None,
+    ai_root: Path | None = None,
+    interval_hours: float = 24.0,
+    now_ts: float | None = None
+) -> dict[str, str]:
+    """Auto-refresh cli-reality-observed.json if interval expired or hash changed.
+    Uses SHA256 of the real CLI binary as the cache key to skip expensive real-invocation probes.
+    Reuses check_cli_canary budget mechanism.
+    """
+    from datetime import timezone
+    if orch is None:
+        orch_path = SYS_DIR / "ai" / "orchestration.json"
+        try:
+            orch = json.loads(orch_path.read_text(encoding="utf-8"))
+        except Exception:
+            orch = {}
+    if ai_root is None:
+        ai_root = _AI_DIR
+    if now_ts is None:
+        now_ts = datetime.now(timezone.utc).timestamp()
+    
+    import check_cli_canary
+    
+    observed_path = ai_root / "cli-reality-observed.json"
+    observed_data = {}
+    if observed_path.exists():
+        try:
+            observed_data = json.loads(observed_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    cap, window_hours = check_cli_canary.get_budget_config(orch)
+    results = {}
+    needs_save = False
+
+    for peer in REAL_BINARIES:
+        fp_info = fingerprint(real_binary(peer))
+        current_fp = fp_info.get("sha256")
+        
+        peer_data = observed_data.get(peer)
+        if peer_data and isinstance(peer_data, dict):
+            baseline_fp = peer_data.get("fingerprint")
+            captured_at_str = peer_data.get("captured_at")
+            try:
+                dt = datetime.fromisoformat(captured_at_str)
+                captured_at = dt.timestamp()
+            except Exception:
+                captured_at = 0
+            
+            hash_changed = (current_fp != baseline_fp)
+            interval_expired = (now_ts - captured_at) >= (interval_hours * 3600)
+            
+            if not hash_changed:
+                if not interval_expired:
+                    results[peer] = "interval not yet expired"
+                else:
+                    results[peer] = "skipped, unchanged"
+                    peer_data["captured_at"] = datetime.fromtimestamp(now_ts, timezone.utc).isoformat()
+                    needs_save = True
+                continue
+        
+        # Hash changed or no previous data -> proceed to probe
+        if not check_cli_canary.check_and_update_budget(ai_root, now_ts, cap, window_hours):
+            results[peer] = "skipped, budget exhausted"
+            continue
+            
+        # Probe
+        now_dt = datetime.fromtimestamp(now_ts, timezone.utc)
+        verdicts = check_cli_canary.run_canary(
+            orch=orch,
+            peers=[peer],
+            all_profiles=True,
+            force=True,
+            ai_root=ai_root
+        )
+        
+        capture = check_cli_canary.build_observed_capture(verdicts, now=now_dt)
+        if peer in capture:
+            peer_data = capture[peer]
+            peer_data["fingerprint"] = current_fp
+            observed_data[peer] = peer_data
+            results[peer] = "refreshed"
+            needs_save = True
+        else:
+            results[peer] = "probe failed"
+
+    if needs_save:
+        try:
+            ai_root.mkdir(parents=True, exist_ok=True)
+            observed_path.write_text(json.dumps(observed_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+
+    return results
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
+    
+    if "--auto-refresh" in argv:
+        refresh_results = auto_refresh_observed()
+        print(f"[cli-reality] auto-refresh: {json.dumps(refresh_results, ensure_ascii=False)}")
+        
     live = "--no-live" not in argv
     report = run(live=live)
     if "--json" in argv:

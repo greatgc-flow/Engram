@@ -129,3 +129,78 @@ class TestRunNoLive:
             for probe in pr["probes"]:
                 if probe["kind"] == "model":
                     assert probe["verdict"] == "ABSENT"
+
+
+class TestAutoRefresh:
+    def test_auto_refresh_logic(self, monkeypatch, tmp_path):
+        from datetime import datetime, timezone
+
+        orch = {"canary_config": {"budget_cap": 10, "budget_window_hours": 5.0}}
+        ai_root = tmp_path / ".ai"
+        ai_root.mkdir()
+        observed_file = ai_root / "cli-reality-observed.json"
+
+        # Mock real binary paths
+        monkeypatch.setattr(ccr, "REAL_BINARIES", {"ag": tmp_path / "ag.exe"})
+
+        # Mock fingerprint
+        def mock_fingerprint(path):
+            if str(path).endswith("ag.exe"):
+                return {"sha256": "hash_v1"}
+            return {"sha256": "unknown"}
+        monkeypatch.setattr(ccr, "fingerprint", mock_fingerprint)
+
+        # Mock check_and_update_budget
+        budget_ok = True
+        def mock_check_budget(*args, **kwargs):
+            return budget_ok
+
+        # Mock run_canary
+        probes_called = []
+        def mock_run_canary(*args, **kwargs):
+            probes_called.append(kwargs.get('peers'))
+            return [{"peer": "ag", "status": "PASS", "model": "Model-A", "profile": "p1"}]
+
+        import check_cli_canary
+        monkeypatch.setattr(check_cli_canary, "check_and_update_budget", mock_check_budget)
+        monkeypatch.setattr(check_cli_canary, "run_canary", mock_run_canary)
+
+        # Scenario 1: changed hash (no existing data) -> proceeds to probe
+        now = datetime.now(timezone.utc).timestamp()
+        res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now)
+        assert res["ag"] == "refreshed"
+        assert ["ag"] in probes_called
+        probes_called.clear()
+
+        # verify file saved
+        import json
+        saved = json.loads(observed_file.read_text(encoding="utf-8"))
+        assert saved["ag"]["fingerprint"] == "hash_v1"
+        assert "Model-A" in saved["ag"]["models"]
+
+        # Scenario 2: under 24h old AND hash unchanged -> no refresh (interval not yet expired)
+        now_1h = now + 3600
+        res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now_1h)
+        assert "interval not yet expired" in res["ag"]
+        assert len(probes_called) == 0
+
+        # Scenario 3: interval expired (>= 24h) AND hash unchanged -> skip probe (skipped, unchanged)
+        now_25h = now + 25 * 3600
+        res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now_25h)
+        assert "skipped, unchanged" in res["ag"]
+        assert len(probes_called) == 0
+
+        # Scenario 4: changed hash -> proceeds to probe, but budget exhausted
+        def mock_fingerprint_v2(path):
+            return {"sha256": "hash_v2"}
+        monkeypatch.setattr(ccr, "fingerprint", mock_fingerprint_v2)
+        budget_ok = False
+        res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now_25h)
+        assert "budget exhausted" in res["ag"]
+        assert len(probes_called) == 0
+
+        # Scenario 5: changed hash, budget ok -> refreshed
+        budget_ok = True
+        res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now_25h)
+        assert res["ag"] == "refreshed"
+        assert ["ag"] in probes_called

@@ -80,17 +80,17 @@
     {
       "id": "C",
       "title": "refresh .ai/cli-reality-observed.json",
-      "status": "proposed",
+      "status": "active",
       "priority": "medium",
       "category": "ops",
-      "owner": "unassigned",
-      "blocker": null,
+      "owner": "ag",
+      "blocker": "pending commit",
       "evidence_commit": [],
       "supersedes": [],
       "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md"],
-      "next_action": "READY FOR TDD (ag spec, cc.fable no objection): opt-in check inside check_cli_reality.py, auto-runs on interval expiration (24h default). SHA256 of the real CLI binary as fingerprint cache key - skip the expensive real-invocation probe when the binary hash hasn't changed. Reuse the existing budget-cap mechanism already in check_cli_canary.py rather than inventing a new one.",
+      "next_action": "IMPLEMENTED 2026-07-08 (ag, TDD): auto_refresh_observed() in check_cli_reality.py, wired to a --auto-refresh main() flag. SHA256 fingerprint cache (skip probe if binary hash unchanged and interval <24h), reuses check_cli_canary's existing budget_cap/window mechanism (skips if budget exhausted rather than forcing a probe). 657/657 tests green (independently re-verified by cc). Only remaining step is committing this.",
       "risk": null,
-      "last_verified_at": "2026-07-08T17:00:00+09:00"
+      "last_verified_at": "2026-07-08T20:45:00+09:00"
     },
     {
       "id": "D1",
@@ -230,17 +230,17 @@
     {
       "id": "P3",
       "title": "_legacy test triage",
-      "status": "active",
+      "status": "done",
       "priority": "medium",
       "category": "tests",
       "owner": "unassigned",
-      "blocker": "gc/gemini-tied tests need P2's hook migration first",
+      "blocker": null,
       "evidence_commit": ["b76c44b"],
       "supersedes": [],
       "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md"],
-      "next_action": "RE-TRIAGED (cx, cc.fable confirms consistent with gc's tier_suspended status): no remaining _legacy directory/file under _sys/tests. KEEP as regression coverage (still exercised by live code): test_checks_common.py's gemini_call(), test_model_profiles.py::test_removed_legacy_virtual_nodes_do_not_exist, test_routing_targets.py legacy model_id/runtime_model compat, test_hub_integration_v42.py's HubError.report_from_legacy. NOT independently deletable: test_migration_phase1.py::TestAiCheck + Gemini session cleanup/archive tests - _sys/hooks/ai_check.py and ctx_end.py still contain live gc/Gemini code (_sys/gemini handling, --to gc); migrate/delete those under P2, not blind P3 cleanup.",
+      "next_action": "TRIAGE CONFIRMED FINAL (cx, re-verified 2026-07-08 twice): no remaining _legacy directory/file under _sys/tests. Group (a) kept as regression coverage (test_checks_common.py's gemini_call(), test_model_profiles.py::test_removed_legacy_virtual_nodes_do_not_exist, test_routing_targets.py legacy compat, test_hub_integration_v42.py's HubError.report_from_legacy) - no code change needed, already correct. Group (b) (test_migration_phase1.py::TestAiCheck + Gemini session cleanup/archive tests) remains coupled to live gc/Gemini code in ai_check.py/ctx_end.py - out of scope, tracked separately under P2's hook migration, not blind P3 cleanup. Nothing actionable left for P3 itself.",
       "risk": null,
-      "last_verified_at": "2026-07-08T17:00:00+09:00"
+      "last_verified_at": "2026-07-08T20:41:00+09:00"
     },
     {
       "id": "P4",
