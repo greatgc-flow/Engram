@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-09T00:10:00+09:00",
+  "updated_at": "2026-07-09T06:40:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -241,6 +241,36 @@
       "next_action": "ag+cc.fable verified (2026-07-08) via .ai/consensus/: r-9bc7 was a duplicate/abandoned fragment (only exists as a .tmp) of the same WS2 hub-dispatch fail-fast proposal that was actually finalized as r-8b3b and implemented in commit b2b8a14 ('W1-W3 - hub silent-exit fix, r-8b3b model-operand validator, G-bridge lessons + DIR-004'); a third variant r-c042 was rejected.",
       "risk": null,
       "last_verified_at": "2026-07-08T17:00:00+09:00"
+    },
+    {
+      "id": "D8",
+      "title": "ag.gptoss bulk-candidate enablement (calendar-gated on 3P quota)",
+      "status": "proposed",
+      "priority": "low",
+      "category": "routing",
+      "owner": "unassigned",
+      "blocker": "3P-7D shared quota family at 100% until 2026-07-10 (orchestration.json:296 _routing_note)",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": ["sandbox-behavior-probe-b7-2026-07-08.md"],
+      "next_action": "Found during 2026-07-09 ag exhaustive backlog sweep: ag.gptoss's enablement path (unanimous ag+cx 2026-07-07) is fully speced and its precondition (shared_quota_reserve enforcement, D6) already shipped/activated - the only remaining step is flipping routing_state from manual_only to eligible once check_cli_reality re-verifies the model and populates runtime_context_window, gated on the 3P-7D quota window resetting (2026-07-10). Tracked here purely so the calendar-gated flip isn't forgotten; no code work needed before that date.",
+      "risk": null,
+      "last_verified_at": "2026-07-09T06:40:00+09:00"
+    },
+    {
+      "id": "T8",
+      "title": "cc/ag lack real OS-level sandbox enforcement (no concrete plan yet)",
+      "status": "proposed",
+      "priority": "low",
+      "category": "security",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": ["sandbox-behavior-probe-b7-2026-07-08.md"],
+      "next_action": "needs-discussion, not ready for TDD (found during 2026-07-09 ag exhaustive backlog sweep, cross-referenced with B7's empirical confirmation): cc runs --dangerously-skip-permissions and ag has no filesystem confinement (--sandbox does not enforce it) - both already declared as accepted trusted-IPC risk in orchestration.json's permission_classes notes (DIR-002), and now empirically reconfirmed unenforced 2/2+ real runs by B7. A CLI-permission-tool allowlist was already trialed for cc (2026-07-03) and reverted because it did not hard-enforce under -p. No concrete OS-level/hook enforcement design exists yet - this item exists so the gap has a tracked home, not because a fix is imminent or requested.",
+      "risk": null,
+      "last_verified_at": "2026-07-09T06:40:00+09:00"
     },
     {
       "id": "P1",

@@ -189,7 +189,7 @@
       "max_lift": 1.5
     },
     "_context_affinity_doc": "Heavy-task steering onto the peer with the most ABSOLUTE free context (design 2026-07-08 §1). When an AUTO ask's estimated size >= heavy_task_tokens, the candidate with the largest measured abs_headroom (=window_tokens*ctx_remaining, e.g. ag's ~1M window) gets a bounded weight lift (<= max_lift) beyond the routine sqrt headroom_bias — so large/multi-turn chains land where the context fits. Over-pacing peers are not amplified. `switch_ratio` is the session-reuse HYSTERESIS: keep an incumbent session unless a challenger has >= switch_ratio x its absolute free headroom (or the incumbent is stale / within effective_headroom_floor) — prevents oscillation and permanent pinning. Only affects `--to auto`.",
-    "_phase": "P1 (selector shipped; hub hook + shadow-logging next). enabled=False until shadow-validated.",
+    "_phase": "P1 shipped and ACTIVATED 2026-07-04 (enabled=true, r-9aba/19f688a). shadow_log stays true alongside live routing for ongoing distribution monitoring.",
     "shadow_log": true,
     "_shadow_doc": "shadow_log=True logs what the balancer WOULD pick (routing_metrics.jsonl event=load_balance_shadow) without driving routing; enabled=False keeps actual routing unchanged. Validate distribution before flipping enabled.",
     "arbiter_models": [
@@ -217,10 +217,10 @@
     }
   },
   "final_arbiter": {
-    "_doc": "Smartest-Model Final Arbiter (DIR-005). Decision layer shipped (snapshot.select_arbiter/evaluate_arbiter_trigger/build_final_opinion_record). Live wiring (invoke arbiter, apply verdict, budget persistence) pending. arbiter_models is the canonical list under token_load_balancing (shared with bulk exclusion).",
+    "_doc": "Smartest-Model Final Arbiter (DIR-005). Decision layer shipped (snapshot.select_arbiter/evaluate_arbiter_trigger/build_final_opinion_record). Live wiring (invoke arbiter, apply verdict, budget persistence) SHIPPED and ACTIVATED 2026-07-05 (b52e496, r-ce51). arbiter_models is the canonical list under token_load_balancing (shared with bulk exclusion).",
     "enabled": true,
     "auto_wire_on_finalize": true,
-    "_auto_wire_doc": "B6: when true, consensus finalization auto-runs the arbiter on dissent/high_risk (executed OUTSIDE the round lock). Default FALSE so premium cc.fable is never spent implicitly; flip to true to activate auto-review. Manual `hub.py arbiter-review --round-id` works regardless.",
+    "_auto_wire_doc": "B6: when true, consensus finalization auto-runs the arbiter on dissent/high_risk (executed OUTSIDE the round lock), so premium cc.fable is only spent on real dissent/high_risk, never routine work. ACTIVATED 2026-07-05 (b52e496). Manual `hub.py arbiter-review --round-id` also works regardless of this flag.",
     "triggers": [
       "dissent",
       "high_risk",
