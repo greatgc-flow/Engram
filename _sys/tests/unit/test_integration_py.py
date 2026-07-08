@@ -18,7 +18,9 @@ class TestIntegrationP2P:
 
     @pytest.fixture
     def test_env(self, tmp_path):
-        """테스트용 격리 환경 생성."""
+        """테스트용 격리 환경 생성. HUB_AI_ROOT를 명시 주입해 hub 서브프로세스가
+        실제 repo .ai로 새는지 여부와 무관하게 격리를 보장하고(방어적 이중화),
+        종료 시 실제 repo .ai/state.json이 건드려지지 않았는지 회귀 검증한다."""
         ai_dir = tmp_path / ".ai"
         ai_dir.mkdir(exist_ok=True)
         (tmp_path / ".git").mkdir(exist_ok=True)
@@ -26,13 +28,23 @@ class TestIntegrationP2P:
         root_dir = Path(__file__).parent.parent.parent.parent
         venv_py = root_dir / "_sys" / "env" / "venv" / "Scripts" / "python.exe"
         hub_py = root_dir / "_sys" / "core" / "hub.py"
+        repo_ai_state = root_dir / ".ai" / "state.json"
+        repo_state_before = repo_ai_state.read_text(encoding="utf-8") if repo_ai_state.exists() else None
 
-        return {
+        env = {
             "root": tmp_path,
             "ai_dir": ai_dir,
             "venv_py": venv_py,
             "hub_py": hub_py
         }
+
+        try:
+            yield env
+        finally:
+            repo_state_after = repo_ai_state.read_text(encoding="utf-8") if repo_ai_state.exists() else None
+            assert repo_state_after == repo_state_before, (
+                "hub subprocess leaked writes into the real repo .ai/state.json"
+            )
 
     def _run(self, vpy, hub, args, cwd, **kwargs):
         """subprocess.run wrapper with guaranteed timeout."""
@@ -41,7 +53,8 @@ class TestIntegrationP2P:
             origin = args[args.index("--from") + 1]
         elif "--agent" in args:
             origin = args[args.index("--agent") + 1]
-        sub_env = {**os.environ, "HUB_ORIGIN": origin}
+        base_env = kwargs.pop("env", os.environ)
+        sub_env = {**base_env, "HUB_ORIGIN": origin, "HUB_AI_ROOT": str(Path(cwd) / ".ai")}
         return subprocess.run(
             [str(vpy), str(hub)] + args, cwd=cwd,
             check=True, timeout=_HUB_TIMEOUT, env=sub_env, **kwargs
@@ -54,7 +67,7 @@ class TestIntegrationP2P:
             origin = args[args.index("--from") + 1]
         elif "--agent" in args:
             origin = args[args.index("--agent") + 1]
-        sub_env = {**os.environ, "HUB_ORIGIN": origin}
+        sub_env = {**os.environ, "HUB_ORIGIN": origin, "HUB_AI_ROOT": str(Path(cwd) / ".ai")}
         return subprocess.check_output(
             [str(vpy), str(hub)] + args,
             cwd=cwd, text=True, encoding="utf-8", timeout=_HUB_TIMEOUT, env=sub_env

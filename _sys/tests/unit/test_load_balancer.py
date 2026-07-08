@@ -45,6 +45,131 @@ def _patch_rows(monkeypatch, rows):
     monkeypatch.setattr(snapshot, "_derive_headroom_rows", lambda _snapshot: list(rows))
 
 
+def _profile_conf(routing_state="eligible"):
+    return {
+        "model_id": "test-model",
+        "reasoning_effort": "low",
+        "runtime_context_window": 1000,
+        "routing_state": routing_state,
+        "cost_tier": "low",
+    }
+
+
+def _orch_with_profiles(peer, profiles):
+    return {
+        "hub_nodes": [{
+            "type": "peer",
+            "enabled": True,
+            "node_id": peer,
+            "default_profile": "standard",
+            "profiles": profiles,
+        }]
+    }
+
+
+def _profile_record(peer, bucket_label, profile_health=None):
+    observed = "2026-07-08T00:00:00+00:00"
+    return {
+        "peer": peer,
+        "model": "test-model",
+        "domains": {
+            "context": {
+                "window_tokens": 1000,
+                "used_tokens": 100,
+                "utilization_pct": 10.0,
+                "source": {"kind": "cached", "observed_at": observed, "confidence": "exact"},
+            },
+            "quota": {
+                "buckets": [{"label": bucket_label, "used_frac": 0.10}],
+                "source": {"kind": "cached", "observed_at": observed, "confidence": "exact"},
+            },
+            "health": {"profiles": profile_health or {}},
+        },
+        "raw": {"source": "health"},
+    }
+
+
+def test_build_profile_rows_blocks_closed_profile_and_lb_excludes_it(monkeypatch):
+    observed = "2026-07-08T00:00:00+00:00"
+    orch = {"hub_nodes": [
+        _orch_with_profiles("ag", {"standard": _profile_conf()})["hub_nodes"][0],
+        _orch_with_profiles("cx", {"standard": _profile_conf()})["hub_nodes"][0],
+    ]}
+    records = [
+        _profile_record("ag", "G-5H", {"standard": {
+            "gate_open": False,
+            "rate_limit_state": {"limited": True, "reset_at": "2999-01-01T00:00:00+00:00"},
+        }}),
+        _profile_record("cx", "X-5H"),
+    ]
+
+    rows = snapshot._build_profile_rows(orch, records, observed)
+    rows_by_profile = {r["profile"]: r for r in rows}
+    assert rows_by_profile["ag.standard"]["state"] == "blocked"
+    assert rows_by_profile["cx.standard"]["state"] == "eligible"
+
+    lb_rows = [{**r, "quota_remaining": 0.5, "context_remaining": 0.5, "headroom": 0.5,
+                "tier_strength": 2, "tier_risk": False} for r in rows]
+    _patch_rows(monkeypatch, lb_rows)
+    result = snapshot.select_load_balanced_peer({"profiles": rows}, CONFIG, ask_id="profile-health")
+    assert result["selected_peer"] == "cx"
+    assert "ag" not in result["weights"]
+
+
+def test_build_profile_rows_expired_profile_cooldown_is_eligible():
+    observed = "2026-07-08T00:00:00+00:00"
+    orch = _orch_with_profiles("ag", {"standard": _profile_conf()})
+    records = [_profile_record("ag", "G-5H", {"standard": {
+        "gate_open": False,
+        "rate_limit_state": {"limited": True, "reset_at": "2000-01-01T00:00:00+00:00"},
+    }})]
+
+    rows = snapshot._build_profile_rows(orch, records, observed)
+    assert rows[0]["state"] == "eligible"
+
+
+def test_build_profile_rows_missing_profile_health_does_not_block():
+    observed = "2026-07-08T00:00:00+00:00"
+    orch = _orch_with_profiles("ag", {"standard": _profile_conf()})
+    records = [_profile_record("ag", "G-5H")]
+
+    rows = snapshot._build_profile_rows(orch, records, observed)
+    assert rows[0]["state"] == "eligible"
+
+
+def test_build_profile_rows_ignores_removed_profile_health():
+    observed = "2026-07-08T00:00:00+00:00"
+    orch = _orch_with_profiles("ag", {"standard": _profile_conf()})
+    records = [_profile_record("ag", "G-5H", {
+        "removed": {"gate_open": True},
+        "standard": {"gate_open": True},
+    })]
+
+    rows = snapshot._build_profile_rows(orch, records, observed)
+    assert [r["profile"] for r in rows] == ["ag.standard"]
+
+
+def test_build_profile_rows_malformed_profile_cooldown_is_blocked_fail_safe():
+    observed = "2026-07-08T00:00:00+00:00"
+    orch = _orch_with_profiles("ag", {"standard": _profile_conf()})
+    records = [
+        _profile_record("ag", "G-5H", {
+            "standard": {
+                "gate_open": False,
+                "rate_limit_state": {
+                    "limited": True,
+                    "reset_at": 12345,
+                },
+            }
+        })
+    ]
+
+    rows = snapshot._build_profile_rows(orch, records, observed)
+
+    assert rows[0]["profile"] == "ag.standard"
+    assert rows[0]["state"] == "blocked"
+
+
 def test_terminal_hard_excluded_when_non_terminal_above_floor(monkeypatch):
     _patch_rows(monkeypatch, [
         _row("cc", 0.09),

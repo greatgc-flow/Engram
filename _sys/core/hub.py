@@ -121,13 +121,21 @@ def find_ai_root() -> Path:
         return Path(override).expanduser().resolve()
     canonical_root = Path(__file__).resolve().parents[2]
     sys_tree = canonical_root / "_sys"
+    scratch_root = (sys_tree / "data" / "temp").resolve()
 
     def _is_phantom(cand: Path) -> bool:
         # A .ai/.git discovered INSIDE our own _sys/ tree (e.g. a peer's
         # scratch/sandbox that grew a stray .ai) is machinery debris, never a
         # legit external-project root. Resolve first: a worker's CWD can reach
         # the phantom via a junction, so an unresolved compare would miss it.
+        # EXCEPTION: candidates under _sys/data/temp are the designated scratch
+        # area (e.g. pytest's tmp_path/basetemp) — a .ai there is a legit
+        # isolated-test root, not debris. Without this, tests silently fall
+        # through to the real repo .ai and mutate live hub state (verified
+        # 2026-07-08: a test run overwrote .ai/state.json's room_id).
         c = cand.resolve()
+        if c == scratch_root or scratch_root in c.parents:
+            return False
         return c != canonical_root and sys_tree in c.parents
 
     cwd = Path.cwd().resolve()

@@ -254,6 +254,10 @@ def render_card(info):
     if info.get("sessions") is not None:
         print(_c(f" Sessions today: {info['sessions']}", "dim"))
 
+    profile_health = info.get("profile_health") if isinstance(info.get("profile_health"), dict) else {}
+    if str(info.get("peer") or "").lower() == "cc" and "fable" in profile_health:
+        print(_c(" Fable quota: F-7D when present; 5h uses C-5H (no F-5H/F-7H bucket)", "dim"))
+
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(prog="diag")
@@ -358,6 +362,130 @@ def _ctx_session_cell(context):
 
 
 
+_FRAME_NOW = object()
+
+
+def _frame_dt(value=_FRAME_NOW):
+    if value is _FRAME_NOW:
+        return datetime.now().astimezone()
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        if isinstance(value, (int, float)):
+            dt = _parse_reset(value)
+            return dt.astimezone() if dt else None
+        text = str(value).strip()
+        if not text:
+            return None
+        if text.replace(".", "", 1).isdigit():
+            dt = _parse_reset(text)
+            return dt.astimezone() if dt else None
+        try:
+            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
+    return dt.astimezone()
+
+
+def _fmt_frame_dt(value):
+    dt = _frame_dt(value)
+    return dt.strftime("%Y-%m-%d %H:%M:%S %z") if dt else "absent"
+
+
+def _snapshot_age_seconds(snapshot, now=None):
+    now_dt = _frame_dt() if now is None else _frame_dt(now)
+    observed = _frame_dt((snapshot or {}).get("observed_at"))
+    if not now_dt or not observed:
+        return None
+    return max(0, int((now_dt - observed).total_seconds()))
+
+
+def _limited_reset_rows(snapshot, now=None):
+    """Current profile-level usage limits sorted by reset countdown."""
+    snapshot = snapshot or {}
+    now_dt = _frame_dt() if now is None else _frame_dt(now)
+    active_profiles = {
+        str(row.get("profile"))
+        for row in snapshot.get("profiles") or []
+        if row.get("profile")
+    }
+    rows = []
+    for rec in snapshot.get("peers") or []:
+        peer = rec.get("peer")
+        if not peer:
+            continue
+        health = (rec.get("domains") or {}).get("health") or {}
+        profiles = health.get("profiles") or (rec.get("raw") or {}).get("profile_health") or {}
+        if not isinstance(profiles, dict):
+            continue
+        for name, profile_health in profiles.items():
+            if not isinstance(profile_health, dict):
+                continue
+            rate_state = profile_health.get("rate_limit_state")
+            if not (isinstance(rate_state, dict) and rate_state.get("limited") is True):
+                continue
+            profile_id = str(name) if "." in str(name) else f"{peer}.{name}"
+            if active_profiles and profile_id not in active_profiles:
+                continue
+            reset_at = _frame_dt(rate_state.get("reset_at"))
+            remaining = None
+            if reset_at and now_dt:
+                remaining = int((reset_at - now_dt).total_seconds())
+                if remaining <= 0:
+                    continue
+            rows.append({
+                "profile": profile_id,
+                "reset_at": reset_at,
+                "remaining_sec": remaining,
+            })
+    return sorted(rows, key=lambda row: (
+        row["remaining_sec"] if isinstance(row.get("remaining_sec"), int) else float("inf"),
+        row.get("profile") or "",
+    ))
+
+
+def render_frame_footer(stdout=None, snapshot=None, rendered_at=None):
+    out = stdout or sys.stdout
+    snapshot = snapshot or {}
+    rendered = _frame_dt() if rendered_at is None else _frame_dt(rendered_at)
+    tc = telemetry_config()
+    ttl = tc.get("ttl", {})
+    snapshot_ttl = ttl.get("snapshot_sec", "absent")
+    local_ttl = ttl.get("local_sec", "absent")
+    expensive_ttl = ttl.get("expensive_source_sec", "absent")
+    snapshot_age = _snapshot_age_seconds(snapshot, rendered)
+    snapshot_age_txt = f"{snapshot_age}s" if isinstance(snapshot_age, int) else "absent"
+    expensive_age = expensive_source_age_sec()
+    expensive_age_txt = f"{expensive_age}s" if isinstance(expensive_age, int) else "absent"
+
+    out.write("\n" + "=" * 60 + "\n")
+    out.write(_c(" FRAME", "bold") + "\n")
+    out.write("=" * 60 + "\n")
+    out.write(
+        f"TTL snapshot refreshed {_fmt_frame_dt(snapshot.get('observed_at'))} "
+        f"(age {snapshot_age_txt} / TTL {snapshot_ttl}s); "
+        f"local TTL {local_ttl}s; expensive quota cache {expensive_age_txt} / TTL {expensive_ttl}s\n"
+    )
+    out.write(f"RENDERED {_fmt_frame_dt(rendered)}\n")
+
+    rows = _limited_reset_rows(snapshot, rendered)
+    if not rows:
+        out.write("LIMITED RESETS none\n")
+        return
+    out.write("LIMITED RESETS\n")
+    for row in rows:
+        remaining = row.get("remaining_sec")
+        remaining_txt = _rel(remaining) if isinstance(remaining, int) else "absent"
+        out.write(
+            f"  {str(row.get('profile') or 'absent'):<22} "
+            f"{remaining_txt:<10} resets {_fmt_frame_dt(row.get('reset_at'))}\n"
+        )
+
+
 def render_dashboard(stdout=None, watch_mode=False):
     out = stdout or sys.stdout
     with redirect_stdout(out):
@@ -384,52 +512,64 @@ def render_dashboard(stdout=None, watch_mode=False):
         snapshot = collect_snapshot()
         infos = [p["raw"] for p in snapshot["peers"]]
 
-        # Section order is the unanimous FP-4 spec (2026-07-03): static first,
-        # volatile nearest the prompt — PROFILES&QUOTAS → DETAIL → SESSIONS/
-        # HEADROOM → ALERTS → SUMMARY, identical in default and watch mode.
-        print("\n" + "=" * 60)
-        print(_c(" PROFILES & ROUTING", "bold"))
-        print("=" * 60)
-        render_profiles(out, snapshot=snapshot)
+        # Section order is the unanimous FP-4 spec (2026-07-03, reconfirmed
+        # 2026-07-08 w/ ag+cx): static first, volatile nearest the prompt —
+        # PROFILES&ROUTING → DETAIL → SESSIONS/HEADROOM → ALERTS → POLICY →
+        # SUMMARY → FRAME. SUMMARY is the final CONTENT panel (nearest the
+        # prompt among domain-data panels); POLICY must precede it. FRAME is
+        # a meta-footer ABOUT the render itself (snapshot staleness/TTL age,
+        # rendered-at timestamp, imminent rate-limit resets) — distinct from
+        # content panels, so it is always the true last line of output, after
+        # SUMMARY (ag verdict 2026-07-08, re-confirmed after this same rule
+        # was silently re-broken once already today — see backlog-5whys-
+        # consensus-2026-07-08-round3.md for why this class of regression
+        # keeps recurring). Order is expressed as ONE list below (not
+        # scattered print() calls) so it is structurally enforced, not just
+        # documented in a comment that can be quietly outpaced by an edit.
+        def _render_panel_header(title):
+            print("\n" + "=" * 60)
+            print(_c(title, "bold"))
+            print("=" * 60)
 
-        print("\n" + "=" * 60)
-        print(_c(" PEER DETAIL", "bold"))
-        print("=" * 60)
-        for info in infos:
-            render_card(info)
+        def _render_peer_detail():
+            for info in infos:
+                render_card(info)
 
-        print("\n" + "=" * 60)
-        print(_c(" ACTIVE SESSIONS & HEADROOM", "bold"))
-        print("=" * 60)
-        render_sessions(out, snapshot=snapshot)
-        target = _next_headroom_target(_derive_headroom_rows(snapshot))
-        if target:
-            risk = " TIER RISK" if target.get("tier_risk") else ""
-            out.write(f"NEXT FAILOVER TARGET: {target.get('profile')} "
-                      f"headroom {_fmt_remaining(target.get('headroom'))}{risk}\n")
+        def _render_active_sessions_and_headroom():
+            render_sessions(out, snapshot=snapshot)
+            target = _next_headroom_target(_derive_headroom_rows(snapshot))
+            if target:
+                risk = " TIER RISK" if target.get("tier_risk") else ""
+                out.write(f"NEXT FAILOVER TARGET: {target.get('profile')} "
+                          f"headroom {_fmt_remaining(target.get('headroom'))}{risk}\n")
 
-        print("\n" + "=" * 60)
-        print(_c(" ALERTS", "bold"))
-        print("=" * 60)
-        alert_count = 0
-        for rec in snapshot["peers"]:
-            for alert in rec.get("alerts") or []:
-                sev = str(alert.get("severity") or "info").upper()
-                print(f"[{sev}] {rec.get('peer')}: {alert.get('code')} {alert.get('message')}")
-                alert_count += 1
-        if not alert_count:
-            print("(no alerts)")
+        def _render_alerts():
+            alert_count = 0
+            for rec in snapshot["peers"]:
+                for alert in rec.get("alerts") or []:
+                    sev = str(alert.get("severity") or "info").upper()
+                    print(f"[{sev}] {rec.get('peer')}: {alert.get('code')} {alert.get('message')}")
+                    alert_count += 1
+            if not alert_count:
+                print("(no alerts)")
 
-        render_summary(infos)
+        content_panels = [
+            (" PROFILES & ROUTING", lambda: render_profiles(out, snapshot=snapshot)),
+            (" PEER DETAIL", _render_peer_detail),
+            (" ACTIVE SESSIONS & HEADROOM", _render_active_sessions_and_headroom),
+            (" ALERTS", _render_alerts),
+            (" POLICY", lambda: render_policy(out)),
+            (" SUMMARY", lambda: render_summary(infos)),  # self-prints its own header
+        ]
 
-        print("\n" + "=" * 60)
-        print(_c(" POLICY", "bold"))
-        print("=" * 60)
-        render_policy(out)
+        for title, render_fn in content_panels:
+            if title == " SUMMARY":
+                render_fn()
+                continue
+            _render_panel_header(title)
+            render_fn()
 
-        print("\n" + "=" * 60)
-        print(_c(" Note: run '_sys\\cli\\diag' (or diag.bat) anytime to view this screen.", "dim"))
-        print("=" * 60)
+        render_frame_footer(out, snapshot=snapshot)
 
 
 def _load_routing_cfg():

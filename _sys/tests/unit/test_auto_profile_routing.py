@@ -183,3 +183,60 @@ def test_multilingual_short_and_complex_requests_are_separated():
     )
     assert select("cx", short_query).profile == "standard"
     assert select("cx", complex_query).profile == "deepthink"
+
+
+def test_explicit_profile_honors_expired_profile_cooldown():
+    health = {
+        "availability": {
+            "gate_open": True,
+            "profiles": {
+                "fable": {
+                    "gate_open": False,
+                    "rate_limit_state": {
+                        "limited": True,
+                        "reset_at": "2000-01-01T00:00:00+00:00",
+                    },
+                },
+            },
+        },
+    }
+
+    decision = hub_profile_router.select_profile_node(
+        "cc.fable",
+        "Use the arbiter.",
+        orchestration=_orch(),
+        routing_config=_routing(),
+        health=health,
+    )
+
+    assert decision.node_id == "cc.fable"
+
+
+def test_explicit_profile_blocks_unexpired_profile_cooldown():
+    health = {
+        "availability": {
+            "gate_open": True,
+            "profiles": {
+                "fable": {
+                    "gate_open": False,
+                    "rate_limit_state": {
+                        "limited": True,
+                        "reset_at": "2999-01-01T00:00:00+00:00",
+                    },
+                },
+            },
+        },
+    }
+
+    try:
+        hub_profile_router.select_profile_node(
+            "cc.fable",
+            "Use the arbiter.",
+            orchestration=_orch(),
+            routing_config=_routing(),
+            health=health,
+        )
+    except hub_profile_router.ProfileRoutingError as exc:
+        assert "fable" in str(exc)
+    else:
+        raise AssertionError("unexpired explicit profile cooldown must stay blocked")

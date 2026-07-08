@@ -356,6 +356,7 @@ def _claude_usage_emit(section, used_pct, reset_text, now=None):
         "used_frac": used_frac,
         "pacing": pacing,
         "reset": _fmt_reset(reset_at),
+        "reset_at": reset_at,
         "source": "cc_usage",
         "metric": f"{float(used_pct):.0f}% used{_fmt_pacing(pacing)}",
         "pacing_ratio": pacing.get("ratio"),
@@ -633,9 +634,11 @@ def gather_peer(peer, peer_dirs):
 
     # Health / gate
     avail = health_data.get("availability", {})
+    profile_health = avail.get("profiles", {})
     info["gate"] = avail.get("gate_open")
     info["quarantined"] = avail.get("quarantined")
     info["quarantine_reason"] = avail.get("quarantine_reason") or avail.get("reason")
+    info["profile_health"] = profile_health if isinstance(profile_health, dict) else {}
 
     # Context & tokens (live preferred)
     if "context_window" in data:
@@ -702,11 +705,15 @@ def gather_peer(peer, peer_dirs):
             import quota as qmgr
             window_hours = 5.0 if "5H" in label else 168.0
             reset_sec = q.get("reset_in_seconds")
+            reset_at = _parse_reset(q.get("reset_time"))
             rem_sec = qmgr.get_remaining_seconds(reset_in_seconds=reset_sec)
             pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours) if used_frac is not None else None
             quotas.append({
                 "label": label, "used_frac": used_frac, "pacing": pacing,
-                "reset": _fmt_reset(q.get("reset_time"), reset_sec), "source": "ag",
+                "reset": _fmt_reset(q.get("reset_time"), reset_sec),
+                "reset_at": reset_at.isoformat() if reset_at else None,
+                "reset_in_seconds": reset_sec,
+                "source": "ag",
             })
     if "rate_limits" in data and isinstance(data["rate_limits"], dict):  # cc
         rl = data["rate_limits"]
@@ -730,6 +737,7 @@ def gather_peer(peer, peer_dirs):
             
             import quota as qmgr
             resets_at = q.get("resets_at") or q.get("reset_at")
+            reset_at = _parse_reset(resets_at)
             reset_sec = q.get("reset_in_seconds")
             
             if reset_sec is not None:
@@ -740,7 +748,10 @@ def gather_peer(peer, peer_dirs):
             pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours) if used_frac is not None else None
             quotas.append({
                 "label": label, "used_frac": used_frac, "pacing": pacing,
-                "reset": _fmt_reset(resets_at, reset_sec), "source": "cc",
+                "reset": _fmt_reset(resets_at, reset_sec),
+                "reset_at": reset_at.isoformat() if reset_at else None,
+                "reset_in_seconds": reset_sec,
+                "source": "cc",
             })
     if peer == "cc":
         usage_quotas = _cached_claude_usage_quotas()
@@ -803,12 +814,14 @@ def gather_peer(peer, peer_dirs):
                 import quota as qmgr
                 window_hours = 5.0 if "5H" in label else 168.0
                 resets_at = q.get("resetsAt")
+                reset_at = _parse_reset(resets_at)
                 rem_sec = qmgr.get_remaining_seconds(resets_at_iso=resets_at)
                 pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours)
 
                 quotas.append({
                     "label": label, "used_frac": used_frac,
                     "reset": _fmt_reset(resets_at),
+                    "reset_at": reset_at.isoformat() if reset_at else None,
                     "pacing": pacing,
                     "metric": f"{float(used):.1f}% used{_fmt_pacing(pacing)}",
                     "pacing_ratio": pacing.get("ratio"), "pacing_status": pacing.get("status"),
@@ -936,6 +949,36 @@ def _profile_source(kind, tag, observed_at, confidence="last_known"):
     return {"source": _source_meta(kind, observed_at, ttl, confidence), "source_tag": tag}
 
 
+def profile_health_gate_open(profile_health):
+    """Effective profile gate. Expired cooldowns are treated open without writing.
+
+    SSOT (2026-07-08): also imported directly by hub_profile_router.py so the
+    routing layer and the display layer agree on cooldown expiry — previously
+    the router used a raw `gate_open is False` check with no expiry awareness,
+    which could keep an explicit-profile ask (e.g. cc.fable) blocked long after
+    its rate-limit window had actually reset, while diag correctly showed it as
+    open again."""
+    if not isinstance(profile_health, dict):
+        return True
+    if profile_health.get("gate_open") is not False:
+        return True
+    rls = profile_health.get("rate_limit_state")
+    if isinstance(rls, dict) and rls.get("limited"):
+        reset_str = rls.get("reset_at")
+        if reset_str:
+            try:
+                reset_dt = datetime.fromisoformat(reset_str)
+                now = datetime.now(reset_dt.tzinfo) if reset_dt.tzinfo else datetime.now()
+                if now >= reset_dt:
+                    return True
+            except (ValueError, TypeError):
+                pass
+    return False
+
+
+_profile_health_gate_open = profile_health_gate_open
+
+
 def _build_profile_rows(orch, peer_records, observed_at):
     """First-class per-profile rows derived from one collected peer snapshot."""
     by_peer = {rec.get("peer"): rec for rec in peer_records or []}
@@ -950,6 +993,8 @@ def _build_profile_rows(orch, peer_records, observed_at):
         domains = peer_rec.get("domains") or {}
         root_ctx = domains.get("context") or {}
         root_quota = domains.get("quota") or {}
+        root_health = domains.get("health") or {}
+        health_profiles = root_health.get("profiles") or {}
         default_profile = node.get("default_profile")
         for profile_name, prof in (node.get("profiles") or {}).items():
             model = prof.get("model_id") or prof.get("runtime_model")
@@ -1016,6 +1061,10 @@ def _build_profile_rows(orch, peer_records, observed_at):
                 model_tag = "orchestration" if model else "absent"
             effort_tag = "orchestration" if effort else "absent"
             routing_tag = "orchestration" if prof.get("routing_state") else "absent"
+            state = prof.get("routing_state") or "unknown"
+            profile_health = health_profiles.get(profile_name, {})
+            if state == "eligible" and not _profile_health_gate_open(profile_health):
+                state = "blocked"
             rows.append({
                 "profile": f"{peer_id}.{profile_name}",
                 "peer": peer_id,
@@ -1024,7 +1073,7 @@ def _build_profile_rows(orch, peer_records, observed_at):
                 "effort": effort,
                 "cost_tier": prof.get("cost_tier"),
                 "routing_state": prof.get("routing_state"),
-                "state": prof.get("routing_state") or "unknown",
+                "state": state,
                 "context": context,
                 "quota": quota,
                 "sources": {
@@ -1460,6 +1509,7 @@ def normalize_peer(info, now=None):
     health = {
         "gate_open": info.get("gate"),
         "quarantined": info.get("quarantined"),
+        "profiles": info.get("profile_health") or {},
         "source": _source_meta("cached", observed, _LOCAL_TTL_SEC,
                                "last_known" if not info.get("empty") else "unknown"),
     }

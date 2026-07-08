@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 import hub_peer
+from snapshot import profile_health_gate_open
 
 
 class ProfileRoutingError(RuntimeError):
@@ -184,7 +185,7 @@ def _eligible_profile(
     health: dict | None = None,
 ) -> tuple[str | None, str | None]:
     avail = health.get("availability", {}) if health else {}
-    if avail.get("gate_open") is False:
+    if not profile_health_gate_open(avail):
         return None, None
     health_profiles = avail.get("profiles", {})
     profiles = root.get("profiles", {})
@@ -193,22 +194,8 @@ def _eligible_profile(
         candidate = profile_order[index]
         profile = profiles.get(candidate, {})
         h_prof = health_profiles.get(candidate, {})
-        
-        gate_open = h_prof.get("gate_open") is not False
-        if not gate_open:
-            p_rls = h_prof.get("rate_limit_state")
-            if isinstance(p_rls, dict) and p_rls.get("limited"):
-                reset_str = p_rls.get("reset_at")
-                if reset_str:
-                    try:
-                        from datetime import datetime
-                        reset_dt = datetime.fromisoformat(reset_str)
-                        now = datetime.now(reset_dt.tzinfo) if reset_dt.tzinfo else datetime.now()
-                        if now >= reset_dt:
-                            gate_open = True
-                    except ValueError:
-                        pass
-                        
+        gate_open = profile_health_gate_open(h_prof)
+
         if (
             profile
             and profile.get("enabled") is not False
@@ -243,10 +230,10 @@ def select_profile_node(
 
     if explicit and explicit_profile:
         avail = health.get("availability", {}) if health else {}
-        if avail.get("gate_open") is False:
+        if not profile_health_gate_open(avail):
             raise ProfileRoutingError(f"peer '{root_id}' is completely unavailable")
         h_prof = avail.get("profiles", {}).get(explicit_profile, {})
-        if h_prof.get("gate_open") is False:
+        if not profile_health_gate_open(h_prof):
             raise ProfileRoutingError(f"explicit profile '{explicit_profile}' is currently unavailable")
         return ProfileDecision(
             root_peer=root_id,

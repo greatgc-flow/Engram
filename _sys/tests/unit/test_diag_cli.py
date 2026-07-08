@@ -673,6 +673,8 @@ def test_dashboard_follows_fp4_section_order(monkeypatch):
             < text.index(" ACTIVE SESSIONS & HEADROOM")
             < text.index(" ALERTS")
             < text.index(" SUMMARY"))
+    assert text.index(" POLICY") < text.index(" SUMMARY") < text.index(" FRAME")
+    assert text.rstrip().endswith("LIMITED RESETS none")
 
 
 def test_watch_dashboard_moves_summary_after_detail(monkeypatch):
@@ -694,6 +696,97 @@ def test_watch_dashboard_moves_summary_after_detail(monkeypatch):
     text = out.getvalue()
 
     assert text.index(" PEER DETAIL") < text.index(" SUMMARY")
+    assert text.index(" SUMMARY") < text.index(" FRAME")
+
+
+
+def test_frame_footer_freshness_and_no_limited_resets(monkeypatch):
+    diag = load_diag()
+    monkeypatch.setattr(diag, "expensive_source_age_sec", lambda: 17)
+    rendered = datetime(2026, 7, 8, 10, 0, 0, tzinfo=timezone(timedelta(hours=9)))
+    snapshot = {
+        "observed_at": "2026-07-08T09:59:55+09:00",
+        "peers": [],
+        "profiles": [],
+    }
+
+    out = io.StringIO()
+    diag.render_frame_footer(out, snapshot=snapshot, rendered_at=rendered)
+    text = out.getvalue()
+
+    assert "TTL snapshot refreshed 2026-07-08 09:59:55 +0900" in text
+    assert "age 5s / TTL 60s" in text
+    assert "local TTL 5s" in text
+    assert "expensive quota cache 17s / TTL 60s" in text
+    assert "RENDERED 2026-07-08 10:00:00 +0900" in text
+    assert text.rstrip().endswith("LIMITED RESETS none")
+
+
+def test_frame_footer_single_limited_reset(monkeypatch):
+    diag = load_diag()
+    monkeypatch.setattr(diag, "expensive_source_age_sec", lambda: None)
+    rendered = datetime(2026, 7, 8, 10, 0, 0, tzinfo=timezone(timedelta(hours=9)))
+    snapshot = {
+        "observed_at": "2026-07-08T10:00:00+09:00",
+        "profiles": [{"profile": "ag.standard"}],
+        "peers": [{
+            "peer": "ag",
+            "domains": {"health": {"profiles": {
+                "standard": {"rate_limit_state": {
+                    "limited": True,
+                    "reset_at": "2026-07-08T10:15:00+09:00",
+                }},
+            }}},
+        }],
+    }
+
+    out = io.StringIO()
+    diag.render_frame_footer(out, snapshot=snapshot, rendered_at=rendered)
+    text = out.getvalue()
+
+    assert "LIMITED RESETS\n" in text
+    assert "ag.standard" in text
+    assert "in 15m" in text
+    assert "2026-07-08 10:15:00 +0900" in text
+
+
+def test_limited_reset_rows_sort_filter_and_unknown():
+    diag = load_diag()
+    rendered = datetime(2026, 7, 8, 10, 0, 0, tzinfo=timezone(timedelta(hours=9)))
+    snapshot = {
+        "profiles": [
+            {"profile": "ag.standard"},
+            {"profile": "ag.opus"},
+            {"profile": "ag.effort"},
+            {"profile": "cc.fable"},
+            {"profile": "cx.deepthink"},
+        ],
+        "peers": [
+            {"peer": "ag", "domains": {"health": {"profiles": {
+                "standard": {"rate_limit_state": {
+                    "limited": True, "reset_at": "2026-07-08T10:30:00+09:00"}},
+                "opus": {"rate_limit_state": {"limited": True}},
+                "effort": {"rate_limit_state": {
+                    "limited": False, "reset_at": "2026-07-08T10:05:00+09:00"}},
+            }}}},
+            {"peer": "cc", "domains": {"health": {"profiles": {
+                "fable": {"rate_limit_state": {
+                    "limited": True, "reset_at": "2026-07-08T09:59:00+09:00"}},
+                "ghost": {"rate_limit_state": {
+                    "limited": True, "reset_at": "2026-07-08T10:01:00+09:00"}},
+            }}}},
+            {"peer": "cx", "domains": {"health": {"profiles": {
+                "deepthink": {"rate_limit_state": {
+                    "limited": True, "reset_at": "2026-07-08T10:10:00+09:00"}},
+            }}}},
+        ],
+    }
+
+    rows = diag._limited_reset_rows(snapshot, rendered)
+
+    assert [row["profile"] for row in rows] == ["cx.deepthink", "ag.standard", "ag.opus"]
+    assert [row["remaining_sec"] for row in rows[:2]] == [600, 1800]
+    assert rows[2]["remaining_sec"] is None
 
 
 def test_headroom_requires_quota_and_context_numeric():
