@@ -3335,6 +3335,12 @@ def resolve_auto_target(ai_root, config=None, snapshot_obj=None, now=None, task_
         decision = snapshot.select_load_balanced_peer(
             snap, cfg, terminal_peer=terminal_peer, ask_id=_short_id("lb-"),
             task_tokens=task_tokens)
+        if ai_root:
+            try:
+                for ev in decision.get("telemetry_events", []):
+                    _record_routing_metric(ai_root, ev["event"], **{k: v for k, v in ev.items() if k != "event"})
+            except Exception:
+                pass
         if decision.get("selected_peer"):
             target = decision["selected_peer"]
             target, hyst = _session_hysteresis_target(snap, ai_root, target, terminal_peer, cfg)
@@ -3396,6 +3402,11 @@ def _shadow_log_load_balance(ai_root: Path | None, actual_peer: str, origin: str
             origin=origin,
             driving=bool(cfg.get("enabled")),
         )
+        try:
+            for ev in decision.get("telemetry_events", []):
+                _record_routing_metric(ai_root, ev["event"], **{k: v for k, v in ev.items() if k != "event"})
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -5717,28 +5728,55 @@ def _has_finalized_consensus(ai_root: Path) -> bool:
     return False
 
 
-def _guard_action(ai_root: Path, action: str, force_tier0: bool = False, origin: str = "terminal", target_peer: str | None = None) -> None:
+_SYSTEM_EXEMPT_ACTIONS = {"consensus-sweep", "health-sweep", "health-update", "health-check",
+                          "health-precheck", "transient-scan", "lease-sweep", "lesson-sweep",
+                          "update-signatures", "init-session", "end-session", "context-fill",
+                          "context-hash", "context-ack", "peer-recover", "peer-quarantine"}
+
+
+def _guard_decision(
+    would_block: bool = False,
+    reason: str | None = None,
+    code: int = 0,
+    matched_rule: str | None = None,
+    action_group: str | None = None,
+    warnings: list[str] | None = None,
+    audit: dict | None = None,
+) -> dict:
+    return {
+        "would_block": would_block,
+        "reason": reason,
+        "code": code,
+        "matched_rule": matched_rule,
+        "action_group": action_group,
+        "warnings": warnings or [],
+        "audit": audit,
+    }
+
+
+def _guard_action_dry_run(ai_root: Path, action: str, force_tier0: bool = False, origin: str = "terminal", target_peer: str | None = None) -> dict:
     cfg = _operational_guard_cfg()
     if not cfg.get("enabled", False) or force_tier0:
+        warnings = []
         if force_tier0:
-            _log_p2p("WARN", f"force-tier0 bypass for action={action}", from_node="TIER0")
-        return
-
-    def _block(detail: str, code: int = 3):
-        print(f"[HUB:BLOCK] {detail}", file=sys.stderr)
-        sys.exit(code)
+            warnings.append(f"force-tier0 bypass for action={action}")
+        return _guard_decision(warnings=warnings)
 
     # PRO-19 enforcement: terminal/router peers cannot mutate governance state
     # System-automated actions are exempt (sweep, health actions invoked by hub itself)
-    _SYSTEM_EXEMPT_ACTIONS = {"consensus-sweep", "health-sweep", "health-update", "health-check",
-                               "health-precheck", "transient-scan", "lease-sweep", "lesson-sweep",
-                               "update-signatures", "init-session", "end-session", "context-fill",
-                               "context-hash", "context-ack", "peer-recover", "peer-quarantine"}
+    group = _action_group(action)
     if origin == "terminal" and action not in _SYSTEM_EXEMPT_ACTIONS:
         if _is_mutating_action(action):
-            _log_p2p("BLOCK", f"PRO-19: terminal-origin mutating action '{action}' rejected. Use --force-tier0 for Tier-0 human override.", from_node="GUARD")
-            _block(f"PRO-19: terminal/router cannot execute '{action}'. This is a governance-mutating action. "
-                   f"[ESCALATE] Use --force-tier0 if you are exercising Tier-0 human authority (INV-03).")
+            return _guard_decision(
+                would_block=True,
+                reason=(
+                    f"PRO-19: terminal/router cannot execute '{action}'. This is a governance-mutating action. "
+                    f"[ESCALATE] Use --force-tier0 if you are exercising Tier-0 human authority (INV-03)."
+                ),
+                code=3,
+                matched_rule="pro19_terminal_mutating",
+                action_group=group,
+            )
 
     if action not in _SYSTEM_EXEMPT_ACTIONS:
         tier_floor = cfg.get("decision_tier_floor", {})
@@ -5763,13 +5801,23 @@ def _guard_action(ai_root: Path, action: str, force_tier0: bool = False, origin:
                         origin_tier = root.get("default_profile", "standard")
             
             if tier_order.get(origin_tier, 0) < tier_order.get(required_tier, 1):
-                _log_p2p("BLOCK", f"PRO-19/C2: tier-floor violation for action '{action}' (origin: {origin_tier} < required: {required_tier})", from_node="GUARD")
-                _block(f"PRO-19/C2: action '{action}' requires at least '{required_tier}' profile tier (origin is '{origin_tier}'). "
-                       f"[ESCALATE] Use --force-tier0 for Tier-0 human override.")
+                return _guard_decision(
+                    would_block=True,
+                    reason=(
+                        f"PRO-19/C2: action '{action}' requires at least '{required_tier}' profile tier (origin is '{origin_tier}'). "
+                        f"[ESCALATE] Use --force-tier0 for Tier-0 human override."
+                    ),
+                    code=3,
+                    matched_rule="tier_floor",
+                    action_group=group,
+                )
+    warnings = []
+    rate_guard = cfg.get("collab_rate_guard", {})
+    current = 0
+    threshold = 10
     try:
-        rate_guard = cfg.get("collab_rate_guard", {})
-        current = int(_load_protocol_cfg().get("collab_rate", {}).get("current", 0) or 0)
         threshold = int(rate_guard.get("threshold", 10) or 10)
+        current = int(_load_protocol_cfg().get("collab_rate", {}).get("current", 0) or 0)
         exempt = set(rate_guard.get("exempt_actions", []))
         if (
             rate_guard.get("enabled", False)
@@ -5779,37 +5827,113 @@ def _guard_action(ai_root: Path, action: str, force_tier0: bool = False, origin:
             and rate_guard.get("require_finalized_consensus", True)
             and not _has_finalized_consensus(ai_root)
         ):
-            _block(f"action '{action}' requires finalized consensus at collab_rate {current}. Use --force-tier0 only for Tier0 recovery.")
-    except SystemExit:
-        raise
+            return _guard_decision(
+                would_block=True,
+                reason=f"action '{action}' requires finalized consensus at collab_rate {current}. Use --force-tier0 only for Tier0 recovery.",
+                code=3,
+                matched_rule="collab_rate_guard",
+                action_group=group,
+            )
     except Exception as e:
-        print(f"[HUB:WARN] collab_rate guard check error: {e}", file=sys.stderr)
-    group = _action_group(action)
+        warnings.append(f"[HUB:WARN] collab_rate guard check error: {e}")
 
     # semi_governed actions: exempt only during RED/STALE/rate-limited recovery
+    audit = None
     if group == "semi_governed_hub_actions":
         peer_state = _current_coordinator_health(ai_root)
         if peer_state not in ("RED", "STALE", "RATE_LIMITED", "MISSING"):
             if rate_guard.get("enabled", False) and current >= threshold and not _has_finalized_consensus(ai_root):
-                _block(f"action '{action}' is semi-governed and requires finalized consensus when coordinator is {peer_state}.")
+                return _guard_decision(
+                    would_block=True,
+                    reason=f"action '{action}' is semi-governed and requires finalized consensus when coordinator is {peer_state}.",
+                    code=3,
+                    matched_rule="semi_governed_consensus",
+                    action_group=group,
+                    warnings=warnings,
+                )
         # Always write audit record for semi-governed actions
-        _log_p2p("AUDIT", f"semi-governed action={action} coordinator_state={peer_state}", from_node="GUARD")
+        audit = {"type": "semi_governed", "peer_state": peer_state}
 
     phase = _current_phase(ai_root)
     if not phase:
         if cfg.get("missing_phase_policy") == "allow_with_warning":
-            print(f"[HUB:WARN] phase is unset; allowing action '{action}'", file=sys.stderr)
+            warnings.append(f"[HUB:WARN] phase is unset; allowing action '{action}'")
         elif not cfg.get("allow_missing_phase", True):
-            _block(f"phase is unset; refusing action '{action}'")
-        return
+            return _guard_decision(
+                would_block=True,
+                reason=f"phase is unset; refusing action '{action}'",
+                code=3,
+                matched_rule="missing_phase_policy",
+                action_group=group,
+                warnings=warnings,
+                audit=audit,
+            )
+        return _guard_decision(action_group=group, warnings=warnings, audit=audit)
     matrix = cfg.get("phase_action_matrix", {})
     matrix_key = "no_code" if phase in set(cfg.get("no_code_phases", [])) else "default"
     decision = matrix.get(matrix_key, matrix.get("default", {})).get(group, "allow")
     if decision == "block":
         flag = cfg.get("force_tier0_flag", "--force-tier0")
-        _block(f"action '{action}' is blocked during phase '{phase}'. Use {flag} only for Tier0 recovery.")
+        return _guard_decision(
+            would_block=True,
+            reason=f"action '{action}' is blocked during phase '{phase}'. Use {flag} only for Tier0 recovery.",
+            code=3,
+            matched_rule="phase_action_matrix",
+            action_group=group,
+            warnings=warnings,
+            audit=audit,
+        )
     if decision == "requires_classification":
-        _block(f"action '{action}' has no phase policy during phase '{phase}'")
+        return _guard_decision(
+            would_block=True,
+            reason=f"action '{action}' has no phase policy during phase '{phase}'",
+            code=3,
+            matched_rule="phase_requires_classification",
+            action_group=group,
+            warnings=warnings,
+            audit=audit,
+        )
+    return _guard_decision(action_group=group, warnings=warnings, audit=audit)
+
+
+def _guard_action(ai_root: Path, action: str, force_tier0: bool = False, origin: str = "terminal", target_peer: str | None = None) -> None:
+    result = _guard_action_dry_run(ai_root, action, force_tier0=force_tier0, origin=origin, target_peer=target_peer)
+
+    if force_tier0:
+        _log_p2p("WARN", f"force-tier0 bypass for action={action}", from_node="TIER0")
+        return
+
+    for warning in result.get("warnings", []):
+        print(warning, file=sys.stderr)
+
+    audit = result.get("audit")
+    if audit and audit.get("type") == "semi_governed":
+        _log_p2p("AUDIT", f"semi-governed action={action} coordinator_state={audit.get('peer_state')}", from_node="GUARD")
+
+    if not result.get("would_block"):
+        return
+
+    matched_rule = result.get("matched_rule")
+    if matched_rule == "pro19_terminal_mutating":
+        _log_p2p("BLOCK", f"PRO-19: terminal-origin mutating action '{action}' rejected. Use --force-tier0 for Tier-0 human override.", from_node="GUARD")
+    elif matched_rule == "tier_floor":
+        tier_floor = _operational_guard_cfg().get("decision_tier_floor", {})
+        required_tier = tier_floor.get("mutating_hub_actions_min_tier", "effort")
+        origin_tier = "standard"
+        if origin and origin != "terminal":
+            if "." in origin:
+                origin_tier = origin.split(".", 1)[1]
+            elif origin == "worker":
+                origin_tier = os.environ.get("HUB_PEER_TIER", "standard")
+            else:
+                orch = _load_orchestration()
+                root = next((n for n in orch.get("hub_nodes", []) if n.get("node_id") == origin), None)
+                if root:
+                    origin_tier = root.get("default_profile", "standard")
+        _log_p2p("BLOCK", f"PRO-19/C2: tier-floor violation for action '{action}' (origin: {origin_tier} < required: {required_tier})", from_node="GUARD")
+
+    print(f"[HUB:BLOCK] {result.get('reason')}", file=sys.stderr)
+    sys.exit(result.get("code", 3))
 
 
 def _regex_match(pattern: str, text: str) -> bool:
@@ -8377,4 +8501,3 @@ if __name__ == "__main__":
     except Exception:
         pass
     main()
-

@@ -793,3 +793,126 @@ def test_filter_profile_buckets_fable_includes_c_buckets():
 
     standard_buckets = snapshot._filter_profile_buckets("cc", "standard", buckets)
     assert [b.get("label") for b in standard_buckets] == ["C-5H", "C-7D"]
+
+
+def test_shared_quota_reserve_clamping_and_telemetry():
+    cfg = {
+        "enabled": True,
+        "effective_headroom_floor": 0.10,
+        "shared_quota_reserve": {
+            "enabled": True,
+            "families": {
+                "3P": {
+                    "reserve_for": ["peer2.reserved"],
+                    "reserve_fraction": 0.25
+                }
+            }
+        }
+    }
+
+    # Case A: Headroom is plenty (remaining headroom = 0.40 > 0.25)
+    snap_plenty = {
+        "profiles": [
+            {
+                "profile": "peer2.reserved",
+                "peer": "peer2",
+                "state": "eligible",
+                "quota": {"buckets": [{"label": "3P-WEEKLY", "used_frac": 0.60}]},
+                "context": {"utilization_pct": 0.0}
+            },
+            {
+                "profile": "peer1.bulk",
+                "peer": "peer1",
+                "state": "eligible",
+                "quota": {"buckets": [{"label": "3P-WEEKLY", "used_frac": 0.60}]},
+                "context": {"utilization_pct": 0.0}
+            }
+        ]
+    }
+    result_plenty = snapshot.select_load_balanced_peer(snap_plenty, cfg, ask_id="test-plenty")
+    assert result_plenty["selected_peer"] is not None
+    assert result_plenty["weights"]["peer1"] == pytest.approx(0.40)
+    assert result_plenty["weights"]["peer2"] == pytest.approx(0.40)
+    assert not result_plenty.get("telemetry_events")
+
+    # Case B: Headroom is below reserve (remaining = 0.20 < 0.25)
+    snap_clamped = {
+        "profiles": [
+            {
+                "profile": "peer2.reserved",
+                "peer": "peer2",
+                "state": "eligible",
+                "quota": {"buckets": [{"label": "3P-WEEKLY", "used_frac": 0.80}]},
+                "context": {"utilization_pct": 0.0}
+            },
+            {
+                "profile": "peer1.bulk",
+                "peer": "peer1",
+                "state": "eligible",
+                "quota": {"buckets": [{"label": "3P-WEEKLY", "used_frac": 0.80}]},
+                "context": {"utilization_pct": 0.0}
+            }
+        ]
+    }
+    result_clamped = snapshot.select_load_balanced_peer(snap_clamped, cfg, ask_id="test-clamped")
+    # peer1 (bulk) should be clamped to eps (0.01)
+    assert result_clamped["weights"]["peer1"] == pytest.approx(0.01)
+    # peer2 (reserved) is not clamped
+    assert result_clamped["weights"]["peer2"] == pytest.approx(0.20)
+    
+    # Telemetry should contain clamp event
+    events = result_clamped.get("telemetry_events", [])
+    clamp_events = [e for e in events if e.get("event") == "shared_quota_reserve_clamp"]
+    assert len(clamp_events) == 1
+    assert clamp_events[0]["family"] == "3P"
+    assert clamp_events[0]["profile"] == "peer1.bulk"
+    assert clamp_events[0]["remaining_headroom"] == pytest.approx(0.20)
+    assert clamp_events[0]["reserve_fraction"] == 0.25
+
+    # Case C: Regression guard (reserve disabled)
+    cfg_disabled = {
+        "enabled": True,
+        "effective_headroom_floor": 0.10,
+        "shared_quota_reserve": {
+            "enabled": False,
+            "families": {
+                "3P": {
+                    "reserve_for": ["peer2.reserved"],
+                    "reserve_fraction": 0.25
+                }
+            }
+        }
+    }
+    result_disabled = snapshot.select_load_balanced_peer(snap_clamped, cfg_disabled, ask_id="test-disabled")
+    assert result_disabled["weights"]["peer1"] == pytest.approx(0.20)
+    assert result_disabled["weights"]["peer2"] == pytest.approx(0.20)
+    assert not result_disabled.get("telemetry_events")
+
+    # Case D: Reserved profile critically low warning (remaining = 0.05 <= 0.10)
+    snap_critical = {
+        "profiles": [
+            {
+                "profile": "peer2.reserved",
+                "peer": "peer2",
+                "state": "eligible",
+                "quota": {"buckets": [{"label": "3P-WEEKLY", "used_frac": 0.95}]},
+                "context": {"utilization_pct": 0.0}
+            },
+            {
+                "profile": "peer1.bulk",
+                "peer": "peer1",
+                "state": "eligible",
+                "quota": {"buckets": [{"label": "3P-WEEKLY", "used_frac": 0.95}]},
+                "context": {"utilization_pct": 0.0}
+            }
+        ]
+    }
+    result_critical = snapshot.select_load_balanced_peer(snap_critical, cfg, ask_id="test-critical")
+    events_crit = result_critical.get("telemetry_events", [])
+    starvation_events = [e for e in events_crit if e.get("event") == "premium_starvation_warning"]
+    assert len(starvation_events) == 1
+    assert starvation_events[0]["family"] == "3P"
+    assert starvation_events[0]["profile"] == "peer2.reserved"
+    assert starvation_events[0]["remaining_headroom"] == pytest.approx(0.05)
+    assert starvation_events[0]["threshold"] == pytest.approx(0.10)
+

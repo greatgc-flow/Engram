@@ -208,6 +208,10 @@
         "3P": {
           "reserve_for": ["ag.opus"],
           "reserve_fraction": 0.25
+        },
+        "C": {
+          "reserve_for": ["cc.fable"],
+          "reserve_fraction": 0.20
         }
       }
     }

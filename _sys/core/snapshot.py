@@ -1640,18 +1640,85 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
     floor = config.get("effective_headroom_floor", 0.10)
     hard_exclude = config.get("terminal_hard_exclude", True)
     arbiter_models = set(config.get("arbiter_models", []) or [])
+    shared_events = []
 
     def _empty(reason, premium=None):
         return {"selected": None, "selected_peer": None, "weights": {},
                 "probabilities": {}, "terminal_excluded": None,
                 "premium_excluded": sorted(premium or []), "seed": None,
-                "draw": None, "candidates": [], "reason": reason}
+                "draw": None, "candidates": [], "reason": reason,
+                "telemetry_events": list(shared_events)}
 
     # Candidate prefilter (hard): eligible + measured (non-absent) headroom.
     eligible = [
         r for r in _derive_headroom_rows(snapshot)
         if r.get("state") == "eligible" and isinstance(r.get("headroom"), (int, float))
     ]
+
+    sq_cfg = config.get("shared_quota_reserve", {}) or {}
+    if sq_cfg.get("enabled"):
+        families = sq_cfg.get("families", {}) or {}
+        family_headrooms = {}
+        for family, fam_cfg in families.items():
+            min_rem = None
+            for p in snapshot.get("profiles", []):
+                for b in ((p.get("quota") or {}).get("buckets") or []):
+                    lbl = b.get("label", "")
+                    if lbl == family or lbl.startswith(family + "-"):
+                        uf = b.get("used_frac")
+                        if isinstance(uf, (int, float)):
+                            rem = max(0.0, min(1.0, 1.0 - float(uf)))
+                            if min_rem is None or rem < min_rem:
+                                min_rem = rem
+            if min_rem is not None:
+                family_headrooms[family] = min_rem
+
+        for family, fam_cfg in families.items():
+            reserve_frac = fam_cfg.get("reserve_fraction", 0.0)
+            reserve_for = set(fam_cfg.get("reserve_for", []) or [])
+            rem_headroom = family_headrooms.get(family)
+            if rem_headroom is None:
+                continue
+
+            is_clamped_active = rem_headroom < reserve_frac
+
+            for r in eligible:
+                prof_id = r.get("profile")
+                has_family_bucket = False
+                for p in snapshot.get("profiles", []):
+                    if p.get("profile") == prof_id:
+                        for b in ((p.get("quota") or {}).get("buckets") or []):
+                            lbl = b.get("label", "")
+                            if lbl == family or lbl.startswith(family + "-"):
+                                has_family_bucket = True
+                                break
+                        break
+
+                if has_family_bucket:
+                    if prof_id in reserve_for:
+                        # Reserved profile: Check if critically low
+                        crit_thresh = round(1.0 - QUOTA_CRIT_FRAC, 4)
+                        if rem_headroom <= crit_thresh:
+                            shared_events.append({
+                                "event": "premium_starvation_warning",
+                                "family": family,
+                                "profile": prof_id,
+                                "remaining_headroom": round(rem_headroom, 4),
+                                "threshold": crit_thresh
+                            })
+                    else:
+                        # Bulk candidate: Clamp if active
+                        if is_clamped_active:
+                            r["headroom"] = 0.0
+                            r["quota_remaining"] = 0.0
+                            shared_events.append({
+                                "event": "shared_quota_reserve_clamp",
+                                "family": family,
+                                "profile": prof_id,
+                                "remaining_headroom": round(rem_headroom, 4),
+                                "reserve_fraction": reserve_frac
+                            })
+
     if not eligible:
         return _empty("no_eligible_candidate")
 
@@ -1825,6 +1892,7 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
         "draw": draw,
         "candidates": peers,
         "reason": "selected",
+        "telemetry_events": list(shared_events),
     }
 
 

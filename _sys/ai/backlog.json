@@ -4,7 +4,7 @@
   "items": [
     {
       "id": "T4",
-      "title": "ag wrote a governed file directly during a report-only design ask (LL-20260703-005)",
+      "title": "peers write governed files directly during report-only design asks (LL-20260703-005) - consistent pattern, not a one-off",
       "status": "proposed",
       "priority": "low",
       "category": "ops",
@@ -13,9 +13,9 @@
       "evidence_commit": [],
       "supersedes": [],
       "source_refs": ["pretdd-prep-2026-07-08-round2.md"],
-      "next_action": "2026-07-08: asked ag to implement T2 via TDD but explicitly report code rather than edit files (DO_NOT: edit files yourself). hub.py's own GOVERNED_MUTATION_VIOLATION detector caught ag writing directly to _sys/core/snapshot.py anyway (LL-20260703-005 - peers should not write governed files directly). Content matched what ag reported verbatim, so no harm this time, but the instruction was not honored. Investigate: is 'DO_NOT edit files' in an IPC query text actually enforceable, or does it depend entirely on the peer's own compliance? If unenforceable, either accept peer direct-writes as a fact (drop the theater of a prompt-text restriction) or add a real technical control (e.g. run peer asks with a read-only filesystem view under _sys, or a pre/post hash-diff hard revert instead of warn-only).",
+      "next_action": "2026-07-08: observed TWICE in one session - ag on T2 (wrote _sys/core/snapshot.py) and, in the very next round, BOTH ag on D6 (_sys/core/hub.py + snapshot.py) AND cx on D2 (_sys/core/hub.py) wrote directly despite explicit 'DO_NOT edit files yourself' instructions in the IPC query text. hub.py's GOVERNED_MUTATION_VIOLATION detector caught all of it (LL-20260703-005); a PHANTOM_WRITE violation with ~360 stray root-level scratch files also accompanied the D6/D2 round (cleaned up manually, no git-tracked pollution). Content matched what each peer reported verbatim every time, so no correctness harm so far - but the instruction is clearly NOT reliably honored by peers, twice in a row from two different peers. Investigate: 'DO_NOT edit files' in IPC query text is prompt-only, not a technical control, and peers are ignoring it consistently. Either (a) accept direct peer writes as normal operating mode for implementation asks (stop instructing report-only for code changes, just always independently re-verify via full test suite + git diff review before committing, which is already cc's practice), or (b) add a real enforcement mechanism (read-only filesystem view for peer subprocesses under _sys, or auto-revert-and-fail instead of warn-only on GOVERNED_MUTATION_VIOLATION).",
       "risk": null,
-      "last_verified_at": "2026-07-08T20:15:00+09:00"
+      "last_verified_at": "2026-07-08T20:35:00+09:00"
     },
     {
       "id": "T3",
@@ -35,15 +35,15 @@
     {
       "id": "T2",
       "title": "cc.fable excluded from C-5H/C-7D quota families in headroom/routing math",
-      "status": "active",
+      "status": "done",
       "priority": "high",
       "category": "routing",
       "owner": "ag",
-      "blocker": "pending commit",
-      "evidence_commit": [],
+      "blocker": null,
+      "evidence_commit": ["0ddbd72"],
       "supersedes": [],
       "source_refs": ["backlog-5whys-consensus-2026-07-08-round4.md", "pretdd-prep-2026-07-08-round2.md"],
-      "next_action": "IMPLEMENTED 2026-07-08 (ag, TDD): _quota_family_for_profile now returns a tuple of prefixes per case (('F-','C-') for cc.fable, single-element tuples elsewhere); _filter_profile_buckets needed no change since str.startswith() natively accepts a tuple. New test test_filter_profile_buckets_fable_includes_c_buckets in test_load_balancer.py; test_diag_cli.py's test_profile_rows_split_cc_fable_quota_and_context_sources updated to expect both C-5H and F-5H for cc.fable. 650/650 tests green (independently re-verified by cc, not just ag's claim). D6 (shared-quota reserve) is now unblocked. Only remaining step is committing this.",
+      "next_action": "",
       "risk": "high",
       "last_verified_at": "2026-07-08T20:15:00+09:00"
     },
@@ -110,17 +110,17 @@
     {
       "id": "D2",
       "title": "INV-26 fail-closed",
-      "status": "blocked",
+      "status": "active",
       "priority": "low",
       "category": "security",
-      "owner": "unassigned",
-      "blocker": "needs zero-false-positive AND zero-false-negative WOULD-BLOCK soak evidence before flipping to fail-closed",
+      "owner": "cx",
+      "blocker": "policy promotion (actually flipping to fail-closed) still needs a larger soak run beyond the initial 20-pass matrix",
       "evidence_commit": [],
       "supersedes": [],
       "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md"],
-      "next_action": "READY FOR TDD on the dry-run helper + soak harness (cx spec, cc.fable confirms the acceptance bar is right, no scope creep). No WOULD-BLOCK dry-run mode exists today (existing preflight only classifies shell commands, not hub actions). Extract/wrap _guard_action() with a pure dry-run path returning structured JSON ({would_block, reason, code, matched_rule}, no sys.exit/mutation). Soak harness over a fixture matrix: read-only=allow, terminal-mutating=block, collab-rate>=10 mutating w/o finalized consensus=block, no-code-phase mutating=block, explicit exemptions=allow. Run repeated randomized passes; policy promotion (actually flipping to fail-closed) stays blocked until zero-mismatch evidence.",
+      "next_action": "IMPLEMENTED 2026-07-08 (cx, TDD): added _guard_decision()/_guard_action_dry_run() in hub.py; _guard_action() refactored to consume the dry-run decision while preserving all existing enforcement side effects (logging, stderr, sys.exit) unchanged - cx caught and fixed a behavior-preservation regression in its own refactor (malformed collab_rate_guard.threshold parsing) before finishing. New _sys/tests/unit/test_guard_dry_run.py covers read-only allow, terminal-mutating block, collab-rate block, exemption allow, plus a 20-pass randomized soak with zero mismatches. cx's own sandbox couldn't run the full suite (local tempfile/pytest environment issue, unrelated to the code), but cc independently ran the full suite: 656/656 green. Next: a larger/longer soak run (more than 20 passes, ideally continuous over real usage) before actually promoting to fail-closed policy.",
       "risk": null,
-      "last_verified_at": "2026-07-08T17:00:00+09:00"
+      "last_verified_at": "2026-07-08T20:35:00+09:00"
     },
     {
       "id": "D3",
@@ -170,17 +170,17 @@
     {
       "id": "D6",
       "title": "shared-quota reserve for premium profiles (was: 5-Whys deferred set)",
-      "status": "proposed",
+      "status": "active",
       "priority": "medium",
       "category": "routing",
-      "owner": "unassigned",
-      "blocker": null,
+      "owner": "ag",
+      "blocker": "enforcement implemented but shared_quota_reserve.enabled left false pending a human decision to activate (also gates the pre-existing 3P/ag.opus reserve, not just the new C/cc.fable one)",
       "evidence_commit": [],
       "supersedes": [],
       "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md"],
-      "next_action": "UNBLOCKED 2026-07-08 - T2 implemented (pending commit). READY FOR TDD now. Genuinely separate from T2 (T2 = fix headroom visibility; D6 = actively protect premium profiles from starvation). Clamp bulk-candidate (e.g. cc.effort) headroom once remaining shared quota (C-5H/C-7D) drops below a reserve_fraction. cc.fable verdict: mechanism yes, but the fraction must be a routing-config.json knob defaulting to 0.20 (heuristic, tagged as such) - NOT a hardcoded constant (would violate CHK-CONST, commit 81d3f18). Emit telemetry on every reserve-clamp activation and premium-starvation event so the default can be tuned from real observation. Log rotation and hub-decomposition Ph2/Linux-Mac/adapter-guide items remain deferred as before, out of scope here.",
+      "next_action": "IMPLEMENTED 2026-07-08 (ag, TDD): enforcement wired into snapshot.py's select_load_balanced_peer (clamps bulk-candidate headroom per family once remaining shared quota drops below reserve_fraction; reserved profiles themselves never clamped); telemetry events shared_quota_reserve_clamp and premium_starvation_warning added to routing_metrics.jsonl via existing telemetry_events plumbing, consumed by hub.py. routing-config.json families now has both '3P' (ag.opus, 0.25, pre-existing) and new 'C' (cc.fable, 0.20). enabled stays false - flipping it activates BOTH families at once (this also unblocks the separately-gated ag.gptoss bulk activation decision), so that's a human call, not part of this TDD pass. 656/656 tests green (independently re-verified by cc).",
       "risk": null,
-      "last_verified_at": "2026-07-08T17:00:00+09:00"
+      "last_verified_at": "2026-07-08T20:35:00+09:00"
     },
     {
       "id": "D7",
