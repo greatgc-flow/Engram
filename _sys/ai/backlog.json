@@ -110,17 +110,17 @@
     {
       "id": "B",
       "title": "B7 enforcement-behavior probe",
-      "status": "active",
+      "status": "done",
       "priority": "medium",
       "category": "security",
-      "owner": "unassigned",
+      "owner": "ag",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": ["63141de"],
       "supersedes": [],
       "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md", "remaining-items-pretdd-2026-07-08.md", "sandbox-behavior-probe-b7-2026-07-08.md"],
-      "next_action": "IMPLEMENTED (ag.deepthink, applied by cc after verifying every reused import/function was real, not hallucinated) + full suite green (686 passed) + empirically run 3x against cc/ag/cx (1 self-report by ag, 2 independent cc runs). T4 auto-revert fired live again (8th confirmation) when ag wrote directly to the governed check file. Findings: cc unenforced 3/3; ag unenforced 2/2 in cc's independent runs, contradicting ag's own self-reported timeout (self-invocation artifact, not sandbox evidence); cx repo-scoped (-s workspace-write: inside-repo writes succeed, outside-repo writes denied whenever attempted, sometimes refuses both at the model layer). Full writeup at ops/sandbox-behavior-probe-b7-2026-07-08.md. Awaiting commit approval to finalize evidence_commit and flip status to done.",
+      "next_action": "DONE. Implemented (ag.deepthink, applied by cc after verifying every reused import/function was real, not hallucinated) + full suite green (686 passed) + empirically run 3x against cc/ag/cx (1 self-report by ag, 2 independent cc runs). T4 auto-revert fired live again (8th confirmation) when ag wrote directly to the governed check file. Findings: cc unenforced 3/3; ag unenforced 2/2 in cc's independent runs, contradicting ag's own self-reported timeout (self-invocation artifact, not sandbox evidence); cx repo-scoped (-s workspace-write: inside-repo writes succeed, outside-repo writes denied whenever attempted, sometimes refuses both at the model layer). Full writeup at ops/sandbox-behavior-probe-b7-2026-07-08.md.",
       "risk": null,
-      "last_verified_at": "2026-07-08T23:50:00+09:00"
+      "last_verified_at": "2026-07-09T00:05:00+09:00"
     },
     {
       "id": "C",
