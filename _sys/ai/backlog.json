@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-08T22:19:00+09:00",
+  "updated_at": "2026-07-09T00:10:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -260,7 +260,7 @@
     {
       "id": "P2",
       "title": "gc/gemini residue removal",
-      "status": "active",
+      "status": "done",
       "priority": "medium",
       "category": "cleanup",
       "owner": "unassigned",
@@ -268,9 +268,9 @@
       "evidence_commit": ["31ebe56", "0e78717"],
       "supersedes": [],
       "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08.md"],
-      "next_action": "Phase 1+2 (code+config decouple, commit 31ebe56) and Phase 3 (physical deletion, user-approved retention decision 2026-07-08) DONE - _sys/gemini/** and the git-tracked _sys/cli/gemini, gemini.bat, gemini_entry.py launcher scripts all removed; 672/672 tests green after deletion. Remaining, smaller, lower-priority scope (cx's own classification, not part of this pass): _sys/cli/batch_review.py and git_draft.py still call a gemini_call() compatibility shim (routes through an active peer under the hood per P3's earlier finding - functional, just legacy-named) and _sys/cli/peer_console.py has an `if peer_id == \"gc\":` branch. These need an actual rename/refactor, not deletion, so left untouched pending a dedicated pass.",
+      "next_action": "DONE. Phase 1+2 (code+config decouple, commit 31ebe56) and Phase 3 (physical deletion, user-approved retention decision 2026-07-08) complete - _sys/gemini/** and the git-tracked _sys/cli/gemini, gemini.bat, gemini_entry.py launcher scripts all removed; 672/672 tests green after deletion. Closed 2026-07-09 (ag+cc consensus): the remaining gemini_call() compat shim in batch_review.py/git_draft.py and the `if peer_id == \"gc\":` branch in peer_console.py are functional, legacy-named, no active bug - accepted as cosmetic tech debt, not tracked further. Reopen only if either shim actually breaks or needs to change behavior.",
       "risk": null,
-      "last_verified_at": "2026-07-08T22:55:00+09:00"
+      "last_verified_at": "2026-07-09T00:10:00+09:00"
     },
     {
       "id": "P3",
@@ -369,7 +369,7 @@
     {
       "id": "F1",
       "title": "backlog-refresh automated feedback loop",
-      "status": "proposed",
+      "status": "deferred",
       "priority": "medium",
       "category": "ops",
       "owner": "unassigned",
@@ -377,9 +377,9 @@
       "evidence_commit": [],
       "supersedes": [],
       "source_refs": ["backlog-5whys-consensus-2026-07-08-round2.md"],
-      "next_action": "ag+cx round-2 consensus (2026-07-08): a job reads test/check failures + lessons + health/ask logs, scores them (recurrence, blast radius, staleness, evidence freshness), and auto-registers a 'proposed' backlog.json item or emits a triage report. Peer/human consensus still required before it patches backlog.json directly. Goal: make manual exhaustive re-triage rounds progressively unnecessary.",
+      "next_action": "DEFER (ag+cc consensus 2026-07-09, re-triage of ag+cx's 2026-07-08 design): the design itself (a job reads test/check failures + lessons + health/ask logs, scores them, auto-registers a 'proposed' item or triage report, human/peer consensus still required before patching backlog.json) remains valid but is moot at current scale - the backlog is now down to 6 open items (from a much larger count earlier this session), nowhere near the ~50-item threshold fable originally set as the bar for this meta-tooling to earn its keep. Revisit only if the backlog regrows past roughly that size and manual re-triage rounds start feeling costly again.",
       "risk": null,
-      "last_verified_at": "2026-07-08T10:10:00+09:00"
+      "last_verified_at": "2026-07-09T00:10:00+09:00"
     },
     {
       "id": "G-VOTER",
