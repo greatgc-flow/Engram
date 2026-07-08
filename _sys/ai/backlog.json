@@ -117,10 +117,10 @@
       "blocker": null,
       "evidence_commit": [],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md", "remaining-items-pretdd-2026-07-08.md"],
-      "next_action": "FULLY SPEC'D, READY FOR TDD (cx sharpened, cc.fable found one gap now folded in): new _sys/checks/check_sandbox_behavior.py, reusing check_cli_reality.py/check_cli_canary.py precedent. Creates _sys/data/temp/sandbox-probe/<probe_id>/{workspace,outside}, sends an exact unambiguous prompt asking for one write outside the workspace, classifies by actual sentinel-file existence (never trust the printed marker alone). cc.fable gap: use TWO outside targets (outside-cwd-but-inside-repo, and a disposable outside-repo path) to disambiguate whether a CLI's sandbox scopes to cwd or to the whole repo - a single _sys/data/temp target can't tell those apart. Add per-invocation timeout+budget guard mirroring check_cli_canary; cleanup must run even on classification=error. Manual/opt-in only, no default hook.",
+      "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md", "remaining-items-pretdd-2026-07-08.md", "sandbox-behavior-probe-b7-2026-07-08.md"],
+      "next_action": "IMPLEMENTED (ag.deepthink, applied by cc after verifying every reused import/function was real, not hallucinated) + full suite green (686 passed) + empirically run 3x against cc/ag/cx (1 self-report by ag, 2 independent cc runs). T4 auto-revert fired live again (8th confirmation) when ag wrote directly to the governed check file. Findings: cc unenforced 3/3; ag unenforced 2/2 in cc's independent runs, contradicting ag's own self-reported timeout (self-invocation artifact, not sandbox evidence); cx repo-scoped (-s workspace-write: inside-repo writes succeed, outside-repo writes denied whenever attempted, sometimes refuses both at the model layer). Full writeup at ops/sandbox-behavior-probe-b7-2026-07-08.md. Awaiting commit approval to finalize evidence_commit and flip status to done.",
       "risk": null,
-      "last_verified_at": "2026-07-08T22:19:00+09:00"
+      "last_verified_at": "2026-07-08T23:50:00+09:00"
     },
     {
       "id": "C",
