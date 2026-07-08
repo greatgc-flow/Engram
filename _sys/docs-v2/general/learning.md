@@ -22,8 +22,8 @@ Every task execution and failure feeds into a self-healing loop designed to achi
 When performing analysis, peers MUST use the 5-Whys method.
 
 Example:
-*   **Problem**: Peer `gc` failed with `sandbox_spawn_eperm`.
-*   **Why 1**: `gemini.bat` could not write to `_sys/gemini/config/state.json`.
+*   **Problem**: Peer `cx` failed with `sandbox_spawn_eperm`.
+*   **Why 1**: `codex.bat` could not write to its local session-lock file.
 *   **Why 2**: The file lock was held by another process.
 *   **Why 3**: The previous `hub.py ask` process crashed and orphaned the lock.
 *   **Why 4**: Heartbeat/Lease timeout was too long, so the lock wasn't released.
