@@ -1733,16 +1733,20 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
         if not eligible:
             return _empty("no_eligible_candidate")
 
-    # Premium/arbiter structural exclusion from BULK (DIR-005): a peer is excluded
-    # from bulk routing if its peer id OR ANY of its profile ids is listed in
-    # config.arbiter_models — the WHOLE peer, not just the matching profile
-    # (premium models must not do routine bulk work). Independent of the
-    # terminal exclusion; premium ID is structural, not the stale active_coordinator.
+    # Premium/arbiter structural exclusion from BULK (DIR-005): drop only rows
+    # whose profile id is listed in config.arbiter_models, so cheap sibling
+    # profiles on the same peer remain bulk-eligible. A bare peer id in
+    # arbiter_models remains an intentional whole-peer exclusion. Independent of
+    # the terminal exclusion; premium ID is structural, not the stale
+    # active_coordinator.
     premium_excluded = {
-        r.get("peer") for r in eligible
+        r.get("profile") or r.get("peer") for r in eligible
         if r.get("peer") in arbiter_models or r.get("profile") in arbiter_models
     }
-    candidates = [r for r in eligible if r.get("peer") not in premium_excluded]
+    candidates = [
+        r for r in eligible
+        if r.get("peer") not in arbiter_models and r.get("profile") not in arbiter_models
+    ]
     if not candidates:
         return _empty("no_eligible_candidate", premium_excluded)
 

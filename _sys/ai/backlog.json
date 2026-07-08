@@ -1,7 +1,37 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-08T20:15:00+09:00",
+  "updated_at": "2026-07-08T21:15:00+09:00",
   "items": [
+    {
+      "id": "T5",
+      "title": "cx sandbox tempfile create-but-cannot-delete, causes repeated large stray-file dumps",
+      "status": "proposed",
+      "priority": "low",
+      "category": "ops",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": ["d6-activation-taxonomy-2026-07-08.md"],
+      "next_action": "Observed twice 2026-07-08: cx's sandbox can CREATE files under its temp paths but cannot DELETE them, so Python's tempfile module rejects every candidate directory (create+delete probe fails) and pytest cannot even start. cx's own diagnostic attempts to work around this (probing different TEMP/TMP paths, trying to isolate to a single file) leave dozens to 1000+ stray root-level scratch files per occurrence (cleaned up manually both times, no git-tracked pollution). cx worked around it by running direct assertion scripts instead of pytest, which cc then independently re-verified via full pytest run in a working environment - so no correctness harm, but this blocks cx's own ability to self-verify and generates significant cleanup overhead each time. Investigate cx's sandbox/environment temp-dir permissions; consider whether cx's ask invocation should set TEMP/TMP to a known-good, delete-capable path before cx starts, rather than letting cx discover the problem mid-task.",
+      "risk": null,
+      "last_verified_at": "2026-07-08T21:15:00+09:00"
+    },
+    {
+      "id": "T6",
+      "title": "arbiter_models whole-peer bulk exclusion bug (fixed)",
+      "status": "active",
+      "priority": "medium",
+      "category": "routing",
+      "owner": "cx",
+      "blocker": "pending commit",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": ["d6-activation-taxonomy-2026-07-08.md"],
+      "next_action": "cc.fable empirical_probe 2026-07-08 confirmed (cc reproduced live): select_load_balanced_peer's arbiter_models exclusion dropped an entire peer from --to auto bulk routing whenever ANY of its profiles was listed in arbiter_models, not just that profile - meaning cc.standard/cc.effort were silently unselectable for bulk auto-routing whenever cc.fable/cc.deepthink appeared in the same candidate snapshot (the normal case). Fixed by cx (TDD): exclusion is now per-profile-row, with a bare peer id in arbiter_models still correctly triggering whole-peer exclusion (defensive, not currently used by any config entry). Comment + routing-config.json's _arbiter_doc updated; 5 existing tests fixed/renamed, 1 new regression test added (bare-peer preservation). 658/658 tests green (independently re-verified by cc). Only remaining step is committing this.",
+      "risk": "medium",
+      "last_verified_at": "2026-07-08T21:15:00+09:00"
+    },
     {
       "id": "T4",
       "title": "peers write governed files directly during report-only design asks (LL-20260703-005) - consistent pattern, not a one-off",

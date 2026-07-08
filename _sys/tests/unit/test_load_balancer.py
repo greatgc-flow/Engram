@@ -555,21 +555,21 @@ def test_premium_profile_is_excluded_from_bulk(monkeypatch):
     assert result["selected_peer"] == "ag"
     assert "cc" not in result["candidates"]
     assert "cc" not in result["weights"]
-    assert result["premium_excluded"] == ["cc"]
+    assert result["premium_excluded"] == ["cc.fable"]
 
 
-def test_profile_level_arbiter_entry_excludes_whole_peer(monkeypatch):
+def test_profile_level_arbiter_entry_excludes_only_that_profile(monkeypatch):
     cfg = {**CONFIG, "arbiter_models": ["cc.deepthink"]}
     _patch_rows(monkeypatch, [
         _row("cc", 0.90, profile="cc.deepthink"),
         _row("cc", 0.80, profile="cc.effort"),
         _row("ag", 0.20, profile="ag.deepthink"),
     ])
-    result = snapshot.select_load_balanced_peer({}, cfg, ask_id="whole-peer")
-    assert result["selected_peer"] == "ag"
-    assert result["candidates"] == ["ag"]
-    assert "cc" not in result["weights"]
-    assert result["premium_excluded"] == ["cc"]
+    result = snapshot.select_load_balanced_peer({}, cfg, ask_id="profile-only")
+    assert "cc" in result["candidates"]
+    assert "cc" in result["weights"]
+    assert result["premium_excluded"] == ["cc.deepthink"]
+    assert result["selected"]["profile"] == "cc.effort"
 
 
 def test_premium_only_eligible_returns_no_candidate(monkeypatch):
@@ -582,7 +582,7 @@ def test_premium_only_eligible_returns_no_candidate(monkeypatch):
     assert result["selected"] is None
     assert result["selected_peer"] is None
     assert result["reason"] == "no_eligible_candidate"
-    assert result["premium_excluded"] == ["cc"]
+    assert result["premium_excluded"] == ["cc.fable"]
 
 
 def test_premium_exclusion_and_terminal_exclusion_both_apply(monkeypatch):
@@ -594,7 +594,7 @@ def test_premium_exclusion_and_terminal_exclusion_both_apply(monkeypatch):
     ])
     result = snapshot.select_load_balanced_peer({}, cfg, terminal_peer="cc", ask_id="both")
     assert result["selected_peer"] == "cx"
-    assert result["premium_excluded"] == ["ag"]
+    assert result["premium_excluded"] == ["ag.deepthink"]
     assert result["terminal_excluded"] == "non_terminal_above_floor"
     assert result["weights"]["cc"] == 0.0
     assert "ag" not in result["weights"]
@@ -613,6 +613,20 @@ def test_empty_arbiter_models_preserves_existing_behavior(monkeypatch):
     assert result["weights"]["cc"] == 0.0
     assert result["terminal_excluded"] == "non_terminal_above_floor"
     assert result["premium_excluded"] == []
+
+
+def test_bare_peer_arbiter_entry_still_excludes_all_peer_rows(monkeypatch):
+    cfg = {**CONFIG, "arbiter_models": ["cc"]}
+    _patch_rows(monkeypatch, [
+        _row("cc", 0.90, profile="cc.deepthink"),
+        _row("cc", 0.80, profile="cc.effort"),
+        _row("ag", 0.20, profile="ag.deepthink"),
+    ])
+    result = snapshot.select_load_balanced_peer({}, cfg, ask_id="bare-peer")
+    assert result["selected_peer"] == "ag"
+    assert result["candidates"] == ["ag"]
+    assert "cc" not in result["weights"]
+    assert result["premium_excluded"] == ["cc.deepthink", "cc.effort"]
 
 
 # ── P2: Pacing Penalty Tests (design contract §3.3) ──────────────────────────
@@ -915,4 +929,3 @@ def test_shared_quota_reserve_clamping_and_telemetry():
     assert starvation_events[0]["profile"] == "peer2.reserved"
     assert starvation_events[0]["remaining_headroom"] == pytest.approx(0.05)
     assert starvation_events[0]["threshold"] == pytest.approx(0.10)
-
