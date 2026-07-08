@@ -20,15 +20,15 @@
     {
       "id": "T6",
       "title": "arbiter_models whole-peer bulk exclusion bug (fixed)",
-      "status": "active",
+      "status": "done",
       "priority": "medium",
       "category": "routing",
       "owner": "cx",
-      "blocker": "pending commit",
-      "evidence_commit": [],
+      "blocker": null,
+      "evidence_commit": ["22fb16e"],
       "supersedes": [],
       "source_refs": ["d6-activation-taxonomy-2026-07-08.md"],
-      "next_action": "cc.fable empirical_probe 2026-07-08 confirmed (cc reproduced live): select_load_balanced_peer's arbiter_models exclusion dropped an entire peer from --to auto bulk routing whenever ANY of its profiles was listed in arbiter_models, not just that profile - meaning cc.standard/cc.effort were silently unselectable for bulk auto-routing whenever cc.fable/cc.deepthink appeared in the same candidate snapshot (the normal case). Fixed by cx (TDD): exclusion is now per-profile-row, with a bare peer id in arbiter_models still correctly triggering whole-peer exclusion (defensive, not currently used by any config entry). Comment + routing-config.json's _arbiter_doc updated; 5 existing tests fixed/renamed, 1 new regression test added (bare-peer preservation). 658/658 tests green (independently re-verified by cc). Only remaining step is committing this.",
+      "next_action": "",
       "risk": "medium",
       "last_verified_at": "2026-07-08T21:15:00+09:00"
     },
@@ -200,17 +200,17 @@
     {
       "id": "D6",
       "title": "shared-quota reserve for premium profiles (was: 5-Whys deferred set)",
-      "status": "active",
+      "status": "done",
       "priority": "medium",
       "category": "routing",
       "owner": "ag",
-      "blocker": "enforcement implemented but shared_quota_reserve.enabled left false pending a human decision to activate (also gates the pre-existing 3P/ag.opus reserve, not just the new C/cc.fable one)",
-      "evidence_commit": ["feadb3b"],
+      "blocker": null,
+      "evidence_commit": ["feadb3b", "22fb16e"],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md"],
-      "next_action": "IMPLEMENTED 2026-07-08 (ag, TDD): enforcement wired into snapshot.py's select_load_balanced_peer (clamps bulk-candidate headroom per family once remaining shared quota drops below reserve_fraction; reserved profiles themselves never clamped); telemetry events shared_quota_reserve_clamp and premium_starvation_warning added to routing_metrics.jsonl via existing telemetry_events plumbing, consumed by hub.py. routing-config.json families now has both '3P' (ag.opus, 0.25, pre-existing) and new 'C' (cc.fable, 0.20). enabled stays false - flipping it activates BOTH families at once (this also unblocks the separately-gated ag.gptoss bulk activation decision), so that's a human call, not part of this TDD pass. 656/656 tests green (independently re-verified by cc).",
+      "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md", "d6-activation-taxonomy-2026-07-08.md"],
+      "next_action": "",
       "risk": null,
-      "last_verified_at": "2026-07-08T20:35:00+09:00"
+      "last_verified_at": "2026-07-08T21:15:00+09:00"
     },
     {
       "id": "D7",
