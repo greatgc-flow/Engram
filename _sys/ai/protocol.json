@@ -115,6 +115,7 @@
     "collab_rate":  {
                         "current":  10,
                         "review_interval_min":  5,
+                        "batch_review_min_collab_rate":  7,
                         "last_review_ts":  null,
                         "risk_table":  {
                                            "readonly":  0,

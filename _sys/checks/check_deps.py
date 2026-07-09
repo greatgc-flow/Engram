@@ -11,29 +11,62 @@ from _common import (  # noqa: E402
 )
 
 
-def _merge_target_files(portable_root: Path) -> str:
-    """Merge specific target scripts into one string for Gemini analysis."""
+def _merge_target_files(portable_root: Path, sys_dir: Path | None = None) -> str:
+    """Merge selected dependency entrypoints and disclose exact coverage."""
+    sys_dir = sys_dir or _SYS_DIR
     targets = [
         portable_root / "start.bat",
-        _SYS_DIR / "hooks" / "ctx-save.bat",
-        _SYS_DIR / "hooks" / "ctx-end.bat",
-        _SYS_DIR / "hooks" / "ctx_save.py",
-        _SYS_DIR / "hooks" / "ctx_end.py",
-        _SYS_DIR / "cli" / "msg.bat",
+        sys_dir / "hooks" / "ctx-save.bat",
+        sys_dir / "hooks" / "ctx-end.bat",
+        sys_dir / "hooks" / "ctx_save.py",
+        sys_dir / "hooks" / "ctx_end.py",
+        sys_dir / "cli" / "msg.bat",
         portable_root / "manage.bat",
         portable_root / "manage.py",
         portable_root / "launch.bat",
-        _SYS_DIR / "core" / "setup.py",
-        _SYS_DIR / "core" / "cleanup.py",
+        sys_dir / "core" / "setup.py",
+        sys_dir / "core" / "cleanup.py",
     ]
-    parts = []
-    count = 0
-    for t in targets:
-        if t.exists():
-            parts.append(f"=== {t.name} ===\n{t.read_text(encoding='utf-8', errors='replace')}")
-            count += 1
-    print(f"[script-deps] Merged {count} script files.")
-    return "\n".join(parts)
+
+    found: list[Path] = []
+    missing: list[Path] = []
+    parts: list[str] = []
+
+    for target in targets:
+        if target.is_file():
+            found.append(target)
+            label = (
+                target.relative_to(portable_root).as_posix()
+                if target.is_relative_to(portable_root)
+                else str(target)
+            )
+            parts.append(
+                f"=== {label} ===\n"
+                + target.read_text(encoding="utf-8", errors="replace")
+            )
+        else:
+            missing.append(target)
+
+    print(f"[script-deps] Merged {len(found)} of {len(targets)} selected files.")
+    if missing:
+        print("[script-deps] Skipped missing selected targets:")
+        for target in missing:
+            label = (
+                target.relative_to(portable_root).as_posix()
+                if target.is_relative_to(portable_root)
+                else str(target)
+            )
+            print(f"  - {label}")
+
+    if not parts:
+        return ""
+
+    coverage = (
+        "=== COVERAGE ===\n"
+        f"found={len(found)} selected={len(targets)} missing={len(missing)}\n"
+        "This is a selected-entrypoint audit, not complete repository coverage.\n"
+    )
+    return coverage + "\n" + "\n".join(parts)
 
 
 def main() -> None:

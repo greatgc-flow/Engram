@@ -27,18 +27,17 @@ def main() -> None:
     dt = datetime.now().strftime("%Y%m%d%H%M%S")
 
     if not ai_available():
-        print("[version-check] ERROR: Gemini not available.")
-        print("                Check hub.py peer-status --peer gc")
+        print("[version-check] ERROR: No active AI review peer is available.")
+        print("                Check hub.py peer-status for cc, ag, or cx.")
         sys.exit(1)
 
-    print(f"[version-check] Querying latest tool versions via Gemini...")
+    print(f"[version-check] Querying latest tool versions via active peer...")
     print(f"[version-check] Date: {dt[:8]}")
 
     result = gemini_call(_PROMPT)
 
     if result.returncode != 0:
-        print("[version-check] ERROR: gemini returned non-zero. Check auth or network.")
-        print("                Run 'gemini' interactively to re-authenticate.")
+        print("[version-check] ERROR: active peer returned non-zero. Check auth or network.")
         out_file.unlink(missing_ok=True)
         log_collab("Axis-B", "check-versions.py", "FAIL", "Error: api_error")
         update_status_error(dt, "version_check_failed")

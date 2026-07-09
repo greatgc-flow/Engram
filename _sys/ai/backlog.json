@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-09T16:10:00+09:00",
+  "updated_at": "2026-07-09T17:00:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -320,32 +320,32 @@
     {
       "id": "T12",
       "title": "Misc path/config-resolution debt (checks+cli)",
-      "status": "proposed",
+      "status": "active",
       "priority": "low",
       "category": "ops",
-      "owner": "unassigned",
+      "owner": "cx",
       "blocker": null,
       "evidence_commit": [],
       "supersedes": [],
       "source_refs": ["hardcoding-full-audit-2026-07-09.md"],
-      "next_action": "needs light validation before TDD (found by cx during 2026-07-09 hardcoding audit, not yet individually re-verified line-by-line by cc given volume): saturation_scan.py:244 --sys-root default resolves to repo root although downstream paths expect _sys itself; check_health.py:78 Claude transcript discovery pinned to the encoded project dir 'P--', breaking on a portable-root change or a concurrent project bucket; check_agents.py:27 hardcodes '.claude/agents' instead of resolving the configured _sys/claude/project/agents tree, currently exiting 'directory not found'; check_deps.py:16 dependency audit uses a fixed, partly-legacy file list and silently skips missing entries, overstating its own coverage; batch_review.py:44,79 review interval read from a deprecated config.json while the activation threshold 7 is a separate hardcoded literal; ag_statusline.py:10,23,28 writes raw statusline stdin under _sys/cli (runtime data leaking into the source tree) and its subprocess call has no timeout.",
+      "next_action": "DONE, all 6 (cx fix, cc-verified against live config/directories before applying - _configured_agents_dir() and _claude_project_dir() both empirically confirmed to resolve to the real existing directories P:\\_sys\\claude\\project\\agents and P:\\_sys\\claude\\config\\projects\\P-- respectively): saturation_scan.py's --sys-root default now resolves to _sys itself (was 1 level too high, resolving to the portable root); check_health.py's Claude transcript discovery now derives the encoded project-dir key dynamically from _PORTABLE_ROOT via a new _claude_project_key()/_claude_project_dir() pair instead of the literal 'P--' (verified the encoding matches real directory names D--PortableDev--v2-0- and P-- observed on disk); check_agents.py now resolves the configured agents tree via peers.json's claude.sys_subdir/project_junction instead of the wrong hardcoded '.claude/agents'; check_deps.py's dependency merge now reports exact found/selected/missing coverage instead of silently overstating it; batch_review.py's review threshold/interval now both come from protocol.json's collab_rate (added a new batch_review_min_collab_rate=7 key; review_interval_min already existed there unused) instead of a deprecated config.json + hardcoded 7, with last_review_ts state kept in a separate file to avoid routinely mutating the governed protocol.json; ag_statusline.py's stdin dump moved from the source tree (_sys/cli/ag_stdin.log) to the data/temp scratch convention with an 8s subprocess timeout added - cc also updated snapshot.py's live-telemetry reader (a real consumer of the old path found during verification, not previously flagged) to match the new location so ag's diag live-status wasn't silently broken by the move. Full suite green (708 passed).",
       "risk": null,
-      "last_verified_at": "2026-07-09T15:00:00+09:00"
+      "last_verified_at": "2026-07-09T17:00:00+09:00"
     },
     {
       "id": "T13",
       "title": "Scattered tuning literals + stale gc/Gemini recovery-message text",
-      "status": "proposed",
+      "status": "active",
       "priority": "low",
       "category": "cleanup",
-      "owner": "unassigned",
+      "owner": "cx",
       "blocker": null,
       "evidence_commit": [],
       "supersedes": [],
       "source_refs": ["hardcoding-full-audit-2026-07-09.md"],
-      "next_action": "cosmetic/trivial, low priority (found by cx during 2026-07-09 hardcoding audit): scattered Python-literal tuning knobs with no active bug (saturation_scan.py:26,72,259 file-size limits/severity multiplier/commit cadence, check_encoding.py:60 mojibake threshold, check_root_hygiene.py:20 root allowlist embedded in the checker, _common.py:81,121 / check_cli_canary.py:165 / check_cli_reality.py:183,255 / check_sandbox_behavior.py:145 assorted probe timeouts/grace periods, check_health.py:94 / check_docs_mece.py:326 / check_policy.py:115 governance-value duplication currently matching config but driftable); plus check_agents.py:32 / check_health.py:119 / check_versions.py:31,41 still pointing users at retired gc/Gemini recovery commands (P2 already removed the routing logic, this is leftover user-facing text only). Bundle into a single low-effort cleanup pass whenever picked up - not worth splitting further.",
+      "next_action": "DONE for the stale gc/Gemini recovery text (cx fix, cc-verified): check_agents.py/check_health.py/check_versions.py's failure-path guidance now says 'Check hub.py peer-status for cc, ag, or cx' instead of '--peer gc', and check_versions.py's 'Run 'gemini' interactively to re-authenticate' line was removed outright rather than reworded (no equivalent command exists for the current 3-peer setup). Remaining T13 scope (scattered tuning literals - saturation_scan.py/check_encoding.py thresholds, check_root_hygiene.py's embedded allowlist, assorted probe timeouts, check_health.py/check_docs_mece.py/check_policy.py governance-value duplication) deliberately NOT touched - cx confirmed these are cosmetic with no active bug, not worth it in this pass.",
       "risk": null,
-      "last_verified_at": "2026-07-09T15:00:00+09:00"
+      "last_verified_at": "2026-07-09T17:00:00+09:00"
     },
     {
       "id": "T14",

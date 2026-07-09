@@ -1,4 +1,5 @@
 """check_agents.py — Axis-E: Analyze agent consistency via Gemini."""
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -20,16 +21,44 @@ def _merge_agent_files(agents_dir: Path) -> str:
     return "\n".join(parts)
 
 
+def _configured_agents_dir(portable_root: Path | None = None) -> Path:
+    """Resolve the Claude agents directory from peers.json's claude provider."""
+    root = portable_root or _PORTABLE_ROOT
+    sys_dir = root / "_sys"
+    peers_path = sys_dir / "ai" / "peers.json"
+    data = json.loads(peers_path.read_text(encoding="utf-8"))
+
+    provider = (data.get("peers") or {}).get("claude")
+    if not isinstance(provider, dict):
+        raise ValueError("peers.json has no claude provider")
+
+    sys_subdir = provider.get("sys_subdir")
+    project_subdir = (provider.get("project_junction") or {}).get("portable_subpath")
+    if not isinstance(sys_subdir, str) or not isinstance(project_subdir, str):
+        raise ValueError("claude provider lacks sys_subdir/project_junction")
+
+    segments = (Path(sys_subdir), Path(project_subdir))
+    if any(p.is_absolute() or ".." in p.parts for p in segments):
+        raise ValueError("claude provider contains an unsafe project path")
+
+    return sys_dir / sys_subdir / project_subdir / "agents"
+
+
 def main() -> None:
     archive_dir = _PORTABLE_ROOT / "_archive"
     archive_dir.mkdir(parents=True, exist_ok=True)
     out_file = archive_dir / "agent-audit.json"
-    agents_dir = _PORTABLE_ROOT / ".claude" / "agents"
     dt = datetime.now().strftime("%Y%m%d%H%M%S")
 
+    try:
+        agents_dir = _configured_agents_dir()
+    except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        print(f"[agent-audit] ERROR: Cannot resolve configured agents directory: {exc}")
+        sys.exit(1)
+
     if not ai_available():
-        print("[agent-audit] ERROR: Gemini not available.")
-        print("              Check hub.py peer-status --peer gc")
+        print("[agent-audit] ERROR: No active AI review peer is available.")
+        print("              Check hub.py peer-status for cc, ag, or cx.")
         sys.exit(1)
 
     if not agents_dir.exists():

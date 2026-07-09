@@ -15,49 +15,64 @@ from _common import (  # noqa: E402
     _PORTABLE_ROOT, _SYS_DIR, ai_available, gemini_call, is_refusal, log_collab,
 )
 
-_CFG_FILE = _SYS_DIR / "ai" / "config.json"
+_REVIEW_STATE_FILE = _SYS_DIR / "ai" / "config.json"
 _PROTOCOL_FILE = _SYS_DIR / "ai" / "protocol.json"
 
 
-def _ratio_ok(threshold: int) -> bool:
-    # protocol.json 우선, fallback → config.json (deprecated)
+def _load_collab_policy() -> dict | None:
+    """Read the batch-review policy (ratio threshold + interval) from protocol.json."""
     try:
-        if _PROTOCOL_FILE.exists():
-            rate = json.loads(_PROTOCOL_FILE.read_text(encoding="utf-8"))
-            val = rate.get("collab_rate", {}).get("current", 0)
-            return int(val) >= threshold
-    except Exception:
-        pass
-    try:
-        if _CFG_FILE.exists():
-            return int(json.loads(_CFG_FILE.read_text(encoding="utf-8")).get("ratio", 0)) >= threshold
-    except Exception:
-        pass
-    return False
+        data = json.loads(_PROTOCOL_FILE.read_text(encoding="utf-8"))
+        policy = data.get("collab_rate")
+        if not isinstance(policy, dict):
+            return None
+
+        current = int(policy["current"])
+        threshold = int(policy["batch_review_min_collab_rate"])
+        interval = int(policy["review_interval_min"])
+        if current < 0 or threshold < 0 or interval < 0:
+            return None
+
+        return {
+            "current": current,
+            "batch_review_min_collab_rate": threshold,
+            "review_interval_min": interval,
+        }
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return None
 
 
-def _time_gate_ok() -> bool:
-    if not _CFG_FILE.exists():
+def _ratio_ok(policy: dict) -> bool:
+    return policy["current"] >= policy["batch_review_min_collab_rate"]
+
+
+def _time_gate_ok(policy: dict, now: datetime | None = None) -> bool:
+    if not _REVIEW_STATE_FILE.exists():
         return True
     try:
-        cfg = json.loads(_CFG_FILE.read_text(encoding="utf-8"))
-        interval = int(cfg.get("review_interval_min", 5))
-        last = cfg.get("last_review_ts")
+        state = json.loads(_REVIEW_STATE_FILE.read_text(encoding="utf-8"))
+        last = state.get("last_review_ts")
         if not last or last == "null":
             return True
-        last_dt = datetime.fromisoformat(last)
-        return (datetime.now() - last_dt).total_seconds() / 60 >= interval
-    except Exception:
+        last_dt = datetime.fromisoformat(str(last))
+        current = now or (
+            datetime.now(last_dt.tzinfo) if last_dt.tzinfo else datetime.now()
+        )
+        return (current - last_dt).total_seconds() / 60 >= policy["review_interval_min"]
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
         return True
 
 
 def _update_last_review_ts() -> None:
     try:
-        cfg = json.loads(_CFG_FILE.read_text(encoding="utf-8")) if _CFG_FILE.exists() else {}
-    except Exception:
-        cfg = {}
-    cfg["last_review_ts"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    _CFG_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+        state = (
+            json.loads(_REVIEW_STATE_FILE.read_text(encoding="utf-8"))
+            if _REVIEW_STATE_FILE.exists() else {}
+        )
+    except (OSError, json.JSONDecodeError):
+        state = {}
+    state["last_review_ts"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    _REVIEW_STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _get_diff(root: Path) -> str:
@@ -76,15 +91,20 @@ def _get_diff(root: Path) -> str:
 
 
 def main() -> None:
-    if not _ratio_ok(7):
-        print("[Axis-R] SKIP: ratio < 7")
+    policy = _load_collab_policy()
+    if policy is None:
+        print("[Axis-R] SKIP: collab_rate policy is missing or invalid")
+        return
+
+    if not _ratio_ok(policy):
+        print(f"[Axis-R] SKIP: collab_rate < {policy['batch_review_min_collab_rate']}")
         return
 
     if not ai_available():
-        print("[Axis-R] SKIP: Gemini not available")
+        print("[Axis-R] SKIP: No active AI review peer is available")
         return
 
-    if not _time_gate_ok():
+    if not _time_gate_ok(policy):
         print("[Axis-R] SKIP: review interval not elapsed")
         return
 

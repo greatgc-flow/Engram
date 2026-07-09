@@ -53,6 +53,19 @@ def _mark_health_error(health_file: Path, dt: str) -> None:
         pass
 
 
+def _claude_project_key(project_root: Path) -> str:
+    """Encode a cwd using Claude Code's project-directory convention."""
+    return "".join(
+        ch if ch.isascii() and ch.isalnum() else "-"
+        for ch in str(project_root)
+    )
+
+
+def _claude_project_dir(project_root: Path, projects_root: Path | None = None) -> Path:
+    base = projects_root or (_SYS_DIR / "claude" / "config" / "projects")
+    return base / _claude_project_key(project_root)
+
+
 _HANDOFF_PROMPT = (
     "Read this session log and output ONLY a valid JSON object with no extra text, "
     'matching this exact schema: {"version":"1.0","generated_at":"ISO8601_timestamp",'
@@ -75,7 +88,7 @@ def main() -> None:
     archive_dir = _PORTABLE_ROOT / "_archive"
     sessions_dir = archive_dir / "sessions"
     handoff_file = archive_dir / "session-handoff.json"
-    projects_dir = _SYS_DIR / "claude" / "config" / "projects" / "P--"
+    projects_dir = _claude_project_dir(_PORTABLE_ROOT)
 
     ai_available()  # prints [GATE] gemini=ON/OFF for visibility
 
@@ -115,8 +128,8 @@ def main() -> None:
         return
 
     if not ai_available():
-        print("[context-health] Gemini not available. Skipping handoff generation.")
-        print("                 Check orchestration lifecycle and hub.py peer-status --peer gc")
+        print("[context-health] No active AI review peer is available. Skipping handoff generation.")
+        print("                 Check hub.py peer-status for cc, ag, or cx.")
         return
 
     # Find newest session log

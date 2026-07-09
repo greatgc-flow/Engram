@@ -597,7 +597,7 @@ def gather_peer(peer, peer_dirs):
     # Live state log (cc/ag publish one; cx is queried live below).
     live_file = None
     if peer == "ag":
-        live_file = CLI_DIR / "ag_stdin.log"
+        live_file = SYS_DIR / "data" / "temp" / "ag_statusline_stdin.log"
     elif peer == "cc":
         live_file = SYS_DIR / "claude" / "config" / "status_input.log"
 
