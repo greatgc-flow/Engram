@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-09T15:20:00+09:00",
+  "updated_at": "2026-07-09T16:10:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -290,12 +290,12 @@
     {
       "id": "T10",
       "title": "Peer/config values hardcoded instead of orchestration-sourced (checks+cli)",
-      "status": "active",
+      "status": "done",
       "priority": "low",
       "category": "ops",
       "owner": "cx",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": ["413b817"],
       "supersedes": [],
       "source_refs": ["hardcoding-full-audit-2026-07-09.md"],
       "next_action": "DONE for items 1/3/5/6 (cx fix, cc-verified+applied): _common.py's _active_ai_peer() now derives priority from enabled orchestration nodes (optionally overridden by a review_peer_priority config key) instead of the literal 'ag,cc,cx' tuple; check_sandbox_behavior.py's run_probes() now iterates enabled peers from orchestration.json instead of a hardcoded 'cc,ag,cx' list (existing tests updated to pass a real 3-peer orch fixture); peer_mgr.py's cmd_add() now fails closed with an explicit error when no matching provider template exists, instead of silently inventing Claude-style invoke_args/memory/capability_class defaults (cc kept default_profile='effort' as an intentional peer-agnostic default, not part of the unsafe-invention bug, narrower than cx's first-draft rewrite); diag.py's Fable-quota annotation now resolves from routing-config.json's token_load_balancing.arbiter_models via a new _arbiter_model_ids() helper instead of a literal peer=='cc' check (cc fixed a real bug in cx's draft: _read_json_file() returns a (data, observed_ts) tuple, not a bare dict - cx's snippet would have silently always returned an empty set). Items 2 (check_cli_reality.py REAL_BINARIES duplication) and 4 (peer_console.py security-defaults duplication) explicitly deferred by cx as needing a coordinated follow-up - see T15.",
@@ -305,12 +305,12 @@
     {
       "id": "T11",
       "title": "Check scripts risk false-success / silent-degradation (checks)",
-      "status": "active",
+      "status": "done",
       "priority": "low",
       "category": "ops",
       "owner": "cx",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": ["413b817"],
       "supersedes": [],
       "source_refs": ["hardcoding-full-audit-2026-07-09.md"],
       "next_action": "DONE for items 9/10 (cx fix, cc-verified+applied): check_cli_canary.py's record_budget_invocation() now treats a malformed (non-list) budget file as empty rather than crashing, and a failed budget-file write is logged to stderr instead of silently ignored (cc chose log-over-raise vs cx's raise-RuntimeError draft, since neither of the two real call sites currently wraps this call in a try/except - raising would have turned a silent no-op into an uncaught crash mid-loop); _common.py's update_status_error() now reads protocol.json's autonomous_maintenance.health_thresholds.consecutive_failure_halt (currently 5) and only force-closes a peer's gate_open once that many consecutive failures accrue, instead of tripping on the very first failure. Items 7/8 (check_cli_reality.py stale-hash reprobe + check_cli_canary.py budget-bypass threading) and 11/12 (check_health.py model resolution + shared AI-output-contract validator across 4 check files) explicitly deferred by cx as too architecturally coupled to rush into this batch - see T16.",
