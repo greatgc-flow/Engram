@@ -298,28 +298,40 @@ class TestAutoRefresh:
         assert saved["ag"]["fingerprint"] == "hash_v1"
         assert "Model-A" in saved["ag"]["models"]
 
-        # Scenario 2: under 24h old AND hash unchanged -> no refresh (interval not yet expired)
+        # Scenario 2: under 24h old AND hash unchanged -> no refresh
         now_1h = now + 3600
         res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now_1h)
-        assert "interval not yet expired" in res["ag"]
+        assert res["ag"] == "interval_not_expired"
         assert len(probes_called) == 0
 
-        # Scenario 3: interval expired (>= 24h) AND hash unchanged -> skip probe (skipped, unchanged)
+        # Scenario 3 (T16, 2026-07-10): interval expired (>= 24h) AND hash
+        # unchanged -> a binary hash alone can't prove server-side model
+        # drift didn't happen, so this now performs a REAL budgeted re-probe
+        # instead of just bumping captured_at and skipping.
         now_25h = now + 25 * 3600
         res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now_25h)
-        assert "skipped, unchanged" in res["ag"]
+        assert res["ag"] == "refreshed"
+        assert ["ag"] in probes_called
+        probes_called.clear()
+
+        # Scenario 4 (T16): same expired-but-unchanged case again (>= 24h
+        # past scenario 3's refresh, since captured_at was just bumped), but
+        # budget is exhausted -> must not probe, must report skipped_budget.
+        now_50h = now + 50 * 3600
+        budget_ok = False
+        res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now_50h)
+        assert res["ag"] == "skipped_budget"
         assert len(probes_called) == 0
 
-        # Scenario 4: changed hash -> proceeds to probe, but budget exhausted
+        # Scenario 5: changed hash -> proceeds to probe, but budget exhausted
         def mock_fingerprint_v2(path):
             return {"sha256": "hash_v2"}
         monkeypatch.setattr(ccr, "fingerprint", mock_fingerprint_v2)
-        budget_ok = False
         res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now_25h)
-        assert "budget exhausted" in res["ag"]
+        assert res["ag"] == "skipped_budget"
         assert len(probes_called) == 0
 
-        # Scenario 5: changed hash, budget ok -> refreshed
+        # Scenario 6: changed hash, budget ok -> refreshed
         budget_ok = True
         res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now_25h)
         assert res["ag"] == "refreshed"

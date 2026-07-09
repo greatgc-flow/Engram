@@ -321,24 +321,102 @@ class TestRunCanary:
     def test_run_canary_all_profiles(self, monkeypatch, tmp_path):
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
         monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
-        
+
+        # T16 (2026-07-10): all_profiles fan-out is budget-capped now (no
+        # longer an implicit bypass) - this test verifies the target-
+        # expansion logic itself (every peer's every profile), so give it
+        # enough budget headroom to not be about budget capping.
+        import copy
+        orch = copy.deepcopy(MOCK_ORCHESTRATION)
+        orch["canary_config"]["budget_cap"] = 10
+
         invoked = []
         def mock_invoker(peer, profile, model, prompt):
             invoked.append((peer, profile))
             return "OK"
-            
+
         verdicts = ccc.run_canary(
-            orch=MOCK_ORCHESTRATION,
+            orch=orch,
             all_profiles=True,
             invoker=mock_invoker,
             ai_root=tmp_path
         )
-        
+
         assert len(verdicts) == 5
         assert set(invoked) == {
             ("cc", "standard"), ("cc", "effort"), ("cc", "deepthink"),
             ("ag", "standard"), ("ag", "deepthink")
         }
+
+    def test_run_canary_all_profiles_is_budget_capped(self, monkeypatch, tmp_path):
+        """T16 (2026-07-10): all_profiles fan-out is no longer an implicit
+        budget bypass - MOCK_ORCHESTRATION's budget_cap=2 must cap the
+        5-target fan-out at 2 real invocations, the rest SKIP on budget."""
+        monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+
+        invoked = []
+        def mock_invoker(peer, profile, model, prompt):
+            invoked.append((peer, profile))
+            return "OK"
+
+        verdicts = ccc.run_canary(
+            orch=MOCK_ORCHESTRATION,
+            all_profiles=True,
+            invoker=mock_invoker,
+            ai_root=tmp_path,
+        )
+
+        assert len(verdicts) == 5
+        assert len(invoked) == 2
+        skipped = [v for v in verdicts if v["status"] == "SKIP"]
+        assert len(skipped) == 3
+        assert all(v["reason"] == "budget" for v in skipped)
+
+    def test_run_canary_root_peer_all_profiles_is_not_explicit_budget_bypass(self, monkeypatch, tmp_path):
+        """T16: peers=['cc'] + all_profiles=True is a fan-out (bulk), not a
+        specific single target - must NOT bypass an exhausted budget."""
+        import copy
+        orch = copy.deepcopy(MOCK_ORCHESTRATION)
+        orch["canary_config"]["budget_cap"] = 0
+        (tmp_path / "canary_budget.json").write_text("[]", encoding="utf-8")
+
+        monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+
+        invoked = []
+        verdicts = ccc.run_canary(
+            orch=orch,
+            peers=["cc"],
+            all_profiles=True,
+            invoker=lambda *args: invoked.append(args) or "OK",
+            ai_root=tmp_path,
+        )
+
+        assert invoked == []
+        assert verdicts
+        assert all(v["status"] == "SKIP" and v["reason"] == "budget" for v in verdicts)
+
+    def test_run_canary_explicit_peer_profile_bypasses_budget(self, monkeypatch, tmp_path):
+        """T16: an explicit 'peer.profile' target is the sole remaining
+        budget-bypass path, even with an exhausted budget."""
+        import copy
+        orch = copy.deepcopy(MOCK_ORCHESTRATION)
+        orch["canary_config"]["budget_cap"] = 0
+        (tmp_path / "canary_budget.json").write_text("[]", encoding="utf-8")
+
+        monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+
+        verdicts = ccc.run_canary(
+            orch=orch,
+            peers=["cc.standard"],
+            invoker=lambda *args: "OK",
+            ai_root=tmp_path,
+        )
+
+        assert len(verdicts) == 1
+        assert verdicts[0]["status"] == "PASS"
 
     def test_run_canary_crash_safe(self, monkeypatch, tmp_path):
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})

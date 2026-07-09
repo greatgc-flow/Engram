@@ -1,12 +1,17 @@
 """check_versions.py — Axis-B: Check latest tool versions via Gemini."""
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from _common import (  # noqa: E402
-    _PORTABLE_ROOT, ai_available, archive_file, build_env,
-    gemini_call, is_refusal, log_collab, save_raw, update_status_error,
+    _PORTABLE_ROOT, ContractViolationError, ai_available, archive_file, build_env,
+    gemini_call, is_refusal, log_collab, save_raw, update_status_error, validate_ai_json,
+)
+
+_VERSIONS_REQUIRED_KEYS = (
+    "ripgrep", "fd", "jq", "bat", "delta", "fzf", "oh-my-posh", "nodejs-lts",
 )
 
 _PROMPT = (
@@ -48,7 +53,16 @@ def main() -> None:
         out_file.unlink(missing_ok=True)
         sys.exit(1)
 
-    out_file.write_text(result.stdout, encoding="utf-8")
+    try:
+        versions = validate_ai_json(result.stdout, _VERSIONS_REQUIRED_KEYS)
+    except ContractViolationError as exc:
+        print(f"[version-check] ERROR: Invalid version JSON: {exc}")
+        out_file.unlink(missing_ok=True)
+        log_collab("Axis-B", "check-versions.py", "FAIL", f"Error: invalid_version_json: {exc}")
+        update_status_error(dt, "version_check_failed")
+        sys.exit(1)
+
+    out_file.write_text(json.dumps(versions, ensure_ascii=False, indent=2), encoding="utf-8")
     save_raw("Axis-B", out_file)
     print(f"[version-check] Done: {out_file}")
     print("[version-check] Compare with setup.ps1 version section to find updates.")

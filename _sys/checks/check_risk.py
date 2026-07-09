@@ -3,15 +3,18 @@
 Usage: python check_risk.py "task description" "file1,file2,..."
 GEMINI OFF → writes UNKNOWN result, exits 0 (non-blocking).
 """
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from _common import (  # noqa: E402
-    _PORTABLE_ROOT, ai_available, archive_file, gemini_call, is_refusal,
-    log_collab, save_raw, write_unknown_json,
+    _PORTABLE_ROOT, ContractViolationError, ai_available, archive_file, gemini_call,
+    is_refusal, log_collab, save_raw, validate_ai_json, write_unknown_json,
 )
+
+_RISK_REQUIRED_KEYS = ("agent", "timestamp", "task_summary", "risks", "overall_risk", "proceed")
 
 
 def _read_collab_tail(collab_log_dir: Path, n: int = 20) -> str:
@@ -71,16 +74,17 @@ def main() -> None:
         print("[risk-scan] Gemini refused. UNKNOWN result written (non-blocking).")
         return  # exit 0
 
-    out_file.write_text(result.stdout, encoding="utf-8")
-    save_raw("Axis-I", out_file)
-
-    # Validate JSON
     try:
-        import json
-        j = json.loads(out_file.read_text(encoding="utf-8"))
-        print(f"[risk-scan] overall_risk={j.get('overall_risk', '?')}")
-    except Exception:
-        print(f"[risk-scan] WARNING: Output is not valid JSON - check {out_file}")
+        risk = validate_ai_json(result.stdout, _RISK_REQUIRED_KEYS)
+    except ContractViolationError as exc:
+        log_collab("Axis-I", "check-risk.py", "FAIL", f"Error: invalid_risk_json: {exc}")
+        write_unknown_json(out_file, task, f"Invalid risk JSON - proceeding without risk scan: {exc}")
+        print(f"[risk-scan] WARNING: Invalid risk JSON ({exc}). UNKNOWN result written (non-blocking).")
+        return  # exit 0, non-blocking
+
+    out_file.write_text(json.dumps(risk, ensure_ascii=False, indent=2), encoding="utf-8")
+    save_raw("Axis-I", out_file)
+    print(f"[risk-scan] overall_risk={risk.get('overall_risk', '?')}")
 
     log_collab("Axis-I", "check-risk.py", "OK", f"Output: {out_file}")
     print(f"[risk-scan] Done. Output: {out_file}")

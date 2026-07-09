@@ -18,8 +18,17 @@ from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent))
 from _common import (  # noqa: E402
-    _PORTABLE_ROOT, _SYS_DIR, ai_available, archive_file, gemini_call, is_refusal,
-    log_collab, save_raw,
+    _PORTABLE_ROOT, _SYS_DIR, ContractViolationError, ai_available, archive_file,
+    gemini_call, is_refusal, log_collab, save_raw, validate_ai_json,
+)
+
+_HANDOFF_REQUIRED_KEYS = (
+    "version",
+    "generated_at",
+    "session_context",
+    "executive_summary",
+    "technical_state",
+    "strategy_for_next_session",
 )
 
 
@@ -160,7 +169,15 @@ def main() -> None:
         log_collab("Axis-H", "check-health.py", "REFUSED", "Gemini refused request")
         sys.exit(1)
 
-    handoff_file.write_text(result.stdout, encoding="utf-8")
+    try:
+        handoff = validate_ai_json(result.stdout, _HANDOFF_REQUIRED_KEYS)
+    except ContractViolationError as exc:
+        print(f"[context-health] ERROR: Invalid handoff JSON: {exc}")
+        log_collab("Axis-H", "check-health.py", "FAIL", f"Error: invalid_handoff_json: {exc}")
+        _mark_health_error(health_file, dt)
+        sys.exit(1)
+
+    handoff_file.write_text(json.dumps(handoff, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"[context-health] Handoff written: {handoff_file}")
     log_collab("Axis-H", "check-health.py", "OK", f"Handoff: {handoff_file}")
     print("[context-health] Recommended actions:")

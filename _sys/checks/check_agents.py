@@ -6,9 +6,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from _common import (  # noqa: E402
-    _PORTABLE_ROOT, ai_available, archive_file, extract_json_block, gemini_call,
-    is_refusal, log_collab, save_raw, update_status_error,
+    _PORTABLE_ROOT, ContractViolationError, ai_available, archive_file, gemini_call,
+    is_refusal, log_collab, save_raw, update_status_error, validate_ai_json,
 )
+
+_AGENT_AUDIT_REQUIRED_KEYS = ("scan_ts", "overlaps", "gaps", "inconsistencies", "ok_count")
 
 
 def _merge_agent_files(agents_dir: Path) -> str:
@@ -100,14 +102,17 @@ def main() -> None:
         out_file.unlink(missing_ok=True)
         sys.exit(1)
 
-    # Extract clean JSON block (strip YOLO messages, routing errors, code fences)
-    clean = extract_json_block(result.stdout)
-    if clean.startswith("{"):
-        out_file.write_text(clean, encoding="utf-8")
-        print("[agent-audit] JSON extracted cleanly.")
-    else:
-        out_file.write_text(result.stdout, encoding="utf-8")
-        print("[agent-audit] WARNING: No JSON found in output.")
+    try:
+        audit = validate_ai_json(result.stdout, _AGENT_AUDIT_REQUIRED_KEYS)
+    except ContractViolationError as exc:
+        print(f"[agent-audit] ERROR: Invalid audit JSON: {exc}")
+        log_collab("Axis-E", "check-agents.py", "FAIL", f"Error: invalid_audit_json: {exc}")
+        out_file.unlink(missing_ok=True)
+        update_status_error(dt, "agent_audit_failed")
+        sys.exit(1)
+
+    out_file.write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
+    print("[agent-audit] JSON validated cleanly.")
 
     save_raw("Axis-E", out_file)
     print(f"[agent-audit] Done: {out_file}")

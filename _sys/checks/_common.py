@@ -221,3 +221,39 @@ def extract_json_block(text: str) -> str:
         return text
     end = text.rfind("}")
     return text[start:end + 1] if end >= start else text
+
+
+class ContractViolationError(ValueError):
+    """Raised when an AI-produced JSON object violates a check output contract."""
+
+
+def _json_path_exists(data: dict, path: str) -> bool:
+    current = data
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return False
+        current = current[part]
+    return True
+
+
+def validate_ai_json(raw_output: str, required_keys) -> dict:
+    """Return validated AI JSON or raise ContractViolationError (T16, 2026-07-10).
+
+    `required_keys` may contain top-level keys or dotted dict paths.
+    """
+    clean = extract_json_block(raw_output)
+    try:
+        data = json.loads(clean)
+    except json.JSONDecodeError as exc:
+        raise ContractViolationError(f"invalid JSON: {exc.msg}") from exc
+
+    if not isinstance(data, dict):
+        raise ContractViolationError("AI output must be a JSON object")
+
+    missing = [key for key in required_keys if not _json_path_exists(data, str(key))]
+    if missing:
+        raise ContractViolationError(
+            "missing required key(s): " + ", ".join(sorted(missing))
+        )
+
+    return data

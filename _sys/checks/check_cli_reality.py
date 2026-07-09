@@ -327,7 +327,7 @@ def auto_refresh_observed(
     for peer in _enabled_peer_ids(orch):
         fp_info = fingerprint(real_binary(peer, orch))
         current_fp = fp_info.get("sha256")
-        
+
         peer_data = observed_data.get(peer)
         if peer_data and isinstance(peer_data, dict):
             baseline_fp = peer_data.get("fingerprint")
@@ -337,24 +337,22 @@ def auto_refresh_observed(
                 captured_at = dt.timestamp()
             except Exception:
                 captured_at = 0
-            
-            hash_changed = (current_fp != baseline_fp)
+
+            hash_changed = current_fp != baseline_fp
             interval_expired = (now_ts - captured_at) >= (interval_hours * 3600)
-            
-            if not hash_changed:
-                if not interval_expired:
-                    results[peer] = "interval not yet expired"
-                else:
-                    results[peer] = "skipped, unchanged"
-                    peer_data["captured_at"] = datetime.fromtimestamp(now_ts, timezone.utc).isoformat()
-                    needs_save = True
+
+            # T16 (2026-07-10): a binary hash can't detect server-side model
+            # drift, so an expired interval still triggers a real budgeted
+            # re-probe even when the hash is unchanged - falls through to the
+            # same probe path as the hash-changed case below.
+            if not hash_changed and not interval_expired:
+                results[peer] = "interval_not_expired"
                 continue
-        
-        # Hash changed or no previous data -> proceed to probe
+
         if not check_cli_canary.check_and_update_budget(ai_root, now_ts, cap, window_hours):
-            results[peer] = "skipped, budget exhausted"
+            results[peer] = "skipped_budget"
             continue
-            
+
         # Probe
         now_dt = datetime.fromtimestamp(now_ts, timezone.utc)
         verdicts = check_cli_canary.run_canary(
@@ -364,7 +362,7 @@ def auto_refresh_observed(
             force=True,
             ai_root=ai_root
         )
-        
+
         capture = check_cli_canary.build_observed_capture(verdicts, now=now_dt)
         if peer in capture:
             peer_data = capture[peer]
@@ -373,7 +371,19 @@ def auto_refresh_observed(
             results[peer] = "refreshed"
             needs_save = True
         else:
-            results[peer] = "probe failed"
+            # T16: run_canary's own per-profile fan-out now respects the
+            # budget too (is_explicit-only bypass), so a peer with no PASS
+            # verdicts might be a real probe failure OR the whole fan-out
+            # getting budget-capped internally - classify honestly rather
+            # than always calling it a failure.
+            peer_verdicts = [v for v in verdicts if v.get("peer") == peer]
+            if peer_verdicts and all(
+                v.get("status") == "SKIP" and v.get("reason") == "budget"
+                for v in peer_verdicts
+            ):
+                results[peer] = "skipped_budget"
+            else:
+                results[peer] = "probe_failed"
 
     if needs_save:
         try:

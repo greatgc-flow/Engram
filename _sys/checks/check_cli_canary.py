@@ -358,8 +358,12 @@ def run_canary(
                 if not node or not node.get("enabled", True):
                     continue
                 if all_profiles:
+                    # Fan-out (root peer or global) is a bulk request, not a
+                    # specific single target - must not imply budget bypass
+                    # (T16, 2026-07-10). An explicit "peer.profile" item
+                    # (line above, split on ".") is the only True case left.
                     for p_name in (node.get("profiles") or {}):
-                        targets.append((peer_id, p_name, True))
+                        targets.append((peer_id, p_name, False))
                 else:
                     cheapest = _cheapest_profile(node)
                     if cheapest:
@@ -368,8 +372,12 @@ def run_canary(
         for peer_id, node in nodes.items():
             if node.get("type") == "peer" and node.get("enabled", True):
                 if all_profiles:
+                    # Fan-out (root peer or global) is a bulk request, not a
+                    # specific single target - must not imply budget bypass
+                    # (T16, 2026-07-10). An explicit "peer.profile" item
+                    # (line above, split on ".") is the only True case left.
                     for p_name in (node.get("profiles") or {}):
-                        targets.append((peer_id, p_name, True))
+                        targets.append((peer_id, p_name, False))
                 else:
                     cheapest = _cheapest_profile(node)
                     if cheapest:
@@ -396,10 +404,12 @@ def run_canary(
 
     verdicts = []
     for peer_id, p_name, is_explicit in filtered_targets:
-        # An operator-intended run (all_profiles or an explicit peer/profile) is
-        # not the automatic budget-gated path — bypass the budget (but keep the
-        # cache unless the caller explicitly asked to --force a fresh probe).
-        bypass_budget = all_profiles or is_explicit
+        # Only a specific peer.profile target bypasses the budget. Root-peer
+        # or global --all-profiles runs are budget-capped, operator or
+        # internal alike (T16, 2026-07-10, unanimous ag+cx design-fork vote:
+        # DIR-004 "a budget is a budget" - is_explicit remains the sole
+        # escape hatch; keep the cache unless the caller explicitly --force).
+        bypass_budget = is_explicit
         try:
             verdict = canary_probe(
                 peer_id, p_name, orch, invoker=invoker,
