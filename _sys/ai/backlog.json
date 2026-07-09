@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-10T00:35:00+09:00",
+  "updated_at": "2026-07-10T01:10:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -395,15 +395,15 @@
     {
       "id": "T16",
       "title": "check_cli_reality/canary budget-bypass coupling + shared AI-output-contract validator",
-      "status": "proposed",
+      "status": "done",
       "priority": "low",
       "category": "ops",
-      "owner": "unassigned",
+      "owner": "cx",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": ["8eb7dfa"],
       "supersedes": [],
       "source_refs": ["hardcoding-full-audit-2026-07-09.md", "pretdd-prep-2026-07-09.md"],
-      "next_action": "READY FOR TDD (2026-07-09 four-round unanimous discussion, ag+cx+cc.fable, full spec at pretdd-prep-2026-07-09.md §Topic C): scope narrower than originally scoped - check_cli_canary.py already has a working bypass_budget parameter on run_canary() (pre-existing, not new). Actual fix: (1) check_cli_reality.py's auto_refresh_observed() hash-unchanged-but-expired case must do a real budgeted re-probe instead of just bumping captured_at. (2) check_cli_canary.py:402 (NOT check_cli_reality.py - cc.fable caught this location error in an earlier draft of this spec, verified by grep) change 'bypass_budget = all_profiles or is_explicit' to 'bypass_budget = is_explicit'. DESIGN FORK RESOLVED (unanimous vote, ag+cx both independently picked the same option): this also caps the genuine CLI --all-profiles operator flag, not just internal auto-callers (auto_refresh_observed, emit_observed_capture) - CHOSE to accept that (DIR-004 'a budget is a budget'), NOT to thread a separate operator_invoked flag; is_explicit (per-profile targeting) remains the operator's escape hatch, and new skipped_budget status must be visibly surfaced, never silent. New structured statuses: refreshed/skipped_budget/interval_not_expired/probe_failed. Shared validate_ai_json()/ContractViolationError in _common.py with REAL per-file required-key schemas (verified against actual current prompt/schema strings, ag's first-draft guesses were all wrong): check_health.py={version,generated_at,session_context,executive_summary,technical_state,strategy_for_next_session}; check_agents.py={scan_ts,overlaps,gaps,inconsistencies,ok_count}; check_risk.py={agent,timestamp,task_summary,risks,overall_risk,proceed}; check_versions.py={ripgrep,fd,jq,bat,delta,fzf,oh-my-posh,nodejs-lts}.",
+      "next_action": "DONE (cx implementation, cc found+fixed a load-bearing gap before applying): auto_refresh_observed() now does a real budgeted re-probe on hash-unchanged-but-expired instead of skip+bump; check_cli_canary.py's bypass_budget expression changed to is_explicit-only. cc verified the fix would have been a no-op as originally scoped: run_canary()'s target fan-out already marked EVERY all_profiles=True target (root-peer and global alike) as is_explicit=True, so changing just the bypass expression wouldn't have capped anything - fixed the fan-out itself to only claim explicit for a genuinely explicit 'peer.profile' CLI target, not bulk fan-out. Shared validate_ai_json()/ContractViolationError wired into all 4 AI-check files with real per-file schemas, replacing 'startswith(\"{\")'-style acceptance of any parseable JSON as success. Full suite green (743 passed).",
       "risk": null,
       "last_verified_at": "2026-07-09T23:50:00+09:00"
     },
