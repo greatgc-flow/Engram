@@ -40,14 +40,18 @@ def _active_ai_peer() -> str | None:
     except (OSError, json.JSONDecodeError):
         return None
 
-    enabled = {
-        node.get("node_id")
-        for node in orchestration.get("hub_nodes", [])
+    enabled_nodes = [
+        node for node in orchestration.get("hub_nodes", [])
         if node.get("type") == "peer"
         and node.get("enabled", True) is not False
         and node.get("node_id")
-    }
-    for node_id in ("ag", "cc", "cx"):
+    ]
+    enabled = {node["node_id"] for node in enabled_nodes}
+    priority = orchestration.get("review_peer_priority")
+    if not isinstance(priority, list):
+        priority = [node["node_id"] for node in enabled_nodes]
+
+    for node_id in priority:
         if node_id not in enabled:
             continue
         sys_subdir = resolve_peer_sys_dir(node_id)
@@ -154,22 +158,45 @@ def write_unknown_json(out_file: Path, task: str, note: str) -> None:
 
 
 def update_status_error(dt: str, error_key: str) -> None:
-    """Record an active peer failure in its runtime health manifest."""
+    """Record a check failure and close the peer gate only at the halt threshold."""
     peer_id = _active_ai_peer()
     if not peer_id:
         return
     sys_subdir = resolve_peer_sys_dir(peer_id)
     if not sys_subdir:
         return
+
+    halt_after = 5
+    try:
+        protocol = json.loads(
+            (_SYS_DIR / "ai" / "protocol.json").read_text(encoding="utf-8")
+        )
+        configured = (
+            protocol.get("autonomous_maintenance", {})
+            .get("health_thresholds", {})
+            .get("consecutive_failure_halt", halt_after)
+        )
+        halt_after = max(1, int(configured))
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        pass
+
     health_file = _SYS_DIR / sys_subdir / "health.json"
     try:
-        data = json.loads(health_file.read_text(encoding="utf-8")) if health_file.exists() else {}
+        data = (
+            json.loads(health_file.read_text(encoding="utf-8"))
+            if health_file.exists() else {}
+        )
         session = data.setdefault("session_health", {})
         session["last_failure_reason"] = f"{error_key}_{dt}"
-        session["consecutive_failures"] = int(session.get("consecutive_failures", 0)) + 1
-        data.setdefault("availability", {})["gate_open"] = False
-        health_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception:
+        failures = int(session.get("consecutive_failures", 0)) + 1
+        session["consecutive_failures"] = failures
+        if failures >= halt_after:
+            data.setdefault("availability", {})["gate_open"] = False
+        health_file.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
         pass
 
 

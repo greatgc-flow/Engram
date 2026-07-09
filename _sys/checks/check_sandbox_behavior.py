@@ -199,7 +199,14 @@ def run_probes(orch: dict, ai_root: Path) -> dict:
 
     results = []
 
-    for peer in ["cc", "ag", "cx"]:
+    enabled_peers = [
+        node["node_id"] for node in orch.get("hub_nodes", [])
+        if node.get("type") == "peer"
+        and node.get("enabled", True) is not False
+        and node.get("node_id")
+    ]
+
+    for peer in enabled_peers:
         # Budget check
         if not check_and_update_budget(ai_root, now_ts, cap, window_hours):
             results.append({

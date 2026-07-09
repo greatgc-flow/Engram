@@ -105,6 +105,18 @@ def _sev_color(used_frac):
     return "green"
 
 
+def _arbiter_model_ids() -> set:
+    """Return routing-config.json's token_load_balancing.arbiter_models as a set."""
+    data, _observed = _read_json_file(SYS_DIR / "ai" / "routing-config.json")
+    if not isinstance(data, dict):
+        return set()
+    balancing = data.get("token_load_balancing")
+    if not isinstance(balancing, dict):
+        return set()
+    models = balancing.get("arbiter_models")
+    return {str(model) for model in models} if isinstance(models, list) else set()
+
+
 
 
 
@@ -255,8 +267,21 @@ def render_card(info):
         print(_c(f" Sessions today: {info['sessions']}", "dim"))
 
     profile_health = info.get("profile_health") if isinstance(info.get("profile_health"), dict) else {}
-    if str(info.get("peer") or "").lower() == "cc" and "fable" in profile_health:
-        print(_c(" Fable quota: F-7D when present; 5h uses C-5H (no F-5H/F-7H bucket)", "dim"))
+    peer = str(info.get("peer") or "").lower()
+    active_arbiters = {
+        f"{peer}.{profile_name}" for profile_name in profile_health
+    } & _arbiter_model_ids()
+    has_f_family = any(
+        str(quota.get("label") or "").startswith("F-")
+        for quota in info.get("quotas", [])
+        if isinstance(quota, dict)
+    )
+    if active_arbiters and has_f_family:
+        print(_c(
+            " Arbiter quota: F-7D when present; 5h uses C-5H "
+            "(no F-5H/F-7H bucket)",
+            "dim",
+        ))
 
 
 def parse_args(argv=None):

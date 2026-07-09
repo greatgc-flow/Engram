@@ -92,20 +92,26 @@ def record_budget_invocation(ai_root: Path, now_ts: float):
     invocations = []
     if budget_file.exists():
         try:
-            invocations = json.loads(budget_file.read_text(encoding="utf-8"))
+            loaded = json.loads(budget_file.read_text(encoding="utf-8"))
+            if isinstance(loaded, list):
+                invocations = loaded
         except Exception:
             invocations = []
     invocations.append(now_ts)
-    
+
     # Prune old invocations to keep file size small (keep past 24 hours)
     cutoff = now_ts - 24 * 3600
     invocations = [t for t in invocations if isinstance(t, (int, float)) and t >= cutoff]
-    
+
     try:
         ai_root.mkdir(parents=True, exist_ok=True)
         budget_file.write_text(json.dumps(invocations), encoding="utf-8")
-    except Exception:
-        pass
+    except OSError as exc:
+        # Fail-open on token-cost enforcement is a real risk; at minimum
+        # surface it instead of silently pretending the invocation was
+        # accounted for. Non-fatal for callers (neither current call site
+        # wraps this call), so log rather than raise.
+        print(f"[check_cli_canary] WARNING: failed to persist budget invocation: {exc}", file=sys.stderr)
 
 
 def load_cache(ai_root: Path) -> dict:

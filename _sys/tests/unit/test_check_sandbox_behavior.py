@@ -107,11 +107,18 @@ def test_probe_peer_success(mock_run, mock_build, tmp_path):
     assert res["profile"] == "standard"
     assert res["targets"]["outside_cwd_inside_repo"]["classification"] == "claimed_write_unverified"
 
+_THREE_ENABLED_PEERS = {
+    "hub_nodes": [
+        {"node_id": "cc", "type": "peer", "enabled": True},
+        {"node_id": "ag", "type": "peer", "enabled": True},
+        {"node_id": "cx", "type": "peer", "enabled": True},
+    ]
+}
+
 @patch("check_sandbox_behavior.check_and_update_budget", return_value=False)
 def test_run_probes_budget_exhausted(mock_budget, tmp_path):
-    orch = {}
-    res = check_sandbox_behavior.run_probes(orch, tmp_path)
-    
+    res = check_sandbox_behavior.run_probes(_THREE_ENABLED_PEERS, tmp_path)
+
     assert len(res["results"]) == 3
     for r in res["results"]:
         assert r["targets"]["outside_cwd_inside_repo"]["classification"] == "error"
@@ -122,9 +129,19 @@ def test_run_probes_budget_exhausted(mock_budget, tmp_path):
 @patch("check_sandbox_behavior.record_budget_invocation")
 def test_run_probes(mock_record, mock_budget, mock_probe, tmp_path):
     mock_probe.return_value = {"fake": "result"}
-    orch = {}
-    res = check_sandbox_behavior.run_probes(orch, tmp_path)
-    
+    res = check_sandbox_behavior.run_probes(_THREE_ENABLED_PEERS, tmp_path)
+
     assert len(res["results"]) == 3
     assert res["results"][0] == {"fake": "result"}
     assert mock_record.call_count == 3
+
+@patch("check_sandbox_behavior.check_and_update_budget", return_value=False)
+def test_run_probes_uses_only_enabled_orchestration_peers(mock_budget, tmp_path):
+    orch = {"hub_nodes": [
+        {"node_id": "ag", "type": "peer", "enabled": True},
+        {"node_id": "cc", "type": "peer", "enabled": False},
+        {"node_id": "not-peer", "type": "profile", "enabled": True},
+    ]}
+    result = check_sandbox_behavior.run_probes(orch, tmp_path)
+    assert [row["peer"] for row in result["results"]] == ["ag"]
+    mock_budget.assert_called_once()

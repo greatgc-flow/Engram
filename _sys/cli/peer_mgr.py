@@ -291,17 +291,24 @@ def cmd_add(
     if _orch_find(nodes, peer_id):
         print(f"  orchestration.json: {peer_id} already exists — skipping add")
     else:
-        template = next((n for n in nodes if n.get("invoke") == invoke), {})
+        template = next((n for n in nodes if n.get("invoke") == invoke), None)
+        if template is None:
+            print(
+                f"[ERROR] unknown provider/invoke {invoke!r}: "
+                "no safe orchestration template",
+                file=sys.stderr,
+            )
+            return 1
         new_node: dict = {
             "node_id": peer_id,
             "type": "peer",
             "invoke": invoke,
             "adapter_class": template.get("adapter_class"),
-            "invoke_args": template.get("invoke_args", ["-p", "{query}"]),
-            "memory": template.get("memory", "persistent"),
+            "invoke_args": template.get("invoke_args", []),
+            "memory": template.get("memory"),
             "timeout": template.get("timeout", 0),
             "default_profile": "effort",
-            "capability_class": template.get("capability_class", "trusted_ipc_mutation"),
+            "capability_class": template.get("capability_class"),
             "profiles": {
                 tier: {
                     "model_id": model,

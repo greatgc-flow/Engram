@@ -362,3 +362,28 @@ class TestRunCanary:
         assert v_cc["status"] == "FAIL"
         assert v_cc["stage"] == "launch"
         assert v_ag["status"] == "PASS"
+
+
+def test_record_budget_invocation_ignores_malformed_file(tmp_path):
+    """A non-list budget file is treated as empty rather than crashing."""
+    budget_file = tmp_path / "canary_budget.json"
+    budget_file.write_text(json.dumps({"not": "a list"}), encoding="utf-8")
+
+    ccc.record_budget_invocation(tmp_path, 1000.0)
+
+    saved = json.loads(budget_file.read_text(encoding="utf-8"))
+    assert saved == [1000.0]
+
+
+def test_record_budget_invocation_persistence_failure_is_logged(monkeypatch, tmp_path, capsys):
+    """A failed budget-file write is surfaced (stderr), not silently ignored."""
+    def fail_write(self, *args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(Path, "write_text", fail_write)
+
+    ccc.record_budget_invocation(tmp_path, 123.0)
+
+    err = capsys.readouterr().err
+    assert "failed to persist budget invocation" in err
+    assert "disk full" in err
