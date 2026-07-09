@@ -94,8 +94,8 @@ class TestCheapestProfile:
 
 class TestCanaryProbe:
     def test_canary_probe_success(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(ccr, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccr, "real_binary", lambda peer: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
         
         invoker_called = []
         def mock_invoker(peer, profile, model, prompt):
@@ -119,8 +119,8 @@ class TestCanaryProbe:
         assert invoker_called[0] == ("cc", "standard", "claude-haiku", "Respond with exactly: OK")
 
     def test_canary_probe_reply_fail(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(ccr, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccr, "real_binary", lambda peer: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
         
         def mock_invoker(peer, profile, model, prompt):
             return "NOPE"
@@ -141,8 +141,8 @@ class TestCanaryProbe:
     def test_canary_probe_reply_negation_is_fail(self, monkeypatch, tmp_path):
         # Regression: a substring "OK" test false-PASSes replies like "NOT OK".
         # The assertion must be an exact normalized match (prompt demands "OK").
-        monkeypatch.setattr(ccr, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccr, "real_binary", lambda peer: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
 
         for bad_reply in ("NOT OK", "OK but failed", "not ok"):
             def mock_invoker(peer, profile, model, prompt, _r=bad_reply):
@@ -162,8 +162,8 @@ class TestCanaryProbe:
 
     def test_canary_probe_reply_normalized_ok(self, monkeypatch, tmp_path):
         # Whitespace/newline-wrapped and lower-case exact "OK" still PASS.
-        monkeypatch.setattr(ccr, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccr, "real_binary", lambda peer: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
 
         for good_reply in ("OK", " OK\n", "ok", "\tOK  "):
             def mock_invoker(peer, profile, model, prompt, _r=good_reply):
@@ -181,8 +181,8 @@ class TestCanaryProbe:
             assert verdict["status"] == "PASS", f"{good_reply!r} must PASS"
 
     def test_canary_probe_launch_fail(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(ccr, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccr, "real_binary", lambda peer: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
         
         def mock_invoker(peer, profile, model, prompt):
             raise RuntimeError("failed to launch binary")
@@ -201,8 +201,8 @@ class TestCanaryProbe:
         assert "failed to launch binary" in verdict["detail"]
 
     def test_canary_probe_operand_drift(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(ccr, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccr, "real_binary", lambda peer: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
         
         monkeypatch.setattr(ccc, "validate_model_operand", lambda node: "mocked operand drift error")
         
@@ -229,8 +229,8 @@ class TestCanaryProbe:
 
 class TestBudgetAndCache:
     def test_canary_probe_budget(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(ccr, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccr, "real_binary", lambda peer: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
         
         def mock_invoker(peer, profile, model, prompt):
             return "OK"
@@ -252,8 +252,8 @@ class TestBudgetAndCache:
         assert verdict["reason"] == "budget"
 
     def test_canary_probe_cache(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(ccr, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccr, "real_binary", lambda peer: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
         
         invoker_count = 0
         def mock_invoker(peer, profile, model, prompt):
@@ -300,8 +300,8 @@ class TestBudgetAndCache:
 
 class TestRunCanary:
     def test_run_canary_default_behavior(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(ccr, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccr, "real_binary", lambda peer: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
         
         invoked = []
         def mock_invoker(peer, profile, model, prompt):
@@ -319,8 +319,8 @@ class TestRunCanary:
         assert all(v["status"] == "PASS" for v in verdicts)
 
     def test_run_canary_all_profiles(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(ccr, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccr, "real_binary", lambda peer: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
         
         invoked = []
         def mock_invoker(peer, profile, model, prompt):
@@ -341,8 +341,8 @@ class TestRunCanary:
         }
 
     def test_run_canary_crash_safe(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(ccr, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccr, "real_binary", lambda peer: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
         
         def mock_invoker(peer, profile, model, prompt):
             if peer == "cc":

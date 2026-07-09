@@ -3,6 +3,7 @@ import argparse
 import io
 import json
 import re
+import shutil
 import subprocess
 from pathlib import Path
 import sys
@@ -288,10 +289,13 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(prog="diag")
     parser.add_argument("--json", dest="json_mode", action="store_true",
                         help="emit normalized telemetry JSON")
-    parser.add_argument("--watch", nargs="?", const=-1.0, type=float, metavar="SECONDS",
+    watch_group = parser.add_mutually_exclusive_group()
+    watch_group.add_argument("--watch", nargs="?", const=-1.0, type=float, metavar="SECONDS",
                         help="refresh repeatedly; interval defaults to telemetry-config watch.default_interval_sec")
+    watch_group.add_argument("--watch-summary", nargs="?", const=-1.0, type=float, metavar="SECONDS",
+                        help="like --watch, but only SUMMARY+FRAME repaint each tick (no full-panel/hub.py-status re-render, no scroll)")
     parser.add_argument("--interval", type=float, metavar="SECONDS",
-                        help="alias for --watch SECONDS")
+                        help="alias for --watch/--watch-summary SECONDS")
     parser.add_argument("--fresh", action="store_true",
                         help="force one bypass of the 60s expensive-source cache (quota/rate-limits)")
     parser.add_argument("--profiles", action="store_true", help="reserved profile detail view")
@@ -302,11 +306,15 @@ def parse_args(argv=None):
     parser.add_argument("--headroom", action="store_true", help="derived routing headroom view")
     args = parser.parse_args(argv)
 
-    requested_interval = args.interval if args.interval is not None else args.watch
-    args.watch = requested_interval is not None
-    # const sentinel (-1.0) = bare --watch -> use config default interval (None).
+    watch_summary_mode = args.watch_summary is not None
+    requested_interval = args.interval if args.interval is not None else (
+        args.watch_summary if watch_summary_mode else args.watch
+    )
+    args.watch = requested_interval is not None and not watch_summary_mode
+    args.watch_summary = watch_summary_mode
+    # const sentinel (-1.0) = bare --watch/--watch-summary -> use config default interval (None).
     args.interval = None if requested_interval == -1.0 else requested_interval
-    if args.watch and args.interval is not None:
+    if (args.watch or args.watch_summary) and args.interval is not None:
         min_iv = telemetry_config()["watch"]["min_interval_sec"]
         if args.interval < min_iv:
             parser.error(f"minimum interval is {min_iv} seconds")
@@ -511,7 +519,17 @@ def render_frame_footer(stdout=None, snapshot=None, rendered_at=None):
         )
 
 
-def render_dashboard(stdout=None, watch_mode=False):
+def render_summary_frame(out, snapshot):
+    """Renders ONLY SUMMARY + FRAME (design 2026-07-09 §Topic A) for the
+    --watch-summary loop - deliberately skips every other panel and the
+    hub.py status subprocess call."""
+    with redirect_stdout(out):
+        infos = [p["raw"] for p in snapshot["peers"]]
+        render_summary(infos)
+    render_frame_footer(out, snapshot=snapshot)
+
+
+def render_dashboard(stdout=None, watch_mode=False, snapshot=None):
     out = stdout or sys.stdout
     with redirect_stdout(out):
         print("=" * 60)
@@ -534,7 +552,8 @@ def render_dashboard(stdout=None, watch_mode=False):
         else:
             print("hub.py not found.")
 
-        snapshot = collect_snapshot()
+        if snapshot is None:
+            snapshot = collect_snapshot()
         infos = [p["raw"] for p in snapshot["peers"]]
 
         # Section order is the unanimous FP-4 spec (2026-07-03, reconfirmed
@@ -663,7 +682,7 @@ def _blit_frame(out, text, sync):
     out.flush()
 
 
-def run_watch(interval=None, json_mode=False, stdout=None, sleep=time.sleep, max_frames=None):
+def run_watch(interval=None, json_mode=False, stdout=None, sleep=time.sleep, max_frames=None, summary_only=False):
     out = stdout or sys.stdout
     wcfg = telemetry_config()["watch"]
     if interval is None:
@@ -673,12 +692,50 @@ def run_watch(interval=None, json_mode=False, stdout=None, sleep=time.sleep, max
     sync_mode = wcfg.get("sync_output", "auto")
     sync = is_tty and (sync_mode == "on" or (sync_mode == "auto"))
     frames = 0
+    prev_summary_lines = 0
+    prev_term_size = shutil.get_terminal_size() if is_tty else None
     try:
-        if is_tty and not json_mode:
+        if is_tty and not json_mode and not summary_only:
             out.write("\033[2J\033[H")  # one-time clear to start from a clean screen
         while max_frames is None or frames < max_frames:
             if json_mode:
                 emit_json_snapshot(out)
+            elif summary_only:
+                # design 2026-07-09 §Topic A: first tick (and any tick after a
+                # terminal resize) does a full render; every other tick only
+                # recomputes collect_snapshot() (no hub.py status subprocess)
+                # and repaints SUMMARY+FRAME in place.
+                curr_term_size = shutil.get_terminal_size() if is_tty else None
+                is_resize = is_tty and curr_term_size != prev_term_size
+                if frames == 0 or is_resize:
+                    snap = collect_snapshot()
+                    if is_tty:
+                        buf = io.StringIO()
+                        render_dashboard(buf, watch_mode=True, snapshot=snap)
+                        _blit_frame(out, buf.getvalue(), sync)
+                    else:
+                        render_dashboard(out, watch_mode=True, snapshot=snap)
+                        out.flush()
+                    sbuf = io.StringIO()
+                    render_summary_frame(sbuf, snap)
+                    prev_summary_lines = len(sbuf.getvalue().rstrip("\n").split("\n"))
+                    prev_term_size = curr_term_size
+                else:
+                    snap = collect_snapshot()
+                    sbuf = io.StringIO()
+                    render_summary_frame(sbuf, snap)
+                    text = sbuf.getvalue().rstrip("\n")
+                    if is_tty:
+                        seq = "\033[?2026h" if sync else ""
+                        if prev_summary_lines > 0:
+                            seq += f"\033[{prev_summary_lines}A"
+                        seq += "\033[J" + text + "\n"
+                        seq += "\033[?2026l" if sync else ""
+                        out.write(seq)
+                    else:
+                        out.write(text + "\n")
+                    out.flush()
+                    prev_summary_lines = len(text.split("\n"))
             elif is_tty:
                 buf = io.StringIO()
                 render_dashboard(buf, watch_mode=True)
@@ -848,8 +905,9 @@ def main(argv=None, stdout=None):
     out = stdout or sys.stdout
     if getattr(args, "fresh", False):
         clear_expensive_cache()  # opt-in: force one bypass of the 60s quota cache
-    if args.watch:
-        return run_watch(interval=args.interval, json_mode=args.json_mode, stdout=out)
+    if args.watch or args.watch_summary:
+        return run_watch(interval=args.interval, json_mode=args.json_mode, stdout=out,
+                          summary_only=args.watch_summary)
     if args.json_mode:
         emit_json_snapshot(out)
         return 0

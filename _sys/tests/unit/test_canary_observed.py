@@ -21,6 +21,7 @@ MOCK_ORCHESTRATION = {
             "node_id": "cc",
             "type": "peer",
             "enabled": True,
+            "invoke": "_sys/tools/cc_bin",
             "profiles": {
                 "standard": {
                     "model_id": "claude-haiku",
@@ -38,6 +39,7 @@ MOCK_ORCHESTRATION = {
             "node_id": "ag",
             "type": "peer",
             "enabled": True,
+            "invoke": "_sys/tools/ag_bin",
             "profiles": {
                 "standard": {
                     "runtime_model": "gemini-flash",
@@ -95,8 +97,8 @@ def test_build_observed_capture_empty_on_all_fail(tmp_path):
 
 
 def test_emit_observed_capture(monkeypatch, tmp_path):
-    monkeypatch.setattr(ccr, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-    monkeypatch.setattr(ccr, "real_binary", lambda peer: tmp_path / f"{peer}_bin")
+    monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
+    monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
     
     def mock_invoker(peer, profile, model, prompt):
         if peer == "cc" and profile == "deepthink":

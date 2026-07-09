@@ -1113,3 +1113,134 @@ def test_fp1_profile_copy_regression(tmp_path, monkeypatch):
     assert ctx["used_tokens"] != 9999
     assert ctx["window_tokens"] == 200000
     assert ctx["source_tag"] == "absent"
+
+
+# --------------------------------------------------------------------------
+# D9 - --watch-summary (design 2026-07-09 pretdd-prep, unanimous ag/cx/fable)
+# --------------------------------------------------------------------------
+
+class _FakeTTY(io.StringIO):
+    """A StringIO that reports itself as a TTY, for exercising the
+    cursor-repaint escape-sequence branches of run_watch()."""
+
+    def isatty(self):
+        return True
+
+
+def _fake_snapshot(peer="cc"):
+    return {"schema_version": 1, "peers": [{"raw": {
+        "peer": peer, "gate": None, "quarantined": None, "quarantine_reason": None,
+        "model": "Unknown", "ctx_used": 0, "ctx_window": "Unknown", "ctx_pct": None,
+        "cost": None, "source": "none", "agent_state": None, "plan_tier": None,
+        "quotas": [], "sessions": None, "total_tokens": None, "empty": True,
+        "ctx_known": False, "errors": [],
+    }}]}
+
+
+def test_watch_summary_flag_parses_and_is_mutually_exclusive_with_watch():
+    diag = load_diag()
+
+    args = diag.parse_args(["--watch-summary"])
+    assert args.watch_summary is True
+    assert args.watch is False
+    assert args.interval is None
+
+    args = diag.parse_args(["--watch-summary", "3"])
+    assert args.watch_summary is True
+    assert args.interval == 3
+
+    with pytest.raises(SystemExit):
+        diag.parse_args(["--watch", "--watch-summary"])
+
+
+def test_watch_summary_non_tty_first_tick_full_then_lightweight(monkeypatch):
+    diag = load_diag()
+    monkeypatch.setattr(diag, "collect_snapshot", lambda: _fake_snapshot())
+    run_calls = []
+
+    def fake_run(cmd, **kwargs):
+        run_calls.append(cmd)
+        class Res:
+            stdout = ""
+        return Res()
+
+    monkeypatch.setattr(diag.subprocess, "run", fake_run)
+    out = io.StringIO()
+
+    diag.run_watch(interval=0, stdout=out, max_frames=3, summary_only=True, sleep=lambda s: None)
+
+    # hub.py status subprocess only spawned on the first (full) render.
+    assert len(run_calls) == 1
+    text = out.getvalue()
+    # First frame includes the full dashboard framing; SUMMARY/FRAME appear at
+    # least 3 times total (once per frame).
+    assert text.count(" SUMMARY") >= 3
+
+
+def test_watch_summary_tty_skips_subprocess_after_first_tick(monkeypatch):
+    diag = load_diag()
+    monkeypatch.setattr(diag, "collect_snapshot", lambda: _fake_snapshot())
+    monkeypatch.setattr(diag, "shutil", type("S", (), {
+        "get_terminal_size": staticmethod(lambda: (80, 24)),
+    }))
+    run_calls = []
+
+    def fake_run(cmd, **kwargs):
+        run_calls.append(cmd)
+        class Res:
+            stdout = ""
+        return Res()
+
+    monkeypatch.setattr(diag.subprocess, "run", fake_run)
+    out = _FakeTTY()
+
+    diag.run_watch(interval=0, stdout=out, max_frames=4, summary_only=True, sleep=lambda s: None)
+
+    assert len(run_calls) == 1
+
+
+def test_watch_summary_tty_repaints_in_place_with_dynamic_height(monkeypatch):
+    diag = load_diag()
+    monkeypatch.setattr(diag, "shutil", type("S", (), {
+        "get_terminal_size": staticmethod(lambda: (80, 24)),
+    }))
+    monkeypatch.setattr(diag.subprocess, "run", lambda *a, **kw: type("R", (), {"stdout": ""})())
+
+    snaps = iter([_fake_snapshot(), _fake_snapshot(), _fake_snapshot()])
+    monkeypatch.setattr(diag, "collect_snapshot", lambda: next(snaps))
+    out = _FakeTTY()
+
+    diag.run_watch(interval=0, stdout=out, max_frames=3, summary_only=True, sleep=lambda s: None)
+
+    text = out.getvalue()
+    # Ticks after the first must reposition the cursor up and clear-to-end
+    # before printing the new SUMMARY+FRAME block (no scroll).
+    assert "\033[J" in text
+    assert any(f"\033[{n}A" in text for n in range(1, 200))
+
+
+def test_watch_summary_resize_forces_full_rerender(monkeypatch):
+    diag = load_diag()
+    monkeypatch.setattr(diag, "collect_snapshot", lambda: _fake_snapshot())
+    run_calls = []
+
+    def fake_run(cmd, **kwargs):
+        run_calls.append(cmd)
+        class Res:
+            stdout = ""
+        return Res()
+
+    monkeypatch.setattr(diag.subprocess, "run", fake_run)
+
+    sizes = iter([(80, 24), (80, 24), (120, 40), (120, 40)])
+    monkeypatch.setattr(diag, "shutil", type("S", (), {
+        "get_terminal_size": staticmethod(lambda: next(sizes)),
+    }))
+    out = _FakeTTY()
+
+    diag.run_watch(interval=0, stdout=out, max_frames=3, summary_only=True, sleep=lambda s: None)
+
+    # tick0 (full render, sees size A) + tick1 (sees size B, resize forces
+    # another full render) = 2 subprocess spawns; tick2 (still size B) stays
+    # light and does not spawn hub.py status.
+    assert len(run_calls) == 2

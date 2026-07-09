@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -34,12 +35,6 @@ SYS_DIR = Path(__file__).resolve().parent.parent  # _sys/
 _PORTABLE_ROOT = SYS_DIR.parent
 _AI_DIR = _PORTABLE_ROOT / ".ai"
 
-# The ONLY trusted invocation targets. Never the _sys/cli/*.bat wrappers.
-REAL_BINARIES: dict[str, Path] = {
-    "cc": SYS_DIR / "env" / "nodejs" / "npm-global" / "claude.cmd",
-    "cx": SYS_DIR / "env" / "nodejs" / "npm-global" / "codex.cmd",
-    "ag": SYS_DIR / "tools" / "agy" / "agy.exe",
-}
 _WRAPPER_DIR = (SYS_DIR / "cli").resolve()
 
 VERDICT_MATCH = "MATCH"
@@ -51,12 +46,52 @@ VERDICT_OBSERVED_ONLY = "OBSERVED_ONLY"  # measured but nothing declared => no c
 
 # ── pure logic (unit-tested; no live CLI) ────────────────────────────────────
 
-def real_binary(peer: str) -> Path:
-    """Resolve a peer to its real binary path. Raises on unknown peer."""
-    try:
-        return REAL_BINARIES[peer]
-    except KeyError as exc:
-        raise KeyError(f"unknown peer {peer!r}") from exc
+def _enabled_peer_ids(orch: dict) -> list[str]:
+    """Enabled peer node_ids from orchestration.json's hub_nodes (design
+    2026-07-09 §Topic B - replaces the static REAL_BINARIES dict)."""
+    return [
+        n["node_id"] for n in orch.get("hub_nodes", [])
+        if n.get("type") == "peer" and n.get("enabled") is not False and n.get("node_id")
+    ]
+
+
+def real_binary(peer: str, orch: dict | None = None) -> Path:
+    """Resolve a peer to its real binary path via orchestration.json's
+    hub_nodes (never the _sys/cli/*.bat wrappers). Raises on unknown/disabled
+    peer, a missing invoke field, or a wrapper-script target."""
+    if orch is None:
+        orch_path = SYS_DIR / "ai" / "orchestration.json"
+        orch = json.loads(orch_path.read_text(encoding="utf-8"))
+
+    node = next(
+        (n for n in orch.get("hub_nodes", [])
+         if n.get("type") == "peer" and n.get("node_id") == peer and n.get("enabled") is not False),
+        None,
+    )
+    if node is None:
+        raise KeyError(f"unknown or disabled peer {peer!r}")
+
+    invoke = node.get("invoke")
+    if not invoke:
+        raise ValueError(f"no invoke field for peer {peer!r}")
+
+    if "/" not in invoke and "\\" not in invoke:
+        # Bare command name (no path separators) - fable hardening note
+        # (2026-07-09): degrade gracefully via PATH lookup instead of
+        # assuming it's already a resolvable relative path.
+        resolved = shutil.which(invoke)
+        if not resolved:
+            raise FileNotFoundError(f"bare command {invoke!r} for peer {peer!r} not found on PATH")
+        exec_path = Path(resolved)
+    else:
+        exec_path = Path(invoke)
+        if not exec_path.is_absolute() and exec_path.parts and exec_path.parts[0].casefold() == "_sys":
+            exec_path = (_PORTABLE_ROOT / exec_path).resolve()
+
+    if is_wrapper(exec_path):
+        raise ValueError(f"invoke path {exec_path} for peer {peer!r} is a wrapper script")
+
+    return exec_path
 
 
 def is_wrapper(path: str | Path) -> bool:
@@ -122,6 +157,7 @@ def reconcile_peer(
     peer: str,
     declared_models: list[str],
     observed: dict[str, Any],
+    orch: dict | None = None,
 ) -> dict[str, Any]:
     """Reconcile one peer's declarations against measured `observed`:
     observed = {"version": str|None, "actual_models": list|None, "fingerprint": dict}.
@@ -151,7 +187,7 @@ def reconcile_peer(
         p["severity"] = _severity(p["verdict"])
     return {
         "peer": peer,
-        "binary": str(real_binary(peer)),
+        "binary": str(real_binary(peer, orch)),
         "fingerprint": observed.get("fingerprint"),
         "probes": probes,
         "drift": [p for p in probes if p["verdict"] in (VERDICT_DRIFT, VERDICT_CONTRADICTED)],
@@ -180,9 +216,12 @@ def build_report(peer_reports: list[dict], observed_at: str | None = None) -> di
 
 # ── live probes (impure; safe, bounded, honest-absent on any failure) ─────────
 
-def probe_version(peer: str, timeout: int = 20) -> str | None:
+def probe_version(peer: str, orch: dict | None = None, timeout: int = 20) -> str | None:
     """Run the REAL binary `--version`; return first semver-ish token or None."""
-    binary = real_binary(peer)
+    try:
+        binary = real_binary(peer, orch)
+    except (KeyError, ValueError, FileNotFoundError):
+        return None
     if is_wrapper(binary) or not binary.exists():
         return None
     try:
@@ -237,15 +276,15 @@ def run(orch: dict | None = None, live: bool = True) -> dict[str, Any]:
         orch_path = SYS_DIR / "ai" / "orchestration.json"
         orch = json.loads(orch_path.read_text(encoding="utf-8"))
     reports = []
-    for peer in REAL_BINARIES:
+    for peer in _enabled_peer_ids(orch):
         declared_models, declared_version = _declared(orch, peer)
         observed = {
-            "fingerprint": fingerprint(real_binary(peer)),
+            "fingerprint": fingerprint(real_binary(peer, orch)),
             "declared_version": declared_version,
-            "version": probe_version(peer) if live else None,
+            "version": probe_version(peer, orch) if live else None,
             "actual_models": load_observed_models(peer),
         }
-        reports.append(reconcile_peer(peer, declared_models, observed))
+        reports.append(reconcile_peer(peer, declared_models, observed, orch))
     return build_report(reports)
 
 
@@ -285,8 +324,8 @@ def auto_refresh_observed(
     results = {}
     needs_save = False
 
-    for peer in REAL_BINARIES:
-        fp_info = fingerprint(real_binary(peer))
+    for peer in _enabled_peer_ids(orch):
+        fp_info = fingerprint(real_binary(peer, orch))
         current_fp = fp_info.get("sha256")
         
         peer_data = observed_data.get(peer)

@@ -37,6 +37,122 @@ class TestRealBinaryResolution:
             ccr.real_binary("nope")
 
 
+class TestRealBinaryResolver:
+    """T15 (design 2026-07-09 §Topic B): real_binary() resolves from
+    orchestration.json's hub_nodes instead of the removed REAL_BINARIES dict."""
+
+    _ORCH = {
+        "hub_nodes": [
+            {"type": "peer", "node_id": "test_peer", "invoke": "_sys/tools/my_bin", "enabled": True},
+            {"type": "peer", "node_id": "disabled_peer", "invoke": "_sys/tools/other", "enabled": False},
+            {"type": "peer", "node_id": "bare_peer", "invoke": "python", "enabled": True},
+            {"type": "peer", "node_id": "wrap", "invoke": "_sys/cli/hub.bat", "enabled": True},
+            {"type": "peer", "node_id": "no_invoke", "enabled": True},
+            {"type": "profile", "node_id": "test_peer.deepthink", "invoke": "ignored", "enabled": True},
+        ]
+    }
+
+    def test_enabled_peer_resolves_sys_relative_path(self):
+        path = ccr.real_binary("test_peer", self._ORCH)
+        assert path.is_absolute()
+        assert "_sys" in [p.lower() for p in path.parts]
+
+    def test_disabled_peer_raises_key_error(self):
+        import pytest
+        with pytest.raises(KeyError, match="unknown or disabled peer"):
+            ccr.real_binary("disabled_peer", self._ORCH)
+
+    def test_unknown_peer_id_raises_key_error(self):
+        import pytest
+        with pytest.raises(KeyError, match="unknown or disabled peer"):
+            ccr.real_binary("totally_not_a_peer", self._ORCH)
+
+    def test_non_peer_type_node_is_not_matched(self):
+        import pytest
+        # "test_peer.deepthink" is type=='profile', not 'peer' - must not resolve.
+        with pytest.raises(KeyError):
+            ccr.real_binary("test_peer.deepthink", self._ORCH)
+
+    def test_bare_command_degrades_via_path_lookup(self):
+        path = ccr.real_binary("bare_peer", self._ORCH)
+        assert path.name.lower() in ("python", "python.exe")
+
+    def test_bare_command_not_on_path_raises_file_not_found(self):
+        import pytest
+        orch = {"hub_nodes": [
+            {"type": "peer", "node_id": "p", "invoke": "definitely-not-a-real-command-xyz", "enabled": True},
+        ]}
+        with pytest.raises(FileNotFoundError):
+            ccr.real_binary("p", orch)
+
+    def test_wrapper_script_target_is_rejected(self):
+        import pytest
+        with pytest.raises(ValueError, match="wrapper script"):
+            ccr.real_binary("wrap", self._ORCH)
+
+    def test_missing_invoke_field_raises_value_error(self):
+        import pytest
+        with pytest.raises(ValueError, match="no invoke field"):
+            ccr.real_binary("no_invoke", self._ORCH)
+
+    def test_defaults_to_loading_real_orchestration_when_orch_omitted(self):
+        # No orch passed -> loads the real orchestration.json; cc/ag/cx must
+        # all resolve without raising (already covered by
+        # test_real_binary_is_not_wrapper, this just documents the contract).
+        for peer in ("cc", "ag", "cx"):
+            assert ccr.real_binary(peer).exists() or True  # existence not guaranteed in CI, resolution must not raise
+
+
+class TestApplySecuritySemantics:
+    """T15 (design 2026-07-09 §Topic B): peer_console.py's policy-to-CLI layer."""
+
+    @staticmethod
+    def _load_peer_console():
+        import importlib.util
+        path = SYS_DIR / "cli" / "peer_console.py"
+        spec = importlib.util.spec_from_file_location("peer_console_under_test", path)
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        return module
+
+    def test_no_sandbox_semantics_is_a_no_op(self):
+        pc = self._load_peer_console()
+        cmd = ["cmd", "arg"]
+        assert pc.apply_security_semantics(cmd, {}) == cmd
+        assert pc.apply_security_semantics(cmd, {"sandbox_semantics": None}) == cmd
+
+    def test_skip_permissions_appends_required_effective_args(self):
+        pc = self._load_peer_console()
+        cmd = ["cmd", "arg"]
+        contract = {
+            "sandbox_semantics": "skip-permissions",
+            "required_effective_args": ["--dangerously-skip-permissions"],
+        }
+        assert pc.apply_security_semantics(cmd, contract) == [
+            "cmd", "arg", "--dangerously-skip-permissions",
+        ]
+
+    def test_skip_permissions_with_empty_required_args_is_still_a_no_op(self):
+        pc = self._load_peer_console()
+        cmd = ["cmd", "arg"]
+        contract = {"sandbox_semantics": "skip-permissions", "required_effective_args": []}
+        assert pc.apply_security_semantics(cmd, contract) == cmd
+
+    def test_workspace_write_appends_sandbox_flag(self):
+        pc = self._load_peer_console()
+        cmd = ["cmd", "arg"]
+        contract = {"sandbox_semantics": "workspace-write"}
+        assert pc.apply_security_semantics(cmd, contract) == ["cmd", "arg", "-s", "workspace-write"]
+
+    def test_workspace_write_skipped_if_user_already_supplied_sandbox_flag(self):
+        pc = self._load_peer_console()
+        contract = {"sandbox_semantics": "workspace-write"}
+        assert pc.apply_security_semantics(["cmd", "-s", "read-only"], contract) == ["cmd", "-s", "read-only"]
+        assert pc.apply_security_semantics(["cmd", "--sandbox", "x"], contract) == ["cmd", "--sandbox", "x"]
+        assert pc.apply_security_semantics(["cmd", "--ask-for-approval"], contract) == ["cmd", "--ask-for-approval"]
+
+
 class TestClassify:
     def test_model_match(self):
         assert ccr.classify_model("Gemini 3.1 Pro (High)", AGY_REAL_MODELS) == "MATCH"
@@ -116,9 +232,11 @@ class TestRunNoLive:
         # observed models, every model probe must be ABSENT, never a fabricated MATCH.
         monkeypatch.setattr(ccr, "load_observed_models", lambda peer: None)
         orch = {"hub_nodes": [
-            {"node_id": "cc", "profiles": {"deepthink": {"model_id": "claude-opus-4-8"}}},
-            {"node_id": "cx", "profiles": {}},
-            {"node_id": "ag", "profiles": {"deepthink": {"runtime_model": "Gemini 3.1 Pro (High)"}}},
+            {"node_id": "cc", "type": "peer", "enabled": True, "invoke": "/fake/cc-bin",
+             "profiles": {"deepthink": {"model_id": "claude-opus-4-8"}}},
+            {"node_id": "cx", "type": "peer", "enabled": True, "invoke": "/fake/cx-bin", "profiles": {}},
+            {"node_id": "ag", "type": "peer", "enabled": True, "invoke": "/fake/ag-bin",
+             "profiles": {"deepthink": {"runtime_model": "Gemini 3.1 Pro (High)"}}},
         ]}
         report = ccr.run(orch=orch, live=False)
         assert report["kind"] == "cli_reality_drift_report"
@@ -135,13 +253,15 @@ class TestAutoRefresh:
     def test_auto_refresh_logic(self, monkeypatch, tmp_path):
         from datetime import datetime, timezone
 
-        orch = {"canary_config": {"budget_cap": 10, "budget_window_hours": 5.0}}
+        orch = {
+            "canary_config": {"budget_cap": 10, "budget_window_hours": 5.0},
+            "hub_nodes": [
+                {"node_id": "ag", "type": "peer", "enabled": True, "invoke": str(tmp_path / "ag.exe")},
+            ],
+        }
         ai_root = tmp_path / ".ai"
         ai_root.mkdir()
         observed_file = ai_root / "cli-reality-observed.json"
-
-        # Mock real binary paths
-        monkeypatch.setattr(ccr, "REAL_BINARIES", {"ag": tmp_path / "ag.exe"})
 
         # Mock fingerprint
         def mock_fingerprint(path):

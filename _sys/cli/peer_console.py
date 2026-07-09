@@ -79,6 +79,32 @@ def _is_help_or_version(args: list[str]) -> bool:
     return any(arg in {"-h", "--help", "-v", "--version", "-V"} for arg in args)
 
 
+def apply_security_semantics(cmd: list[str], security_contract: dict) -> list[str]:
+    """Policy-to-CLI translation layer (design 2026-07-09 §Topic B): drives a
+    peer's sandbox flags from its security_contract.sandbox_semantics
+    declaration, so a peer whose required_effective_args is legitimately
+    empty (e.g. cx, whose sandbox is declared via semantics rather than a
+    literal arg list) still gets the right runtime flag applied."""
+    semantics = security_contract.get("sandbox_semantics")
+    if not semantics:
+        return list(cmd)
+
+    out = list(cmd)
+    if semantics == "skip-permissions":
+        eff_args = security_contract.get("required_effective_args") or []
+        out = _append_missing(out, list(eff_args))
+    elif semantics == "workspace-write":
+        if not _has_flag(out, {
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--sandbox",
+            "-s",
+            "--ask-for-approval",
+            "-a",
+        }):
+            out = _append_missing(out, ["-s", "workspace-write"])
+    return out
+
+
 _CLAUDE_COMMANDS = {
     "agents", "auth", "auto-mode", "doctor", "install", "mcp", "plugin",
     "plugins", "project", "setup-token", "ultrareview", "update", "upgrade",

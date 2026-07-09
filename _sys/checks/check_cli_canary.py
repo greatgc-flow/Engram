@@ -246,7 +246,7 @@ def canary_probe(
     model_id = profile_node.get("model_id") or profile_node.get("runtime_model") or ""
 
     # 3. Retrieve fingerprint and build cache key
-    fp_info = fingerprint(real_binary(peer))
+    fp_info = fingerprint(real_binary(peer, orch))
     binary_fp = fp_info.get("sha256") or ""
     invoke_args = profile_node.get("invoke_args") or []
     # Identity-qualify the cache key so distinct (peer, profile) never collide even
