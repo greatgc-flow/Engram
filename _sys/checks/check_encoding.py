@@ -21,6 +21,7 @@ Usage:
 Exit codes:
     0 — clean
     1 — at least one violation
+    2 — could not run (e.g. git failed; distinct from "zero files found")
 """
 from __future__ import annotations
 
@@ -84,20 +85,34 @@ def _git(*args: str) -> subprocess.CompletedProcess:
     )
 
 
-def _staged_paths() -> list[str]:
-    cp = _git("diff", "--cached", "--name-only", "--diff-filter=ACM")
+class GitCommandError(RuntimeError):
+    """Git failed before the encoding guard could determine its input files."""
+
+
+def _git_paths(*args: str) -> list[str]:
+    command = f"git {' '.join(args)}"
+    try:
+        cp = _git(*args)
+    except OSError as exc:
+        raise GitCommandError(f"{command} could not run: {exc}") from exc
+
     if cp.returncode != 0:
-        return []
+        stderr = (cp.stderr or b"").decode("utf-8", "replace").strip()
+        detail = f": {stderr}" if stderr else ""
+        raise GitCommandError(
+            f"{command} failed with exit code {cp.returncode}{detail}"
+        )
+
     out = cp.stdout.decode("utf-8", "replace")
     return [line.strip() for line in out.splitlines() if line.strip()]
+
+
+def _staged_paths() -> list[str]:
+    return _git_paths("diff", "--cached", "--name-only", "--diff-filter=ACM")
 
 
 def _worktree_paths() -> list[str]:
-    cp = _git("ls-files")
-    if cp.returncode != 0:
-        return []
-    out = cp.stdout.decode("utf-8", "replace")
-    return [line.strip() for line in out.splitlines() if line.strip()]
+    return _git_paths("ls-files")
 
 
 def _is_governed(path: str, governed: list[str], exempt: list[str]) -> bool:
@@ -190,7 +205,20 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     args = ap.parse_args(argv)
 
-    violations = run(args.all)
+    try:
+        violations = run(args.all)
+    except GitCommandError as exc:
+        error = str(exc)
+        if args.json:
+            print(json.dumps({
+                "check": "CHK-ENC",
+                "ok": False,
+                "error": error,
+                "violations": [],
+            }, ensure_ascii=False, indent=2))
+        else:
+            print(f"[CHK-ENC] ERROR — {error}", file=sys.stderr)
+        return 2
 
     if args.json:
         print(json.dumps({

@@ -5,7 +5,12 @@ literal '?') via git-HEAD regression, catches lossy U+FFFD re-saves, and does
 NOT false-positive on a legitimately added question mark.
 """
 import importlib.util
+import json
+import subprocess
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]  # _sys/
 GUARD = ROOT / "checks" / "check_encoding.py"
@@ -63,3 +68,20 @@ def test_invalid_utf8_flagged():
     violations = m._check_one("f.md", new, base_bytes=None)
     assert len(violations) == 1
     assert "not valid UTF-8" in violations[0]
+
+
+@pytest.mark.parametrize("argv", [[], ["--all"]])
+def test_git_failure_is_explicit_non_clean_result(argv, capsys):
+    m = _mod()
+    failed = subprocess.CompletedProcess(
+        args=["git"], returncode=128, stdout=b"",
+        stderr=b"fatal: not a git repository",
+    )
+    with patch.object(m, "_git", return_value=failed):
+        result = m.main([*argv, "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert result == 2
+    assert payload["ok"] is False
+    assert payload["violations"] == []
+    assert "fatal: not a git repository" in payload["error"]

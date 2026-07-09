@@ -129,10 +129,17 @@ class SelfCare:
     def scan(self) -> None:
         scan_script = _CHECKS_DIR / "saturation_scan.py"
         result = subprocess.run(
-            [sys.executable, str(scan_script), "--quiet"],
+            [sys.executable, str(scan_script)],
             capture_output=True, text=True
         )
         self.state["scan_findings"] = result.stdout.strip()
+        if result.returncode != 0:
+            detail = result.stderr.strip() or result.stdout.strip()
+            suffix = f": {detail}" if detail else ""
+            self.state["errors"].append(
+                f"scan: saturation_scan.py failed with exit code "
+                f"{result.returncode}{suffix}"
+            )
         self.state["steps_completed"].append("scan")
 
     # ── Step 5: Propose ───────────────────────────────────────────────────────

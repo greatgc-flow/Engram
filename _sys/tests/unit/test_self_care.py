@@ -112,6 +112,25 @@ class TestSelfCare:
             cmd = " ".join(args[0])
             assert "saturation_scan.py" in cmd
 
+    def test_scan_failure_is_recorded(self, mock_env):
+        """scan() records saturation_scan.py subprocess failure into state['errors']."""
+        from self_care import SelfCare
+        failed = MagicMock(
+            returncode=2, stdout="",
+            stderr="saturation_scan.py: error: unrecognized arguments",
+        )
+        with patch("subprocess.run", return_value=failed) as mock_run:
+            sc = SelfCare(sys_dir=mock_env["sys"])
+            sc.scan()
+
+        assert "--quiet" not in mock_run.call_args[0][0]
+        assert sc.state["scan_findings"] == ""
+        assert sc.state["steps_completed"] == ["scan"]
+        assert sc.state["errors"] == [
+            "scan: saturation_scan.py failed with exit code 2: "
+            "saturation_scan.py: error: unrecognized arguments"
+        ]
+
     def test_propose_on_saturation_findings(self, mock_env):
         """Step 5: Propose calls hub.py proposal-add if scan findings exist."""
         from self_care import SelfCare

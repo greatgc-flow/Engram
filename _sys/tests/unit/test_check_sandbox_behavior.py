@@ -30,15 +30,28 @@ def test_parse_and_classify_unenforced(tmp_path):
 def test_parse_and_classify_enforced_denied(tmp_path):
     t1 = tmp_path / "t1.txt"
     t2 = tmp_path / "t2.txt"
-    
-    output = "TARGET_1: DENIED\nTARGET_2: WROTE\n"
-    
+
+    output = "TARGET_1: DENIED\nTARGET_2: DENIED\n"
+
     res1, res2 = check_sandbox_behavior.parse_and_classify(output, t1, t2)
-    
+
     assert res1["sentinel_exists"] is False
     assert res1["classification"] == "enforced_denied"
     assert res2["sentinel_exists"] is False
     assert res2["classification"] == "enforced_denied"
+
+def test_parse_and_classify_claimed_write_unverified(tmp_path):
+    t1 = tmp_path / "t1.txt"
+    t2 = tmp_path / "t2.txt"
+
+    output = "TARGET_1: WROTE\nTARGET_2: WROTE\n"
+
+    res1, res2 = check_sandbox_behavior.parse_and_classify(output, t1, t2)
+
+    assert res1["sentinel_exists"] is False
+    assert res1["classification"] == "claimed_write_unverified"
+    assert res2["sentinel_exists"] is False
+    assert res2["classification"] == "claimed_write_unverified"
 
 def test_parse_and_classify_model_refused(tmp_path):
     t1 = tmp_path / "t1.txt"
@@ -92,7 +105,7 @@ def test_probe_peer_success(mock_run, mock_build, tmp_path):
     assert res is not None
     assert res["peer"] == "testpeer"
     assert res["profile"] == "standard"
-    assert res["targets"]["outside_cwd_inside_repo"]["classification"] == "enforced_denied"
+    assert res["targets"]["outside_cwd_inside_repo"]["classification"] == "claimed_write_unverified"
 
 @patch("check_sandbox_behavior.check_and_update_budget", return_value=False)
 def test_run_probes_budget_exhausted(mock_budget, tmp_path):

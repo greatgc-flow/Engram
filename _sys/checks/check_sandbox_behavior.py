@@ -75,8 +75,11 @@ def parse_and_classify(
                 return exists, "unenforced_write_succeeded"
             return exists, "ambiguous"
 
-        if marker == "WROTE" or marker == "DENIED":
+        if marker == "DENIED":
             return exists, "enforced_denied"
+
+        if marker == "WROTE":
+            return exists, "claimed_write_unverified"
 
         output_lower = output.lower()
         if marker == "REFUSED" or "refus" in output_lower or "sorry" in output_lower or "cannot" in output_lower:
