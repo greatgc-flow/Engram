@@ -275,17 +275,17 @@
     {
       "id": "T9",
       "title": "_sys/core config-drift + silent-except bugs (hardcoding audit)",
-      "status": "proposed",
+      "status": "active",
       "priority": "medium",
       "category": "ops",
-      "owner": "unassigned",
+      "owner": "ag",
       "blocker": null,
       "evidence_commit": [],
       "supersedes": [],
       "source_refs": ["hardcoding-full-audit-2026-07-09.md"],
-      "next_action": "READY FOR TDD (found by ag, all four independently re-verified by cc via direct code read during the 2026-07-09 hardcoding audit): (1) diag.py:101,103,212,213,216 imports config-sourced QUOTA_WARN_FRAC/QUOTA_CRIT_FRAC (line 25) but compares against hardcoded literals 0.90/0.75 instead - use the imported constants. (2) hub.py:3806 arbiter subprocess timeout=300 is a bare literal with no config lookup - source from orchestration.json or final_arbiter config. (3) hub.py:2871 ask_history.jsonl append wrapped in bare `except Exception: pass`, silently swallowing real IO errors. (4) config.py:143,154 runtimes.json/env.json parse failures also bare except-pass, silently becoming {}. For (3)/(4), consider routing the swallowed error through the existing action_report_error/operational-error-memory mechanism (T4-adjacent) instead of leaving it fully silent.",
+      "next_action": "DONE (ag fix, cc-applied+verified after checking every referenced identifier - _final_arbiter_config, action_report_error, ConfigManager, _append_ask_history all confirmed real before applying): (1) diag.py now uses imported QUOTA_WARN_FRAC/QUOTA_CRIT_FRAC instead of hardcoded 0.90/0.75. (2) hub.py's arbiter subprocess timeout now reads routing-config.json's new final_arbiter.invocation_timeout_sec (default 300, unchanged behavior). (3) hub.py's ask_history.jsonl append failure now routed through action_report_error (double-guarded so a second failure still can't crash the caller). (4) config.py's get_runtimes_config/get_env_config failures now print to stderr instead of silently returning {}. Full suite green (693 passed) after fixing one test bug in cc's own review (test_config_loader_error_handling needed the files to actually exist so .exists() gate doesn't short-circuit before the mocked open() ever runs).",
       "risk": null,
-      "last_verified_at": "2026-07-09T15:00:00+09:00"
+      "last_verified_at": "2026-07-09T15:35:00+09:00"
     },
     {
       "id": "T10",
@@ -350,12 +350,12 @@
     {
       "id": "T14",
       "title": "3 HIGH-severity bugs fixed (2026-07-09 hardcoding audit)",
-      "status": "active",
+      "status": "done",
       "priority": "high",
       "category": "ops",
       "owner": "ag/cx",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": ["ea39b78"],
       "supersedes": [],
       "source_refs": ["hardcoding-full-audit-2026-07-09.md"],
       "next_action": "DONE, all 3 independently cc-verified before AND after fix. (1) check_sandbox_behavior.py's _classify() conflated marker=='WROTE'+absent-sentinel with marker=='DENIED'+absent-sentinel into the same enforced_denied classification (ag fix): split into a new claimed_write_unverified classification for the WROTE+absent case, enforced_denied now only for honest DENIED+absent reports. Did not corrupt B7's already-published findings (checked, none hit that branch). (2) check_encoding.py's _staged_paths()/_worktree_paths() returned [] on any git failure, making the encoding guard fail open (cx fix): added GitCommandError + _git_paths() helper, main() now catches it and returns exit 2 with an explicit error instead of a silent clean pass. (3) self_care.py's scan() called saturation_scan.py --quiet, a flag that does not exist, so the step has been a silent no-op on every run (cx fix): removed --quiet, now checks returncode and records failures into state['errors'] matching the existing docs_mece-step pattern. All 3 fixes + new/updated tests applied by cc after independent verification; full suite green (690 passed).",

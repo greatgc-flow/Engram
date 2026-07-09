@@ -2868,8 +2868,11 @@ def _append_ask_history(ai_root: Path | None, peer_id: str, query_file_path: str
         log_path = ai_root / "ask_history.jsonl"
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
+    except Exception as exc:
+        try:
+            action_report_error(ai_root, peer_id, "ask_history_append_failed", str(exc), "warn")
+        except Exception:
+            pass
 
 
 # ─────────────────────────────────────────────────────────────
@@ -3800,10 +3803,11 @@ def _real_arbiter_invoker(ai_root):
             ipc_dir.mkdir(parents=True, exist_ok=True)
             qf = ipc_dir / f"arbiter-{uuid.uuid4().hex[:8]}.txt"
             qf.write_text(prompt, encoding="utf-8")
+            timeout_sec = _final_arbiter_config().get("invocation_timeout_sec", 300)
             proc = subprocess.run(
                 [sys.executable, str(Path(__file__).resolve()), "ask",
                  "--to", str(arbiter_id), "--query-file", str(qf)],
-                capture_output=True, text=True, timeout=300,
+                capture_output=True, text=True, timeout=timeout_sec,
             )
             out = proc.stdout or ""
             lines = [ln for ln in out.splitlines()

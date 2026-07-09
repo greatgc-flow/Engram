@@ -98,9 +98,9 @@ def _pad(s, width, align="left"):
 
 def _sev_color(used_frac):
     """Map a USED fraction (0..1) to a severity color name."""
-    if used_frac >= 0.90:
+    if used_frac >= QUOTA_CRIT_FRAC:
         return "red"
-    if used_frac >= 0.75:
+    if used_frac >= QUOTA_WARN_FRAC:
         return "yellow"
     return "green"
 
@@ -209,11 +209,11 @@ def render_summary(infos):
             uf = q.get("used_frac")
             if uf is None:
                 continue
-            glyph = "🚫" if uf >= 1.0 else ("🔴" if uf >= 0.90
-                    else ("🟡" if uf >= 0.75 else "🟢"))
+            glyph = "🚫" if uf >= 1.0 else ("🔴" if uf >= QUOTA_CRIT_FRAC
+                    else ("🟡" if uf >= QUOTA_WARN_FRAC else "🟢"))
             pct = _pad(f"{uf * 100:.0f}%", 4, align="right")
             pace = _pad(_fmt_pacing(q.get("pacing")), 10)
-            warn = "  " + _c("WARN", "red", "bold") if uf >= 0.90 else ""
+            warn = "  " + _c("WARN", "red", "bold") if uf >= QUOTA_CRIT_FRAC else ""
             print(f"  ↳ {_pad(q.get('label', ''), 6)} {_pad(glyph, 2)} {pct} {pace} resets {q.get('reset') or '?'}{warn}")
 
 

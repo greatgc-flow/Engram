@@ -140,7 +140,8 @@ class ConfigManager:
             try:
                 with open(rt_path, "r", encoding="utf-8") as f:
                     return json.load(f).get("runtimes", {})
-            except Exception: pass
+            except Exception as exc:
+                print(f"[config] get_runtimes_config error reading {rt_path}: {exc}", file=sys.stderr)
         return {}
 
     @classmethod
@@ -151,7 +152,8 @@ class ConfigManager:
             try:
                 with open(env_path, "r", encoding="utf-8") as f:
                     return json.load(f)
-            except Exception: pass
+            except Exception as exc:
+                print(f"[config] get_env_config error reading {env_path}: {exc}", file=sys.stderr)
         return {}
 
     @classmethod

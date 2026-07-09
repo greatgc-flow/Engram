@@ -36,9 +36,9 @@ def test_absent_is_literal_never_fabricated():
 
 def test_severity_thresholds():
     d = _diag()
-    assert GREEN in d.format_quota_bucket({"used_frac": 0.50, "pacing_ratio": 1.0})
-    assert YELLOW in d.format_quota_bucket({"used_frac": 0.80, "pacing_ratio": 1.0})
-    assert RED in d.format_quota_bucket({"used_frac": 0.95, "pacing_ratio": 1.0})
+    assert GREEN in d.format_quota_bucket({"used_frac": d.QUOTA_WARN_FRAC - 0.05, "pacing_ratio": 1.0})
+    assert YELLOW in d.format_quota_bucket({"used_frac": d.QUOTA_WARN_FRAC + 0.01, "pacing_ratio": 1.0})
+    assert RED in d.format_quota_bucket({"used_frac": d.QUOTA_CRIT_FRAC + 0.01, "pacing_ratio": 1.0})
 
 
 def test_real_binary_rejects_wrapper_and_unknown():
