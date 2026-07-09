@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-09T17:10:00+09:00",
+  "updated_at": "2026-07-09T23:50:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -258,6 +258,21 @@
       "last_verified_at": "2026-07-09T06:40:00+09:00"
     },
     {
+      "id": "D9",
+      "title": "diag.py --watch-summary: SUMMARY+FRAME-only periodic no-scroll refresh",
+      "status": "proposed",
+      "priority": "medium",
+      "category": "diag",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": ["pretdd-prep-2026-07-09.md"],
+      "next_action": "READY FOR TDD (2026-07-09 four-round unanimous discussion, ag+cx+cc.fable, full spec at pretdd-prep-2026-07-09.md §Topic A): new --watch-summary [SECONDS] flag renders the full dashboard once, then on each subsequent tick calls ONLY collect_snapshot() fresh (no subprocess) and repaints ONLY SUMMARY+FRAME via a new render_summary_frame(out, snapshot) helper - explicitly does not re-run the hub.py status subprocess or re-render PROFILES/PEER DETAIL/etc. on every tick. In-place repaint: track previous tick's printed SUMMARY+FRAME line count, cursor-up that many lines + clear-to-end + print new block + store new count (handles height changing tick-to-tick); force full re-render on terminal resize. Rejected alternative (ag's first draft): recompute the entire dashboard every tick including the hub.py status subprocess spawn, believing collect_snapshot()'s cache absorbs it - verified FALSE: collect_snapshot(use_cache=False) is the deliberate CLI-renderer default specifically so --watch frames never go stale (snapshot.py:1536 docstring); the subprocess spawn is real non-trivial cost that would run every tick under the rejected design. T9's quota-threshold fixes are exercised by render_summary() for free; T14's arbiter-annotation (in render_card(), not render_summary()) needs its OWN dedicated test since summary-only mode won't exercise it.",
+      "risk": null,
+      "last_verified_at": "2026-07-09T23:50:00+09:00"
+    },
+    {
       "id": "T8",
       "title": "cc/ag lack real OS-level sandbox enforcement (no concrete plan yet)",
       "status": "proposed",
@@ -372,10 +387,10 @@
       "blocker": null,
       "evidence_commit": [],
       "supersedes": [],
-      "source_refs": ["hardcoding-full-audit-2026-07-09.md"],
-      "next_action": "Deferred out of T10 by cx (2026-07-09) as needing a coordinated follow-up rather than a rushed change: (2) check_cli_reality.py:38's REAL_BINARIES duplicates peer/path config already declared in orchestration.json's per-node 'invoke' field - removing it touches run(), auto_refresh_observed(), check_cli_canary.py's import of real_binary(), and any tests that monkeypatch the current resolver; landing only a new resolver would leave auto_refresh_observed() referencing deleted state. (4) peer_console.py:113,134,147's provider branches duplicate orchestration's required_effective_args, but cx notes cx's own security_contract has required_effective_args intentionally EMPTY while sandbox_semantics=workspace-write - naively converting the semantic declaration into console argv would silently drop the '-s workspace-write' flag; needs a tested policy-to-CLI translation layer, not a direct list substitution.",
+      "source_refs": ["hardcoding-full-audit-2026-07-09.md", "pretdd-prep-2026-07-09.md"],
+      "next_action": "READY FOR TDD (2026-07-09 four-round unanimous discussion, ag+cx+cc.fable, full spec at pretdd-prep-2026-07-09.md §Topic B): new real_binary(peer, orch=None) filters hub_nodes for type=='peer' + enabled is not False, reads node['invoke'] directly (already a resolvable path, not a dict-of-dicts under a nonexistent 'peers' key - ag's first draft hallucinated that schema, corrected), resolves _sys-relative paths + rejects wrappers via is_wrapper() reusing check_sandbox_behavior.py's pattern. fable hardening note: node 'ca' has a bare-name invoke ('claude') but is disabled, so add a shutil.which fallback/skip-with-warning for a future enabled bare-name node, non-blocking. peer_console.py: new policy-to-CLI layer reads the peer's real security_contract.sandbox_semantics field ('skip-permissions'/'workspace-write' - NOT a fabricated 'permission_mode', ag's first draft invented that field name too) - 'skip-permissions' appends the peer's own required_effective_args, 'workspace-write' appends '-s workspace-write' unless the user already supplied sandbox/approval flags. Migration touches: check_cli_reality.py's run()/auto_refresh_observed(), check_cli_canary.py's import, and any test monkeypatching REAL_BINARIES.",
       "risk": null,
-      "last_verified_at": "2026-07-09T16:00:00+09:00"
+      "last_verified_at": "2026-07-09T23:50:00+09:00"
     },
     {
       "id": "T16",
@@ -387,10 +402,10 @@
       "blocker": null,
       "evidence_commit": [],
       "supersedes": [],
-      "source_refs": ["hardcoding-full-audit-2026-07-09.md"],
-      "next_action": "Deferred out of T11 by cx (2026-07-09) as needing coordinated changes rather than a rushed batch: (7) check_cli_reality.py:302's unchanged-hash refresh skip never rechecks server-side model drift, only renews captured_at - cx's view is a full re-probe likely IS still needed even when the binary hash is unchanged, but this must land together with (8)'s bounded multi-profile budget behavior, not standalone. (8) check_cli_reality.py:321 / check_cli_canary.py:396's all_profiles=True currently implies a budget bypass for auto-refresh, explicit peer selection, and CLI --all-profiles alike - needs one coordinated signature change (e.g. a separate bypass_budget parameter set only by real CLI/operator calls) plus a call-site audit, not a piecemeal fix. (11) check_health.py:60's hardcoded model_used=claude-sonnet-4-6 needs the transcript-derived model resolution to be validated against the same schema landing in (12), to avoid duplicating parsing/validation code. (12) check_agents.py/check_risk.py/check_health.py/check_versions.py accepting malformed AI-backed output as success - cx's design: a shared parse_ai_json()/validator living in _common.py (already imported by all four), with each checker keeping its own distinct required-keys schema and tested failure/cleanup behavior. All four items share the theme of 'a check silently degrading to success/no-op instead of a distinguishable failure' - same class as T14's 3 HIGH fixes, just lower urgency/more coupled to land safely.",
+      "source_refs": ["hardcoding-full-audit-2026-07-09.md", "pretdd-prep-2026-07-09.md"],
+      "next_action": "READY FOR TDD (2026-07-09 four-round unanimous discussion, ag+cx+cc.fable, full spec at pretdd-prep-2026-07-09.md §Topic C): scope narrower than originally scoped - check_cli_canary.py already has a working bypass_budget parameter on run_canary() (pre-existing, not new). Actual fix: (1) check_cli_reality.py's auto_refresh_observed() hash-unchanged-but-expired case must do a real budgeted re-probe instead of just bumping captured_at. (2) check_cli_canary.py:402 (NOT check_cli_reality.py - cc.fable caught this location error in an earlier draft of this spec, verified by grep) change 'bypass_budget = all_profiles or is_explicit' to 'bypass_budget = is_explicit'. DESIGN FORK RESOLVED (unanimous vote, ag+cx both independently picked the same option): this also caps the genuine CLI --all-profiles operator flag, not just internal auto-callers (auto_refresh_observed, emit_observed_capture) - CHOSE to accept that (DIR-004 'a budget is a budget'), NOT to thread a separate operator_invoked flag; is_explicit (per-profile targeting) remains the operator's escape hatch, and new skipped_budget status must be visibly surfaced, never silent. New structured statuses: refreshed/skipped_budget/interval_not_expired/probe_failed. Shared validate_ai_json()/ContractViolationError in _common.py with REAL per-file required-key schemas (verified against actual current prompt/schema strings, ag's first-draft guesses were all wrong): check_health.py={version,generated_at,session_context,executive_summary,technical_state,strategy_for_next_session}; check_agents.py={scan_ts,overlaps,gaps,inconsistencies,ok_count}; check_risk.py={agent,timestamp,task_summary,risks,overall_risk,proceed}; check_versions.py={ripgrep,fd,jq,bat,delta,fzf,oh-my-posh,nodejs-lts}.",
       "risk": null,
-      "last_verified_at": "2026-07-09T16:00:00+09:00"
+      "last_verified_at": "2026-07-09T23:50:00+09:00"
     },
     {
       "id": "P1",
