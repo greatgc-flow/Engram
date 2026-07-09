@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-09T23:50:00+09:00",
+  "updated_at": "2026-07-10T00:35:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -260,15 +260,15 @@
     {
       "id": "D9",
       "title": "diag.py --watch-summary: SUMMARY+FRAME-only periodic no-scroll refresh",
-      "status": "proposed",
+      "status": "done",
       "priority": "medium",
       "category": "diag",
-      "owner": "unassigned",
+      "owner": "ag",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": ["e446c55"],
       "supersedes": [],
       "source_refs": ["pretdd-prep-2026-07-09.md"],
-      "next_action": "READY FOR TDD (2026-07-09 four-round unanimous discussion, ag+cx+cc.fable, full spec at pretdd-prep-2026-07-09.md §Topic A): new --watch-summary [SECONDS] flag renders the full dashboard once, then on each subsequent tick calls ONLY collect_snapshot() fresh (no subprocess) and repaints ONLY SUMMARY+FRAME via a new render_summary_frame(out, snapshot) helper - explicitly does not re-run the hub.py status subprocess or re-render PROFILES/PEER DETAIL/etc. on every tick. In-place repaint: track previous tick's printed SUMMARY+FRAME line count, cursor-up that many lines + clear-to-end + print new block + store new count (handles height changing tick-to-tick); force full re-render on terminal resize. Rejected alternative (ag's first draft): recompute the entire dashboard every tick including the hub.py status subprocess spawn, believing collect_snapshot()'s cache absorbs it - verified FALSE: collect_snapshot(use_cache=False) is the deliberate CLI-renderer default specifically so --watch frames never go stale (snapshot.py:1536 docstring); the subprocess spawn is real non-trivial cost that would run every tick under the rejected design. T9's quota-threshold fixes are exercised by render_summary() for free; T14's arbiter-annotation (in render_card(), not render_summary()) needs its OWN dedicated test since summary-only mode won't exercise it.",
+      "next_action": "DONE (ag implementation, cc found+fixed 2 real bugs before applying: resize-triggered full re-render never repositioned the cursor - would have scrolled instead of repainting in place, now reuses _blit_frame(); ag's own test used a plain io.StringIO (isatty()==False) to assert TTY-only escape behavior, silently testing the wrong branch - rewrote with a FakeTTY). --watch-summary is mutually exclusive with --watch via argparse (cleaner than ag's fragile combined-branch parsing, which could silently drop the interval if both flags were passed together). Full suite green (727 passed).",
       "risk": null,
       "last_verified_at": "2026-07-09T23:50:00+09:00"
     },
@@ -380,15 +380,15 @@
     {
       "id": "T15",
       "title": "check_cli_reality.py REAL_BINARIES + peer_console.py security-defaults duplication",
-      "status": "proposed",
+      "status": "done",
       "priority": "low",
       "category": "ops",
-      "owner": "unassigned",
+      "owner": "ag",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": ["e446c55"],
       "supersedes": [],
       "source_refs": ["hardcoding-full-audit-2026-07-09.md", "pretdd-prep-2026-07-09.md"],
-      "next_action": "READY FOR TDD (2026-07-09 four-round unanimous discussion, ag+cx+cc.fable, full spec at pretdd-prep-2026-07-09.md §Topic B): new real_binary(peer, orch=None) filters hub_nodes for type=='peer' + enabled is not False, reads node['invoke'] directly (already a resolvable path, not a dict-of-dicts under a nonexistent 'peers' key - ag's first draft hallucinated that schema, corrected), resolves _sys-relative paths + rejects wrappers via is_wrapper() reusing check_sandbox_behavior.py's pattern. fable hardening note: node 'ca' has a bare-name invoke ('claude') but is disabled, so add a shutil.which fallback/skip-with-warning for a future enabled bare-name node, non-blocking. peer_console.py: new policy-to-CLI layer reads the peer's real security_contract.sandbox_semantics field ('skip-permissions'/'workspace-write' - NOT a fabricated 'permission_mode', ag's first draft invented that field name too) - 'skip-permissions' appends the peer's own required_effective_args, 'workspace-write' appends '-s workspace-write' unless the user already supplied sandbox/approval flags. Migration touches: check_cli_reality.py's run()/auto_refresh_observed(), check_cli_canary.py's import, and any test monkeypatching REAL_BINARIES.",
+      "next_action": "DONE (ag implementation, cc migrated every call site: reconcile_peer/probe_version/run/auto_refresh_observed + check_cli_canary.py's import). Found and fixed a pre-existing latent test bug this exposed: several tests monkeypatched check_cli_reality.real_binary/fingerprint, but check_cli_canary.py imports those names directly (from X import Y), so the patches never actually took effect against check_cli_canary's own calls - harmless before since the old REAL_BINARIES-dict real_binary() didn't depend on orch content; the new resolver made the gap load-bearing (ValueError: no invoke field). Fixed by patching the consuming module (check_cli_canary) instead of the defining one. peer_console.py's apply_security_semantics() implemented per spec (sandbox_semantics, not the hallucinated permission_mode). Full suite green (727 passed).",
       "risk": null,
       "last_verified_at": "2026-07-09T23:50:00+09:00"
     },
