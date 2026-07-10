@@ -188,7 +188,289 @@ should be **expanded** (confirmed new work, not already present) to purge
 `_sys/tools/*_old` rollback directories specifically — never active tool
 directories.
 
+## Implementation-level spec (rounds 6-9, same-day follow-up)
+
+Policy above was settled and ratified first (rounds 1-5). This section takes it
+down to concrete schemas/signatures for zero-ambiguity TDD handoff. Round
+history: ag round-6 elaboration (file layout/schemas/CLI/test-matrix) → cx
+round-7 review found 5 gaps (install-mechanism dispatch, checksum provenance,
+propose-diff artifact shape, session-boundary reliability, four smaller items) →
+ag round-8 conceded all 5 → cx final-call confirmed → cc.fable round-9
+ratification found the session-boundary fix ITSELF referenced non-existent
+infrastructure (same class of mistake the policy round already guarded against
+for `periodic_minutes`) plus 2 more required amendments (npm_peer checksum
+semantics, `base_sha256` enforcement) → ag round-10 conceded all → cx final-call
+confirmed. Fully unanimous.
+
+### File / module layout
+
+- **New `_sys/core/version_resolver.py`**: `resolve_latest(tool_name, provider,
+  current_version) -> dict`, delegating to `_resolve_github()` / `_resolve_npm()`
+  / `_resolve_sqlite()` internal helpers.
+- **New `_sys/checks/check_tool_updates.py`** (matches `check_versions.py`'s
+  location convention): `--json` and `--propose-diff` flags.
+- **`_sys/core/provisioner.py` additions**: `ensure_tool(name, orch=None) ->
+  dict`, `ensure_peer_cli(peer, orch=None) -> dict`, both returning
+  `{"status": "<enum>", "detail": "..."}`.
+- **Install dispatch is explicit by mechanism** (cx's correction of ag's
+  original single-shared-helper idea — confirmed `provisioner.py` already
+  splits `_install_tools()` (zip/exe) from `_install_ai_peers()` (npm) today):
+  dispatch by `install_mechanism: zip_tool | exe_tool | npm_peer`. `zip_tool`/
+  `exe_tool` share one `_install_atomic(name, cfg, manifest_path)` helper
+  (download/verify/extract/canary/swap). `npm_peer` is a genuinely different,
+  separate strategy (see npm semantics below) since `npm install -g` mutates a
+  shared `node_modules` in place — no atomic directory swap is possible there.
+
+### `runtimes.json` schema additions
+
+No schema-version bump needed (confirmed: `runtimes.json`'s only top-level keys
+today are `_comment`, `runtimes`, `tools` — no version field to bump). New
+per-entry fields:
+- `discovery_provider`: `"github_releases"` | `"npm"` | `"sqlite_org_page"` |
+  `"manual"`.
+- `discovery_id`: explicit identity for the discovery provider to query — e.g.
+  `"BurntSushi/ripgrep"` (owner/repo) for GitHub, the npm package name for npm.
+  Required because deriving identity from the download URL is fragile (URL
+  format can change between versions).
+- `install_mechanism`: `"zip_tool"` | `"exe_tool"` | `"npm_peer"`.
+- `canary`: `{"argv": [...], "timeout_sec": N, "expect_regex": "..."}` (no
+  universal `--version` assumption).
+- Checksum: bare `<algo>` key per algorithm (`sha256`, `sha3_256`), matching the
+  pre-existing `sha512` convention already on `agy`'s entry.
+
+Example (ripgrep — github_releases, sha256):
+```json
+"ripgrep": {
+  "version": "15.1.0",
+  "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-pc-windows-msvc.zip",
+  "type": "zip",
+  "install_mechanism": "zip_tool",
+  "discovery_provider": "github_releases",
+  "discovery_id": "BurntSushi/ripgrep",
+  "sha256": "a81907cb...",
+  "canary": {"argv": ["--version"], "timeout_sec": 5, "expect_regex": "^ripgrep 15\\."}
+}
+```
+
+Example (sqlite — sqlite_org_page, sha3_256):
+```json
+"sqlite": {
+  "version": "3.53.1",
+  "url": "https://www.sqlite.org/2026/sqlite-tools-win-x64-3530100.zip",
+  "type": "zip",
+  "install_mechanism": "zip_tool",
+  "discovery_provider": "sqlite_org_page",
+  "discovery_id": "sqlite-tools-win-x64",
+  "sha3_256": "4b97a2c...",
+  "canary": {"argv": ["-version"], "timeout_sec": 5, "expect_regex": "^3\\.\\d+"}
+}
+```
+
+`ensure-peer-cli <name>` argument mapping (cx's gap, ag conceded must be
+explicit, not implicit): accepts the human-facing tool names `claude`/`codex`/
+`agy`, internally mapped to this project's node_ids `cc`/`cx`/`ag`
+respectively — state this mapping explicitly in the implementation, not left
+for a TDD implementer to guess which form is accepted.
+
+Extras (e.g. oh-my-posh themes, handled by `_install_extra()` today) must be
+staged as part of the SAME atomic-swap candidate directory as the main binary —
+not copied in as a separate step after the swap completes (which would create a
+window where the swap "succeeded" but extras are missing, or extras land but
+the main swap then rolls back, leaving orphans).
+
+### `.install_manifest.json` schema
+
+Lives at `_sys/tools/<name>/.install_manifest.json`. Full example (ripgrep):
+```json
+{
+  "tool": "ripgrep",
+  "declared_version": "15.1.0",
+  "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-pc-windows-msvc.zip",
+  "checksum_algo": "sha256",
+  "checksum_value": "a81907cb...",
+  "checksum_source": "declared",
+  "checksum_verified": true,
+  "installed_bytes_hash": "c4d5e6f7...",
+  "canary_command": ["ripgrep.exe", "--version"],
+  "canary_output": "ripgrep 15.1.0\n",
+  "installed_at": "2026-07-10T12:00:00Z",
+  "source_config_hash": "f1e2d3c4..."
+}
+```
+
+`checksum_source`/`checksum_verified` (cx's addition, required — without this a
+future reader can't distinguish "verified against a known-good hash" from "just
+recorded whatever bytes we got", which matters for the TOFU-shrinking optional
+amendment): `checksum_source` is `"declared"` (from `runtimes.json`),
+`"release_asset"` (from a GitHub release's own published checksum),
+`"registry_integrity"` (npm's own packument integrity field — npm_peer only),
+or `"computed_tls_trust"` (no verifiable source existed; the hash is
+drift-evidence only). `checksum_verified` is `true` only for the first three.
+
+`source_config_hash` is scoped to just this tool's own `runtimes.json` entry
+(not the whole file — an unrelated edit elsewhere in runtimes.json must not
+spuriously invalidate every other tool's manifest), computed over a
+**canonically serialized** form (sorted keys, stable separators) so
+semantically-identical entries with different key ordering hash identically
+(fable's note, ag included).
+
+### npm_peer install semantics (fable's required amendment)
+
+The `install_mechanism: npm_peer` path (claude/codex) has distinct rules from
+zip/exe tools:
+1. **Always install pinned** to the exact version declared in `runtimes.json`
+   (`npm install -g pkg@x.y.z`) — never bare `@latest`, or the manifest's
+   `declared_version` field would be fiction.
+2. **Checksum = npm registry's own `integrity` field** (npm's sha512) from the
+   package's packument, recorded with `checksum_source: "registry_integrity"`
+   and `checksum_verified: true` (npm itself already enforces this during
+   install).
+3. **No atomic swap is possible** — `npm install -g` mutates the shared
+   `node_modules` in place. A failed bootstrap must, at minimum, leave the tool
+   re-detectable as "missing/broken" afterward (never falsely reporting
+   "installed"). Acceptable given peer CLIs are bootstrap-only scope, but must
+   be written down explicitly.
+4. **Node.js bootstrap dependency ordering** (fable's separate required
+   amendment): `ensure-peer-cli claude` on a clean machine must check/ensure
+   the portable Node.js runtime exists first, or fail with an explicit
+   "install nodejs-lts first" message — not discover the gap mid-install.
+
+### `check_tool_updates.py --propose-diff` artifact (cx's gap, made concrete)
+
+Read-only — **never** touches the real `_sys/runtimes.json`. Writes to
+`_archive/tool-updates/<UTC-timestamp>/`:
+- `proposal.json` — structured discovery summary.
+- `runtimes.proposed.json` — full proposed replacement file (for direct diffing
+  against the real one).
+- `runtimes.diff` — unified diff text.
+
+Stdout JSON (also used for `--json`):
+```json
+{
+  "artifact_dir": "_archive/tool-updates/2026-07-10T12-00-00Z/",
+  "base_sha256": "<hash of current runtimes.json at proposal time>",
+  "updates_discovered": [
+    {"tool": "ripgrep", "current_version": "15.1.0", "latest_version": "15.2.0",
+     "url": "https://...", "checksum_algo": "sha256", "checksum_value": "..."}
+  ],
+  "up_to_date": ["bat", "delta"],
+  "rate_limited": ["gh"],
+  "errors": []
+}
+```
+
+**`base_sha256` must be ENFORCED at apply time, not just recorded** (fable's
+required amendment — "recording without checking is provenance theater"): the
+apply path (governed merge of a version-bump diff) must reject the proposal if
+the current `runtimes.json`'s hash no longer matches the proposal's recorded
+`base_sha256` — i.e. someone edited `runtimes.json` in the meantime and this is
+now a stale proposal.
+
+`rate_limited` entries come from `discovery_provider`s that hit GitHub's
+60/hour unauthenticated cap — classified as `discovery_unavailable`
+internally, never silently folded into `up_to_date` (DIR-004: absence of
+evidence is not evidence of "no update").
+
+`_archive/tool-updates/<timestamp>/` needs a retention policy (fable's note,
+ag included) — assign it a scrubber tier or a retention-count limit; it
+accumulates forever otherwise.
+
+### CLI interfaces, exact
+
+- `check_tool_updates.py [--json] [--propose-diff]`.
+- `python _sys/core/provisioner.py ensure-tool <name>` /
+  `ensure-peer-cli <claude|codex|agy>`. Exit codes: `0` (already current, or
+  installed/updated successfully), `1` (network failure), `2` (checksum
+  mismatch), `3` (deferred — in-use at attempt time, see retry mechanism
+  below).
+- `--repair-missing`: opt-in flag added to `_sys/checks/check_cli_reality.py`
+  (confirmed today's `main()` already uses simple `if "--flag" in argv:`
+  string-checks, not argparse — `--repair-missing` follows the same existing
+  style). When set, a reported-missing peer/tool maps to
+  `ensure_tool()`/`ensure_peer_cli()`. `real_binary()` itself is never touched
+  by this — it stays the pure resolver `main()` already calls.
+
+### Deferred-install retry mechanism (CORRECTED — this is the important fix)
+
+An earlier draft of this section proposed retrying a deferred (file-locked)
+swap "at the next session's `on_session_start`" — **this was wrong and has been
+removed**: `cc.fable` and independently `cc` verified `_sys/hooks/` contains
+only `ai_check.py, collab_log.py, ctx_end.py, ctx_save.py, memory_compactor.py,
+raw_log.py` — there is no session-start handler anywhere in this codebase. This
+was the exact "build on infrastructure that doesn't exist" mistake the
+Scheduling section above already avoided for `self_care.py`'s
+`periodic_minutes` (confirmed `0`, unwired).
+
+**Corrected mechanism**: `ensure-tool --retry-deferred` is the PRIMARY retry
+path (an explicit command a human or future hook can invoke), plus **lazy
+opportunistic draining** — any subsequent `ensure-tool`/`ensure-peer-cli`
+invocation, for any tool, first drains the deferred-retry list before doing its
+own work. If session-boundary wiring is wanted later, it is new, separately
+scoped work (name the exact hook, verify it actually fires) — not assumed
+infrastructure.
+
+### TDD test matrix (checklist)
+
+`version_resolver.py`:
+- [ ] github_releases: 200 OK returns version/URL.
+- [ ] github_releases: 403 rate-limit returns `discovery_unavailable`, not
+      "no update".
+- [ ] github_releases: matching ETag (304) returns cached value, no re-download.
+- [ ] sqlite_org_page: correctly parses the HTML-comment CSV for version/URL/
+      sha3 hash.
+- [ ] npm: 200 OK returns latest version (discovery only, no apply path).
+- [ ] all providers: network timeout/error handled without crashing, classified
+      distinctly from rate-limit.
+
+`provisioner.py` (`ensure_tool`/`ensure_peer_cli`/`_install_atomic`):
+- [ ] manifest-vs-runtimes.json version mismatch correctly triggers the update
+      path (the confirmed root gap this whole feature fixes).
+- [ ] checksum match proceeds; mismatch deletes temp dir, aborts, leaves active
+      install untouched.
+- [ ] TLS-trust fallback completes when no hash is declared/discoverable;
+      records `checksum_source: "computed_tls_trust"`,
+      `checksum_verified: false`.
+- [ ] atomic swap success: canary passes, `_old` rotated (max 1-2
+      generations), temp becomes active.
+- [ ] canary failure: temp deleted, active untouched, returns error (not a
+      partial state).
+- [ ] Windows file-locked rename failure: leaves active untouched, returns
+      `in_use_retry_at_session_boundary`/status 3, recorded for
+      `--retry-deferred`.
+- [ ] `--retry-deferred` successfully re-attempts a previously-deferred update
+      once the lock is gone.
+- [ ] lazy draining: an unrelated `ensure-tool` call drains a pending deferred
+      entry for a DIFFERENT tool before doing its own work.
+- [ ] governance gate: aborts to manual/governed path if URL != tracked entry,
+      OR checksum declared-but-mismatched, OR redirect is cross-host, OR a 404
+      would otherwise silently fall back to "latest".
+- [ ] `npm_peer`: always installs `pkg@declared_version`, never bare `@latest`.
+- [ ] `npm_peer`: checksum recorded as `registry_integrity` from the packument,
+      `checksum_verified: true`.
+- [ ] `npm_peer`: failed bootstrap leaves the tool detectable as missing/broken,
+      not falsely "installed".
+- [ ] `npm_peer`: `ensure-peer-cli claude` fails with an explicit
+      "install nodejs-lts first" message if Node.js isn't present yet, rather
+      than failing deep inside npm.
+- [ ] `source_config_hash` uses canonical (sorted-key) serialization — two
+      differently-key-ordered but semantically identical entries hash the
+      same.
+
+`check_tool_updates.py`:
+- [ ] `--propose-diff` never writes to the real `runtimes.json`.
+- [ ] artifact directory contains all 3 files (`proposal.json`,
+      `runtimes.proposed.json`, `runtimes.diff`) with correct `base_sha256`.
+- [ ] apply path rejects a proposal whose `base_sha256` no longer matches the
+      current `runtimes.json` (stale-proposal rejection).
+
+`check_cli_reality.py`:
+- [ ] `real_binary()` NEVER triggers any install path under any circumstance —
+      regression guard for the architectural read-only rule.
+- [ ] `--repair-missing` correctly routes a reported-missing peer/tool to
+      `ensure_tool`/`ensure_peer_cli`.
+
 ## Status
 
-Unanimous, TDD-ready. Nothing implemented yet — this doc is the spec for the
-next TDD pass.
+Unanimous across 10 rounds (5 policy + 5 implementation-elaboration,
+ag+cx+cc.fable), TDD-ready. Nothing implemented yet — this doc is the complete
+spec for the next TDD pass.
