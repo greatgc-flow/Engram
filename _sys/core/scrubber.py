@@ -179,6 +179,7 @@ def _tier1(base_dir: Path, sys_dir: Path, peers: dict, dry_run: bool) -> int:
 def _tier2(base_dir: Path, sys_dir: Path, peers: dict, dry_run: bool) -> int:
     env_dir  = sys_dir / "env"
     data_dir = sys_dir / "data"
+    tools_dir = sys_dir / "tools"
     freed    = 0
     freed += _remove_path(data_dir / "setup-files", "설치 아카이브 (zip/exe)", dry_run)
     freed += _remove_path(env_dir  / "venv",         "Python 가상환경 (venv)",  dry_run)
@@ -192,6 +193,11 @@ def _tier2(base_dir: Path, sys_dir: Path, peers: dict, dry_run: bool) -> int:
             peer_dir / "project" / "settings.local.json",
             f"{peer_id} 로컬 설정 (settings.local.json)", dry_run
         )
+    # D10 atomic-swap rollback dirs (tool_v{X}_old left behind by ensure_tool)
+    if tools_dir.exists():
+        for item in tools_dir.iterdir():
+            if item.is_dir() and item.name.endswith("_old"):
+                freed += _remove_path(item, f"도구 롤백 ({item.name})", dry_run)
     return freed
 
 

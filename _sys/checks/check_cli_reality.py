@@ -395,14 +395,48 @@ def auto_refresh_observed(
     return results
 
 
+_PEER_KEY_BY_NODE_ID = {"cc": "claude", "ca": "claude", "cx": "codex", "ag": "antigravity"}
+
+
+def _repair_missing_peers(orch: dict) -> dict[str, dict]:
+    """Pre-flight existence check per enabled peer, independent of the drift
+    report. reconcile_peer()'s "drift" list never contains ABSENT verdicts by
+    design (DIR-004: unmeasured != drift), and a genuinely missing binary
+    makes real_binary() raise - so `run()`'s report can't be used to detect
+    "not installed at all". This does its own resolution instead."""
+    sys.path.insert(0, str(SYS_DIR / "core"))
+    import provisioner  # noqa: E402
+
+    repaired = {}
+    for peer in _enabled_peer_ids(orch):
+        try:
+            binary = real_binary(peer, orch)
+            missing = not binary.exists()
+        except (KeyError, ValueError, FileNotFoundError):
+            missing = True
+        if not missing:
+            continue
+        peer_key = _PEER_KEY_BY_NODE_ID.get(peer, peer)
+        res = provisioner.ensure_peer_cli(peer_key)
+        repaired[peer] = res
+        print(f"[cli-reality] repaired {peer} ({peer_key}): {res}")
+    return repaired
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
-    
+
     if "--auto-refresh" in argv:
         refresh_results = auto_refresh_observed()
         print(f"[cli-reality] auto-refresh: {json.dumps(refresh_results, ensure_ascii=False)}")
-        
+
     live = "--no-live" not in argv
+
+    if "--repair-missing" in argv:
+        orch_path = SYS_DIR / "ai" / "orchestration.json"
+        orch = json.loads(orch_path.read_text(encoding="utf-8"))
+        _repair_missing_peers(orch)
+
     report = run(live=live)
     if "--json" in argv:
         print(json.dumps(report, ensure_ascii=False, indent=2))
