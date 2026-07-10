@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-10T10:15:00+09:00",
+  "updated_at": "2026-07-10T12:30:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -10,9 +10,13 @@
       "category": "ops",
       "owner": "cx",
       "blocker": null,
-      "evidence_commit": ["295c221"],
+      "evidence_commit": [
+        "295c221"
+      ],
       "supersedes": [],
-      "source_refs": ["turn-logging-proposal-2026-07-08.md"],
+      "source_refs": [
+        "turn-logging-proposal-2026-07-08.md"
+      ],
       "next_action": "",
       "risk": null,
       "last_verified_at": "2026-07-08T22:00:00+09:00"
@@ -27,7 +31,10 @@
       "blocker": null,
       "evidence_commit": [],
       "supersedes": [],
-      "source_refs": ["d6-activation-taxonomy-2026-07-08.md", "remaining-items-pretdd-2026-07-08.md"],
+      "source_refs": [
+        "d6-activation-taxonomy-2026-07-08.md",
+        "remaining-items-pretdd-2026-07-08.md"
+      ],
       "next_action": "READY FOR TDD (ag spec, cc.fable confirms mechanism reasoning with one condition): hub.py should create a dedicated writable/deletable dir under _sys/data/temp/cx_session_<id> before invoking cx, inject via TEMP/TMP/TMPDIR, tear down after. Mandatory: TDD must include an empirical probe (create+delete inside the injected TEMP under the real cx sandbox) before claiming fixed - this is reasoned-declared, not yet measured.",
       "risk": null,
       "last_verified_at": "2026-07-08T22:19:00+09:00"
@@ -40,9 +47,13 @@
       "category": "routing",
       "owner": "cx",
       "blocker": null,
-      "evidence_commit": ["22fb16e"],
+      "evidence_commit": [
+        "22fb16e"
+      ],
       "supersedes": [],
-      "source_refs": ["d6-activation-taxonomy-2026-07-08.md"],
+      "source_refs": [
+        "d6-activation-taxonomy-2026-07-08.md"
+      ],
       "next_action": "",
       "risk": "medium",
       "last_verified_at": "2026-07-08T21:15:00+09:00"
@@ -55,9 +66,14 @@
       "category": "ops",
       "owner": "ag",
       "blocker": null,
-      "evidence_commit": ["31ebe56"],
+      "evidence_commit": [
+        "31ebe56"
+      ],
       "supersedes": [],
-      "source_refs": ["pretdd-prep-2026-07-08-round2.md", "remaining-items-pretdd-2026-07-08.md"],
+      "source_refs": [
+        "pretdd-prep-2026-07-08-round2.md",
+        "remaining-items-pretdd-2026-07-08.md"
+      ],
       "next_action": "",
       "risk": null,
       "last_verified_at": "2026-07-08T22:45:00+09:00"
@@ -72,7 +88,10 @@
       "blocker": null,
       "evidence_commit": [],
       "supersedes": [],
-      "source_refs": ["pretdd-prep-2026-07-08-round2.md", "remaining-items-pretdd-2026-07-08.md"],
+      "source_refs": [
+        "pretdd-prep-2026-07-08-round2.md",
+        "remaining-items-pretdd-2026-07-08.md"
+      ],
       "next_action": "READY FOR TDD (ag self-assessment + cc.fable refinement): ag's tool-calling loop doesn't flush partial output, so a large multi-item ask that exceeds 900s combined yields zero output. Fix: hub.py pre-dispatch fail-fast heuristic (task-count/token-size threshold, config-declared per DIR-004) warning 'split this' by default. cc.fable REJECTS silent auto-split of free-text queries (parsing task structure out of prose is brittle and breaks cross-item context) - auto-split only when the caller passes an explicit structured task list, not prose.",
       "risk": null,
       "last_verified_at": "2026-07-08T22:19:00+09:00"
@@ -85,9 +104,14 @@
       "category": "routing",
       "owner": "ag",
       "blocker": null,
-      "evidence_commit": ["0ddbd72"],
+      "evidence_commit": [
+        "0ddbd72"
+      ],
       "supersedes": [],
-      "source_refs": ["backlog-5whys-consensus-2026-07-08-round4.md", "pretdd-prep-2026-07-08-round2.md"],
+      "source_refs": [
+        "backlog-5whys-consensus-2026-07-08-round4.md",
+        "pretdd-prep-2026-07-08-round2.md"
+      ],
       "next_action": "",
       "risk": "high",
       "last_verified_at": "2026-07-08T20:15:00+09:00"
@@ -100,9 +124,14 @@
       "category": "routing",
       "owner": "ag",
       "blocker": null,
-      "evidence_commit": ["b76c44b"],
+      "evidence_commit": [
+        "b76c44b"
+      ],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md", "backlog-5whys-consensus-2026-07-08.md"],
+      "source_refs": [
+        "backlog_reorg_2026_07_04.md",
+        "backlog-5whys-consensus-2026-07-08.md"
+      ],
       "next_action": "",
       "risk": null,
       "last_verified_at": "2026-07-08T09:16:00+09:00"
@@ -115,9 +144,16 @@
       "category": "security",
       "owner": "ag",
       "blocker": null,
-      "evidence_commit": ["63141de"],
+      "evidence_commit": [
+        "63141de"
+      ],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md", "remaining-items-pretdd-2026-07-08.md", "sandbox-behavior-probe-b7-2026-07-08.md"],
+      "source_refs": [
+        "backlog_reorg_2026_07_04.md",
+        "pretdd-prep-2026-07-08-round2.md",
+        "remaining-items-pretdd-2026-07-08.md",
+        "sandbox-behavior-probe-b7-2026-07-08.md"
+      ],
       "next_action": "DONE. Implemented (ag.deepthink, applied by cc after verifying every reused import/function was real, not hallucinated) + full suite green (686 passed) + empirically run 3x against cc/ag/cx (1 self-report by ag, 2 independent cc runs). T4 auto-revert fired live again (8th confirmation) when ag wrote directly to the governed check file. Findings: cc unenforced 3/3; ag unenforced 2/2 in cc's independent runs, contradicting ag's own self-reported timeout (self-invocation artifact, not sandbox evidence); cx repo-scoped (-s workspace-write: inside-repo writes succeed, outside-repo writes denied whenever attempted, sometimes refuses both at the model layer). Full writeup at ops/sandbox-behavior-probe-b7-2026-07-08.md.",
       "risk": null,
       "last_verified_at": "2026-07-09T00:05:00+09:00"
@@ -130,9 +166,14 @@
       "category": "ops",
       "owner": "ag",
       "blocker": null,
-      "evidence_commit": ["f40d3c2"],
+      "evidence_commit": [
+        "f40d3c2"
+      ],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md"],
+      "source_refs": [
+        "backlog_reorg_2026_07_04.md",
+        "pretdd-prep-2026-07-08-round2.md"
+      ],
       "next_action": "",
       "risk": null,
       "last_verified_at": "2026-07-08T20:45:00+09:00"
@@ -145,9 +186,14 @@
       "category": "docs",
       "owner": "cx",
       "blocker": null,
-      "evidence_commit": ["29f32e3"],
+      "evidence_commit": [
+        "29f32e3"
+      ],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md", "backlog-5whys-consensus-2026-07-08.md"],
+      "source_refs": [
+        "backlog_reorg_2026_07_04.md",
+        "backlog-5whys-consensus-2026-07-08.md"
+      ],
       "next_action": "",
       "risk": null,
       "last_verified_at": "2026-07-08T09:16:00+09:00"
@@ -160,9 +206,15 @@
       "category": "security",
       "owner": "cx",
       "blocker": "policy promotion needs the full 3-gate soak (static exhaustive matrix + 100-shuffle + >=24h/100-action live shadow) to actually run and pass",
-      "evidence_commit": ["feadb3b"],
+      "evidence_commit": [
+        "feadb3b"
+      ],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md", "remaining-items-pretdd-2026-07-08.md"],
+      "source_refs": [
+        "backlog_reorg_2026_07_04.md",
+        "pretdd-prep-2026-07-08-round2.md",
+        "remaining-items-pretdd-2026-07-08.md"
+      ],
       "next_action": "Dry-run helper + 20-pass matrix shipped (feadb3b). cc.fable confirms the promotion bar (\"right, not overkill\") is 3 gates, all required: (1) static EXHAUSTIVE matrix generated from live protocol.json (action groups x phase_action_matrix x collab_rate_guard.exempt_actions x origins) - zero false pos/neg; (2) 100-pass deterministic shuffle over that matrix, fixed seed, zero mismatches; (3) live shadow >=24h and >=100 real _guard_action evaluations, dry-run vs actual, zero mismatches. cc.fable addition: if the live shadow sees an action shape absent from the static matrix, that's a coverage gap requiring the soak to EXTEND (add case, rerun gates 1-2), not silently pass gate 3. READY FOR TDD on the exhaustive-matrix generator + live-shadow logger; NOT ready to promote fail-closed until the soak itself runs and passes.",
       "risk": null,
       "last_verified_at": "2026-07-08T22:19:00+09:00"
@@ -175,9 +227,13 @@
       "category": "routing",
       "owner": "ag",
       "blocker": null,
-      "evidence_commit": ["a25b34a"],
+      "evidence_commit": [
+        "a25b34a"
+      ],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md"],
+      "source_refs": [
+        "backlog_reorg_2026_07_04.md"
+      ],
       "next_action": "DROP/REPLACE - quota-contention root cause mitigated by context_affinity steering; consider narrow shared_quota_reserve-gated dual-family activation instead",
       "risk": null,
       "last_verified_at": "2026-07-08T09:16:00+09:00"
@@ -192,7 +248,10 @@
       "blocker": null,
       "evidence_commit": [],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md"],
+      "source_refs": [
+        "backlog_reorg_2026_07_04.md",
+        "pretdd-prep-2026-07-08-round2.md"
+      ],
       "next_action": "DEFER (ag+cc.fable unanimous, 2026-07-08): D5's per-profile health gating plus the existing pre-dispatch headroom failover ranking (hub.py:3925, r-f291 W4) already cover 'don't route to a dead profile'. A transparent runtime auto-retry/re-route engine can't distinguish 'never executed' from 'executed but response lost', so re-dispatching non-idempotent mutating asks risks double execution. Narrower version if ever wanted: retry only explicitly read-only/idempotent asks, fail-fast with clear error surfacing otherwise - not worth building now absent measured failure-rate evidence (DIR-004).",
       "risk": null,
       "last_verified_at": "2026-07-08T17:00:00+09:00"
@@ -205,9 +264,14 @@
       "category": "routing",
       "owner": "cx",
       "blocker": null,
-      "evidence_commit": ["00484f8"],
+      "evidence_commit": [
+        "00484f8"
+      ],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08.md"],
+      "source_refs": [
+        "backlog_reorg_2026_07_04.md",
+        "pretdd-prep-2026-07-08.md"
+      ],
       "next_action": "",
       "risk": null,
       "last_verified_at": "2026-07-08T12:30:00+09:00"
@@ -220,9 +284,16 @@
       "category": "routing",
       "owner": "ag",
       "blocker": null,
-      "evidence_commit": ["feadb3b", "22fb16e"],
+      "evidence_commit": [
+        "feadb3b",
+        "22fb16e"
+      ],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md", "d6-activation-taxonomy-2026-07-08.md"],
+      "source_refs": [
+        "backlog_reorg_2026_07_04.md",
+        "pretdd-prep-2026-07-08-round2.md",
+        "d6-activation-taxonomy-2026-07-08.md"
+      ],
       "next_action": "",
       "risk": null,
       "last_verified_at": "2026-07-08T21:15:00+09:00"
@@ -235,9 +306,14 @@
       "category": "ops",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": ["b2b8a14"],
+      "evidence_commit": [
+        "b2b8a14"
+      ],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md"],
+      "source_refs": [
+        "backlog_reorg_2026_07_04.md",
+        "pretdd-prep-2026-07-08-round2.md"
+      ],
       "next_action": "ag+cc.fable verified (2026-07-08) via .ai/consensus/: r-9bc7 was a duplicate/abandoned fragment (only exists as a .tmp) of the same WS2 hub-dispatch fail-fast proposal that was actually finalized as r-8b3b and implemented in commit b2b8a14 ('W1-W3 - hub silent-exit fix, r-8b3b model-operand validator, G-bridge lessons + DIR-004'); a third variant r-c042 was rejected.",
       "risk": null,
       "last_verified_at": "2026-07-08T17:00:00+09:00"
@@ -252,7 +328,9 @@
       "blocker": "3P-7D shared quota family at 100% until 2026-07-10 (orchestration.json:296 _routing_note)",
       "evidence_commit": [],
       "supersedes": [],
-      "source_refs": ["sandbox-behavior-probe-b7-2026-07-08.md"],
+      "source_refs": [
+        "sandbox-behavior-probe-b7-2026-07-08.md"
+      ],
       "next_action": "Found during 2026-07-09 ag exhaustive backlog sweep: ag.gptoss's enablement path (unanimous ag+cx 2026-07-07) is fully speced and its precondition (shared_quota_reserve enforcement, D6) already shipped/activated - the only remaining step is flipping routing_state from manual_only to eligible once check_cli_reality re-verifies the model and populates runtime_context_window, gated on the 3P-7D quota window resetting (2026-07-10). Tracked here purely so the calendar-gated flip isn't forgotten; no code work needed before that date.",
       "risk": null,
       "last_verified_at": "2026-07-09T06:40:00+09:00"
@@ -265,9 +343,13 @@
       "category": "diag",
       "owner": "ag",
       "blocker": null,
-      "evidence_commit": ["e446c55"],
+      "evidence_commit": [
+        "e446c55"
+      ],
       "supersedes": [],
-      "source_refs": ["pretdd-prep-2026-07-09.md"],
+      "source_refs": [
+        "pretdd-prep-2026-07-09.md"
+      ],
       "next_action": "DONE (ag implementation, cc found+fixed 2 real bugs before applying: resize-triggered full re-render never repositioned the cursor - would have scrolled instead of repainting in place, now reuses _blit_frame(); ag's own test used a plain io.StringIO (isatty()==False) to assert TTY-only escape behavior, silently testing the wrong branch - rewrote with a FakeTTY). --watch-summary is mutually exclusive with --watch via argparse (cleaner than ag's fragile combined-branch parsing, which could silently drop the interval if both flags were passed together). Full suite green (727 passed).",
       "risk": null,
       "last_verified_at": "2026-07-09T23:50:00+09:00"
@@ -275,15 +357,19 @@
     {
       "id": "D10",
       "title": "Auto-install missing tools + measured auto-update-discovery for aux tools & peer CLIs",
-      "status": "proposed",
+      "status": "done",
       "priority": "medium",
       "category": "ops",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "03af006"
+      ],
       "supersedes": [],
-      "source_refs": ["pretdd-prep-2026-07-10-tool-autoinstall.md"],
-      "next_action": "READY FOR TDD, fully concrete (2026-07-10, 10-round unanimous discussion total - 5 policy rounds + 5 implementation-elaboration rounds, ag+cx+cc.fable, full spec at pretdd-prep-2026-07-10-tool-autoinstall.md). Policy layer (rounds 1-5): auxiliary tools get full auto-install+measured-auto-update-discovery; peer CLIs bootstrap-only, no mid-session auto-update; real_binary() stays strictly read-only (cx architectural win, ag conceded); governance conditional-exempt for mechanical recovery, always-governed for version bumps; fable's 4 required + 1 optional amendments (Windows file-locking common-case, GitHub rate limits, SHA3, npm/nodejs bootstrap order, TOFU auto-pinning). Implementation layer (rounds 6-10, NEW today): exact file layout (version_resolver.py, check_tool_updates.py, provisioner.py ensure_tool/ensure_peer_cli), exact runtimes.json schema additions (discovery_provider/discovery_id/install_mechanism/canary/checksum fields), exact .install_manifest.json schema incl. checksum_source/checksum_verified provenance tracking (cx's addition), explicit zip_tool/exe_tool/npm_peer install-mechanism dispatch (cx corrected ag's single-shared-function draft), concrete --propose-diff artifact contract (_archive/tool-updates/<UTC>/ with 3 files + enforced base_sha256 stale-proposal rejection, fable required), npm_peer-specific semantics (always pin exact version, registry integrity as checksum, nodejs-first bootstrap check), and a CORRECTED deferred-retry mechanism after fable caught cx's own round-7 proposal (retry at 'on_session_start') referencing a hook that does not exist anywhere in _sys/hooks/ - same class of mistake the policy round already avoided for periodic_minutes; corrected to ensure-tool --retry-deferred as primary + lazy opportunistic draining, no assumed session-start infrastructure. Full TDD test-matrix checklist included in the doc. Nothing implemented yet.",
+      "source_refs": [
+        "pretdd-prep-2026-07-10-tool-autoinstall.md"
+      ],
+      "next_action": "READY FOR TDD, fully concrete (2026-07-10, 10-round unanimous discussion total - 5 policy rounds + 5 implementation-elaboration rounds, ag+cx+cc.fable, full spec at pretdd-prep-2026-07-10-tool-autoinstall.md). Policy layer (rounds 1-5): auxiliary tools get full auto-install+measured-auto-update-discovery; peer CLIs bootstrap-only, no mid-session auto-update; real_binary() stays strictly read-only (cx architectural win, ag conceded); governance conditional-exempt for mechanical recovery, always-governed for version bumps; fable's 4 required + 1 optional amendments (Windows file-locking common-case, GitHub rate limits, SHA3, npm/nodejs bootstrap order, TOFU auto-pinning). Implementation layer (rounds 6-10, NEW today): exact file layout (version_resolver.py, check_tool_updates.py, provisioner.py ensure_tool/ensure_peer_cli), exact runtimes.json schema additions (discovery_provider/discovery_id/install_mechanism/canary/checksum fields), exact .install_manifest.json schema incl. checksum_source/checksum_verified provenance tracking (cx's addition), explicit zip_tool/exe_tool/npm_peer install-mechanism dispatch (cx corrected ag's single-shared-function draft), concrete --propose-diff artifact contract (_archive/tool-updates/<UTC>/ with 3 files + enforced base_sha256 stale-proposal rejection, fable required), npm_peer-specific semantics (always pin exact version, registry integrity as checksum, nodejs-first bootstrap check), and a CORRECTED deferred-retry mechanism after fable caught cx's own round-7 proposal (retry at 'on_session_start') referencing a hook that does not exist anywhere in _sys/hooks/ - same class of mistake the policy round already avoided for periodic_minutes; corrected to ensure-tool --retry-deferred as primary + lazy opportunistic draining, no assumed session-start infrastructure. Full TDD test-matrix checklist included in the doc. Nothing implemented yet. TDD IMPLEMENTED AND COMMITTED 2026-07-10 (03af006): version_resolver.py + check_tool_updates.py + provisioner.py ensure_tool/ensure_peer_cli + check_cli_reality.py --repair-missing + scrubber.py Tier2 purge, 5 new test files (770/770 green). Independent verification before apply caught 4 real bugs in the delegated implementations (see commit msg): ensure_peer_cli wrong data source (runtimes.json vs peers.json), missing zip-flatten step, --repair-missing relying on a report shape that cannot surface a truly-missing binary, sqlite.org PRODUCT-column parser bug (verified live against sqlite.org/npm/GitHub).",
       "risk": null,
       "last_verified_at": "2026-07-10T10:15:00+09:00"
     },
@@ -297,7 +383,9 @@
       "blocker": null,
       "evidence_commit": [],
       "supersedes": [],
-      "source_refs": ["sandbox-behavior-probe-b7-2026-07-08.md"],
+      "source_refs": [
+        "sandbox-behavior-probe-b7-2026-07-08.md"
+      ],
       "next_action": "needs-discussion, not ready for TDD (found during 2026-07-09 ag exhaustive backlog sweep, cross-referenced with B7's empirical confirmation): cc runs --dangerously-skip-permissions and ag has no filesystem confinement (--sandbox does not enforce it) - both already declared as accepted trusted-IPC risk in orchestration.json's permission_classes notes (DIR-002), and now empirically reconfirmed unenforced 2/2+ real runs by B7. A CLI-permission-tool allowlist was already trialed for cc (2026-07-03) and reverted because it did not hard-enforce under -p. No concrete OS-level/hook enforcement design exists yet - this item exists so the gap has a tracked home, not because a fix is imminent or requested.",
       "risk": null,
       "last_verified_at": "2026-07-09T06:40:00+09:00"
@@ -310,9 +398,13 @@
       "category": "ops",
       "owner": "ag",
       "blocker": null,
-      "evidence_commit": ["8df17fc"],
+      "evidence_commit": [
+        "8df17fc"
+      ],
       "supersedes": [],
-      "source_refs": ["hardcoding-full-audit-2026-07-09.md"],
+      "source_refs": [
+        "hardcoding-full-audit-2026-07-09.md"
+      ],
       "next_action": "DONE (ag fix, cc-applied+verified after checking every referenced identifier - _final_arbiter_config, action_report_error, ConfigManager, _append_ask_history all confirmed real before applying): (1) diag.py now uses imported QUOTA_WARN_FRAC/QUOTA_CRIT_FRAC instead of hardcoded 0.90/0.75. (2) hub.py's arbiter subprocess timeout now reads routing-config.json's new final_arbiter.invocation_timeout_sec (default 300, unchanged behavior). (3) hub.py's ask_history.jsonl append failure now routed through action_report_error (double-guarded so a second failure still can't crash the caller). (4) config.py's get_runtimes_config/get_env_config failures now print to stderr instead of silently returning {}. Full suite green (693 passed) after fixing one test bug in cc's own review (test_config_loader_error_handling needed the files to actually exist so .exists() gate doesn't short-circuit before the mocked open() ever runs).",
       "risk": null,
       "last_verified_at": "2026-07-09T15:35:00+09:00"
@@ -325,9 +417,13 @@
       "category": "ops",
       "owner": "cx",
       "blocker": null,
-      "evidence_commit": ["413b817"],
+      "evidence_commit": [
+        "413b817"
+      ],
       "supersedes": [],
-      "source_refs": ["hardcoding-full-audit-2026-07-09.md"],
+      "source_refs": [
+        "hardcoding-full-audit-2026-07-09.md"
+      ],
       "next_action": "DONE for items 1/3/5/6 (cx fix, cc-verified+applied): _common.py's _active_ai_peer() now derives priority from enabled orchestration nodes (optionally overridden by a review_peer_priority config key) instead of the literal 'ag,cc,cx' tuple; check_sandbox_behavior.py's run_probes() now iterates enabled peers from orchestration.json instead of a hardcoded 'cc,ag,cx' list (existing tests updated to pass a real 3-peer orch fixture); peer_mgr.py's cmd_add() now fails closed with an explicit error when no matching provider template exists, instead of silently inventing Claude-style invoke_args/memory/capability_class defaults (cc kept default_profile='effort' as an intentional peer-agnostic default, not part of the unsafe-invention bug, narrower than cx's first-draft rewrite); diag.py's Fable-quota annotation now resolves from routing-config.json's token_load_balancing.arbiter_models via a new _arbiter_model_ids() helper instead of a literal peer=='cc' check (cc fixed a real bug in cx's draft: _read_json_file() returns a (data, observed_ts) tuple, not a bare dict - cx's snippet would have silently always returned an empty set). Items 2 (check_cli_reality.py REAL_BINARIES duplication) and 4 (peer_console.py security-defaults duplication) explicitly deferred by cx as needing a coordinated follow-up - see T15.",
       "risk": null,
       "last_verified_at": "2026-07-09T16:00:00+09:00"
@@ -340,9 +436,13 @@
       "category": "ops",
       "owner": "cx",
       "blocker": null,
-      "evidence_commit": ["413b817"],
+      "evidence_commit": [
+        "413b817"
+      ],
       "supersedes": [],
-      "source_refs": ["hardcoding-full-audit-2026-07-09.md"],
+      "source_refs": [
+        "hardcoding-full-audit-2026-07-09.md"
+      ],
       "next_action": "DONE for items 9/10 (cx fix, cc-verified+applied): check_cli_canary.py's record_budget_invocation() now treats a malformed (non-list) budget file as empty rather than crashing, and a failed budget-file write is logged to stderr instead of silently ignored (cc chose log-over-raise vs cx's raise-RuntimeError draft, since neither of the two real call sites currently wraps this call in a try/except - raising would have turned a silent no-op into an uncaught crash mid-loop); _common.py's update_status_error() now reads protocol.json's autonomous_maintenance.health_thresholds.consecutive_failure_halt (currently 5) and only force-closes a peer's gate_open once that many consecutive failures accrue, instead of tripping on the very first failure. Items 7/8 (check_cli_reality.py stale-hash reprobe + check_cli_canary.py budget-bypass threading) and 11/12 (check_health.py model resolution + shared AI-output-contract validator across 4 check files) explicitly deferred by cx as too architecturally coupled to rush into this batch - see T16.",
       "risk": null,
       "last_verified_at": "2026-07-09T16:00:00+09:00"
@@ -355,9 +455,13 @@
       "category": "ops",
       "owner": "cx",
       "blocker": null,
-      "evidence_commit": ["dac3204"],
+      "evidence_commit": [
+        "dac3204"
+      ],
       "supersedes": [],
-      "source_refs": ["hardcoding-full-audit-2026-07-09.md"],
+      "source_refs": [
+        "hardcoding-full-audit-2026-07-09.md"
+      ],
       "next_action": "DONE, all 6 (cx fix, cc-verified against live config/directories before applying - _configured_agents_dir() and _claude_project_dir() both empirically confirmed to resolve to the real existing directories P:\\_sys\\claude\\project\\agents and P:\\_sys\\claude\\config\\projects\\P-- respectively): saturation_scan.py's --sys-root default now resolves to _sys itself (was 1 level too high, resolving to the portable root); check_health.py's Claude transcript discovery now derives the encoded project-dir key dynamically from _PORTABLE_ROOT via a new _claude_project_key()/_claude_project_dir() pair instead of the literal 'P--' (verified the encoding matches real directory names D--PortableDev--v2-0- and P-- observed on disk); check_agents.py now resolves the configured agents tree via peers.json's claude.sys_subdir/project_junction instead of the wrong hardcoded '.claude/agents'; check_deps.py's dependency merge now reports exact found/selected/missing coverage instead of silently overstating it; batch_review.py's review threshold/interval now both come from protocol.json's collab_rate (added a new batch_review_min_collab_rate=7 key; review_interval_min already existed there unused) instead of a deprecated config.json + hardcoded 7, with last_review_ts state kept in a separate file to avoid routinely mutating the governed protocol.json; ag_statusline.py's stdin dump moved from the source tree (_sys/cli/ag_stdin.log) to the data/temp scratch convention with an 8s subprocess timeout added - cc also updated snapshot.py's live-telemetry reader (a real consumer of the old path found during verification, not previously flagged) to match the new location so ag's diag live-status wasn't silently broken by the move. Full suite green (708 passed).",
       "risk": null,
       "last_verified_at": "2026-07-09T17:00:00+09:00"
@@ -370,9 +474,13 @@
       "category": "cleanup",
       "owner": "cx",
       "blocker": null,
-      "evidence_commit": ["dac3204"],
+      "evidence_commit": [
+        "dac3204"
+      ],
       "supersedes": [],
-      "source_refs": ["hardcoding-full-audit-2026-07-09.md"],
+      "source_refs": [
+        "hardcoding-full-audit-2026-07-09.md"
+      ],
       "next_action": "DONE for the stale gc/Gemini recovery text (cx fix, cc-verified): check_agents.py/check_health.py/check_versions.py's failure-path guidance now says 'Check hub.py peer-status for cc, ag, or cx' instead of '--peer gc', and check_versions.py's 'Run 'gemini' interactively to re-authenticate' line was removed outright rather than reworded (no equivalent command exists for the current 3-peer setup). Remaining T13 scope (scattered tuning literals - saturation_scan.py/check_encoding.py thresholds, check_root_hygiene.py's embedded allowlist, assorted probe timeouts, check_health.py/check_docs_mece.py/check_policy.py governance-value duplication) deliberately NOT touched - cx confirmed these are cosmetic with no active bug, not worth it in this pass.",
       "risk": null,
       "last_verified_at": "2026-07-09T17:00:00+09:00"
@@ -385,9 +493,13 @@
       "category": "ops",
       "owner": "ag/cx",
       "blocker": null,
-      "evidence_commit": ["ea39b78"],
+      "evidence_commit": [
+        "ea39b78"
+      ],
       "supersedes": [],
-      "source_refs": ["hardcoding-full-audit-2026-07-09.md"],
+      "source_refs": [
+        "hardcoding-full-audit-2026-07-09.md"
+      ],
       "next_action": "DONE, all 3 independently cc-verified before AND after fix. (1) check_sandbox_behavior.py's _classify() conflated marker=='WROTE'+absent-sentinel with marker=='DENIED'+absent-sentinel into the same enforced_denied classification (ag fix): split into a new claimed_write_unverified classification for the WROTE+absent case, enforced_denied now only for honest DENIED+absent reports. Did not corrupt B7's already-published findings (checked, none hit that branch). (2) check_encoding.py's _staged_paths()/_worktree_paths() returned [] on any git failure, making the encoding guard fail open (cx fix): added GitCommandError + _git_paths() helper, main() now catches it and returns exit 2 with an explicit error instead of a silent clean pass. (3) self_care.py's scan() called saturation_scan.py --quiet, a flag that does not exist, so the step has been a silent no-op on every run (cx fix): removed --quiet, now checks returncode and records failures into state['errors'] matching the existing docs_mece-step pattern. All 3 fixes + new/updated tests applied by cc after independent verification; full suite green (690 passed).",
       "risk": null,
       "last_verified_at": "2026-07-09T15:00:00+09:00"
@@ -400,9 +512,14 @@
       "category": "ops",
       "owner": "ag",
       "blocker": null,
-      "evidence_commit": ["e446c55"],
+      "evidence_commit": [
+        "e446c55"
+      ],
       "supersedes": [],
-      "source_refs": ["hardcoding-full-audit-2026-07-09.md", "pretdd-prep-2026-07-09.md"],
+      "source_refs": [
+        "hardcoding-full-audit-2026-07-09.md",
+        "pretdd-prep-2026-07-09.md"
+      ],
       "next_action": "DONE (ag implementation, cc migrated every call site: reconcile_peer/probe_version/run/auto_refresh_observed + check_cli_canary.py's import). Found and fixed a pre-existing latent test bug this exposed: several tests monkeypatched check_cli_reality.real_binary/fingerprint, but check_cli_canary.py imports those names directly (from X import Y), so the patches never actually took effect against check_cli_canary's own calls - harmless before since the old REAL_BINARIES-dict real_binary() didn't depend on orch content; the new resolver made the gap load-bearing (ValueError: no invoke field). Fixed by patching the consuming module (check_cli_canary) instead of the defining one. peer_console.py's apply_security_semantics() implemented per spec (sandbox_semantics, not the hallucinated permission_mode). Full suite green (727 passed).",
       "risk": null,
       "last_verified_at": "2026-07-09T23:50:00+09:00"
@@ -415,9 +532,14 @@
       "category": "ops",
       "owner": "cx",
       "blocker": null,
-      "evidence_commit": ["8eb7dfa"],
+      "evidence_commit": [
+        "8eb7dfa"
+      ],
       "supersedes": [],
-      "source_refs": ["hardcoding-full-audit-2026-07-09.md", "pretdd-prep-2026-07-09.md"],
+      "source_refs": [
+        "hardcoding-full-audit-2026-07-09.md",
+        "pretdd-prep-2026-07-09.md"
+      ],
       "next_action": "DONE (cx implementation, cc found+fixed a load-bearing gap before applying): auto_refresh_observed() now does a real budgeted re-probe on hash-unchanged-but-expired instead of skip+bump; check_cli_canary.py's bypass_budget expression changed to is_explicit-only. cc verified the fix would have been a no-op as originally scoped: run_canary()'s target fan-out already marked EVERY all_profiles=True target (root-peer and global alike) as is_explicit=True, so changing just the bypass expression wouldn't have capped anything - fixed the fan-out itself to only claim explicit for a genuinely explicit 'peer.profile' CLI target, not bulk fan-out. Shared validate_ai_json()/ContractViolationError wired into all 4 AI-check files with real per-file schemas, replacing 'startswith(\"{\")'-style acceptance of any parseable JSON as success. Full suite green (743 passed).",
       "risk": null,
       "last_verified_at": "2026-07-09T23:50:00+09:00"
@@ -430,9 +552,16 @@
       "category": "config",
       "owner": "ag",
       "blocker": null,
-      "evidence_commit": ["63f3499"],
+      "evidence_commit": [
+        "63f3499"
+      ],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md", "backlog-5whys-consensus-2026-07-08-round3.md", "pretdd-prep-2026-07-08-round2.md", "remaining-items-pretdd-2026-07-08.md"],
+      "source_refs": [
+        "backlog_reorg_2026_07_04.md",
+        "backlog-5whys-consensus-2026-07-08-round3.md",
+        "pretdd-prep-2026-07-08-round2.md",
+        "remaining-items-pretdd-2026-07-08.md"
+      ],
       "next_action": "IMPLEMENTED 2026-07-08 (ag, TDD): _sys/checks/check_root_hygiene.py per spec - default mode scans root children only, exits 2 on unexpected entries; --closure mode also runs git status/diff-check/check_backlog. Live-verified against the real repo root (clean/ok) and --closure mode (correctly flags uncommitted new files as not-clean). Notable: T4's brand-new auto-revert mechanism fired for real during this implementation - ag wrote the check script directly to _sys/checks/ (a governed dir) despite instructions, and hub.py auto-quarantined+deleted it since it was a new file absent from HEAD (safe-to-revert case); cc re-applied the quarantined content properly via Write after confirming it matched ag's reported text exactly. 679/679 tests green (independently re-verified by cc). Only remaining step is committing this.",
       "risk": null,
       "last_verified_at": "2026-07-08T23:14:00+09:00"
@@ -445,9 +574,15 @@
       "category": "cleanup",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": ["31ebe56", "0e78717"],
+      "evidence_commit": [
+        "31ebe56",
+        "0e78717"
+      ],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08.md"],
+      "source_refs": [
+        "backlog_reorg_2026_07_04.md",
+        "pretdd-prep-2026-07-08.md"
+      ],
       "next_action": "DONE. Phase 1+2 (code+config decouple, commit 31ebe56) and Phase 3 (physical deletion, user-approved retention decision 2026-07-08) complete - _sys/gemini/** and the git-tracked _sys/cli/gemini, gemini.bat, gemini_entry.py launcher scripts all removed; 672/672 tests green after deletion. Closed 2026-07-09 (ag+cc consensus): the remaining gemini_call() compat shim in batch_review.py/git_draft.py and the `if peer_id == \"gc\":` branch in peer_console.py are functional, legacy-named, no active bug - accepted as cosmetic tech debt, not tracked further. Reopen only if either shim actually breaks or needs to change behavior.",
       "risk": null,
       "last_verified_at": "2026-07-09T00:10:00+09:00"
@@ -460,9 +595,14 @@
       "category": "tests",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": ["b76c44b"],
+      "evidence_commit": [
+        "b76c44b"
+      ],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md"],
+      "source_refs": [
+        "backlog_reorg_2026_07_04.md",
+        "pretdd-prep-2026-07-08-round2.md"
+      ],
       "next_action": "TRIAGE CONFIRMED FINAL (cx, re-verified 2026-07-08 twice): no remaining _legacy directory/file under _sys/tests. Group (a) kept as regression coverage (test_checks_common.py's gemini_call(), test_model_profiles.py::test_removed_legacy_virtual_nodes_do_not_exist, test_routing_targets.py legacy compat, test_hub_integration_v42.py's HubError.report_from_legacy) - no code change needed, already correct. Group (b) (test_migration_phase1.py::TestAiCheck + Gemini session cleanup/archive tests) remains coupled to live gc/Gemini code in ai_check.py/ctx_end.py - out of scope, tracked separately under P2's hook migration, not blind P3 cleanup. Nothing actionable left for P3 itself.",
       "risk": null,
       "last_verified_at": "2026-07-08T20:41:00+09:00"
@@ -475,9 +615,13 @@
       "category": "docs",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": ["81d3f18"],
+      "evidence_commit": [
+        "81d3f18"
+      ],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md"],
+      "source_refs": [
+        "backlog_reorg_2026_07_04.md"
+      ],
       "next_action": "MERGE into Drift & Document Currency epic, leverage 81d3f18 CHK-CONST guard",
       "risk": null,
       "last_verified_at": "2026-07-08T09:16:00+09:00"
@@ -490,9 +634,13 @@
       "category": "cleanup",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": ["0e78717"],
+      "evidence_commit": [
+        "0e78717"
+      ],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md"],
+      "source_refs": [
+        "backlog_reorg_2026_07_04.md"
+      ],
       "next_action": "User approved retention decision 2026-07-08 (delete). _archive/ (68M, fully untracked - zero git-tracked files) deleted from local disk. No git diff exists for this action since nothing in it was tracked; this backlog record + commit timestamp is the only durable evidence. 672/672 tests still green after deletion (confirms nothing depended on it).",
       "risk": null,
       "last_verified_at": "2026-07-08T22:55:00+09:00"
@@ -505,9 +653,13 @@
       "category": "governance",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": ["b2b8a14"],
+      "evidence_commit": [
+        "b2b8a14"
+      ],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md"],
+      "source_refs": [
+        "backlog_reorg_2026_07_04.md"
+      ],
       "next_action": "DROP - already ratified in practice",
       "risk": null,
       "last_verified_at": "2026-07-08T09:16:00+09:00"
@@ -520,9 +672,14 @@
       "category": "docs",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": ["b1a3caf"],
+      "evidence_commit": [
+        "b1a3caf"
+      ],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md", "pretdd-prep-2026-07-08-round2.md"],
+      "source_refs": [
+        "backlog_reorg_2026_07_04.md",
+        "pretdd-prep-2026-07-08-round2.md"
+      ],
       "next_action": "",
       "risk": null,
       "last_verified_at": "2026-07-08T09:16:00+09:00"
@@ -535,7 +692,9 @@
       "category": "governance-safety",
       "owner": "cx",
       "blocker": null,
-      "evidence_commit": ["00484f8"],
+      "evidence_commit": [
+        "00484f8"
+      ],
       "supersedes": [],
       "source_refs": [
         "backlog-5whys-consensus-2026-07-08-round2.md",
@@ -556,7 +715,9 @@
       "blocker": null,
       "evidence_commit": [],
       "supersedes": [],
-      "source_refs": ["backlog-5whys-consensus-2026-07-08-round2.md"],
+      "source_refs": [
+        "backlog-5whys-consensus-2026-07-08-round2.md"
+      ],
       "next_action": "DEFER (ag+cc consensus 2026-07-09, re-triage of ag+cx's 2026-07-08 design): the design itself (a job reads test/check failures + lessons + health/ask logs, scores them, auto-registers a 'proposed' item or triage report, human/peer consensus still required before patching backlog.json) remains valid but is moot at current scale - the backlog is now down to 6 open items (from a much larger count earlier this session), nowhere near the ~50-item threshold fable originally set as the bar for this meta-tooling to earn its keep. Revisit only if the backlog regrows past roughly that size and manual re-triage rounds start feeling costly again.",
       "risk": null,
       "last_verified_at": "2026-07-09T00:10:00+09:00"
@@ -569,9 +730,13 @@
       "category": "cleanup",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": ["1dcc12a"],
+      "evidence_commit": [
+        "1dcc12a"
+      ],
       "supersedes": [],
-      "source_refs": ["backlog_reorg_2026_07_04.md"],
+      "source_refs": [
+        "backlog_reorg_2026_07_04.md"
+      ],
       "next_action": "",
       "risk": null,
       "last_verified_at": "2026-07-08T10:47:00+09:00"
