@@ -57,20 +57,23 @@ class TestLeafCfgContract:
         assert zombie >= heartbeat * 2, "zombie_timeout must be >= 2× heartbeat"
 
 
-class TestStartupTimeoutContract:
-    """_startup_timeout_sec() gates the pre-first-output stall window (must be
-    far below zombie so a silent peer fails fast)."""
+class TestUnifiedSilenceContract:
+    """Peer supervision uses one profile-scoped silence window; no separate
+    pre-first-output startup timeout remains (retired 2026-07-11 - a shorter
+    profile-scoped startup window killed 3 real cx calls at 180s while the
+    peer was still legitimately working)."""
 
-    def test_is_int_and_bounded(self):
-        val = hub._startup_timeout_sec()
-        assert isinstance(val, int)
-        assert val >= 5, "startup timeout must be >= 5s to allow spin-up"
+    def test_startup_timeout_config_removed(self):
+        protocol = json.loads((SYS_DIR / "ai" / "protocol.json").read_text(encoding="utf-8"))
+        comm = protocol.get("communication_policy", {})
+        assert "startup_timeout_sec" not in comm
+        assert "startup_profile_map" not in comm
+        assert comm.get("silent_startup_warning_sec") == 180
+        assert not hasattr(hub, "_startup_timeout_sec")
 
-    def test_below_zombie_window(self):
-        _, _, zombie = hub._lease_cfg()
-        assert hub._startup_timeout_sec() < zombie, (
-            "startup timeout must be shorter than the zombie window (else it never fires)"
-        )
+    def test_deepthink_zombie_profile_applies(self):
+        _, _, zombie = hub._lease_cfg("cx.deepthink")
+        assert zombie == 900
 
 
 class TestActionAskContract:

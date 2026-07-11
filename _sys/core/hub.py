@@ -2674,7 +2674,7 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
         sys.exit(1)
 
     heartbeat_sec, _lease_timeout_sec, zombie_timeout_sec = _lease_cfg(node_id)
-    startup_timeout_sec = _startup_timeout_sec(node_id)
+    silent_warning_sec = _silent_startup_warning_sec()
     lease = int(_runtime_cfg().get("pty_lease_sec", 300) or 300)
 
     # CONDITION-3: the bounded get() slice MUST be <= heartbeat (so lease renewal
@@ -2732,7 +2732,7 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
     deadline = t0 + (timeout_sec if timeout_sec > 0 else float("inf"))
     last_renew = t0
     last_activity = t0  # any chunk resets the silent-zombie clock
-    first_output_seen = False  # staged timeout: startup window until first chunk
+    startup_warning_emitted = False
     timed_out = False
     timeout_kind: str | None = None
     transport_error: str | None = None
@@ -2753,15 +2753,28 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
             _lease_renew(ai_root, node_id, lease)
             last_renew = now
 
-        # 3. silent-stall guard — staged: startup window until first output,
-        #    then the full zombie window. startup never exceeds zombie.
-        _silence_bound = zombie_timeout_sec if first_output_seen else min(startup_timeout_sec, zombie_timeout_sec)
-        if now - last_activity >= _silence_bound:
+        # 3. non-lethal startup visibility: warn once if the peer has produced
+        #    no output by the configured threshold. This never kills the process.
+        if (
+            silent_warning_sec > 0
+            and not startup_warning_emitted
+            and not chunks
+            and now - t0 >= silent_warning_sec
+        ):
+            _emit_peer_silent_startup_warning(
+                ai_root, node_id, now - t0, silent_warning_sec, pid, "pty"
+            )
+            startup_warning_emitted = True
+
+        # 4. silent-stall guard. The same zombie window applies from process
+        #    start and after every output chunk; there is no separate startup
+        #    fast-fail window.
+        if now - last_activity >= zombie_timeout_sec:
             timed_out = True
-            timeout_kind = "zombie" if first_output_seen else "startup"
+            timeout_kind = "zombie"
             break
 
-        # 4. liveness backstop
+        # 5. liveness backstop
         try:
             alive = p.isalive()
         except Exception:
@@ -2784,7 +2797,6 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
         if kind == "data":
             chunks.append(payload)
             last_activity = time.monotonic()
-            first_output_seen = True
         elif kind == "eof":
             eof_seen = True
             break
@@ -3034,8 +3046,60 @@ def _is_ephemeral_query_file(path: Path) -> bool:
     )
 
 
+def _silent_startup_warning_sec() -> int:
+    """Non-lethal initial-silence warning threshold.
+
+    This is telemetry only. The actual kill threshold remains the profile-scoped
+    zombie timeout from _lease_cfg() - crossing this value never kills a peer."""
+    try:
+        comm = _load_protocol_cfg().get("communication_policy", {})
+        raw = comm.get("silent_startup_warning_sec", 180)
+        return max(0, int(raw or 0))
+    except Exception:
+        return 180
+
+
+def _emit_peer_silent_startup_warning(
+    ai_root: Path | None,
+    peer_id: str,
+    elapsed_sec: float,
+    threshold_sec: int | float,
+    pid: int | None,
+    transport: str,
+) -> None:
+    """Emit a once-per-process warning for initial silence without affecting the
+    process. Purely observational (DIR-004: accumulates measured silence-distribution
+    data for future evidence-based tuning) - never raises/kills."""
+    elapsed = int(max(0, elapsed_sec))
+    threshold = int(max(0, threshold_sec))
+    try:
+        print(
+            f"[HUB:WARN] {peer_id} produced no output for {elapsed}s "
+            f"(threshold={threshold}s, event=peer_silent_startup)",
+            file=sys.stderr,
+        )
+    except Exception:
+        pass
+    if not ai_root:
+        return
+    try:
+        _record_routing_metric(
+            ai_root,
+            "peer_silent_startup",
+            level="warning",
+            peer_id=peer_id,
+            node_id=peer_id,
+            elapsed_sec=elapsed,
+            threshold_sec=threshold,
+            pid=pid,
+            transport=transport,
+        )
+    except Exception:
+        pass
+
+
 def _stream_process_output(proc, cmd, input_bytes, heartbeat_sec, zombie_timeout_sec,
-                           startup_timeout_sec, timeout_sec, ai_root, to, lease_timeout_sec,
+                           timeout_sec, ai_root, to, lease_timeout_sec,
                            _clock=time.monotonic, _sleep=time.sleep):
     """Read a subprocess' stdout/stderr INCREMENTALLY via background threads so a
     streaming peer (e.g. `codex exec --json`, which emits `thread.started` within
@@ -3043,9 +3107,11 @@ def _stream_process_output(proc, cmd, input_bytes, heartbeat_sec, zombie_timeout
     `communicate(timeout=…)` loop, which could not see partial output (exc.output was
     None) and therefore startup-killed a working-but-slow peer.
 
-    Staged silence guard: BEFORE the first output chunk the (short) startup window
-    applies; AFTER it, the full zombie window applies. Raises subprocess.TimeoutExpired
-    on hard deadline or silence stall. Returns (raw_out: bytes, raw_err: bytes)."""
+    Silence guard: the same zombie window applies from process start and after
+    every output chunk. A non-lethal peer_silent_startup warning is emitted once
+    when initial silence crosses the configured threshold. Raises
+    subprocess.TimeoutExpired on hard deadline or silence stall. Returns
+    (raw_out: bytes, raw_err: bytes)."""
     import threading
 
     if input_bytes is not None and proc.stdin:
@@ -3082,10 +3148,10 @@ def _stream_process_output(proc, cmd, input_bytes, heartbeat_sec, zombie_timeout
 
     t0 = _clock()
     deadline = t0 + (timeout_sec if timeout_sec > 0 else float("inf"))
-    startup_bound = min(startup_timeout_sec, zombie_timeout_sec)
+    silent_warning_sec = _silent_startup_warning_sec()
     last_activity = t0
     last_renew = t0
-    first_output = False
+    startup_warning_emitted = False
     last_len = 0
     slice_sec = max(0.02, min(0.2, float(heartbeat_sec)))
 
@@ -3099,14 +3165,22 @@ def _stream_process_output(proc, cmd, input_bytes, heartbeat_sec, zombie_timeout
         if cur_len > last_len:
             last_len = cur_len
             last_activity = now
-            first_output = True
+        if (
+            silent_warning_sec > 0
+            and not startup_warning_emitted
+            and cur_len == 0
+            and now - t0 >= silent_warning_sec
+        ):
+            _emit_peer_silent_startup_warning(
+                ai_root, to, now - t0, silent_warning_sec, getattr(proc, "pid", None), "subprocess"
+            )
+            startup_warning_emitted = True
         # process finished AND streams fully drained → done
         if proc.poll() is not None and not t_out.is_alive() and not t_err.is_alive():
             break
-        bound = zombie_timeout_sec if first_output else startup_bound
-        if now - last_activity >= bound:
+        if now - last_activity >= zombie_timeout_sec:
             _kill_process_tree(proc.pid)
-            raise subprocess.TimeoutExpired(cmd, bound)
+            raise subprocess.TimeoutExpired(cmd, zombie_timeout_sec)
         if ai_root and now - last_renew >= heartbeat_sec:
             _lease_renew(ai_root, to, lease_timeout_sec)
             last_renew = now
@@ -4552,7 +4626,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         return
 
     # ── Subprocess path (with optional session-retry) ──────────
-    heartbeat_sec, lease_timeout_sec, zombie_timeout_sec = _lease_cfg()
+    heartbeat_sec, lease_timeout_sec, zombie_timeout_sec = _lease_cfg(to)
     ask_id = ask_id or _short_id("ask-")
     lease_status = "open"
     t0 = time.monotonic()
@@ -4578,13 +4652,12 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         _lease_open(ai_root, to, proc.pid, lease_timeout_sec, ask_id=ask_id, ask_query_file=saved_query_file_path)
 
         input_bytes = query.encode("utf-8") if use_stdin else None
-        # Incremental streaming read (A-fix): sees a peer's partial output so a slow-but-
-        # working peer (codex xhigh emits thread.started fast then reasons ~minutes) is
-        # NOT startup-killed. Staged silence: startup window until first output, then zombie.
+        # Incremental streaming read: sees partial output and applies one unified
+        # silence window from t0 and after every output chunk.
         try:
             raw_out, raw_err = _stream_process_output(
                 proc, cmd, input_bytes, heartbeat_sec, zombie_timeout_sec,
-                _startup_timeout_sec(to), timeout_sec, ai_root, to, lease_timeout_sec)
+                timeout_sec, ai_root, to, lease_timeout_sec)
         except subprocess.TimeoutExpired:
             lease_status = "timeout"
             raise
@@ -4658,12 +4731,15 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     env=process_env,
+                    cwd=proc_cwd,
                 )
                 _lease_open(ai_root, to, proc.pid, lease_timeout_sec, ask_id=ask_id + "-r")
                 t1 = time.monotonic()
                 try:
                     retry_input = query.encode("utf-8") if fresh_use_stdin else None
-                    raw_out, raw_err = proc.communicate(input=retry_input, timeout=timeout_sec if timeout_sec > 0 else None)
+                    raw_out, raw_err = _stream_process_output(
+                        proc, fresh_cmd, retry_input, heartbeat_sec, zombie_timeout_sec,
+                        timeout_sec, ai_root, to, lease_timeout_sec)
                 except subprocess.TimeoutExpired:
                     raise
                 elapsed = int(time.monotonic() - t0)
@@ -7451,26 +7527,6 @@ def _lease_cfg(node_id: str | None = None) -> tuple[int, int, int]:
                 
     z = max(h * 2, z_base)
     return h, l, z
-
-
-def _startup_timeout_sec(node_id: str | None = None) -> int:
-    """Pre-first-output stall window (seconds), profile-scoped. Until a peer emits
-    its first stdout chunk, silence is bounded by this instead of the full zombie
-    window, so a cold/hung startup fails fast. Deep-reasoning profiles legitimately
-    stay silent longer before their first byte (a buffered `claude -p` flushes the
-    whole turn at completion), so the window scales by profile via startup_profile_map
-    (mirror of zombie_profile_map). This is the backstop for the streaming-transport
-    root fix. Kept separate from _lease_cfg to preserve that function's 3-tuple contract."""
-    comm = _load_protocol_cfg().get("communication_policy", {})
-    base = int(comm.get("startup_timeout_sec", 90) or 90)
-    if node_id:
-        profile_id = _resolve_profile_id(node_id)
-        if profile_id:
-            profile_name = profile_id.split(".")[-1] if "." in profile_id else profile_id
-            profile_map = comm.get("startup_profile_map", {})
-            if profile_name in profile_map:
-                base = int(profile_map[profile_name])
-    return max(5, base)
 
 
 def _lease_open(ai_root: Path | None, peer_id: str, pid: int, lease_timeout_sec: int, ask_id: str | None = None, ask_query_file: str | None = None) -> None:

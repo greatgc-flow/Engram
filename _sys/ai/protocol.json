@@ -491,15 +491,8 @@
                                                             "effort":  600,
                                                             "deepthink":  900
                                                         },
-                                 "_note_zombie_profile_map":  "Silence (no-output) window per profile. Peer comms are UNLIMITED in total time and content ??ANY output chunk resets this clock, so a peer that keeps streaming is never killed. The window only catches a HANG (zero progress). deepthink=900s (15m): streaming reasoning models never idle that long mid-work, so 15m of silence = hung (was 7200s, which let a stalled deepthink hang ~2h).",
-                                 "startup_timeout_sec":  90,
-                                 "startup_profile_map":  {
-                                                             "standard":  90,
-                                                             "effort":  180,
-                                                             "deepthink":  300,
-                                                             "fable":  300
-                                                         },
-                                 "_note_startup_timeout":  "Pre-first-output stall window, profile-scoped (mirror of zombie_profile_map). Until a peer emits its first stdout chunk, silence is bounded by this (fast-fail cold stalls); after first output the zombie window applies. Deep-reasoning profiles legitimately stay silent longer before first byte (buffered `claude -p` flushes whole turn at completion), so effort/deepthink/fable get larger windows. Backstop for the streaming-transport root fix; instruction-heartbeat was empirically falsified (prompts control token order, not time-to-first-byte)."
+                                 "silent_startup_warning_sec":  180,
+                                 "_note_zombie_profile_map":  "Silence (no-output) window per profile. Peer comms are UNLIMITED in total time and content - ANY output chunk resets this clock, so a peer that keeps streaming is never killed. The same window applies from process start and after every output chunk; there is no separate startup fast-fail window (retired 2026-07-11: a shorter profile-scoped startup_profile_map killed 3 real cx calls at 180s while the peer was still legitimately working). A non-lethal peer_silent_startup warning is emitted once when initial silence crosses silent_startup_warning_sec - telemetry only, never kills. The zombie window is the only silence-based kill threshold. deepthink=900s (15m): streaming reasoning models never idle that long mid-work, so 15m of silence = hung."
                              },
     "feedback_loop":  {
                           "enabled":  true,

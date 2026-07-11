@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-11T09:20:00+09:00",
+  "updated_at": "2026-07-11T11:35:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -789,6 +789,19 @@
         "full-repo-mece-inventory-2026-07-10.md"
       ],
       "next_action": "Documentation complete (5-round unanimous ag+cx+cc.fable). 5-category MECE partition ratified: Source / Configuration & Maps / Instructions & Documentation (prescriptive+descriptive) / Provisioned Components & Scaffolding / Generated Runtime State. Tie-breaker rule: classify by WHO writes it and WHEN, not git-tracked status. Concrete cleanup candidates identified (not yet actioned): _sys/antigravity/config/scratch/temp_sys/ (stale mirrored copy of hub.py/snapshot.py/tests), _sys/env/ffmpeg/ (stale empty dir, residue from todays ffmpeg removal), _sys/test_valid2.out (tracked zero-byte orphan file), cleanup_tiers.json doc/code drift (scrubber.py docstring references a file that does not exist - tiers are hardcoded). Root allowlist (24 entries) cross-checked 1:1, no gaps. Two of the 5 discussion rounds were real regressions (round 4 collapsed most of _sys/ into etc. and dropped the entire Source category) caught independently before being forwarded - not just more rounds, verified each one. Next: decide whether to action the 4 cleanup candidates."
+    },
+    {
+      "id": "T19",
+      "title": "Unify peer hang-detection: eliminate profile-scoped startup-kill timeout, unified zombie window + non-lethal silent_startup_warning telemetry",
+      "status": "active",
+      "priority": "high",
+      "category": "ops",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [],
+      "next_action": "Triggered by 3 real consecutive cx timeouts today at exactly 180s (the effort-tier startup_profile_map bound) on a genuinely large D11 HALF B task, unaffected by --timeout - independently root-caused (protocol.json startup_profile_map + hub.py _stream_process_output staged silence guard) before any peer discussion. 4-round unanimous ag+cx+cc.fable design: eliminate the separate pre-first-output startup-kill window entirely (not just raise the number) for ALL tiers, unify on the existing profile-scoped zombie_timeout_sec (600s standard/effort, 900s deepthink) as the single silence-based kill threshold from process start onward - matching deepthink philosophy that peer comms are unlimited in total time, only zero-progress hangs get killed. cx found the scope was 3 places not 1: _stream_process_output (cx/cc path, the proximate fix), _ask_with_pty (ag/antigravity Windows PTY path - ag's own round-1 diff missed fixing its OWN code path entirely), and a session-resume retry bypass calling bare proc.communicate(timeout=...) with no streaming/silence guard at all (switched to _stream_process_output). Also found+fixed: _lease_cfg() was called without the to/node_id arg on the subprocess path, meaning profile-specific zombie windows (deepthink=900s) were NEVER actually applied there - fixed to _lease_cfg(to). Also fixed a missing cwd=proc_cwd on the retry-path spawn (inconsistent with the primary path's git-root cwd, real pre-existing bug). fable required amendment: instead of zero safety net, added a non-lethal LOG-ONLY peer_silent_startup telemetry event (new config key silent_startup_warning_sec=180, DIR-004 measured-data-for-future-tuning rationale) that fires once but never kills - purely observational. Deleted _startup_timeout_sec() entirely; updated LL-011 lesson enforcement (check_lesson_enforcement.py + active-lessons.jsonl LL-20260703-002) which had itself required the now-retired startup_profile_map to exist - this was found independently by the terminal, not by any peer round, while applying the diff (LL-011 would have started failing the moment the old keys were removed). ADDITIONAL FINDING (terminal, empirical, post-ratification, not blocking): live-tested _ask_with_pty with a real pywinpty spawn and found Windows PTY emits terminal-init escape sequences within ~8ms of every spawn (window title/mode queries), meaning the peer_silent_startup telemetry's \"not chunks yet\" gate is satisfied almost instantly by PTY noise on every call regardless of tier - the telemetry event is not a meaningful signal for the PTY transport specifically (unlike plain subprocess, which has no such noise). Does NOT affect the actual safety fix (last_activity resetting on any byte incl. noise is fine/conservative for kill-avoidance) - only means PTY-path observability is weaker than subprocess-path. Flagged as a non-blocking follow-up, not fixed this round. 795/795 tests pass (3 new: subprocess warn-without-kill, PTY warn-without-kill test simplified to just verify no-kill given the noise finding, deepthink zombie-profile-applies contract test). NOTE: this is a SEPARATE fix from T5 (cx sandbox tempfile create-but-cannot-delete) - T5 itself is still unimplemented, this item only addresses the startup-kill-timeout class of failure, not the tempfile-cleanup issue."
     }
   ]
 }

@@ -7,7 +7,7 @@ _lesson_activation_blocker accepts. Exit 0 only when every check passes.
 
 Checks:
   LL-009  model operand grammar (r-8b3b)  — hub_peer.model_operand_report()
-  LL-011  transport startup contract      — protocol.json startup_profile_map
+  LL-011  transport startup contract      — protocol.json zombie_profile_map
   LL-012  declared-vs-actual              — check_cli_reality.run()
 """
 from __future__ import annotations
@@ -42,7 +42,16 @@ def check_ll009() -> dict:
 
 
 def check_ll011() -> dict:
-    """LL-011: startup_profile_map exists, covers required profiles, sane values."""
+    """LL-011: transport startup contract (revised 2026-07-11) - a peer that is
+    streaming output, or hasn't yet emitted its first byte, must never be killed
+    by a short profile-scoped pre-output window. The 2026-07-03 fix used a
+    separate (shorter) startup_profile_map, which itself proved unsafe: 3
+    consecutive real cx failures on 2026-07-11 were killed at exactly the
+    "effort" tier's 180s startup bound despite the peer still legitimately
+    working. The contract is now enforced via a SINGLE profile-scoped
+    zombie_profile_map (no separate kill-capable startup window) plus a
+    non-lethal silent_startup_warning_sec telemetry threshold. This check
+    verifies the new contract holds and the retired keys are actually gone."""
     findings = []
     try:
         protocol = json.loads(
@@ -51,16 +60,24 @@ def check_ll011() -> dict:
         findings.append(f"protocol.json unreadable: {exc}")
         protocol = {}
     policy = protocol.get("communication_policy") or {}
-    profile_map = policy.get("startup_profile_map")
+
+    profile_map = policy.get("zombie_profile_map")
     if not isinstance(profile_map, dict):
-        findings.append("communication_policy.startup_profile_map missing")
+        findings.append("communication_policy.zombie_profile_map missing")
     else:
         for name in REQUIRED_STARTUP_PROFILES:
             value = profile_map.get(name)
             if not isinstance(value, (int, float)) or value <= 0:
-                findings.append(f"startup_profile_map.{name} missing or non-positive: {value!r}")
-    if not isinstance(policy.get("startup_timeout_sec"), (int, float)):
-        findings.append("communication_policy.startup_timeout_sec missing")
+                findings.append(f"zombie_profile_map.{name} missing or non-positive: {value!r}")
+
+    warning_sec = policy.get("silent_startup_warning_sec")
+    if not isinstance(warning_sec, (int, float)) or warning_sec < 0:
+        findings.append("communication_policy.silent_startup_warning_sec missing or negative")
+
+    if "startup_timeout_sec" in policy or "startup_profile_map" in policy:
+        findings.append("retired keys startup_timeout_sec/startup_profile_map still present - "
+                         "these must stay removed, a kill-capable pre-output window must not return")
+
     return {
         "lesson": "LL-011",
         "check": "transport_startup_contract",
