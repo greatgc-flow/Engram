@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-10T15:00:00+09:00",
+  "updated_at": "2026-07-11T08:35:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -759,12 +759,14 @@
     {
       "id": "T17",
       "title": "D10 regression: _install_tools() crash on npm_peer entries + ensure_peer_cli wrong sentinel filename",
-      "status": "active",
+      "status": "done",
       "priority": "high",
       "category": "ops",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "1e971c8"
+      ],
       "supersedes": [],
       "source_refs": [],
       "next_action": "Full-component audit (cx) + cross-check (ag), delegated per user instruction (not authored directly by terminal), found 2 real bugs in already-shipped D10 code (03af006): (1) P0 - _install_tools() in provisioner.py iterates ALL runtimes.json tools entries unconditionally; since D10 added claude/codex (install_mechanism=npm_peer, no url field) to that dict, cfg.get(\"url\",\"\") returns empty string and _download(\"\", ...) raises ValueError(\"unknown url type\") - a fresh INSTALL.bat run would crash mid-provisioning. Fixed: _install_tools() now skips install_mechanism==\"npm_peer\" entries (installed via _install_ai_peers()/peers.json instead). (2) ensure_peer_cli()'s already-current fast path computed peer_cmd from peer_cfg[\"node_ids\"][0] (e.g. claude peers.json node_ids=[\"cc\",\"ca\"] -> looked for nonexistent \"cc.cmd\"), but npm actually creates claude.cmd/codex.cmd matching the peers.json top-level key. Fixed: peer_cmd now uses peer_key directly. Both fixes independently verified by terminal reading the actual code (not trusting ag's claim that check_cli_reality.py's _repair_missing_peers/_PEER_KEY_BY_NODE_ID \"do not exist\" - confirmed false, they do exist, unaffected by this fix). Added 2 regression tests (cx-authored) to test_provisioner_autoinstall.py - none existed for _install_tools() before. Full component inventory table (install path + install/update/discovery/cleanup status per component) also produced this round, not yet filed as a standalone doc."
@@ -772,12 +774,14 @@
     {
       "id": "T18",
       "title": "Full-repo MECE inventory (source/config/instructions/provisioned/state) - 5-round unanimous",
-      "status": "active",
+      "status": "done",
       "priority": "low",
       "category": "ops",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "23d0988"
+      ],
       "supersedes": [],
       "source_refs": [
         "full-repo-mece-inventory-2026-07-10.md"
