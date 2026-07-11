@@ -4025,6 +4025,28 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 sys.exit(1)
 
 
+def _sweep_stale_ask_temp_dirs(temp_root: Path, max_age_sec: int = 3600) -> None:
+    """Best-effort reap of orphaned per-ask scratch dirs (T5) from prior asks
+    whose teardown failed (e.g. a grandchild process still held a file lock
+    at exit time). Only removes dirs older than max_age_sec so a concurrent
+    live ask's directory is never touched - the NEXT ask becomes the retry,
+    so a locked orphan survives at most an hour instead of forever."""
+    try:
+        if not temp_root.exists():
+            return
+        cutoff = time.time() - max_age_sec
+        for entry in temp_root.iterdir():
+            if not entry.is_dir() or not entry.name.startswith("ask_"):
+                continue
+            try:
+                if entry.stat().st_mtime < cutoff:
+                    shutil.rmtree(entry, ignore_errors=True)
+            except OSError:
+                continue
+    except Exception:
+        pass
+
+
 def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False, ask_id: str | None = None) -> None:
     if _depth > RUNTIME_ESCALATION_DEPTH_CEILING:
 
@@ -4291,7 +4313,25 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
 
     # ── Environment Variable Injection ─────────────────────────
     process_env = {**os.environ, "PYTHONUTF8": "1"}
-    
+
+    # ── Per-ask scratch TEMP dir (T5) ────────────────────────────
+    # Isolates peer-subprocess temp litter (e.g. cx's small lock/ping files)
+    # so it can be deterministically reaped, instead of dumping into the
+    # shared _sys/data/temp/ where it accumulates forever. Does NOT address
+    # host-level PowerShell execution-policy-check litter
+    # (__PSScriptPolicyTest_* - a separate, unrelated leak, see backlog):
+    # those files are created by whatever process's own ambient TEMP
+    # resolves to (e.g. INSTALL.bat's or this terminal's own PowerShell
+    # calls), independent of any peer subprocess's env vars.
+    ask_id = ask_id or _short_id("ask-")
+    _ask_temp_root = Path(__file__).resolve().parent.parent / "data" / "temp"
+    _sweep_stale_ask_temp_dirs(_ask_temp_root)
+    ask_temp_dir = _ask_temp_root / f"ask_{ask_id}"
+    ask_temp_dir.mkdir(parents=True, exist_ok=True)
+    process_env["TEMP"] = str(ask_temp_dir)
+    process_env["TMP"] = str(ask_temp_dir)
+    process_env["TMPDIR"] = str(ask_temp_dir)
+
     tier = "standard"
     if profile_decision:
         tier = profile_decision.get("selected_profile", "standard")
@@ -4344,7 +4384,6 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
 
     # ── PTY path ───────────────────────────────────────────────
     if requires_pty:
-        ask_id = ask_id or _short_id("ask-")
         query_summary = re.sub(r"[\x00-\x1f\x7f]+", " ", query)
         query_summary = re.sub(r"\s+", " ", query_summary).strip()[:80] or "(empty query)"
 
@@ -4623,11 +4662,12 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     staged_path.unlink(missing_ok=True)
                 except Exception:
                     pass
+            if ask_temp_dir and ask_temp_dir.exists():
+                shutil.rmtree(ask_temp_dir, ignore_errors=True)
         return
 
     # ── Subprocess path (with optional session-retry) ──────────
     heartbeat_sec, lease_timeout_sec, zombie_timeout_sec = _lease_cfg(to)
-    ask_id = ask_id or _short_id("ask-")
     lease_status = "open"
     t0 = time.monotonic()
     proc = None  # ensure defined for finally
@@ -4950,6 +4990,8 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         if proc is not None and proc.returncode is None:
             _kill_process_tree(proc)
         _lease_close(ai_root, to, pid, lease_status)
+        if ask_temp_dir and ask_temp_dir.exists():
+            shutil.rmtree(ask_temp_dir, ignore_errors=True)
 
 
 def _read_query_arg(query: str, query_file: str | None) -> str:

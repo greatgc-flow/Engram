@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-11T11:45:00+09:00",
+  "updated_at": "2026-07-11T00:00:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -24,8 +24,8 @@
     {
       "id": "T5",
       "title": "cx sandbox tempfile create-but-cannot-delete, causes repeated large stray-file dumps",
-      "status": "proposed",
-      "priority": "low",
+      "status": "active",
+      "priority": "medium",
       "category": "ops",
       "owner": "unassigned",
       "blocker": null,
@@ -35,9 +35,9 @@
         "d6-activation-taxonomy-2026-07-08.md",
         "remaining-items-pretdd-2026-07-08.md"
       ],
-      "next_action": "READY FOR TDD (ag spec, cc.fable confirms mechanism reasoning with one condition): hub.py should create a dedicated writable/deletable dir under _sys/data/temp/cx_session_<id> before invoking cx, inject via TEMP/TMP/TMPDIR, tear down after. Mandatory: TDD must include an empirical probe (create+delete inside the injected TEMP under the real cx sandbox) before claiming fixed - this is reasoned-declared, not yet measured.",
+      "next_action": "IMPLEMENTED + EMPIRICALLY VERIFIED (2026-07-11). Root cause per ag+cx 2-round discussion, cc.fable ratified: peer subprocesses inherited the shared _sys/data/temp/ directory with no per-ask isolation, so cx's sandboxed child process could create files it could not later delete, leaving stray litter (measured: 17,534 files in _sys/data/temp/, NOT 'millions' as ag's first pass overstated - independently recounted by the terminal). Of those, 69% (12,062) were __PSScriptPolicyTest_* files, a generic Windows PowerShell execution-policy artifact created by ANY .ps1/.psm1 invocation system-wide (hub.py, INSTALL.bat, provisioner.py, etc.) - NOT specific to cx's sandbox and explicitly OUT OF SCOPE for T5 (split off as a separate host-level PowerShell-leak observation, not yet ticketed). T5 itself covers only the peer-subprocess-owned '00xxxxxxx'/blat-pattern subset. Fix: hub.py now hoists ask_id generation before process_env construction, computes _sys/data/temp/ask_<ask_id> per ask, points TEMP/TMP/TMPDIR at it for the child process, and tears it down via shutil.rmtree(ignore_errors=True) in BOTH the PTY and subprocess finally blocks. Added _sweep_stale_ask_temp_dirs() (reaps ask_*-prefixed sibling dirs older than 1h at the start of every ask) to catch orphans from a prior teardown that failed (e.g. a still-locked file), without touching a concurrent live ask's directory. 2 real errors caught in ag's round-2 'final' diff before implementation: (1) referenced a scratch_root variable that is actually a LOCAL var inside an unrelated function (hub.py:124, ai_root resolution) - would have raised NameError if applied; (2) silently dropped the explicit shutil.rmtree teardown from round 1 in favor of 'rely on scrubber.py periodically', which is factually wrong since scrubber.py has zero automatic/scheduled invocation anywhere in this codebase. Final implementation used round-1's self-contained path computation + explicit dual-finally-block teardown, not ag's regressed round-2 version. Process note: ag directly mutated hub.py + created a stray test_probe.py file during what was meant to be a 'report only' ask (terminal's own instruction-writing lapse) - caught live by the T4 governed-mutation guard (reverted hub.py) and the LL-20260703-005 phantom-write guard (flagged the stray file); ag was quarantined (3rd occurrence) and recovered via peer-recover after cleanup; retried cleanly with an explicit 'do NOT write/edit/modify ANY file' instruction. cx was interrupted/stopped 3x during this item with no hub-level error message (not a timeout, task status just 'killed'/'stopped') - redirected to ag per R:6 rather than blind-retry; cc.fable recommends logging this as an observed-events-with-timestamps reliability signal for cx, TEST NEEDED, not yet diagnosed to a root cause. MANDATORY empirical probe (per original design + fable ratification) executed live: real `hub.py ask --to cx` created probe.txt inside the injected TEMP (confirmed path _sys/data/temp/ask_ask-8925, matching the new naming scheme), cx confirmed create+delete succeeded, and the terminal independently verified hub.py's own finally-block teardown removed the ask_ask-8925 directory entirely after the ask completed (0 ask_* dirs left). 800/800 tests pass (5 new: TestSweepStaleAskTempDirs - removes-old-dirs, never-touches-fresh-concurrent-dirs, ignores-non-ask-prefixed-entries, missing-temp-root-is-noop, survives-permission-error-on-one-entry).",
       "risk": null,
-      "last_verified_at": "2026-07-08T22:19:00+09:00"
+      "last_verified_at": "2026-07-11T00:00:00+09:00"
     },
     {
       "id": "T6",
@@ -804,6 +804,21 @@
       "supersedes": [],
       "source_refs": [],
       "next_action": "Triggered by 3 real consecutive cx timeouts today at exactly 180s (the effort-tier startup_profile_map bound) on a genuinely large D11 HALF B task, unaffected by --timeout - independently root-caused (protocol.json startup_profile_map + hub.py _stream_process_output staged silence guard) before any peer discussion. 4-round unanimous ag+cx+cc.fable design: eliminate the separate pre-first-output startup-kill window entirely (not just raise the number) for ALL tiers, unify on the existing profile-scoped zombie_timeout_sec (600s standard/effort, 900s deepthink) as the single silence-based kill threshold from process start onward - matching deepthink philosophy that peer comms are unlimited in total time, only zero-progress hangs get killed. cx found the scope was 3 places not 1: _stream_process_output (cx/cc path, the proximate fix), _ask_with_pty (ag/antigravity Windows PTY path - ag's own round-1 diff missed fixing its OWN code path entirely), and a session-resume retry bypass calling bare proc.communicate(timeout=...) with no streaming/silence guard at all (switched to _stream_process_output). Also found+fixed: _lease_cfg() was called without the to/node_id arg on the subprocess path, meaning profile-specific zombie windows (deepthink=900s) were NEVER actually applied there - fixed to _lease_cfg(to). Also fixed a missing cwd=proc_cwd on the retry-path spawn (inconsistent with the primary path's git-root cwd, real pre-existing bug). fable required amendment: instead of zero safety net, added a non-lethal LOG-ONLY peer_silent_startup telemetry event (new config key silent_startup_warning_sec=180, DIR-004 measured-data-for-future-tuning rationale) that fires once but never kills - purely observational. Deleted _startup_timeout_sec() entirely; updated LL-011 lesson enforcement (check_lesson_enforcement.py + active-lessons.jsonl LL-20260703-002) which had itself required the now-retired startup_profile_map to exist - this was found independently by the terminal, not by any peer round, while applying the diff (LL-011 would have started failing the moment the old keys were removed). ADDITIONAL FINDING (terminal, empirical, post-ratification, not blocking): live-tested _ask_with_pty with a real pywinpty spawn and found Windows PTY emits terminal-init escape sequences within ~8ms of every spawn (window title/mode queries), meaning the peer_silent_startup telemetry's \"not chunks yet\" gate is satisfied almost instantly by PTY noise on every call regardless of tier - the telemetry event is not a meaningful signal for the PTY transport specifically (unlike plain subprocess, which has no such noise). Does NOT affect the actual safety fix (last_activity resetting on any byte incl. noise is fine/conservative for kill-avoidance) - only means PTY-path observability is weaker than subprocess-path. Flagged as a non-blocking follow-up, not fixed this round. 795/795 tests pass (3 new: subprocess warn-without-kill, PTY warn-without-kill test simplified to just verify no-kill given the noise finding, deepthink zombie-profile-applies contract test). NOTE: this is a SEPARATE fix from T5 (cx sandbox tempfile create-but-cannot-delete) - T5 itself is still unimplemented, this item only addresses the startup-kill-timeout class of failure, not the tempfile-cleanup issue."
+    },
+    {
+      "id": "OBS1",
+      "title": "cx reliability observation: 3x interrupted/stopped (not timeout) during T5 work on 2026-07-11",
+      "status": "proposed",
+      "priority": "low",
+      "category": "ops",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [],
+      "next_action": "cc.fable recommendation during T5 discussion: cx was interrupted/stopped 3 separate times while working on T5 on 2026-07-11, with hub-level task status simply 'killed'/'stopped' and no error message - NOT the same failure mode as the 180s startup-timeout class that T19 fixed (T19's fix was independently confirmed unrelated to this). Recorded here as an observed-events-with-timestamps signal per fable's guidance ('record as observed events, not diagnosed cause'). TEST NEEDED before any fix is attempted - do not guess a root cause without measurement (DIR-004). If this recurs, avoid routing self-review tasks back to cx in place of genuine cross-review (self-review is not cross-review); prefer redirecting to ag or cc.fable per R:6 as was done live during T5.",
+      "risk": null,
+      "last_verified_at": "2026-07-11T00:00:00+09:00"
     }
   ]
 }
