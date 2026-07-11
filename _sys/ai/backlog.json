@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-11T09:15:00+09:00",
+  "updated_at": "2026-07-11T09:20:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -744,12 +744,14 @@
     {
       "id": "D11",
       "title": "INSTALL.bat/UPDATE.bat split trigger so ALL components (peer CLIs + aux tools + base runtimes) actually UPDATE",
-      "status": "active",
+      "status": "done",
       "priority": "medium",
       "category": "ops",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "07bbcdb"
+      ],
       "supersedes": [],
       "source_refs": [
         "install-update-trigger-mece-2026-07-10.md"
