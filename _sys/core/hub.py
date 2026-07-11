@@ -6313,11 +6313,85 @@ def _guard_action_dry_run(ai_root: Path, action: str, force_tier0: bool = False,
     return _guard_decision(action_group=group, warnings=warnings, audit=audit)
 
 
+def _guard_shadow_phase_key(phase: str | None, cfg: dict) -> str:
+    if not phase:
+        return "unset"
+    return "no_code" if phase in set(cfg.get("no_code_phases", [])) else "default"
+
+
+def _guard_shadow_bucket_facts(ai_root: Path, cfg: dict, origin: str) -> dict:
+    rate_guard = cfg.get("collab_rate_guard", {})
+    threshold = int(rate_guard.get("threshold", 10) or 10)
+    current = int(_load_protocol_cfg().get("collab_rate", {}).get("current", 0) or 0)
+    health = _current_coordinator_health(ai_root)
+    return {
+        "collab_current": current,
+        "collab_bucket": "at_or_above_threshold" if current >= threshold else "below_threshold",
+        "finalized_consensus": _has_finalized_consensus(ai_root),
+        "coordinator_health": health,
+        "coordinator_bucket": "recovery" if health in ("RED", "STALE", "RATE_LIMITED", "MISSING") else "healthy",
+        "worker_tier": os.environ.get("HUB_PEER_TIER", "standard") if origin == "worker" else "",
+    }
+
+
+def _guard_shadow_case_key(action: str, origin: str, phase_key: str, force_tier0: bool, group: str, facts: dict) -> str:
+    return "|".join([
+        f"action={action}",
+        f"origin={origin}",
+        f"phase={phase_key}",
+        f"force={int(bool(force_tier0))}",
+        f"collab={facts['collab_bucket']}",
+        f"consensus={int(bool(facts['finalized_consensus']))}",
+        f"coord={facts['coordinator_bucket']}",
+        f"worker_tier={facts.get('worker_tier') or '-'}",
+    ])
+
+
+def _record_guard_shadow(
+    ai_root: Path, action: str, origin: str, target_peer: str | None, force_tier0: bool,
+    dry_run_result: dict, real_outcome: str, real_exit_code: int = 0,
+) -> None:
+    """D2 (INV-26) Gate 3: logs dry-run-vs-real outcome for every real
+    _guard_action call, so check_operational_guard_shadow.py can later tally
+    a >=24h/>=100-evaluation soak with zero mismatches, and flag any live
+    case_key absent from the Gate-1 static matrix as a coverage gap. Purely
+    observational - never changes _guard_action's actual enforcement."""
+    try:
+        cfg = _operational_guard_cfg()
+        phase = _current_phase(ai_root)
+        phase_key = _guard_shadow_phase_key(phase, cfg)
+        group = dry_run_result.get("action_group") or _action_group(action)
+        facts = _guard_shadow_bucket_facts(ai_root, cfg, origin)
+        real_blocked = real_outcome == "block"
+        _record_routing_metric(
+            ai_root,
+            "operational_guard_shadow",
+            action=action,
+            origin=origin,
+            target_peer=target_peer,
+            phase=phase,
+            phase_key=phase_key,
+            force_tier0=bool(force_tier0),
+            action_group=group,
+            dry_run_would_block=bool(dry_run_result.get("would_block")),
+            dry_run_matched_rule=dry_run_result.get("matched_rule"),
+            dry_run_code=int(dry_run_result.get("code", 0) or 0),
+            real_outcome=real_outcome,
+            real_exit_code=real_exit_code,
+            shadow_match=(bool(dry_run_result.get("would_block")) == real_blocked),
+            case_key=_guard_shadow_case_key(action, origin, phase_key, force_tier0, group, facts),
+            **facts,
+        )
+    except Exception as e:
+        _log_p2p("WARN", f"operational_guard_shadow_log_failed: {e}", from_node="GUARD")
+
+
 def _guard_action(ai_root: Path, action: str, force_tier0: bool = False, origin: str = "terminal", target_peer: str | None = None) -> None:
     result = _guard_action_dry_run(ai_root, action, force_tier0=force_tier0, origin=origin, target_peer=target_peer)
 
     if force_tier0:
         _log_p2p("WARN", f"force-tier0 bypass for action={action}", from_node="TIER0")
+        _record_guard_shadow(ai_root, action, origin, target_peer, force_tier0, result, "force_tier0_bypass", 0)
         return
 
     for warning in result.get("warnings", []):
@@ -6328,6 +6402,7 @@ def _guard_action(ai_root: Path, action: str, force_tier0: bool = False, origin:
         _log_p2p("AUDIT", f"semi-governed action={action} coordinator_state={audit.get('peer_state')}", from_node="GUARD")
 
     if not result.get("would_block"):
+        _record_guard_shadow(ai_root, action, origin, target_peer, force_tier0, result, "allow", 0)
         return
 
     matched_rule = result.get("matched_rule")
@@ -6350,6 +6425,7 @@ def _guard_action(ai_root: Path, action: str, force_tier0: bool = False, origin:
         _log_p2p("BLOCK", f"PRO-19/C2: tier-floor violation for action '{action}' (origin: {origin_tier} < required: {required_tier})", from_node="GUARD")
 
     print(f"[HUB:BLOCK] {result.get('reason')}", file=sys.stderr)
+    _record_guard_shadow(ai_root, action, origin, target_peer, force_tier0, result, "block", int(result.get("code", 3) or 3))
     sys.exit(result.get("code", 3))
 
 
