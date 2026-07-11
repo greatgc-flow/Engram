@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-10T12:30:00+09:00",
+  "updated_at": "2026-07-10T15:00:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -740,6 +740,49 @@
       "next_action": "",
       "risk": null,
       "last_verified_at": "2026-07-08T10:47:00+09:00"
+    },
+    {
+      "id": "D11",
+      "title": "INSTALL.bat/UPDATE.bat split trigger so ALL components (peer CLIs + aux tools + base runtimes) actually UPDATE",
+      "status": "proposed",
+      "priority": "medium",
+      "category": "ops",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "install-update-trigger-mece-2026-07-10.md"
+      ],
+      "next_action": "READY FOR TDD, fully concrete (2026-07-10, 5-round unanimous discussion, ag+cx+cc.fable, full spec at install-update-trigger-mece-2026-07-10.md). Extends D10: INSTALL.bat becomes apply-current-declared-state (every run, unconditional, loops runtimes.json.tools + peers.json.peers through ensure_tool/ensure_peer_cli, no new modules - stays in provisioner.py); new UPDATE.bat is the opt-in discover-and-propose-diff trigger (check_tool_updates.py --propose-diff, guarded on portable Python presence). Governance gate stays on the runtimes.json bump (UPDATE.bat review step), never on the apply step. Concrete changes: (1) provisioner.deploy() refactored to delegate to ensure_tool/ensure_peer_cli instead of naive sentinel/peer_cmd.exists() checks; (2) force: bool=False added to both ensure functions, wired to deploy()'s existing --force; (3) already-current fast path tightened to 3 conditions (declared_version match + source_config_hash match + on-disk binary exists); (4) npm peer canary gap fixed (canary runs after npm install -g, before manifest write, hard-fails without writing manifest on canary failure); (5) npm update-canary-failure rollback to last-known-good declared_version before hard-failing as npm_canary_failed; (6) npm install nonzero-exit classified as npm_install_retry_deferred (not the lock-specific in_use_retry_at_session_boundary - DIR-004: status must claim only what was measured), retry counter keyed on (peer_key, declared_version) in tool_deferred_retries.json (attempts/first_failed_at/last_failed_at/last_exit_code), N=3 consecutive failed drains before escalating to hard npm_install_failed which halts auto-retry until success/version-change/--force - this was the one genuine 3-way dissent point, resolved by cc.fable DIR-005 arbiter ruling in favor of cx over ag's original blanket-defer position; (7) active-peer guard via .ai/leases.json before the npm_peer UPDATE path specifically (not bootstrap); (8) INSTALL.bat's existing unreviewed Python self-update (endoflife.date + live runtimes.json PowerShell rewrite) gets a one-line audit/drift log entry per rewrite for DIR-004 reconstructability, stays otherwise unchanged (hard bootstrap-ordering exception, cannot use version_resolver.py before Python exists). Base runtimes (python/nodejs/git/vscode/pwsh/ffmpeg) explicitly OUT OF SCOPE this round - bespoke install logic per component, queued separately. Caught during discussion: ag's tool_manager.py/peer_manager.py module-split proposal was fabricated (verified against real tree - no such files exist), corrected to stay provisioner.py-local. ROUND 2 EXTENSION (2026-07-10, same day, 5 more rounds ag+cx+cc.fable unanimous, user requested \"완벽할 때까지\"): base runtimes (python/nodejs/git/vscode/pwsh/ffmpeg) brought into the SAME model, reopening round-1's out-of-scope call. New install_mechanism=sfx_exe (Git self-extracting installer). New zip_tool-only fields archive_layout=flatten_exes|preserve_tree + strip_components=0|1 (replaces a rejected single-enum zip_unwrap proposal that would have conflated download mechanism with archive post-processing - confirmed live via a real PowerShell zip download that flatten_exes would have silently destroyed ~330 files incl. Modules/Schemas/locale dirs). New ensure_runtime(name, force=False) sharing an atomic-install core with ensure_tool, swap-target _sys/env/<name>. FFmpeg version-pin fixed (switch from BtbN rolling latest tag to GyanD/codexffmpeg semver releases - DIR-004). Git sfx_exe needs a fake-SFX unit test + live canary before trusting the atomic-swap wrapping (not proven the installer accepts a fresh staging path). Venv gets pinned filelock/pywinpty versions + measured verify step (was unpinned pip install, a separate DIR-004 gap). CRITICAL FINDING (cc.fable, missed by ag/cx AND the terminal's own first-pass check): npm_global (holding installed claude/codex) lives INSIDE _sys/env/nodejs, which this design designates as an atomic-swap target - a routine Node.js version bump would have silently destroyed both peer CLIs, and the proposed env_dir _old-purge would then delete the only surviving copy. Fixed via new preserve_paths:[] field per swap-target entry (nodejs:[\"npm-global\"] confirmed; vscode data/ and git etc/ flagged TEST NEEDED for TDD audit). Mandatory TDD guards before this is safe to enable: (a) regression test on a POPULATED fake env tree proving preserve_paths survive + byte-identical rollback + untouched-original on failure at any stage, (b) runtimes keep >=1 _old generation until the NEW version canary passes - Tier2 purge eligibility starts only after, (c) Git sfx_exe empirically confirmed first, (d) active-peer-lease guard (.ai/leases.json) extended to nodejs swaps specifically, not just direct npm_peer updates. Full spec at install-update-trigger-mece-2026-07-10.md (round 2 section). Base runtimes now fully in scope - nothing besides Python's own INSTALL.bat bootstrap self-update and the venv itself stay special-cased. AMENDMENT (2026-07-10, same day): user asked why ffmpeg was in scope - grep found ZERO actual consumers anywhere in this project's own code (only a reserved PATH slot + circumstantial AI-peer skill docs + optional venv-package backends, nothing exercised). User chose to remove FFmpeg entirely rather than carry speculative scope: deleted runtimes.json.runtimes.ffmpeg, env.json's ffmpeg/bin path_entries slot, and provisioner.py's URLS[\"FFmpeg\"]/env_dir/\"ffmpeg\" references. Final ensure_runtime scope is python (bootstrap-exempt) + nodejs + git + vscode + pwsh only - ffmpeg fully out, not deferred."
+    },
+    {
+      "id": "T17",
+      "title": "D10 regression: _install_tools() crash on npm_peer entries + ensure_peer_cli wrong sentinel filename",
+      "status": "active",
+      "priority": "high",
+      "category": "ops",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [],
+      "next_action": "Full-component audit (cx) + cross-check (ag), delegated per user instruction (not authored directly by terminal), found 2 real bugs in already-shipped D10 code (03af006): (1) P0 - _install_tools() in provisioner.py iterates ALL runtimes.json tools entries unconditionally; since D10 added claude/codex (install_mechanism=npm_peer, no url field) to that dict, cfg.get(\"url\",\"\") returns empty string and _download(\"\", ...) raises ValueError(\"unknown url type\") - a fresh INSTALL.bat run would crash mid-provisioning. Fixed: _install_tools() now skips install_mechanism==\"npm_peer\" entries (installed via _install_ai_peers()/peers.json instead). (2) ensure_peer_cli()'s already-current fast path computed peer_cmd from peer_cfg[\"node_ids\"][0] (e.g. claude peers.json node_ids=[\"cc\",\"ca\"] -> looked for nonexistent \"cc.cmd\"), but npm actually creates claude.cmd/codex.cmd matching the peers.json top-level key. Fixed: peer_cmd now uses peer_key directly. Both fixes independently verified by terminal reading the actual code (not trusting ag's claim that check_cli_reality.py's _repair_missing_peers/_PEER_KEY_BY_NODE_ID \"do not exist\" - confirmed false, they do exist, unaffected by this fix). Added 2 regression tests (cx-authored) to test_provisioner_autoinstall.py - none existed for _install_tools() before. Full component inventory table (install path + install/update/discovery/cleanup status per component) also produced this round, not yet filed as a standalone doc."
+    },
+    {
+      "id": "T18",
+      "title": "Full-repo MECE inventory (source/config/instructions/provisioned/state) - 5-round unanimous",
+      "status": "active",
+      "priority": "low",
+      "category": "ops",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "full-repo-mece-inventory-2026-07-10.md"
+      ],
+      "next_action": "Documentation complete (5-round unanimous ag+cx+cc.fable). 5-category MECE partition ratified: Source / Configuration & Maps / Instructions & Documentation (prescriptive+descriptive) / Provisioned Components & Scaffolding / Generated Runtime State. Tie-breaker rule: classify by WHO writes it and WHEN, not git-tracked status. Concrete cleanup candidates identified (not yet actioned): _sys/antigravity/config/scratch/temp_sys/ (stale mirrored copy of hub.py/snapshot.py/tests), _sys/env/ffmpeg/ (stale empty dir, residue from todays ffmpeg removal), _sys/test_valid2.out (tracked zero-byte orphan file), cleanup_tiers.json doc/code drift (scrubber.py docstring references a file that does not exist - tiers are hardcoded). Root allowlist (24 entries) cross-checked 1:1, no gaps. Two of the 5 discussion rounds were real regressions (round 4 collapsed most of _sys/ into etc. and dropped the entire Source category) caught independently before being forwarded - not just more rounds, verified each one. Next: decide whether to action the 4 cleanup candidates."
     }
   ]
 }

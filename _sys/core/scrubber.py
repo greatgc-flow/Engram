@@ -1,6 +1,7 @@
 """
 scrubber.py - Tiered cleanup for Portable Dev Environment.
-Tier definitions driven by cleanup_tiers.json (falls back to defaults).
+Tier definitions are hardcoded below (_tier1 through _tier5) - there is no
+cleanup_tiers.json config file or JSON-driven fallback mechanism.
 AI peer items driven by peers.json. State-aware for register artifacts.
 
 Tier 1  Light     — 캐시·임시파일·로그 (안전, 재설치 불필요)
