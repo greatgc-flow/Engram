@@ -215,6 +215,51 @@ class TestEnsurePeerCliNpm:
         assert manifest["declared_version"] == "2.1.206"
         assert manifest["checksum_source"] == "registry_integrity"
 
+    def test_npm_peer_already_current_uses_peer_key_cmd_not_node_id(self, monkeypatch, tmp_path):
+        sys_dir = _make_sys_dir(
+            tmp_path,
+            tools={
+                "claude": {
+                    "version": "2.1.206",
+                    "discovery_id": "@anthropic-ai/claude-code",
+                    "install_mechanism": "npm_peer",
+                }
+            },
+            peers={
+                "claude": {
+                    "npm_package": "@anthropic-ai/claude-code",
+                    "node_ids": ["cc", "ca"],
+                }
+            },
+        )
+        self._setup_npm_env(sys_dir)
+
+        npm_global = sys_dir / "env" / "nodejs" / "npm-global"
+        npm_global.mkdir(parents=True)
+        (npm_global / "claude.cmd").write_text("@echo off\n", encoding="utf-8")
+
+        manifest_dir = sys_dir / "tools" / "claude"
+        manifest_dir.mkdir(parents=True)
+        (manifest_dir / ".install_manifest.json").write_text(
+            json.dumps({"declared_version": "2.1.206"}),
+            encoding="utf-8",
+        )
+
+        subprocess_calls = []
+
+        def fail_if_called(*args, **kwargs):
+            subprocess_calls.append((args, kwargs))
+            raise AssertionError("already-current peer CLI must not invoke npm")
+
+        monkeypatch.setattr(pv.subprocess, "run", fail_if_called)
+
+        res = pv.ensure_peer_cli("claude", sys_dir=sys_dir)
+
+        assert res["status"] == "already_current"
+        assert subprocess_calls == []
+        assert (npm_global / "claude.cmd").exists()
+        assert not (npm_global / "cc.cmd").exists()
+
     def test_npm_peer_without_nodejs_errors(self, tmp_path):
         sys_dir = _make_sys_dir(
             tmp_path,
@@ -246,6 +291,48 @@ class TestDeferredRetry:
 
         pv._remove_deferred(sys_dir, "ripgrep", "tool")
         assert pv._load_deferred(sys_dir) == {}
+
+
+class TestLegacyInstallToolsCompatibility:
+    def test_install_tools_skips_npm_peer_entries_without_url(self, monkeypatch, tmp_path):
+        env_dir = tmp_path / "_sys" / "env"
+        setup_dir = tmp_path / "_sys" / "data" / "setup-files"
+        env_dir.mkdir(parents=True)
+        setup_dir.mkdir(parents=True)
+
+        tools = {
+            "claude": {
+                "version": "1.0.0",
+                "install_mechanism": "npm_peer",
+            },
+            "ripgrep": {
+                "version": "15.1.0",
+                "url": "https://example.invalid/ripgrep.zip",
+                "type": "zip",
+                "bin": "rg.exe",
+            },
+        }
+
+        download_calls = []
+
+        def fake_download(url, dest, label):
+            download_calls.append((url, label))
+            dest.write_bytes(b"fake zip placeholder")
+
+        def fake_extract(zip_path, dest):
+            nested = dest / "ripgrep-15.1.0"
+            nested.mkdir(parents=True)
+            (nested / "rg.exe").write_bytes(b"fake rg binary")
+
+        monkeypatch.setattr(pv, "_download", fake_download)
+        monkeypatch.setattr(pv, "_extract", fake_extract)
+
+        installed = pv._install_tools(tools, env_dir, setup_dir, force=False)
+
+        assert installed == ["ripgrep"]
+        assert download_calls == [("https://example.invalid/ripgrep.zip", "ripgrep")]
+        assert (env_dir.parent / "tools" / "ripgrep" / "rg.exe").read_bytes() == b"fake rg binary"
+        assert not (env_dir.parent / "tools" / "claude").exists()
 
     def test_lazy_drain_processes_and_clears_queue(self, monkeypatch, tmp_path):
         sys_dir = _make_sys_dir(tmp_path, {})

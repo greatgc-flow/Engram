@@ -32,7 +32,6 @@ def _load_runtimes(sys_dir: Path) -> tuple[dict, dict, dict]:
     URLS = {
         "NodeJS": data.get("nodejs",  {}).get("url", ""),
         "Git":    data.get("git",     {}).get("url", ""),
-        "FFmpeg": data.get("ffmpeg",  {}).get("url", ""),
         "VSCode": data.get("vscode",  {}).get("url", ""),
         "Pwsh":   data.get("pwsh",    {}).get("url", ""),
     }
@@ -82,6 +81,8 @@ def _install_tools(TOOLS: dict, env_dir: Path, setup_dir: Path, force: bool) -> 
         return installed
     tools_dir = env_dir.parent / "tools"
     for name, cfg in TOOLS.items():
+        if cfg.get("install_mechanism") == "npm_peer":
+            continue
         url      = cfg.get("url", "")
         kind     = cfg.get("type", "zip")
         bin_name = cfg.get("bin", f"{name}.exe")
@@ -481,8 +482,7 @@ def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = 
         return {"status": "error", "detail": "Node.js not installed; run provisioner deploy for nodejs first"}
 
     npm_global = env_dir / "nodejs" / "npm-global"
-    node_ids = peer_cfg.get("node_ids") or [peer_key]
-    peer_cmd = npm_global / f"{node_ids[0]}.cmd"
+    peer_cmd = npm_global / f"{peer_key}.cmd"
 
     manifest_path = sys_dir / "tools" / peer_key / ".install_manifest.json"
     if manifest_path.exists():
@@ -557,7 +557,7 @@ def deploy(ctx: dict) -> None:
     # ── Folder structure ─────────────────────────────────────────
     print("\n>>> Folder structure")
     dirs = [
-        env_dir / "python", env_dir / "nodejs", env_dir / "ffmpeg",
+        env_dir / "python", env_dir / "nodejs",
         env_dir / "git", env_dir / "vscode", env_dir / "venv", env_dir / "pwsh",
         sys_dir / "tools" / "apps",
         sys_dir / "data" / "logs", sys_dir / "data" / "temp",
