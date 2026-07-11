@@ -39,6 +39,7 @@ ALLOWLIST = {
     "README.md",
     "register.bat",
     "tmp",
+    "UPDATE.bat",
     "unregister.bat",
     "workspace",
     "wrapper.cs"

@@ -8,19 +8,30 @@
                                 },
                      "nodejs":  {
                                     "version":  "22.22.3",
-                                    "url":  "https://nodejs.org/dist/v22.22.3/node-v22.22.3-win-x64.zip"
+                                    "url":  "https://nodejs.org/dist/v22.22.3/node-v22.22.3-win-x64.zip",
+                                    "install_mechanism":  "zip_tool",
+                                    "archive_layout":  "preserve_tree",
+                                    "strip_components":  1,
+                                    "preserve_paths":  ["npm-global"]
                                 },
                      "git":  {
                                  "version":  "2.49.0",
-                                 "url":  "https://github.com/git-for-windows/git/releases/download/v2.49.0.windows.1/PortableGit-2.49.0-64-bit.7z.exe"
+                                 "url":  "https://github.com/git-for-windows/git/releases/download/v2.49.0.windows.1/PortableGit-2.49.0-64-bit.7z.exe",
+                                 "install_mechanism":  "sfx_exe"
                              },
                      "vscode":  {
                                     "version":  "1.100.2",
-                                    "url":  "https://update.code.visualstudio.com/1.100.2/win32-x64-archive/stable"
+                                    "url":  "https://update.code.visualstudio.com/1.100.2/win32-x64-archive/stable",
+                                    "install_mechanism":  "zip_tool",
+                                    "archive_layout":  "preserve_tree",
+                                    "strip_components":  0
                                 },
                      "pwsh":  {
                                   "version":  "7.6.2",
-                                  "url":  "https://github.com/PowerShell/PowerShell/releases/download/v7.6.2/PowerShell-7.6.2-win-x64.zip"
+                                  "url":  "https://github.com/PowerShell/PowerShell/releases/download/v7.6.2/PowerShell-7.6.2-win-x64.zip",
+                                  "install_mechanism":  "zip_tool",
+                                  "archive_layout":  "preserve_tree",
+                                  "strip_components":  0
                               }
                  },
     "tools":  {

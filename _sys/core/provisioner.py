@@ -74,48 +74,6 @@ def _check_python_version(V: dict) -> None:
         print(f"  [OK] Python {running}")
 
 
-def _install_tools(TOOLS: dict, env_dir: Path, setup_dir: Path, force: bool) -> list:
-    installed = []
-    if not TOOLS:
-        print("  [--] No tools defined in runtimes.json")
-        return installed
-    tools_dir = env_dir.parent / "tools"
-    for name, cfg in TOOLS.items():
-        if cfg.get("install_mechanism") == "npm_peer":
-            continue
-        url      = cfg.get("url", "")
-        kind     = cfg.get("type", "zip")
-        bin_name = cfg.get("bin", f"{name}.exe")
-        dest_dir = tools_dir / name
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        sentinel = dest_dir / bin_name
-        if not force and sentinel.exists():
-            print(f"  [--] {name} (already installed)")
-            installed.append(name)
-            continue
-        print(f"\n>>> Tool: {name} v{cfg.get('version', '?')}")
-        if kind == "exe":
-            dl = setup_dir / f"{name}-dl.exe"
-            _download(url, dl, name)
-            shutil.copy2(str(dl), str(sentinel))
-            dl.unlink()
-        else:
-            zp = setup_dir / f"{name}.zip"
-            _download(url, zp, name)
-            tmp = setup_dir / f"_{name}_tmp"
-            tmp.mkdir(exist_ok=True)
-            _extract(zp, tmp)
-            for exe in tmp.rglob("*.exe"):
-                shutil.copy2(str(exe), str(dest_dir / exe.name))
-            shutil.rmtree(tmp)
-            zp.unlink(missing_ok=True)
-        for extra in cfg.get("extras", []):
-            _install_extra(name, extra, dest_dir, setup_dir)
-        installed.append(name)
-        print(f"  [OK] {name} ready")
-    return installed
-
-
 def _install_extra(tool_name: str, extra: dict, dest_dir: Path, setup_dir: Path) -> None:
     url       = extra.get("url", "")
     kind      = extra.get("type", "zip")
@@ -132,25 +90,6 @@ def _install_extra(tool_name: str, extra: dict, dest_dir: Path, setup_dir: Path)
         print(f"  [OK] {tool_name}/{subfolder} ready")
 
 
-def _install_ai_peers(peers: dict, npm_exe: Path, npm_global: Path, env: dict, force: bool) -> list:
-    installed = []
-    for peer_id, cfg in peers.items():
-        if not cfg.get("enabled"):
-            continue
-        pkg = cfg.get("npm_package")
-        if not pkg:
-            continue
-        print(f"\n>>> AI Peer: {cfg.get('description', peer_id)}")
-        peer_cmd = npm_global / f"{peer_id}.cmd"
-        if force or not peer_cmd.exists():
-            subprocess.run([str(npm_exe), "install", "-g", pkg], env=env, check=True)
-            print(f"  [OK] {peer_id} CLI ready")
-        else:
-            print(f"  [--] {peer_id} CLI (already installed)")
-        installed.append(peer_id)
-    return installed
-
-
 def _default_sys_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
@@ -162,6 +101,10 @@ def _default_sys_dir() -> Path:
 # must stay a pure, non-mutating path resolver (PRO-19 / T15 invariant).
 
 _LAZY_DRAINING = False
+
+# Consecutive failed lazy drains for the same (peer_key, declared_version)
+# before an npm_peer install stops being auto-retried (npm_install_failed).
+MAX_NPM_INSTALL_RETRIES = 3
 
 
 def _get_deferred_path(sys_dir: Path) -> Path:
@@ -198,12 +141,14 @@ def _remove_deferred(sys_dir: Path, name: str, kind: str) -> None:
         _save_deferred(sys_dir, data)
 
 
-def _drain_deferred_lazy(orch: dict | None, sys_dir: Path) -> None:
+def _drain_deferred_lazy(orch: dict | None, sys_dir: Path, skip_kind: str | None = None, skip_name: str | None = None) -> None:
     """Opportunistically retry deferred (file-locked) installs. Primary
     mechanism is `ensure-tool --retry-deferred`; this is the lazy fallback
     that fires on any subsequent ensure_tool/ensure_peer_cli call. There is
     NO session-start hook in this codebase (verified: _sys/hooks/ has none) -
-    do not assume one."""
+    do not assume one. `skip_kind`/`skip_name` exclude the entry the CALLER
+    is about to process directly anyway - draining it here too would attempt
+    the same install twice in one call and double-count retry attempts."""
     global _LAZY_DRAINING
     if _LAZY_DRAINING:
         return
@@ -212,14 +157,23 @@ def _drain_deferred_lazy(orch: dict | None, sys_dir: Path) -> None:
         data = _load_deferred(sys_dir)
         if not data:
             return
-        _save_deferred(sys_dir, {})
-        for val in data.values():
+        remaining = {}
+        to_process = []
+        for key, val in data.items():
+            if val.get("kind") == skip_kind and val.get("name") == skip_name:
+                remaining[key] = val
+                continue
+            to_process.append(val)
+        _save_deferred(sys_dir, remaining)
+        for val in to_process:
             kind = val.get("kind")
             name = val.get("name")
             if kind == "tool":
                 ensure_tool(name, orch, sys_dir)
             elif kind == "peer":
                 ensure_peer_cli(name, orch, sys_dir)
+            elif kind == "runtime":
+                ensure_runtime(name, orch, sys_dir)
     finally:
         _LAZY_DRAINING = False
 
@@ -283,7 +237,40 @@ def _run_canary(tmp_dir: Path, canary: dict | None) -> tuple[bool, str]:
     return True, output
 
 
-def _install_atomic(name: str, cfg: dict, manifest_path: Path, tools_dir: Path, sys_dir: Path) -> dict:
+def _copy_preserve_tree(src_dir: Path, dest_dir: Path, strip_components: int = 0) -> None:
+    """Extract a zip's already-unpacked contents into dest_dir, preserving
+    the internal directory structure and stripping `strip_components`
+    leading path segments (e.g. strip_components=1 removes a release zip's
+    single top-level wrapper folder like node-vX.Y.Z-win-x64/)."""
+    for root, _, files in os.walk(src_dir):
+        root_path = Path(root)
+        for fname in files:
+            file_path = root_path / fname
+            rel_parts = file_path.relative_to(src_dir).parts
+            if len(rel_parts) <= strip_components:
+                continue
+            target_path = dest_dir / Path(*rel_parts[strip_components:])
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(file_path), str(target_path))
+
+
+def _migrate_preserve_paths(old_dir: Path, tmp_dir: Path, preserve_paths: list) -> None:
+    """Move mutable-state subdirectories (e.g. nodejs's npm-global, which
+    holds the installed claude/codex peer CLIs) from the OLD active dir into
+    the staged tmp_dir before the atomic swap finalizes - otherwise a
+    routine tool/runtime update silently destroys that state."""
+    for rel in preserve_paths:
+        src = old_dir / rel
+        if not src.exists():
+            continue
+        dest = tmp_dir / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.exists():
+            shutil.rmtree(dest, ignore_errors=True) if dest.is_dir() else dest.unlink()
+        shutil.move(str(src), str(dest))
+
+
+def _install_atomic(name: str, cfg: dict, manifest_path: Path, target_root: Path, sys_dir: Path, force: bool = False) -> dict:
     url = cfg.get("url")
     declared_version = cfg.get("version")
     if not url:
@@ -297,9 +284,9 @@ def _install_atomic(name: str, cfg: dict, manifest_path: Path, tools_dir: Path, 
             declared_hash = cfg[algo]
             break
 
-    tmp_dir = tools_dir / f"{name}_v{declared_version}_tmp"
-    old_dir = tools_dir / f"{name}_old"
-    tools_dir.mkdir(parents=True, exist_ok=True)
+    tmp_dir = target_root / f"{name}_v{declared_version}_tmp"
+    old_dir = target_root / f"{name}_old"
+    target_root.mkdir(parents=True, exist_ok=True)
 
     if tmp_dir.exists():
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -333,12 +320,29 @@ def _install_atomic(name: str, cfg: dict, manifest_path: Path, tools_dir: Path, 
             extract_tmp.mkdir(parents=True, exist_ok=True)
             _extract(dl_path, extract_tmp)
             dl_path.unlink(missing_ok=True)
-            _flatten_zip_extract(extract_tmp, tmp_dir)
+
+            layout = cfg.get("archive_layout", "flatten_exes")
+            if layout == "flatten_exes":
+                _flatten_zip_extract(extract_tmp, tmp_dir)
+            elif layout == "preserve_tree":
+                strip = int(cfg.get("strip_components", 0))
+                _copy_preserve_tree(extract_tmp, tmp_dir, strip)
+            else:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                return {"status": "error", "detail": f"Unknown archive_layout {layout!r}"}
+
             shutil.rmtree(extract_tmp, ignore_errors=True)
         elif mechanism == "exe_tool":
             bin_name = cfg.get("bin", f"{name}.exe")
             if dl_path.name != bin_name:
                 dl_path.rename(tmp_dir / bin_name)
+        elif mechanism == "sfx_exe":
+            try:
+                subprocess.run([str(dl_path), f"-o{tmp_dir}", "-y"], check=True)
+            except Exception as e:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                return {"status": "error", "detail": f"SFX extraction failed: {e}"}
+            dl_path.unlink(missing_ok=True)
         else:
             shutil.rmtree(tmp_dir, ignore_errors=True)
             return {"status": "error", "detail": f"_install_atomic does not support mechanism {mechanism!r}"}
@@ -357,7 +361,8 @@ def _install_atomic(name: str, cfg: dict, manifest_path: Path, tools_dir: Path, 
             shutil.rmtree(tmp_dir, ignore_errors=True)
             return {"status": "error", "detail": f"Canary failed: {canary_output}"}
 
-        active_dir = tools_dir / name
+        active_dir = target_root / name
+        kind = "runtime" if target_root.name == "env" else "tool"
         if active_dir.exists():
             if old_dir.exists():
                 shutil.rmtree(old_dir, ignore_errors=True)
@@ -365,8 +370,12 @@ def _install_atomic(name: str, cfg: dict, manifest_path: Path, tools_dir: Path, 
                 active_dir.rename(old_dir)
             except OSError as e:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
-                _add_deferred(sys_dir, name, "tool")
+                _add_deferred(sys_dir, name, kind)
                 return {"status": "in_use_retry_at_session_boundary", "detail": f"Locked: {e}"}
+
+            preserve_paths = cfg.get("preserve_paths") or []
+            if preserve_paths:
+                _migrate_preserve_paths(old_dir, tmp_dir, preserve_paths)
 
         try:
             tmp_dir.rename(active_dir)
@@ -376,7 +385,7 @@ def _install_atomic(name: str, cfg: dict, manifest_path: Path, tools_dir: Path, 
             return {"status": "error", "detail": f"Swap to active failed: {e}"}
 
         manifest = {
-            "tool": name,
+            "tool" if kind == "tool" else "runtime": name,
             "declared_version": declared_version,
             "url": url,
             "checksum_algo": hash_algo,
@@ -390,7 +399,7 @@ def _install_atomic(name: str, cfg: dict, manifest_path: Path, tools_dir: Path, 
         }
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-        _remove_deferred(sys_dir, name, "tool")
+        _remove_deferred(sys_dir, name, kind)
 
         return {"status": "success", "detail": "Installed successfully"}
 
@@ -399,11 +408,31 @@ def _install_atomic(name: str, cfg: dict, manifest_path: Path, tools_dir: Path, 
         return {"status": "error", "detail": str(e)}
 
 
-def ensure_tool(name: str, orch: dict | None = None, sys_dir: Path | None = None) -> dict:
+def _already_current(dest_dir: Path, manifest_path: Path, cfg: dict, declared_version, bin_name: str | None) -> bool:
+    """Three-condition already-current check (D11-ratified): declared_version
+    match, source_config_hash match (catches a URL/checksum/canary change
+    with no version bump), and the installed binary still physically
+    exists on disk (catches manual deletion)."""
+    if not manifest_path.exists():
+        return False
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if manifest.get("declared_version") != declared_version:
+        return False
+    if manifest.get("source_config_hash") != _canon_hash(cfg):
+        return False
+    if bin_name and not (dest_dir / bin_name).exists():
+        return False
+    return True
+
+
+def ensure_tool(name: str, orch: dict | None = None, sys_dir: Path | None = None, force: bool = False) -> dict:
     """Install `name` (a runtimes.json `tools` entry) if missing or stale.
     Read-only no-op if the manifest already matches the declared version."""
     sys_dir = sys_dir or _default_sys_dir()
-    _drain_deferred_lazy(orch, sys_dir)
+    _drain_deferred_lazy(orch, sys_dir, skip_kind="tool", skip_name=name)
 
     _, _, TOOLS = _load_runtimes(sys_dir)
     cfg = TOOLS.get(name)
@@ -415,20 +444,141 @@ def ensure_tool(name: str, orch: dict | None = None, sys_dir: Path | None = None
     manifest_path = dest_dir / ".install_manifest.json"
 
     declared_version = cfg.get("version")
-    if manifest_path.exists():
+    bin_name = cfg.get("bin", f"{name}.exe")
+    if not force and _already_current(dest_dir, manifest_path, cfg, declared_version, bin_name):
+        return {"status": "already_current", "detail": "Version matches manifest"}
+
+    mechanism = cfg.get("install_mechanism", "zip_tool")
+    if mechanism in ("zip_tool", "exe_tool", "sfx_exe"):
+        return _install_atomic(name, cfg, manifest_path, tools_dir, sys_dir, force=force)
+    if mechanism == "npm_peer":
+        return {"status": "error", "detail": f"{name!r} is install_mechanism=npm_peer; use ensure_peer_cli instead"}
+    return {"status": "error", "detail": f"Unknown install_mechanism {mechanism!r}"}
+
+
+def ensure_runtime(name: str, orch: dict | None = None, sys_dir: Path | None = None, force: bool = False) -> dict:
+    """Install or update a base runtime (nodejs/git/vscode/pwsh) from
+    runtimes.json's `runtimes` dict. Python is a special bootstrap-only case:
+    it cannot swap the interpreter it's currently running under."""
+    sys_dir = sys_dir or _default_sys_dir()
+
+    if name == "nodejs" and not force and _is_peer_leased(sys_dir, "nodejs"):
+        _add_deferred(sys_dir, name, "runtime")
+        return {"status": "in_use_deferred", "detail": "Node.js is currently leased by an active peer session."}
+
+    _drain_deferred_lazy(orch, sys_dir, skip_kind="runtime", skip_name=name)
+
+    path = sys_dir / "runtimes.json"
+    if not path.exists():
+        return {"status": "error", "detail": f"runtimes.json not found at {path}"}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        return {"status": "error", "detail": f"Failed to load runtimes.json: {e}"}
+
+    runtimes = raw.get("runtimes", {})
+    cfg = runtimes.get(name)
+    if not cfg:
+        return {"status": "error", "detail": f"Runtime {name!r} not found in runtimes.json runtimes"}
+
+    env_dir = sys_dir / "env"
+    dest_dir = env_dir / name
+    manifest_path = dest_dir / ".install_manifest.json"
+    declared_version = cfg.get("version")
+
+    if name == "python":
+        running_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        if running_version == declared_version:
+            manifest = {
+                "runtime": "python",
+                "declared_version": declared_version,
+                "installed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "source_config_hash": _canon_hash(cfg),
+                "detail": "Running interpreter matches declared version",
+            }
+            manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+            return {"status": "already_current", "detail": "Python version matches running interpreter"}
+        return {
+            "status": "error",
+            "detail": f"Python version mismatch (running={running_version}, declared={declared_version}). "
+                      f"Python must be updated via INSTALL.bat's own bootstrap mechanism, not ensure_runtime.",
+        }
+
+    cfg = dict(cfg)
+    if name == "nodejs":
+        cfg.setdefault("install_mechanism", "zip_tool")
+        cfg.setdefault("archive_layout", "preserve_tree")
+        cfg.setdefault("strip_components", 1)
+        cfg.setdefault("preserve_paths", ["npm-global"])
+        bin_name = "node.exe"
+    elif name == "git":
+        cfg.setdefault("install_mechanism", "sfx_exe")
+        bin_name = None  # git.exe lives under cmd/ or bin/, checked below
+    elif name == "vscode":
+        cfg.setdefault("install_mechanism", "zip_tool")
+        cfg.setdefault("archive_layout", "preserve_tree")
+        cfg.setdefault("strip_components", 0)
+        bin_name = "Code.exe"
+    elif name == "pwsh":
+        cfg.setdefault("install_mechanism", "zip_tool")
+        cfg.setdefault("archive_layout", "preserve_tree")
+        cfg.setdefault("strip_components", 0)
+        bin_name = "pwsh.exe"
+    else:
+        bin_name = cfg.get("bin")
+
+    if not force and _already_current(dest_dir, manifest_path, cfg, declared_version, bin_name):
+        return {"status": "already_current", "detail": "Version matches manifest"}
+    if not force and name == "git" and manifest_path.exists():
+        # git.exe's exact subpath varies (cmd/ vs bin/); fall back to a
+        # path-agnostic existence check for the already-current fast path.
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            if manifest.get("declared_version") == declared_version:
+            if (manifest.get("declared_version") == declared_version
+                    and manifest.get("source_config_hash") == _canon_hash(cfg)
+                    and ((dest_dir / "cmd" / "git.exe").exists() or (dest_dir / "bin" / "git.exe").exists())):
                 return {"status": "already_current", "detail": "Version matches manifest"}
         except (OSError, json.JSONDecodeError):
             pass
 
     mechanism = cfg.get("install_mechanism", "zip_tool")
-    if mechanism in ("zip_tool", "exe_tool"):
-        return _install_atomic(name, cfg, manifest_path, tools_dir, sys_dir)
-    if mechanism == "npm_peer":
-        return {"status": "error", "detail": f"{name!r} is install_mechanism=npm_peer; use ensure_peer_cli instead"}
-    return {"status": "error", "detail": f"Unknown install_mechanism {mechanism!r}"}
+    if mechanism in ("zip_tool", "exe_tool", "sfx_exe"):
+        return _install_atomic(name, cfg, manifest_path, env_dir, sys_dir, force=force)
+    return {"status": "error", "detail": f"Unknown install_mechanism {mechanism!r} for runtime {name!r}"}
+
+
+def _is_peer_leased(sys_dir: Path, peer_or_tool: str) -> bool:
+    """True if .ai/leases.json (hub.py's active-session lease tracker) has a
+    currently-open, non-expired lease matching peer_or_tool. "nodejs" is
+    treated as leased if ANY peer has an open lease, since all npm-based
+    peer CLIs live inside nodejs's own npm-global directory. Lease schema
+    (hub.py's _lease_open/_lease_close): keyed by peer_id, fields include
+    status ("open" while active), expires_at (naive local-time string,
+    "%Y-%m-%dT%H:%M:%S" - hub.py's _now() uses datetime.now(), no tz)."""
+    leases_path = sys_dir.parent / ".ai" / "leases.json"
+    if not leases_path.exists():
+        return False
+    try:
+        leases = json.loads(leases_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+
+    now = datetime.datetime.now()
+    for peer_id, lease in leases.items():
+        if not isinstance(lease, dict) or lease.get("status") != "open":
+            continue
+        if peer_or_tool != "nodejs" and peer_id != peer_or_tool:
+            continue
+        expires_at = lease.get("expires_at")
+        if not expires_at:
+            continue
+        try:
+            if datetime.datetime.fromisoformat(expires_at) > now:
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def _resolve_peer_key(peers: dict, peer: str) -> str | None:
@@ -443,19 +593,20 @@ def _resolve_peer_key(peers: dict, peer: str) -> str | None:
     return None
 
 
-def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = None) -> dict:
-    """Install a peer CLI if missing. `peer` may be a peers.json key
-    (claude/codex/antigravity) or a node_id (cc/cx/ag/...). npm-backed peers
-    (npm_package set in peers.json) are version-pinned via runtimes.json's
-    tools entry of the same key; native-binary peers (e.g. antigravity/agy)
-    delegate to ensure_tool for the matching runtimes.json tools entry."""
+def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = None, force: bool = False) -> dict:
+    """Install a peer CLI if missing, or update it if runtimes.json's pinned
+    version changed. `peer` may be a peers.json key (claude/codex/
+    antigravity) or a node_id (cc/cx/ag/...). npm-backed peers (npm_package
+    set in peers.json) are version-pinned via runtimes.json's tools entry of
+    the same key; native-binary peers (e.g. antigravity/agy) delegate to
+    ensure_tool for the matching runtimes.json tools entry."""
     sys_dir = sys_dir or _default_sys_dir()
-    _drain_deferred_lazy(orch, sys_dir)
 
     peers = _load_peers(sys_dir)
     peer_key = _resolve_peer_key(peers, peer)
     if not peer_key:
         return {"status": "error", "detail": f"Peer {peer!r} not found in peers.json"}
+    _drain_deferred_lazy(orch, sys_dir, skip_kind="peer", skip_name=peer_key)
     peer_cfg = peers[peer_key]
 
     native = peer_cfg.get("native_binary")
@@ -464,7 +615,7 @@ def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = 
         _, _, TOOLS = _load_runtimes(sys_dir)
         if tool_key not in TOOLS:
             return {"status": "error", "detail": f"native_binary tool {tool_key!r} not found in runtimes.json tools"}
-        return ensure_tool(tool_key, orch, sys_dir)
+        return ensure_tool(tool_key, orch, sys_dir, force=force)
 
     pkg = peer_cfg.get("npm_package")
     if not pkg:
@@ -476,6 +627,12 @@ def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = 
     if not declared_version:
         return {"status": "error", "detail": f"No version declared in runtimes.json tools[{peer_key!r}]; add it before bootstrapping"}
 
+    deferred_data = _load_deferred(sys_dir)
+    retry_entry = deferred_data.get(f"peer:{peer_key}", {})
+    if (not force and retry_entry.get("version") == declared_version
+            and retry_entry.get("attempts", 0) >= MAX_NPM_INSTALL_RETRIES):
+        return {"status": "error", "detail": f"npm_install_failed: exceeded {MAX_NPM_INSTALL_RETRIES} attempts for {declared_version}"}
+
     env_dir = sys_dir / "env"
     node_exe = env_dir / "nodejs" / "node.exe"
     if not node_exe.exists():
@@ -485,13 +642,22 @@ def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = 
     peer_cmd = npm_global / f"{peer_key}.cmd"
 
     manifest_path = sys_dir / "tools" / peer_key / ".install_manifest.json"
-    if manifest_path.exists():
+    old_version = None
+    is_update = manifest_path.exists()
+    if is_update:
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            if manifest.get("declared_version") == declared_version and peer_cmd.exists():
+            old_version = manifest.get("declared_version")
+            if (not force and old_version == declared_version
+                    and manifest.get("source_config_hash") == _canon_hash(tool_cfg)
+                    and peer_cmd.exists()):
                 return {"status": "already_current", "detail": "Version matches manifest"}
         except (OSError, json.JSONDecodeError):
             pass
+
+        if not force and _is_peer_leased(sys_dir, peer_key):
+            _add_deferred(sys_dir, peer_key, "peer")
+            return {"status": "in_use_deferred", "detail": f"Peer {peer_key} is currently leased."}
 
     npm_exe = env_dir / "nodejs" / "npm.cmd"
     try:
@@ -515,8 +681,38 @@ def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = 
             env=npm_env, check=True,
         )
     except subprocess.CalledProcessError as e:
-        _add_deferred(sys_dir, peer_key, "peer")
-        return {"status": "error", "detail": f"npm install failed: {e}"}
+        attempts = retry_entry.get("attempts", 0) + 1 if retry_entry.get("version") == declared_version else 1
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        entry = {
+            "kind": "peer",
+            "name": peer_key,
+            "version": declared_version,
+            "attempts": attempts,
+            "first_failed_at": retry_entry.get("first_failed_at") if retry_entry.get("version") == declared_version else now_iso,
+            "last_failed_at": now_iso,
+            "last_exit_code": e.returncode,
+        }
+        deferred_data[f"peer:{peer_key}"] = entry
+        _save_deferred(sys_dir, deferred_data)
+        if attempts >= MAX_NPM_INSTALL_RETRIES:
+            return {"status": "npm_install_failed", "detail": f"npm install failed {attempts} times for {declared_version} (exit code {e.returncode})"}
+        return {"status": "npm_install_retry_deferred", "detail": f"npm install failed (exit code {e.returncode}), attempt {attempts}/{MAX_NPM_INSTALL_RETRIES}"}
+
+    canary = tool_cfg.get("canary")
+    ok, canary_output = _run_canary(npm_global, canary)
+    if not ok:
+        if is_update and old_version and old_version != declared_version:
+            try:
+                subprocess.run(
+                    [str(npm_exe), "install", "-g", f"{pkg}@{old_version}"],
+                    env=npm_env, check=True,
+                )
+                rb_ok, _rb_out = _run_canary(npm_global, canary)
+                if rb_ok:
+                    return {"status": "error", "detail": f"Canary failed for {declared_version}, rolled back to {old_version}: {canary_output}"}
+            except subprocess.CalledProcessError:
+                pass
+        return {"status": "npm_canary_failed", "detail": f"Canary failed: {canary_output}"}
 
     manifest = {
         "tool": peer_key,
@@ -526,8 +722,8 @@ def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = 
         "checksum_value": integrity,
         "checksum_source": "registry_integrity",
         "checksum_verified": True,
-        "canary_command": [],
-        "canary_output": "",
+        "canary_command": canary.get("argv", []) if canary else [],
+        "canary_output": canary_output,
         "installed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "source_config_hash": _canon_hash(tool_cfg),
     }
@@ -538,7 +734,9 @@ def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = 
 
 
 def deploy(ctx: dict) -> None:
-    """Install all runtimes, tools, and AI peer CLIs."""
+    """Install all runtimes, tools, and AI peer CLIs via ensure_runtime/
+    ensure_tool/ensure_peer_cli - every entry in runtimes.json/peers.json is
+    manifest-tracked and update-aware (D11), not just install-if-missing."""
     args       = ctx["args"]
     force      = "--force" in args
     skip_vsc   = "--skip-vscode" in args
@@ -580,58 +778,21 @@ def deploy(ctx: dict) -> None:
 
     installed = []
 
-    # ── Node.js ──────────────────────────────────────────────────
-    print(f"\n>>> Node.js {V['NodeJS']}")
-    node_exe = env_dir / "nodejs" / "node.exe"
-    if force or not node_exe.exists():
-        zp = setup_dir / "nodejs.zip"
-        if force or not zp.exists():
-            _download(URLS["NodeJS"], zp, "Node.js")
-        tmp = setup_dir / "_nodejs_tmp"
-        tmp.mkdir(exist_ok=True)
-        _extract(zp, tmp)
-        extracted = next(tmp.iterdir())
-        if extracted.is_dir():
-            for item in extracted.iterdir():
-                dest = env_dir / "nodejs" / item.name
-                if dest.exists():
-                    shutil.rmtree(dest) if dest.is_dir() else dest.unlink()
-                shutil.move(str(item), str(env_dir / "nodejs"))
-        shutil.rmtree(tmp)
-        print("  [OK] Node.js ready")
-    else:
-        print("  [--] Node.js (already installed)")
-    installed.append("nodejs")
-
-    # ── Git ──────────────────────────────────────────────────────
-    print(f"\n>>> Git {V['Git']} (portable)")
-    git_exe = env_dir / "git" / "cmd" / "git.exe"
-    if force or not git_exe.exists():
-        exe_path = setup_dir / "PortableGit.7z.exe"
-        if force or not exe_path.exists():
-            _download(URLS["Git"], exe_path, "Git Portable")
-        subprocess.run([str(exe_path), f"-o{env_dir / 'git'}", "-y"], check=True)
-        print("  [OK] Git ready")
-    else:
-        print("  [--] Git (already installed)")
-    installed.append("git")
-
-    # ── VS Code ──────────────────────────────────────────────────
-    if not skip_vsc:
-        print(f"\n>>> VS Code {V['VSCode']} (portable)")
-        vsc_exe = env_dir / "vscode" / "Code.exe"
-        if force or not vsc_exe.exists():
-            zp = setup_dir / "vscode.zip"
-            if force or not zp.exists():
-                _download(URLS["VSCode"], zp, "VS Code")
-            _extract(zp, env_dir / "vscode")
-            (env_dir / "vscode" / "data").mkdir(exist_ok=True)
-            print("  [OK] VS Code ready")
+    # ── Base runtimes (python/nodejs/git/vscode/pwsh) ─────────────
+    print("\n>>> Base runtimes")
+    raw = json.loads((sys_dir / "runtimes.json").read_text(encoding="utf-8"))
+    for rt_name in raw.get("runtimes", {}).keys():
+        if skip_vsc and rt_name == "vscode":
+            continue
+        res = ensure_runtime(rt_name, sys_dir=sys_dir, force=force)
+        status = res.get("status")
+        if status in ("success", "already_current"):
+            installed.append(rt_name)
+            print(f"  [OK] {rt_name} ({status})")
         else:
-            print("  [--] VS Code (already installed)")
-        installed.append("vscode")
+            print(f"  [!] {rt_name} failed: {res.get('detail')}")
 
-    # ── Python venv ──────────────────────────────────────────────
+    # ── Python venv (not an immutable vendor binary - stays procedural) ──
     print("\n>>> Python venv")
     venv_py = env_dir / "venv" / "Scripts" / "python.exe"
     if force or not venv_py.exists():
@@ -647,19 +808,35 @@ def deploy(ctx: dict) -> None:
 
     # ── CLI Tools ────────────────────────────────────────────────
     print("\n>>> CLI Tools")
-    installed += _install_tools(TOOLS, env_dir, setup_dir, force)
+    for tool_name, tool_cfg in TOOLS.items():
+        if tool_cfg.get("install_mechanism") == "npm_peer":
+            continue  # installed via the AI Peer CLIs loop below instead
+        if skip_ai and tool_cfg.get("install_mechanism") == "exe_tool" and any(
+            peer_cfg.get("native_binary", {}).get("install_subdir", "").endswith(f"/{tool_name}")
+            for peer_cfg in peers.values()
+        ):
+            continue  # e.g. agy: a peer CLI's native binary, skip under --skip-ai too
+        res = ensure_tool(tool_name, sys_dir=sys_dir, force=force)
+        status = res.get("status")
+        if status in ("success", "already_current"):
+            installed.append(tool_name)
+            print(f"  [OK] {tool_name} ({status})")
+        else:
+            print(f"  [!] {tool_name} failed: {res.get('detail')}")
 
     # ── AI Peer CLIs ─────────────────────────────────────────────
     if not skip_ai:
         print("\n>>> AI Peer CLIs")
-        npm_global = env_dir / "nodejs" / "npm-global"
-        npm_global.mkdir(exist_ok=True)
-        npm_env = os.environ.copy()
-        npm_env["NPM_CONFIG_PREFIX"] = str(npm_global)
-        npm_env["NPM_CONFIG_CACHE"]  = str(env_dir / "nodejs" / "npm-cache")
-        npm_env["PATH"]              = str(env_dir / "nodejs") + os.pathsep + npm_env["PATH"]
-        npm_exe = env_dir / "nodejs" / "npm.cmd"
-        installed += _install_ai_peers(peers, npm_exe, npm_global, npm_env, force)
+        for peer_id, cfg in peers.items():
+            if not cfg.get("enabled"):
+                continue
+            res = ensure_peer_cli(peer_id, sys_dir=sys_dir, force=force)
+            status = res.get("status")
+            if status in ("success", "already_current"):
+                installed.append(peer_id)
+                print(f"  [OK] {peer_id} ({status})")
+            else:
+                print(f"  [!] {peer_id} failed: {res.get('detail')}")
 
     ctx["state"]["installed"] = installed
     print("\n======================================================")
@@ -667,11 +844,23 @@ def deploy(ctx: dict) -> None:
     print("======================================================")
 
 
+def _exit_code(res: dict) -> int:
+    status = res.get("status")
+    if status in ("success", "already_current"):
+        return 0
+    if status in ("in_use_retry_at_session_boundary", "in_use_deferred", "npm_install_retry_deferred"):
+        return 3
+    if "Checksum mismatch" in res.get("detail", ""):
+        return 2
+    return 1
+
+
 def _cli_ensure_tool(argv: list[str]) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(prog="provisioner.py ensure-tool")
     parser.add_argument("name", nargs="?", help="Name of the runtimes.json tools entry to ensure")
+    parser.add_argument("--force", action="store_true", help="Bypass the already-current fast path")
     parser.add_argument("--retry-deferred", action="store_true", help="Drain the deferred-retry queue and exit")
     args = parser.parse_args(argv)
 
@@ -686,15 +875,23 @@ def _cli_ensure_tool(argv: list[str]) -> int:
     if not args.name:
         parser.error("name is required unless --retry-deferred is given")
 
-    res = ensure_tool(args.name, sys_dir=sys_dir)
+    res = ensure_tool(args.name, sys_dir=sys_dir, force=args.force)
     print(json.dumps(res, indent=2))
-    if res["status"] in ("success", "already_current"):
-        return 0
-    if res["status"] == "in_use_retry_at_session_boundary":
-        return 3
-    if "Checksum mismatch" in res.get("detail", ""):
-        return 2
-    return 1
+    return _exit_code(res)
+
+
+def _cli_ensure_runtime(argv: list[str]) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="provisioner.py ensure-runtime")
+    parser.add_argument("name", help="Name of the runtimes.json runtimes entry to ensure")
+    parser.add_argument("--force", action="store_true", help="Bypass the already-current fast path")
+    args = parser.parse_args(argv)
+
+    sys_dir = _default_sys_dir()
+    res = ensure_runtime(args.name, sys_dir=sys_dir, force=args.force)
+    print(json.dumps(res, indent=2))
+    return _exit_code(res)
 
 
 def _cli_ensure_peer_cli(argv: list[str]) -> int:
@@ -702,18 +899,13 @@ def _cli_ensure_peer_cli(argv: list[str]) -> int:
 
     parser = argparse.ArgumentParser(prog="provisioner.py ensure-peer-cli")
     parser.add_argument("peer", help="peers.json key or node_id of the peer CLI to ensure")
+    parser.add_argument("--force", action="store_true", help="Bypass the already-current fast path")
     args = parser.parse_args(argv)
 
     sys_dir = _default_sys_dir()
-    res = ensure_peer_cli(args.peer, sys_dir=sys_dir)
+    res = ensure_peer_cli(args.peer, sys_dir=sys_dir, force=args.force)
     print(json.dumps(res, indent=2))
-    if res["status"] in ("success", "already_current"):
-        return 0
-    if res["status"] == "in_use_retry_at_session_boundary":
-        return 3
-    if "Checksum mismatch" in res.get("detail", ""):
-        return 2
-    return 1
+    return _exit_code(res)
 
 
 if __name__ == "__main__":
@@ -722,6 +914,8 @@ if __name__ == "__main__":
 
     if len(sys.argv) > 1 and sys.argv[1] == "ensure-tool":
         sys.exit(_cli_ensure_tool(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "ensure-runtime":
+        sys.exit(_cli_ensure_runtime(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] == "ensure-peer-cli":
         sys.exit(_cli_ensure_peer_cli(sys.argv[2:]))
 

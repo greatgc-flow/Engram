@@ -35,6 +35,8 @@ if "!_SKIP_UPDATE!"=="0" (
                 powershell -NoProfile -Command ^
                     "$d=Get-Content '!_RT!' -Raw | ConvertFrom-Json; $d.runtimes.python.version='!_LATEST_VER!'; $d.runtimes.python.url='!_NEW_URL!'; [System.IO.File]::WriteAllText('!_RT!', ($d | ConvertTo-Json -Depth 10), (New-Object System.Text.UTF8Encoding($false)))"
                 echo [OK] runtimes.json updated to Python !_LATEST_VER!
+                powershell -NoProfile -Command ^
+                    "$log='%~dp0_sys\data\logs\runtimes_drift.jsonl'; $dir=Split-Path $log; if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force $dir | Out-Null }; $line = @{ timestamp=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'); source='install_bat_python_bootstrap'; old_version='!PY_VER!'; new_version='!_LATEST_VER!' } | ConvertTo-Json -Compress; Add-Content -Path $log -Value $line"
             )
             set "PY_VER=!_LATEST_VER!"
             set "PY_URL=!_NEW_URL!"
