@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-11T00:00:00+09:00",
+  "updated_at": "2026-07-12T00:00:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -323,19 +323,19 @@
     {
       "id": "D8",
       "title": "ag.gptoss bulk-candidate enablement (calendar-gated on 3P quota)",
-      "status": "proposed",
+      "status": "active",
       "priority": "low",
       "category": "routing",
       "owner": "unassigned",
-      "blocker": "3P-7D shared quota family at 100% until 2026-07-10 (orchestration.json:296 _routing_note)",
+      "blocker": null,
       "evidence_commit": [],
       "supersedes": [],
       "source_refs": [
         "sandbox-behavior-probe-b7-2026-07-08.md"
       ],
-      "next_action": "Found during 2026-07-09 ag exhaustive backlog sweep: ag.gptoss's enablement path (unanimous ag+cx 2026-07-07) is fully speced and its precondition (shared_quota_reserve enforcement, D6) already shipped/activated - the only remaining step is flipping routing_state from manual_only to eligible once check_cli_reality re-verifies the model and populates runtime_context_window, gated on the 3P-7D quota window resetting (2026-07-10). Tracked here purely so the calendar-gated flip isn't forgotten; no code work needed before that date.",
+      "next_action": "DONE 2026-07-12. Calendar gate (3P-7D reset 2026-07-10) confirmed passed via live diag (3P-7D at 0% on 2026-07-12). ag ran a real invocation of gptoss (agy.exe --model 'GPT-OSS 120B (Medium)') - succeeded, got a real reply, confirming reachability. ag's FIRST context-window report (asked the model to self-report its own context window: '2048 tokens') was independently flagged as untrustworthy by cx before being written anywhere - a model self-reporting its own configuration limits is a known hallucination-prone pattern, not a real measurement (DIR-004). cx cited real sourced facts: gpt-oss-120b's public model card documents 128K native context, and '(Medium)' is a reasoning-EFFORT tier per OpenAI's own docs, not a context-window tier - no basis for a 2048 cap. cx designed a real empirical bound-test instead: a ~8000-token prompt with 3 unique sentinel markers (start/middle/end), asking the model to identify all 3 - success proves real processing of the full input, not just a truncated/hallucinated response. ag ran it for real (piping via stdin to dodge the Windows CreateProcess 32K arg-length limit) - SUCCEEDED CLEANLY, all 3 sentinels correctly identified, establishing a genuine empirically-confirmed LOWER BOUND of ~8000 tokens (not the true ceiling - the real ceiling was not further probed this round). Applied to orchestration.json's ag.gptoss profile: model_availability 'cli_listed' -> 'verified_local' (real invocation confirmed), runtime_context_window null -> 8000 (explicitly labeled as a confirmed LOWER BOUND via a new _context_window_note - NOT the 128K public spec ceiling, which was never validated against this specific hosted deployment), validated_at/validation_method added matching the existing cx-profile convention (sentinel_bound_probe_lower_bound), routing_state 'manual_only' -> 'eligible'. It now self-gates on the 3P shared-quota-reserve mechanism (D6, already shipped/activated) so it won't be picked while 3P-7D is exhausted in the future. Empirically verified post-change: `diag.py` shows ag.gptoss as 'eligible' with context '8k'; `hub.is_routable('ag.gptoss')` returns True; D2's Gate 1 (54,912-case exhaustive guard cross-check) re-run against the updated live orchestration.json still shows zero mismatches; 856/856 tests still pass.",
       "risk": null,
-      "last_verified_at": "2026-07-09T06:40:00+09:00"
+      "last_verified_at": "2026-07-12T00:00:00+09:00"
     },
     {
       "id": "D9",
@@ -388,9 +388,9 @@
       "source_refs": [
         "sandbox-behavior-probe-b7-2026-07-08.md"
       ],
-      "next_action": "needs-discussion, not ready for TDD (found during 2026-07-09 ag exhaustive backlog sweep, cross-referenced with B7's empirical confirmation): cc runs --dangerously-skip-permissions and ag has no filesystem confinement (--sandbox does not enforce it) - both already declared as accepted trusted-IPC risk in orchestration.json's permission_classes notes (DIR-002), and now empirically reconfirmed unenforced 2/2+ real runs by B7. A CLI-permission-tool allowlist was already trialed for cc (2026-07-03) and reverted because it did not hard-enforce under -p. No concrete OS-level/hook enforcement design exists yet - this item exists so the gap has a tracked home, not because a fix is imminent or requested.",
+      "next_action": "DISCUSSION HELD 2026-07-12 (cx, single-peer discussion since this was pure security-architecture research, not implementation - no dissent to arbitrate, fable not called). cx researched real Windows OS-level sandboxing primitives (cited actual Microsoft docs, not assumed): Job Objects (process/resource management only, NOT filesystem confinement by themselves), restricted tokens/low integrity (CreateRestrictedToken - fragile as a primary boundary, requires per-path ACL/integrity-label setup, MS recommends a separate desktop to avoid UI-message attacks), AppContainer (the only realistic Windows-native process-sandbox candidate - unpackaged/legacy apps CAN run in AppContainer per MS docs, but requires manually building a profile + ACL grants + a native broker/launcher - not a drop-in wrapper), Windows Sandbox/Hyper-V (strong isolation but a disposable VM - no host software inside, no concurrent instances - operationally mismatched for per-ask peer IPC, would require a fundamentally different 'isolated worker' architecture). VERDICT: application-level enforcement (hooks/wrapper allowlists/CLI permission flags) is NOT and can never be a real security boundary - confirmed by the prior cc allowlist failure (2026-07-03, reverted: '-p doesn't confine') being exactly the expected failure mode for that class of control. Real confinement needs OS token/container isolation, VM isolation, a separate low-privilege account with ACL isolation, or a broker architecture where peers never get direct write access (return patches/artifacts only, applied after governance review). 'Accepted trusted-IPC risk' (current DIR-002 stance) REMAINS THE RIGHT CALL - B7's reconfirmation proves the gap is real, it does not make a fix suddenly available. cx explicitly declined to fabricate a design just to look thorough. RECLASSIFIED (per cx, no dissent): from 'no design exists' to 'research-prototype: AppContainer sandbox launcher canary' - a concrete, bounded next step IF this is ever prioritized: build sandbox-runner.exe (native, outside Python/hub.py) -> per-peer-class AppContainer profile -> grant SID access only to per-ask temp dir + controlled inbox/outbox + required runtime dirs -> launch cc/ag under AppContainer + a Job Object (kill-on-close, no breakaway) -> hub communicates via pipes/stdout/controlled files only -> peer output becomes patches/artifacts, broker applies after governance -> a canary suite must prove: cannot write outside allowed dirs, cannot mutate repo directly, child processes inherit confinement, a trivial real cc/ag ask still works, network/API access still works when intentionally granted, and the PTY path either still works for ag or is explicitly declared unsupported under confinement. STILL NOT TDD-READY: this prototype sketch itself needs to be built and empirically proven before any enforcement code is written - T8 stays 'needs-discussion' in spirit (no fix imminent, no implementation requested), just with a concrete research path recorded instead of 'no design exists'.",
       "risk": null,
-      "last_verified_at": "2026-07-09T06:40:00+09:00"
+      "last_verified_at": "2026-07-12T00:00:00+09:00"
     },
     {
       "id": "T9",
@@ -818,9 +818,9 @@
       "evidence_commit": [],
       "supersedes": [],
       "source_refs": [],
-      "next_action": "cc.fable recommendation during T5 discussion: cx was interrupted/stopped 3 separate times while working on T5 on 2026-07-11, with hub-level task status simply 'killed'/'stopped' and no error message - NOT the same failure mode as the 180s startup-timeout class that T19 fixed (T19's fix was independently confirmed unrelated to this). Recorded here as an observed-events-with-timestamps signal per fable's guidance ('record as observed events, not diagnosed cause'). TEST NEEDED before any fix is attempted - do not guess a root cause without measurement (DIR-004). If this recurs, avoid routing self-review tasks back to cx in place of genuine cross-review (self-review is not cross-review); prefer redirecting to ag or cc.fable per R:6 as was done live during T5.",
+      "next_action": "CORRECTED 2026-07-12 (user caught the real root cause: '너 왜 자꾸 피어에게 타임아웃을 거는거야?' - why do you keep putting timeouts on peers?). Original entry attributed 3 cx interruptions during T5 (2026-07-11) to unexplained peer flakiness. Re-examined: hub.py's `ask --timeout` CLI flag defaults to 0 (unlimited - _lease_cfg's zombie/silence window from T19 is the ONLY intended kill mechanism), but the terminal (cc) had been habitually passing explicit --timeout values (120/180/240/500s etc.) on nearly every ask this entire session, INCLUDING after T19 shipped - which reintroduces exactly the hard total-duration deadline T19 was built to eliminate (hub.py:2732 `deadline = t0 + timeout_sec`, unconditional regardless of whether the peer is actively producing output). Confirmed live in this same session (2026-07-11/12, D2/D8 work): multiple '[HUB:ERROR] ask timeout after 120s'/'240s' failures that were clearly self-inflicted by the terminal's own short --timeout choice, not a peer hang - the deepthink zombie window is 900s, far beyond what was passed. A SEPARATE failure mode (the Bash tool's own ~2-minute default foreground-execution timeout killing the process before hub.py's own logic could even respond) was also observed and is a plausible match for OBS1's original 'killed/stopped, no hub-level error message' description from T5 - notably different from today's confirmed cases, which DID print hub.py's own '[HUB:ERROR] ask timeout after Ns' message. CONCLUSION: cx's actual reliability was very likely never in question - both failure classes are self-inflicted by the terminal's own invocation choices (explicit --timeout flag, or foreground Bash calls without run_in_background for genuinely long deepthink-tier asks), not evidence of peer flakiness. GOING FORWARD (behavior change, not a code fix - no backlog implementation needed): stop passing --timeout on ask calls (let it default to 0/unlimited, trusting T19's silence-based zombie detection which is specifically designed to be safe under unlimited real time), and always invoke potentially-long asks via run_in_background rather than a bare foreground Bash call. This entry is closed as a process-correction, not a code backlog item - no fix needed in hub.py itself, the mechanism T19 built was already correct.",
       "risk": null,
-      "last_verified_at": "2026-07-11T00:00:00+09:00"
+      "last_verified_at": "2026-07-12T00:00:00+09:00"
     },
     {
       "id": "T20",
