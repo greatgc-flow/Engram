@@ -24,12 +24,14 @@
     {
       "id": "T5",
       "title": "cx sandbox tempfile create-but-cannot-delete, causes repeated large stray-file dumps",
-      "status": "active",
+      "status": "done",
       "priority": "medium",
       "category": "ops",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "47083d4"
+      ],
       "supersedes": [],
       "source_refs": [
         "d6-activation-taxonomy-2026-07-08.md",
