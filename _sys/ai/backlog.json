@@ -83,12 +83,14 @@
     {
       "id": "T3",
       "title": "ag zombie-timeout at 900s on a 7-item design ask - root cause self-diagnosed",
-      "status": "active",
+      "status": "done",
       "priority": "medium",
       "category": "ops",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "9c4023d"
+      ],
       "supersedes": [],
       "source_refs": [
         "pretdd-prep-2026-07-08-round2.md",
@@ -323,12 +325,14 @@
     {
       "id": "D8",
       "title": "ag.gptoss bulk-candidate enablement (calendar-gated on 3P quota)",
-      "status": "active",
+      "status": "done",
       "priority": "low",
       "category": "routing",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "236be37"
+      ],
       "supersedes": [],
       "source_refs": [
         "sandbox-behavior-probe-b7-2026-07-08.md"
