@@ -3046,6 +3046,100 @@ def _is_ephemeral_query_file(path: Path) -> bool:
     )
 
 
+def _oversized_ask_limits() -> tuple[int, int]:
+    """Return configured pre-dispatch oversized-ask limits.
+
+    A value <= 0 disables that dimension.
+    """
+    comm = _load_protocol_cfg().get("communication_policy", {})
+
+    def _nonnegative_int(key: str) -> int:
+        try:
+            return max(0, int(comm.get(key, 0) or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    return (
+        _nonnegative_int("oversized_ask_max_tasks"),
+        _nonnegative_int("oversized_ask_max_chars"),
+    )
+
+
+def _oversized_ask_task_count(text: str) -> int:
+    """Count obvious numbered/bulleted task-list items in raw user prose."""
+    return len(
+        re.findall(
+            r"(?m)^\s*(?:[-*+]\s+\S+|\d+[.)]\s+\S+)",
+            text or "",
+        )
+    )
+
+
+def _guard_oversized_ask(
+    user_query_raw: str,
+    max_tasks: int,
+    max_chars: int,
+    to: str,
+    hard_reject: bool,
+    ai_root: Path | None = None,
+) -> None:
+    """Non-lethal telemetry for every peer; a hard pre-dispatch reject only for
+    peers with a known non-flushing tool-loop (hard_reject=True, currently
+    `requires_pty` peers - e.g. ag - as a stopgap proxy; see
+    communication_policy._note_oversized_ask_guard). Peer comms remain
+    UNLIMITED in time and content for peers that don't have this bug (T19) -
+    this guard exists only to stop a known-vulnerable peer's tool-calling loop
+    from silently losing 100% of its output on an oversized ask, not as a
+    universal content cap.
+    """
+    char_count = len(user_query_raw or "")
+    task_count = _oversized_ask_task_count(user_query_raw or "")
+    reasons: list[str] = []
+    if max_chars > 0 and char_count > max_chars:
+        reasons.append(f"chars={char_count} > limit={max_chars}")
+    if max_tasks > 0 and task_count > max_tasks:
+        reasons.append(f"task_items={task_count} > limit={max_tasks}")
+    if not reasons:
+        return
+
+    reason_str = "; ".join(reasons)
+    if not hard_reject:
+        print(
+            f"[HUB:WARN] {to}: oversized ask detected ({reason_str}) - "
+            "peer is not known-vulnerable to silent output loss, proceeding "
+            "(event=oversized_ask_detected).",
+            file=sys.stderr,
+        )
+        if ai_root:
+            try:
+                _record_routing_metric(
+                    ai_root, "oversized_ask_detected", level="warning",
+                    peer_id=to, node_id=to, task_count=task_count, char_count=char_count,
+                    max_tasks=max_tasks, max_chars=max_chars, hard_reject=False,
+                )
+            except Exception:
+                pass
+        return
+
+    print(
+        f"[HUB:ERROR] {to}: oversized ask rejected before dispatch: {reason_str}. "
+        "This peer's tool-calling loop is known to drop all output on oversized asks "
+        "(event=oversized_ask_detected). Split the request into smaller asks or raise "
+        "the configured limits.",
+        file=sys.stderr,
+    )
+    if ai_root:
+        try:
+            _record_routing_metric(
+                ai_root, "oversized_ask_detected", level="error",
+                peer_id=to, node_id=to, task_count=task_count, char_count=char_count,
+                max_tasks=max_tasks, max_chars=max_chars, hard_reject=True,
+            )
+        except Exception:
+            pass
+    sys.exit(1)
+
+
 def _silent_startup_warning_sec() -> int:
     """Non-lethal initial-silence warning threshold.
 
@@ -4093,6 +4187,8 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
 
     requested_to = to
     user_query_raw = query
+    max_ask_tasks, max_ask_chars = _oversized_ask_limits()
+
     profile_decision: dict | None = None
     try:
         to, profile_decision = _select_ask_profile(to, user_query_raw)
@@ -4164,6 +4260,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     adapter = hub_peer.get_adapter(node) if _HUB_PEER_AVAILABLE else None
     requires_pty = node.get("requires_pty", False)
     exe_name = node.get("invoke", to)
+
+    if _depth == 0 and _escalation_depth == 0 and (max_ask_tasks > 0 or max_ask_chars > 0):
+        _guard_oversized_ask(user_query_raw, max_ask_tasks, max_ask_chars, to, hard_reject=requires_pty, ai_root=ai_root)
 
     if not timeout_sec or timeout_sec <= 0:
         timeout_sec = 0  # unlimited; heartbeat loop monitors for dead processes

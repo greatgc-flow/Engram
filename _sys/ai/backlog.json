@@ -83,8 +83,8 @@
     {
       "id": "T3",
       "title": "ag zombie-timeout at 900s on a 7-item design ask - root cause self-diagnosed",
-      "status": "proposed",
-      "priority": "low",
+      "status": "active",
+      "priority": "medium",
       "category": "ops",
       "owner": "unassigned",
       "blocker": null,
@@ -94,7 +94,7 @@
         "pretdd-prep-2026-07-08-round2.md",
         "remaining-items-pretdd-2026-07-08.md"
       ],
-      "next_action": "READY FOR TDD (ag self-assessment + cc.fable refinement): ag's tool-calling loop doesn't flush partial output, so a large multi-item ask that exceeds 900s combined yields zero output. Fix: hub.py pre-dispatch fail-fast heuristic (task-count/token-size threshold, config-declared per DIR-004) warning 'split this' by default. cc.fable REJECTS silent auto-split of free-text queries (parsing task structure out of prose is brittle and breaks cross-item context) - auto-split only when the caller passes an explicit structured task list, not prose.",
+      "next_action": "IMPLEMENTED + EMPIRICALLY VERIFIED (2026-07-11), revised once post-implementation after user cross-check caught a real design flaw. First pass (ag+cx 2-round design, terminal caught+cx-fixed a context-inflation depth-guard bug): implemented as a GLOBAL hard reject for any peer on an oversized ask (task-count/char-count over config thresholds). USER THEN ASKED: does a global hard content cap contradict T19's just-ratified 'peer comms are UNLIMITED in total time and content' principle? Cross-checked with ag+cx in parallel: BOTH independently converged (no dissent, no fable arbitration needed per DIR-005) that this was a hasty generalization - the root cause (silent 100% output loss) is specifically ag's tool-calling loop not flushing partial output, NOT a universal peer trait; applying it as a global reject handicapped cx/cc, which have no such flush problem, in violation of the 'unlimited content' principle for peers that don't need the protection. cx flagged under DIR-004 that cx/cc's own immunity is not itself empirically probed this round (only ag's vulnerability was originally diagnosed) - TEST NEEDED if ever revisited. REVISED DESIGN (both peers agreed): split into (1) a universal non-lethal oversized_ask_detected warning/telemetry event (fires for every peer, never blocks, consistent with T19's peer_silent_startup pattern) and (2) a hard pre-dispatch reject ONLY for peers declared vulnerable via requires_pty=true (currently only ag; both peers agree this is a stopgap proxy - a purpose-built capability flag like flushes_partial_output would be architecturally cleaner if more peers are added later). The guard was moved from immediately-after-user_query_raw to immediately-after node/requires_pty resolution (both peers independently confirmed this reordering is safe: no side-effecting code runs between the old and new insertion points that the guard depends on, and it preserves the _depth==0/_escalation_depth==0 context-inflation guard from the first pass). protocol.json's _note_oversized_ask_guard was rewritten to explicitly document that this is NOT a universal content cap and to record the correction. Empirical probe (live hub.py CLI, both peers): oversized 7-item query to `--to cx` now gets a WARN and proceeds to real dispatch (cx replied normally, exit 0); the same query to `--to ag` is hard-rejected before dispatch in 0.4s (exit 1) - confirms peer-scoping works exactly as designed. 814/814 tests pass (14 in this file, rewritten from the first pass's 10: task-count regex, _guard_oversized_ask unit tests for hard_reject=True/False + telemetry recording, protocol config declared, and 4 integration tests against the real _action_ask_inner covering pty-peer-rejected / non-pty-peer-warns-only / depth-guard-skips / escalation-depth-guard-skips).",
       "risk": null,
       "last_verified_at": "2026-07-08T22:19:00+09:00"
     },
@@ -819,6 +819,36 @@
       "supersedes": [],
       "source_refs": [],
       "next_action": "cc.fable recommendation during T5 discussion: cx was interrupted/stopped 3 separate times while working on T5 on 2026-07-11, with hub-level task status simply 'killed'/'stopped' and no error message - NOT the same failure mode as the 180s startup-timeout class that T19 fixed (T19's fix was independently confirmed unrelated to this). Recorded here as an observed-events-with-timestamps signal per fable's guidance ('record as observed events, not diagnosed cause'). TEST NEEDED before any fix is attempted - do not guess a root cause without measurement (DIR-004). If this recurs, avoid routing self-review tasks back to cx in place of genuine cross-review (self-review is not cross-review); prefer redirecting to ag or cc.fable per R:6 as was done live during T5.",
+      "risk": null,
+      "last_verified_at": "2026-07-11T00:00:00+09:00"
+    },
+    {
+      "id": "T20",
+      "title": "human_interface_peer hard-pinned to \"cc\" overfits the 2026-07-07 cx.standard incident - replace with eligibility gating",
+      "status": "proposed",
+      "priority": "medium",
+      "category": "ops",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [],
+      "next_action": "PROPOSED, not yet implemented (recorded per user request 2026-07-11, implementation explicitly deferred). Found during a 'hasty generalization' audit requested by the user after T3: ag+cx independently audited protocol.json/orchestration.json/peers.json/routing-config.json/hub.py/lessons for cases where a single peer's specific incident was generalized into a universal policy. Both independently flagged `human_interface_peer_stays_fixed: true` + `human_interface_peer: \"cc\"` (protocol.json:16-19): the note cites the 2026-07-07 cx.standard UTF-8-corruption incident as rationale for PERMANENTLY hard-pinning terminal identity to \"cc\" - but the same file already has a separately-scoped fix for the same incident (terminal_file_write_min_tier=effort, protocol.json:635). cc.fable arbitrated (no dissent on this one, only on T21's tier-floor question): the hard pin is the wrong shape - protocol.json:18 already carries `human_interface_peer_freshness_minutes: 30` sitting beside `stays_fixed: true`, which is internally contradictory (a freshness/staleness window implies re-election should be possible, but stays_fixed forecloses it), and this sits uneasily with the 'never hardcode a peer' invariant. The note at line 19 also misattributes the actual safety fix (tier-gate + CHK-ENC, not 'cc's tooling'). RULING: replace the hard pin with eligibility gating - tier floor (line 635) + health/freshness (existing line 18 window) + a measured encoding-safety canary (see T21) - while keeping cc as a documented DEFAULT/operator-preference terminal (legitimate: cc hosts the arbiter profiles and the interface the human actually sits at), explicitly labeled as preference rather than as the incident's fix. The two notes (lines 19 and 636) should cross-reference each other so a future reader doesn't re-derive the pin from the incident. IMPLEMENTATION CAVEAT (fable): this touches leader election and PRO-19 GAP-2 wiring - the docs-v2 invariants entry and any tests asserting stays_fixed must move in the same commit as any future implementation.",
+      "risk": "medium - touches leader election + PRO-19 GAP-2 wiring",
+      "last_verified_at": "2026-07-11T00:00:00+09:00"
+    },
+    {
+      "id": "T21",
+      "title": "terminal_file_write_min_tier: add measured encoding-safety canary promotion path (tier floor itself ratified as correctly-scoped, NOT a hasty generalization)",
+      "status": "proposed",
+      "priority": "low",
+      "category": "ops",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [],
+      "next_action": "PROPOSED, not yet implemented (recorded per user request 2026-07-11). Companion to T20, same audit. ag flagged `terminal_file_write_min_tier: \"effort\"` (protocol.json:635-636) as ALSO a hasty generalization of the 2026-07-07 cx.standard incident (constrains ag.standard/cc.standard too). cx disagreed (this is correctly scoped by tier/capability, not peer identity - a defensible general safety rule since encoding carelessness is plausibly a tier/capability trait, not unique to cx's transport). cc.fable ARBITRATED THIS DISSENT IN CX'S FAVOR (ag's finding REJECTED): scoping by tier is the right causal axis (contrast with T3, where the flush-bug WAS implementation-specific to ag, so requires_pty-scoping was correct there - same logic, opposite peer-vs-trait conclusion). Under acknowledged absence of fresh evidence either way (DIR-004), fable chose the cheaper failure mode if wrong: an over-broad tier floor costs only mild reversible inefficiency (standard-tier peers delegate writes to an effort+ peer), while an under-scoped peer-pin risks a repeat mojibake corruption of governed docs - the exact incident class these guards exist for. AMENDMENT ORDERED (satisfies both sides): mark the causal claim in the protocol.json:636 note as 'declared, unverified' hypothesis (not asserted fact), and define an empirical PROMOTION GATE: any standard-tier profile can earn a direct-write exemption by passing a measured encoding-safety canary - round-trip a non-ASCII fixture (Korean text, ellipses, box-drawing characters) through that peer's actual write path and byte-compare. The tier floor stays as the default today; exemption is earned by measurement, not argued from absence of evidence. META-LESSON (fable, worth recording separately in active-lessons.jsonl per fable's own suggestion): the SAME 2026-07-07 incident produced one correctly-shaped rule (tier-scoped, T21) and one wrongly-shaped rule (peer-pinned, T20) side by side - scope future rules by the causal variable (tier, transport, capability), never by the identity of whoever tripped first.",
       "risk": null,
       "last_verified_at": "2026-07-11T00:00:00+09:00"
     }
