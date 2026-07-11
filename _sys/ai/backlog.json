@@ -810,12 +810,14 @@
     {
       "id": "OBS1",
       "title": "cx reliability observation: 3x interrupted/stopped (not timeout) during T5 work on 2026-07-11",
-      "status": "proposed",
+      "status": "dropped",
       "priority": "low",
       "category": "ops",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "236be37"
+      ],
       "supersedes": [],
       "source_refs": [],
       "next_action": "CORRECTED 2026-07-12 (user caught the real root cause: '너 왜 자꾸 피어에게 타임아웃을 거는거야?' - why do you keep putting timeouts on peers?). Original entry attributed 3 cx interruptions during T5 (2026-07-11) to unexplained peer flakiness. Re-examined: hub.py's `ask --timeout` CLI flag defaults to 0 (unlimited - _lease_cfg's zombie/silence window from T19 is the ONLY intended kill mechanism), but the terminal (cc) had been habitually passing explicit --timeout values (120/180/240/500s etc.) on nearly every ask this entire session, INCLUDING after T19 shipped - which reintroduces exactly the hard total-duration deadline T19 was built to eliminate (hub.py:2732 `deadline = t0 + timeout_sec`, unconditional regardless of whether the peer is actively producing output). Confirmed live in this same session (2026-07-11/12, D2/D8 work): multiple '[HUB:ERROR] ask timeout after 120s'/'240s' failures that were clearly self-inflicted by the terminal's own short --timeout choice, not a peer hang - the deepthink zombie window is 900s, far beyond what was passed. A SEPARATE failure mode (the Bash tool's own ~2-minute default foreground-execution timeout killing the process before hub.py's own logic could even respond) was also observed and is a plausible match for OBS1's original 'killed/stopped, no hub-level error message' description from T5 - notably different from today's confirmed cases, which DID print hub.py's own '[HUB:ERROR] ask timeout after Ns' message. CONCLUSION: cx's actual reliability was very likely never in question - both failure classes are self-inflicted by the terminal's own invocation choices (explicit --timeout flag, or foreground Bash calls without run_in_background for genuinely long deepthink-tier asks), not evidence of peer flakiness. GOING FORWARD (behavior change, not a code fix - no backlog implementation needed): stop passing --timeout on ask calls (let it default to 0/unlimited, trusting T19's silence-based zombie detection which is specifically designed to be safe under unlimited real time), and always invoke potentially-long asks via run_in_background rather than a bare foreground Bash call. This entry is closed as a process-correction, not a code backlog item - no fix needed in hub.py itself, the mechanism T19 built was already correct.",
