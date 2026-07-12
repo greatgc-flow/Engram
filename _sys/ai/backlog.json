@@ -83,13 +83,13 @@
     {
       "id": "T3",
       "title": "ag zombie-timeout at 900s on a 7-item design ask - root cause self-diagnosed",
-      "status": "active",
+      "status": "done",
       "priority": "medium",
       "category": "ops",
       "owner": "unassigned",
       "blocker": null,
       "evidence_commit": [
-        "9c4023d"
+        "57b08ad"
       ],
       "supersedes": [],
       "source_refs": [
@@ -983,12 +983,14 @@
     {
       "id": "T22",
       "title": "T3 recheck: 2-probe test (instructed-incremental vs natural output) to determine if ag no-flush root cause persists at real zombie-window duration",
-      "status": "active",
+      "status": "done",
       "priority": "medium",
       "category": "ops",
       "owner": "unassigned",
       "blocker": "needs a longer-lived execution context than this session's background/foreground tooling could sustain (multiple attempts killed early before reaching a stable multi-minute run)",
-      "evidence_commit": [],
+      "evidence_commit": [
+        "57b08ad"
+      ],
       "supersedes": [],
       "source_refs": [
         "_sys/ai/knowledge/peer-characteristics.jsonl#PC-20260711-ag-toolloop-no-flush"
