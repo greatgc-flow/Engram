@@ -382,12 +382,14 @@
     {
       "id": "T8",
       "title": "cc/ag lack real OS-level sandbox enforcement - CLOSED as accepted risk (reopen triggers listed)",
-      "status": "proposed",
+      "status": "dropped",
       "priority": "low",
       "category": "security",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "a632921"
+      ],
       "supersedes": [],
       "source_refs": [
         "sandbox-behavior-probe-b7-2026-07-08.md"
