@@ -882,12 +882,14 @@
     {
       "id": "A2",
       "title": "AP-20 coordinator-monopoly violation hard-exits with no directive auto-promotion",
-      "status": "active",
+      "status": "done",
       "priority": "high",
       "category": "ops",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "142b899"
+      ],
       "supersedes": [],
       "source_refs": [
         "ops/full-system-purpose-audit-2026-07-12.md#3"
