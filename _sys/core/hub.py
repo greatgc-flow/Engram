@@ -6422,7 +6422,7 @@ def _guard_action_dry_run(ai_root: Path, action: str, force_tier0: bool = False,
         tier_floor = cfg.get("decision_tier_floor", {})
         if tier_floor.get("enabled", False) and _is_mutating_action(action):
             required_tier = tier_floor.get("mutating_hub_actions_min_tier", "effort")
-            tier_order = {"standard": 0, "effort": 1, "deepthink": 2}
+            tier_order = {"standard": 0, "effort": 1, "deepthink": 2, "fable": 3}
             
             origin_tier = "standard"
             if origin and origin != "terminal":

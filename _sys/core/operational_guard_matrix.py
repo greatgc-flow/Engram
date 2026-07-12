@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from itertools import product
 
-TIER_ORDER = {"standard": 0, "effort": 1, "deepthink": 2}
+TIER_ORDER = {"standard": 0, "effort": 1, "deepthink": 2, "fable": 3}
 RECOVERY_COORDINATOR_STATES = ("RED", "STALE", "RATE_LIMITED", "MISSING")
 
 # Mirrors hub.py's _SYSTEM_EXEMPT_ACTIONS exactly (kept as an independent literal,
