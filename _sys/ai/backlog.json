@@ -899,12 +899,14 @@
     {
       "id": "A3",
       "title": "self_care.py does not check/record its own subprocess follow-up return codes",
-      "status": "active",
+      "status": "done",
       "priority": "medium",
       "category": "ops",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "26f842e"
+      ],
       "supersedes": [],
       "source_refs": [
         "ops/full-system-purpose-audit-2026-07-12.md#3"
