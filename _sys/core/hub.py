@@ -2655,6 +2655,107 @@ class _PtyAskResult:
     transport_error: str | None = None
 
 
+def _pty_chunk_telemetry_cfg() -> tuple[bool, int]:
+    """Return (enabled, max_recorded_chunks) for PTY chunk-arrival telemetry.
+
+    The telemetry is emitted as one aggregate routing_metrics.jsonl event per
+    PTY ask, so the default can stay enabled without per-read JSONL churn.
+    Added 2026-07-12 (T23): the burst-vs-steady chunk-arrival pattern and
+    reader/dequeue delay distribution are the load-bearing measurement for
+    distinguishing real CPU/priority throttling of a backgrounded process tree
+    from PTY-reader-thread/ConPTY-backpressure starvation - see
+    peer-characteristics.jsonl's PC-20260712-agent-backgrounding-degrades-long-asks.
+    """
+    try:
+        comm = _load_protocol_cfg().get("communication_policy", {})
+        enabled = bool(comm.get("pty_chunk_telemetry_enabled", True))
+        max_chunks = int(comm.get("pty_chunk_telemetry_max_chunks", 500) or 0)
+        return enabled, max(0, max_chunks)
+    except Exception:
+        return True, 500
+
+
+def _chunk_byte_count(chunk) -> int:
+    if isinstance(chunk, bytes):
+        return len(chunk)
+    return len(str(chunk).encode("utf-8", "replace"))
+
+
+def _pct(values: list[float], percentile: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return round(float(ordered[0]), 6)
+    pos = (len(ordered) - 1) * percentile
+    lo = int(pos)
+    hi = min(lo + 1, len(ordered) - 1)
+    frac = pos - lo
+    return round(float(ordered[lo] * (1.0 - frac) + ordered[hi] * frac), 6)
+
+
+def _record_pty_chunk_arrival_metric(
+    ai_root: Path | None,
+    *,
+    peer_id: str,
+    ask_id: str | None,
+    pid: int,
+    elapsed_sec: int,
+    timed_out: bool,
+    timeout_kind: str | None,
+    transport_error: str | None,
+    chunks: list[dict],
+    max_chunks: int,
+) -> None:
+    """Emit one aggregate PTY chunk timing event.
+
+    Each chunk records when the reader thread got bytes from pywinpty and when
+    the main loop dequeued them. The queue-delay distribution distinguishes
+    reader/main-loop starvation from source-side silence.
+    """
+    if not ai_root:
+        return
+
+    recorded = chunks[:max_chunks] if max_chunks > 0 else []
+    read_elapsed = [float(c["read_elapsed_sec"]) for c in chunks]
+    queue_delays = [float(c["queue_delay_sec"]) for c in chunks]
+    read_gaps = [
+        max(0.0, read_elapsed[i] - read_elapsed[i - 1])
+        for i in range(1, len(read_elapsed))
+    ]
+    bytes_total = int(chunks[-1]["bytes_total"]) if chunks else 0
+
+    try:
+        _record_routing_metric(
+            ai_root,
+            "pty_chunk_arrival",
+            peer_id=peer_id,
+            node_id=peer_id,
+            ask_id=ask_id,
+            pid=pid,
+            transport="pty",
+            elapsed_sec=elapsed_sec,
+            timed_out=bool(timed_out),
+            timeout_kind=timeout_kind,
+            transport_error=transport_error,
+            chunks_observed=len(chunks),
+            chunks_recorded=len(recorded),
+            chunks_truncated=len(chunks) > len(recorded),
+            bytes_total=bytes_total,
+            read_gap_min_sec=round(min(read_gaps), 6) if read_gaps else None,
+            read_gap_p50_sec=_pct(read_gaps, 0.50),
+            read_gap_p95_sec=_pct(read_gaps, 0.95),
+            read_gap_max_sec=round(max(read_gaps), 6) if read_gaps else None,
+            queue_delay_min_sec=round(min(queue_delays), 6) if queue_delays else None,
+            queue_delay_p50_sec=_pct(queue_delays, 0.50),
+            queue_delay_p95_sec=_pct(queue_delays, 0.95),
+            queue_delay_max_sec=round(max(queue_delays), 6) if queue_delays else None,
+            chunks=recorded,
+        )
+    except Exception:
+        pass
+
+
 def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: dict, quiet: bool = False, ai_root: Path | None = None, ask_id: str | None = None, cwd: str | None = None) -> "_PtyAskResult":
     """pywinpty로 pseudo-TTY 실행 — WriteConsole() API 우회 (agy 등 TUI CLI 전용).
 
@@ -2708,14 +2809,21 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
         _lease_open(ai_root, node_id, pid, lease, ask_id=ask_id)
 
     out_q: "queue.Queue" = queue.Queue()
+    pty_telemetry_enabled, pty_telemetry_max_chunks = _pty_chunk_telemetry_cfg()
+    pty_telemetry_t0 = time.monotonic()
+    pty_reader_bytes_total = 0
 
     def _reader() -> None:
+        nonlocal pty_reader_bytes_total
         # The ONLY caller of blocking p.read(4096).
         try:
             while True:
                 chunk = p.read(4096)
                 if chunk:
-                    out_q.put(("data", chunk))
+                    read_at = time.monotonic()
+                    byte_count = _chunk_byte_count(chunk)
+                    pty_reader_bytes_total += byte_count
+                    out_q.put(("data", chunk, read_at, byte_count, pty_reader_bytes_total))
                 else:
                     out_q.put(("eof", None))
                     return
@@ -2738,6 +2846,7 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
     transport_error: str | None = None
     exit_code: int | None = None
     eof_seen = False
+    pty_chunk_samples: list[dict] = []
 
     while True:
         now = time.monotonic()
@@ -2781,26 +2890,38 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
             alive = False
 
         try:
-            kind, payload = out_q.get(timeout=slice_sec)
+            item = out_q.get(timeout=slice_sec)
         except queue.Empty:
             if not alive:
                 # Process gone but EOF not yet queued; one short grace slice,
                 # then treat the absence of further data as EOF.
                 try:
-                    kind, payload = out_q.get(timeout=slice_sec)
+                    item = out_q.get(timeout=slice_sec)
                 except queue.Empty:
                     eof_seen = True
                     break
             else:
                 continue
 
+        kind = item[0]
         if kind == "data":
+            _kind, payload, read_at, byte_count, bytes_total = item
+            dequeued_at = time.monotonic()
             chunks.append(payload)
-            last_activity = time.monotonic()
+            last_activity = dequeued_at
+            if pty_telemetry_enabled:
+                pty_chunk_samples.append({
+                    "read_elapsed_sec": round(max(0.0, read_at - pty_telemetry_t0), 6),
+                    "dequeue_elapsed_sec": round(max(0.0, dequeued_at - pty_telemetry_t0), 6),
+                    "byte_count": int(byte_count),
+                    "bytes_total": int(bytes_total),
+                    "queue_delay_sec": round(max(0.0, dequeued_at - read_at), 6),
+                })
         elif kind == "eof":
             eof_seen = True
             break
         else:  # "error"
+            payload = item[1]
             transport_error = f"pty_read_error: {payload}"
             break
 
@@ -2818,12 +2939,24 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
         # Drain anything the reader already queued before EOF/error.
         while True:
             try:
-                kind, payload = out_q.get_nowait()
+                item = out_q.get_nowait()
             except queue.Empty:
                 break
+            kind = item[0]
             if kind == "data":
+                _kind, payload, read_at, byte_count, bytes_total = item
+                dequeued_at = time.monotonic()
                 chunks.append(payload)
+                if pty_telemetry_enabled:
+                    pty_chunk_samples.append({
+                        "read_elapsed_sec": round(max(0.0, read_at - pty_telemetry_t0), 6),
+                        "dequeue_elapsed_sec": round(max(0.0, dequeued_at - pty_telemetry_t0), 6),
+                        "byte_count": int(byte_count),
+                        "bytes_total": int(bytes_total),
+                        "queue_delay_sec": round(max(0.0, dequeued_at - read_at), 6),
+                    })
             elif kind == "error" and transport_error is None:
+                payload = item[1]
                 transport_error = f"pty_read_error: {payload}"
         if eof_seen:
             try:
@@ -2839,6 +2972,19 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
     # Partial text is returned for diagnostics only; timed_out=True must still
     # prevent the caller from treating it as success.
     output = _strip_ansi("".join(chunks))
+    if pty_telemetry_enabled:
+        _record_pty_chunk_arrival_metric(
+            ai_root,
+            peer_id=node_id,
+            ask_id=ask_id,
+            pid=pid,
+            elapsed_sec=elapsed,
+            timed_out=timed_out,
+            timeout_kind=timeout_kind,
+            transport_error=transport_error,
+            chunks=pty_chunk_samples,
+            max_chunks=pty_telemetry_max_chunks,
+        )
     if not quiet:
         print(f"[HUB] REPLY {node_id} | chars={len(output)} | elapsed={elapsed}s\n{output.strip()}")
     return _PtyAskResult(
