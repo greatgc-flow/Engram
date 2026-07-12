@@ -863,12 +863,14 @@
     {
       "id": "A1",
       "title": "check_contracts.py fail-open gate silently converts internal-error exit code to 0",
-      "status": "active",
+      "status": "done",
       "priority": "high",
       "category": "security",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "670c6b9"
+      ],
       "supersedes": [],
       "source_refs": [
         "ops/full-system-purpose-audit-2026-07-12.md#5"
