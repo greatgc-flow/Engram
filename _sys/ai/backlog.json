@@ -859,6 +859,126 @@
       "next_action": "See T20's next_action for the fully fable-ratified shared design (both items share one capability-scoring framework: T21 = direct_file_write.safe_utf8.v1 canary specifically, T20 = the human_interface_terminal.safe_role.v1 superset canary built on top of it). T21-SPECIFIC DETAIL (cx's original proposal, unchanged by fable except the byte-roundtrip normalization ruling): direct_file_write.safe_utf8.v1, 100pt scale, threshold >=95 + zero hard failures: unicode_byte_roundtrip (30pt, byte-exact after normalizing CRLF->LF + strip leading BOM only - see T20 for why broader normalization was rejected), targeted_edit_preservation (25pt, hard gate - untouched bytes in a mixed-Unicode fixture must stay byte-identical after a targeted edit), line_endings_and_bom (15pt, hard gate - preserve existing LF/CRLF style, no unrequested BOM), target_scope (10pt, hard gate - only the declared path may be touched, no stray temp/extra-file artifacts), failure_truthfulness (15pt, hard gate - must honestly report failure on a locked/invalid target, not silently claim success; this specific check would have caught T5's report-only-violation incident class), repeatability (5pt, 3 consecutive passes under the same profile/runtime fingerprint). This REPLACES (after the 3-phase migration soak) the current coarse terminal_file_write_min_tier tier-floor gate with a measured, peer-agnostic score. STATUS: fully designed, NOT YET IMPLEMENTED - awaiting user go-ahead for TDD. cx: 'design-ready / implement when terminal-role policy is next touched', not urgent.",
       "risk": null,
       "last_verified_at": "2026-07-11T00:00:00+09:00"
+    },
+    {
+      "id": "A1",
+      "title": "check_contracts.py fail-open gate silently converts internal-error exit code to 0",
+      "status": "proposed",
+      "priority": "high",
+      "category": "security",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "ops/full-system-purpose-audit-2026-07-12.md#5"
+      ],
+      "next_action": "RATIFIED DESIGN (cc.fable, 2026-07-12 full-system audit), not yet implemented. Confirmed bug (terminal-verified, check_contracts.py:129-139): run_contracts() returns rc=2 on internal error (pytest missing/timeout/test file not found), but main()'s rc==2 branch prints 'WARN (fail-open)' and then calls sys.exit(0) - the SAME exit code as a genuine pass. A caller checking only the process exit code cannot tell 'contracts verified and passed' from 'the verifier itself is broken'. RULING: (1) tiered fail-closed - on rc==2, fail CLOSED (block the write) if the changed file is in the DIR-003 governed-core set (hub.py + contract-protected API surface - exactly the files whose corruption motivated this gate); --force-tier0 remains the human override; fail-open retained for files outside that set. (2) NEVER exit 0 on internal error anywhere - preserve a distinct exit code so the caller can always distinguish passed from broken; this silent 2->0 conversion is the actual defect, independent of fail-open/closed policy. (3) every fail-open event writes an operational_errors.jsonl record; a consecutive-fail-open cap (default N=3, config-declared) escalates to fail-closed until a genuine pass is observed - mirrors the same evidence-triggered-escalation shape already used elsewhere (D11's npm retry-classification pattern).",
+      "risk": "medium - security gate correctness",
+      "last_verified_at": "2026-07-12T00:00:00+09:00"
+    },
+    {
+      "id": "A2",
+      "title": "AP-20 coordinator-monopoly violation hard-exits with no directive auto-promotion",
+      "status": "proposed",
+      "priority": "high",
+      "category": "ops",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "ops/full-system-purpose-audit-2026-07-12.md#3"
+      ],
+      "next_action": "Found during 2026-07-12 full-system purpose audit (ag, docs layer). A peer violating the AP-20 coordinator-monopoly guard gets a hard sys.exit(1) with no runtime directive auto-promoted for the specific failure - meaning the peer may blindly retry the same blocked claim on its next activation, since nothing taught it not to. cc.fable ranked this Tier-1 (load-bearing): 'a governance block that teaches nothing guarantees blind retries; it's the one confirmed BROKEN feedback loop in the layer whose whole job is loops.' NOT independently re-verified line-by-line by the terminal this round (declared by ag, plausible given the documented mechanism) - verify the exact AP-20 enforcement code path before implementing a fix. Needs design: wire an AP-20 violation into the existing runtime-directive injection mechanism (same TTL-bound pattern the 5-Whys loop already uses elsewhere, per learning.md).",
+      "risk": null,
+      "last_verified_at": "2026-07-12T00:00:00+09:00"
+    },
+    {
+      "id": "A3",
+      "title": "self_care.py does not check/record its own subprocess follow-up return codes",
+      "status": "proposed",
+      "priority": "medium",
+      "category": "ops",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "ops/full-system-purpose-audit-2026-07-12.md#3"
+      ],
+      "next_action": "Found during 2026-07-12 full-system purpose audit (cx, code layer). self_care.py's follow-up subprocess calls (around lines 218, 239) capture output but never check or record the return code into state['errors'] - the self-healing layer can't see its own failures. cc.fable ranked this Tier-1 despite being a small fix: 'disproportionate value' relative to effort. Straightforward fix: check the subprocess result's return code and append a structured error record when non-zero, matching this repo's existing state['errors'] schema elsewhere.",
+      "risk": null,
+      "last_verified_at": "2026-07-12T00:00:00+09:00"
+    },
+    {
+      "id": "A4",
+      "title": "check_sandbox_behavior.py measured data has no consumer (report-and-remember)",
+      "status": "proposed",
+      "priority": "medium",
+      "category": "ops",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "ops/full-system-purpose-audit-2026-07-12.md#3"
+      ],
+      "next_action": "Found during 2026-07-12 full-system purpose audit (cx, code layer). check_sandbox_behavior.py classifies real CLI sandbox-enforcement outcomes and can emit observed JSON, but cx found no hub routing/enforcement consumer of that data - DIR-004 'theater' per cc.fable ('unconsumed measurement'). NOT independently re-verified this round (cx's own search found no consumer - an absence-of-evidence claim; a repo-wide grep would be needed to fully confirm before acting). Decision needed: either wire this data into an actual eligibility/diag consumer, or explicitly label it advisory-only in its own docstring/output so it isn't mistaken for enforcement.",
+      "risk": null,
+      "last_verified_at": "2026-07-12T00:00:00+09:00"
+    },
+    {
+      "id": "A5",
+      "title": "Docs consolidation: 3 near-duplicate section pairs (permissions/lifecycle/protocol/learning)",
+      "status": "proposed",
+      "priority": "low",
+      "category": "docs",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "ops/full-system-purpose-audit-2026-07-12.md#6"
+      ],
+      "next_action": "Found + ratified during 2026-07-12 full-system purpose audit. Three near-duplicate doc section pairs, terminal-verified: (1) permissions.md §8 'Hub State Mutation Boundary' vs lifecycle.md §18 'Sandbox Mutation Boundary' - near-verbatim, both describe SANDBOX_RENAME_DENIED/broker-submit/atomic-replace; RULING: permissions.md §8 canonical (already the DIR-002-cited authority), lifecycle.md §18 becomes a stub. (2) protocol.md §3.1 'Canonical Feedback Loop' vs learning.md §1 'Learning Loop' - overlapping authority; RULING: learning.md §1 canonical, protocol.md §3.1 stubs to it. (3) lifecycle.md §15 'Recovery Runbooks' vs learning.md §4 'Self-Care & Autonomy Bounds' - both govern RED/STALE handling; RULING: split by concern - lifecycle.md §15 keeps runbook MECHANICS, learning.md §4 keeps autonomy BOUNDS, each cross-referencing the other. Each consolidation MUST land as a single commit (canonical edit + stub together) so no drift window opens between the two copies.",
+      "risk": null,
+      "last_verified_at": "2026-07-12T00:00:00+09:00"
+    },
+    {
+      "id": "A6",
+      "title": "Boundary clarity: COLLAB_RATE R:3/R:5 ambiguity + PRO-01 missing worked examples",
+      "status": "proposed",
+      "priority": "low",
+      "category": "docs",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "ops/full-system-purpose-audit-2026-07-12.md#7"
+      ],
+      "next_action": "Found during 2026-07-12 full-system purpose audit (ag, docs layer). COLLAB_RATE table: R:3 applies to '_sys/ changes', R:5 applies to 'single _sys/ script edit' - unclear which governs editing exactly ONE system script (does a single-file change count as R:3's '_sys/ changes' or R:5's 'single script edit'?). Needs a worked example disambiguating multi-file-_sys-change (R:3) from single-script-edit (R:5). PRO-01 prohibits 'passing raw user shell text as executable/flag fragments' with no concrete example of raw-vs-sanitized/parsed text - needs a worked before/after example. Cheap fix, real documentation gap per cc.fable.",
+      "risk": null,
+      "last_verified_at": "2026-07-12T00:00:00+09:00"
+    },
+    {
+      "id": "A7",
+      "title": "Retirement-discipline cleanup batch: inert broker path, redundant soak test, OOM-guard diagnostics, setup.py, test taxonomy",
+      "status": "proposed",
+      "priority": "low",
+      "category": "ops",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "ops/full-system-purpose-audit-2026-07-12.md#4",
+        "ops/full-system-purpose-audit-2026-07-12.md#9"
+      ],
+      "next_action": "Batched Tier-2 cleanup items from the 2026-07-12 full-system purpose audit (Meta-Finding B: 'no retirement discipline' - superseded artifacts tend to coexist with their replacements rather than being retired). All terminal-verified to exist: (1) _enqueue_hub_mutation_request (hub.py:788) is an inert parallel broker code path alongside _write_json_atomic's live fallback (hub.py:735,750), gated by hub_mutation_broker_enabled - either activate it for real or remove it. (2) test_guard_dry_run.py's old 5-case/20-shuffle soak is now largely redundant given the newer exhaustive operational-guard-matrix oracle + check_operational_guard_matrix.py (54,912-case check) - delete or merge. (3) conftest.py's OOM guard force-exits via os._exit(1) with no diagnostic artifact left behind - write a minimal marker file before the hard exit. (4) core/setup.py is a documented-legacy dispatch wrapper with no check proving no stale caller still depends on it - add a check or a planned removal condition. (5) test taxonomy (l1_core/l2_policy/l3_mocked vs flat files) inconsistently applied - batch with a reorg-by-invariant-ownership pass (transport/governance/encoding/routing/provisioning) per cc.fable's 'accepted, low urgency' ruling on the test-reorg alternative. Proposed convention going forward (not yet adopted): 'supersede => retire in the same commit.'",
+      "risk": null,
+      "last_verified_at": "2026-07-12T00:00:00+09:00"
     }
   ]
 }
