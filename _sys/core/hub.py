@@ -2333,6 +2333,290 @@ def _healthy_peer(peer_id: str, ai_root: Path | None = None, allow_stale: bool =
     return True
 
 
+_PROFILE_TIER_ORDER = {"standard": 0, "effort": 1, "deepthink": 2, "fable": 3}
+
+
+def _profile_tier_rank(profile: str | None) -> int:
+    return _PROFILE_TIER_ORDER.get(str(profile or "standard").lower(), 0)
+
+
+def _human_interface_cfg() -> dict:
+    return _load_protocol_cfg().get("leader_election", {}) or {}
+
+
+def _human_interface_freshness_minutes() -> int:
+    cfg = _human_interface_cfg()
+    return int(cfg.get("human_interface_peer_freshness_minutes", 30) or 30)
+
+
+def _human_interface_required_profile() -> str:
+    floor = (
+        _load_protocol_cfg()
+        .get("decision_tier_floor", {})
+        .get("terminal_file_write_min_tier", "effort")
+    )
+    return str(floor or "effort")
+
+
+def _human_interface_profile_for_peer(orch: dict, peer: str, profile: str | None = None) -> str:
+    if profile:
+        return profile
+    root = next((n for n in orch.get("hub_nodes", []) if n.get("node_id") == peer), None)
+    return str((root or {}).get("default_profile") or "standard")
+
+
+def _human_interface_peer_node(orch: dict, peer: str) -> dict | None:
+    return next(
+        (
+            n for n in orch.get("hub_nodes", [])
+            if n.get("node_id") == peer and n.get("type", "peer") == "peer"
+        ),
+        None,
+    )
+
+
+def _parse_human_interface_ts(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    compact = _parse_compact_ts(str(value))
+    if compact:
+        return compact
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _human_interface_ts_fresh(value: str | None, now: datetime, freshness_minutes: int) -> bool | None:
+    ts = _parse_human_interface_ts(value)
+    if ts is None:
+        return None
+    n = now
+    if ts.tzinfo is not None and n.tzinfo is None:
+        n = n.astimezone()
+    elif ts.tzinfo is None and n.tzinfo is not None:
+        ts = ts.astimezone()
+    return (n - ts).total_seconds() <= freshness_minutes * 60
+
+
+def _human_interface_assignment_fresh(
+    ai_root: Path,
+    peer: str,
+    now: datetime,
+    freshness_minutes: int,
+) -> tuple[bool, str]:
+    """Validate terminal-role freshness when a terminal assignment timestamp exists.
+
+    Older state files do not carry a terminal assignment timestamp, so absence of
+    a timestamp falls back to the health freshness check performed separately.
+    A present-but-expired timestamp is authoritative and makes the peer
+    ineligible.
+    """
+    state = _read_json(ai_root / "state.json") if ai_root else {}
+    candidates: list[str | None] = []
+
+    if state.get("human_interface_peer") == peer:
+        candidates.append(state.get("human_interface_peer_assigned_at"))
+    if state.get("active_console_peer") == peer:
+        candidates.append(state.get("active_console_peer_assigned_at"))
+
+    assignments = state.get("role_assignments") or {}
+    for role in ("human_interface_peer", "human_interface", "terminal", "console"):
+        assignment = assignments.get(role)
+        if isinstance(assignment, dict) and assignment.get("peer") == peer:
+            candidates.append(assignment.get("assigned_at"))
+        elif isinstance(assignment, str) and assignment == peer:
+            candidates.append(None)
+
+    concrete = [value for value in candidates if value]
+    if not concrete:
+        return True, "no_terminal_assignment_timestamp"
+    if any(_human_interface_ts_fresh(value, now, freshness_minutes) for value in concrete):
+        return True, "terminal_assignment_fresh"
+    return False, "terminal_assignment_stale"
+
+
+def _direct_write_capability_status(peer: str, profile: str, now: datetime) -> dict:
+    checks_dir = Path(__file__).resolve().parents[1] / "checks"
+    if str(checks_dir) not in sys.path:
+        sys.path.insert(0, str(checks_dir))
+    try:
+        import check_peer_capability_canary as capability_canary  # type: ignore
+    except Exception as exc:
+        return {
+            "records_present": True,
+            "valid": False,
+            "reason": f"capability_helper_unavailable:{exc}",
+        }
+
+    try:
+        entries = capability_canary.load_score_entries()
+    except Exception as exc:
+        return {
+            "records_present": True,
+            "valid": False,
+            "reason": f"capability_records_unreadable:{exc}",
+        }
+
+    matching = [
+        entry for entry in entries
+        if entry.get("peer") == peer
+        and entry.get("profile") == profile
+        and entry.get("capability_id") == "direct_file_write.safe_utf8.v1"
+    ]
+    if not matching:
+        return {"records_present": False, "valid": None, "reason": "no_capability_record"}
+
+    valid = any(capability_canary.is_capability_record_valid(entry, now=now) for entry in matching)
+    return {
+        "records_present": True,
+        "valid": bool(valid),
+        "reason": "capability_valid" if valid else "capability_invalid",
+    }
+
+
+def _human_interface_peer_eligibility(
+    ai_root: Path,
+    peer: str,
+    profile: str | None = None,
+    now: datetime | None = None,
+) -> dict:
+    """Return measured eligibility for a peer/profile to hold human-interface duty."""
+    now = now or datetime.now()
+    orch = _load_orchestration()
+    profile = _human_interface_profile_for_peer(orch, peer, profile)
+    freshness_minutes = _human_interface_freshness_minutes()
+    required_profile = _human_interface_required_profile()
+    result = {
+        "peer": peer,
+        "profile": profile,
+        "eligible": False,
+        "reason": "",
+        "details": {
+            "freshness_minutes": freshness_minutes,
+            "required_profile": required_profile,
+        },
+    }
+
+    root = _human_interface_peer_node(orch, peer)
+    if not root:
+        result["reason"] = "unknown_peer"
+        return result
+    if root.get("enabled") is False or root.get("status") == "tier_suspended" or root.get("tier") == "tier_suspended":
+        result["reason"] = "peer_disabled_or_suspended"
+        return result
+
+    profiles = root.get("profiles") or {}
+    profile_cfg = profiles.get(profile, {})
+    if profiles and profile not in profiles:
+        result["reason"] = "unknown_profile"
+        return result
+    if profile_cfg.get("enabled") is False or profile_cfg.get("routing_state") == "disabled":
+        result["reason"] = "profile_disabled"
+        return result
+
+    status, health = _peer_effective_health(
+        peer,
+        stale_minutes=freshness_minutes,
+        ai_root=ai_root,
+    )
+    availability = health.get("availability", {}) if isinstance(health, dict) else {}
+    result["details"]["health_status"] = status
+    if status not in {"GREEN", "YELLOW"}:
+        result["reason"] = f"health_{str(status).lower()}"
+        return result
+    if availability.get("quarantined") or availability.get("gate_open") is False:
+        result["reason"] = "peer_quarantined_or_gate_closed"
+        return result
+    health_profiles = availability.get("profiles", {}) if isinstance(availability, dict) else {}
+    profile_health = health_profiles.get(profile, {}) if isinstance(health_profiles, dict) else {}
+    if profile_health.get("gate_open") is False:
+        result["reason"] = "profile_gate_closed"
+        return result
+
+    terminal_fresh, terminal_reason = _human_interface_assignment_fresh(
+        ai_root,
+        peer,
+        now,
+        freshness_minutes,
+    )
+    result["details"]["terminal_freshness"] = terminal_reason
+    if not terminal_fresh:
+        result["reason"] = terminal_reason
+        return result
+
+    if _profile_tier_rank(profile) < _profile_tier_rank(required_profile):
+        result["reason"] = "tier_floor"
+        return result
+
+    capability = _direct_write_capability_status(peer, profile, now)
+    result["details"]["direct_file_write_capability"] = capability
+    if capability["records_present"] and not capability["valid"]:
+        result["reason"] = capability["reason"]
+        return result
+
+    result["eligible"] = True
+    result["reason"] = "eligible"
+    return result
+
+
+def _select_human_interface_peer(ai_root: Path, now: datetime | None = None) -> dict:
+    """Select the human-interface peer, fail-closed when nobody is eligible."""
+    now = now or datetime.now()
+    orch = _load_orchestration()
+    cfg = _human_interface_cfg()
+    default_peer = str(cfg.get("human_interface_peer") or "cc")
+
+    default_profile = _human_interface_profile_for_peer(orch, default_peer)
+    default_result = _human_interface_peer_eligibility(ai_root, default_peer, default_profile, now=now)
+    evaluated = [default_result]
+    if default_result["eligible"]:
+        return {
+            "peer": default_peer,
+            "profile": default_profile,
+            "reason": "configured_default",
+            "eligible": True,
+            "evaluated": evaluated,
+        }
+
+    candidates = []
+    for index, node in enumerate(orch.get("hub_nodes", [])):
+        peer = node.get("node_id")
+        if not peer or peer == default_peer or node.get("type", "peer") != "peer":
+            continue
+        profile = _human_interface_profile_for_peer(orch, peer)
+        item = _human_interface_peer_eligibility(ai_root, peer, profile, now=now)
+        item["details"]["orchestration_index"] = index
+        evaluated.append(item)
+        if item["eligible"]:
+            candidates.append(item)
+
+    if candidates:
+        candidates.sort(
+            key=lambda item: (
+                -_profile_tier_rank(item.get("profile")),
+                item["details"].get("orchestration_index", 9999),
+                str(item.get("peer") or ""),
+            )
+        )
+        selected = candidates[0]
+        return {
+            "peer": selected["peer"],
+            "profile": selected["profile"],
+            "reason": "fallback_highest_eligible_tier",
+            "eligible": True,
+            "evaluated": evaluated,
+        }
+
+    return {
+        "peer": None,
+        "profile": None,
+        "reason": "no_eligible_human_interface_peer",
+        "eligible": False,
+        "evaluated": evaluated,
+    }
+
+
 def _role_guard(ai_root: Path, peer: str, action: str, allowed_roles: set[str], force_tier0: bool = False) -> None:
     if force_tier0 or not peer or peer == "unknown":
         return
@@ -8765,8 +9049,26 @@ def action_transient_scan(ai_root: Path) -> None:
 
 def action_approval_request(ai_root: Path, from_peer: str, action: str, auth_needed: str, scope: str, risk: str, fallback: str = "") -> None:
     _role_guard(ai_root, from_peer or "unknown", "approval-request", {"coordinator", "implementer", "researcher", "documenter"})
-    state = _read_json(ai_root / "state.json")
-    target = state.get("human_interface_peer") or state.get("active_console_peer") or "cx"
+    selection = _select_human_interface_peer(ai_root)
+    target = selection.get("peer")
+    if not target:
+        print("[HUB:ERROR] no eligible human_interface_peer for approval request", file=sys.stderr)
+        _record_routing_metric(
+            ai_root,
+            "human_interface_peer_selection",
+            selected=None,
+            reason=selection.get("reason"),
+            eligible=False,
+        )
+        sys.exit(2)
+    _record_routing_metric(
+        ai_root,
+        "human_interface_peer_selection",
+        selected=target,
+        profile=selection.get("profile"),
+        reason=selection.get("reason"),
+        eligible=True,
+    )
     content = "\n".join([
         "APPROVAL_REQUEST:",
         f"REQUESTING_PEER: {from_peer or 'unknown'}",
