@@ -16,6 +16,24 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "core"))
 
 # --- OOM / Hang Protection ---
 
+def _enforce_oom_guard(threshold_mb: float, available_mb: float, marker_path: str = "oom_marker.json") -> None:
+    """Decision point for the OOM guard. Isolated for testability."""
+    if available_mb < threshold_mb:
+        print(f"\n[CRITICAL] OOM Guard: Available RAM ({available_mb:.1f}MB) below threshold ({threshold_mb}MB)!")
+        print("[CRITICAL] Force-terminating pytest and child processes to save OS...")
+        try:
+            with open(marker_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "timestamp": time.time(),
+                    "pid": os.getpid(),
+                    "available_mb": available_mb,
+                    "threshold_mb": threshold_mb,
+                    "reason": "OOM Guard triggered"
+                }, f)
+        except Exception:
+            pass
+        os._exit(1)
+
 class MemoryGuard(threading.Thread):
     """Monitor system memory and force-terminate if it drops below threshold."""
     def __init__(self, threshold_mb=512, interval=1.0):
@@ -28,12 +46,7 @@ class MemoryGuard(threading.Thread):
         while not self.stop_event.is_set():
             try:
                 available_mb = psutil.virtual_memory().available / (1024 * 1024)
-                if available_mb < self.threshold_mb:
-                    # Emergency exit to prevent OS hang/freeze
-                    print(f"\n[CRITICAL] OOM Guard: Available RAM ({available_mb:.1f}MB) below threshold ({self.threshold_mb}MB)!")
-                    print("[CRITICAL] Force-terminating pytest and child processes to save OS...")
-                    # os._exit is used to bypass pytest's normal teardown which might hang during OOM
-                    os._exit(1)
+                _enforce_oom_guard(self.threshold_mb, available_mb)
             except Exception as e:
                 # Fail-safe: if psutil fails, don't crash the test runner but log it
                 print(f"\n[OOM-GUARD] Monitor Error: {e}")

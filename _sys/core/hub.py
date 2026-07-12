@@ -781,25 +781,7 @@ class HubMutationRequest:
     operation: str = "json_replace"
 
 
-def _mutation_broker_enabled() -> bool:
-    return bool(_runtime_cfg().get("hub_mutation_broker_enabled", False))
 
-
-def _enqueue_hub_mutation_request(ai_root: Path, request: HubMutationRequest) -> None:
-    """Record intent for a future host-side broker; fail closed until enabled."""
-    _journal_op(ai_root, "hub_mutation_broker", "intent", {
-        "request_id": request.request_id,
-        "action": request.action,
-        "origin": request.origin,
-        "target_path": str(request.target_path),
-    })
-    if not _mutation_broker_enabled():
-        _journal_op(ai_root, "hub_mutation_broker", "rejected", {
-            "request_id": request.request_id,
-            "reason": "broker_disabled",
-        })
-        raise RuntimeError("hub mutation broker is disabled; request was not committed")
-    raise NotImplementedError("host-side mutation broker consumer is not implemented")
 
 
 def _commit_hub_mutation_request(ai_root: Path, request: HubMutationRequest, force_tier0: bool = False) -> dict | None:
