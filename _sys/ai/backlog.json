@@ -977,12 +977,14 @@
     {
       "id": "A7",
       "title": "Retirement-discipline cleanup batch: inert broker path, redundant soak test, OOM-guard diagnostics, setup.py, test taxonomy",
-      "status": "active",
+      "status": "done",
       "priority": "low",
       "category": "ops",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "3d9992d"
+      ],
       "supersedes": [],
       "source_refs": [
         "ops/full-system-purpose-audit-2026-07-12.md#4",
