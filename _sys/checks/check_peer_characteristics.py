@@ -11,6 +11,8 @@ Validates:
   - 'status' and 'confidence' are within their known value sets.
   - 'mitigation.workaround_refs' entries look like real file paths that exist on disk
     (best-effort: only checks the file part before any ':' section/attribute suffix).
+  - Optional structured recheck_contract executable-probe fields have machine-usable
+    types when present.
   - Flags (warning, not failure) any entry whose 'review_after' date has passed - a
     schedule-based nudge to go re-run the entry's recheck_contract.required_probe.
 
@@ -88,6 +90,32 @@ def check_peer_characteristics() -> tuple[list[str], list[str]]:
                 errors.append(f"'{entry_id}': recheck_contract missing 'trigger'")
             if not recheck.get("required_probe"):
                 errors.append(f"'{entry_id}': recheck_contract missing 'required_probe'")
+            if "runnable_probe_cmd" in recheck:
+                cmd = recheck.get("runnable_probe_cmd")
+                if (
+                    not isinstance(cmd, list)
+                    or not cmd
+                    or any(not isinstance(part, str) or not part.strip() for part in cmd)
+                ):
+                    errors.append(f"'{entry_id}': recheck_contract runnable_probe_cmd must be a non-empty list of strings")
+            if "expected_exit_code" in recheck:
+                expected_exit_code = recheck.get("expected_exit_code")
+                if (
+                    not isinstance(expected_exit_code, int)
+                    or isinstance(expected_exit_code, bool)
+                    or expected_exit_code < 0
+                ):
+                    errors.append(f"'{entry_id}': recheck_contract expected_exit_code must be a non-negative integer")
+            if "recheck_interval_days" in recheck:
+                interval = recheck.get("recheck_interval_days")
+                if not isinstance(interval, int) or isinstance(interval, bool) or interval <= 0:
+                    errors.append(f"'{entry_id}': recheck_contract recheck_interval_days must be a positive integer")
+            if "owner" in recheck:
+                owner = recheck.get("owner")
+                if not isinstance(owner, str) or not owner.strip():
+                    errors.append(f"'{entry_id}': recheck_contract owner must be a non-empty string")
+        elif recheck is not None:
+            errors.append(f"'{entry_id}': recheck_contract must be an object")
 
         mitigation = entry.get("mitigation", {})
         if isinstance(mitigation, dict):

@@ -95,6 +95,41 @@ def test_missing_workaround_ref_file_is_a_warning_not_an_error(monkeypatch, tmp_
     assert any("does not resolve to a file on disk" in w for w in warnings)
 
 
+def test_structured_recheck_contract_fields_are_validated(monkeypatch, tmp_path):
+    m = _mod()
+    fake = tmp_path / "peer-characteristics.jsonl"
+    entry = _valid_entry()
+    entry["recheck_contract"].update({
+        "runnable_probe_cmd": ["python", "_sys/checks/check_peer_capability_canary.py", "--peer", "cx.standard"],
+        "expected_exit_code": 0,
+        "recheck_interval_days": 7,
+        "owner": "coordinator",
+    })
+    fake.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+    monkeypatch.setattr(m, "REGISTRY_PATH", fake)
+    errors, warnings = m.check_peer_characteristics()
+    assert errors == []
+
+
+def test_invalid_structured_recheck_contract_fields_are_errors(monkeypatch, tmp_path):
+    m = _mod()
+    fake = tmp_path / "peer-characteristics.jsonl"
+    entry = _valid_entry()
+    entry["recheck_contract"].update({
+        "runnable_probe_cmd": "python _sys/checks/check_peer_capability_canary.py",
+        "expected_exit_code": "0",
+        "recheck_interval_days": 0,
+        "owner": "",
+    })
+    fake.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+    monkeypatch.setattr(m, "REGISTRY_PATH", fake)
+    errors, warnings = m.check_peer_characteristics()
+    assert any("runnable_probe_cmd must be a non-empty list of strings" in e for e in errors)
+    assert any("expected_exit_code must be a non-negative integer" in e for e in errors)
+    assert any("recheck_interval_days must be a positive integer" in e for e in errors)
+    assert any("owner must be a non-empty string" in e for e in errors)
+
+
 def _valid_entry() -> dict:
     return {
         "id": "PC-TEST-1",
