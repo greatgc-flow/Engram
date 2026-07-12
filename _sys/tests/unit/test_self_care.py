@@ -279,3 +279,138 @@ class TestSelfCare:
                     except SystemExit as e:
                         assert e.code == 0 or e.code is None
                     mock_lesson_grad.assert_called_once()
+
+
+class TestRunCheckedStep:
+    """A3: self_care.py return-code recording via _run_checked_step."""
+
+    def test_run_checked_step_success_records_no_error_and_step_appends(self, mock_env):
+        from self_care import SelfCare
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+            sc = SelfCare(sys_dir=mock_env["sys"])
+            sc.validate()
+
+        assert sc.state["errors"] == []
+        assert "validate" in sc.state["steps_completed"]
+
+    def test_run_checked_step_nonzero_records_structured_error_and_skips_step(self, mock_env):
+        from self_care import SelfCare
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=9, stdout="bad stdout", stderr="bad stderr")
+            sc = SelfCare(sys_dir=mock_env["sys"])
+            sc.validate()
+
+        assert "validate" not in sc.state["steps_completed"]
+        assert len(sc.state["errors"]) == 1
+
+        err = sc.state["errors"][0]
+        assert err["step"] == "validate"
+        assert err["returncode"] == 9
+        assert err["stdout_tail"] == "bad stdout"
+        assert err["stderr_tail"] == "bad stderr"
+        assert err["severity"] == "warn"
+        assert err["ts"]
+        assert any("virtualizer.py" in part for part in err["cmd"])
+
+    def test_run_checked_step_truncates_stdout_and_stderr_tails(self):
+        from self_care import _OUTPUT_TAIL_LIMIT, _run_checked_step
+
+        long_stdout = "O" * (_OUTPUT_TAIL_LIMIT + 200)
+        long_stderr = "E" * (_OUTPUT_TAIL_LIMIT + 300)
+        state = {"errors": []}
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=5, stdout=long_stdout, stderr=long_stderr)
+            _run_checked_step(state, "validate", ["fake-cmd"])
+
+        err = state["errors"][0]
+        assert len(err["stdout_tail"]) == _OUTPUT_TAIL_LIMIT
+        assert len(err["stderr_tail"]) == _OUTPUT_TAIL_LIMIT
+        assert err["stdout_tail"] == long_stdout[-_OUTPUT_TAIL_LIMIT:]
+        assert err["stderr_tail"] == long_stderr[-_OUTPUT_TAIL_LIMIT:]
+
+    def test_run_checked_step_exception_records_structured_error_without_raising(self):
+        from self_care import _run_checked_step
+
+        state = {"errors": []}
+
+        with patch("subprocess.run", side_effect=RuntimeError("boom")):
+            result = _run_checked_step(state, "sync", ["fake-cmd"])
+
+        assert result.returncode == 1
+        assert len(state["errors"]) == 1
+        err = state["errors"][0]
+        assert err["step"] == "sync"
+        assert err["returncode"] == 1
+        assert err["stdout_tail"] == ""
+        assert "RuntimeError: boom" in err["stderr_tail"]
+        assert err["severity"] == "warn"
+
+    def test_validate_nonzero_records_error_and_does_not_complete_step(self, mock_env):
+        from self_care import SelfCare
+
+        with patch("subprocess.run", return_value=MagicMock(returncode=2, stdout="", stderr="validate failed")):
+            sc = SelfCare(sys_dir=mock_env["sys"])
+            sc.validate()
+
+        assert "validate" not in sc.state["steps_completed"]
+        assert sc.state["errors"][0]["step"] == "validate"
+        assert sc.state["errors"][0]["returncode"] == 2
+
+    def test_propose_nonzero_records_error_and_does_not_complete_step(self, mock_env):
+        from self_care import SelfCare
+
+        with patch("subprocess.run", return_value=MagicMock(returncode=2, stdout="", stderr="proposal failed")):
+            sc = SelfCare(sys_dir=mock_env["sys"])
+            sc.state["scan_findings"] = "Saturation detected"
+            sc.propose()
+
+        assert "propose" not in sc.state["steps_completed"]
+        assert sc.state["errors"][0]["step"] == "propose"
+        assert sc.state["errors"][0]["returncode"] == 2
+
+    def test_lesson_graduation_nonzero_records_error_and_does_not_complete_step(self, mock_env):
+        from self_care import SelfCare
+
+        gov_path = mock_env["sys"] / "ai" / "governance_params.json"
+        gov_path.parent.mkdir(parents=True, exist_ok=True)
+        gov_path.write_text(json.dumps({"lesson_graduation_auto_propose": True}), encoding="utf-8")
+
+        knowledge_dir = mock_env["sys"] / "ai" / "knowledge" / "general"
+        knowledge_dir.mkdir(parents=True, exist_ok=True)
+        lessons_path = knowledge_dir / "active-lessons.jsonl"
+        lesson = {
+            "id": "L-FAIL",
+            "status": "active",
+            "title": "Failing Lesson",
+            "compact_rule": "test rule",
+            "source_refs": [
+                {"id": "1", "type": "debate", "ts": "2026-06-25T12:00:00Z"},
+                {"id": "2", "type": "debate", "ts": "2026-06-25T12:00:00Z"},
+                {"id": "3", "type": "debate", "ts": "2026-06-25T12:00:00Z"},
+            ],
+        }
+        lessons_path.write_text(json.dumps(lesson) + "\n", encoding="utf-8")
+
+        with patch("subprocess.run", return_value=MagicMock(returncode=2, stdout="", stderr="graduation failed")):
+            sc = SelfCare(sys_dir=mock_env["sys"])
+            sc.lesson_graduation()
+
+        assert "lesson_graduation" not in sc.state["steps_completed"]
+        assert sc.state["graduation_candidates"] == ["L-FAIL"]
+        assert sc.state["errors"][0]["step"] == "lesson_graduation"
+        assert sc.state["errors"][0]["returncode"] == 2
+
+    def test_sync_nonzero_records_error_and_does_not_complete_step(self, mock_env):
+        from self_care import SelfCare
+
+        with patch("subprocess.run", return_value=MagicMock(returncode=2, stdout="", stderr="sync failed")):
+            sc = SelfCare(sys_dir=mock_env["sys"])
+            sc.sync()
+
+        assert "sync" not in sc.state["steps_completed"]
+        assert sc.state["errors"][0]["step"] == "sync"
+        assert sc.state["errors"][0]["returncode"] == 2
