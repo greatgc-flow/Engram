@@ -75,6 +75,7 @@ class TestGuardOversizedAsk:
             hub._guard_oversized_ask("x" * 100, 0, 10, "ag", hard_reject=True, ai_root=tmp_path)
         assert calls and calls[0][0] == "oversized_ask_detected"
         assert calls[0][1]["hard_reject"] is True
+        assert calls[0][1]["force_tier0_override"] is False
 
     def test_records_routing_metric_on_warn(self, tmp_path, monkeypatch):
         calls = []
@@ -85,6 +86,28 @@ class TestGuardOversizedAsk:
         hub._guard_oversized_ask("x" * 100, 0, 10, "cx", hard_reject=False, ai_root=tmp_path)
         assert calls and calls[0][0] == "oversized_ask_detected"
         assert calls[0][1]["hard_reject"] is False
+        assert calls[0][1]["force_tier0_override"] is False
+
+    def test_force_tier0_override_warns_records_and_does_not_raise(self, tmp_path, monkeypatch, capsys):
+        calls = []
+        monkeypatch.setattr(
+            hub, "_record_routing_metric",
+            lambda ai_root, event, **kw: calls.append((event, kw)),
+        )
+
+        hub._guard_oversized_ask(
+            "x" * 100, 0, 10, "ag",
+            hard_reject=False,
+            ai_root=tmp_path,
+            force_tier0_override=True,
+        )
+
+        err = capsys.readouterr().err
+        assert "[HUB:WARN]" in err
+        assert "--force-tier0 override" in err
+        assert calls and calls[0][0] == "oversized_ask_detected"
+        assert calls[0][1]["hard_reject"] is False
+        assert calls[0][1]["force_tier0_override"] is True
 
 
 class TestOversizedAskLimitsConfig:
@@ -152,6 +175,31 @@ class TestDepthAndPeerScopeOnActionAskInner:
             )
         assert exc.value.code == 1
 
+    def test_force_tier0_bypasses_pty_peer_hard_reject_at_depth_zero(self, monkeypatch, tmp_path):
+        sentinel_cls = self._patch_pre_guard_scaffolding(monkeypatch, {"requires_pty": True})
+        calls = []
+        monkeypatch.setattr(
+            hub, "_record_routing_metric",
+            lambda ai_root, event, **kw: calls.append((event, kw)),
+        )
+
+        with pytest.raises(sentinel_cls):
+            hub._action_ask_inner(
+                to="ag",
+                query=self._oversized_query(),
+                query_file=None,
+                timeout_sec=60,
+                ai_root=tmp_path,
+                quiet=True,
+                _depth=0,
+                _escalation_depth=0,
+                force_tier0=True,
+            )
+
+        assert calls and calls[0][0] == "oversized_ask_detected"
+        assert calls[0][1]["hard_reject"] is False
+        assert calls[0][1]["force_tier0_override"] is True
+
     def test_non_pty_peer_only_warns_and_proceeds_past_guard(self, monkeypatch, tmp_path):
         sentinel_cls = self._patch_pre_guard_scaffolding(monkeypatch, {"requires_pty": False})
 
@@ -197,3 +245,40 @@ class TestDepthAndPeerScopeOnActionAskInner:
                 _depth=0,
                 _escalation_depth=1,
             )
+
+
+class TestForceTier0Threading:
+    def test_action_ask_threads_force_tier0_to_inner(self, monkeypatch, tmp_path):
+        captured = {}
+
+        def _fake_inner(*args, **kwargs):
+            captured.update(kwargs)
+
+        monkeypatch.setattr(hub, "_action_ask_inner", _fake_inner)
+
+        hub.action_ask(
+            "ag", "query", None, 60, tmp_path,
+            allow_governed_mutation=True,
+            force_tier0=True,
+        )
+
+        assert captured["force_tier0"] is True
+
+    def test_cli_force_tier0_reaches_action_ask(self, monkeypatch, tmp_path):
+        captured = {}
+
+        def _fake_action_ask(*args, **kwargs):
+            captured["args"] = args
+            captured["kwargs"] = kwargs
+
+        monkeypatch.setattr(sys, "argv", [
+            "hub.py", "ask", "--to", "ag", "--query", "hello", "--force-tier0",
+        ])
+        monkeypatch.setattr(hub, "find_ai_root", lambda: tmp_path)
+        monkeypatch.setattr(hub, "ensure_ai_dir", lambda ai_root: None)
+        monkeypatch.setattr(hub, "action_ask", _fake_action_ask)
+
+        hub.main()
+
+        assert captured["args"][0] == "ag"
+        assert captured["kwargs"]["force_tier0"] is True

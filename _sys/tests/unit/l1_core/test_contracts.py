@@ -99,9 +99,12 @@ class TestActionAskContract:
         assert p["origin"].default == "terminal"
         # LL-20260703-005 guard param (2026-07-03): default False = guard active.
         assert p["allow_governed_mutation"].default is False
+        # T3 human override (2026-07-12): default False = oversized-ask hard reject active.
+        assert p["force_tier0"].default is False
         params = list(p.keys())
         assert params.index("_escalation_depth") == params.index("_depth") + 1
         assert params.index("origin") == params.index("_escalation_depth") + 1
+        assert params.index("force_tier0") == params.index("allow_governed_mutation") + 1
 
 
 

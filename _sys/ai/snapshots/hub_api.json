@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-03T23:44:49",
+  "generated_at": "2026-07-12T16:19:01",
   "source": "hub.py",
   "count": 83,
   "signatures": {
@@ -247,6 +247,11 @@
           "annotation": "str"
         },
         "allow_governed_mutation": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "default": false,
+          "annotation": "bool"
+        },
+        "force_tier0": {
           "kind": "POSITIONAL_OR_KEYWORD",
           "default": false,
           "annotation": "bool"

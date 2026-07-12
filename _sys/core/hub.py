@@ -3082,6 +3082,7 @@ def _guard_oversized_ask(
     to: str,
     hard_reject: bool,
     ai_root: Path | None = None,
+    force_tier0_override: bool = False,
 ) -> None:
     """Non-lethal telemetry for every peer; a hard pre-dispatch reject only for
     peers with a known non-flushing tool-loop (hard_reject=True, currently
@@ -3104,9 +3105,14 @@ def _guard_oversized_ask(
 
     reason_str = "; ".join(reasons)
     if not hard_reject:
+        proceed_reason = (
+            "human --force-tier0 override accepted the oversized-ask risk"
+            if force_tier0_override
+            else "peer is not known-vulnerable to silent output loss"
+        )
         print(
             f"[HUB:WARN] {to}: oversized ask detected ({reason_str}) - "
-            "peer is not known-vulnerable to silent output loss, proceeding "
+            f"{proceed_reason}, proceeding "
             "(event=oversized_ask_detected).",
             file=sys.stderr,
         )
@@ -3116,6 +3122,7 @@ def _guard_oversized_ask(
                     ai_root, "oversized_ask_detected", level="warning",
                     peer_id=to, node_id=to, task_count=task_count, char_count=char_count,
                     max_tasks=max_tasks, max_chars=max_chars, hard_reject=False,
+                    force_tier0_override=bool(force_tier0_override),
                 )
             except Exception:
                 pass
@@ -3134,6 +3141,7 @@ def _guard_oversized_ask(
                 ai_root, "oversized_ask_detected", level="error",
                 peer_id=to, node_id=to, task_count=task_count, char_count=char_count,
                 max_tasks=max_tasks, max_chars=max_chars, hard_reject=True,
+                force_tier0_override=False,
             )
         except Exception:
             pass
@@ -4042,7 +4050,7 @@ def _maybe_run_arbiter_on_finalize(ai_root, data) -> None:
         print(f"[HUB:WARN] arbiter auto-wire error on finalize: {exc}", file=sys.stderr)
 
 
-def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False) -> None:
+def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False, force_tier0: bool = False) -> None:
     """Public entry: wraps _action_ask_inner with the LL-20260703-005 governed-
     mutation guard. Governed files are hashed before the peer executes and re-
     hashed in a crash-safe finally that covers BOTH the PTY (_ask_with_pty, ag)
@@ -4068,6 +4076,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             to, query, query_file, timeout_sec, ai_root, quiet, output_file,
             include_context, session_policy, explicit_scope, _depth,
             _escalation_depth, origin, allow_governed_mutation,
+            force_tier0=force_tier0,
             ask_id=ask_id,
         )
     except BaseException as exc:
@@ -4141,7 +4150,7 @@ def _sweep_stale_ask_temp_dirs(temp_root: Path, max_age_sec: int = 3600) -> None
         pass
 
 
-def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False, ask_id: str | None = None) -> None:
+def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False, force_tier0: bool = False, ask_id: str | None = None) -> None:
     if _depth > RUNTIME_ESCALATION_DEPTH_CEILING:
 
         print(f"[ERROR] action_ask: maximum failover depth reached for {to}", file=sys.stderr)
@@ -4262,7 +4271,12 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     exe_name = node.get("invoke", to)
 
     if _depth == 0 and _escalation_depth == 0 and (max_ask_tasks > 0 or max_ask_chars > 0):
-        _guard_oversized_ask(user_query_raw, max_ask_tasks, max_ask_chars, to, hard_reject=requires_pty, ai_root=ai_root)
+        _guard_oversized_ask(
+            user_query_raw, max_ask_tasks, max_ask_chars, to,
+            hard_reject=bool(requires_pty and not force_tier0),
+            ai_root=ai_root,
+            force_tier0_override=bool(force_tier0 and requires_pty),
+        )
 
     if not timeout_sec or timeout_sec <= 0:
         timeout_sec = 0  # unlimited; heartbeat loop monitors for dead processes
@@ -4330,7 +4344,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     # Recurse into the inner impl (not the wrapper): the outer
                     # action_ask guard's single window already covers this whole
                     # failover chain, so we avoid a nested re-guard / double-log.
-                    return _action_ask_inner(failover_model, query, None, timeout_sec, ai_root, quiet, output_file, include_context=False, session_policy=session_policy, explicit_scope=explicit_scope, _depth=_depth + 1, _escalation_depth=_escalation_depth, origin=origin, allow_governed_mutation=allow_governed_mutation, ask_id=ask_id)
+                    return _action_ask_inner(failover_model, query, None, timeout_sec, ai_root, quiet, output_file, include_context=False, session_policy=session_policy, explicit_scope=explicit_scope, _depth=_depth + 1, _escalation_depth=_escalation_depth, origin=origin, allow_governed_mutation=allow_governed_mutation, force_tier0=force_tier0, ask_id=ask_id)
 
             elif action == "reject":
                 msg = gate_result.get("message", "context limit exceeded")
@@ -4704,6 +4718,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     session_policy=session_policy, explicit_scope=explicit_scope,
                     _depth=_depth, _escalation_depth=_escalation_depth + 1, origin=origin,
                     allow_governed_mutation=allow_governed_mutation,
+                    force_tier0=force_tier0,
                 )
 
             # ── success: exit 0 + nonempty output + ok output-file ─────
@@ -5012,6 +5027,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     session_policy=session_policy, explicit_scope=explicit_scope,
                     _depth=_depth, _escalation_depth=_escalation_depth + 1, origin=origin,
                     allow_governed_mutation=allow_governed_mutation,
+                    force_tier0=force_tier0,
                 )
 
 
@@ -8711,7 +8727,7 @@ def main() -> None:
             else:
                 print(f"[HUB:WARN] auto routing unavailable ({res.get('reason')}); specify an explicit --to", file=sys.stderr)
                 sys.exit(1)
-        action_ask(effective_target, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file, session_policy=args.session_policy, explicit_scope=args.scope, origin=origin, allow_governed_mutation=getattr(args, "allow_governed_mutation", False))
+        action_ask(effective_target, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file, session_policy=args.session_policy, explicit_scope=args.scope, origin=origin, allow_governed_mutation=getattr(args, "allow_governed_mutation", False), force_tier0=getattr(args, "force_tier0", False))
         return
     if args.action == "ask-all":
         ai_root_opt = None
