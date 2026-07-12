@@ -3075,6 +3075,49 @@ def _oversized_ask_task_count(text: str) -> int:
     )
 
 
+def _oversized_ask_stats(user_query_raw: str, max_tasks: int, max_chars: int) -> tuple[list[str], int, int]:
+    """Shared sizing check used by both _guard_oversized_ask and the
+    progress-injection decision in _action_ask_inner, so the two never drift."""
+    char_count = len(user_query_raw or "")
+    task_count = _oversized_ask_task_count(user_query_raw or "")
+    reasons: list[str] = []
+    if max_chars > 0 and char_count > max_chars:
+        reasons.append(f"chars={char_count} > limit={max_chars}")
+    if max_tasks > 0 and task_count > max_tasks:
+        reasons.append(f"task_items={task_count} > limit={max_tasks}")
+    return reasons, task_count, char_count
+
+
+_OVERSIZED_PROGRESS_MARKER = "[HUB OVERSIZED-ASK STREAMING MITIGATION]"
+
+
+def _inject_oversized_progress_instruction(user_query_raw: str) -> str:
+    """Root-cause mitigation for T3 (2026-07-12 recheck): a known-vulnerable peer
+    (requires_pty) doesn't lose output on an oversized ask - it silently
+    batch-processes internally then dumps everything at the end, which can
+    exceed even T19's extended zombie window on genuinely complex tasks
+    (confirmed: same 7-item task failed silently at 752s unmodified, succeeded
+    at 352s with this instruction). Wrapping the query so the peer emits
+    visible progress converts a silent-batch risk into a safely-streaming ask."""
+    raw = user_query_raw or ""
+    if _OVERSIZED_PROGRESS_MARKER in raw:
+        return raw
+    return (
+        f"{_OVERSIZED_PROGRESS_MARKER}\n"
+        "This request may require extended tool use or multi-step analysis. "
+        "Do not work silently until the final answer.\n"
+        "Immediately emit a visible progress line before starting substantial work, "
+        "then emit another concise progress line after each file, subtask, or tool-call batch.\n"
+        "Use this exact form for progress lines:\n"
+        "PROGRESS <n>: <completed step> | next=<next step>\n"
+        "Keep progress concise. Do not reveal hidden reasoning. Continue to provide the final answer normally.\n"
+        "[/HUB OVERSIZED-ASK STREAMING MITIGATION]\n\n"
+        "[USER REQUEST]\n"
+        f"{raw}\n"
+        "[/USER REQUEST]\n"
+    )
+
+
 def _guard_oversized_ask(
     user_query_raw: str,
     max_tasks: int,
@@ -3083,33 +3126,33 @@ def _guard_oversized_ask(
     hard_reject: bool,
     ai_root: Path | None = None,
     force_tier0_override: bool = False,
+    progress_mitigation: bool = False,
 ) -> None:
-    """Non-lethal telemetry for every peer; a hard pre-dispatch reject only for
-    peers with a known non-flushing tool-loop (hard_reject=True, currently
-    `requires_pty` peers - e.g. ag - as a stopgap proxy; see
-    communication_policy._note_oversized_ask_guard). Peer comms remain
-    UNLIMITED in time and content for peers that don't have this bug (T19) -
-    this guard exists only to stop a known-vulnerable peer's tool-calling loop
-    from silently losing 100% of its output on an oversized ask, not as a
-    universal content cap.
+    """Non-lethal telemetry for every peer. A known-vulnerable peer
+    (requires_pty, currently ag) doesn't lose output on an oversized ask - it
+    silently batch-processes internally then dumps everything at the end,
+    which can exceed even T19's extended zombie window on genuinely complex
+    tasks (confirmed via direct A/B measurement 2026-07-12). The production
+    default is now progress_mitigation (the caller injects an incremental-
+    progress instruction and proceeds) rather than hard_reject; hard_reject
+    remains a supported capability of this function but is no longer invoked
+    from the production ask path. Peer comms remain UNLIMITED in time and
+    content for peers that don't have this characteristic (T19) - this guard
+    exists only to protect a known-vulnerable peer's silent-batch behavior,
+    not as a universal content cap.
     """
-    char_count = len(user_query_raw or "")
-    task_count = _oversized_ask_task_count(user_query_raw or "")
-    reasons: list[str] = []
-    if max_chars > 0 and char_count > max_chars:
-        reasons.append(f"chars={char_count} > limit={max_chars}")
-    if max_tasks > 0 and task_count > max_tasks:
-        reasons.append(f"task_items={task_count} > limit={max_tasks}")
+    reasons, task_count, char_count = _oversized_ask_stats(user_query_raw, max_tasks, max_chars)
     if not reasons:
         return
 
     reason_str = "; ".join(reasons)
     if not hard_reject:
-        proceed_reason = (
-            "human --force-tier0 override accepted the oversized-ask risk"
-            if force_tier0_override
-            else "peer is not known-vulnerable to silent output loss"
-        )
+        if force_tier0_override:
+            proceed_reason = "human --force-tier0 override accepted the oversized-ask risk (query unmodified)"
+        elif progress_mitigation:
+            proceed_reason = "injecting an incremental-progress instruction before dispatch"
+        else:
+            proceed_reason = "peer is not known-vulnerable to silent output loss"
         print(
             f"[HUB:WARN] {to}: oversized ask detected ({reason_str}) - "
             f"{proceed_reason}, proceeding "
@@ -3123,6 +3166,7 @@ def _guard_oversized_ask(
                     peer_id=to, node_id=to, task_count=task_count, char_count=char_count,
                     max_tasks=max_tasks, max_chars=max_chars, hard_reject=False,
                     force_tier0_override=bool(force_tier0_override),
+                    progress_mitigation=bool(progress_mitigation),
                 )
             except Exception:
                 pass
@@ -3141,7 +3185,7 @@ def _guard_oversized_ask(
                 ai_root, "oversized_ask_detected", level="error",
                 peer_id=to, node_id=to, task_count=task_count, char_count=char_count,
                 max_tasks=max_tasks, max_chars=max_chars, hard_reject=True,
-                force_tier0_override=False,
+                force_tier0_override=False, progress_mitigation=False,
             )
         except Exception:
             pass
@@ -4271,12 +4315,29 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     exe_name = node.get("invoke", to)
 
     if _depth == 0 and _escalation_depth == 0 and (max_ask_tasks > 0 or max_ask_chars > 0):
+        oversized_reasons, _, _ = _oversized_ask_stats(user_query_raw, max_ask_tasks, max_ask_chars)
+        oversized_detected = bool(oversized_reasons)
+        progress_mitigation = bool(
+            oversized_detected and requires_pty and not force_tier0
+        )
         _guard_oversized_ask(
             user_query_raw, max_ask_tasks, max_ask_chars, to,
-            hard_reject=bool(requires_pty and not force_tier0),
+            hard_reject=False,
             ai_root=ai_root,
-            force_tier0_override=bool(force_tier0 and requires_pty),
+            force_tier0_override=bool(force_tier0 and requires_pty and oversized_detected),
+            progress_mitigation=progress_mitigation,
         )
+        if progress_mitigation:
+            user_query_raw = _inject_oversized_progress_instruction(user_query_raw)
+            query = user_query_raw
+            if ai_root:
+                try:
+                    _record_routing_metric(
+                        ai_root, "oversized_ask_progress_injected", level="warning",
+                        peer_id=to, node_id=to, max_tasks=max_ask_tasks, max_chars=max_ask_chars,
+                    )
+                except Exception:
+                    pass
 
     if not timeout_sec or timeout_sec <= 0:
         timeout_sec = 0  # unlimited; heartbeat loop monitors for dead processes

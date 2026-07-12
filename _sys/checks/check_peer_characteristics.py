@@ -28,7 +28,7 @@ SYS_DIR = Path(__file__).resolve().parent.parent
 PORTABLE_ROOT = SYS_DIR.parent
 REGISTRY_PATH = SYS_DIR / "ai" / "knowledge" / "peer-characteristics.jsonl"
 
-VALID_STATUSES = {"open", "mitigated", "recheck-due", "resolved-upstream"}
+VALID_STATUSES = {"open", "mitigated", "recheck-due", "resolved-upstream", "superseded-by-corrected-diagnosis"}
 VALID_CONFIDENCE = {"confirmed", "probable", "needs_probe"}
 REQUIRED_FIELDS = ("id", "peer", "description", "diagnostics", "mitigation", "status", "recheck_contract", "review_after")
 

@@ -1,14 +1,23 @@
 """Tests for T3: pre-dispatch oversized-ask guard.
 
 A single ask with too many task items or too many raw characters can run
-past the zombie timeout with zero output (ag's tool-calling loop doesn't
-flush partial output on large multi-item asks - this is an ag-specific
-characteristic, not a universal peer trait). hub.py's guard reflects that:
-every peer gets a non-lethal oversized_ask_detected warning, but only a
-peer declared vulnerable (hard_reject=True, currently proxied by
-requires_pty=true i.e. ag) is actually rejected before dispatch. Peer
+past the zombie timeout with zero output. Root-cause recheck (2026-07-12,
+direct A/B measurement): a known-vulnerable peer (requires_pty=true, i.e.
+ag) doesn't actually lose output - it silently batch-processes internally
+then dumps everything at the end, which can exceed even T19's extended
+zombie window on genuinely complex tasks (confirmed: an unmodified 7-item
+task failed silently at 752s; the same task succeeded at 352s once
+instructed to emit progress). hub.py's guard reflects this: every peer
+gets a non-lethal oversized_ask_detected warning, and a peer declared
+vulnerable additionally gets its query wrapped with an incremental-
+progress instruction (progress_mitigation) before dispatch, rather than
+being hard-rejected - --force-tier0 bypasses the injection entirely and
+proceeds with the query unmodified, accepting the silent-batch risk. Peer
 comms otherwise remain UNLIMITED in time and content (see T19's
-zombie_profile_map note) - this guard is not a universal content cap.
+zombie_profile_map note) - this guard is not a universal content cap. The
+hard-reject code path itself remains a supported capability of
+_guard_oversized_ask (tested below) but is no longer invoked from the
+production ask path.
 
 The guard runs after peer/node resolution (so it can read the target
 peer's requires_pty) and only on the true top-level ask (_depth == 0 and
@@ -35,6 +44,39 @@ class TestOversizedAskTaskCount:
 
     def test_empty_text_counts_zero(self):
         assert hub._oversized_ask_task_count("") == 0
+
+
+class TestOversizedAskStats:
+    def test_flags_over_char_limit(self):
+        reasons, task_count, char_count = hub._oversized_ask_stats("x" * 11, 0, 10)
+        assert reasons == ["chars=11 > limit=10"]
+        assert char_count == 11
+
+    def test_flags_over_task_limit(self):
+        text = "\n".join(f"{i}. task" for i in range(1, 7))
+        reasons, task_count, char_count = hub._oversized_ask_stats(text, 5, 0)
+        assert reasons == ["task_items=6 > limit=5"]
+        assert task_count == 6
+
+    def test_no_reasons_when_under_both_limits(self):
+        reasons, _, _ = hub._oversized_ask_stats("short", 5, 8000)
+        assert reasons == []
+
+
+class TestInjectOversizedProgressInstruction:
+    def test_wraps_original_query_verbatim(self):
+        raw = "please review these six files and report back"
+        injected = hub._inject_oversized_progress_instruction(raw)
+        assert hub._OVERSIZED_PROGRESS_MARKER in injected
+        assert "[USER REQUEST]" in injected
+        assert raw in injected
+
+    def test_is_idempotent_if_marker_already_present(self):
+        raw = "please review these six files and report back"
+        once = hub._inject_oversized_progress_instruction(raw)
+        twice = hub._inject_oversized_progress_instruction(once)
+        assert once == twice
+        assert once.count(hub._OVERSIZED_PROGRESS_MARKER) == 1
 
 
 class TestGuardOversizedAsk:
@@ -131,8 +173,10 @@ class TestDepthAndPeerScopeOnActionAskInner:
     """Verifies the guard (a) fires only on the true top-level call
     (_depth==0, _escalation_depth==0), not on ContextGate-failover or
     runtime-escalation recursion where the passed-in query may already be
-    context-inflated, and (b) hard-rejects only a peer whose node declares
-    requires_pty=true, warning (not rejecting) every other peer."""
+    context-inflated, and (b) as of the 2026-07-12 recheck, injects an
+    incremental-progress instruction (rather than hard-rejecting) for a peer
+    whose node declares requires_pty=true, proceeding to dispatch either way;
+    every other peer just gets a warning with no query mutation."""
 
     def _oversized_query(self):
         return "\n".join(f"{i}. do task {i}" for i in range(1, 8))  # 7 items > max_tasks(5)
@@ -159,10 +203,15 @@ class TestDepthAndPeerScopeOnActionAskInner:
         )
         return _PastGuardSentinel
 
-    def test_pty_peer_is_hard_rejected_at_depth_zero(self, monkeypatch, tmp_path):
-        self._patch_pre_guard_scaffolding(monkeypatch, {"requires_pty": True})
+    def test_pty_peer_gets_progress_injection_and_proceeds_at_depth_zero(self, monkeypatch, tmp_path):
+        sentinel_cls = self._patch_pre_guard_scaffolding(monkeypatch, {"requires_pty": True})
+        calls = []
+        monkeypatch.setattr(
+            hub, "_record_routing_metric",
+            lambda ai_root, event, **kw: calls.append((event, kw)),
+        )
 
-        with pytest.raises(SystemExit) as exc:
+        with pytest.raises(sentinel_cls):
             hub._action_ask_inner(
                 to="ag",
                 query=self._oversized_query(),
@@ -173,9 +222,16 @@ class TestDepthAndPeerScopeOnActionAskInner:
                 _depth=0,
                 _escalation_depth=0,
             )
-        assert exc.value.code == 1
 
-    def test_force_tier0_bypasses_pty_peer_hard_reject_at_depth_zero(self, monkeypatch, tmp_path):
+        events = [c[0] for c in calls]
+        assert "oversized_ask_detected" in events
+        assert "oversized_ask_progress_injected" in events
+        detected = next(c for c in calls if c[0] == "oversized_ask_detected")
+        assert detected[1]["hard_reject"] is False
+        assert detected[1]["force_tier0_override"] is False
+        assert detected[1]["progress_mitigation"] is True
+
+    def test_force_tier0_bypasses_progress_injection_at_depth_zero(self, monkeypatch, tmp_path):
         sentinel_cls = self._patch_pre_guard_scaffolding(monkeypatch, {"requires_pty": True})
         calls = []
         monkeypatch.setattr(
@@ -196,9 +252,13 @@ class TestDepthAndPeerScopeOnActionAskInner:
                 force_tier0=True,
             )
 
-        assert calls and calls[0][0] == "oversized_ask_detected"
-        assert calls[0][1]["hard_reject"] is False
-        assert calls[0][1]["force_tier0_override"] is True
+        events = [c[0] for c in calls]
+        assert "oversized_ask_detected" in events
+        assert "oversized_ask_progress_injected" not in events
+        detected = next(c for c in calls if c[0] == "oversized_ask_detected")
+        assert detected[1]["hard_reject"] is False
+        assert detected[1]["force_tier0_override"] is True
+        assert detected[1]["progress_mitigation"] is False
 
     def test_non_pty_peer_only_warns_and_proceeds_past_guard(self, monkeypatch, tmp_path):
         sentinel_cls = self._patch_pre_guard_scaffolding(monkeypatch, {"requires_pty": False})
