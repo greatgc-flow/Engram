@@ -1002,12 +1002,15 @@
     {
       "id": "T23",
       "title": "Add heartbeat-drift telemetry to distinguish CPU-throttling vs PTY-reader-starvation for backgrounded long asks",
-      "status": "active",
+      "status": "done",
       "priority": "low",
       "category": "ops",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "e5ae8b2",
+        "f359c61"
+      ],
       "supersedes": [],
       "source_refs": [
         "_sys/ai/knowledge/peer-characteristics.jsonl#PC-20260712-agent-backgrounding-degrades-long-asks"
