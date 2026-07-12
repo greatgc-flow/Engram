@@ -64,6 +64,13 @@ Parameters can be adjusted via the following methods:
 ## 3. Task Execution & Feedback Loop
 
 ### 3.1 Canonical Feedback Loop
+
+> **Canonical learning cycle:** the failure → 5-Whys → mitigate → resolve →
+> close *learning* loop is defined once in
+> [`learning.md` §1 "Learning Loop"](learning.md#1-learning-loop-5-whys-virtuous-cycle).
+> This section defines the per-task *execution* sequence that feeds it; the
+> `improve` step below is where an execution outcome enters that learning loop.
+
 ```
 observe → classify → decide → sync → act_or_ask → record → handoff → improve
 ```
@@ -147,6 +154,22 @@ Zero-token local operations (observe/validate/classify) are **exempt** from COLL
 | 5 | Partner / Sys-Single | 50% | Majority ACK (2+ peers). Consensus at design start + milestone. | High: Single `_sys/` script edit |
 | 8 | Strict / Sys-Multi | 25% | Supermajority ACK (All active peers). All logic changes need consensus. Only typos autonomous. | Multi-script: Spans multiple `_sys/` scripts |
 | 10 | Brain Sync / Constitutional | 0% | Unanimous ACK + Final Call (FC). ANY file modification requires prior consensus. No exceptions. | Critical: `PROTOCOL.md`, `CLAUDE.md`, `GEMINI.md`, `hub.py`, `protocol.json`, core config |
+
+**Boundary examples** (disambiguating the R:3 vs R:5 vs escalate line):
+
+- **R:3 example** — editing a plain workspace utility script under `workspace/`
+  (or any non-`_sys/` code) plus its matching local test, with no change to a
+  `_sys/` file, a constitutional doc, or peer routing. This is an ordinary
+  reversible workspace change: informal notification or a single peer review is enough.
+- **R:5 example** — editing exactly ONE `_sys/` script to change its behavior
+  (e.g. one `_sys/checks/*.py` enforcement tweak) plus its matching unit test.
+  A single-file `_sys/` behavior edit is R:5 (majority ACK, consensus at design
+  start + milestone), NOT R:3 — R:3's "`_sys/` changes" wording covers only
+  trivial/notification-level touches, not a behavior change to a system script.
+- **Escalate above R:5** — any change to `hub.py`, `protocol.json`,
+  `orchestration.json`, a public hub action contract, peer permission policy, or
+  behavior spanning multiple `_sys/` scripts is NOT a simple single-script R:5
+  edit. Treat it as R:8 (multi-script) or R:10 (constitutional/core) per the table.
 
 ### 4.2 Round Lifecycle
 ```

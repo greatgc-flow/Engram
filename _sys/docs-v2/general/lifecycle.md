@@ -259,6 +259,11 @@ Preference order: GREEN → YELLOW → (avoid STALE) → RED blocked.
 
 ## 15. Recovery Runbooks
 
+> **Scope:** this section owns the recovery *mechanics* (the RED/STALE/YELLOW
+> operational sequences). The *autonomy bounds* governing what a self-care
+> subsystem may do on its own (propose-only, never auto-remediate) live in
+> [`learning.md` §4 "Self-Care & Autonomy Bounds"](learning.md#4-self-care--autonomy-bounds).
+
 **YELLOW**: reduce routing priority → run diagnostic → on success `_record_ask_success()` resets to GREEN.
 
 **STALE**: `hub.py health-sweep` → assign no new leadership → explicit precheck or diagnostic → on success update to GREEN → if no response: `hub.py task-failover`.
@@ -317,13 +322,15 @@ Preference order: GREEN → YELLOW → (avoid STALE) → RED blocked.
 
 ## 18. Sandbox Mutation Boundary
 
-Heartbeat, lease, handoff, thread, proposal, directive, and role updates are hub-managed state mutations. They require the same atomic commit guarantees as other `.ai` state.
+**Canonical:** the hub state mutation boundary (broker-submit / broker-drain,
+atomic replace, `SANDBOX_RENAME_DENIED`) is defined in
+[`permissions.md` §8 "Hub State Mutation Boundary"](permissions.md#8-hub-state-mutation-boundary),
+the DIR-002-cited authority. Heartbeat, lease, handoff, thread, proposal,
+directive, and role updates are all hub-managed `.ai` state and follow that
+boundary. Design contract and implementation status: `ops/hub-mutation-broker.md`.
 
-Under managed sandboxes, ordinary file writes may succeed while `os.replace`, rename, or delete fails. When that happens, classify the failure as `SANDBOX_RENAME_DENIED` and fail closed. Do not downgrade to non-atomic copy/write/bak behavior.
-
-Current implementation: `hub.py` classifies persistent Windows ACCESS_DENIED from atomic replace as `SANDBOX_RENAME_DENIED`. Sandbox peers can use `broker-submit` to create unique pending requests under `.ai/broker/pending`; host-side `broker-drain` validates whitelisted targets and performs guarded commits with locks, journals, and `os.replace`; `broker-status` reports queue state. Operator-approved direct external execution is break-glass only when the broker path itself is unavailable.
-
-See `ops/hub-mutation-broker.md`.
+The subsection below covers the spawn-denial case, which is specific to the
+lifecycle (process-invocation) concern and is not duplicated in permissions.md.
 
 ### 18.1 Sandbox spawn denial (D6 decision — 2026-07-01, R:10 ag+cx+cc)
 

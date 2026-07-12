@@ -139,6 +139,11 @@ recurrence check → retire/update → (next cycle)
 
 ## 4. Self-Care & Autonomy Bounds
 
+> **Scope:** this section owns the autonomy *bounds* (what self-care subsystems
+> may do on their own — propose-only, never auto-remediate). The operational
+> recovery runbook *mechanics* (RED/STALE/YELLOW sequences) live in
+> [`lifecycle.md` §15 "Recovery Runbooks"](lifecycle.md#15-recovery-runbooks).
+
 ### Core Principle: Autonomy vs. Consensus
 
 Under COLLAB_RATE:10 (configured in `governance_params.json`), governed decisions require unanimous consensus. Autonomous maintenance layers actions:

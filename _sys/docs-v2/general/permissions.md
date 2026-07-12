@@ -72,6 +72,24 @@ Prevents silent compatibility failures when permission flags change.
 5. NEVER resume peer session without verifying session fingerprint
 6. NEVER hardcode credentials into peer invocation args or environment
 
+**PRO-01 worked example** (raw shell text as executable/flag fragments):
+
+- **Unsafe** — interpolating user/peer text into a shell string:
+  ```python
+  subprocess.run(f"rg {query}", shell=True)          # query="; rm -rf /" → disaster
+  ```
+- **Safe** — pass arguments as an argv list with `shell=False`, and terminate
+  option parsing with `--` so a value starting with `-` can't become a flag:
+  ```python
+  subprocess.run(["rg", "--", query], shell=False)
+  ```
+- **Unsafe** — piping a peer-generated command through `cmd.exe` / PowerShell /
+  a batch file by string concatenation.
+- **Safe** — resolve and verify the target path stays inside the intended
+  workspace, pass structured argv (never a concatenated command line), and for
+  long peer-supplied text write it to a controlled temp file and pass the file
+  *path* as an argument rather than interpolating the text itself.
+
 ---
 
 ## 7. DIR-002 KNOWN GAP — ag has no flag-based FS sandbox
