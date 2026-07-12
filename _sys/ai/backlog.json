@@ -920,12 +920,14 @@
     {
       "id": "A4",
       "title": "check_sandbox_behavior.py measured data has no consumer (report-and-remember)",
-      "status": "active",
+      "status": "done",
       "priority": "medium",
       "category": "ops",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "1856c5b"
+      ],
       "supersedes": [],
       "source_refs": [
         "ops/full-system-purpose-audit-2026-07-12.md#3"
