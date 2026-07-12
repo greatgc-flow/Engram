@@ -6092,9 +6092,15 @@ def action_leader_claim(ai_root: Path, agent: str, reason: str = "", domain: str
         
         # AP-20: Coordinator Monopoly Guard
         history = state.get("coordinator_history", [])
-        last_3 = [h.get("peer") for h in history[-3:]]
-        if len(last_3) == 3 and all(p == agent for p in last_3):
-            print(f"[HUB:ERR] AP-20 Violation: {agent} has been coordinator for 3 consecutive terms. Yield to others.", file=sys.stderr)
+        try:
+            ap20_threshold = int(proto_cfg.get("leader_election", {}).get("yield_failure_threshold", 3))
+        except (TypeError, ValueError):
+            ap20_threshold = 3
+        ap20_threshold = max(1, ap20_threshold)
+        history_tail = [str(h.get("peer", "")) for h in history[-ap20_threshold:]]
+        if len(history_tail) == ap20_threshold and all(p == agent for p in history_tail):
+            _record_ap20_runtime_directive(ai_root, agent, ap20_threshold, history_tail)
+            print(f"[HUB:ERR] AP-20 Violation: {agent} has been coordinator for {ap20_threshold} consecutive terms. Yield to others.", file=sys.stderr)
             sys.exit(1)
 
         if current_leader and current_leader != agent:
@@ -7145,6 +7151,38 @@ def _bump_directive_trigger(path: Path, directive_id: str) -> None:
         if item:
             output.append(json.dumps(item, ensure_ascii=False))
     path.write_text("\n".join(output) + "\n", encoding="utf-8")
+
+
+def _record_ap20_runtime_directive(ai_root: Path, agent: str, threshold: int, history_tail: list[str]) -> dict:
+    """Record or bump an AP-20 coordinator-monopoly runtime directive."""
+    trigger_reason = "ap20_coordinator_monopoly"
+    path = _runtime_directives_path(ai_root)
+    for item in _get_active_runtime_directives(path):
+        if item.get("source_peer") == agent and item.get("trigger_reason") == trigger_reason:
+            _bump_directive_trigger(path, item["id"])
+            for updated in _get_active_runtime_directives(path):
+                if updated.get("id") == item.get("id"):
+                    return updated
+            return item
+
+    rule = (
+        f"Peer {agent} must not attempt another coordinator claim until another peer "
+        f"has successfully held coordinator, or this directive expires "
+        f"(AP-20 monopoly guard, {threshold} consecutive terms)."
+    )
+    detail = f"consecutive_history={history_tail}"
+    entry = _save_runtime_directive(
+        path,
+        rule,
+        agent,
+        trigger_reason,
+        detail,
+        ttl_hours=6,
+        clear_condition="other_peer_leads_or_expiry",
+        target_peers=None,
+    )
+    print(f"[HUB] AP20-DIRECTIVE {entry['id']} created for {agent}", file=sys.stderr)
+    return entry
 
 
 def _auto_promote_runtime_directive(peer_id: str, reason: str, detail: str, ai_root: Path) -> None:
