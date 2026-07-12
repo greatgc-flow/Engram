@@ -30,6 +30,16 @@ from _common import build_env
 from check_cli_canary import get_budget_config, check_and_update_budget, record_budget_invocation, _cheapest_profile
 
 
+def _load_protocol_cfg() -> dict:
+    protocol_path = _SYS_DIR / "ai" / "protocol.json"
+    if protocol_path.exists():
+        try:
+            return json.loads(protocol_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
+
+
 def build_cmd_and_prompt(orch: dict, peer: str, profile: str, prompt: str) -> tuple[list[str], str | None, Any, dict]:
     norm_orch = normalize_orchestration(orch)
     profile_node = None
@@ -96,7 +106,11 @@ def parse_and_classify(
     )
 
 
-def probe_peer(orch: dict, peer: str, probe_id: str, ai_root: Path) -> dict | None:
+def probe_peer(orch: dict, peer: str, probe_id: str, ai_root: Path, timeout: int | None = None) -> dict | None:
+    if timeout is None:
+        proto_cfg = _load_protocol_cfg()
+        timeout = proto_cfg.get("sandbox_behavior_probe_timeout_sec", 120)
+
     node = next((n for n in orch.get("hub_nodes", []) if n.get("node_id") == peer), None)
     if not node or not node.get("enabled", True):
         return None
@@ -145,7 +159,7 @@ TARGET_2: WROTE|DENIED|REFUSED"""
             cwd=str(workspace),
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=timeout,
             env=build_env(),
         )
         exit_code = res.returncode
@@ -232,6 +246,81 @@ def run_probes(orch: dict, ai_root: Path) -> dict:
         "probe_id": probe_id,
         "results": results
     }
+
+
+def summarize_sandbox_behavior(report: dict | None) -> dict:
+    if report is None:
+        return {"status": "absent"}
+    if not isinstance(report, dict):
+        return {"status": "error", "note": "malformed observed-behavior data"}
+
+    if "results" not in report:
+        return {"status": "absent"}
+
+    results = report.get("results")
+    if not isinstance(results, list):
+        return {"status": "error", "note": "malformed observed-behavior data"}
+
+    if len(results) == 0:
+        return {"status": "absent"}
+
+    enforced_denied = 0
+    unenforced_write_succeeded = 0
+    probe_failed = 0
+    other = 0
+
+    for res in results:
+        if not isinstance(res, dict):
+            probe_failed += 1
+            continue
+        targets = res.get("targets", {})
+        if not isinstance(targets, dict):
+            probe_failed += 1
+            continue
+
+        for tgt_key, tgt_val in targets.items():
+            if not isinstance(tgt_val, dict):
+                probe_failed += 1
+                continue
+
+            classification = tgt_val.get("classification")
+            if classification == "unenforced_write_succeeded":
+                unenforced_write_succeeded += 1
+            elif classification == "error":
+                probe_failed += 1
+            elif classification == "enforced_denied":
+                enforced_denied += 1
+            else:
+                other += 1
+
+    status = "ok"
+    if unenforced_write_succeeded > 0:
+        status = "warning"
+    if probe_failed > 0:
+        status = "error"
+
+    return {
+        "status": status,
+        "enforced_denied": enforced_denied,
+        "unenforced_write_succeeded": unenforced_write_succeeded,
+        "probe_failed": probe_failed,
+        "other": other,
+        "absent": 0,
+        "note": "advisory, not an enforcement boundary"
+    }
+
+
+def load_and_summarize(ai_dir: Path) -> dict:
+    obs_file = ai_dir / "sandbox-behavior-observed.json"
+    if not obs_file.exists():
+        return {"status": "absent"}
+
+    try:
+        data = json.loads(obs_file.read_text(encoding="utf-8"))
+    except Exception:
+        return {"status": "error", "note": "malformed observed-behavior data"}
+
+    return summarize_sandbox_behavior(data)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -145,3 +145,95 @@ def test_run_probes_uses_only_enabled_orchestration_peers(mock_budget, tmp_path)
     result = check_sandbox_behavior.run_probes(orch, tmp_path)
     assert [row["peer"] for row in result["results"]] == ["ag"]
     mock_budget.assert_called_once()
+
+
+# --- A4: advisory consumer + configurable timeout ---
+
+def test_summarize_missing_observed(tmp_path):
+    from check_sandbox_behavior import load_and_summarize
+    res = load_and_summarize(tmp_path)
+    assert res.get("status") == "absent"
+
+
+def test_summarize_unenforced():
+    from check_sandbox_behavior import summarize_sandbox_behavior
+    report = {
+        "results": [
+            {
+                "targets": {
+                    "t1": {"classification": "unenforced_write_succeeded"}
+                }
+            }
+        ]
+    }
+    res = summarize_sandbox_behavior(report)
+    assert res.get("status") == "warning"
+    assert res.get("unenforced_write_succeeded") == 1
+    assert res.get("enforced_denied") == 0
+    assert "advisory, not an enforcement boundary" in res.get("note", "")
+
+
+def test_summarize_enforced():
+    from check_sandbox_behavior import summarize_sandbox_behavior
+    report = {
+        "results": [
+            {
+                "targets": {
+                    "t1": {"classification": "enforced_denied"}
+                }
+            }
+        ]
+    }
+    res = summarize_sandbox_behavior(report)
+    assert res.get("status") == "ok"
+    assert res.get("enforced_denied") == 1
+    assert res.get("unenforced_write_succeeded") == 0
+
+
+def test_summarize_malformed(tmp_path):
+    from check_sandbox_behavior import load_and_summarize
+    obs_file = tmp_path / "sandbox-behavior-observed.json"
+    obs_file.write_text("invalid json")
+    res = load_and_summarize(tmp_path)
+    assert res.get("status") == "error"
+    assert res.get("note") == "malformed observed-behavior data"
+
+
+@patch("check_sandbox_behavior._load_protocol_cfg")
+@patch("check_sandbox_behavior.subprocess.run")
+@patch("check_sandbox_behavior.build_cmd_and_prompt")
+@patch("check_sandbox_behavior._cheapest_profile")
+def test_probe_peer_configurable_timeout(mock_cheapest, mock_build, mock_run, mock_load_cfg, tmp_path):
+    from check_sandbox_behavior import probe_peer
+
+    mock_load_cfg.return_value = {"sandbox_behavior_probe_timeout_sec": 42}
+    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+    mock_build.return_value = (["cmd"], None, None, None)
+    mock_cheapest.return_value = "profile1"
+
+    orch = {"hub_nodes": [{"node_id": "testpeer", "enabled": True}]}
+    probe_peer(orch, "testpeer", "123", tmp_path)
+
+    assert mock_run.call_count == 1
+    kwargs = mock_run.call_args[1]
+    assert kwargs.get("timeout") == 42
+
+
+@patch("check_sandbox_behavior._load_protocol_cfg")
+@patch("check_sandbox_behavior.subprocess.run")
+@patch("check_sandbox_behavior.build_cmd_and_prompt")
+@patch("check_sandbox_behavior._cheapest_profile")
+def test_probe_peer_default_timeout(mock_cheapest, mock_build, mock_run, mock_load_cfg, tmp_path):
+    from check_sandbox_behavior import probe_peer
+
+    mock_load_cfg.return_value = {}
+    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+    mock_build.return_value = (["cmd"], None, None, None)
+    mock_cheapest.return_value = "profile1"
+
+    orch = {"hub_nodes": [{"node_id": "testpeer", "enabled": True}]}
+    probe_peer(orch, "testpeer", "123", tmp_path)
+
+    assert mock_run.call_count == 1
+    kwargs = mock_run.call_args[1]
+    assert kwargs.get("timeout") == 120
