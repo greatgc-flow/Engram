@@ -1,7 +1,8 @@
 """Measured tool update discovery for _sys/runtimes.json.
 
-This check is read-only with respect to the real runtimes.json. With
---propose-diff it writes proposal artifacts under _archive/tool-updates/.
+Default discovery is read-only. With --propose-diff it writes proposal artifacts
+under _archive/tool-updates/. With --apply it applies one previously generated
+proposal after base_sha256 validation and explicit confirmation.
 """
 from __future__ import annotations
 
@@ -10,7 +11,9 @@ import copy
 import difflib
 import hashlib
 import json
+import os
 import shutil
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,6 +30,12 @@ RUNTIMES_PATH = _SYS_DIR / "runtimes.json"
 ARCHIVE_ROOT = _PORTABLE_ROOT / "_archive" / "tool-updates"
 DISCOVERY_CACHE_PATH = _PORTABLE_ROOT / ".ai" / "tool_discovery_cache.json"
 RETENTION_KEEP = 20
+
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_INVALID_PROPOSAL = 2
+EXIT_CONFIRMATION_REQUIRED = 3
+EXIT_INSTALL_FAILED = 4
 
 
 def _utc_stamp() -> str:
@@ -50,6 +59,15 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=4) + "\n", encoding="utf-8")
+
+
+def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
+    tmp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+    try:
+        _write_json(tmp, data)
+        tmp.replace(path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def _display_path(path: Path) -> str:
@@ -97,7 +115,7 @@ def _update_entry_from_discovery(entry: dict[str, Any], discovery: dict[str, Any
         entry[algo] = value
 
 
-def discover_updates() -> tuple[dict[str, Any], dict[str, Any], str]:
+def discover_updates() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     base_sha = _sha256_file(RUNTIMES_PATH)
     runtimes = _read_json(RUNTIMES_PATH)
     proposed = copy.deepcopy(runtimes)
@@ -216,6 +234,120 @@ def verify_proposal_still_valid(artifact_dir: str | Path) -> bool:
     return current == expected
 
 
+def _resolve_artifact_dir_under_archive(artifact_dir: str | Path) -> Path:
+    archive_root = ARCHIVE_ROOT.resolve()
+    candidate = Path(artifact_dir)
+    candidates = [candidate]
+    if not candidate.is_absolute():
+        candidates.append(_PORTABLE_ROOT / candidate)
+
+    for item in candidates:
+        resolved = item.resolve()
+        try:
+            resolved.relative_to(archive_root)
+            return resolved
+        except ValueError:
+            continue
+    raise ValueError(f"artifact_dir must be under {archive_root}")
+
+
+def _planned_changes(proposal: dict[str, Any]) -> list[str]:
+    changes = []
+    for update in proposal.get("updates_discovered", []):
+        if not isinstance(update, dict):
+            continue
+        tool = update.get("tool", "?")
+        current = update.get("current_version", "?")
+        latest = update.get("latest_version", "?")
+        changes.append(f"{tool}: {current} -> {latest}")
+    return changes
+
+
+def _run_install_step() -> subprocess.CompletedProcess:
+    install_bat = _PORTABLE_ROOT / "INSTALL.bat"
+    return subprocess.run(
+        [str(install_bat), "--skip-update"],
+        cwd=str(_PORTABLE_ROOT),
+        capture_output=True,
+        text=True,
+    )
+
+
+def apply_proposal(
+    artifact_dir: str | Path,
+    *,
+    yes: bool = False,
+    install: bool = False,
+) -> tuple[int, dict[str, Any]]:
+    result: dict[str, Any] = {
+        "artifact_dir": str(artifact_dir),
+        "applied": False,
+        "install_requested": bool(install),
+        "install_succeeded": None,
+        "planned_changes": [],
+        "errors": [],
+    }
+
+    try:
+        resolved_dir = _resolve_artifact_dir_under_archive(artifact_dir)
+    except (OSError, ValueError) as exc:
+        result["errors"].append(f"path rejected: {exc}")
+        return EXIT_INVALID_PROPOSAL, result
+
+    result["artifact_dir"] = _display_path(resolved_dir)
+    proposal_path = resolved_dir / "proposal.json"
+    proposed_path = resolved_dir / "runtimes.proposed.json"
+    backup_path = resolved_dir / "runtimes.json.bak"
+
+    try:
+        proposal = _read_json(proposal_path)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        result["errors"].append(f"invalid proposal.json: {exc}")
+        return EXIT_INVALID_PROPOSAL, result
+
+    result["planned_changes"] = _planned_changes(proposal)
+
+    if not verify_proposal_still_valid(resolved_dir):
+        result["errors"].append("stale proposal: current runtimes.json sha256 does not match proposal base_sha256")
+        return EXIT_INVALID_PROPOSAL, result
+
+    try:
+        proposed = _read_json(proposed_path)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        result["errors"].append(f"invalid runtimes.proposed.json: {exc}")
+        return EXIT_INVALID_PROPOSAL, result
+
+    if not yes:
+        result["confirmation_required"] = True
+        return EXIT_CONFIRMATION_REQUIRED, result
+
+    try:
+        shutil.copy2(RUNTIMES_PATH, backup_path)
+        _atomic_write_json(RUNTIMES_PATH, proposed)
+        result["applied"] = True
+        result["backup_path"] = _display_path(backup_path)
+    except OSError as exc:
+        result["errors"].append(f"apply failed: {exc}")
+        return EXIT_ERROR, result
+
+    if install:
+        try:
+            cp = _run_install_step()
+        except OSError as exc:
+            result["install_succeeded"] = False
+            result["install_error"] = str(exc)
+            return EXIT_INSTALL_FAILED, result
+
+        result["install_returncode"] = cp.returncode
+        result["install_stdout"] = cp.stdout
+        result["install_stderr"] = cp.stderr
+        result["install_succeeded"] = cp.returncode == 0
+        if cp.returncode != 0:
+            return EXIT_INSTALL_FAILED, result
+
+    return EXIT_OK, result
+
+
 def run(*, propose_diff: bool = False) -> dict[str, Any]:
     payload, runtimes, proposed = discover_updates()
     if propose_diff:
@@ -227,7 +359,25 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Measured update discovery for _sys/runtimes.json")
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     parser.add_argument("--propose-diff", action="store_true", help="write read-only proposal artifacts")
+    parser.add_argument("--apply", metavar="ARTIFACT_DIR", help="apply a previously generated proposal")
+    parser.add_argument("--yes", action="store_true", help="confirm --apply mutation")
+    parser.add_argument("--install", action="store_true", help="run INSTALL.bat --skip-update after successful --apply --yes")
     args = parser.parse_args(argv)
+
+    if args.install and not args.apply:
+        print(json.dumps({"errors": ["--install requires --apply"]}, ensure_ascii=False, indent=2))
+        return EXIT_ERROR
+    if args.yes and not args.apply:
+        print(json.dumps({"errors": ["--yes requires --apply"]}, ensure_ascii=False, indent=2))
+        return EXIT_ERROR
+    if args.apply and args.propose_diff:
+        print(json.dumps({"errors": ["--apply cannot be combined with --propose-diff"]}, ensure_ascii=False, indent=2))
+        return EXIT_ERROR
+
+    if args.apply:
+        code, payload = apply_proposal(args.apply, yes=args.yes, install=args.install)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return code
 
     try:
         payload = run(propose_diff=args.propose_diff)
@@ -241,7 +391,7 @@ def main(argv: list[str] | None = None) -> int:
             "errors": [{"error": str(exc)}],
         }
         print(json.dumps(payload, ensure_ascii=False, indent=2))
-        return 1
+        return EXIT_ERROR
 
     if args.json or args.propose_diff:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -251,7 +401,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[tool-updates] rate-limited: {len(payload['rate_limited'])}")
         print(f"[tool-updates] errors: {len(payload['errors'])}")
 
-    return 1 if payload["errors"] else 0
+    return EXIT_ERROR if payload["errors"] else EXIT_OK
 
 
 if __name__ == "__main__":
