@@ -943,12 +943,14 @@
     {
       "id": "A5",
       "title": "Docs consolidation: 3 near-duplicate section pairs (permissions/lifecycle/protocol/learning)",
-      "status": "active",
+      "status": "done",
       "priority": "low",
       "category": "docs",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "ac4bdf8"
+      ],
       "supersedes": [],
       "source_refs": [
         "ops/full-system-purpose-audit-2026-07-12.md#6"
@@ -960,12 +962,14 @@
     {
       "id": "A6",
       "title": "Boundary clarity: COLLAB_RATE R:3/R:5 ambiguity + PRO-01 missing worked examples",
-      "status": "active",
+      "status": "done",
       "priority": "low",
       "category": "docs",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "ac4bdf8"
+      ],
       "supersedes": [],
       "source_refs": [
         "ops/full-system-purpose-audit-2026-07-12.md#7"
