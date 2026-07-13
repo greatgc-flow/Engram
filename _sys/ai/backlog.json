@@ -1080,11 +1080,13 @@
     {
       "id": "T27",
       "title": "diag mislabels codex 7-day quota bucket as X-5H (post-gpt-5.6 app-server shape change)",
-      "status": "active",
+      "status": "done",
       "priority": "medium",
       "category": "telemetry",
       "owner": "unassigned",
-      "evidence_commit": [],
+      "evidence_commit": [
+        "65e4b08"
+      ],
       "supersedes": [],
       "source_refs": [
         "_sys/core/snapshot.py",
