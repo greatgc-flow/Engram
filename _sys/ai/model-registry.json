@@ -1,7 +1,7 @@
 {
   "_version": "2.0",
-  "_updated": "2026-06-20",
-  "_as_of": "2026-06-20",
+  "_updated": "2026-07-13",
+  "_as_of": "2026-07-13",
   "_purpose": "Vendor-documented model facts. Runtime CLI availability is recorded separately in orchestration.json profiles.",
   "_source_policy": "Only official vendor documentation or local CLI observation. Unknown values are omitted, never inferred.",
   "sources": {
@@ -51,6 +51,39 @@
       "status": "GA",
       "confidence": "documented",
       "validated_at": "2026-06-19"
+    },
+    "gpt-5.6-luna": {
+      "provider": "openai",
+      "context_limit": 372000,
+      "reasoning_effort": ["low", "medium", "high", "xhigh", "max"],
+      "default_reasoning_effort": "medium",
+      "status": "GA",
+      "confidence": "cli_live",
+      "source_tag": "cli_live",
+      "validation_method": "codex_debug_models",
+      "validated_at": "2026-07-13"
+    },
+    "gpt-5.6-terra": {
+      "provider": "openai",
+      "context_limit": 372000,
+      "reasoning_effort": ["low", "medium", "high", "xhigh", "max", "ultra"],
+      "default_reasoning_effort": "medium",
+      "status": "GA",
+      "confidence": "cli_live",
+      "source_tag": "cli_live",
+      "validation_method": "codex_debug_models",
+      "validated_at": "2026-07-13"
+    },
+    "gpt-5.6-sol": {
+      "provider": "openai",
+      "context_limit": 372000,
+      "reasoning_effort": ["low", "medium", "high", "xhigh", "max", "ultra"],
+      "default_reasoning_effort": "medium",
+      "status": "GA",
+      "confidence": "cli_live",
+      "source_tag": "cli_live",
+      "validation_method": "codex_debug_models",
+      "validated_at": "2026-07-13"
     },
     "o3": {
       "provider": "openai",

@@ -105,7 +105,7 @@
     "R03": {
       "_label": "Planner/Architect",
       "primary": "cc::claude-sonnet-4-6::medium::none",
-      "fallback": "cx::gpt-5.5::medium::none",
+      "fallback": "cx::effort::none::none",
       "weight": 1.0
     },
     "R04": {
@@ -117,7 +117,7 @@
     "R05": {
       "_label": "Deep Reasoner",
       "primary": "cc::claude-opus-4-8::max::none",
-      "fallback": "cx::gpt-5.5::high::none",
+      "fallback": "cx::deepthink::none::none",
       "weight": 1.0
     },
     "R06": {
@@ -128,7 +128,7 @@
     },
     "R07": {
       "_label": "Code Mutator",
-      "primary": "cx::gpt-5.5::high::workspace-write",
+      "primary": "cx::effort::none::workspace-write",
       "fallback": "cc::claude-sonnet-4-6::medium::none",
       "weight": 1.0
     },
@@ -159,7 +159,7 @@
     "R12": {
       "_label": "Fast QA",
       "primary": "cc::claude-haiku-4-5-20251001::none::none",
-      "fallback": "cx::gpt-5.5::none::none",
+      "fallback": "cx::standard::none::none",
       "weight": 1.0
     }
   },

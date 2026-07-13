@@ -333,49 +333,49 @@
       "capability_class": "sandboxed_mutation",
       "profiles": {
         "standard": {
-          "model_id": "gpt-5.4-mini",
+          "model_id": "gpt-5.6-luna",
           "model_availability": "verified_local",
-          "runtime_context_window": 272000,
-          "validated_at": "2026-06-20",
+          "runtime_context_window": 372000,
+          "validated_at": "2026-07-13",
           "validation_method": "codex_debug_models_and_successful_invocation",
           "reasoning_effort": "low",
           "cost_tier": "low",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "gpt-5.4-mini",
+            "gpt-5.6-luna",
             "-c",
             "model_reasoning_effort=\"low\""
           ]
         },
         "effort": {
-          "model_id": "gpt-5.5",
+          "model_id": "gpt-5.6-terra",
           "model_availability": "verified_local",
-          "runtime_context_window": 272000,
-          "validated_at": "2026-06-20",
+          "runtime_context_window": 372000,
+          "validated_at": "2026-07-13",
           "validation_method": "codex_debug_models_and_successful_invocation",
           "reasoning_effort": "high",
           "cost_tier": "mid",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "gpt-5.5",
+            "gpt-5.6-terra",
             "-c",
             "model_reasoning_effort=\"high\""
           ]
         },
         "deepthink": {
-          "model_id": "gpt-5.5",
+          "model_id": "gpt-5.6-sol",
           "model_availability": "verified_local",
-          "runtime_context_window": 272000,
-          "validated_at": "2026-06-20",
+          "runtime_context_window": 372000,
+          "validated_at": "2026-07-13",
           "validation_method": "codex_debug_models_and_successful_invocation",
           "reasoning_effort": "xhigh",
           "cost_tier": "high",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "gpt-5.5",
+            "gpt-5.6-sol",
             "-c",
             "model_reasoning_effort=\"xhigh\""
           ]

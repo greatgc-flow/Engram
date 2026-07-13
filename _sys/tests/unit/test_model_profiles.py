@@ -109,24 +109,25 @@ def test_ag_runtime_models_are_locally_verified_and_routable():
 
 def test_cc_and_cx_profiles_are_locally_verified():
     roots = {n["node_id"]: n for n in _raw()["hub_nodes"]}
-    expected_context = {
+    expected = {
         "cc": {
-            "standard": 200000,
-            "effort": 200000,
-            "deepthink": 1000000,
+            "standard": {"model_id": "claude-haiku-4-5-20251001", "context": 200000, "validated_at": "2026-06-20"},
+            "effort": {"model_id": "claude-sonnet-4-6", "context": 200000, "validated_at": "2026-06-20"},
+            "deepthink": {"model_id": "claude-opus-4-8", "context": 1000000, "validated_at": "2026-06-20"},
         },
         "cx": {
-            "standard": 272000,
-            "effort": 272000,
-            "deepthink": 272000,
+            "standard": {"model_id": "gpt-5.6-luna", "context": 372000, "validated_at": "2026-07-13"},
+            "effort": {"model_id": "gpt-5.6-terra", "context": 372000, "validated_at": "2026-07-13"},
+            "deepthink": {"model_id": "gpt-5.6-sol", "context": 372000, "validated_at": "2026-07-13"},
         },
     }
-    for peer_id, profiles in expected_context.items():
-        for profile_name, context_window in profiles.items():
+    for peer_id, profiles in expected.items():
+        for profile_name, expected_profile in profiles.items():
             profile = roots[peer_id]["profiles"][profile_name]
+            assert profile["model_id"] == expected_profile["model_id"]
             assert profile["model_availability"] == "verified_local"
-            assert profile["runtime_context_window"] == context_window
-            assert profile["validated_at"] == "2026-06-20"
+            assert profile["runtime_context_window"] == expected_profile["context"]
+            assert profile["validated_at"] == expected_profile["validated_at"]
             assert profile["validation_method"]
 
 
@@ -164,7 +165,7 @@ def test_validate_model_operand_drift_fails():
 
 
 def test_validate_model_operand_rejects_invoke_args_model():
-    node = {"node_id": "cx", "invoke_args": ["exec", "{query}", "--model", "gpt-5.5"],
+    node = {"node_id": "cx", "invoke_args": ["exec", "{query}", "--model", "gpt-5.6-terra"],
             "profile_args": []}
     error = hub_peer.validate_model_operand(node)
     assert error and "invoke_args" in error

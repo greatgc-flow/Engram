@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-13T01:45:00+09:00",
+  "updated_at": "2026-07-13T09:10:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -1054,6 +1054,26 @@
       "evidence_commit": [
         "ab4c4d4"
       ]
+    },
+    {
+      "id": "T26",
+      "title": "Migrate cx profiles to Codex gpt-5.6 luna/terra/sol; retain ag.opus bulk exclusion",
+      "status": "active",
+      "priority": "high",
+      "category": "routing",
+      "owner": "unassigned",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/ai/orchestration.json#cx",
+        "_sys/ai/routing-config.json",
+        "_sys/ai/model-registry.json",
+        "_sys/docs-v2/specific/cx.md",
+        "_sys/tests/unit/test_model_profiles.py",
+        ".ai/consensus/r-9aeb.json"
+      ],
+      "next_action": "Opened as R:10 round r-9aeb by the OTHER terminal (cx proposer, cx=agree, cc/ag pending) 2026-07-12; that terminal then went away. Human Tier-0 (now sole terminal) directed cc to re-negotiate + finalize 2026-07-13. RE-NEGOTIATED (cc drove, ag.deepthink cross-checked, cx already agreed): (1) ag.opus bulk exclusion RETAINED - cc+ag agree: ag.opus=Claude Opus 4.6 premium sharing peer 'ag' with cheap Gemini bulk profiles; profile-level bulk_exclude keeps premium reasoning for manual/arbiter/escalation only (DIR-005) + 3P shared-quota reserve; deliberately kept separate from arbiter_models (cc.fable 2026-07-08 ruling). Left routing-config bulk_exclude_profiles/reserve_for and the orch _routing_note untouched (git diff confirms zero ag.opus change). (2) DIR-004 catalog RE-MEASURED live 2026-07-13 via `codex debug models`: gpt-5.6-sol/terra ctx=372000 efforts incl ultra; gpt-5.6-luna ctx=372000 efforts low..max (NO ultra); all default medium. (3) cx profiles migrated: cx.standard=gpt-5.6-luna/low/low-cost, cx.effort=gpt-5.6-terra/high/mid, cx.deepthink=gpt-5.6-sol/xhigh/high; runtime_context_window 272000->372000; validated_at 2026-07-13; model_availability=verified_local. successful_invocation confirmed by cc via 3 real codex exec canaries (luna/low, terra/high, sol/xhigh each returned CANARY_OK exit 0) AFTER cx's own run hit a TRANSIENT codex transport blip (os error 10061) - so DIR-004's catalog+invocation bar is genuinely met, not guessed. (4) routing-config: 4 cx targets converted to STABLE PROFILE refs (Option B, ag-endorsed; resolver already accepts profile refs in slot2, proven by live ag::effort targets): R03 fallback->cx::effort, R05 fallback->cx::deepthink, R07 primary->cx::effort::none::workspace-write, R12 fallback->cx::standard - so the next model bump needs no routing edit. (5) model-registry.json gained measured gpt-5.6-luna/terra/sol entries (old gpt-5.5/gpt-5.4-mini kept); specific/cx.md docs updated (CHK-ENC clean); test_model_profiles.py STRENGTHENED (now asserts model_id per profile, not just context) to expect the gpt-5.6 ids. IMPLEMENTED via full delegation (cx wrote the 5 files; cc recovered orchestration.json+cx.md from quarantine, re-measured the 3 canaries itself, verified ag.opus untouched, ran check_cli_reality (drift 0, P0=0; cx observed-capture renders ABSENT which is honest-not-a-failure), CHK-ENC clean, full suite 927 passed). Round r-9aeb closed on the Tier-0 finalize directive.",
+      "last_verified_at": "2026-07-13T09:10:00"
     }
   ]
 }
