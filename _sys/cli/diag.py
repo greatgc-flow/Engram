@@ -389,6 +389,7 @@ def parse_args(argv=None):
     parser.add_argument("--fresh", action="store_true",
                         help="force one bypass of the 60s expensive-source cache (quota/rate-limits)")
     parser.add_argument("--profiles", action="store_true", help="reserved profile detail view")
+    parser.add_argument("--peers", action="store_true", help="peer detail cards")
     parser.add_argument("--accounts", action="store_true", help="reserved account detail view")
     parser.add_argument("--tokens", action="store_true", help="reserved token detail view")
     parser.add_argument("--sessions", action="store_true", help="reserved session detail view")
@@ -811,34 +812,121 @@ def render_summary_frame(out, snapshot, *, terminal_lines=None, columns=80, now=
     out.write(frame_text)
 
 
+def _compact_room_status(status_text):
+    """Reduce hub status to the operator facts needed in the dashboard."""
+    values = {}
+    for line in str(status_text or "").splitlines():
+        match = re.match(r"\*\*(.+?)\*\*:\s*(.*)", line.strip())
+        if match:
+            values[match.group(1).strip().lower()] = match.group(2).strip()
+    roles = values.get("roles", "")
+    coordinator = re.search(r"(?:^|[,\s])coordinator=([^,\s]+)", roles)
+    parts = [
+        f"room={values.get('room id', 'absent')}",
+        f"leader={values.get('leader', 'absent')}",
+        f"coordinator={coordinator.group(1) if coordinator else 'absent'}",
+        f"mission={values.get('mission', 'absent')}",
+        f"phase={values.get('phase', 'absent')}",
+    ]
+    blocked = values.get("blocked")
+    if blocked:
+        parts.append(f"blocked={blocked}")
+    return "ROOM " + " ".join(parts)
+
+
+def _next_target_line(snapshot):
+    target = _next_headroom_target(_derive_headroom_rows(snapshot))
+    if not target:
+        return "NEXT FAILOVER TARGET: absent"
+    risk = " TIER RISK" if target.get("tier_risk") else ""
+    return (f"NEXT FAILOVER TARGET: {target.get('profile')} "
+            f"headroom {_fmt_remaining(target.get('headroom'))}{risk}")
+
+
+def render_attention(stdout=None, snapshot=None):
+    """Attention strip: alerts, unavailable peers, over-cap sessions, target."""
+    out = stdout or sys.stdout
+    snapshot = snapshot if snapshot is not None else collect_snapshot()
+    lines = []
+    severity = {"critical": "CRIT", "warn": "WARN", "info": "INFO"}
+    for rec in snapshot.get("peers") or []:
+        peer = rec.get("peer") or "?"
+        for alert in rec.get("alerts") or []:
+            sev = severity.get(str(alert.get("severity") or "").lower(), "INFO")
+            lines.append(f"[{sev}] {peer}: {alert.get('code')} {alert.get('message')}")
+        health = (rec.get("domains") or {}).get("health") or {}
+        if health.get("quarantined"):
+            lines.append(f"[CRIT] {peer}: QUARANTINE peer is quarantined")
+        elif health.get("gate_open") is False:
+            lines.append(f"[WARN] {peer}: GATE_SHUT gate is closed")
+    for row in snapshot.get("sessions") or []:
+        pct = (row.get("context") or {}).get("utilization_pct")
+        if isinstance(pct, (int, float)) and pct > 100:
+            lines.append(
+                f"[CRIT] {row.get('profile') or '?'}: SESSION_CONTEXT_OVER_CAPACITY {pct:.0f}%"
+            )
+    if not lines:
+        lines.append("(no alerts)")
+    out.write("\n".join(lines) + "\n")
+    out.write(_next_target_line(snapshot) + "\n")
+
+
+def render_peers(stdout=None, snapshot=None):
+    """Opt-in peer cards; kept out of the default scan-oriented dashboard."""
+    out = stdout or sys.stdout
+    snapshot = snapshot if snapshot is not None else collect_snapshot()
+    with redirect_stdout(out):
+        print("PEER DETAIL")
+        for record in snapshot.get("peers") or []:
+            render_card(record.get("raw") or {})
+
+
+def _render_summary_to(out, infos):
+    """Adapt print-based SUMMARY to the renderer stream contract."""
+    with redirect_stdout(out):
+        render_summary(infos)
+
+
 def render_dashboard(stdout=None, watch_mode=False, snapshot=None):
     out = stdout or sys.stdout
+    columns = shutil.get_terminal_size().columns if bool(getattr(out, "isatty", lambda: False)()) else None
+
+    def _write_width_safe(text):
+        if columns is None:
+            out.write(text)
+            return
+        out.write("\n".join(_elide_display(line, columns) for line in text.splitlines()) + "\n")
+
+    def _render_width_safe(render_fn):
+        if columns is None:
+            render_fn(out)
+            return
+        buf = io.StringIO()
+        render_fn(buf)
+        _write_width_safe(buf.getvalue().rstrip("\n"))
+
     with redirect_stdout(out):
         print("=" * 60)
         print(_c(" Antigravity Collaboration Environment Diagnostics", "bold"))
         print("=" * 60)
-        print(_c(" Reset times shown in local time. Set NO_COLOR=1 to disable color.", "dim"))
+        print(_c(_elide_display(" Reset times shown in local time. Set NO_COLOR=1 to disable color.", columns), "dim"))
 
-        print("\n[ROOM & HUB STATUS]")
+        print("\n[ROOM]")
         hub_py = SYS_DIR / "core" / "hub.py"
         if hub_py.exists():
-            # Capture (not stream) so watch-mode double-buffering can blit the
-            # whole frame in one write; direct stdout= would bypass the buffer.
-            if watch_mode:
-                res = subprocess.run(["python", str(hub_py), "status"],
-                                     capture_output=True, text=True)
-                print(getattr(res, "stdout", "") or "", end="")
-            else:
-                out.flush()
-                subprocess.run(["python", str(hub_py), "status"], stdout=out)
+            # The dashboard is a scan surface, not a handoff reader. Capture
+            # the existing status command and keep only the room-level facts.
+            res = subprocess.run(["python", str(hub_py), "status"],
+                                 capture_output=True, text=True)
+            print(_elide_display(_compact_room_status(getattr(res, "stdout", "") or ""), columns))
         else:
-            print("hub.py not found.")
+            print("ROOM status unavailable")
 
         if snapshot is None:
             snapshot = collect_snapshot()
         infos = [p["raw"] for p in snapshot["peers"]]
 
-        # Section order is the unanimous FP-4 spec (2026-07-03, reconfirmed
+        # Historical FP-4 order (superseded by the action-first list below):
         # 2026-07-08 w/ ag+cx): static first, volatile nearest the prompt —
         # PROFILES&ROUTING → DETAIL → SESSIONS/HEADROOM → ALERTS → POLICY →
         # SUMMARY → FRAME. SUMMARY is the final CONTENT panel (nearest the
@@ -857,45 +945,23 @@ def render_dashboard(stdout=None, watch_mode=False, snapshot=None):
             print(_c(title, "bold"))
             print("=" * 60)
 
-        def _render_peer_detail():
-            for info in infos:
-                render_card(info)
-
-        def _render_active_sessions_and_headroom():
-            render_sessions(out, snapshot=snapshot)
-            target = _next_headroom_target(_derive_headroom_rows(snapshot))
-            if target:
-                risk = " TIER RISK" if target.get("tier_risk") else ""
-                out.write(f"NEXT FAILOVER TARGET: {target.get('profile')} "
-                          f"headroom {_fmt_remaining(target.get('headroom'))}{risk}\n")
-
-        def _render_alerts():
-            alert_count = 0
-            for rec in snapshot["peers"]:
-                for alert in rec.get("alerts") or []:
-                    sev = str(alert.get("severity") or "info").upper()
-                    print(f"[{sev}] {rec.get('peer')}: {alert.get('code')} {alert.get('message')}")
-                    alert_count += 1
-            if not alert_count:
-                print("(no alerts)")
-
         content_panels = [
-            (" PROFILES & ROUTING", lambda: render_profiles(out, snapshot=snapshot)),
-            (" PEER DETAIL", _render_peer_detail),
-            (" RECENT SESSIONS & HEADROOM", _render_active_sessions_and_headroom),
-            (" ALERTS", _render_alerts),
-            (" POLICY", lambda: render_policy(out)),
-            (" SUMMARY", lambda: render_summary(infos)),  # self-prints its own header
+            (" ATTENTION", lambda target: render_attention(target, snapshot=snapshot)),
+            (" SUMMARY", lambda target: _render_summary_to(target, infos)),
+            (" HEADROOM", lambda target: render_headroom(target, snapshot=snapshot, include_target=False)),
+            (" RECENT SESSIONS", lambda target: render_sessions(target, snapshot=snapshot)),
+            (" PROFILES & ROUTING", lambda target: render_profiles(target, snapshot=snapshot)),
+            (" POLICY", lambda target: render_policy(target)),
         ]
 
         for title, render_fn in content_panels:
             if title == " SUMMARY":
-                render_fn()
+                _render_width_safe(render_fn)
                 continue
             _render_panel_header(title)
-            render_fn()
+            _render_width_safe(render_fn)
 
-        render_frame_footer(out, snapshot=snapshot)
+        _render_width_safe(lambda target: render_frame_footer(target, snapshot=snapshot))
 
 
 def _load_routing_cfg():
@@ -1061,18 +1127,19 @@ def render_profiles(stdout=None, snapshot=None):
     out.write(_c(_source_legend(), "dim") + "\n")
 
 
-def render_headroom(stdout=None, snapshot=None):
+def render_headroom(stdout=None, snapshot=None, include_target=True):
     """Derived failover/headroom view. Consumes collect_snapshot only."""
     out = stdout or sys.stdout
     if snapshot is None:
         snapshot = collect_snapshot()
     rows = _derive_headroom_rows(snapshot)
-    target = _next_headroom_target(rows)
-    if target:
-        risk = " TIER RISK" if target.get("tier_risk") else ""
-        out.write(f"NEXT {target.get('profile')} headroom {_fmt_remaining(target.get('headroom'))}{risk}\n")
-    else:
-        out.write("NEXT absent\n")
+    if include_target:
+        target = _next_headroom_target(rows)
+        if target:
+            risk = " TIER RISK" if target.get("tier_risk") else ""
+            out.write(f"NEXT {target.get('profile')} headroom {_fmt_remaining(target.get('headroom'))}{risk}\n")
+        else:
+            out.write("NEXT absent\n")
     out.write("PROFILE                HEADROOM QUOTA    CTX      EFFORT   STATE       SOURCE\n")
     for row in rows:
         sources = row.get("sources") or {}
@@ -1180,6 +1247,8 @@ def main(argv=None, stdout=None):
         return 0
     if args.profiles:
         render_profiles(out); return 0
+    if args.peers:
+        render_peers(out); return 0
     if args.accounts:
         render_accounts(out); return 0
     if args.tokens:

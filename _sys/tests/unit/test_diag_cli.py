@@ -648,7 +648,7 @@ def test_dashboard_uses_one_collected_snapshot_for_profile_render(monkeypatch):
 
 # ???? TDD slice 5: detail views (吏?.2) ????????????????????????????????????????????????????????????????????????????????????????
 
-def test_dashboard_follows_fp4_section_order(monkeypatch):
+def test_dashboard_follows_action_first_section_order(monkeypatch):
     """FP-4 (unanimous 2026-07-03): PROFILES&QUOTAS → DETAIL → SESSIONS/HEADROOM
     → ALERTS → SUMMARY, identical in default and watch mode (volatile last)."""
     diag = load_diag()
@@ -660,6 +660,7 @@ def test_dashboard_follows_fp4_section_order(monkeypatch):
         "total_tokens": None, "empty": False, "errors": [], "quotas": [],
     }
     rec = diag.normalize_peer(raw)
+    rec["alerts"] = []
     snapshot = {"schema_version": 1, "peers": [rec], "profiles": []}
     monkeypatch.setattr(diag, "collect_snapshot", lambda: snapshot)
     monkeypatch.setattr(diag.subprocess, "run", lambda *args, **kwargs: None)
@@ -668,16 +669,20 @@ def test_dashboard_follows_fp4_section_order(monkeypatch):
     diag.render_dashboard(out)
     text = out.getvalue()
 
-    assert (text.index(" PROFILES & ROUTING")
-            < text.index(" PEER DETAIL")
-            < text.index(" RECENT SESSIONS & HEADROOM")
-            < text.index(" ALERTS")
-            < text.index(" SUMMARY"))
-    assert text.index(" POLICY") < text.index(" SUMMARY") < text.index(" FRAME")
+    assert (text.index(" ATTENTION")
+            < text.index(" SUMMARY")
+            < text.index(" HEADROOM")
+            < text.index(" RECENT SESSIONS")
+            < text.index(" PROFILES & ROUTING")
+            < text.index(" POLICY")
+            < text.index(" FRAME"))
+    assert " PEER DETAIL" not in text
+    assert "(no alerts)" in text
+    assert text.index("(no alerts)") < text.index(" SUMMARY")
     assert text.rstrip().endswith("LIMITED RESETS none")
 
 
-def test_watch_dashboard_moves_summary_after_detail(monkeypatch):
+def test_watch_dashboard_keeps_action_first_order(monkeypatch):
     diag = load_diag()
     raw = {
         "peer": "cc", "source": "live", "gate": True, "quarantined": False,
@@ -695,9 +700,64 @@ def test_watch_dashboard_moves_summary_after_detail(monkeypatch):
     diag.render_dashboard(out, watch_mode=True)
     text = out.getvalue()
 
-    assert text.index(" PEER DETAIL") < text.index(" SUMMARY")
-    assert text.index(" SUMMARY") < text.index(" FRAME")
+    assert text.index(" ATTENTION") < text.index(" SUMMARY") < text.index(" HEADROOM")
+    assert text.index(" HEADROOM") < text.index(" RECENT SESSIONS") < text.index(" FRAME")
+    assert " PEER DETAIL" not in text
 
+def test_peers_view_is_opt_in_and_default_dashboard_omits_cards(monkeypatch):
+    diag = load_diag()
+    raw = {
+        "peer": "cc", "source": "live", "gate": True, "quarantined": False,
+        "quarantine_reason": None, "model": "Opus", "ctx_used": 1,
+        "ctx_window": 100, "ctx_pct": 1.0, "ctx_known": True, "cost": None,
+        "agent_state": "idle", "plan_tier": "Pro", "sessions": None,
+        "total_tokens": None, "empty": False, "errors": [], "quotas": [],
+    }
+    rec = diag.normalize_peer(raw)
+    rec["alerts"] = []
+    snapshot = {"schema_version": 1, "peers": [rec], "profiles": [], "sessions": []}
+    monkeypatch.setattr(diag, "collect_snapshot", lambda: snapshot)
+    monkeypatch.setattr(diag.subprocess, "run", lambda *args, **kwargs: None)
+
+    default = io.StringIO()
+    diag.render_dashboard(default)
+    peers = io.StringIO()
+    assert diag.main(["--peers"], stdout=peers) == 0
+
+    assert "PEER DETAIL" not in default.getvalue()
+    assert "[ CC ]" not in default.getvalue()
+    assert "PEER DETAIL" in peers.getvalue()
+    assert "[ CC ]" in peers.getvalue()
+
+
+def test_tty_dashboard_elides_wide_rows_instead_of_wrapping(monkeypatch):
+    diag = load_diag()
+
+    class TtyBuffer(io.StringIO):
+        def isatty(self):
+            return True
+
+    raw = {
+        "peer": "cc", "source": "live", "gate": True, "quarantined": False,
+        "quarantine_reason": None, "model": "model-name-that-is-deliberately-too-wide-for-a-tty-row",
+        "ctx_used": 1, "ctx_window": 100, "ctx_pct": 1.0, "ctx_known": True,
+        "cost": None, "agent_state": "idle", "plan_tier": "Pro", "sessions": None,
+        "total_tokens": None, "empty": False, "errors": [], "quotas": [],
+    }
+    rec = diag.normalize_peer(raw)
+    rec["alerts"] = []
+    snapshot = {"schema_version": 1, "peers": [rec], "profiles": [], "sessions": []}
+    monkeypatch.setattr(diag, "collect_snapshot", lambda: snapshot)
+    monkeypatch.setattr(diag.subprocess, "run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(diag.shutil, "get_terminal_size", lambda: type(
+        "Size", (), {"columns": 60, "lines": 24}
+    )())
+
+    out = TtyBuffer()
+    diag.render_dashboard(out)
+
+    assert all(diag._dw(line) <= 60 for line in out.getvalue().splitlines())
+    assert "..." in out.getvalue()
 
 
 def test_frame_footer_freshness_and_no_limited_resets(monkeypatch):
