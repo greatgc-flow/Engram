@@ -1270,6 +1270,23 @@
       ],
       "next_action": "Found during the 2026-07-13 profile-policy MECE 끝장토론 (ag). terminal_hard_exclude only guards --to auto selection; it does NOT stop explicit --to cc.* asks, subagent spawns defaulting to cc, or the same_peer_downward_only fallback (cc.effort fail -> cc.standard) from burning terminal context. Closing these tightens the terminal-token-minimization invariant (docs-v2/ops/profile-policy.md §5). Taste call: some manual --to cc.* is legitimate operator choice, so this is a guard/warn, not a hard block. Defer to a routing R:10 round.",
       "last_verified_at": "2026-07-13T15:45:00"
+    },
+    {
+      "id": "T34b",
+      "title": "MECE profile-policy framework documented (ops/profile-policy.md)",
+      "status": "done",
+      "priority": "medium",
+      "category": "routing",
+      "owner": "unassigned",
+      "evidence_commit": [
+        "f515162"
+      ],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/docs-v2/ops/profile-policy.md"
+      ],
+      "next_action": "Exhaustive cx+ag discussion + cc synthesis; unified MECE framework (taxonomy/capability/quota-economics/load-balancing/terminal-minimization) documented at docs-v2/ops/profile-policy.md; config changes deferred to R:10; findings T37/T38 filed.",
+      "last_verified_at": "2026-07-13T15:50:00"
     }
   ]
 }
