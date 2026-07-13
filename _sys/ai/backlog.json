@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-14T09:45:00Z",
+ "updated_at": "2026-07-14T10:10:00Z",
  "items": [
   {
    "id": "T7",
@@ -1464,11 +1464,14 @@
   {
    "id": "T44",
    "title": "Capability leveling: unify budget ledger + capability-core.v1/long_context canaries",
-   "status": "proposed",
+   "status": "done",
    "priority": "medium",
    "category": "routing",
    "owner": "unassigned",
-   "evidence_commit": [],
+   "evidence_commit": [
+    "288ccc3",
+    "e26c7f6"
+   ],
    "supersedes": [],
    "source_refs": [
     "_sys/checks/check_peer_capability_canary.py",
@@ -1476,8 +1479,8 @@
     "_sys/docs-v2/ops/capability-leveling.md",
     "_sys/docs-v2/ops/capability-leveling-decisions.md"
    ],
-   "next_action": "T44a (shared canary_budget.py ledger + check_cli_canary unification, fail-closed) DONE 288ccc3 2026-07-14; T44b (capability-core.v1 + long_context.{8k,32k,128k}.v1 canaries + fixtures, budgeted) still PENDING. capability-leveling.md Phase 2 / §5.1-5.2. SPENDS TOKENS (budgeted). Unify T21 + check_cli_canary onto one budget ledger (T21 currently ignores it). Add capability-core.v1 (reasoning=closed-form, code=fixture+hidden tests+exact diff, agentic=T21-style file/schema/forbidden-path/truthful-failure), judged ONLY on deterministic artifacts (no transcript, no LLM judge), 3 repeatability; long_context.{8k,32k,128k}.v1 separate, never above measured capacity. Hard bounds: exactly 3 invocations/profile, atomic reserve, no auto-measure below reserve floor; actual_tokens=absent unless machine-observed. Premium/arbiter = allowlist+explicit only; results shadow-only. [2026-07-13: detailed to TDD-ready in docs-v2/ops/capability-leveling-decisions.md §2 (cx spec + ag PTY/quota cross-check + cc synthesis); status ready.]",
-   "last_verified_at": "2026-07-14T09:45:00"
+   "next_action": "DONE: T44a ledger (288ccc3) + T44b canaries (e26c7f6). --execute activation still gated on H1-H4. T44a (shared canary_budget.py ledger + check_cli_canary unification, fail-closed) DONE 288ccc3 2026-07-14; T44b (capability-core.v1 + long_context.{8k,32k,128k}.v1 canaries + fixtures, budgeted) still PENDING. capability-leveling.md Phase 2 / §5.1-5.2. SPENDS TOKENS (budgeted). Unify T21 + check_cli_canary onto one budget ledger (T21 currently ignores it). Add capability-core.v1 (reasoning=closed-form, code=fixture+hidden tests+exact diff, agentic=T21-style file/schema/forbidden-path/truthful-failure), judged ONLY on deterministic artifacts (no transcript, no LLM judge), 3 repeatability; long_context.{8k,32k,128k}.v1 separate, never above measured capacity. Hard bounds: exactly 3 invocations/profile, atomic reserve, no auto-measure below reserve floor; actual_tokens=absent unless machine-observed. Premium/arbiter = allowlist+explicit only; results shadow-only. [2026-07-13: detailed to TDD-ready in docs-v2/ops/capability-leveling-decisions.md §2 (cx spec + ag PTY/quota cross-check + cc synthesis); status ready.]",
+   "last_verified_at": "2026-07-14T10:10:00"
   },
   {
    "id": "T45",
@@ -1497,6 +1500,21 @@
    ],
    "next_action": "capability-leveling.md Phase 3a / §7. Add gates 5 (measured-capability requirement), 6 (context-fit), 7 economics after profile-policy.md §4. Bulk: measured bulk_fitness = bounded weight multiplier only; declaration-only = neutral 1.0 (no migration regression). D5 complexity gate consumes a task requirement vector; hard-remove measurable-but-unmeasured candidates on required axes, but missing_score_policy=allow for FEASIBILITY-BLOCKED peers (ag pre-PTY) so D5 does not strand ag (ag's adopted refinement); fail-loud on empty; explicit target warn-then-allow; SHADOW events first. Declared/composite scores never enter any gate. D1/D5 real activation = Phase 3b, a separate R:10. [2026-07-13: detailed to TDD-ready in docs-v2/ops/capability-leveling-decisions.md §2 (cx spec + ag PTY/quota cross-check + cc synthesis); status ready.]",
    "last_verified_at": "2026-07-13T15:55:00"
+  },
+  {
+   "id": "T46",
+   "title": "capability-core code_fidelity: sandbox-execute hidden tests (vs exact-patch oracle)",
+   "status": "proposed",
+   "priority": "low",
+   "category": "routing",
+   "owner": "unassigned",
+   "evidence_commit": [],
+   "supersedes": [],
+   "source_refs": [
+    "_sys/checks/check_capability_core.py"
+   ],
+   "next_action": "T44b (commit e26c7f6) scores code_fidelity by exact-normalized-patch match against the sole allowlisted patch (untrusted candidate code is never executed, for safety). This penalizes a correct-but-textually-different patch (scores 0). Future refinement: run the hidden tests in a sandboxed subprocess to score functional correctness independent of exact diff. Requires a safe code-exec sandbox; deferred (Phase 2+ measurement quality).",
+   "last_verified_at": "2026-07-14T10:10:00"
   }
  ]
 }
