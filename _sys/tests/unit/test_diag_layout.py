@@ -85,17 +85,111 @@ def test_render_summary_sorted_continuation_rows_and_glyphs():
     }]
     out = io.StringIO()
     old = sys.stdout
+    old_color = diag._COLOR
     sys.stdout = out
+    diag._COLOR = True
     try:
         diag.render_summary(infos)
     finally:
         sys.stdout = old
+        diag._COLOR = old_color
     text = out.getvalue()
     assert text.index("C-5H") < text.index("C-7D") < text.index("F-5H")  # sorted
     assert "\U0001F6AB" in text   # 🚫 saturated (>=1.0)
     assert "\U0001F534" in text   # 🔴 (>=0.90)
     assert "\U0001F7E2" in text   # 🟢 (0%)
     assert "WARN" in text         # >=0.90
+
+
+def test_peer_state_precedence_quarantine_over_open():
+    diag = load_diag()
+    info = {
+        "peer": "cc", "model": "M", "cost": None, "source": "live",
+        "ctx_window": 100, "ctx_used": 1, "ctx_pct": 1.0, "ctx_known": True,
+        "gate": True, "quarantined": True, "empty": False, "quotas": [],
+    }
+    assert diag._peer_state_label(info) == "QUARANTINE"
+    out = io.StringIO()
+    old = sys.stdout
+    sys.stdout = out
+    try:
+        diag.render_summary([info])
+    finally:
+        sys.stdout = old
+    assert "QUARANTINE" in out.getvalue()
+    assert "CC    OPEN" not in out.getvalue()
+
+
+def test_source_codes_are_consistent_across_summary_profiles_and_card():
+    diag = load_diag()
+    raw = {
+        "peer": "cc", "model": "M", "cost": None, "source": "live",
+        "ctx_window": 100, "ctx_used": 1, "ctx_pct": 1.0, "ctx_known": True,
+        "gate": True, "quarantined": False, "empty": False, "quotas": [],
+    }
+    summary = io.StringIO()
+    old = sys.stdout
+    sys.stdout = summary
+    try:
+        diag.render_summary([raw])
+    finally:
+        sys.stdout = old
+    profiles = io.StringIO()
+    diag.render_profiles(profiles, snapshot={"profiles": [{
+        "profile": "cc.standard", "model": "M", "effort": "low", "cost_tier": "low",
+        "context": {"window_tokens": 100}, "state": "eligible",
+        "sources": {"model": "statusline", "context": "live", "quota": "app_server"},
+    }]})
+    card = io.StringIO()
+    old = sys.stdout
+    sys.stdout = card
+    try:
+        diag.render_card(raw)
+    finally:
+        sys.stdout = old
+    assert "STAT" in summary.getvalue()
+    assert "c:STAT q:APP" in profiles.getvalue()
+    assert "Source: STAT" in card.getvalue()
+    assert "CLI=cli_live" in summary.getvalue()
+
+
+def test_model_elision_is_display_width_safe_after_prefixing():
+    diag = load_diag()
+    long_model = "model-name-that-exceeds-the-available-cell-width"
+    rendered = diag._elide_display("[decl] " + long_model, 28)
+    assert rendered.endswith("...")
+    assert diag._dw(rendered) == 28
+    out = io.StringIO()
+    diag.render_profiles(out, snapshot={"profiles": [{
+        "profile": "cc.standard", "model": long_model, "effort": "low", "cost_tier": "low",
+        "context": {"window_tokens": 100}, "state": "eligible",
+        "sources": {"model": "orchestration", "context": "orchestration", "quota": "absent"},
+    }]})
+    assert "..." in out.getvalue()
+
+
+def test_plain_output_uses_text_severity_tokens_without_ansi_or_emoji():
+    diag = load_diag()
+    old_color = diag._COLOR
+    diag._COLOR = False
+    out = io.StringIO()
+    old = sys.stdout
+    sys.stdout = out
+    try:
+        diag.render_summary([{
+            "peer": "cc", "model": "M", "cost": None, "source": "live",
+            "ctx_window": 100, "ctx_used": 1, "ctx_pct": 1.0, "ctx_known": True,
+            "gate": True, "quarantined": False, "empty": False,
+            "quotas": [{"label": "C-5H", "used_frac": 0.95,
+                        "pacing": {"ratio": 1.05, "status": "danger", "indicator": "x"}}],
+        }])
+    finally:
+        sys.stdout = old
+        diag._COLOR = old_color
+    text = out.getvalue()
+    assert "[CRIT]" in text
+    assert "\033[" not in text
+    assert not any(ch in text for ch in ("🟢", "🟡", "🔴", "🚫"))
 
 
 def test_snapshot_absent_stays_literal():
@@ -164,4 +258,4 @@ def test_summary_frame_respects_terminal_height_budget_and_panel_order():
 
     text = out.getvalue()
     assert len(text.splitlines()) <= 19  # one row is deliberately reserved
-    assert text.index(" SUMMARY") < text.index("RECENT ACTIVE SESSIONS") < text.index(" FRAME")
+    assert text.index(" SUMMARY") < text.index("RECENT SESSIONS") < text.index(" FRAME")

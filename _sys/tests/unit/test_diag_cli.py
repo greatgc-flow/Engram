@@ -670,7 +670,7 @@ def test_dashboard_follows_fp4_section_order(monkeypatch):
 
     assert (text.index(" PROFILES & ROUTING")
             < text.index(" PEER DETAIL")
-            < text.index(" ACTIVE SESSIONS & HEADROOM")
+            < text.index(" RECENT SESSIONS & HEADROOM")
             < text.index(" ALERTS")
             < text.index(" SUMMARY"))
     assert text.index(" POLICY") < text.index(" SUMMARY") < text.index(" FRAME")
@@ -954,7 +954,7 @@ def test_sessions_view_renders_absent_context(monkeypatch):
     text = out.getvalue()
 
     assert "cc.fable" in text
-    assert "failed" in text
+    assert "[FAILED]" in text
     assert "absent" in text
 
 
@@ -977,6 +977,43 @@ def test_sessions_view_can_consume_existing_snapshot(monkeypatch):
 
     assert "cx.deepthink" in out.getvalue()
     assert "100/1k 10%" in out.getvalue()
+
+
+def test_recent_session_views_mark_closed_lease_state():
+    diag = load_diag()
+    snapshot = {
+        "peers": [{"peer": "cc"}],
+        "sessions": [{
+            "peer": "cc", "profile": "cc.fable", "model": "long-model-name",
+            "status": "active", "scope_key": "room-x:cc.fable",
+            "last_used_at": "2026-07-03T09:00:00+00:00",
+            "context": {"used_tokens": 250000, "window_tokens": 200000, "utilization_pct": 125.0},
+            "lease": {"status": "closed", "expires_at": "2026-07-03T09:30:00+00:00"},
+        }],
+    }
+    full = io.StringIO()
+    diag.render_sessions(full, snapshot=snapshot)
+    hud = io.StringIO()
+    diag.render_recent_sessions(
+        hud, snapshot, now=datetime(2026, 7, 3, 10, tzinfo=timezone.utc), columns=80,
+    )
+    assert "RECENT SESSIONS" in hud.getvalue()
+    assert "ROOM / STATE" in hud.getvalue()
+    assert "[CLOSED]" in hud.getvalue()
+    assert "[CLOSED]" in full.getvalue()
+    assert "ACTIVE SESSIONS" not in hud.getvalue()
+
+
+def test_open_lease_requires_unexpired_timestamp_for_open_state():
+    diag = load_diag()
+    now = datetime(2026, 7, 3, 10, tzinfo=timezone.utc)
+    assert diag._session_lease_state({"lease": {
+        "status": "open", "expires_at": "2026-07-03T10:30:00+00:00",
+    }}, now) == "[OPEN]"
+    assert diag._session_lease_state({"lease": {
+        "status": "open", "expires_at": "2026-07-03T09:30:00+00:00",
+    }}, now) == "[STALE]"
+    assert diag._session_lease_state({"lease": {"status": "open"}}, now) == "[STALE]"
 
 
 def test_profiles_view_never_leaks_raw_profile_args():
@@ -1223,7 +1260,7 @@ def test_live_non_tty_is_plain_sequential_and_collects_once_per_tick(monkeypatch
     text = out.getvalue()
     assert calls == [False, False, False]
     assert text.count(" SUMMARY") == 3
-    assert text.count("RECENT ACTIVE SESSIONS") == 3
+    assert text.count("RECENT SESSIONS") == 3
     assert " PROFILES & ROUTING" not in text
     assert " POLICY" not in text
     assert "\033[" not in text
@@ -1348,7 +1385,7 @@ def test_recent_sessions_tiny_budget_uses_one_line_per_peer_digest():
 
     lines = out.getvalue().splitlines()
     assert len(lines) == 3
-    assert lines[0].startswith("RECENT ACTIVE SESSIONS")
+    assert lines[0].startswith("RECENT SESSIONS")
     assert lines[1].startswith("CC:") and lines[1].endswith("(3)")
     assert lines[2].startswith("AG:") and lines[2].endswith("(3)")
 

@@ -139,6 +139,80 @@ def _sev_color(used_frac):
     return "green"
 
 
+_SOURCE_CODES = {
+    "cli_live": "CLI",
+    "app_server": "APP",
+    "statusline": "STAT",
+    "empirical_probe": "PROBE",
+    "declared, unverified": "DECL",
+    "absent": "ABS",
+}
+
+
+def _source_code(value):
+    """Render source provenance with one stable, compact vocabulary."""
+    key = str(value or "").strip().lower()
+    canonical = {
+        "cli_live": "cli_live", "app_server": "app_server",
+        "app-server": "app_server", "statusline": "statusline",
+        "live": "statusline", "health": "statusline",
+        "empirical_probe": "empirical_probe",
+        "orchestration": "declared, unverified", "decl": "declared, unverified",
+        "declared": "declared, unverified",
+    }.get(key, "absent")
+    return _SOURCE_CODES[canonical]
+
+
+def _source_legend():
+    return ("SRC LEGEND: CLI=cli_live APP=app_server STAT=statusline "
+            "PROBE=empirical_probe DECL=declared, unverified ABS=absent")
+
+
+def _peer_state_label(info):
+    """Canonical peer-state precedence for every peer-level renderer."""
+    if info.get("quarantined"):
+        return "QUARANTINE"
+    if info.get("gate") is False:
+        return "GATE SHUT"
+    if info.get("gate") is True:
+        return "OPEN"
+    return "UNKNOWN"
+
+
+def _peer_state_cell(info, width=11):
+    state = _peer_state_label(info)
+    cell = _pad(state, width)
+    if state == "OPEN":
+        return _c(cell, "green")
+    if state == "QUARANTINE":
+        return _c(cell, "red", "bold")
+    if state == "GATE SHUT":
+        return _c(cell, "yellow")
+    return _c(cell, "dim")
+
+
+def _severity_glyph(*, used_frac=None, pacing=None):
+    """One quota/pacing glyph source with an ASCII fallback for plain output."""
+    if isinstance(used_frac, (int, float)):
+        level = "stop" if used_frac >= 1.0 else (
+            "crit" if used_frac >= QUOTA_CRIT_FRAC else (
+                "warn" if used_frac >= QUOTA_WARN_FRAC else "ok"))
+    else:
+        status = str((pacing or {}).get("status") or "").lower()
+        indicator = str((pacing or {}).get("indicator") or "")
+        level = "crit" if status in {"danger", "critical", "crit"} or indicator == "🔴" else (
+            "warn" if status in {"warning", "warn"} or indicator == "🟡" else "ok")
+    if not _COLOR:
+        return {"stop": "[CRIT]", "crit": "[CRIT]", "warn": "[WARN]", "ok": "[OK]"}[level]
+    return {"stop": "🚫", "crit": "🔴", "warn": "🟡", "ok": "🟢"}[level]
+
+
+def _pacing_cell(pacing):
+    if not isinstance(pacing, dict) or not isinstance(pacing.get("ratio"), (int, float)):
+        return ""
+    return f"{_severity_glyph(pacing=pacing)} {pacing['ratio']:.2f}x"
+
+
 def _arbiter_model_ids() -> set:
     """Return routing-config.json's token_load_balancing.arbiter_models as a set."""
     data, _observed = _read_json_file(SYS_DIR / "ai" / "routing-config.json")
@@ -213,54 +287,34 @@ def _arbiter_model_ids() -> set:
 # Rendering
 # --------------------------------------------------------------------------
 
-def _health_label(info):
-    if info["empty"]:
-        return _c("NO DATA", "dim")
-    if info.get("quarantined"):
-        return _c("QUARANTINE", "red", "bold")
-    if info.get("gate") is False:
-        return _c("GATE SHUT", "yellow")
-    if info.get("gate") is True:
-        return _c("OPEN", "green")
-    return _c("?", "dim")
-
-
 def render_summary(infos):
     """SUMMARY (nearest prompt): per-peer header + sorted quota continuation rows
     (label, glyph, pct, pace, reset), WARN>=0.90, glyph=absent(literal)/emoji."""
     print("\n" + "=" * 60)
     print(_c(" SUMMARY", "bold"))
     print("=" * 60)
-    headers = [_pad("PEER", 5), _pad("GATE", 6), _pad("MODEL", 24),
+    headers = [_pad("PEER", 5), _pad("STATE", 11), _pad("MODEL", 24),
                _pad("CONTEXT(used/win %)", 19), _pad("COST", 9), _pad("SRC", 12)]
     print(_c(" ".join(headers).rstrip(), "dim"))
     for info in infos:
         peer = info["peer"].upper()
         model = info["model"] or "Unknown"
-        if len(model) > 24:
-            model = model[:21] + "..."
+        model = _elide_display(model, 24)
         cost = f"${info['cost']:.4f}" if isinstance(info["cost"], (int, float)) else "-"
-        gate_raw = "OPEN" if info.get("gate") else ("QUAR" if info.get("quarantined")
-                    else ("SHUT" if info.get("gate") is False else "n/a"))
-        gate_cell = _pad(gate_raw, 6)
-        if gate_raw == "OPEN":
-            gate_cell = _c(gate_cell, "green")
-        elif gate_raw == "QUAR":
-            gate_cell = _c(gate_cell, "red", "bold")
-        elif gate_raw == "SHUT":
-            gate_cell = _c(gate_cell, "yellow")
-        print(f"{_pad(peer, 5)} {gate_cell} {_pad(model, 24)} "
-              f"{_pad(_ctx_cell_raw(info), 19)} {_pad(cost, 9)} {_pad(info.get('source', 'none'), 12)}")
+        state_cell = _peer_state_cell(info)
+        print(f"{_pad(peer, 5)} {state_cell} {_pad(model, 24)} "
+              f"{_pad(_ctx_cell_raw(info), 19)} {_pad(cost, 9)} {_pad(_source_code(info.get('source')), 12)}")
         for q in sorted(info.get("quotas") or [], key=lambda x: str(x.get("label", ""))):
             uf = q.get("used_frac")
             if uf is None:
                 continue
-            glyph = "🚫" if uf >= 1.0 else ("🔴" if uf >= QUOTA_CRIT_FRAC
-                    else ("🟡" if uf >= QUOTA_WARN_FRAC else "🟢"))
+            glyph = _severity_glyph(used_frac=uf)
             pct = _pad(f"{uf * 100:.0f}%", 4, align="right")
-            pace = _pad(_fmt_pacing(q.get("pacing")), 10)
+            pace = _pad(_pacing_cell(q.get("pacing")), 12)
             warn = "  " + _c("WARN", "red", "bold") if uf >= QUOTA_CRIT_FRAC else ""
             print(f"  ↳ {_pad(q.get('label', ''), 6)} {_pad(glyph, 2)} {pct} {pace} resets {q.get('reset') or '?'}{warn}")
+
+    print(_c(_source_legend(), "dim"))
 
 
 def _ctx_cell_raw(info):
@@ -278,7 +332,7 @@ def render_card(info):
     if info["empty"]:
         print(f"[ {peer} ] " + _c("(no data found)", "dim"))
         return
-    head_bits = [info["model"] or "Unknown", _health_label(info)]
+    head_bits = [info["model"] or "Unknown", _peer_state_cell(info, 0)]
     if info.get("agent_state"):
         head_bits.append(str(info["agent_state"]).upper())
     if isinstance(info["cost"], (int, float)):
@@ -286,6 +340,7 @@ def render_card(info):
     print(f"[ {_c(peer, 'bold', 'cyan')} ] " + " | ".join(head_bits))
     if info.get("plan_tier"):
         print(_c(f"   Plan: {info['plan_tier']}", "dim"))
+    print(_c(f"   Source: {_source_code(info.get('source'))}", "dim"))
     print("-" * 60)
     if not info.get("ctx_known"):
         print(f" Context : (current occupancy n/a)  window {_short(info['ctx_window'])}")
@@ -594,6 +649,29 @@ def _session_scope(row, profile):
     return scope
 
 
+def _session_lease_state(row, now):
+    """Truthful lease-state token; post-mortem rows remain visible."""
+    lease = row.get("lease") or {}
+    status = str(lease.get("status") or "absent").upper()
+    if status == "OPEN":
+        expires = _frame_dt(lease.get("expires_at"))
+        if expires is None or now is None or expires <= now:
+            status = "STALE"
+    return f"[{status}]"
+
+
+def _session_room_state(row, profile, now, width):
+    state = _session_lease_state(row, now)
+    room = _session_scope(row, profile)
+    if width is None:
+        return f"{room} {state}"
+    state_width = _dw(state)
+    room_width = width - state_width - 1
+    if room_width <= 0:
+        return _elide_display(state, width)
+    return f"{_elide_display(room, room_width)} {state}"
+
+
 def _session_ctx_text(row):
     pct = (row.get("context") or {}).get("utilization_pct")
     return f"{pct:.0f}%" if isinstance(pct, (int, float)) else "absent"
@@ -603,28 +681,28 @@ def _compact_session_row(row, peer, now, columns):
     profile = _session_profile(row, peer)
     age = _session_age_text(row.get("last_used_at"), now)
     ctx = _session_ctx_text(row)
-    scope = _session_scope(row, profile)
+    room_state = _session_room_state(row, profile, now, None)
     if columns is None:
-        return f"{profile} {age} {ctx} {scope}"
+        return f"{profile} {age} {ctx} {room_state}"
     profile_cell = _pad(_elide_display(profile, 20), 20)
     prefix = f"{profile_cell} {_pad(age, 5, align='right')} {_pad(ctx, 7)}"
-    scope_width = columns - _dw(prefix) - 1
-    if scope_width <= 0:
+    room_width = columns - _dw(prefix) - 1
+    if room_width <= 0:
         return _elide_display(prefix, columns)
-    return f"{prefix} {_elide_display(scope, scope_width)}"
+    return f"{prefix} {_session_room_state(row, profile, now, room_width)}"
 
 
 def _session_digest(row, peer, count, now, columns):
     profile = _session_profile(row, peer)
     age = _session_age_text(row.get("last_used_at"), now)
     ctx = _session_ctx_text(row)
-    scope = _session_scope(row, profile)
-    text = f"{str(peer).upper()}: {profile} {age} {ctx} {scope} ({count})"
+    room_state = _session_room_state(row, profile, now, None)
+    text = f"{str(peer).upper()}: {profile} {age} {ctx} {room_state} ({count})"
     return _elide_display(text, columns)
 
 
 def render_recent_sessions(out, snapshot, *, now=None, columns=80, line_budget=None):
-    """Compact active sessions from one supplied snapshot; never recollects."""
+    """Compact recent sessions from one supplied snapshot; never recollects."""
     if line_budget is not None:
         line_budget = max(0, int(line_budget))
         if line_budget == 0:
@@ -638,7 +716,7 @@ def render_recent_sessions(out, snapshot, *, now=None, columns=80, line_budget=N
             continue
         groups.setdefault(str(row["peer"]), []).append(row)
     if not groups:
-        out.write(_elide_display("RECENT ACTIVE SESSIONS none", columns) + "\n")
+        out.write(_elide_display("RECENT SESSIONS none", columns) + "\n")
         return
 
     snapshot_peer_order = [
@@ -657,9 +735,9 @@ def render_recent_sessions(out, snapshot, *, now=None, columns=80, line_budget=N
             if rank < len(capped[peer]):
                 round_robin.append((peer, capped[peer][rank]))
 
-    title = _elide_display("RECENT ACTIVE SESSIONS (newest first; max 3/peer)", columns)
+    title = _elide_display("RECENT SESSIONS (newest first; max 3/peer)", columns)
     header_prefix = f"{_pad('PROFILE', 20)} {_pad('AGE', 5, align='right')} {_pad('CTX', 7)}"
-    header = header_prefix if columns is not None and _dw(header_prefix) >= columns else f"{header_prefix} SCOPE"
+    header = header_prefix if columns is not None and _dw(header_prefix) >= columns else f"{header_prefix} ROOM / STATE"
     header = _elide_display(header, columns)
 
     candidate_count = len(round_robin)
@@ -687,7 +765,8 @@ def render_recent_sessions(out, snapshot, *, now=None, columns=80, line_budget=N
                     profile = _session_profile(row, peer)
                     age = _session_age_text(row.get("last_used_at"), rendered_now)
                     ctx = _session_ctx_text(row)
-                    items.append(f"{peer.upper()}:{profile}@{age}/{ctx}({len(capped[peer])})")
+                    room_state = _session_room_state(row, profile, rendered_now, None)
+                    items.append(f"{peer.upper()}:{profile}@{age}/{ctx}/{room_state}({len(capped[peer])})")
                 lines = [_elide_display("SESS " + " ".join(items), columns)]
             out.write("\n".join(lines[:line_budget]) + "\n")
             return
@@ -803,7 +882,7 @@ def render_dashboard(stdout=None, watch_mode=False, snapshot=None):
         content_panels = [
             (" PROFILES & ROUTING", lambda: render_profiles(out, snapshot=snapshot)),
             (" PEER DETAIL", _render_peer_detail),
-            (" ACTIVE SESSIONS & HEADROOM", _render_active_sessions_and_headroom),
+            (" RECENT SESSIONS & HEADROOM", _render_active_sessions_and_headroom),
             (" ALERTS", _render_alerts),
             (" POLICY", lambda: render_policy(out)),
             (" SUMMARY", lambda: render_summary(infos)),  # self-prints its own header
@@ -958,10 +1037,6 @@ def render_profiles(stdout=None, snapshot=None):
                _pad("TIER", 5), _pad("CTX", 12), _pad("STATE", 12), _pad("SRC", 13)]
     out.write(" ".join(headers).rstrip() + "\n")
 
-    def _fmt_src(tag):
-        return {"orchestration": "decl", "cli_live": "cliv", "app_server": "app",
-                "statusline": "live", "health": "hlth", "absent": "-"}.get(tag, str(tag)[:4])
-
     for row in rows:
         sources = row.get("sources") or {}
         model = row.get("model") or "absent"
@@ -973,15 +1048,17 @@ def render_profiles(stdout=None, snapshot=None):
         win = ctx.get("window_tokens")
         ctx_val = _short(win) if win is not None else "absent"
         state = row.get("state") or "unknown"
-        src = f"c:{_fmt_src(sources.get('context'))} q:{_fmt_src(sources.get('quota'))}"
+        src = f"c:{_source_code(sources.get('context'))} q:{_source_code(sources.get('quota'))}"
 
         c_state = _pad(state, 12)
         if state == "eligible":
             c_state = _c(c_state, "green")
         elif state == "manual_only":
             c_state = _c(c_state, "yellow")
-        out.write(f"{_pad(str(row.get('profile') or 'absent'), 22)} {_pad(str(model)[:28], 28)} "
+        model = _elide_display(model, 28)
+        out.write(f"{_pad(str(row.get('profile') or 'absent'), 22)} {_pad(model, 28)} "
                   f"{_pad(effort, 5)} {_pad(tier, 5)} {_pad(ctx_val, 12)} {c_state} {_pad(src, 13)}\n")
+    out.write(_c(_source_legend(), "dim") + "\n")
 
 
 def render_headroom(stdout=None, snapshot=None):
@@ -999,7 +1076,8 @@ def render_headroom(stdout=None, snapshot=None):
     out.write("PROFILE                HEADROOM QUOTA    CTX      EFFORT   STATE       SOURCE\n")
     for row in rows:
         sources = row.get("sources") or {}
-        source_str = f"ctx:{sources.get('context') or '?'} q:{sources.get('quota') or '?'}"
+        source_str = (f"ctx:{_source_code(sources.get('context'))} "
+                      f"q:{_source_code(sources.get('quota'))}")
         risk = " TIER RISK" if row.get("tier_risk") else ""
         out.write(
             f"{str(row.get('profile') or '?'):<22} "
@@ -1046,17 +1124,18 @@ def render_sessions(stdout=None, snapshot=None):
         snapshot = collect_snapshot()
     rows = snapshot.get("sessions") or []
     if not rows:
-        out.write("(no active sessions)\n")
+        out.write("(no recent sessions)\n")
         return
-    out.write("PROFILE                MODEL                      STATUS    LEASE     LAST_USED           CTX             SCOPE\n")
+    out.write("PROFILE                MODEL                      STATUS    LEASE_STATE LAST_USED           CTX             SCOPE\n")
     for row in rows:
-        lease_status = (row.get("lease") or {}).get("status") or "absent"
+        lease_state = _session_lease_state(row, _frame_dt())
         last_used = str(row.get("last_used_at") or "-")[:19]
+        model = _elide_display(row.get("model") or "absent", 26)
         out.write(
             f"{str(row.get('profile') or '?'):<22} "
-            f"{str(row.get('model') or 'absent')[:26]:<26} "
+            f"{_pad(model, 26)} "
             f"{str(row.get('status') or 'unknown'):<9} "
-            f"{str(lease_status):<9} "
+            f"{_pad(lease_state, 11)} "
             f"{last_used:<19} "
             f"{_ctx_session_cell(row.get('context')):<15} "
             f"{row.get('scope_key') or '-'}\n"
