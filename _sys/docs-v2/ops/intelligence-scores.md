@@ -5,6 +5,13 @@
 > governed R:10 round is required before any of the config changes land.
 > Discussion: cx.deepthink + ag.deepthink, synthesized by cc; human directed
 > "document first, apply later."
+>
+> **SUPERSEDED-IN-SPIRIT (2026-07-13):** the single composite scalar below is now
+> the **declared bootstrap layer** of the capability-leveling framework
+> (`ops/capability-leveling.md`). It is `declared/unverified` and **never enters a
+> routing decision**; measured per-axis evidence supersedes it (supersede-not-
+> overwrite). This table shrinks to a historical/bootstrap appendix once local
+> measurement exists (Phase 2+). See `ops/capability-leveling.md §4, §6`.
 
 ## 1. Source data (DIR-004: `declared, unverified`)
 
