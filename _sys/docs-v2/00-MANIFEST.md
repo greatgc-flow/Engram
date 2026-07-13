@@ -72,6 +72,7 @@ For navigation by domain: `MOC.md`. For human onboarding: `user/manual.md`.
 | `ops/status-consolidation-2026-07-08.md` | living | Reconciliation point for the 2026-07-07/08 work stream: shipped commits, pending/backlog, MECE, freshness | 2026-07-08 |
 | `ops/intelligence-scores.md` | living | Composite model intelligence scores (declared, unverified) + profile/arbiter policy recommendations; documented-only pending R:10 | 2026-07-13 |
 | `ops/profile-policy.md` | living | MECE profile framework: taxonomy (tier/specialty) · capability · quota-family economics (C/F/G/3P/X) · load-balancing gates · terminal token minimization; config changes deferred to R:10 | 2026-07-13 |
+| `ops/profile-policy-decisions.md` | living | Ratified R:10 decisions + TDD-ready specs for the deferred profile/LB items (D1-D9); 2 verified P0 enforcement defects (bulk-exclude bypass, terminal-identity mismatch) | 2026-07-13 |
 | `user/manual.md` | living | Human onboarding, daily workflow, command reference | 2026-06-26 |
 | `user/requirements.md` | living | Root requirement contract (A1-A5...) — source of intent | 2026-06-26 |
 | `_exceptions/README.md` | living | Active ambiguity register (small; not a backlog) | 2026-06-26 |

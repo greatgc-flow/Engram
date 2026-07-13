@@ -101,6 +101,12 @@ on *different* families — that decoupling is the whole point.
 
 ## 4. Load-balancing policy (MECE decision table)
 
+> **Known enforcement defect (2026-07-13):** gates 2-3 are NOT fully enforced
+> end-to-end today — `resolve_auto_target()` discards the balancer's chosen
+> profile and `_select_ask_profile()` can reintroduce a bulk-excluded one (P0-1).
+> The table below is the *intended* model; see
+> [`profile-policy-decisions.md`](profile-policy-decisions.md) §0 + T39, fixed by D7.
+
 `--to auto` eligibility is the ordered conjunction of these gates. They are
 mutually exclusive as *reasons to exclude* and collectively exhaustive:
 
@@ -130,8 +136,12 @@ mutually exclusive as *reasons to exclude* and collectively exhaustive:
 - **Invariant:** the terminal (`cc`) orchestrates and must minimize its own token
   spend — it delegates implementation, bulk file reading, and heavy reasoning to
   peers, and preserves its context window + rate limits to keep the unbroken
-  human conversation loop alive. `terminal_hard_exclude=true` enforces this for
-  `--to auto`: cc is never an auto-routing bulk target.
+  human conversation loop alive. `terminal_hard_exclude=true` is *intended* to
+  enforce this for `--to auto`: cc is never an auto-routing bulk target.
+  > **Known enforcement defect (2026-07-13):** `terminal_hard_exclude` is keyed on
+  > `active_coordinator`, not the human-interface terminal, so it can exclude the
+  > coordinator (e.g. cx) while cc keeps spending (P0-2). See
+  > [`profile-policy-decisions.md`](profile-policy-decisions.md) §0 + T40, fixed by D7.
 - **Enforcement leaks (backlog):** `terminal_hard_exclude` only guards the
   `--to auto` *selection*. It does NOT protect the terminal from (a) explicit
   `--to cc.*` asks, or (b) subagent spawns that default to cc, or (c) the

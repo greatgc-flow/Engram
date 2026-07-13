@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-13T15:45:00+09:00",
+  "updated_at": "2026-07-13T16:15:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -1237,7 +1237,7 @@
       "source_refs": [
         "_sys/core/snapshot.py"
       ],
-      "next_action": "Found by ag during the 2026-07-13 diag MECE review: snapshot._session_context_measured only has log parsers for cx (codex rollout JSONL) and cc (claude), so ag sessions (agy.exe PTY) always render context as 'absent' - a diagnostic blind spot for Gemini allocations. Deferred out of the diag P0/P1 refactor (it is a data-collection feature, not a display fix): needs an agy session-log format reader. DIR-004: 'absent' is the honest current state, so this is an enhancement, not a correctness bug. TDD-ready when picked up: add an agy log reader to _session_context_measured returning measured used/window or honest absent.",
+      "next_action": "Found by ag during the 2026-07-13 diag MECE review: snapshot._session_context_measured only has log parsers for cx (codex rollout JSONL) and cc (claude), so ag sessions (agy.exe PTY) always render context as 'absent' - a diagnostic blind spot for Gemini allocations. Deferred out of the diag P0/P1 refactor (it is a data-collection feature, not a display fix): needs an agy session-log format reader. DIR-004: 'absent' is the honest current state, so this is an enhancement, not a correctness bug. TDD-ready when picked up: add an agy log reader to _session_context_measured returning measured used/window or honest absent. [2026-07-13: decided + detailed to TDD-ready as D9 in docs-v2/ops/profile-policy-decisions.md.]",
       "last_verified_at": "2026-07-13T14:30:00"
     },
     {
@@ -1252,7 +1252,7 @@
       "source_refs": [
         "_sys/core/snapshot.py"
       ],
-      "next_action": "Found during the 2026-07-13 profile-policy MECE 끝장토론 (ag). _quota_family_for_profile maps ag {opus,gptoss,sonnet}->3P- but ag has no 'sonnet' profile in orchestration.json. Harmless (dead mapping) but should be removed. Best fixed as part of the R:10 round that lifts quota_family into orchestration.json per profile (see docs-v2/ops/profile-policy.md §7).",
+      "next_action": "Found during the 2026-07-13 profile-policy MECE 끝장토론 (ag). _quota_family_for_profile maps ag {opus,gptoss,sonnet}->3P- but ag has no 'sonnet' profile in orchestration.json. Harmless (dead mapping) but should be removed. Best fixed as part of the R:10 round that lifts quota_family into orchestration.json per profile (see docs-v2/ops/profile-policy.md §7). [2026-07-13: decided + detailed to TDD-ready as D4 in docs-v2/ops/profile-policy-decisions.md.]",
       "last_verified_at": "2026-07-13T15:45:00"
     },
     {
@@ -1268,7 +1268,7 @@
         "_sys/core/hub.py",
         "_sys/ai/routing-config.json"
       ],
-      "next_action": "Found during the 2026-07-13 profile-policy MECE 끝장토론 (ag). terminal_hard_exclude only guards --to auto selection; it does NOT stop explicit --to cc.* asks, subagent spawns defaulting to cc, or the same_peer_downward_only fallback (cc.effort fail -> cc.standard) from burning terminal context. Closing these tightens the terminal-token-minimization invariant (docs-v2/ops/profile-policy.md §5). Taste call: some manual --to cc.* is legitimate operator choice, so this is a guard/warn, not a hard block. Defer to a routing R:10 round.",
+      "next_action": "Found during the 2026-07-13 profile-policy MECE 끝장토론 (ag). terminal_hard_exclude only guards --to auto selection; it does NOT stop explicit --to cc.* asks, subagent spawns defaulting to cc, or the same_peer_downward_only fallback (cc.effort fail -> cc.standard) from burning terminal context. Closing these tightens the terminal-token-minimization invariant (docs-v2/ops/profile-policy.md §5). Taste call: some manual --to cc.* is legitimate operator choice, so this is a guard/warn, not a hard block. Defer to a routing R:10 round. [2026-07-13: decided + detailed to TDD-ready as D7 in docs-v2/ops/profile-policy-decisions.md.]",
       "last_verified_at": "2026-07-13T15:45:00"
     },
     {
@@ -1287,6 +1287,37 @@
       ],
       "next_action": "Exhaustive cx+ag discussion + cc synthesis; unified MECE framework (taxonomy/capability/quota-economics/load-balancing/terminal-minimization) documented at docs-v2/ops/profile-policy.md; config changes deferred to R:10; findings T37/T38 filed.",
       "last_verified_at": "2026-07-13T15:50:00"
+    },
+    {
+      "id": "T39",
+      "title": "P0: bulk_exclude/arbiter_models not enforced end-to-end (AUTO discards LB profile, _select_ask_profile re-picks)",
+      "status": "proposed",
+      "priority": "high",
+      "category": "routing",
+      "owner": "unassigned",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/core/hub.py",
+        "_sys/core/snapshot.py"
+      ],
+      "next_action": "VERIFIED by cx+ag 2026-07-13 (profile-policy decision round). hub.resolve_auto_target() (~4126) has the load balancer pick a correct non-excluded profile row but returns only the peer ({target: selected_peer}); _action_ask_inner (~4659) then calls _select_ask_profile(to, query) which re-runs textual analysis and can reintroduce a bulk-excluded/arbiter profile (cc.fable/ag.opus). So token_load_balancing.bulk_exclude_profiles + arbiter_models are bypassed. FIX = D7 step 2 in docs-v2/ops/profile-policy-decisions.md: resolve_auto_target returns the selected PROFILE id and _action_ask_inner bypasses _select_ask_profile when the effective target already carries a specific LB-chosen profile; session hysteresis keeps that exact representative. TDD-ready spec + tests in the decision doc.",
+      "last_verified_at": "2026-07-13T16:15:00"
+    },
+    {
+      "id": "T40",
+      "title": "P0: terminal_hard_exclude keyed on active_coordinator, not human-interface terminal (cc drains tokens unthrottled)",
+      "status": "proposed",
+      "priority": "high",
+      "category": "routing",
+      "owner": "unassigned",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/core/hub.py"
+      ],
+      "next_action": "VERIFIED by cx+ag 2026-07-13. hub.resolve_auto_target() (~4123) sets terminal_peer=_fresh_active_coordinator(...); with coordinator=cx, human_interface_peer=null, default=cc, terminal_hard_exclude excludes the COORDINATOR (cx) not the actual terminal (cc) - so cc makes bulk background calls and drains its own tokens while cx is wrongly blocked. FIX = D7 step 1: resolve the real terminal from the human-interface selection/state (reuse T20 _human_interface_peer_* eligibility), fail loud terminal_identity_absent if hard-exclude on but no trustworthy terminal. TDD-ready spec + test (coordinator=cx, terminal=cc -> AUTO excludes cc not cx) in docs-v2/ops/profile-policy-decisions.md.",
+      "last_verified_at": "2026-07-13T16:15:00"
     }
   ]
 }
