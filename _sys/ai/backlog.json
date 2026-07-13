@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-13T12:00:00+09:00",
+  "updated_at": "2026-07-13T12:30:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -1174,14 +1174,14 @@
     {
       "id": "T33",
       "title": "P1: user manual lifecycle sections are stale (lists GPT-5.4/5.5 + disabled Gemini; New PC Setup runs register before install) and omit the zero-admin rule + update-apply flow",
-      "status": "proposed",
+      "status": "active",
       "priority": "medium",
       "category": "lifecycle",
       "owner": "unassigned",
       "evidence_commit": [],
       "supersedes": [],
       "source_refs": [],
-      "next_action": "Raised 2026-07-13 from a human-requested install/update/cleanup MECE + convenience review (ag.deepthink + cx.deepthink design pass; cc.fable synthesis; human chose FULL P0 batch). rewrite manual lifecycle sections after T28-T32 contracts settle: lifecycle-at-a-glance, install/register/status/update/cleanup, zero-admin rule + optional Defender exception, fix stale model table Sequenced per cx: T28/T29 truthfulness+consistency first, then T31 update UX, T30 cleanup safety, then T32 status, then T33 manual. Admin: DOCUMENT-ONLY zero-admin rule + status advisory line (both peers rejected auto Defender exclusion as security-weakening/unmeasured).",
+      "next_action": "Raised 2026-07-13 from a human-requested install/update/cleanup MECE + convenience review (ag.deepthink + cx.deepthink design pass; cc.fable synthesis; human chose FULL P0 batch). rewrite manual lifecycle sections after T28-T32 contracts settle: lifecycle-at-a-glance, install/register/status/update/cleanup, zero-admin rule + optional Defender exception, fix stale model table Sequenced per cx: T28/T29 truthfulness+consistency first, then T31 update UX, T30 cleanup safety, then T32 status, then T33 manual. Admin: DOCUMENT-ONLY zero-admin rule + status advisory line (both peers rejected auto Defender exclusion as security-weakening/unmeasured). IMPLEMENTED 2026-07-13 (cc editorial, encoding-safe terminal; outline ratified by cx+ag in the lifecycle discussion; validated by CHK-ENC + check_docs_mece). Rewrote docs-v2/user/manual.md lifecycle coverage: fixed Quick Start (was register-before-install + launched disabled gemini) to INSTALL -> register -> STATUS -> launch; added a Lifecycle-at-a-Glance table (purpose/mutates/admin/reversible); new sections for Install/Repair (idempotent, truthful outcomes, T29 Python pin), Host Registration (register/unregister, unregister-before-move, register.state.json ledger never deleted by cleanup), Status/Doctor (STATUS.bat --json, python hard-gate), Updating (T31 one-command discover->confirm->apply/install/dry-run + not_checked coverage + backup), Cleanup (T30 tier table + governance-preserved-at-Tier1 + active-session guard + never-orphan + --dry-run/--force + uninstall recipe), and the Zero-Admin Rule (everything user-space: SUBST/HKCU/junctions/portable-extract; admin ONLY for an optional Defender exclusion, not automated). Fixed the stale peer table to current reality (cx=gpt-5.6 luna/terra/sol per T26, removed disabled gc row, noted cc.fable arbiter + ag.opus/gptoss manual profiles). CHK-ENC clean, all check_docs_mece checks pass. Closes the T28-T33 lifecycle P0 batch.",
       "last_verified_at": "2026-07-13T10:00:00"
     }
   ]
