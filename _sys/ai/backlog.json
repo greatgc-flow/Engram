@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-13T14:45:00Z",
+ "updated_at": "2026-07-13T15:55:00Z",
  "items": [
   {
    "id": "T7",
@@ -1411,10 +1411,11 @@
    "supersedes": [],
    "source_refs": [
     "_sys/checks/check_peer_capability_canary.py",
-    "_sys/docs-v2/ops/capability-leveling.md"
+    "_sys/docs-v2/ops/capability-leveling.md",
+    "_sys/docs-v2/ops/capability-leveling-decisions.md"
    ],
-   "next_action": "capability-leveling.md Phase 1 / §3. check_peer_capability_canary._same_runtime today compares only model_id+binary_sha; widen the subject fingerprint to include invoke_args, reasoning_effort, adapter/runtime, and the profile-config hash so a score is valid only for its exact treatment. A record whose fingerprint no longer matches the live subject becomes STALE (falls back to next evidence tier), not silently reused. TDD-ready: extend the canary validity tests.",
-   "last_verified_at": "2026-07-13T14:45:00"
+   "next_action": "capability-leveling.md Phase 1 / §3. check_peer_capability_canary._same_runtime today compares only model_id+binary_sha; widen the subject fingerprint to include invoke_args, reasoning_effort, adapter/runtime, and the profile-config hash so a score is valid only for its exact treatment. A record whose fingerprint no longer matches the live subject becomes STALE (falls back to next evidence tier), not silently reused. TDD-ready: extend the canary validity tests. [2026-07-13: detailed to TDD-ready in docs-v2/ops/capability-leveling-decisions.md §2 (cx spec + ag PTY/quota cross-check + cc synthesis); status ready.]",
+   "last_verified_at": "2026-07-13T15:55:00"
   },
   {
    "id": "T42",
@@ -1429,10 +1430,11 @@
     "_sys/core/hub.py",
     "_sys/core/hub_peer.py",
     "_sys/checks/check_peer_capability_canary.py",
-    "_sys/docs-v2/ops/capability-leveling.md"
+    "_sys/docs-v2/ops/capability-leveling.md",
+    "_sys/docs-v2/ops/capability-leveling-decisions.md"
    ],
-   "next_action": "capability-leveling.md Phase 1.5 / §5.3 (ag's focal finding). agy on Windows is PTY-only (native WriteConsole); the current canary invoker uses plain subprocess.run -> agy hangs/crashes/no output. Build a PTY-native canary harness reusing hub._ask_with_pty daemon-reader queue; AgyAdapter.parse_output already sanitizes ANSI/CR/BS so artifacts are deterministically judgeable once driven. Certify the pywinpty path or keep ag performance-axis DECLARED-ONLY. Peer-level context IS statusline-measurable; session-level stays absent (see T36/D9). BLOCKS ag joining the measured level.",
-   "last_verified_at": "2026-07-13T14:45:00"
+   "next_action": "capability-leveling.md Phase 1.5 / §5.3 (ag's focal finding). agy on Windows is PTY-only (native WriteConsole); the current canary invoker uses plain subprocess.run -> agy hangs/crashes/no output. Build a PTY-native canary harness reusing hub._ask_with_pty daemon-reader queue; AgyAdapter.parse_output already sanitizes ANSI/CR/BS so artifacts are deterministically judgeable once driven. Certify the pywinpty path or keep ag performance-axis DECLARED-ONLY. Peer-level context IS statusline-measurable; session-level stays absent (see T36/D9). BLOCKS ag joining the measured level. [2026-07-13: detailed to TDD-ready in docs-v2/ops/capability-leveling-decisions.md §2 (cx spec + ag PTY/quota cross-check + cc synthesis); status ready.]",
+   "last_verified_at": "2026-07-13T15:55:00"
   },
   {
    "id": "T43",
@@ -1447,10 +1449,11 @@
     "_sys/ai/capability-declarations.json",
     "_sys/core/snapshot.py",
     "_sys/checks/check_config.py",
-    "_sys/docs-v2/ops/capability-leveling.md"
+    "_sys/docs-v2/ops/capability-leveling.md",
+    "_sys/docs-v2/ops/capability-leveling-decisions.md"
    ],
-   "next_action": "capability-leveling.md Phase 1 / §4,§8. Add governed _sys/ai/capability-declarations.json (composite+model-cards, declared/unverified, NEVER routed); build the per-axis resolver (measured>operational>declared>absent, do-not-reconcile-scales) writing .ai/capability-reality.json (MATCH/DRIFT/CONTRADICTED/ABSENT); new check verifies provenance, source-tag x verification, runtime/suite fingerprint, expiry, scale-compatibility, and the CONTRACT that routing never consumes declared evidence. Reuses app_server/statusline/cli_live only -> spends NO tokens. Migrate the intelligence-scores composite into the declarations registry.",
-   "last_verified_at": "2026-07-13T14:45:00"
+   "next_action": "capability-leveling.md Phase 1 / §4,§8. Add governed _sys/ai/capability-declarations.json (composite+model-cards, declared/unverified, NEVER routed); build the per-axis resolver (measured>operational>declared>absent, do-not-reconcile-scales) writing .ai/capability-reality.json (MATCH/DRIFT/CONTRADICTED/ABSENT); new check verifies provenance, source-tag x verification, runtime/suite fingerprint, expiry, scale-compatibility, and the CONTRACT that routing never consumes declared evidence. Reuses app_server/statusline/cli_live only -> spends NO tokens. Migrate the intelligence-scores composite into the declarations registry. [2026-07-13: detailed to TDD-ready in docs-v2/ops/capability-leveling-decisions.md §2 (cx spec + ag PTY/quota cross-check + cc synthesis); status ready.]",
+   "last_verified_at": "2026-07-13T15:55:00"
   },
   {
    "id": "T44",
@@ -1464,10 +1467,11 @@
    "source_refs": [
     "_sys/checks/check_peer_capability_canary.py",
     "_sys/checks/check_cli_canary.py",
-    "_sys/docs-v2/ops/capability-leveling.md"
+    "_sys/docs-v2/ops/capability-leveling.md",
+    "_sys/docs-v2/ops/capability-leveling-decisions.md"
    ],
-   "next_action": "capability-leveling.md Phase 2 / §5.1-5.2. SPENDS TOKENS (budgeted). Unify T21 + check_cli_canary onto one budget ledger (T21 currently ignores it). Add capability-core.v1 (reasoning=closed-form, code=fixture+hidden tests+exact diff, agentic=T21-style file/schema/forbidden-path/truthful-failure), judged ONLY on deterministic artifacts (no transcript, no LLM judge), 3 repeatability; long_context.{8k,32k,128k}.v1 separate, never above measured capacity. Hard bounds: exactly 3 invocations/profile, atomic reserve, no auto-measure below reserve floor; actual_tokens=absent unless machine-observed. Premium/arbiter = allowlist+explicit only; results shadow-only.",
-   "last_verified_at": "2026-07-13T14:45:00"
+   "next_action": "capability-leveling.md Phase 2 / §5.1-5.2. SPENDS TOKENS (budgeted). Unify T21 + check_cli_canary onto one budget ledger (T21 currently ignores it). Add capability-core.v1 (reasoning=closed-form, code=fixture+hidden tests+exact diff, agentic=T21-style file/schema/forbidden-path/truthful-failure), judged ONLY on deterministic artifacts (no transcript, no LLM judge), 3 repeatability; long_context.{8k,32k,128k}.v1 separate, never above measured capacity. Hard bounds: exactly 3 invocations/profile, atomic reserve, no auto-measure below reserve floor; actual_tokens=absent unless machine-observed. Premium/arbiter = allowlist+explicit only; results shadow-only. [2026-07-13: detailed to TDD-ready in docs-v2/ops/capability-leveling-decisions.md §2 (cx spec + ag PTY/quota cross-check + cc synthesis); status ready.]",
+   "last_verified_at": "2026-07-13T15:55:00"
   },
   {
    "id": "T45",
@@ -1482,10 +1486,11 @@
     "_sys/core/snapshot.py",
     "_sys/ai/routing-config.json",
     "_sys/docs-v2/ops/capability-leveling.md",
-    "_sys/docs-v2/ops/profile-policy-decisions.md"
+    "_sys/docs-v2/ops/profile-policy-decisions.md",
+    "_sys/docs-v2/ops/capability-leveling-decisions.md"
    ],
-   "next_action": "capability-leveling.md Phase 3a / §7. Add gates 5 (measured-capability requirement), 6 (context-fit), 7 economics after profile-policy.md §4. Bulk: measured bulk_fitness = bounded weight multiplier only; declaration-only = neutral 1.0 (no migration regression). D5 complexity gate consumes a task requirement vector; hard-remove measurable-but-unmeasured candidates on required axes, but missing_score_policy=allow for FEASIBILITY-BLOCKED peers (ag pre-PTY) so D5 does not strand ag (ag's adopted refinement); fail-loud on empty; explicit target warn-then-allow; SHADOW events first. Declared/composite scores never enter any gate. D1/D5 real activation = Phase 3b, a separate R:10.",
-   "last_verified_at": "2026-07-13T14:45:00"
+   "next_action": "capability-leveling.md Phase 3a / §7. Add gates 5 (measured-capability requirement), 6 (context-fit), 7 economics after profile-policy.md §4. Bulk: measured bulk_fitness = bounded weight multiplier only; declaration-only = neutral 1.0 (no migration regression). D5 complexity gate consumes a task requirement vector; hard-remove measurable-but-unmeasured candidates on required axes, but missing_score_policy=allow for FEASIBILITY-BLOCKED peers (ag pre-PTY) so D5 does not strand ag (ag's adopted refinement); fail-loud on empty; explicit target warn-then-allow; SHADOW events first. Declared/composite scores never enter any gate. D1/D5 real activation = Phase 3b, a separate R:10. [2026-07-13: detailed to TDD-ready in docs-v2/ops/capability-leveling-decisions.md §2 (cx spec + ag PTY/quota cross-check + cc synthesis); status ready.]",
+   "last_verified_at": "2026-07-13T15:55:00"
   }
  ]
 }
