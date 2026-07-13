@@ -193,7 +193,8 @@ Legend:
 | `diag --sessions` | session reuse, active ids, resume risk |
 | `diag --project` | git/docs/tests/broker/consensus/locks status |
 | `diag --watch [seconds]` | human dashboard refresh; default 5s, minimum 2s |
-| `diag --live [seconds]` | compact in-place SUMMARY → RECENT ACTIVE SESSIONS → FRAME HUD |
+| `diag --live [seconds]` | compact in-place SUMMARY → RECENT SESSIONS → FRAME HUD (no scroll) |
+| `diag --peers` | full dashboard + the verbose per-peer detail cards |
 | `diag --watch-summary [seconds]` | hidden compatibility alias for `--live`; not shown in CLI help |
 | `diag --interval <seconds>` | explicit interval alias for the selected `--watch` or `--live` mode |
 | `diag --json --watch` | NDJSON telemetry stream; no ANSI, no terminal clearing |
@@ -224,12 +225,21 @@ Final peer consensus (`cc.deepthink`, `ag.deepthink`, `cx.deepthink`) uses this 
 - `diag --live` uses the same default and minimum intervals, and is mutually
   exclusive with `--watch`.
 - The live HUD is standalone from tick zero: it renders only SUMMARY, RECENT
-  ACTIVE SESSIONS, and FRAME. It never renders the full dashboard or invokes
+  SESSIONS, and FRAME. It never renders the full dashboard or invokes
   `hub.py status`.
-- RECENT ACTIVE SESSIONS consumes the current snapshot's active rows (not
-  historical sessions), groups them by peer, sorts newest first, and considers
-  at most three rows per peer. Height-constrained rows are allocated round-robin
-  so every peer's newest session is preferred before any peer's second or third.
+- RECENT SESSIONS consumes the current snapshot's session rows, groups them by
+  peer, sorts newest first, and considers at most three rows per peer. Each row
+  shows the real lease state (`[OPEN]`/`[CLOSED]`/`[FAILED]`/`[STALE]`) plus room,
+  so closed/stale records are labelled truthfully rather than called "active".
+  Height-constrained rows are allocated round-robin so every peer's newest
+  session is preferred before any peer's second or third.
+
+One-shot dashboard order (action-first, 2026-07-13 refactor): a compact ROOM
+line, an ATTENTION strip (`[CRIT]`/`[WARN]` peers, gate state, over-capacity
+context, next failover target), then SUMMARY, HEADROOM, RECENT SESSIONS,
+PROFILES & ROUTING, POLICY, FRAME. The verbose per-peer PEER DETAIL cards are
+opt-in behind `--peers`. Peer-state precedence is QUARANTINE > GATE_SHUT > OPEN >
+UNKNOWN everywhere; `NO_COLOR`/non-TTY emits plaintext severity, no emoji/ANSI.
 - The hard minimum interval is 2 seconds; lower requested values are rejected with a non-zero exit code and a clear error message.
 - Cheap local file reads may refresh every frame.
 - Local health/config/sqlite reads use a 5 second TTL by default.
@@ -334,7 +344,7 @@ Implementation should not start until these tests are written or explicitly stub
    - `diag --json` returns valid JSON.
    - `diag --profiles`, `--accounts`, `--tokens`, `--sessions`, and `--project` are read-only.
    - `diag --watch` throttles refresh and does not poll expensive sources faster than TTL.
-   - `diag --live` repaints only SUMMARY, recent active sessions, and FRAME from
+   - `diag --live` repaints only SUMMARY, recent sessions, and FRAME from
      tick zero; it consumes one fresh snapshot per tick and never invokes the
      full dashboard renderer.
    - cheap local file sources may be refreshed every rendered frame.

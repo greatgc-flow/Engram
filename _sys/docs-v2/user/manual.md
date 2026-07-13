@@ -174,14 +174,23 @@ hub peer-status                 # all peers at a glance (canonical status)
 ```
 hub peer-status                 # all peers at a glance (canonical status)
 hub health-precheck --peer ag   # before routing an ask to a peer
-diag                             # diagnostic dashboard (context, quotas, sessions, cost)
+diag                             # action-first dashboard (attention strip, quotas, sessions)
+diag --peers                     # add the verbose per-peer detail cards
 diag --live 5                    # compact no-scroll SUMMARY + recent-session HUD
 diag --json --watch 5            # NDJSON telemetry stream for automation
 ```
 
-`diag --live [seconds]` repaints a standalone SUMMARY → RECENT ACTIVE SESSIONS
-→ FRAME HUD in place. It shows at most three newest active sessions per peer,
-uses five seconds by default, and rejects intervals below two seconds.
+The one-shot `diag` is ordered most-actionable-first: a compact room line, an
+**ATTENTION** strip (any `[CRIT]`/`[WARN]` peer, gate state, over-capacity
+context, and the next failover target), then SUMMARY, HEADROOM, RECENT SESSIONS,
+PROFILES & ROUTING, POLICY, and a freshness FRAME. Session rows show the real
+lease state (`[OPEN]`/`[CLOSED]`/`[FAILED]`). The verbose per-peer cards live
+behind `--peers`. Set `NO_COLOR=1` for plaintext severity (no emoji/ANSI).
+
+`diag --live [seconds]` repaints a standalone SUMMARY → RECENT SESSIONS → FRAME
+HUD in place (no scroll). It shows at most three newest sessions per peer with
+their lease state, uses five seconds by default, and rejects intervals below
+two seconds.
 
 ### Ask a Peer
 ```
