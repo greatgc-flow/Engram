@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-13T09:45:00+09:00",
+  "updated_at": "2026-07-13T10:00:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -1095,6 +1095,84 @@
       ],
       "next_action": "Found 2026-07-13 during a post-T26 usage/consistency check the human requested (diag, cx x-7d). MEASURED (cc, live codex app-server account/rateLimits/read): codex now returns cx a SINGLE 7-day bucket under primary (windowDurationMins=10080, resetsAt 2026-07-20) with secondary=null. snapshot.py hardcoded primary->X-5H(5h)/secondary->X-7D and derived window_hours from the LABEL, so the real 7-day bucket rendered as X-5H with pacing computed against a bogus 5h window - a FALSE 0.18x sense-of-security (old) / and X-7D never appeared. FIX (cx wrote, cc recovered+verified, ag AGREE): new pure helper _codex_quota_buckets(rate_limits) derives label+window_hours from each bucket's windowDurationMins (hours=mins/60; X-{h}H if <=24h else X-{h/24}D), skips null buckets, keeps legacy primary->X-5H/secondary->X-7D fallback when windowDurationMins absent; gather_peer cx branch now quotas.extend(_codex_quota_buckets(rl)); CC/AG branches untouched. IMPORTANT downstream finding (ag): the corrected pacing now honestly reads ~1.80x 🔴 on cx X-7D (9% of the WEEKLY budget spent ~1.5% into the window = ~6x burn dampened to 1.80x) - a REAL early-window weekly-budget spike that the old mislabel was masking as 0.18x. load_balancer already handles X-7D natively (startswith('X-') + _quota_family_for_profile), no consumer regressed. 3 new parametrized tests (10080->X-7D/168h, 300->X-5H/5h, missing-duration->legacy); full suite 930 passed, diag CLI 67 passed, live diag now shows X-7D correctly. Secondary observations left as-is (not bugs): cx.deepthink 372k-declared vs 353400 session model_context_window (matches prior 272k/258k nominal-vs-usable convention); a cc.fable session showing 294k/200k=147% context (separate, unrelated to quota labeling).",
       "last_verified_at": "2026-07-13T09:45:00"
+    },
+    {
+      "id": "T28",
+      "title": "P0: provisioner/install reports success on partial deployment (component failures printed, not aggregated); T24 --install trusts the false exit code",
+      "status": "proposed",
+      "priority": "high",
+      "category": "lifecycle",
+      "owner": "unassigned",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [],
+      "next_action": "Raised 2026-07-13 from a human-requested install/update/cleanup MECE + convenience review (ag.deepthink + cx.deepthink design pass; cc.fable synthesis; human chose FULL P0 batch). provision truthful-exit: aggregate component failures, validate postconditions, return nonzero on incomplete install/register/unregister Sequenced per cx: T28/T29 truthfulness+consistency first, then T31 update UX, T30 cleanup safety, then T32 status, then T33 manual. Admin: DOCUMENT-ONLY zero-admin rule + status advisory line (both peers rejected auto Defender exclusion as security-weakening/unmeasured).",
+      "last_verified_at": "2026-07-13T10:00:00"
+    },
+    {
+      "id": "T29",
+      "title": "P0: INSTALL.bat bumps declared Python version in runtimes.json while an older interpreter remains (extract only runs when python.exe missing)",
+      "status": "proposed",
+      "priority": "medium",
+      "category": "lifecycle",
+      "owner": "unassigned",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [],
+      "next_action": "Raised 2026-07-13 from a human-requested install/update/cleanup MECE + convenience review (ag.deepthink + cx.deepthink design pass; cc.fable synthesis; human chose FULL P0 batch). do not bump declared Python while old interpreter stays; until safe self-replacement, keep pin + report actionable update requirement Sequenced per cx: T28/T29 truthfulness+consistency first, then T31 update UX, T30 cleanup safety, then T32 status, then T33 manual. Admin: DOCUMENT-ONLY zero-admin rule + status advisory line (both peers rejected auto Defender exclusion as security-weakening/unmeasured).",
+      "last_verified_at": "2026-07-13T10:00:00"
+    },
+    {
+      "id": "T30",
+      "title": "P0: CLEANUP scrubber Tier1 deletes the ENTIRE .ai tree as 'logs' and Tier2 deletes register.state.json without unregistering HKCU/SUBST/junctions; no active-session guard",
+      "status": "proposed",
+      "priority": "high",
+      "category": "lifecycle",
+      "owner": "unassigned",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [],
+      "next_action": "Raised 2026-07-13 from a human-requested install/update/cleanup MECE + convenience review (ag.deepthink + cx.deepthink design pass; cc.fable synthesis; human chose FULL P0 batch). cleanup safety: preserve .ai state (delete only true logs/temp), add active-session guard, require unregister before removing registration/host integration Sequenced per cx: T28/T29 truthfulness+consistency first, then T31 update UX, T30 cleanup safety, then T32 status, then T33 manual. Admin: DOCUMENT-ONLY zero-admin rule + status advisory line (both peers rejected auto Defender exclusion as security-weakening/unmeasured).",
+      "last_verified_at": "2026-07-13T10:00:00"
+    },
+    {
+      "id": "T31",
+      "title": "P0/convenience: UPDATE.bat strands user at --propose-diff; T24 --apply not exposed; 'latest' artifact chosen by timestamp (race); no not_checked/manual coverage category",
+      "status": "proposed",
+      "priority": "medium",
+      "category": "lifecycle",
+      "owner": "unassigned",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [],
+      "next_action": "Raised 2026-07-13 from a human-requested install/update/cleanup MECE + convenience review (ag.deepthink + cx.deepthink design pass; cc.fable synthesis; human chose FULL P0 batch). update UX: Python-driven update flow exposing T24 apply/install behind confirmation using the exact proposal artifact path; add not_checked/manual result category; partial-install reporting Sequenced per cx: T28/T29 truthfulness+consistency first, then T31 update UX, T30 cleanup safety, then T32 status, then T33 manual. Admin: DOCUMENT-ONLY zero-admin rule + status advisory line (both peers rejected auto Defender exclusion as security-weakening/unmeasured).",
+      "last_verified_at": "2026-07-13T10:00:00"
+    },
+    {
+      "id": "T32",
+      "title": "P1 MECE gap: no user-facing STATUS/doctor lifecycle health command (SUBST mount? HKCU intact? python.exe? declared-vs-installed versions? active sessions?) + no admin advisory",
+      "status": "proposed",
+      "priority": "medium",
+      "category": "lifecycle",
+      "owner": "unassigned",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [],
+      "next_action": "Raised 2026-07-13 from a human-requested install/update/cleanup MECE + convenience review (ag.deepthink + cx.deepthink design pass; cc.fable synthesis; human chose FULL P0 batch). add status/doctor pipeline: zero-network lifecycle health + machine-readable output + 'Elevation: standard user (expected)' advisory line Sequenced per cx: T28/T29 truthfulness+consistency first, then T31 update UX, T30 cleanup safety, then T32 status, then T33 manual. Admin: DOCUMENT-ONLY zero-admin rule + status advisory line (both peers rejected auto Defender exclusion as security-weakening/unmeasured).",
+      "last_verified_at": "2026-07-13T10:00:00"
+    },
+    {
+      "id": "T33",
+      "title": "P1: user manual lifecycle sections are stale (lists GPT-5.4/5.5 + disabled Gemini; New PC Setup runs register before install) and omit the zero-admin rule + update-apply flow",
+      "status": "proposed",
+      "priority": "medium",
+      "category": "lifecycle",
+      "owner": "unassigned",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [],
+      "next_action": "Raised 2026-07-13 from a human-requested install/update/cleanup MECE + convenience review (ag.deepthink + cx.deepthink design pass; cc.fable synthesis; human chose FULL P0 batch). rewrite manual lifecycle sections after T28-T32 contracts settle: lifecycle-at-a-glance, install/register/status/update/cleanup, zero-admin rule + optional Defender exception, fix stale model table Sequenced per cx: T28/T29 truthfulness+consistency first, then T31 update UX, T30 cleanup safety, then T32 status, then T33 manual. Admin: DOCUMENT-ONLY zero-admin rule + status advisory line (both peers rejected auto Defender exclusion as security-weakening/unmeasured).",
+      "last_verified_at": "2026-07-13T10:00:00"
     }
   ]
 }
