@@ -18,6 +18,30 @@ if exist "!_RT!" (
     for /f "usebackq delims=" %%p in (`powershell -NoProfile -Command "((Get-Content '!_RT!')|ConvertFrom-Json).runtimes.python.get_pip_url"`) do set "GET_PIP_URL=%%p"
 )
 
+set "PY_DIR=%~dp0_sys\env\python"
+set "PY_EXE=%PY_DIR%\python.exe"
+set "_PY_BUMP=0"
+set "_OLD_PY_VER=%PY_VER%"
+
+:: An existing interpreter must match the declaration before discovery can run.
+:: Safe in-place Python replacement is not implemented, so never rewrite the pin
+:: while a different interpreter remains on disk.
+if exist "%PY_EXE%" (
+    set "_INSTALLED_PY_VER="
+    for /f "tokens=2" %%v in ('"%PY_EXE%" --version 2^>^&1') do set "_INSTALLED_PY_VER=%%v"
+    if "!_INSTALLED_PY_VER!"=="" (
+        echo [Error] Could not read the installed Python version from _sys\env\python\python.exe.
+        exit /b 1
+    )
+    if /i not "!_INSTALLED_PY_VER!"=="!PY_VER!" (
+        echo [Error] Python consistency check failed.
+        echo         Installed: !_INSTALLED_PY_VER!
+        echo         Declared : !PY_VER!
+        echo Close portable tools, remove _sys\env\python, then rerun INSTALL.bat.
+        exit /b 1
+    )
+)
+
 :: ── Auto-fetch latest stable Python (skip with --skip-update) ──
 set "_SKIP_UPDATE=0"
 for %%A in (%*) do if /i "%%A"=="--skip-update" set "_SKIP_UPDATE=1"
@@ -29,17 +53,22 @@ if "!_SKIP_UPDATE!"=="0" (
 
     if not "!_LATEST_VER!"=="" (
         if not "!_LATEST_VER!"=="!PY_VER!" (
-            echo [i] New Python version available: !_LATEST_VER! (current: !PY_VER!)
-            set "_NEW_URL=https://www.python.org/ftp/python/!_LATEST_VER!/python-!_LATEST_VER!-embed-amd64.zip"
-            if exist "!_RT!" (
-                powershell -NoProfile -Command ^
-                    "$d=Get-Content '!_RT!' -Raw | ConvertFrom-Json; $d.runtimes.python.version='!_LATEST_VER!'; $d.runtimes.python.url='!_NEW_URL!'; [System.IO.File]::WriteAllText('!_RT!', ($d | ConvertTo-Json -Depth 10), (New-Object System.Text.UTF8Encoding($false)))"
-                echo [OK] runtimes.json updated to Python !_LATEST_VER!
-                powershell -NoProfile -Command ^
-                    "$log='%~dp0_sys\data\logs\runtimes_drift.jsonl'; $dir=Split-Path $log; if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force $dir | Out-Null }; $line = @{ timestamp=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'); source='install_bat_python_bootstrap'; old_version='!PY_VER!'; new_version='!_LATEST_VER!' } | ConvertTo-Json -Compress; Add-Content -Path $log -Value $line"
+            if exist "%PY_EXE%" (
+                echo [i] Python !PY_VER! is installed; newer !_LATEST_VER! is available.
+                echo [i] Not auto-applied: safe in-place Python replacement is not implemented.
+                echo [i] To upgrade, close portable tools, remove _sys\env\python, then rerun INSTALL.bat.
+            ) else (
+                echo [i] New Python version available for first install: !_LATEST_VER! (pinned: !PY_VER!)
+                set "_NEW_URL=https://www.python.org/ftp/python/!_LATEST_VER!/python-!_LATEST_VER!-embed-amd64.zip"
+                if exist "!_RT!" (
+                    set "_PY_BUMP=1"
+                    set "_OLD_PY_VER=!PY_VER!"
+                    set "PY_VER=!_LATEST_VER!"
+                    set "PY_URL=!_NEW_URL!"
+                ) else (
+                    echo [Warning] runtimes.json is missing; keeping the built-in Python pin.
+                )
             )
-            set "PY_VER=!_LATEST_VER!"
-            set "PY_URL=!_NEW_URL!"
         ) else (
             echo [OK] Python !PY_VER! is already latest stable.
         )
@@ -47,9 +76,6 @@ if "!_SKIP_UPDATE!"=="0" (
         echo [!] Could not fetch latest version. Using pinned: !PY_VER!
     )
 )
-
-set "PY_DIR=%~dp0_sys\env\python"
-set "PY_EXE=%PY_DIR%\python.exe"
 
 echo ^>^>^> Checking for Portable Python %PY_VER%...
 
@@ -85,6 +111,33 @@ if not exist "%PY_EXE%" (
     echo [i] Installing pip from !GET_PIP_URL!...
     curl -L "!GET_PIP_URL!" -o "%~dp0_sys\data\setup-files\get-pip.py"
     "%PY_EXE%" "%~dp0_sys\data\setup-files\get-pip.py" --no-warn-script-location
+)
+
+:: Verify the bootstrap postcondition before the Python dispatcher is invoked.
+set "_INSTALLED_PY_VER="
+for /f "tokens=2" %%v in ('"%PY_EXE%" --version 2^>^&1') do set "_INSTALLED_PY_VER=%%v"
+if /i not "!_INSTALLED_PY_VER!"=="!PY_VER!" (
+    echo [Error] Python bootstrap postcondition failed.
+    echo         Installed: !_INSTALLED_PY_VER!
+    echo         Declared : !PY_VER!
+    exit /b 1
+)
+
+:: Persist a discovered first-install bump only after the interpreter exists and
+:: reports that exact version. If persistence fails, remove the new interpreter
+:: so the old declaration and disk cannot silently diverge.
+if "!_PY_BUMP!"=="1" (
+    powershell -NoProfile -Command ^
+        "$d=Get-Content '!_RT!' -Raw | ConvertFrom-Json; $d.runtimes.python.version='!PY_VER!'; $d.runtimes.python.url='!PY_URL!'; [System.IO.File]::WriteAllText('!_RT!', ($d | ConvertTo-Json -Depth 10), (New-Object System.Text.UTF8Encoding($false)))"
+    if errorlevel 1 (
+        echo [Error] Failed to persist Python !PY_VER! in runtimes.json; rolling back the bootstrap.
+        rmdir /s /q "%PY_DIR%"
+        if exist "%PY_EXE%" echo [Error] Python rollback was incomplete; remove _sys\env\python manually.
+        exit /b 1
+    )
+    echo [OK] runtimes.json updated to Python !PY_VER!
+    powershell -NoProfile -Command ^
+        "$log='%~dp0_sys\data\logs\runtimes_drift.jsonl'; $dir=Split-Path $log; if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force $dir | Out-Null }; $line = @{ timestamp=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'); source='install_bat_python_bootstrap'; old_version='!_OLD_PY_VER!'; new_version='!PY_VER!' } | ConvertTo-Json -Compress; Add-Content -Path $log -Value $line"
 )
 
 echo [OK] Python is ready. Handing over to dispatcher...

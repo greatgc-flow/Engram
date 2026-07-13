@@ -107,9 +107,11 @@ def _register_entry(
 
     # Write registry keys
     written_keys = []
+    errors = []
     for target_name in targets:
         target_cfg = targets_cfg.get(target_name)
         if not target_cfg:
+            errors.append(f"unknown registry target: {target_name}")
             print(f"  [Warning] Unknown target '{target_name}' — skipped")
             continue
         path_base = target_cfg["path"]
@@ -128,25 +130,55 @@ def _register_entry(
             winreg.CloseKey(key)
             written_keys.append(f"HKCU\\{full_path}")
         except Exception as e:
+            errors.append(f"registry write failed: {full_path}: {e}")
             print(f"  [Warning] Registry write failed ({full_path}): {e}")
 
-    print(f"  [OK] Context menu entry registered: {key_name} — {label}")
+    if errors:
+        print(f"  [Fail] Context menu entry incomplete: {key_name} — {label}")
+    else:
+        print(f"  [OK] Context menu entry registered: {key_name} — {label}")
     return {
         "key_name":  key_name,
         "relay":     str(relay_path),
         "reg_keys":  written_keys,
+        "_errors":   errors,
     }
 
 
-def _unregister_entry(key_name: str, targets_cfg: dict, relay_root: Path) -> None:
+def _hkcu_key_state(reg_key: str) -> str:
+    relative = reg_key.replace("HKEY_CURRENT_USER\\", "").replace("HKCU\\", "")
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, relative, 0, winreg.KEY_READ)
+        winreg.CloseKey(key)
+        return "present"
+    except FileNotFoundError:
+        return "absent"
+    except OSError:
+        return "unknown"
+
+
+def _unregister_entry(key_name: str, targets_cfg: dict, relay_root: Path) -> list[str]:
+    errors = []
     for target_cfg in targets_cfg.values():
         full_reg = f"HKCU\\{target_cfg['path']}\\{key_name}"
         subprocess.run(["reg", "delete", full_reg, "/f"], capture_output=True)
+        state = _hkcu_key_state(full_reg)
+        if state != "absent":
+            errors.append(f"registry key removal {state}: {full_reg}")
     for ext in (".bat", ".ico"):
         p = relay_root / f"{key_name}{ext}"
         if p.exists():
-            p.unlink()
-    print(f"  [OK] Entry removed: {key_name}")
+            try:
+                p.unlink()
+            except OSError as exc:
+                errors.append(f"relay removal failed: {p}: {exc}")
+        if p.exists():
+            errors.append(f"relay remains: {p}")
+    if errors:
+        print(f"  [Fail] Entry removal incomplete: {key_name}")
+    else:
+        print(f"  [OK] Entry removed: {key_name}")
+    return errors
 
 
 def _clean_orphans(base_key: str, targets_cfg: dict, relay_root: Path) -> None:
@@ -186,7 +218,7 @@ def _clean_orphans(base_key: str, targets_cfg: dict, relay_root: Path) -> None:
             continue
 
 
-def apply(ctx: dict) -> None:
+def apply(ctx: dict) -> dict:
     """Register all enabled context menu entries from context_menu.json."""
     base_dir   = ctx["base_dir"]
     sys_dir    = ctx["sys_dir"]
@@ -195,8 +227,10 @@ def apply(ctx: dict) -> None:
 
     cfg = _load_context_menu(sys_dir)
     if not cfg:
-        print("  [Warning] context_menu.json missing or empty — skipped")
-        return
+        # A missing/empty context_menu.json is a valid state (context menus
+        # intentionally disabled) — skip, do NOT fail the install pipeline.
+        print("  [Warning] context_menu.json missing or empty — skipped (no context menus)")
+        return {"status": "success", "operation": "registry.apply", "skipped": True}
 
     drive      = virt_state.get("subst_drive") or base_dir.drive.rstrip(":")
     root       = str(Path(f"{drive}:\\")) if virt_state.get("subst_drive") else str(base_dir)
@@ -213,17 +247,19 @@ def apply(ctx: dict) -> None:
     _clean_orphans(base_key, targets_cfg, relay_root)
 
     entries = cfg.get("entries", [])
-    if not entries:
-        print("  [Warning] No entries in context_menu.json")
-
     written = []
+    errors = []
+    if not entries:
+        # No entries configured is a valid state, not a pipeline failure.
+        print("  [Warning] No entries in context_menu.json — nothing to register")
     for entry in entries:
         if not entry.get("enabled", True):
             key_name = f"{base_key}_{_safe_key(entry.get('id', 'entry'))}"
-            _unregister_entry(key_name, targets_cfg, relay_root)
+            errors.extend(_unregister_entry(key_name, targets_cfg, relay_root))
             continue
         record = _register_entry(entry, cfg, base_key, relay_root, paths, root, phys_root, drive)
         if record:
+            errors.extend(record.pop("_errors", []))
             written.append(record)
 
     # Windows 11 classic context menu (HKCU per-user)
@@ -236,15 +272,20 @@ def apply(ctx: dict) -> None:
             winreg.CloseKey(k)
             print(f"  [OK] Windows 11 classic menu enabled")
         except Exception as e:
+            errors.append(f"Windows 11 classic-menu registration failed: {e}")
             print(f"  [Warning] Win11 classic menu: {e}")
 
     ctx["state"]["registry_entries"] = written
     ctx["state"]["relay_root"]       = str(relay_root)
     ctx["state"]["base_key"]         = base_key
+    if errors:
+        print(f"\n  Apply incomplete: {'; '.join(errors)}")
+        return {"status": "failed", "operation": "registry.apply", "errors": errors}
     print("\n  Apply complete.")
+    return {"status": "success"}
 
 
-def remove(ctx: dict) -> None:
+def remove(ctx: dict) -> dict:
     """Unregister context menu entries using saved state or context_menu.json."""
     base_dir   = ctx["base_dir"]
     sys_dir    = ctx["sys_dir"]
@@ -257,6 +298,11 @@ def remove(ctx: dict) -> None:
     print(f"\n{'='*50}")
     print(f" Registrar: remove — {base_dir.name}")
     print(f"{'='*50}")
+    errors = []
+    if not cfg:
+        # Missing/empty config is fine on remove — saved prior state (below) is
+        # the authoritative teardown source; do NOT fail the unregister pipeline.
+        print("  [Warning] context_menu.json missing or empty — using saved state for teardown")
 
     # Use saved state if available (most reliable)
     saved_entries = prior.get("registry_entries", [])
@@ -268,27 +314,42 @@ def remove(ctx: dict) -> None:
             for ext in ("", ".ico"):
                 p = Path(str(relay).rstrip(".bat") + ext) if ext else relay
                 if p.exists():
-                    p.unlink()
+                    try:
+                        p.unlink()
+                    except OSError as exc:
+                        errors.append(f"relay removal failed: {p}: {exc}")
+                if p.exists():
+                    errors.append(f"relay remains: {p}")
             # Remove registry keys
             for reg_key in record.get("reg_keys", []):
                 subprocess.run(["reg", "delete", reg_key.replace("HKCU\\", "HKCU\\"), "/f"], capture_output=True)
+                state = _hkcu_key_state(reg_key)
+                if state != "absent":
+                    errors.append(f"registry key removal {state}: {reg_key}")
             print(f"  [OK] Removed: {key_name}")
     else:
         # Fallback: derive base_key from base_dir and remove all matching entries
         base_key = prior.get("base_key") or _registry_key_name(base_dir)
         for entry in cfg.get("entries", []):
             key_name = f"{base_key}_{_safe_key(entry.get('id', 'entry'))}"
-            _unregister_entry(key_name, targets_cfg, relay_root)
+            errors.extend(_unregister_entry(key_name, targets_cfg, relay_root))
 
     # Remove Windows 11 classic menu key
     if cfg.get("win11_classic_menu", False):
         clsid    = cfg.get("registry", {}).get("win11_classic_menu_clsid", "{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}")
         win11_key = rf"Software\Classes\CLSID\{clsid}"
         subprocess.run(["reg", "delete", f"HKCU\\{win11_key}", "/f"], capture_output=True)
+        state = _hkcu_key_state(f"HKCU\\{win11_key}")
+        if state != "absent":
+            errors.append(f"registry key removal {state}: HKCU\\{win11_key}")
         print(f"  [OK] Windows 11 classic menu key removed")
 
     # Orphan cleanup sweep
     base_key = prior.get("base_key") or _registry_key_name(base_dir)
     _clean_orphans(base_key, targets_cfg, relay_root)
 
+    if errors:
+        print(f"\n  Remove incomplete: {'; '.join(errors)}")
+        return {"status": "failed", "operation": "registry.remove", "errors": errors}
     print("\n  Remove complete.")
+    return {"status": "success"}

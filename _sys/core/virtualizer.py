@@ -92,15 +92,21 @@ def _assign_subst(base_dir: Path, sys_dir: Path) -> str | None:
     return None
 
 
-def _release_subst(base_dir: Path) -> None:
+def _release_subst(base_dir: Path) -> bool:
     subst_map = _get_subst_mappings()
     for letter, path in subst_map.items():
         if path.resolve() == base_dir.resolve():
-            subprocess.run(["subst", f"{letter}:", "/D"], capture_output=True)
-            print(f"  [OK] Released SUBST: {letter}:")
-            return
+            result = subprocess.run(["subst", f"{letter}:", "/D"], capture_output=True)
+            remaining = _get_subst_mappings().get(letter)
+            still_ours = remaining is not None and remaining.resolve() == base_dir.resolve()
+            if not still_ours:
+                print(f"  [OK] Released SUBST: {letter}:")
+                return True
+            print(f"  [Fail] Could not release SUBST: {letter}: (exit={result.returncode})")
+            return False
     # Also try from saved state
     # (handled by caller via prior_state)
+    return True
 
 
 def _ensure_junction(host: Path, portable: Path) -> None:
@@ -142,12 +148,14 @@ def _ensure_junction(host: Path, portable: Path) -> None:
     _cmd(f'mklink /J "{host}" "{portable}"')
 
 
-def _remove_junction(host: Path) -> None:
+def _remove_junction(host: Path) -> bool:
     try:
         st = host.lstat()
         is_reparse = os.path.islink(host) or getattr(st, "st_reparse_tag", 0) == 0xA0000003
-    except Exception:
-        return
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
     if is_reparse:
         try:
             host.unlink()
@@ -156,6 +164,14 @@ def _remove_junction(host: Path) -> None:
                 os.rmdir(host)
             except Exception as e:
                 print(f"  [Fail] Could not remove junction {host}: {e}")
+                return False
+    try:
+        st = host.lstat()
+        return not (os.path.islink(host) or getattr(st, "st_reparse_tag", 0) == 0xA0000003)
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
 
 
 def _set_peer_junctions(base_dir: Path, peer_id: str, peer: dict, sys_dir: Path) -> list:
@@ -193,8 +209,9 @@ def _set_peer_junctions(base_dir: Path, peer_id: str, peer: dict, sys_dir: Path)
     return records
 
 
-def _remove_peer_junctions(base_dir: Path, peer_id: str, peer: dict, sys_dir: Path) -> None:
+def _remove_peer_junctions(base_dir: Path, peer_id: str, peer: dict, sys_dir: Path) -> list[str]:
     sub = sys_dir / peer.get("sys_subdir", peer_id)
+    errors = []
 
     host_j = peer.get("host_junction")
     if host_j:
@@ -202,19 +219,24 @@ def _remove_peer_junctions(base_dir: Path, peer_id: str, peer: dict, sys_dir: Pa
         host_dirname = host_j.get("host_dirname")
         if host_env in os.environ:
             host_path = Path(os.environ[host_env]) / host_dirname
-            _remove_junction(host_path)
+            if not _remove_junction(host_path):
+                errors.append(f"{peer_id}: host junction remains at {host_path}")
             backup = host_path.with_suffix(".host_backup")
             if backup.exists():
                 shutil.move(str(backup), str(host_path))
                 print(f"  [Info] {peer_id}: restored host config from backup")
             else:
                 print(f"  [OK] {peer_id}: host junction removed ({host_dirname})")
+        else:
+            errors.append(f"{peer_id}: host environment variable is unavailable: {host_env}")
 
     proj_j = peer.get("project_junction")
     if proj_j:
         root_dir = peer.get("root_dir", f".{peer_id}")
-        _remove_junction(base_dir / root_dir)
+        if not _remove_junction(base_dir / root_dir):
+            errors.append(f"{peer_id}: project junction remains at {base_dir / root_dir}")
         print(f"  [OK] {peer_id}: project junction removed ({root_dir})")
+    return errors
 
 
 def _apply_local_settings(base_dir: Path, peer_id: str, peer_cfg: dict, drive: str, sys_dir: Path) -> None:
@@ -233,7 +255,7 @@ def _apply_local_settings(base_dir: Path, peer_id: str, peer_cfg: dict, drive: s
         print(f"  [OK] {peer_id}: {target_rel} written")
 
 
-def mount(ctx: dict) -> None:
+def mount(ctx: dict) -> dict:
     """Assign SUBST drive and create peer junctions."""
     base_dir = ctx["base_dir"]
     sys_dir  = ctx["sys_dir"]
@@ -245,8 +267,11 @@ def mount(ctx: dict) -> None:
 
     # Peer junctions
     junctions = []
+    expected_junctions = 0
     for peer_id, peer in peers.items():
         if peer.get("enabled", True):
+            expected_junctions += int(bool(peer.get("host_junction")))
+            expected_junctions += int(bool(peer.get("project_junction")))
             junctions += _set_peer_junctions(base_dir, peer_id, peer, sys_dir)
 
     # SUBST drive
@@ -260,15 +285,25 @@ def mount(ctx: dict) -> None:
 
     ctx["state"]["subst_drive"]  = drive
     ctx["state"]["junctions"]    = junctions
+    errors = []
+    if drive is None:
+        errors.append("SUBST drive was not assigned")
+    if len(junctions) != expected_junctions:
+        errors.append(f"created {len(junctions)}/{expected_junctions} required junctions")
+    if errors:
+        print(f"\n  Mount incomplete: {'; '.join(errors)}")
+        return {"status": "failed", "operation": "virtual.mount", "errors": errors}
     print("\n  Mount complete.")
+    return {"status": "success"}
 
 
-def unmount(ctx: dict) -> None:
+def unmount(ctx: dict) -> dict:
     """Release SUBST drive and remove peer junctions."""
     base_dir    = ctx["base_dir"]
     sys_dir     = ctx["sys_dir"]
     peers       = _load_peers(sys_dir)
     prior_state = _load_state(ctx)
+    errors = []
 
     print(f"\n{'='*50}")
     print(f" Virtualizer: unmount — {base_dir.name}")
@@ -277,14 +312,20 @@ def unmount(ctx: dict) -> None:
     # Release SUBST
     drive = prior_state.get("subst_drive")
     if drive:
-        subprocess.run(["subst", f"{drive}:", "/D"], capture_output=True)
-        print(f"  [OK] Released SUBST: {drive}:")
+        result = subprocess.run(["subst", f"{drive}:", "/D"], capture_output=True)
+        remaining = _get_subst_mappings().get(str(drive).rstrip(":").upper())
+        still_ours = remaining is not None and remaining.resolve() == base_dir.resolve()
+        if not still_ours:
+            print(f"  [OK] Released SUBST: {drive}:")
+        else:
+            errors.append(f"could not release SUBST drive {drive}: (exit={result.returncode})")
     else:
-        _release_subst(base_dir)
+        if not _release_subst(base_dir):
+            errors.append("could not release SUBST drive")
 
     # Remove peer junctions
     for peer_id, peer in peers.items():
-        _remove_peer_junctions(base_dir, peer_id, peer, sys_dir)
+        errors.extend(_remove_peer_junctions(base_dir, peer_id, peer, sys_dir))
 
     # Remove per-peer local settings
     for peer_id, peer_cfg in peers.items():
@@ -294,7 +335,11 @@ def unmount(ctx: dict) -> None:
             settings.unlink()
             print(f"  [OK] {peer_id}: settings.local.json removed")
 
+    if errors:
+        print(f"\n  Unmount incomplete: {'; '.join(errors)}")
+        return {"status": "failed", "operation": "virtual.unmount", "errors": errors}
     print("\n  Unmount complete.")
+    return {"status": "success"}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -89,7 +89,17 @@ def _prune_state(ctx: dict) -> None:
             print(f"  [OK] State pruned: {f.name}")
 
 
-def _run_operation(op_id: str, op_cfg: dict, ctx: dict) -> None:
+def _result_failed(result) -> bool:
+    if result is False:
+        return True
+    if not isinstance(result, dict):
+        return False
+    return str(result.get("status", "")).lower() in {
+        "error", "failed", "failure", "incomplete", "postcondition_failed",
+    }
+
+
+def _run_operation(op_id: str, op_cfg: dict, ctx: dict):
     module_name = op_cfg["module"]
     method_name = op_cfg.get("method", "main")
     failure     = op_cfg.get("failure_policy", "abort")
@@ -97,16 +107,21 @@ def _run_operation(op_id: str, op_cfg: dict, ctx: dict) -> None:
     try:
         mod    = importlib.import_module(module_name)
         method = getattr(mod, method_name)
-        method(ctx)
+        result = method(ctx)
     except SystemExit:
         raise
     except Exception as e:
         print(f"  [Error] Operation '{op_id}' ({module_name}.{method_name}): {e}")
-        if failure == "continue":
-            return
-        if failure == "warn":
-            return
+        if failure in ("continue", "warn"):
+            return {"status": "failed", "operation": op_id, "detail": str(e)}
         raise
+
+    if _result_failed(result):
+        detail = result.get("detail") or result.get("failed") or result
+        print(f"  [Error] Operation '{op_id}' returned failure: {detail}")
+        if failure not in ("continue", "warn"):
+            raise RuntimeError(f"operation '{op_id}' failed: {detail}")
+    return result
 
 
 def run_pipeline(cmd: str, extra_args: list) -> None:
@@ -125,19 +140,30 @@ def run_pipeline(cmd: str, extra_args: list) -> None:
         sys.exit(1)
 
     ctx = _build_ctx(cmd, extra_args)
+    failures = []
 
     for op_id in pipelines[cmd]:
         if op_id == "state.write":
-            _write_state(ctx)
+            if not failures:
+                _write_state(ctx)
             continue
         if op_id == "state.prune":
-            _prune_state(ctx)
+            if not failures:
+                _prune_state(ctx)
             continue
         op_cfg = operations.get(op_id)
         if not op_cfg:
-            print(f"  [Warning] Unknown operation '{op_id}' — skipped")
+            failure = {"status": "failed", "operation": op_id, "detail": "operation is not configured"}
+            failures.append(failure)
+            print(f"  [Error] Unknown operation '{op_id}'")
             continue
-        _run_operation(op_id, op_cfg, ctx)
+        result = _run_operation(op_id, op_cfg, ctx)
+        if _result_failed(result):
+            failures.append(result)
+
+    if failures:
+        names = ", ".join(str(item.get("operation", "unknown")) for item in failures)
+        raise RuntimeError(f"pipeline '{cmd}' incomplete; failed operations: {names}")
 
 
 if __name__ == "__main__":

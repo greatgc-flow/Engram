@@ -35,6 +35,72 @@ def _make_fixture_zip(dest: Path, exe_name: str, nested: bool = True) -> None:
         zf.writestr(arcname, b"fake binary contents")
 
 
+def _make_deploy_ctx(tmp_path: Path, runtimes: dict) -> tuple[Path, dict]:
+    sys_dir = _make_sys_dir(tmp_path, {})
+    (sys_dir / "runtimes.json").write_text(
+        json.dumps({"runtimes": runtimes, "tools": {}}), encoding="utf-8"
+    )
+    venv_py = sys_dir / "env" / "venv" / "Scripts" / "python.exe"
+    venv_py.parent.mkdir(parents=True)
+    venv_py.write_bytes(b"fake venv python")
+    return sys_dir, {
+        "base_dir": tmp_path,
+        "sys_dir": sys_dir,
+        "args": [],
+        "state": {},
+    }
+
+
+class TestDeployOutcomeTruthfulness:
+    def test_success_result_with_missing_postcondition_fails_deploy(self, monkeypatch, tmp_path):
+        sys_dir, ctx = _make_deploy_ctx(tmp_path, {
+            "nodejs": {"version": "1.0.0", "url": "https://example/node.zip"}
+        })
+        monkeypatch.setattr(
+            pv, "ensure_runtime",
+            lambda *_args, **_kwargs: {"status": "success", "detail": "reported success"},
+        )
+        monkeypatch.setattr(
+            pv.subprocess, "run",
+            lambda *args, **kwargs: type("R", (), {"returncode": 0})(),
+        )
+
+        result = pv.deploy(ctx)
+
+        assert result["status"] == "failed"
+        assert result["failed"] == [{
+            "component": "nodejs",
+            "status": "postcondition_failed",
+            "detail": "installer reported success but the expected installed path is absent",
+        }]
+        assert ctx["state"]["failed"] == result["failed"]
+        assert not (sys_dir / "env" / "nodejs" / "node.exe").exists()
+
+    def test_deferred_only_deploy_remains_nonfatal(self, monkeypatch, tmp_path):
+        _sys_dir, ctx = _make_deploy_ctx(tmp_path, {
+            "nodejs": {"version": "1.0.0", "url": "https://example/node.zip"}
+        })
+        monkeypatch.setattr(
+            pv, "ensure_runtime",
+            lambda *_args, **_kwargs: {"status": "in_use_deferred", "detail": "active lease"},
+        )
+        monkeypatch.setattr(
+            pv.subprocess, "run",
+            lambda *args, **kwargs: type("R", (), {"returncode": 0})(),
+        )
+
+        result = pv.deploy(ctx)
+
+        assert result["status"] == "deferred"
+        assert result["failed"] == []
+        assert result["deferred"] == [{
+            "component": "nodejs",
+            "status": "in_use_deferred",
+            "detail": "active lease",
+        }]
+        assert pv._exit_code(result) == 0
+
+
 class TestEnsureToolZip:
     def test_missing_tool_installs_and_flattens_nested_zip(self, monkeypatch, tmp_path):
         sys_dir = _make_sys_dir(tmp_path, {

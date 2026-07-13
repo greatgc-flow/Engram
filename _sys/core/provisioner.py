@@ -733,7 +733,74 @@ def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = 
     return {"status": "success", "detail": "Installed successfully"}
 
 
-def deploy(ctx: dict) -> None:
+_DEPLOY_SUCCESS_STATUSES = {"success", "already_current"}
+_DEPLOY_DEFERRED_STATUSES = {
+    "in_use_retry_at_session_boundary",
+    "in_use_deferred",
+    "npm_install_retry_deferred",
+}
+
+
+def _runtime_postcondition(sys_dir: Path, name: str, cfg: dict) -> bool:
+    runtime_dir = sys_dir / "env" / name
+    expected = {
+        "python": [runtime_dir / "python.exe"],
+        "nodejs": [runtime_dir / "node.exe"],
+        "git": [runtime_dir / "cmd" / "git.exe", runtime_dir / "bin" / "git.exe"],
+        "vscode": [runtime_dir / "Code.exe"],
+        "pwsh": [runtime_dir / "pwsh.exe"],
+    }.get(name)
+    if expected is None:
+        bin_name = cfg.get("bin")
+        expected = [runtime_dir / bin_name] if bin_name else [runtime_dir / ".install_manifest.json"]
+    return any(path.exists() for path in expected)
+
+
+def _tool_postcondition(sys_dir: Path, name: str, cfg: dict) -> bool:
+    bin_name = cfg.get("bin", f"{name}.exe")
+    return (sys_dir / "tools" / name / bin_name).exists()
+
+
+def _peer_postcondition(sys_dir: Path, peer_id: str, cfg: dict) -> bool:
+    native = cfg.get("native_binary")
+    if native:
+        install_subdir = native.get("install_subdir", f"tools/{peer_id}")
+        bin_name = native.get("win_exe") or native.get("bin_name") or f"{peer_id}.exe"
+        return (sys_dir / install_subdir / bin_name).exists()
+    return (sys_dir / "env" / "nodejs" / "npm-global" / f"{peer_id}.cmd").exists()
+
+
+def _record_deploy_outcome(
+    component: str,
+    result: dict,
+    postcondition_ok: bool,
+    installed: list[str],
+    deferred: list[dict],
+    failed: list[dict],
+) -> None:
+    status = result.get("status", "error") if isinstance(result, dict) else "error"
+    detail = result.get("detail", "missing result") if isinstance(result, dict) else "invalid result"
+    if status in _DEPLOY_SUCCESS_STATUSES:
+        if postcondition_ok:
+            installed.append(component)
+            print(f"  [OK] {component} ({status})")
+        else:
+            failure = {
+                "component": component,
+                "status": "postcondition_failed",
+                "detail": "installer reported success but the expected installed path is absent",
+            }
+            failed.append(failure)
+            print(f"  [!] {component} failed: {failure['detail']}")
+    elif status in _DEPLOY_DEFERRED_STATUSES:
+        deferred.append({"component": component, "status": status, "detail": detail})
+        print(f"  [~] {component} deferred: {detail}")
+    else:
+        failed.append({"component": component, "status": status, "detail": detail})
+        print(f"  [!] {component} failed: {detail}")
+
+
+def deploy(ctx: dict) -> dict:
     """Install all runtimes, tools, and AI peer CLIs via ensure_runtime/
     ensure_tool/ensure_peer_cli - every entry in runtimes.json/peers.json is
     manifest-tracked and update-aware (D11), not just install-if-missing."""
@@ -777,6 +844,8 @@ def deploy(ctx: dict) -> None:
     print("  [OK] Folder structure ready")
 
     installed = []
+    deferred = []
+    failed = []
 
     # ── Base runtimes (python/nodejs/git/vscode/pwsh) ─────────────
     print("\n>>> Base runtimes")
@@ -785,12 +854,14 @@ def deploy(ctx: dict) -> None:
         if skip_vsc and rt_name == "vscode":
             continue
         res = ensure_runtime(rt_name, sys_dir=sys_dir, force=force)
-        status = res.get("status")
-        if status in ("success", "already_current"):
-            installed.append(rt_name)
-            print(f"  [OK] {rt_name} ({status})")
-        else:
-            print(f"  [!] {rt_name} failed: {res.get('detail')}")
+        _record_deploy_outcome(
+            rt_name,
+            res,
+            _runtime_postcondition(sys_dir, rt_name, raw["runtimes"][rt_name]),
+            installed,
+            deferred,
+            failed,
+        )
 
     # ── Python venv (not an immutable vendor binary - stays procedural) ──
     print("\n>>> Python venv")
@@ -804,7 +875,14 @@ def deploy(ctx: dict) -> None:
     for pkg in ["filelock", "pywinpty"]:
         subprocess.run([str(venv_py), "-m", "pip", "install", pkg, "--quiet"], check=True)
         print(f"  [OK] {pkg} installed")
-    installed.append("venv")
+    if venv_py.exists():
+        installed.append("venv")
+    else:
+        failed.append({
+            "component": "venv",
+            "status": "postcondition_failed",
+            "detail": "virtualenv command completed but the venv interpreter is absent",
+        })
 
     # ── CLI Tools ────────────────────────────────────────────────
     print("\n>>> CLI Tools")
@@ -817,12 +895,14 @@ def deploy(ctx: dict) -> None:
         ):
             continue  # e.g. agy: a peer CLI's native binary, skip under --skip-ai too
         res = ensure_tool(tool_name, sys_dir=sys_dir, force=force)
-        status = res.get("status")
-        if status in ("success", "already_current"):
-            installed.append(tool_name)
-            print(f"  [OK] {tool_name} ({status})")
-        else:
-            print(f"  [!] {tool_name} failed: {res.get('detail')}")
+        _record_deploy_outcome(
+            tool_name,
+            res,
+            _tool_postcondition(sys_dir, tool_name, tool_cfg),
+            installed,
+            deferred,
+            failed,
+        )
 
     # ── AI Peer CLIs ─────────────────────────────────────────────
     if not skip_ai:
@@ -831,22 +911,37 @@ def deploy(ctx: dict) -> None:
             if not cfg.get("enabled"):
                 continue
             res = ensure_peer_cli(peer_id, sys_dir=sys_dir, force=force)
-            status = res.get("status")
-            if status in ("success", "already_current"):
-                installed.append(peer_id)
-                print(f"  [OK] {peer_id} ({status})")
-            else:
-                print(f"  [!] {peer_id} failed: {res.get('detail')}")
+            _record_deploy_outcome(
+                peer_id,
+                res,
+                _peer_postcondition(sys_dir, peer_id, cfg),
+                installed,
+                deferred,
+                failed,
+            )
 
     ctx["state"]["installed"] = installed
+    ctx["state"]["deferred"] = deferred
+    ctx["state"]["failed"] = failed
     print("\n======================================================")
-    print("  Provisioner complete.")
+    if failed:
+        print(f"  Provisioner incomplete: {len(failed)} failed, {len(deferred)} deferred.")
+    elif deferred:
+        print(f"  Provisioner complete with {len(deferred)} deferred component(s).")
+    else:
+        print("  Provisioner complete.")
     print("======================================================")
+    return {
+        "status": "failed" if failed else ("deferred" if deferred else "success"),
+        "installed": installed,
+        "deferred": deferred,
+        "failed": failed,
+    }
 
 
 def _exit_code(res: dict) -> int:
     status = res.get("status")
-    if status in ("success", "already_current"):
+    if status in ("success", "already_current", "deferred"):
         return 0
     if status in ("in_use_retry_at_session_boundary", "in_use_deferred", "npm_install_retry_deferred"):
         return 3
@@ -935,7 +1030,8 @@ if __name__ == "__main__":
         "state":    {},
     }
     try:
-        deploy(ctx)
+        result = deploy(ctx)
+        sys.exit(_exit_code(result))
     except Exception as e:
         print(f"\n[FATAL] {e}")
         traceback.print_exc()

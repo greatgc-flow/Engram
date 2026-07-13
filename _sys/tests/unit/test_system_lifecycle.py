@@ -28,6 +28,7 @@ for p in (_cli_path, _sys_path):
         sys.path.insert(0, str(p))
 
 from core import virtualizer  # noqa: E402
+from core import registrar  # noqa: E402
 import cleanup  # noqa: E402
 
 
@@ -71,23 +72,65 @@ class TestSystemLifecycle:
              patch.object(virtualizer, "_get_subst_mappings", return_value={}), \
              patch("os.path.exists", side_effect=_no_drive_exists), \
              patch("subprocess.run", return_value=MagicMock(returncode=0)):
-            virtualizer.mount(ctx)
+            mount_result = virtualizer.mount(ctx)
 
         drive = ctx["state"].get("subst_drive")
         assert drive is not None, "mount 후 state에 subst_drive 가 있어야 함"
+        assert mount_result["status"] == "success"
 
         # unmount — prior_state 를 통해 drive 전달 (unmount는 _load_state → prior_state 사용)
         ctx2 = _make_ctx(mock_env, tmp_path)
         ctx2["prior_state"] = {"subst_drive": drive}
         with patch.object(virtualizer, "_load_peers", return_value={}), \
              patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_run:
-            virtualizer.unmount(ctx2)
+            unmount_result = virtualizer.unmount(ctx2)
 
         release_calls = [
             c for c in mock_run.call_args_list
             if isinstance(c.args[0], list) and "/D" in c.args[0]
         ]
         assert release_calls, "unmount 후 subst /D 가 호출되어야 함"
+        assert unmount_result["status"] == "success"
+
+    def test_mount_reports_failed_when_subst_assignment_is_missing(self, mock_env, tmp_path):
+        ctx = _make_ctx(mock_env, tmp_path)
+        with patch.object(virtualizer, "_load_peers", return_value={}), \
+             patch.object(virtualizer, "_assign_subst", return_value=None):
+            result = virtualizer.mount(ctx)
+
+        assert result["status"] == "failed"
+        assert "SUBST drive was not assigned" in result["errors"]
+
+    def test_unmount_reports_failed_when_subst_mapping_remains(self, mock_env, tmp_path):
+        ctx = _make_ctx(mock_env, tmp_path)
+        ctx["prior_state"] = {"subst_drive": "P"}
+        with patch.object(virtualizer, "_load_peers", return_value={}), \
+             patch.object(virtualizer, "_get_subst_mappings", return_value={"P": mock_env}), \
+             patch("subprocess.run", return_value=MagicMock(returncode=5)):
+            result = virtualizer.unmount(ctx)
+
+        assert result["status"] == "failed"
+        assert "could not release SUBST drive P:" in result["errors"][0]
+
+    def test_registrar_apply_empty_or_missing_config_is_success_not_failure(self, mock_env, tmp_path):
+        """T28 regression (ag-caught): an empty/missing context_menu.json is a
+        valid 'context menus disabled' state and must NOT fail the install
+        pipeline. apply() returns success (skipped), never 'failed'."""
+        ctx = _make_ctx(mock_env, tmp_path)
+        with patch.object(registrar, "_load_context_menu", return_value={}):
+            result = registrar.apply(ctx)
+        assert result["status"] == "success"
+
+    def test_registrar_remove_missing_config_is_success_not_failure(self, mock_env, tmp_path):
+        """T28 regression (ag-caught): a missing context_menu.json on remove is
+        fine — saved prior state drives teardown; unregister must NOT fail."""
+        ctx = _make_ctx(mock_env, tmp_path)
+        with patch.object(registrar, "_load_context_menu", return_value={}), \
+             patch.object(registrar, "_load_state", return_value={}), \
+             patch.object(registrar, "_clean_orphans", return_value=None), \
+             patch("subprocess.run", return_value=MagicMock(returncode=0)):
+            result = registrar.remove(ctx)
+        assert result["status"] == "success"
 
     def test_cleanup_tiers_sys_c1(self, mock_env):
         """SYS-C1: 클린업 티어별 MECE 검증."""

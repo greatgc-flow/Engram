@@ -156,7 +156,9 @@ class TestPathScenarios:
              patch("winreg.CloseKey"), \
              patch.object(registrar, "_resolve_icon", return_value=None), \
              patch.object(registrar, "_clean_orphans"):
-            registrar.apply(ctx)
+            result = registrar.apply(ctx)
+
+        assert result["status"] == "success"
 
         cmd_values = [
             str(c.args[4]) for c in mock_set_val.call_args_list
@@ -167,6 +169,47 @@ class TestPathScenarios:
         assert cmd_values, 'cmd.exe /c "" 패턴이 레지스트리 명령에 있어야 함'
         for cmd in cmd_values:
             assert cmd.startswith('cmd.exe /c ""'), f"이중인용부호 래핑 없음: {cmd}"
+
+    def test_registry_apply_reports_failed_write(self, korean_base, tmp_path):
+        """A registry write error must make register fail truthfully."""
+        sys_dir = korean_base / "_sys"
+        sys_dir.mkdir(parents=True, exist_ok=True)
+        (sys_dir / "context_menu.json").write_text(
+            json.dumps(
+                {
+                    "win11_classic_menu": False,
+                    "registry": {
+                        "targets": {
+                            "Directory": {
+                                "path": r"Software\Classes\Directory\shell",
+                                "arg": "%V",
+                            }
+                        }
+                    },
+                    "entries": [
+                        {
+                            "id": "sandbox_open",
+                            "label": "Open Sandbox ({DRIVE}:)",
+                            "icon": "",
+                            "targets": ["Directory"],
+                            "enabled": True,
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        ctx = _make_ctx(korean_base, tmp_path)
+        ctx["state"]["subst_drive"] = "P"
+
+        with patch.dict(os.environ, {"LOCALAPPDATA": str(ctx["paths"]["localappdata"])}), \
+             patch("winreg.CreateKey", side_effect=PermissionError("denied")), \
+             patch.object(registrar, "_resolve_icon", return_value=None), \
+             patch.object(registrar, "_clean_orphans"):
+            result = registrar.apply(ctx)
+
+        assert result["status"] == "failed"
+        assert any("registry write failed" in error for error in result["errors"])
 
     def test_korean_path_with_spaces(self, tmp_path):
         """Scenario 7: 한글 + 공백 경로에서 SUBST 정상 할당."""

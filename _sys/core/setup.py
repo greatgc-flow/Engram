@@ -28,7 +28,9 @@ if __name__ == "__main__":
         "state": {},
     }
     try:
-        deploy(ctx)
+        from core.provisioner import _exit_code
+        result = deploy(ctx)
+        sys.exit(_exit_code(result))
     except Exception as e:
         print(f"\n[FATAL] {e}")
         traceback.print_exc()
