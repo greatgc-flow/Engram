@@ -1129,11 +1129,13 @@
     {
       "id": "T30",
       "title": "P0: CLEANUP scrubber Tier1 deletes the ENTIRE .ai tree as 'logs' and Tier2 deletes register.state.json without unregistering HKCU/SUBST/junctions; no active-session guard",
-      "status": "active",
+      "status": "done",
       "priority": "high",
       "category": "lifecycle",
       "owner": "unassigned",
-      "evidence_commit": [],
+      "evidence_commit": [
+        "a007688"
+      ],
       "supersedes": [],
       "source_refs": [],
       "next_action": "Raised 2026-07-13 from a human-requested install/update/cleanup MECE + convenience review (ag.deepthink + cx.deepthink design pass; cc.fable synthesis; human chose FULL P0 batch). cleanup safety: preserve .ai state (delete only true logs/temp), add active-session guard, require unregister before removing registration/host integration Sequenced per cx: T28/T29 truthfulness+consistency first, then T31 update UX, T30 cleanup safety, then T32 status, then T33 manual. Admin: DOCUMENT-ONLY zero-admin rule + status advisory line (both peers rejected auto Defender exclusion as security-weakening/unmeasured). IMPLEMENTED 2026-07-13 (cc implemented directly - cx quota-constrained on its weekly X-7D bucket - ag cross-reviewed and CAUGHT 2 MORE real issues cc then fixed). Three cleanup-safety defects fixed in scrubber.py: (1) Tier 1 no longer deletes the whole .ai tree - new _clean_ai_ephemeral() removes ONLY ephemeral .ai items (ipc/, out/, routing_metrics/operations/ask_history/operational_errors.jsonl, cli-reality-observed.json, *.tmp/*.stdout.txt/*.stderr.txt) and PRESERVES governance state (consensus/, quarantine/, state.json, leases.json, sessions/, nodes.json, mailbox, knowledge/, lessons/, broker/, canary_*.json, cli-reality-baseline.json) - preserve-by-default + explicit ephemeral allowlist. (2) new _active_sessions_present() guard: run() refuses to scrub when a .ai/.lock/*.lock is fresh (<3600s) or a lease is unexpired, unless --dry-run (always safe) or a new --force flag; stale locks/expired leases never permanently block. (3) register.state.json host-teardown ledger. AG-CAUGHT FIX #1 (orphan risk): cc's first cut skipped register.state.json deletion only while the SUBST drive was mounted - but a dropped drive (reboot / manual subst /D) leaves HKCU keys + junctions that only the ledger + unregister.bat can remove; ag: scrubber must NEVER delete it. Changed to ALWAYS preserve register.state.json in cleanup (its lifecycle is owned solely by registrar.remove on a successful unregister) + print a 'run unregister.bat' notice. AG-CAUGHT FIX #2 (ZeroBase regression): moving .ai off Tier 1 meant governance .ai was never deleted at ANY tier; added an explicit _remove_path(.ai) to Tier 4 (ZeroBase) so a confirmed clean-slate actually clears it (register.state.json still untouched - unregister.bat owns host-integration teardown). ag REFINE also folded in: operational_errors.jsonl added to the ephemeral allowlist. 4 new T30 regression tests (governance-preserved / active-session-blocks+force-overrides / ledger-never-deleted / tier4-clears-.ai). Full suite 945 passed.",
