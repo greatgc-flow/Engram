@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-13T16:20:00Z",
+ "updated_at": "2026-07-13T16:55:00Z",
  "items": [
   {
    "id": "T7",
@@ -1441,11 +1441,13 @@
   {
    "id": "T43",
    "title": "Capability leveling: declarations store + resolver + reality overlay + check (no token spend)",
-   "status": "proposed",
+   "status": "done",
    "priority": "medium",
    "category": "routing",
    "owner": "unassigned",
-   "evidence_commit": [],
+   "evidence_commit": [
+    "4d91ca1"
+   ],
    "supersedes": [],
    "source_refs": [
     "_sys/ai/capability-declarations.json",
@@ -1455,7 +1457,7 @@
     "_sys/docs-v2/ops/capability-leveling-decisions.md"
    ],
    "next_action": "capability-leveling.md Phase 1 / §4,§8. Add governed _sys/ai/capability-declarations.json (composite+model-cards, declared/unverified, NEVER routed); build the per-axis resolver (measured>operational>declared>absent, do-not-reconcile-scales) writing .ai/capability-reality.json (MATCH/DRIFT/CONTRADICTED/ABSENT); new check verifies provenance, source-tag x verification, runtime/suite fingerprint, expiry, scale-compatibility, and the CONTRACT that routing never consumes declared evidence. Reuses app_server/statusline/cli_live only -> spends NO tokens. Migrate the intelligence-scores composite into the declarations registry. [2026-07-13: detailed to TDD-ready in docs-v2/ops/capability-leveling-decisions.md §2 (cx spec + ag PTY/quota cross-check + cc synthesis); status ready.]",
-   "last_verified_at": "2026-07-13T15:55:00"
+   "last_verified_at": "2026-07-13T16:55:00"
   },
   {
    "id": "T44",
