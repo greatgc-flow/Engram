@@ -2,6 +2,11 @@ import json
 import sys
 from pathlib import Path
 
+
+REQUIRED_PROFILE_NAMES = {"standard", "effort", "deepthink"}
+VALID_PROFILE_CLASSES = {"tier", "specialty"}
+VALID_QUOTA_FAMILIES = {"C", "F", "G", "3P", "X"}
+
 def dict_raise_on_duplicates(ordered_pairs):
     d = {}
     for k, v in ordered_pairs:
@@ -46,8 +51,118 @@ def validate_config(ai_dir: Path | str) -> bool:
     
     hub_nodes = orch.get("hub_nodes", [])
     valid_peers = {node.get("node_id"): node for node in hub_nodes if "node_id" in node}
+
+    # 2a. D2/D4 profile-policy contract. Taxonomy is descriptive only: routing
+    # authority remains routing_state/arbiter_models/bulk_exclude_profiles.
+    profile_entries = []
+    for node in hub_nodes:
+        if node.get("type") != "peer":
+            continue
+        peer_id = node.get("node_id", "<missing>")
+        enabled = node.get("enabled", True) is not False
+        profiles = node.get("profiles", {})
+        if not isinstance(profiles, dict):
+            log_error(f"orchestration.json: peer '{peer_id}' profiles must be a dictionary")
+            continue
+
+        if enabled:
+            missing = REQUIRED_PROFILE_NAMES - set(profiles)
+            if missing:
+                log_error(
+                    f"orchestration.json: enabled peer '{peer_id}' missing tier profiles "
+                    f"{sorted(missing)}"
+                )
+
+        for profile_name, profile in profiles.items():
+            profile_id = f"{peer_id}.{profile_name}"
+            if not isinstance(profile, dict):
+                log_error(f"orchestration.json: profile '{profile_id}' must be a dictionary")
+                continue
+
+            profile_class = profile.get("profile_class")
+            if profile_class not in VALID_PROFILE_CLASSES:
+                log_error(
+                    f"orchestration.json: profile '{profile_id}' profile_class must be "
+                    "'tier' or 'specialty'"
+                )
+            elif profile_name in REQUIRED_PROFILE_NAMES and profile_class != "tier":
+                log_error(f"orchestration.json: required profile '{profile_id}' must be class 'tier'")
+            elif profile_name not in REQUIRED_PROFILE_NAMES and profile_class != "specialty":
+                log_error(f"orchestration.json: non-tier profile '{profile_id}' must be class 'specialty'")
+
+            quota_families = profile.get("quota_families")
+            if enabled and (not isinstance(quota_families, list) or not quota_families):
+                log_error(
+                    f"orchestration.json: enabled profile '{profile_id}' must declare "
+                    "a non-empty quota_families list"
+                )
+                normalized_families = []
+            elif quota_families is None and not enabled:
+                normalized_families = []
+            elif not isinstance(quota_families, list):
+                log_error(f"orchestration.json: profile '{profile_id}' quota_families must be a list")
+                normalized_families = []
+            else:
+                normalized_families = quota_families
+                invalid = [family for family in quota_families if family not in VALID_QUOTA_FAMILIES]
+                if invalid:
+                    log_error(
+                        f"orchestration.json: profile '{profile_id}' has invalid quota families "
+                        f"{invalid}"
+                    )
+                if len(quota_families) != len(set(quota_families)):
+                    log_error(f"orchestration.json: profile '{profile_id}' has duplicate quota families")
+
+            profile_entries.append({
+                "peer": peer_id,
+                "profile": profile_id,
+                "enabled": enabled,
+                "routing_state": profile.get("routing_state"),
+                "quota_families": set(normalized_families),
+            })
+
+    # A protected profile sharing a quota family with an eligible bulk profile
+    # needs an explicit reserve. Specialty class alone never grants protection.
+    tlb = routing.get("token_load_balancing", {}) or {}
+    arbiter_models = set(tlb.get("arbiter_models", []) or [])
+    bulk_excluded = set(tlb.get("bulk_exclude_profiles", []) or [])
+    protected_entries = []
+    bulk_entries = []
+    for entry in profile_entries:
+        if not entry["enabled"]:
+            continue
+        protected = (
+            entry["profile"] in arbiter_models
+            or entry["peer"] in arbiter_models
+            or entry["profile"] in bulk_excluded
+            or entry["peer"] in bulk_excluded
+            or entry["routing_state"] == "manual_only"
+        )
+        if protected:
+            protected_entries.append(entry)
+        elif entry["routing_state"] == "eligible":
+            bulk_entries.append(entry)
+
+    reserve_cfg = tlb.get("shared_quota_reserve", {}) or {}
+    reserve_families = reserve_cfg.get("families", {}) or {}
+    for protected in protected_entries:
+        for family in protected["quota_families"]:
+            shared_with_bulk = any(
+                family in bulk["quota_families"] and bulk["profile"] != protected["profile"]
+                for bulk in bulk_entries
+            )
+            if not shared_with_bulk:
+                continue
+            family_cfg = reserve_families.get(family, {}) or {}
+            reserve_for = set(family_cfg.get("reserve_for", []) or [])
+            if not reserve_cfg.get("enabled") or protected["profile"] not in reserve_for:
+                log_error(
+                    f"routing-config.json: protected profile '{protected['profile']}' shares "
+                    f"quota family '{family}' with bulk but is not protected by "
+                    "shared_quota_reserve"
+                )
     
-    # 2. Invalid peer/profile routing refs
+    # 2b. Invalid peer/profile routing refs
     routing_weights = routing.get("routing_weights", {})
     for r_key, r_val in routing_weights.items():
         if not isinstance(r_val, dict):

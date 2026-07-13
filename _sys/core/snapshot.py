@@ -958,20 +958,74 @@ def _source_tag(record, domain_name):
     return "absent"
 
 
-def _quota_family_for_profile(peer_id, profile_name):
-    if peer_id == "cc":
-        return ("F-", "C-") if profile_name == "fable" else ("C-",)
-    if peer_id == "ag":
-        return ("3P-",) if profile_name in {"opus", "gptoss", "sonnet"} else ("G-",)
-    if peer_id == "cx":
-        return ("X-",)
+_QUOTA_FAMILY_PREFIXES = {
+    "C": "C-",
+    "F": "F-",
+    "G": "G-",
+    "3P": "3P-",
+    "X": "X-",
+}
+
+# Transitional compatibility for pre-D4 orchestration fixtures/configs. Keep
+# this explicit and narrow: an unknown enabled profile has no binding, and the
+# removed ag.sonnet profile must never regain the old guessed 3P family.
+_LEGACY_QUOTA_FAMILIES = {
+    "cc.standard": ("C-",),
+    "cc.effort": ("C-",),
+    "cc.deepthink": ("C-",),
+    "cc.fable": ("F-", "C-"),
+    "ag.standard": ("G-",),
+    "ag.effort": ("G-",),
+    "ag.deepthink": ("G-",),
+    "ag.opus": ("3P-",),
+    "ag.gptoss": ("3P-",),
+    "cx.standard": ("X-",),
+    "cx.effort": ("X-",),
+    "cx.deepthink": ("X-",),
+}
+
+
+def _quota_family_for_profile(peer_id, profile_name, orchestration=None):
+    """Return declared quota-family bucket prefixes for ``peer.profile``.
+
+    ``quota_families`` is policy metadata from orchestration, not telemetry;
+    bucket source tags continue to come from the app-server/statusline records.
+    The optional orchestration argument lets snapshot collection load config
+    once and reuse it for every profile row.
+    """
+    orch = orchestration
+    if orch is None:
+        try:
+            orch = _read_orchestration()
+        except Exception:
+            orch = {}
+
+    profile = None
+    enabled = None
+    for node in (orch or {}).get("hub_nodes", []):
+        if node.get("type") == "peer" and node.get("node_id") == peer_id:
+            enabled = node.get("enabled", True) is not False
+            profile = (node.get("profiles") or {}).get(profile_name)
+            break
+
+    if isinstance(profile, dict):
+        declared = profile.get("quota_families")
+        if isinstance(declared, list) and declared:
+            if any(family not in _QUOTA_FAMILY_PREFIXES for family in declared):
+                return None  # fail closed; check_config reports the declaration error
+            return tuple(_QUOTA_FAMILY_PREFIXES[family] for family in declared)
+        if enabled is False:
+            return None
+        return _LEGACY_QUOTA_FAMILIES.get(f"{peer_id}.{profile_name}")
+
+    # Unknown profiles are absent rather than inheriting a peer-wide guess.
     return None
 
 
-def _filter_profile_buckets(peer_id, profile_name, buckets):
-    family = _quota_family_for_profile(peer_id, profile_name)
+def _filter_profile_buckets(peer_id, profile_name, buckets, orchestration=None):
+    family = _quota_family_for_profile(peer_id, profile_name, orchestration)
     if not family:
-        return list(buckets or [])
+        return []
     return [b for b in (buckets or []) if str(b.get("label", "")).startswith(family)]
 
 
@@ -1063,7 +1117,9 @@ def _build_profile_rows(orch, peer_records, observed_at):
                     **_profile_source("unknown", "absent", observed_at, "unknown"),
                 }
 
-            buckets = _filter_profile_buckets(peer_id, profile_name, root_quota.get("buckets") or [])
+            buckets = _filter_profile_buckets(
+                peer_id, profile_name, root_quota.get("buckets") or [], orch
+            )
             if buckets:
                 quota_tag = _source_tag(peer_rec, "quota")
                 quota = {
@@ -1100,6 +1156,8 @@ def _build_profile_rows(orch, peer_records, observed_at):
                 "profile": f"{peer_id}.{profile_name}",
                 "peer": peer_id,
                 "profile_name": profile_name,
+                "profile_class": prof.get("profile_class"),
+                "quota_families": list(prof.get("quota_families") or []),
                 "model": model,
                 "effort": effort,
                 "cost_tier": prof.get("cost_tier"),

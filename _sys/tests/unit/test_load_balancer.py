@@ -808,6 +808,70 @@ def test_filter_profile_buckets_fable_includes_c_buckets():
     standard_buckets = snapshot._filter_profile_buckets("cc", "standard", buckets)
     assert [b.get("label") for b in standard_buckets] == ["C-5H", "C-7D"]
 
+    measured = snapshot._filter_profile_buckets("cc", "fable", [
+        {"label": "C-5H", "used_frac": 0.20},
+        {"label": "F-7D", "used_frac": 0.75},
+        {"label": "X-7D", "used_frac": 0.99},
+    ])
+    fable_remaining = snapshot._quota_remaining({"quota": {"buckets": measured}})
+    assert fable_remaining == pytest.approx(0.25)
+
+
+def test_declared_quota_family_assignments_and_snapshot_metadata():
+    orch = snapshot._read_orchestration()
+    expected = {
+        "cc.standard": ("C-",),
+        "cc.effort": ("C-",),
+        "cc.deepthink": ("C-",),
+        "cc.fable": ("F-", "C-"),
+        "ag.standard": ("G-",),
+        "ag.effort": ("G-",),
+        "ag.deepthink": ("G-",),
+        "ag.opus": ("3P-",),
+        "ag.gptoss": ("3P-",),
+        "cx.standard": ("X-",),
+        "cx.effort": ("X-",),
+        "cx.deepthink": ("X-",),
+    }
+    for profile_id, families in expected.items():
+        peer_id, profile_name = profile_id.split(".", 1)
+        assert snapshot._quota_family_for_profile(peer_id, profile_name, orch) == families
+
+    observed = "2026-07-13T00:00:00+00:00"
+    rows = snapshot._build_profile_rows(
+        _orch_with_profiles("cx", {
+            "standard": {
+                **_profile_conf(),
+                "profile_class": "tier",
+                "quota_families": ["X"],
+            }
+        }),
+        [_profile_record("cx", "X-7D")],
+        observed,
+    )
+    assert rows[0]["profile_class"] == "tier"
+    assert rows[0]["quota_families"] == ["X"]
+
+
+def test_quota_family_legacy_fallback_omits_removed_ag_sonnet():
+    legacy = {
+        "hub_nodes": [{
+            "node_id": "ag",
+            "type": "peer",
+            "enabled": True,
+            "profiles": {
+                "standard": {"routing_state": "eligible"},
+                "opus": {"routing_state": "manual_only"},
+                "sonnet": {"routing_state": "eligible"},
+                "unknown": {"routing_state": "eligible"},
+            },
+        }]
+    }
+    assert snapshot._quota_family_for_profile("ag", "standard", legacy) == ("G-",)
+    assert snapshot._quota_family_for_profile("ag", "opus", legacy) == ("3P-",)
+    assert snapshot._quota_family_for_profile("ag", "sonnet", legacy) is None
+    assert snapshot._quota_family_for_profile("ag", "unknown", legacy) is None
+
 
 def test_shared_quota_reserve_clamping_and_telemetry():
     cfg = {

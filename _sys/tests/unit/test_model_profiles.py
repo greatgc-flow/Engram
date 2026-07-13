@@ -10,6 +10,31 @@ import hub_peer
 ORCHESTRATION = SYS / "ai" / "orchestration.json"
 REGISTRY = SYS / "ai" / "model-registry.json"
 REQUIRED = {"standard", "effort", "deepthink"}
+EXPECTED_PROFILE_POLICY = {
+    "cc": {
+        "standard": ("tier", ["C"]),
+        "effort": ("tier", ["C"]),
+        "deepthink": ("tier", ["C"]),
+        "fable": ("specialty", ["F", "C"]),
+    },
+    "ca": {
+        "standard": ("tier", []),
+        "effort": ("tier", []),
+        "deepthink": ("tier", []),
+    },
+    "ag": {
+        "standard": ("tier", ["G"]),
+        "effort": ("tier", ["G"]),
+        "deepthink": ("tier", ["G"]),
+        "opus": ("specialty", ["3P"]),
+        "gptoss": ("specialty", ["3P"]),
+    },
+    "cx": {
+        "standard": ("tier", ["X"]),
+        "effort": ("tier", ["X"]),
+        "deepthink": ("tier", ["X"]),
+    },
+}
 
 
 def _raw():
@@ -38,6 +63,28 @@ def test_profile_nodes_are_generated_systematically():
     
     assert len(profile_nodes) == expected_count
     assert all(n["node_id"] == f"{n['parent_node']}.{n['profile_name']}" for n in profile_nodes)
+
+
+def test_profile_policy_migration_matrix_and_normalization():
+    roots = {node["node_id"]: node for node in _raw()["hub_nodes"]}
+    assert set(roots) == set(EXPECTED_PROFILE_POLICY)
+
+    normalized = hub_peer.normalize_orchestration(_raw())
+    profile_nodes = {
+        node["profile_id"]: node
+        for node in normalized["hub_nodes"]
+        if node.get("type") == "profile"
+    }
+    for peer_id, expected_profiles in EXPECTED_PROFILE_POLICY.items():
+        assert set(roots[peer_id]["profiles"]) == set(expected_profiles)
+        for profile_name, (profile_class, quota_families) in expected_profiles.items():
+            raw_profile = roots[peer_id]["profiles"][profile_name]
+            assert raw_profile["profile_class"] == profile_class
+            assert raw_profile.get("quota_families", []) == quota_families
+
+            normalized_profile = profile_nodes[f"{peer_id}.{profile_name}"]
+            assert normalized_profile["profile_class"] == profile_class
+            assert normalized_profile.get("quota_families", []) == quota_families
 
 
 def test_sibling_profiles_do_not_inherit_default_profile_options():
