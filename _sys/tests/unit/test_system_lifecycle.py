@@ -29,6 +29,7 @@ for p in (_cli_path, _sys_path):
 
 from core import virtualizer  # noqa: E402
 from core import registrar  # noqa: E402
+from core import scrubber  # noqa: E402
 import cleanup  # noqa: E402
 
 
@@ -152,6 +153,81 @@ class TestSystemLifecycle:
         assert not (mock_env / "README.md").exists()
         # local.config.bat is a source config (not data) — Tier 4 does NOT delete it
         assert (mock_env / "_sys" / "local.config.bat").exists()
+
+    def test_tier1_preserves_ai_governance_state_deletes_only_ephemeral(self, mock_env):
+        """T30: a light cleanup must NOT wipe .ai governance state (consensus,
+        quarantine, state.json, leases) — only ephemeral logs/IPC are removed."""
+        ai = mock_env / ".ai"
+        (ai / "consensus").mkdir(parents=True)
+        (ai / "consensus" / "r-x.json").write_text("{}", encoding="utf-8")
+        (ai / "quarantine" / "ask-x").mkdir(parents=True)
+        (ai / "quarantine" / "ask-x" / "f.py").write_text("x", encoding="utf-8")
+        (ai / "state.json").write_text("{}", encoding="utf-8")
+        (ai / "leases.json").write_text("{}", encoding="utf-8")  # no active leases
+        # ephemeral
+        (ai / "ipc").mkdir()
+        (ai / "ipc" / "q.txt").write_text("q", encoding="utf-8")
+        (ai / "routing_metrics.jsonl").write_text("{}\n", encoding="utf-8")
+        (ai / "orphan.tmp").write_text("t", encoding="utf-8")
+
+        cleanup.run_cleanup(tier=1, all_yes=True, base_dir=mock_env)
+
+        # governance PRESERVED
+        assert (ai / "consensus" / "r-x.json").exists()
+        assert (ai / "quarantine" / "ask-x" / "f.py").exists()
+        assert (ai / "state.json").exists()
+        assert (ai / "leases.json").exists()
+        # ephemeral REMOVED
+        assert not (ai / "ipc").exists()
+        assert not (ai / "routing_metrics.jsonl").exists()
+        assert not (ai / "orphan.tmp").exists()
+
+    def test_cleanup_blocked_when_active_session_present(self, mock_env):
+        """T30: an active peer session/lease blocks a real cleanup (dry-run and
+        --force still allowed)."""
+        (mock_env / "_sys" / "data" / "temp").mkdir()
+        (mock_env / "_sys" / "data" / "temp" / "junk.tmp").write_text("junk")
+        lock_dir = mock_env / ".ai" / ".lock"
+        lock_dir.mkdir(parents=True)
+        (lock_dir / "consensus_r-x.lock").write_text("", encoding="utf-8")  # fresh lock
+
+        ctx = _make_ctx(mock_env, mock_env / "_tmp")
+        ctx["args"] = ["--tier", "1", "--all"]  # no --force
+        scrubber.run(ctx)
+
+        # blocked -> temp NOT deleted
+        assert (mock_env / "_sys" / "data" / "temp").exists()
+
+        # --force overrides
+        ctx["args"] = ["--tier", "1", "--all", "--force"]
+        scrubber.run(ctx)
+        assert not (mock_env / "_sys" / "data" / "temp").exists()
+
+    def test_tier2_never_deletes_register_state_ledger(self, mock_env):
+        """T30 (ag-caught orphan risk): cleanup must NEVER delete
+        register.state.json — a dropped SUBST drive can leave HKCU/junctions that
+        only this ledger + unregister.bat can remove. install.state.json is fine."""
+        state_dir = mock_env / "_sys" / "data" / "state"
+        state_dir.mkdir(parents=True)
+        (state_dir / "register.state.json").write_text("{}", encoding="utf-8")
+        (state_dir / "install.state.json").write_text("{}", encoding="utf-8")
+
+        cleanup.run_cleanup(tier=2, all_yes=True, base_dir=mock_env)
+
+        assert (state_dir / "register.state.json").exists()   # preserved (teardown ledger)
+        assert not (state_dir / "install.state.json").exists()  # install state cleaned
+
+    def test_tier4_zerobase_clears_ai_governance_state(self, mock_env):
+        """T30 (ag-caught regression): ZeroBase must actually remove the .ai
+        governance state that Tier 1 now preserves."""
+        ai = mock_env / ".ai"
+        (ai / "consensus").mkdir(parents=True)
+        (ai / "consensus" / "r-x.json").write_text("{}", encoding="utf-8")
+        (ai / "state.json").write_text("{}", encoding="utf-8")
+
+        cleanup.run_cleanup(tier=4, all_yes=True, base_dir=mock_env)
+
+        assert not ai.exists()
 
     def test_registration_migration_sys_r3(self, mock_env, tmp_path):
         """SYS-R3: 경로 이동 후 새 경로에서 재등록 성공 (기존 SUBST 무시)."""
