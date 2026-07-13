@@ -1318,6 +1318,23 @@
       ],
       "next_action": "VERIFIED by cx+ag 2026-07-13. hub.resolve_auto_target() (~4123) sets terminal_peer=_fresh_active_coordinator(...); with coordinator=cx, human_interface_peer=null, default=cc, terminal_hard_exclude excludes the COORDINATOR (cx) not the actual terminal (cc) - so cc makes bulk background calls and drains its own tokens while cx is wrongly blocked. FIX = D7 step 1: resolve the real terminal from the human-interface selection/state (reuse T20 _human_interface_peer_* eligibility), fail loud terminal_identity_absent if hard-exclude on but no trustworthy terminal. TDD-ready spec + test (coordinator=cx, terminal=cc -> AUTO excludes cc not cx) in docs-v2/ops/profile-policy-decisions.md.",
       "last_verified_at": "2026-07-13T16:15:00"
+    },
+    {
+      "id": "T35d",
+      "title": "Deferred profile/LB items decided + detailed to TDD-ready (profile-policy-decisions.md)",
+      "status": "done",
+      "priority": "medium",
+      "category": "routing",
+      "owner": "unassigned",
+      "evidence_commit": [
+        "05a0c9a"
+      ],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/docs-v2/ops/profile-policy-decisions.md"
+      ],
+      "next_action": "Exhaustive cx+ag decision round + cc synthesis; D1-D9 verdicts + TDD-ready specs + 2 verified P0 defects (T39/T40) documented at docs-v2/ops/profile-policy-decisions.md; no config/code changed (separate TDD round).",
+      "last_verified_at": "2026-07-13T16:15:00"
     }
   ]
 }
