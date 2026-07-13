@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-13T17:20:00Z",
+ "updated_at": "2026-07-14T09:45:00Z",
  "items": [
   {
    "id": "T7",
@@ -1476,8 +1476,8 @@
     "_sys/docs-v2/ops/capability-leveling.md",
     "_sys/docs-v2/ops/capability-leveling-decisions.md"
    ],
-   "next_action": "capability-leveling.md Phase 2 / §5.1-5.2. SPENDS TOKENS (budgeted). Unify T21 + check_cli_canary onto one budget ledger (T21 currently ignores it). Add capability-core.v1 (reasoning=closed-form, code=fixture+hidden tests+exact diff, agentic=T21-style file/schema/forbidden-path/truthful-failure), judged ONLY on deterministic artifacts (no transcript, no LLM judge), 3 repeatability; long_context.{8k,32k,128k}.v1 separate, never above measured capacity. Hard bounds: exactly 3 invocations/profile, atomic reserve, no auto-measure below reserve floor; actual_tokens=absent unless machine-observed. Premium/arbiter = allowlist+explicit only; results shadow-only. [2026-07-13: detailed to TDD-ready in docs-v2/ops/capability-leveling-decisions.md §2 (cx spec + ag PTY/quota cross-check + cc synthesis); status ready.]",
-   "last_verified_at": "2026-07-13T15:55:00"
+   "next_action": "T44a (shared canary_budget.py ledger + check_cli_canary unification, fail-closed) DONE 288ccc3 2026-07-14; T44b (capability-core.v1 + long_context.{8k,32k,128k}.v1 canaries + fixtures, budgeted) still PENDING. capability-leveling.md Phase 2 / §5.1-5.2. SPENDS TOKENS (budgeted). Unify T21 + check_cli_canary onto one budget ledger (T21 currently ignores it). Add capability-core.v1 (reasoning=closed-form, code=fixture+hidden tests+exact diff, agentic=T21-style file/schema/forbidden-path/truthful-failure), judged ONLY on deterministic artifacts (no transcript, no LLM judge), 3 repeatability; long_context.{8k,32k,128k}.v1 separate, never above measured capacity. Hard bounds: exactly 3 invocations/profile, atomic reserve, no auto-measure below reserve floor; actual_tokens=absent unless machine-observed. Premium/arbiter = allowlist+explicit only; results shadow-only. [2026-07-13: detailed to TDD-ready in docs-v2/ops/capability-leveling-decisions.md §2 (cx spec + ag PTY/quota cross-check + cc synthesis); status ready.]",
+   "last_verified_at": "2026-07-14T09:45:00"
   },
   {
    "id": "T45",
