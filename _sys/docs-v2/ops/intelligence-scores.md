@@ -118,6 +118,35 @@ live-invocable (confirmed). This is a worked example of
 [`capability-leveling.md`](capability-leveling.md): a real external declaration,
 overridden by our measured operational reality.
 
+## 4.6 Measured file-write fidelity — first cross-peer empirical (DIR-004)
+
+First real capability-canary run (operator-approved, 2026-07-13/14) of
+`direct_file_write.safe_utf8.v1` (the T21 agentic canary: UTF-8 byte roundtrip,
+targeted + 50 KB partial edit, CRLF/LF/BOM preservation, forbidden-path truthful
+failure, scope discipline) across the three deepthink profiles. Records live in
+the empirical ledger `_sys/ai/knowledge/peer-capability-scores.jsonl` (7-day TTL).
+
+| Profile | Model / runtime | Score | Verdict | Failed subcheck |
+|---|---|---:|---|---|
+| `cx.deepthink` | GPT-5.6 Sol (codex) | **100** | **CERTIFIED** (3 consecutive passes) | — |
+| `ag.deepthink` | Gemini 3.1 Pro (agy, PTY) | 80 | fail (not certified) | `line_endings_and_bom` — agy normalizes CRLF |
+| `cc.deepthink` | Claude Opus 4.8 (claude CLI) | 65 | fail (not certified) | `unicode_byte_roundtrip` — `roundtrip_utf8.txt` bytes not preserved |
+
+**This is the AGENTIC file-write FIDELITY axis, NOT reasoning.** It measures how
+faithfully each peer's CLI/file tooling round-trips bytes — a real
+`agentic_reliability` characteristic, but orthogonal to the §1 external reasoning
+composite (Fable ~60 / Sol ~59 / Opus ~56 / Gemini 3.1 ~46). Per DIR-004
+**do-not-reconcile-different-scales**: a low fidelity score is NOT a low
+intelligence claim, and the two rulers must never be merged. The measured
+ordering here (cx > ag > cc) even inverts the declared composite — precisely why
+[`capability-leveling.md`](capability-leveling.md) insists on per-axis measurement
+over a single scalar.
+
+Actionable (measured, not guessed): for **byte-exact** file operations, codex
+(cx) is the reliable choice today; the claude CLI (UTF-8 roundtrip) and agy (CRLF)
+each have a specific, reproducible fidelity gap worth a tooling fix. Only
+`cx.deepthink` is CERTIFIED; ag/cc records are honest fails, not absent.
+
 ## 5. Risks / caveats (DIR-004)
 
 - **Workload divergence:** a composite (math/knowledge/reasoning) may not track
