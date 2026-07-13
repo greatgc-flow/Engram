@@ -121,6 +121,14 @@
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["C"],
+          "intelligence_evidence": {
+            "estimate": {"kind": "point", "value": 56.0, "approximate": true},
+            "scale": "external_composite",
+            "source_kind": "declared",
+            "verification": "unverified",
+            "source_ref": "_sys/docs-v2/ops/intelligence-scores.md#1-source-data-dir-004-declared-unverified",
+            "as_of": "2026-07-13"
+          },
           "runtime_context_window": 1000000,
           "validated_at": "2026-06-20",
           "validation_method": "successful_invocation",
@@ -139,6 +147,14 @@
           "model_availability": "verified_local",
           "profile_class": "specialty",
           "quota_families": ["F", "C"],
+          "intelligence_evidence": {
+            "estimate": {"kind": "point", "value": 60.0, "approximate": true},
+            "scale": "external_composite",
+            "source_kind": "declared",
+            "verification": "unverified",
+            "source_ref": "_sys/docs-v2/ops/intelligence-scores.md#1-source-data-dir-004-declared-unverified",
+            "as_of": "2026-07-13"
+          },
           "runtime_context_window": 200000,
           "validated_at": "2026-07-02",
           "validation_method": "successful_invocation",
@@ -265,6 +281,14 @@
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["G"],
+          "intelligence_evidence": {
+            "estimate": {"kind": "point", "value": 50.0, "approximate": true},
+            "scale": "external_composite",
+            "source_kind": "declared",
+            "verification": "unverified",
+            "source_ref": "_sys/docs-v2/ops/intelligence-scores.md#1-source-data-dir-004-declared-unverified",
+            "as_of": "2026-07-13"
+          },
           "runtime_context_window": 1048576,
           "reasoning_effort": "high",
           "cost_tier": "mid",
@@ -279,6 +303,25 @@
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["G"],
+          "intelligence_evidence": {
+            "estimate": {"kind": "range", "min": 46.0, "max": 47.0, "approximate": true},
+            "scale": "external_composite",
+            "source_kind": "declared",
+            "verification": "unverified",
+            "source_ref": "_sys/docs-v2/ops/intelligence-scores.md#1-source-data-dir-004-declared-unverified",
+            "as_of": "2026-07-13"
+          },
+          "profile_intent": {
+            "selection_basis": "resilience_over_external_composite",
+            "workloads": ["long_context", "tool_use", "multi_turn_instruction_following"],
+            "tier_score_exception": {
+              "relative_to": "ag.effort",
+              "kind": "external_composite_inversion",
+              "status": "accepted_policy_exception"
+            },
+            "evidence_status": "declared_unverified",
+            "source_ref": "_sys/docs-v2/ops/profile-policy.md#2-capability-tiering"
+          },
           "runtime_context_window": 1048576,
           "reasoning_effort": "high",
           "cost_tier": "high",
@@ -358,6 +401,14 @@
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["X"],
+          "intelligence_evidence": {
+            "estimate": {"kind": "point", "value": 51.0, "approximate": true},
+            "scale": "external_composite",
+            "source_kind": "declared",
+            "verification": "unverified",
+            "source_ref": "_sys/docs-v2/ops/intelligence-scores.md#1-source-data-dir-004-declared-unverified",
+            "as_of": "2026-07-13"
+          },
           "runtime_context_window": 372000,
           "validated_at": "2026-07-13",
           "validation_method": "codex_debug_models_and_successful_invocation",
@@ -376,6 +427,14 @@
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["X"],
+          "intelligence_evidence": {
+            "estimate": {"kind": "point", "value": 55.0, "approximate": true},
+            "scale": "external_composite",
+            "source_kind": "declared",
+            "verification": "unverified",
+            "source_ref": "_sys/docs-v2/ops/intelligence-scores.md#1-source-data-dir-004-declared-unverified",
+            "as_of": "2026-07-13"
+          },
           "runtime_context_window": 372000,
           "validated_at": "2026-07-13",
           "validation_method": "codex_debug_models_and_successful_invocation",
@@ -394,6 +453,14 @@
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["X"],
+          "intelligence_evidence": {
+            "estimate": {"kind": "point", "value": 59.0, "approximate": true},
+            "scale": "external_composite",
+            "source_kind": "declared",
+            "verification": "unverified",
+            "source_ref": "_sys/docs-v2/ops/intelligence-scores.md#1-source-data-dir-004-declared-unverified",
+            "as_of": "2026-07-13"
+          },
           "runtime_context_window": 372000,
           "validated_at": "2026-07-13",
           "validation_method": "codex_debug_models_and_successful_invocation",

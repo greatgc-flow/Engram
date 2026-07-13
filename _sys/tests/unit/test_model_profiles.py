@@ -36,6 +36,16 @@ EXPECTED_PROFILE_POLICY = {
     },
 }
 
+INTELLIGENCE_EVIDENCE = {
+    "cc.deepthink": {"kind": "point", "value": 56.0},
+    "cc.fable": {"kind": "point", "value": 60.0},
+    "ag.effort": {"kind": "point", "value": 50.0},
+    "ag.deepthink": {"kind": "range", "min": 46.0, "max": 47.0},
+    "cx.standard": {"kind": "point", "value": 51.0},
+    "cx.effort": {"kind": "point", "value": 55.0},
+    "cx.deepthink": {"kind": "point", "value": 59.0},
+}
+
 
 def _raw():
     return json.loads(ORCHESTRATION.read_text(encoding="utf-8"))
@@ -85,6 +95,70 @@ def test_profile_policy_migration_matrix_and_normalization():
             normalized_profile = profile_nodes[f"{peer_id}.{profile_name}"]
             assert normalized_profile["profile_class"] == profile_class
             assert normalized_profile.get("quota_families", []) == quota_families
+
+
+def test_d3_declared_intelligence_evidence_is_limited_and_normalized():
+    roots = {node["node_id"]: node for node in _raw()["hub_nodes"]}
+    normalized = hub_peer.normalize_orchestration(_raw())
+    profile_nodes = {
+        node["profile_id"]: node
+        for node in normalized["hub_nodes"]
+        if node.get("type") == "profile"
+    }
+    seen = {}
+    for peer_id, root in roots.items():
+        for profile_name, profile in root["profiles"].items():
+            profile_id = f"{peer_id}.{profile_name}"
+            evidence = profile.get("intelligence_evidence")
+            if evidence is not None:
+                seen[profile_id] = evidence
+                assert evidence["scale"] == "external_composite"
+                assert evidence["source_kind"] == "declared"
+                assert evidence["verification"] == "unverified"
+                assert evidence["estimate"]["approximate"] is True
+                assert profile_nodes[profile_id]["intelligence_evidence"] == evidence
+    assert seen == {
+        profile_id: {
+            **{
+                "estimate": {**estimate, "approximate": True},
+                "scale": "external_composite",
+                "source_kind": "declared",
+                "verification": "unverified",
+                "source_ref": "_sys/docs-v2/ops/intelligence-scores.md#1-source-data-dir-004-declared-unverified",
+                "as_of": "2026-07-13",
+            }
+        }
+        for profile_id, estimate in INTELLIGENCE_EVIDENCE.items()
+    }
+    assert "intelligence_evidence" not in roots["cc"]["profiles"]["standard"]
+    assert "intelligence_evidence" not in roots["ag"]["profiles"]["opus"]
+    assert all(
+        "intelligence_evidence" not in profile
+        for profile in roots["ca"]["profiles"].values()
+    )
+
+
+def test_d6_ag_deepthink_intent_is_declared_and_normalized():
+    roots = {node["node_id"]: node for node in _raw()["hub_nodes"]}
+    intent = roots["ag"]["profiles"]["deepthink"]["profile_intent"]
+    assert intent == {
+        "selection_basis": "resilience_over_external_composite",
+        "workloads": ["long_context", "tool_use", "multi_turn_instruction_following"],
+        "tier_score_exception": {
+            "relative_to": "ag.effort",
+            "kind": "external_composite_inversion",
+            "status": "accepted_policy_exception",
+        },
+        "evidence_status": "declared_unverified",
+        "source_ref": "_sys/docs-v2/ops/profile-policy.md#2-capability-tiering",
+    }
+    normalized = hub_peer.normalize_orchestration(_raw())
+    deepthink = next(node for node in normalized["hub_nodes"] if node.get("profile_id") == "ag.deepthink")
+    ag_root = next(node for node in normalized["hub_nodes"] if node.get("node_id") == "ag" and node.get("type") == "peer")
+    assert deepthink["profile_intent"] == intent
+    assert ag_root["profile_intent"] == intent
+    assert deepthink["runtime_model"] == "Gemini 3.1 Pro (High)"
+    assert deepthink["routing_state"] == "eligible"
 
 
 def test_sibling_profiles_do_not_inherit_default_profile_options():

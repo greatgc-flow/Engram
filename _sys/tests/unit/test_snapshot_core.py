@@ -121,6 +121,16 @@ def test_snapshot_hash_is_stable_and_order_insensitive():
     assert len(snapshot.snapshot_hash(a)) == 64
 
 
+def test_snapshot_hash_ignores_declared_profile_policy_metadata():
+    base = {"profiles": [{"profile": "cc.deepthink", "state": "eligible"}]}
+    declared = {"profiles": [{
+        "profile": "cc.deepthink", "state": "eligible",
+        "intelligence_evidence": {"estimate": {"kind": "point", "value": 56.0}},
+        "profile_intent": {"selection_basis": "resilience_over_external_composite"},
+    }]}
+    assert snapshot.snapshot_hash(base) == snapshot.snapshot_hash(declared)
+
+
 def test_snapshot_failover_picks_max_headroom_eligible_profile():
     snap = {
         "profiles": [

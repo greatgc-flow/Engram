@@ -168,6 +168,29 @@ def _source_legend():
             "PROBE=empirical_probe DECL=declared, unverified ABS=absent")
 
 
+def _intelligence_display(evidence):
+    """Compact, explicitly declared D3 evidence label for profile detail."""
+    if not isinstance(evidence, dict):
+        return "absent"
+    if evidence.get("source_kind") != "declared" or evidence.get("verification") != "unverified":
+        return "absent"
+    estimate = evidence.get("estimate")
+    if not isinstance(estimate, dict):
+        return "absent"
+
+    def fmt(value):
+        return f"{value:g}" if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+    if estimate.get("kind") == "point":
+        value = fmt(estimate.get("value"))
+        return f"~{value} [decl]" if value is not None else "absent"
+    if estimate.get("kind") == "range":
+        minimum, maximum = fmt(estimate.get("min")), fmt(estimate.get("max"))
+        if minimum is not None and maximum is not None:
+            return f"~{minimum}-{maximum} [decl]"
+    return "absent"
+
+
 def _peer_state_label(info):
     """Canonical peer-state precedence for every peer-level renderer."""
     if info.get("quarantined"):
@@ -1091,7 +1114,8 @@ def run_watch(interval=None, json_mode=False, stdout=None, sleep=time.sleep, max
 
 def render_profiles(stdout=None, snapshot=None):
     """PROFILES & ROUTING (MECE topology only): profile | model | eff | tier |
-    ctx(declared window) | state | src. No quota (quota lives in SUMMARY)."""
+    ctx(declared window) | state | source | declared intelligence. No quota
+    (quota lives in SUMMARY)."""
     out = stdout or sys.stdout
     if snapshot is None:
         snapshot = collect_snapshot()
@@ -1100,7 +1124,8 @@ def render_profiles(stdout=None, snapshot=None):
         out.write("(profile rows unavailable)\n")
         return
     headers = [_pad("PROFILE", 22), _pad("MODEL", 28), _pad("EFF", 5),
-               _pad("TIER", 5), _pad("CTX", 12), _pad("STATE", 12), _pad("SRC", 13)]
+               _pad("TIER", 5), _pad("CTX", 12), _pad("STATE", 12), _pad("SRC", 13),
+               _pad("INTEL", 15)]
     out.write(" ".join(headers).rstrip() + "\n")
 
     for row in rows:
@@ -1115,6 +1140,7 @@ def render_profiles(stdout=None, snapshot=None):
         ctx_val = _short(win) if win is not None else "absent"
         state = row.get("state") or "unknown"
         src = f"c:{_source_code(sources.get('context'))} q:{_source_code(sources.get('quota'))}"
+        intelligence = _elide_display(_intelligence_display(row.get("intelligence_evidence")), 15)
 
         c_state = _pad(state, 12)
         if state == "eligible":
@@ -1123,7 +1149,8 @@ def render_profiles(stdout=None, snapshot=None):
             c_state = _c(c_state, "yellow")
         model = _elide_display(model, 28)
         out.write(f"{_pad(str(row.get('profile') or 'absent'), 22)} {_pad(model, 28)} "
-                  f"{_pad(effort, 5)} {_pad(tier, 5)} {_pad(ctx_val, 12)} {c_state} {_pad(src, 13)}\n")
+                  f"{_pad(effort, 5)} {_pad(tier, 5)} {_pad(ctx_val, 12)} {c_state} "
+                  f"{_pad(src, 13)} {_pad(intelligence, 15)}\n")
     out.write(_c(_source_legend(), "dim") + "\n")
 
 

@@ -255,7 +255,7 @@ def normalize_orchestration(orch: dict | None = None) -> dict:
                 "runtime_context_window", "validated_at", "validation_method",
                 "routing_state", "profile_args", "capability_class",
                 "reasoning_effort", "cost_tier", "profile_class",
-                "quota_families",
+                "quota_families", "intelligence_evidence", "profile_intent",
             ):
                 if key in selected:
                     root[key] = selected[key]

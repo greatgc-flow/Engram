@@ -4,6 +4,8 @@ Design contract: _sys/docs/history/ops/token-load-balancing-design.md
 (ag design + cx review). cx authored these tests; the impl was applied by the
 terminal (peers do not write governed files — LL-20260703-005).
 """
+import copy
+import json
 import sys
 from pathlib import Path
 
@@ -114,6 +116,54 @@ def test_build_profile_rows_blocks_closed_profile_and_lb_excludes_it(monkeypatch
     result = snapshot.select_load_balanced_peer({"profiles": rows}, CONFIG, ask_id="profile-health")
     assert result["selected_peer"] == "cx"
     assert "ag" not in result["weights"]
+
+
+def test_declared_intelligence_evidence_does_not_change_routing_weights_or_arbiter_pick():
+    observed = "2026-07-08T00:00:00+00:00"
+    profiles = {
+        "fable": {**_profile_conf(), "quota_families": ["C"]},
+        "effort": {**_profile_conf(), "quota_families": ["G"]},
+    }
+    cc = _orch_with_profiles("cc", {"fable": profiles["fable"]})["hub_nodes"][0]
+    ag = _orch_with_profiles("ag", {"effort": profiles["effort"]})["hub_nodes"][0]
+    cc["default_profile"] = "fable"
+    ag["default_profile"] = "effort"
+    orch = {"hub_nodes": [cc, ag]}
+    records = [_profile_record("cc", "C-5H"), _profile_record("ag", "G-5H")]
+    plain = {"profiles": snapshot._build_profile_rows(orch, records, observed)}
+    declared = copy.deepcopy(plain)
+    declared["profiles"][0]["intelligence_evidence"] = {
+        "estimate": {"kind": "point", "value": 60.0, "approximate": True},
+        "source_kind": "declared", "verification": "unverified",
+    }
+    declared["profiles"][0]["profile_intent"] = {
+        "selection_basis": "resilience_over_external_composite",
+    }
+    routing_cfg = {**CONFIG, "arbiter_models": []}
+    plain_result = snapshot.select_load_balanced_peer(plain, routing_cfg, ask_id="d3-equivalence")
+    declared_result = snapshot.select_load_balanced_peer(declared, routing_cfg, ask_id="d3-equivalence")
+    assert json.dumps(plain_result, sort_keys=True) == json.dumps(declared_result, sort_keys=True)
+    assert plain_result["weights"]
+    arbiter_cfg = {"arbiter_models": ["cc.fable", "ag.effort"]}
+    assert snapshot.select_arbiter(plain, arbiter_cfg) == "cc.fable"
+    assert snapshot.select_arbiter(plain, arbiter_cfg) == snapshot.select_arbiter(declared, arbiter_cfg)
+
+
+def test_profile_rows_propagate_declared_policy_metadata():
+    observed = "2026-07-08T00:00:00+00:00"
+    profile = {
+        **_profile_conf(),
+        "quota_families": ["G"],
+        "intelligence_evidence": {
+            "estimate": {"kind": "range", "min": 46.0, "max": 47.0, "approximate": True},
+            "source_kind": "declared", "verification": "unverified",
+        },
+        "profile_intent": {"selection_basis": "resilience_over_external_composite"},
+    }
+    orch = _orch_with_profiles("ag", {"deepthink": profile})
+    row = snapshot._build_profile_rows(orch, [_profile_record("ag", "G-5H")], observed)[0]
+    assert row["intelligence_evidence"] == profile["intelligence_evidence"]
+    assert row["profile_intent"] == profile["profile_intent"]
 
 
 def test_build_profile_rows_expired_profile_cooldown_is_eligible():

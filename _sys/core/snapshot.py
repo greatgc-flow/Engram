@@ -6,6 +6,7 @@ rendering stays in diag.py. hub.py consumes the SAME collect_snapshot() so the
 renderer and the failover router share one source of truth.
 """
 import os
+import copy
 import hashlib
 import json
 import re
@@ -1162,6 +1163,8 @@ def _build_profile_rows(orch, peer_records, observed_at):
                 "effort": effort,
                 "cost_tier": prof.get("cost_tier"),
                 "routing_state": prof.get("routing_state"),
+                "intelligence_evidence": copy.deepcopy(prof.get("intelligence_evidence")),
+                "profile_intent": copy.deepcopy(prof.get("profile_intent")),
                 "state": state,
                 "context": context,
                 "quota": quota,
@@ -1671,8 +1674,25 @@ def collect_snapshot(use_cache=False, clock=time.monotonic):
 
 
 def snapshot_hash(snapshot):
-    """Canonical sha256 of a snapshot for routing-decision audit trails."""
-    payload = json.dumps(snapshot, ensure_ascii=False, sort_keys=True,
+    """Canonical routing-relevant sha256 for routing-decision audit trails.
+
+    Declared profile policy annotations are intentionally excluded: D3/D6
+    metadata must not perturb deterministic bulk routing or arbiter priority.
+    """
+    def strip_declared_policy(value):
+        if isinstance(value, dict):
+            return {
+                key: strip_declared_policy(item)
+                for key, item in value.items()
+                if key not in {"intelligence_evidence", "profile_intent"}
+            }
+        if isinstance(value, list):
+            return [strip_declared_policy(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(strip_declared_policy(item) for item in value)
+        return value
+
+    payload = json.dumps(strip_declared_policy(snapshot), ensure_ascii=False, sort_keys=True,
                          separators=(",", ":"), default=str)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 

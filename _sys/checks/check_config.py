@@ -6,6 +6,13 @@ from pathlib import Path
 REQUIRED_PROFILE_NAMES = {"standard", "effort", "deepthink"}
 VALID_PROFILE_CLASSES = {"tier", "specialty"}
 VALID_QUOTA_FAMILIES = {"C", "F", "G", "3P", "X"}
+VALID_INTELLIGENCE_ESTIMATE_KINDS = {"point", "range"}
+VALID_PROFILE_INTENT_SELECTION_BASES = {"resilience_over_external_composite"}
+VALID_PROFILE_INTENT_WORKLOADS = {
+    "long_context", "tool_use", "multi_turn_instruction_following",
+}
+VALID_TIER_SCORE_EXCEPTION_KINDS = {"external_composite_inversion"}
+VALID_TIER_SCORE_EXCEPTION_STATUSES = {"accepted_policy_exception"}
 
 def dict_raise_on_duplicates(ordered_pairs):
     d = {}
@@ -112,6 +119,124 @@ def validate_config(ai_dir: Path | str) -> bool:
                     )
                 if len(quota_families) != len(set(quota_families)):
                     log_error(f"orchestration.json: profile '{profile_id}' has duplicate quota families")
+
+            # D3: declared intelligence evidence is optional metadata only. It
+            # is deliberately validated here, but never becomes routing input.
+            evidence = profile.get("intelligence_evidence")
+            if evidence is not None:
+                if not isinstance(evidence, dict):
+                    log_error(f"orchestration.json: profile '{profile_id}' intelligence_evidence must be an object")
+                else:
+                    required = {"estimate", "scale", "source_kind", "verification", "source_ref", "as_of"}
+                    missing_evidence = sorted(required - set(evidence))
+                    if missing_evidence:
+                        log_error(
+                            f"orchestration.json: profile '{profile_id}' intelligence_evidence missing "
+                            f"{missing_evidence}"
+                        )
+                    estimate = evidence.get("estimate")
+                    if not isinstance(estimate, dict):
+                        log_error(f"orchestration.json: profile '{profile_id}' intelligence_evidence.estimate must be an object")
+                    else:
+                        kind = estimate.get("kind")
+                        if kind not in VALID_INTELLIGENCE_ESTIMATE_KINDS:
+                            log_error(
+                                f"orchestration.json: profile '{profile_id}' intelligence_evidence.estimate.kind "
+                                "must be 'point' or 'range'"
+                            )
+                        if estimate.get("approximate") is not True:
+                            log_error(
+                                f"orchestration.json: profile '{profile_id}' intelligence_evidence.estimate "
+                                "must set approximate=true"
+                            )
+                        if kind == "point":
+                            value = estimate.get("value")
+                            if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                                    or "min" in estimate or "max" in estimate):
+                                log_error(
+                                    f"orchestration.json: profile '{profile_id}' intelligence_evidence point "
+                                    "needs numeric value only"
+                                )
+                        elif kind == "range":
+                            minimum, maximum = estimate.get("min"), estimate.get("max")
+                            valid_range = (
+                                isinstance(minimum, (int, float)) and not isinstance(minimum, bool)
+                                and isinstance(maximum, (int, float)) and not isinstance(maximum, bool)
+                                and minimum <= maximum and "value" not in estimate
+                            )
+                            if not valid_range:
+                                log_error(
+                                    f"orchestration.json: profile '{profile_id}' intelligence_evidence range "
+                                    "needs numeric min <= max only"
+                                )
+                    for field in ("scale", "source_kind", "verification", "source_ref", "as_of"):
+                        if not isinstance(evidence.get(field), str) or not evidence.get(field).strip():
+                            log_error(
+                                f"orchestration.json: profile '{profile_id}' intelligence_evidence.{field} "
+                                "must be a non-empty string"
+                            )
+                    if evidence.get("source_kind") == "declared" and evidence.get("verification") != "unverified":
+                        log_error(
+                            f"orchestration.json: profile '{profile_id}' declared intelligence_evidence "
+                            "must be verification='unverified'"
+                        )
+
+            # D6: an explicit same-peer exception documents an intentional
+            # external-composite inversion; it does not alter routing policy.
+            intent = profile.get("profile_intent")
+            if intent is not None:
+                if not isinstance(intent, dict):
+                    log_error(f"orchestration.json: profile '{profile_id}' profile_intent must be an object")
+                else:
+                    if intent.get("selection_basis") not in VALID_PROFILE_INTENT_SELECTION_BASES:
+                        log_error(
+                            f"orchestration.json: profile '{profile_id}' profile_intent.selection_basis is invalid"
+                        )
+                    workloads = intent.get("workloads")
+                    if (not isinstance(workloads, list) or not workloads
+                            or any(item not in VALID_PROFILE_INTENT_WORKLOADS for item in workloads)):
+                        log_error(
+                            f"orchestration.json: profile '{profile_id}' profile_intent.workloads is invalid"
+                        )
+                    exception = intent.get("tier_score_exception")
+                    if not isinstance(exception, dict):
+                        log_error(
+                            f"orchestration.json: profile '{profile_id}' profile_intent.tier_score_exception "
+                            "must be an object"
+                        )
+                    else:
+                        relative_to = exception.get("relative_to")
+                        same_peer_prefix = f"{peer_id}."
+                        relative_name = (
+                            relative_to[len(same_peer_prefix):]
+                            if isinstance(relative_to, str) and relative_to.startswith(same_peer_prefix)
+                            else None
+                        )
+                        if relative_name not in profiles or relative_name == profile_name:
+                            log_error(
+                                f"orchestration.json: profile '{profile_id}' profile_intent relative_to "
+                                "must resolve to another profile on the same peer"
+                            )
+                        if exception.get("kind") not in VALID_TIER_SCORE_EXCEPTION_KINDS:
+                            log_error(
+                                f"orchestration.json: profile '{profile_id}' profile_intent "
+                                "tier_score_exception.kind is invalid"
+                            )
+                        if exception.get("status") not in VALID_TIER_SCORE_EXCEPTION_STATUSES:
+                            log_error(
+                                f"orchestration.json: profile '{profile_id}' profile_intent "
+                                "tier_score_exception.status is invalid"
+                            )
+                    if intent.get("evidence_status") != "declared_unverified":
+                        log_error(
+                            f"orchestration.json: profile '{profile_id}' profile_intent.evidence_status "
+                            "must be 'declared_unverified'"
+                        )
+                    if not isinstance(intent.get("source_ref"), str) or not intent.get("source_ref").strip():
+                        log_error(
+                            f"orchestration.json: profile '{profile_id}' profile_intent.source_ref "
+                            "must be a non-empty string"
+                        )
 
             profile_entries.append({
                 "peer": peer_id,

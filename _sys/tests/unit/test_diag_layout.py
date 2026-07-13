@@ -71,6 +71,38 @@ def test_render_profiles_has_no_quota_columns():
     assert "[decl] Opus" in text  # orchestration-sourced model prefixed
 
 
+def test_render_profiles_renders_declared_intelligence_or_absent():
+    diag = load_diag()
+    out = io.StringIO()
+    diag.render_profiles(out, snapshot={"profiles": [
+        {
+            "profile": "cx.deepthink", "model": "Sol", "effort": "xhigh", "cost_tier": "high",
+            "context": {"window_tokens": 100}, "state": "eligible", "sources": {},
+            "intelligence_evidence": {
+                "estimate": {"kind": "point", "value": 59.0, "approximate": True},
+                "source_kind": "declared", "verification": "unverified",
+            },
+        },
+        {
+            "profile": "ag.deepthink", "model": "Pro", "effort": "high", "cost_tier": "high",
+            "context": {"window_tokens": 100}, "state": "eligible", "sources": {},
+            "intelligence_evidence": {
+                "estimate": {"kind": "range", "min": 46.0, "max": 47.0, "approximate": True},
+                "source_kind": "declared", "verification": "unverified",
+            },
+        },
+        {
+            "profile": "cc.standard", "model": "Haiku", "effort": "low", "cost_tier": "low",
+            "context": {"window_tokens": 100}, "state": "eligible", "sources": {},
+        },
+    ]})
+    text = out.getvalue()
+    assert "INTEL" in text
+    assert "~59 [decl]" in text
+    assert "~46-47 [decl]" in text
+    assert "absent" in text
+
+
 def test_render_summary_sorted_continuation_rows_and_glyphs():
     diag = load_diag()
     infos = [{

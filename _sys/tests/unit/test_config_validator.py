@@ -230,3 +230,81 @@ def test_specialty_bulk_profile_does_not_require_reserve_by_class_alone(tmp_path
     node = {"node_id": "xx", "type": "peer", "enabled": True, "profiles": profiles}
     _write_config_set(tmp_path / "ai", node=node)
     assert validate_config(tmp_path / "ai")
+
+
+def _declared_intelligence_evidence(estimate=None):
+    return {
+        "estimate": estimate or {"kind": "point", "value": 56.0, "approximate": True},
+        "scale": "external_composite",
+        "source_kind": "declared",
+        "verification": "unverified",
+        "source_ref": "scores.md#declared",
+        "as_of": "2026-07-13",
+    }
+
+
+@pytest.mark.parametrize("estimate", [
+    {"kind": "point", "approximate": True},
+    {"kind": "point", "value": 56.0, "min": 50.0, "max": 60.0, "approximate": True},
+    {"kind": "range", "min": 47.0, "max": 46.0, "approximate": True},
+    {"kind": "range", "value": 56.0, "min": 50.0, "max": 60.0, "approximate": True},
+    {"kind": "other", "value": 56.0, "approximate": True},
+])
+def test_intelligence_evidence_estimate_schema_is_exactly_point_or_range(tmp_path, estimate):
+    profiles = _valid_profiles()
+    profiles["deepthink"]["intelligence_evidence"] = _declared_intelligence_evidence(estimate)
+    _write_config_set(tmp_path / "ai", node={"node_id": "xx", "type": "peer", "profiles": profiles})
+    assert not validate_config(tmp_path / "ai")
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda e: e.pop("scale"),
+    lambda e: e.pop("source_kind"),
+    lambda e: e.update(verification="verified"),
+    lambda e: e.pop("source_ref"),
+    lambda e: e.pop("as_of"),
+])
+def test_intelligence_evidence_requires_declared_provenance(tmp_path, mutate):
+    profiles = _valid_profiles()
+    evidence = _declared_intelligence_evidence()
+    mutate(evidence)
+    profiles["deepthink"]["intelligence_evidence"] = evidence
+    _write_config_set(tmp_path / "ai", node={"node_id": "xx", "type": "peer", "profiles": profiles})
+    assert not validate_config(tmp_path / "ai")
+
+
+def _ag_deepthink_intent(relative_to="ag.effort"):
+    return {
+        "selection_basis": "resilience_over_external_composite",
+        "workloads": ["long_context", "tool_use", "multi_turn_instruction_following"],
+        "tier_score_exception": {
+            "relative_to": relative_to,
+            "kind": "external_composite_inversion",
+            "status": "accepted_policy_exception",
+        },
+        "evidence_status": "declared_unverified",
+        "source_ref": "profile-policy.md#2-capability-tiering",
+    }
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda intent: intent.update(selection_basis="unsupported"),
+    lambda intent: intent.update(workloads=["unsupported"]),
+    lambda intent: intent["tier_score_exception"].update(status="unexplained"),
+    lambda intent: intent["tier_score_exception"].update(relative_to="other.effort"),
+    lambda intent: intent["tier_score_exception"].update(relative_to="ag.deepthink"),
+])
+def test_profile_intent_validates_documented_same_peer_exception(tmp_path, mutate):
+    profiles = _valid_profiles()
+    intent = _ag_deepthink_intent()
+    mutate(intent)
+    profiles["deepthink"]["profile_intent"] = intent
+    _write_config_set(tmp_path / "ai", node={"node_id": "ag", "type": "peer", "profiles": profiles})
+    assert not validate_config(tmp_path / "ai")
+
+
+def test_profile_intent_accepts_documented_ag_deepthink_inversion(tmp_path):
+    profiles = _valid_profiles()
+    profiles["deepthink"]["profile_intent"] = _ag_deepthink_intent()
+    _write_config_set(tmp_path / "ai", node={"node_id": "ag", "type": "peer", "profiles": profiles})
+    assert validate_config(tmp_path / "ai")
