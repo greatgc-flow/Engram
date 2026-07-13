@@ -1,6 +1,7 @@
 """_sys/tests/unit/test_canary_observed.py — Unit tests for check_cli_canary.py build/emit observed captures"""
 from __future__ import annotations
 
+import copy
 import json
 import sys
 from datetime import datetime, timezone
@@ -99,16 +100,23 @@ def test_build_observed_capture_empty_on_all_fail(tmp_path):
 def test_emit_observed_capture(monkeypatch, tmp_path):
     monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
     monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
-    
+    # T44a: canary invocation now requires a granted budget reservation. Grant it by
+    # supplying a reserve floor and a machine-observed quota above the floor (the
+    # production _canary_quota reads a live snapshot that is absent under test).
+    monkeypatch.setattr(ccc, "_canary_quota",
+                        lambda peer, profile: {"source_tag": "app_server", "remaining": 0.9})
+    orch = copy.deepcopy(MOCK_ORCHESTRATION)
+    orch["canary_config"]["reserve_floor"] = 0.1
+
     def mock_invoker(peer, profile, model, prompt):
         if peer == "cc" and profile == "deepthink":
             return "NOPE"
         return "OK"
-        
+
     now = datetime(2026, 7, 4, 12, 0, 0, tzinfo=timezone.utc)
-    
+
     capture = ccc.emit_observed_capture(
-        orch=MOCK_ORCHESTRATION,
+        orch=orch,
         ai_root=tmp_path,
         invoker=mock_invoker,
         now=now

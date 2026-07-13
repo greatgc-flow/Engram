@@ -6,6 +6,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 SYS_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(SYS_DIR / "checks"))
 import check_cli_canary as ccc  # noqa: E402
@@ -14,7 +16,8 @@ import check_cli_reality as ccr  # noqa: E402
 MOCK_ORCHESTRATION = {
     "canary_config": {
         "budget_cap": 2,
-        "budget_window_hours": 5.0
+        "budget_window_hours": 5.0,
+        "reserve_floor": 0.25,
     },
     "hub_nodes": [
         {
@@ -75,6 +78,15 @@ MOCK_ORCHESTRATION = {
         }
     ]
 }
+
+
+@pytest.fixture(autouse=True)
+def _machine_quota(monkeypatch):
+    """Canary unit tests inject observed quota; production reads snapshot."""
+    monkeypatch.setattr(
+        ccc, "_canary_quota",
+        lambda peer, profile: {"source_tag": "cli_live", "remaining": 0.50},
+    )
 
 
 class TestCheapestProfile:
@@ -143,6 +155,9 @@ class TestCanaryProbe:
         # The assertion must be an exact normalized match (prompt demands "OK").
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
         monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+        import copy
+        orch = copy.deepcopy(MOCK_ORCHESTRATION)
+        orch["canary_config"]["budget_cap"] = 4
 
         for bad_reply in ("NOT OK", "OK but failed", "not ok"):
             def mock_invoker(peer, profile, model, prompt, _r=bad_reply):
@@ -151,11 +166,10 @@ class TestCanaryProbe:
             verdict = ccc.canary_probe(
                 peer="cc",
                 profile_name="standard",
-                orch=MOCK_ORCHESTRATION,
+                orch=orch,
                 invoker=mock_invoker,
                 force=True,
                 ai_root=tmp_path,
-                bypass_budget=True,
             )
             assert verdict["status"] == "FAIL", f"{bad_reply!r} must not PASS"
             assert verdict["stage"] == "reply"
@@ -164,6 +178,9 @@ class TestCanaryProbe:
         # Whitespace/newline-wrapped and lower-case exact "OK" still PASS.
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
         monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+        import copy
+        orch = copy.deepcopy(MOCK_ORCHESTRATION)
+        orch["canary_config"]["budget_cap"] = 5
 
         for good_reply in ("OK", " OK\n", "ok", "\tOK  "):
             def mock_invoker(peer, profile, model, prompt, _r=good_reply):
@@ -172,11 +189,10 @@ class TestCanaryProbe:
             verdict = ccc.canary_probe(
                 peer="cc",
                 profile_name="standard",
-                orch=MOCK_ORCHESTRATION,
+                orch=orch,
                 invoker=mock_invoker,
                 force=True,
                 ai_root=tmp_path,
-                bypass_budget=True,
             )
             assert verdict["status"] == "PASS", f"{good_reply!r} must PASS"
 
@@ -235,9 +251,15 @@ class TestBudgetAndCache:
         def mock_invoker(peer, profile, model, prompt):
             return "OK"
             
-        budget_file = tmp_path / "canary_budget.json"
-        now_ts = datetime.now(timezone.utc).timestamp()
-        budget_file.write_text(json.dumps([now_ts - 100, now_ts - 50]), encoding="utf-8")
+        now = datetime.now(timezone.utc)
+        for subject in ("cc.effort", "ag.standard"):
+            reserved = ccc.reserve_canary_invocation(
+                tmp_path, kind="cli_canary", subject=subject, now=now,
+                cap=2, window_hours=5.0, reserve_floor=0.25,
+                quota_source_tag="cli_live", quota_remaining=0.50,
+                orchestration=MOCK_ORCHESTRATION,
+            )
+            assert reserved["granted"]
         
         verdict = ccc.canary_probe(
             peer="cc",
@@ -379,7 +401,6 @@ class TestRunCanary:
         import copy
         orch = copy.deepcopy(MOCK_ORCHESTRATION)
         orch["canary_config"]["budget_cap"] = 0
-        (tmp_path / "canary_budget.json").write_text("[]", encoding="utf-8")
 
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
         monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
@@ -395,15 +416,13 @@ class TestRunCanary:
 
         assert invoked == []
         assert verdicts
-        assert all(v["status"] == "SKIP" and v["reason"] == "budget" for v in verdicts)
+        assert all(v["status"] == "SKIP" and v["reason"] == "budget_disabled" for v in verdicts)
 
-    def test_run_canary_explicit_peer_profile_bypasses_budget(self, monkeypatch, tmp_path):
-        """T16: an explicit 'peer.profile' target is the sole remaining
-        budget-bypass path, even with an exhausted budget."""
+    def test_run_canary_explicit_peer_profile_never_bypasses_budget(self, monkeypatch, tmp_path):
+        """T44a removes the former explicit-target budget-bypass path."""
         import copy
         orch = copy.deepcopy(MOCK_ORCHESTRATION)
         orch["canary_config"]["budget_cap"] = 0
-        (tmp_path / "canary_budget.json").write_text("[]", encoding="utf-8")
 
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
         monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
@@ -416,7 +435,8 @@ class TestRunCanary:
         )
 
         assert len(verdicts) == 1
-        assert verdicts[0]["status"] == "PASS"
+        assert verdicts[0]["status"] == "SKIP"
+        assert verdicts[0]["reason"] == "budget_disabled"
 
     def test_run_canary_crash_safe(self, monkeypatch, tmp_path):
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
@@ -442,26 +462,17 @@ class TestRunCanary:
         assert v_ag["status"] == "PASS"
 
 
-def test_record_budget_invocation_ignores_malformed_file(tmp_path):
-    """A non-list budget file is treated as empty rather than crashing."""
-    budget_file = tmp_path / "canary_budget.json"
-    budget_file.write_text(json.dumps({"not": "a list"}), encoding="utf-8")
+def test_cli_probe_reserves_before_invoking(monkeypatch, tmp_path):
+    """The invoker can observe its reservation; it is consumed afterwards."""
+    monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
+    monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
 
-    ccc.record_budget_invocation(tmp_path, 1000.0)
+    def invoker(*_args):
+        ledger = json.loads((tmp_path / "canary_budget.json").read_text(encoding="utf-8"))
+        assert ledger["entries"][-1]["state"] == "reserved"
+        return "OK"
 
-    saved = json.loads(budget_file.read_text(encoding="utf-8"))
-    assert saved == [1000.0]
-
-
-def test_record_budget_invocation_persistence_failure_is_logged(monkeypatch, tmp_path, capsys):
-    """A failed budget-file write is surfaced (stderr), not silently ignored."""
-    def fail_write(self, *args, **kwargs):
-        raise OSError("disk full")
-
-    monkeypatch.setattr(Path, "write_text", fail_write)
-
-    ccc.record_budget_invocation(tmp_path, 123.0)
-
-    err = capsys.readouterr().err
-    assert "failed to persist budget invocation" in err
-    assert "disk full" in err
+    verdict = ccc.canary_probe("cc", "standard", MOCK_ORCHESTRATION, invoker=invoker, force=True, ai_root=tmp_path)
+    ledger = json.loads((tmp_path / "canary_budget.json").read_text(encoding="utf-8"))
+    assert verdict["status"] == "PASS"
+    assert ledger["entries"][-1]["state"] == "consumed"

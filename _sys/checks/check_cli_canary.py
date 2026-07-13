@@ -28,6 +28,12 @@ if str(_CHECKS_DIR) not in sys.path:
 from hub_peer import normalize_orchestration, validate_model_operand, get_adapter
 from _common import build_env
 from check_cli_reality import fingerprint, real_binary
+from canary_budget import (
+    consume_canary_reservation,
+    release_canary_reservation,
+    reserve_canary_invocation,
+)
+from snapshot import _quota_remaining, collect_snapshot
 
 
 def _cheapest_profile(node: dict) -> str | None:
@@ -61,57 +67,49 @@ def get_cache_key(binary_fingerprint: str, invoke_args: list[str], model_id: str
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def get_budget_config(orch: dict | None) -> tuple[int, float]:
-    """Retrieve budget configuration (cap and window hours) from orchestration config."""
-    if orch:
-        cfg = orch.get("canary_config", {})
-        cap = cfg.get("budget_cap", 10)
-        window = cfg.get("budget_window_hours", 5.0)
-        return int(cap), float(window)
-    return 10, 5.0
+def get_budget_config(orch: dict | None) -> tuple[int | None, float | None]:
+    """Return injected budget controls, with no permissive fallback.
+
+    H1/H2 are unratified.  A missing value must therefore reach the shared
+    ledger as ``None`` and fail closed instead of silently authorising spend.
+    """
+    cfg = (orch or {}).get("canary_config") or {}
+    cap = cfg.get("budget_cap")
+    window = cfg.get("budget_window_hours")
+    return cap, window
 
 
-def check_and_update_budget(ai_root: Path, now_ts: float, cap: int = 10, window_hours: float = 5.0) -> bool:
-    """Return True if under budget, False otherwise."""
-    budget_file = ai_root / "canary_budget.json"
-    if not budget_file.exists():
-        return True
+def get_reserve_floor(orch: dict | None) -> float | None:
+    """Return the unratified reserve floor without inventing a default."""
+    return ((orch or {}).get("canary_config") or {}).get("reserve_floor")
+
+
+def check_and_update_budget(*_args: Any, **_kwargs: Any) -> bool:
+    """Deprecated compatibility gate for legacy callers.
+
+    The timestamp-list ledger has been removed.  Callers not yet migrated to
+    :mod:`canary_budget` fail closed rather than spend without a reservation.
+    """
+    return False
+
+
+def record_budget_invocation(*_args: Any, **_kwargs: Any) -> None:
+    """Deprecated no-op; reservations are finalized by canary_budget."""
+    return None
+
+
+def _canary_quota(peer: str, profile_name: str) -> dict[str, Any]:
+    """Read the profile's machine-observed quota remaining, or report absent."""
     try:
-        invocations = json.loads(budget_file.read_text(encoding="utf-8"))
+        for row in collect_snapshot(use_cache=True).get("profiles", []):
+            if row.get("peer") != peer or row.get("profile_name") != profile_name:
+                continue
+            source_tag = (row.get("sources") or {}).get("quota", "absent")
+            remaining = _quota_remaining(row)
+            return {"source_tag": source_tag, "remaining": remaining}
     except Exception:
-        invocations = []
-
-    cutoff = now_ts - (window_hours * 3600)
-    valid_invocations = [t for t in invocations if isinstance(t, (int, float)) and t >= cutoff]
-    return len(valid_invocations) < cap
-
-
-def record_budget_invocation(ai_root: Path, now_ts: float):
-    """Record an invocation timestamp to budget file."""
-    budget_file = ai_root / "canary_budget.json"
-    invocations = []
-    if budget_file.exists():
-        try:
-            loaded = json.loads(budget_file.read_text(encoding="utf-8"))
-            if isinstance(loaded, list):
-                invocations = loaded
-        except Exception:
-            invocations = []
-    invocations.append(now_ts)
-
-    # Prune old invocations to keep file size small (keep past 24 hours)
-    cutoff = now_ts - 24 * 3600
-    invocations = [t for t in invocations if isinstance(t, (int, float)) and t >= cutoff]
-
-    try:
-        ai_root.mkdir(parents=True, exist_ok=True)
-        budget_file.write_text(json.dumps(invocations), encoding="utf-8")
-    except OSError as exc:
-        # Fail-open on token-cost enforcement is a real risk; at minimum
-        # surface it instead of silently pretending the invocation was
-        # accounted for. Non-fatal for callers (neither current call site
-        # wraps this call), so log rather than raise.
-        print(f"[check_cli_canary] WARNING: failed to persist budget invocation: {exc}", file=sys.stderr)
+        pass
+    return {"source_tag": "absent", "remaining": None}
 
 
 def load_cache(ai_root: Path) -> dict:
@@ -199,13 +197,14 @@ def canary_probe(
     now: datetime | None = None,
     force: bool = False,
     ai_root: Path | None = None,
-    bypass_budget: bool = False,
+    quota: dict[str, Any] | None = None,
 ) -> dict:
     """Run a single canary probe for a peer profile.
 
     `force` bypasses the result cache (re-invoke even on a cached PASS).
-    `bypass_budget` bypasses the invocation-budget gate independently, for
-    operator-intended runs (all-profiles / explicit peer or profile).
+    Every invocation, including an explicit target, must first reserve the
+    shared ledger.  ``quota`` is an injection seam for tests; production reads
+    the machine-observed profile quota through :func:`_canary_quota`.
     """
     if now is None:
         now = datetime.now(timezone.utc)
@@ -263,17 +262,29 @@ def canary_probe(
                 res["cached"] = True
                 return res
 
-    # 5. Check budget before invoking. `force` bypasses only the cache; the
-    # budget is bypassed independently via `bypass_budget` (operator-intended
-    # all-profiles / explicit runs), so a forced single probe still counts.
-    now_ts = now.timestamp()
+    # 5. Reserve budget before building or calling an invoker.  There is no
+    # explicit-target escape hatch: a budget is a budget.
     cap, window_hours = get_budget_config(orch)
-    if not bypass_budget and not check_and_update_budget(ai_root, now_ts, cap, window_hours):
+    reserve_floor = get_reserve_floor(orch)
+    quota = quota if isinstance(quota, dict) else _canary_quota(peer, profile_name)
+    reservation = reserve_canary_invocation(
+        ai_root,
+        kind="cli_canary",
+        subject=f"{peer}.{profile_name}",
+        now=now,
+        cap=cap,
+        window_hours=window_hours,
+        reserve_floor=reserve_floor,
+        quota_source_tag=quota.get("source_tag", "absent"),
+        quota_remaining=quota.get("remaining"),
+        orchestration=orch,
+    )
+    if not reservation.get("granted"):
         return {
             "peer": peer,
             "profile": profile_name,
             "status": "SKIP",
-            "reason": "budget",
+            "reason": reservation.get("reason", "budget_disabled"),
             "ts": ts_iso,
         }
 
@@ -281,13 +292,14 @@ def canary_probe(
     if invoker is None:
         invoker = _default_invoker(orch)
 
-    # 7. Invoke
+    # 7. Invoke.  A launch failure did not spend an invocation, so release the
+    # reservation; any started invocation is consumed even if its reply fails.
     prompt = "Respond with exactly: OK"
-    record_budget_invocation(ai_root, now_ts)
 
     try:
         verdict_text = invoker(peer, profile_name, model_id, prompt)
     except Exception as exc:
+        release_canary_reservation(ai_root, reservation["reservation_id"], now=now)
         return {
             "peer": peer,
             "profile": profile_name,
@@ -296,6 +308,7 @@ def canary_probe(
             "detail": str(exc)[:200],
             "ts": ts_iso,
         }
+    consume_canary_reservation(ai_root, reservation["reservation_id"], now=now)
 
     # 8. Assertions from the reply. The prompt demands exactly "OK", so require
     # an exact normalized match — a substring test would false-PASS on replies
@@ -404,16 +417,12 @@ def run_canary(
 
     verdicts = []
     for peer_id, p_name, is_explicit in filtered_targets:
-        # Only a specific peer.profile target bypasses the budget. Root-peer
-        # or global --all-profiles runs are budget-capped, operator or
-        # internal alike (T16, 2026-07-10, unanimous ag+cx design-fork vote:
-        # DIR-004 "a budget is a budget" - is_explicit remains the sole
-        # escape hatch; keep the cache unless the caller explicitly --force).
-        bypass_budget = is_explicit
+        # ``is_explicit`` only affects premium-target eligibility above.  It
+        # never bypasses the shared canary ledger (T44a).
         try:
             verdict = canary_probe(
                 peer_id, p_name, orch, invoker=invoker,
-                force=force, ai_root=ai_root, bypass_budget=bypass_budget,
+                force=force, ai_root=ai_root,
             )
             verdicts.append(verdict)
         except Exception as exc:
