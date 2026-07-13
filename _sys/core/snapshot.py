@@ -536,6 +536,58 @@ def _cached_claude_usage_quotas(ttl_sec=EXPENSIVE_SOURCE_TTL_SEC, clock=time.mon
     return value
 
 
+def _codex_quota_buckets(rate_limits):
+    """Normalize Codex app-server rate-limit buckets using reported windows."""
+    if not isinstance(rate_limits, dict):
+        return []
+
+    buckets = []
+    legacy_windows = {
+        "primary": ("X-5H", 5.0),
+        "secondary": ("X-7D", 168.0),
+    }
+    for key in ("primary", "secondary"):
+        q = rate_limits.get(key)
+        if not isinstance(q, dict):
+            continue
+
+        label, window_hours = legacy_windows[key]
+        duration_mins = q.get("windowDurationMins")
+        if duration_mins is not None:
+            try:
+                reported_hours = float(duration_mins) / 60.0
+                if reported_hours <= 0:
+                    raise ValueError("window duration must be positive")
+                if reported_hours <= 24:
+                    reported_label = f"X-{round(reported_hours)}H"
+                else:
+                    reported_label = f"X-{round(reported_hours / 24.0)}D"
+            except (TypeError, ValueError, OverflowError):
+                pass
+            else:
+                label = reported_label
+                window_hours = reported_hours
+
+        used = q.get("usedPercent", 0) or 0
+        used_frac = used / 100.0
+
+        import quota as qmgr
+        resets_at = q.get("resetsAt")
+        reset_at = _parse_reset(resets_at)
+        rem_sec = qmgr.get_remaining_seconds(resets_at_iso=resets_at)
+        pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours)
+
+        buckets.append({
+            "label": label, "used_frac": used_frac,
+            "reset": _fmt_reset(resets_at),
+            "reset_at": reset_at.isoformat() if reset_at else None,
+            "pacing": pacing,
+            "metric": f"{float(used):.1f}% used{_fmt_pacing(pacing)}",
+            "pacing_ratio": pacing.get("ratio"), "pacing_status": pacing.get("status"),
+        })
+    return buckets
+
+
 def _discover_peers():
     """Return (peers, peer_dirs) from orchestration.json, with a static fallback."""
     peers = []
@@ -804,28 +856,7 @@ def gather_peer(peer, peer_dirs):
         rl = _cached_codex_rate_limits()
         if rl:
             info["source"] = "app-server"
-            for key, label in (("primary", "X-5H"), ("secondary", "X-7D")):
-                q = rl.get(key)
-                if not isinstance(q, dict):
-                    continue
-                used = q.get("usedPercent", 0) or 0
-                used_frac = used / 100.0
-                
-                import quota as qmgr
-                window_hours = 5.0 if "5H" in label else 168.0
-                resets_at = q.get("resetsAt")
-                reset_at = _parse_reset(resets_at)
-                rem_sec = qmgr.get_remaining_seconds(resets_at_iso=resets_at)
-                pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours)
-
-                quotas.append({
-                    "label": label, "used_frac": used_frac,
-                    "reset": _fmt_reset(resets_at),
-                    "reset_at": reset_at.isoformat() if reset_at else None,
-                    "pacing": pacing,
-                    "metric": f"{float(used):.1f}% used{_fmt_pacing(pacing)}",
-                    "pacing_ratio": pacing.get("ratio"), "pacing_status": pacing.get("status"),
-                })
+            quotas.extend(_codex_quota_buckets(rl))
         elif not quotas:
             info["cx_quota_unavailable"] = True
 

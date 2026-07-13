@@ -2,18 +2,75 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[3]
 CORE = ROOT / "_sys" / "core"
 if str(CORE) not in sys.path:
     sys.path.insert(0, str(CORE))
 
 import snapshot
+import quota
 
 
 def test_snapshot_import_smoke():
     assert callable(snapshot.collect_snapshot)
     assert callable(snapshot.snapshot_failover_target)
     assert callable(snapshot.snapshot_hash)
+
+
+@pytest.mark.parametrize(
+    ("rate_limits", "expected_label", "expected_window_hours"),
+    [
+        (
+            {
+                "primary": {
+                    "usedPercent": 8,
+                    "windowDurationMins": 10080,
+                    "resetsAt": 1784498297,
+                },
+                "secondary": None,
+            },
+            "X-7D",
+            168.0,
+        ),
+        (
+            {
+                "primary": {
+                    "usedPercent": 8,
+                    "windowDurationMins": 300,
+                    "resetsAt": 1784498297,
+                }
+            },
+            "X-5H",
+            5.0,
+        ),
+        (
+            {"primary": {"usedPercent": 8, "resetsAt": 1784498297}},
+            "X-5H",
+            5.0,
+        ),
+    ],
+)
+def test_codex_quota_buckets_use_reported_window_or_legacy_fallback(
+        monkeypatch, rate_limits, expected_label, expected_window_hours):
+    pacing_calls = []
+
+    def fake_calculate_pacing(used_frac, rem_sec, window_hours):
+        pacing_calls.append((used_frac, rem_sec, window_hours))
+        return {"ratio": 0.5, "status": "ok"}
+
+    monkeypatch.setattr(quota, "calculate_pacing", fake_calculate_pacing)
+
+    buckets = snapshot._codex_quota_buckets(rate_limits)
+
+    assert len(buckets) == 1
+    assert buckets[0]["label"] == expected_label
+    if expected_window_hours == 168.0:
+        assert buckets[0]["label"] != "X-5H"
+    assert len(pacing_calls) == 1
+    assert pacing_calls[0][0] == pytest.approx(0.08)
+    assert pacing_calls[0][2] == expected_window_hours
 
 
 def test_collect_snapshot_shape(monkeypatch):
