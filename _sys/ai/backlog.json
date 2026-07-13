@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-13T14:15:00+09:00",
+  "updated_at": "2026-07-13T14:30:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -1222,6 +1222,21 @@
       ],
       "next_action": "Human supplied a composite model intelligence-score table 2026-07-13 and asked to discuss + document profile policy. DISCUSSED (cx.deepthink + ag.deepthink; cc synthesis); human chose DOCUMENT-ONLY (no config change yet). Wrote _sys/docs-v2/ops/intelligence-scores.md (registered in 00-MANIFEST) capturing: the score table as DIR-004 declared/unverified; current mapping; findings - ag.deepthink=Gemini 3.1 Pro (~46-47) is BELOW ag.effort=Gemini 3.5 Flash (~50) (tier inversion), cross-peer deepthink cx.sol(~59)>cc.opus(~56)>ag.3.1pro(~46), Fable(~60)/Sol(~59) co-top; recommendations (NOT applied) - ag.deepthink Option A (upgrade to Gemini 3.5 Pro if live-measurable, clears inversion) vs Option B (keep 3.1 Pro, reframe deepthink = long-context/tool/multi-turn resilience), add cx.deepthink(sol) to arbiter_models, add per-profile measured_intelligence_score+score_source fields + a routing complexity_threshold clamp; DIR-004 caveats (composite != coding perf, context tradeoffs, store flagged, supersede on local benchmark). CONFIG CHANGES DEFERRED: any orchestration/routing edit is an R:10 round (re-measure availability live like T26, apply atomically, test). This item = the documentation; a future item would apply §4 if the operator approves.",
       "last_verified_at": "2026-07-13T14:15:00"
+    },
+    {
+      "id": "T36",
+      "title": "diag: ag session context always 'absent' (no agy PTY log reader in snapshot)",
+      "status": "proposed",
+      "priority": "low",
+      "category": "telemetry",
+      "owner": "unassigned",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/core/snapshot.py"
+      ],
+      "next_action": "Found by ag during the 2026-07-13 diag MECE review: snapshot._session_context_measured only has log parsers for cx (codex rollout JSONL) and cc (claude), so ag sessions (agy.exe PTY) always render context as 'absent' - a diagnostic blind spot for Gemini allocations. Deferred out of the diag P0/P1 refactor (it is a data-collection feature, not a display fix): needs an agy session-log format reader. DIR-004: 'absent' is the honest current state, so this is an enhancement, not a correctness bug. TDD-ready when picked up: add an agy log reader to _session_context_measured returning measured used/window or honest absent.",
+      "last_verified_at": "2026-07-13T14:30:00"
     }
   ]
 }
