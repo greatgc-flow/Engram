@@ -101,10 +101,16 @@ class TestActionAskContract:
         assert p["allow_governed_mutation"].default is False
         # T3 human override (2026-07-12): default False = oversized-ask hard reject active.
         assert p["force_tier0"].default is False
+        # D7 terminal-spend acknowledgement remains opt-in and non-interactive.
+        assert p["allow_terminal_spend"].default is False
+        # Private CLI-to-wrapper marker locks an AUTO-selected profile end-to-end.
+        assert p["_load_balanced"].default is False
         params = list(p.keys())
         assert params.index("_escalation_depth") == params.index("_depth") + 1
         assert params.index("origin") == params.index("_escalation_depth") + 1
         assert params.index("force_tier0") == params.index("allow_governed_mutation") + 1
+        assert params.index("allow_terminal_spend") == params.index("force_tier0") + 1
+        assert params.index("_load_balanced") == params.index("allow_terminal_spend") + 1
 
 
 

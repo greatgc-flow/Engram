@@ -444,6 +444,7 @@ def test_per_peer_aggregation_does_not_double_weight_multiple_profiles(monkeypat
     assert result["candidates"] == ["ag", "cx"]
     assert result["weights"]["ag"] == pytest.approx(0.31)
     assert result["weights"]["cx"] == pytest.approx(0.12)
+    assert result["representative_profiles"]["ag"] == "ag.deepthink"
 
 
 def test_absent_headroom_and_non_eligible_rows_are_filtered(monkeypatch):

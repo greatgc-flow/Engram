@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-12T16:19:01",
+  "generated_at": "2026-07-13T19:11:50",
   "source": "hub.py",
   "count": 83,
   "signatures": {
@@ -252,6 +252,16 @@
           "annotation": "bool"
         },
         "force_tier0": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "default": false,
+          "annotation": "bool"
+        },
+        "allow_terminal_spend": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "default": false,
+          "annotation": "bool"
+        },
+        "_load_balanced": {
           "kind": "POSITIONAL_OR_KEYWORD",
           "default": false,
           "annotation": "bool"

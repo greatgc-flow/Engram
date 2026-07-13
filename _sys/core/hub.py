@@ -4105,6 +4105,76 @@ def _session_hysteresis_target(snap, ai_root, selected, terminal_peer, cfg):
         return selected, None
 
 
+def _terminal_spend_guard(
+    ai_root: Path | None,
+    requested_target: str,
+    resolved_target: str,
+    profile_decision: dict | None,
+    origin: str,
+    acknowledged: bool,
+) -> None:
+    """Warn and audit an explicit ask that spends the human-interface peer.
+
+    This is deliberately advisory: explicit operator/worker routing still
+    proceeds, and no prompt is introduced into non-interactive hub calls.
+    """
+    if not ai_root:
+        return
+    try:
+        selection = _select_human_interface_peer(ai_root)
+        terminal_peer = selection.get("peer") if selection.get("eligible") else None
+        if not terminal_peer:
+            return
+
+        orch = _load_orchestration()
+
+        def _root(target: str) -> str:
+            if _HUB_PEER_AVAILABLE:
+                try:
+                    return hub_peer.root_peer_id(target, orch=orch) or target.split(".", 1)[0]
+                except Exception:
+                    pass
+            return target.split(".", 1)[0]
+
+        requested_root = _root(requested_target)
+        resolved_root = _root(resolved_target)
+        if resolved_root != terminal_peer:
+            return
+
+        same_peer_fallback = bool(
+            profile_decision
+            and profile_decision.get("fallback_from")
+            and requested_root == resolved_root
+        )
+        if same_peer_fallback:
+            reason = "same_peer_fallback"
+        elif origin == "worker":
+            reason = "worker_explicit_target"
+        else:
+            reason = "explicit_target"
+
+        if not acknowledged:
+            print(
+                f"[HUB:WARN] terminal-token spend: {resolved_target} is on the "
+                "human-interface peer; use --allow-terminal-spend to acknowledge",
+                file=sys.stderr,
+            )
+        _record_routing_metric(
+            ai_root,
+            "terminal_spend_guard",
+            mode="warn",
+            reason=reason,
+            terminal_peer=terminal_peer,
+            requested_target=requested_target,
+            resolved_target=resolved_target,
+            origin=origin,
+            acknowledged=bool(acknowledged),
+        )
+    except Exception as exc:
+        # A warning/telemetry guard must never block an explicit operator route.
+        print(f"[HUB:WARN] terminal-spend guard unavailable: {exc}", file=sys.stderr)
+
+
 def resolve_auto_target(ai_root, config=None, snapshot_obj=None, now=None, task_tokens=0) -> dict:
     """Load-balancer DRIVING path for `--to auto`: resolve the target peer via
     snapshot.select_load_balanced_peer and log the routing decision. Opt-in (does
@@ -4116,13 +4186,23 @@ def resolve_auto_target(ai_root, config=None, snapshot_obj=None, now=None, task_
             return {"target": None, "reason": "lb_disabled"}
         if not _SNAPSHOT_AVAILABLE or snapshot is None:
             return {"target": None, "reason": "snapshot_unavailable"}
-        snap = snapshot_obj if snapshot_obj is not None else snapshot.collect_snapshot()
+
         terminal_peer = None
-        if ai_root:
+        if cfg.get("terminal_hard_exclude", True):
+            selection = None
             try:
-                terminal_peer = _fresh_active_coordinator(_read_json(ai_root / "state.json") or {})
-            except Exception:
-                pass
+                selection = _select_human_interface_peer(ai_root, now=now) if ai_root else None
+            except Exception as exc:
+                selection = {"eligible": False, "peer": None, "reason": f"selection_error:{exc}"}
+            if not selection or not selection.get("eligible") or not selection.get("peer"):
+                return {
+                    "target": None,
+                    "reason": "terminal_identity_absent",
+                    "terminal_reason": (selection or {}).get("reason", "ai_root_absent"),
+                }
+            terminal_peer = str(selection["peer"])
+
+        snap = snapshot_obj if snapshot_obj is not None else snapshot.collect_snapshot()
         decision = snapshot.select_load_balanced_peer(
             snap, cfg, terminal_peer=terminal_peer, ask_id=_short_id("lb-"),
             task_tokens=task_tokens)
@@ -4133,19 +4213,42 @@ def resolve_auto_target(ai_root, config=None, snapshot_obj=None, now=None, task_
             except Exception:
                 pass
         if decision.get("selected_peer"):
-            target = decision["selected_peer"]
-            target, hyst = _session_hysteresis_target(snap, ai_root, target, terminal_peer, cfg)
+            selected_peer = str(decision["selected_peer"])
+            selected_row = decision.get("selected") or {}
+            selected_profile = selected_row.get("profile")
+            if not isinstance(selected_profile, str) or "." not in selected_profile:
+                return {"target": None, "reason": "selected_profile_absent"}
+
+            final_peer, hyst = _session_hysteresis_target(
+                snap, ai_root, selected_peer, terminal_peer, cfg
+            )
+            representatives = decision.get("representative_profiles") or {}
+            target = (
+                selected_profile
+                if final_peer == selected_peer
+                else representatives.get(final_peer)
+            )
+            if not isinstance(target, str) or target.split(".", 1)[0] != final_peer:
+                # Never retain a peer without the exact post-exclusion profile
+                # representative chosen for that peer.
+                final_peer = selected_peer
+                target = selected_profile
+                hyst = "session_hysteresis_profile_unavailable"
+
             snap_hash = snapshot.snapshot_hash(snap)
             if ai_root:
                 try:
                     _record_routing_metric(ai_root, "load_balance_route", target=target,
+                                           selected_peer=final_peer,
+                                           terminal_peer=terminal_peer,
                                            weights=decision.get("weights"),
                                            affinity=decision.get("affinity_applied"),
                                            hysteresis=hyst, snapshot_hash=snap_hash)
                 except Exception:
                     pass
             return {"target": target, "reason": hyst or "load_balanced",
-                    "weights": decision.get("weights"), "snapshot_hash": snap_hash}
+                    "weights": decision.get("weights"), "snapshot_hash": snap_hash,
+                    "terminal_peer": terminal_peer}
         return {"target": None, "reason": decision.get("reason", "no_selection")}
     except Exception as e:
         return {"target": None, "reason": f"error: {e}"}
@@ -4506,7 +4609,7 @@ def _maybe_run_arbiter_on_finalize(ai_root, data) -> None:
         print(f"[HUB:WARN] arbiter auto-wire error on finalize: {exc}", file=sys.stderr)
 
 
-def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False, force_tier0: bool = False) -> None:
+def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False, force_tier0: bool = False, allow_terminal_spend: bool = False, _load_balanced: bool = False) -> None:
     """Public entry: wraps _action_ask_inner with the LL-20260703-005 governed-
     mutation guard. Governed files are hashed before the peer executes and re-
     hashed in a crash-safe finally that covers BOTH the PTY (_ask_with_pty, ag)
@@ -4533,6 +4636,8 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             include_context, session_policy, explicit_scope, _depth,
             _escalation_depth, origin, allow_governed_mutation,
             force_tier0=force_tier0,
+            allow_terminal_spend=allow_terminal_spend,
+            _load_balanced=_load_balanced,
             ask_id=ask_id,
         )
     except BaseException as exc:
@@ -4606,7 +4711,7 @@ def _sweep_stale_ask_temp_dirs(temp_root: Path, max_age_sec: int = 3600) -> None
         pass
 
 
-def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False, force_tier0: bool = False, ask_id: str | None = None) -> None:
+def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False, force_tier0: bool = False, allow_terminal_spend: bool = False, _load_balanced: bool = False, ask_id: str | None = None) -> None:
     if _depth > RUNTIME_ESCALATION_DEPTH_CEILING:
 
         print(f"[ERROR] action_ask: maximum failover depth reached for {to}", file=sys.stderr)
@@ -4655,22 +4760,47 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     max_ask_tasks, max_ask_chars = _oversized_ask_limits()
 
     profile_decision: dict | None = None
-    try:
-        to, profile_decision = _select_ask_profile(to, user_query_raw)
-
-    except Exception as exc:
-        if _PROFILE_ROUTER_AVAILABLE and isinstance(
-            exc, hub_profile_router.ProfileRoutingError
-        ):
-            # A fully health-blocked peer (root RED / all profiles closed) surfaces here as
-            # "no eligible profile". Defer to the health precheck so a health-blocked peer
-            # exits with the canonical health-gate code (2), not a generic routing error (1).
-            # If the peer is actually healthy, precheck returns and this is a real routing fail.
-            root_to = to.split(".")[0]
-            _ask_health_precheck(root_to, ai_root)
-            print(f"[HUB:ERROR] profile routing failed: {exc}", file=sys.stderr)
+    if _load_balanced:
+        if "." not in to:
+            print("[HUB:ERROR] load-balanced target is missing a profile id", file=sys.stderr)
             sys.exit(1)
-        raise
+        root_peer, selected_profile = to.split(".", 1)
+        profile_decision = {
+            "node_id": to,
+            "root_peer": root_peer,
+            "selected_profile": selected_profile,
+            "explicit": False,
+            "classifier_triggered": False,
+            "fallback_from": None,
+            "load_balanced": True,
+        }
+    else:
+        try:
+            to, profile_decision = _select_ask_profile(to, user_query_raw)
+
+        except Exception as exc:
+            if _PROFILE_ROUTER_AVAILABLE and isinstance(
+                exc, hub_profile_router.ProfileRoutingError
+            ):
+                # A fully health-blocked peer (root RED / all profiles closed) surfaces here as
+                # "no eligible profile". Defer to the health precheck so a health-blocked peer
+                # exits with the canonical health-gate code (2), not a generic routing error (1).
+                # If the peer is actually healthy, precheck returns and this is a real routing fail.
+                root_to = to.split(".")[0]
+                _ask_health_precheck(root_to, ai_root)
+                print(f"[HUB:ERROR] profile routing failed: {exc}", file=sys.stderr)
+                sys.exit(1)
+            raise
+
+    if _depth == 0 and _escalation_depth == 0 and not _load_balanced:
+        _terminal_spend_guard(
+            ai_root,
+            requested_to,
+            to,
+            profile_decision,
+            origin,
+            allow_terminal_spend,
+        )
 
     if ai_root:
         _guard_action(ai_root, "ask", force_tier0=False, origin=origin, target_peer=to)
@@ -4684,7 +4814,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
             fallback_from = profile_decision["fallback_from"]
             selected_prof = profile_decision.get("selected_profile")
             print(f"[HUB:FALLBACK] {requested_to}.{fallback_from} -> {requested_to}.{selected_prof}", file=sys.stderr)
-        if ai_root:
+        if ai_root and not _load_balanced:
             _record_routing_metric(
                 ai_root,
                 "auto_profile_route",
@@ -9205,6 +9335,9 @@ def main() -> None:
     parser.add_argument("--allow-governed-mutation", dest="allow_governed_mutation",
                         action="store_true",
                         help="Authorize a peer to mutate governed files during this ask (broker/consensus execution); skips the LL-20260703-005 out-of-band mutation guard")
+    parser.add_argument("--allow-terminal-spend", dest="allow_terminal_spend",
+                        action="store_true",
+                        help="Acknowledge an explicit ask that spends tokens on the human-interface terminal peer")
     parser.add_argument("--rule")
     parser.add_argument("--enforcement-artifact", dest="enforcement_artifact",
                         help="G-bridge artifact path (relative to .ai or knowledge root) whose pass marker gates lesson activation")
@@ -9237,6 +9370,7 @@ def main() -> None:
         if ai_root_opt is not None:
             ensure_ai_dir(ai_root_opt)
         effective_target = args.to_
+        load_balanced = effective_target == "auto"
         # Opt-in load-balanced routing: `--to auto` resolves the target peer via
         # the balancer (gated by token_load_balancing.enabled). Explicit --to is
         # untouched. Fail loud if auto can't resolve — never silently default.
@@ -9256,7 +9390,7 @@ def main() -> None:
             else:
                 print(f"[HUB:WARN] auto routing unavailable ({res.get('reason')}); specify an explicit --to", file=sys.stderr)
                 sys.exit(1)
-        action_ask(effective_target, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file, session_policy=args.session_policy, explicit_scope=args.scope, origin=origin, allow_governed_mutation=getattr(args, "allow_governed_mutation", False), force_tier0=getattr(args, "force_tier0", False))
+        action_ask(effective_target, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file, session_policy=args.session_policy, explicit_scope=args.scope, origin=origin, allow_governed_mutation=getattr(args, "allow_governed_mutation", False), force_tier0=getattr(args, "force_tier0", False), allow_terminal_spend=getattr(args, "allow_terminal_spend", False), _load_balanced=load_balanced)
         return
     if args.action == "ask-all":
         ai_root_opt = None

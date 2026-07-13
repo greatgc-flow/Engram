@@ -1756,6 +1756,7 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
                 "probabilities": {}, "terminal_excluded": None,
                 "premium_excluded": sorted(premium or []), "seed": None,
                 "draw": None, "candidates": [], "reason": reason,
+                "representative_profiles": {},
                 "telemetry_events": list(shared_events)}
 
     # Candidate prefilter (hard): eligible + measured (non-absent) headroom.
@@ -1993,6 +1994,10 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
     return {
         "selected": representatives[selected_peer],
         "selected_peer": selected_peer,
+        "representative_profiles": {
+            peer: row.get("profile") for peer, row in representatives.items()
+            if row.get("profile")
+        },
         "weights": {peer: round(raw_weights[peer], 4) for peer in peers},
         "probabilities": {peer: round(raw_weights[peer] / total, 4) for peer in peers},
         "terminal_excluded": terminal_excluded,
