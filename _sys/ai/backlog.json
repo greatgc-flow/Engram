@@ -1058,11 +1058,13 @@
     {
       "id": "T26",
       "title": "Migrate cx profiles to Codex gpt-5.6 luna/terra/sol; retain ag.opus bulk exclusion",
-      "status": "active",
+      "status": "done",
       "priority": "high",
       "category": "routing",
       "owner": "unassigned",
-      "evidence_commit": [],
+      "evidence_commit": [
+        "04fd821"
+      ],
       "supersedes": [],
       "source_refs": [
         "_sys/ai/orchestration.json#cx",
