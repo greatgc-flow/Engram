@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-13T13:45:00+09:00",
+  "updated_at": "2026-07-13T14:15:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -1203,6 +1203,23 @@
       ],
       "next_action": "Requested by human 2026-07-13: shorter option than --watch-summary + per-peer recent session info (max 3/peer) repainting without scroll. DESIGN DISCUSSED FIRST per human instruction (cx design pass + ag cross-check; human chose the clean-standalone-HUD option via AskUserQuestion). IMPLEMENTED (cx wrote - human asked cx be used maximally; cc recovered docs from quarantine, live-verified, committed). --watch-summary renamed to --live (hidden back-compat alias, help-suppressed; --interval still aliases; mutually exclusive with --watch; min-interval floor kept). --live is a CLEAN STANDALONE HUD: in-place double-buffered repaint from tick 0 rendering ONLY SUMMARY -> RECENT ACTIVE SESSIONS -> FRAME (full PROFILES/ALERTS/POLICY dashboard intentionally dropped for --live; also sidesteps the cursor-up overwrite bug). New pure helper render_recent_sessions(out, snapshot, *, now, columns, line_budget): groups snapshot['sessions'] by peer, sorts last_used desc (missing ts last), caps 3/peer, ROUND-ROBIN allocation within a DYNAMIC per-tick height budget = max(0, terminal_rows - exact_SUMMARY_lines - exact_FRAME_lines - 1), '+N hidden' overflow line, one-line-per-peer digest under a tight budget, skips peers with 0 sessions. Compact row PROFILE(20) AGE(5) CTX(7) SCOPE(rest), honest 'absent' for unknown ctx, ANSI-safe width clipping so no line wraps (no scroll). Sessions refresh via collect_snapshot(use_cache=False) each tick (not the 60s cache). Non-TTY = plain sequential frames, no ANSI. Normal one-shot dashboard untouched. cx empirical: 17 active sessions at 80x24 rendered as 22 rows, max width 80 (no scroll, evidence-backed). Docs updated: user/manual.md (diag --live in Check Peers) + ops/diag-telemetry-architecture.md (CLI table + watch contract + active-not-historical sessions). 74 focused diag tests + 7 net-new; full suite 968 passed; CHK-ENC clean.",
       "last_verified_at": "2026-07-13T13:45:00"
+    },
+    {
+      "id": "T35",
+      "title": "Profile policy from composite intelligence scores (documented; config deferred)",
+      "status": "active",
+      "priority": "medium",
+      "category": "routing",
+      "owner": "unassigned",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/docs-v2/ops/intelligence-scores.md",
+        "_sys/ai/orchestration.json",
+        "_sys/ai/routing-config.json"
+      ],
+      "next_action": "Human supplied a composite model intelligence-score table 2026-07-13 and asked to discuss + document profile policy. DISCUSSED (cx.deepthink + ag.deepthink; cc synthesis); human chose DOCUMENT-ONLY (no config change yet). Wrote _sys/docs-v2/ops/intelligence-scores.md (registered in 00-MANIFEST) capturing: the score table as DIR-004 declared/unverified; current mapping; findings - ag.deepthink=Gemini 3.1 Pro (~46-47) is BELOW ag.effort=Gemini 3.5 Flash (~50) (tier inversion), cross-peer deepthink cx.sol(~59)>cc.opus(~56)>ag.3.1pro(~46), Fable(~60)/Sol(~59) co-top; recommendations (NOT applied) - ag.deepthink Option A (upgrade to Gemini 3.5 Pro if live-measurable, clears inversion) vs Option B (keep 3.1 Pro, reframe deepthink = long-context/tool/multi-turn resilience), add cx.deepthink(sol) to arbiter_models, add per-profile measured_intelligence_score+score_source fields + a routing complexity_threshold clamp; DIR-004 caveats (composite != coding perf, context tradeoffs, store flagged, supersede on local benchmark). CONFIG CHANGES DEFERRED: any orchestration/routing edit is an R:10 round (re-measure availability live like T26, apply atomically, test). This item = the documentation; a future item would apply §4 if the operator approves.",
+      "last_verified_at": "2026-07-13T14:15:00"
     }
   ]
 }

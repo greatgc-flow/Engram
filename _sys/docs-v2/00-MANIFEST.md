@@ -70,6 +70,7 @@ For navigation by domain: `MOC.md`. For human onboarding: `user/manual.md`.
 | `ops/diag-telemetry-architecture.md` | design | Pre-TDD telemetry architecture for `diag`: Specific collectors, Generic schema, freshness-aware presentation | 2026-06-30 |
 | `ops/peer-cli-reference.md` | living | Execution-verified feature reference for claude.cmd/codex.cmd/agy.exe: modes, session/resume, models, sandbox, quirks | 2026-07-02 |
 | `ops/status-consolidation-2026-07-08.md` | living | Reconciliation point for the 2026-07-07/08 work stream: shipped commits, pending/backlog, MECE, freshness | 2026-07-08 |
+| `ops/intelligence-scores.md` | living | Composite model intelligence scores (declared, unverified) + profile/arbiter policy recommendations; documented-only pending R:10 | 2026-07-13 |
 | `user/manual.md` | living | Human onboarding, daily workflow, command reference | 2026-06-26 |
 | `user/requirements.md` | living | Root requirement contract (A1-A5...) — source of intent | 2026-06-26 |
 | `_exceptions/README.md` | living | Active ambiguity register (small; not a backlog) | 2026-06-26 |
