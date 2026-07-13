@@ -1207,11 +1207,13 @@
     {
       "id": "T35",
       "title": "Profile policy from composite intelligence scores (documented; config deferred)",
-      "status": "active",
+      "status": "done",
       "priority": "medium",
       "category": "routing",
       "owner": "unassigned",
-      "evidence_commit": [],
+      "evidence_commit": [
+        "43e872e"
+      ],
       "supersedes": [],
       "source_refs": [
         "_sys/docs-v2/ops/intelligence-scores.md",
