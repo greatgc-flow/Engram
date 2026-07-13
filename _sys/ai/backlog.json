@@ -1356,6 +1356,25 @@
       ],
       "next_action": " IMPLEMENTED 2026-07-13 (TDD batch 1, cx test-first, cc recovered+verified+committed ). profile_class (tier|specialty) + quota_families (plural: cc.fable=[F,C]) added to all profiles; check_config validator (class/name coherence + reserve invariant); snapshot reads declared families (stale ag.sonnet removed); routing/arbiter/terminal untouched. 990 unit + 71 contract pass.",
       "last_verified_at": "2026-07-13T16:30:00"
+    },
+    {
+      "id": "T35f",
+      "title": "TDD D3+D6 landed: intelligence_evidence + ag.deepthink intent",
+      "status": "done",
+      "priority": "medium",
+      "category": "routing",
+      "owner": "unassigned",
+      "evidence_commit": [
+        "feab3e0"
+      ],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/ai/orchestration.json",
+        "_sys/checks/check_config.py",
+        "_sys/cli/diag.py"
+      ],
+      "next_action": "TDD batch 2 (cx test-first, cc verified+committed feab3e0): intelligence_evidence on 7 table-supported profiles (all [decl], DIR-004), ag.deepthink profile_intent (accepted inversion, no 2M claim); diag --profiles INTEL column; declared metadata EXCLUDED from routing hash + equivalence test proves routing/arbiter unchanged. 1012 unit pass. Next: D7 (P0 T39/T40).",
+      "last_verified_at": "2026-07-13T16:50:00"
     }
   ]
 }
