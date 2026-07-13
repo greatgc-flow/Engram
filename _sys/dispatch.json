@@ -1,68 +1,91 @@
 {
-  "_version": "2.0",
-  "_comment": "Pipeline orchestration. 'pipelines' maps CLI commands to ordered operation lists. 'operations' maps op IDs to module+method+config.",
-
-  "operations": {
-    "provision.deploy": {
-      "module": "core.provisioner",
-      "method": "deploy",
-      "config": "runtimes.json",
-      "idempotent": true,
-      "failure_policy": "abort"
+    "_version": "2.0",
+    "_comment": "Pipeline orchestration. 'pipelines' maps CLI commands to ordered operation lists. 'operations' maps op IDs to module+method+config.",
+    "operations": {
+        "provision.deploy": {
+            "module": "core.provisioner",
+            "method": "deploy",
+            "config": "runtimes.json",
+            "idempotent": true,
+            "failure_policy": "abort"
+        },
+        "virtual.mount": {
+            "module": "core.virtualizer",
+            "method": "mount",
+            "config": "ai/peers.json",
+            "idempotent": true,
+            "failure_policy": "warn",
+            "state_key": "register"
+        },
+        "registry.apply": {
+            "module": "core.registrar",
+            "method": "apply",
+            "config": "context_menu.json",
+            "idempotent": true,
+            "failure_policy": "warn",
+            "state_key": "register"
+        },
+        "virtual.unmount": {
+            "module": "core.virtualizer",
+            "method": "unmount",
+            "idempotent": true,
+            "failure_policy": "continue"
+        },
+        "registry.remove": {
+            "module": "core.registrar",
+            "method": "remove",
+            "idempotent": true,
+            "failure_policy": "continue"
+        },
+        "scrub.run": {
+            "module": "core.scrubber",
+            "method": "run",
+            "idempotent": true,
+            "failure_policy": "abort"
+        },
+        "env.launch": {
+            "module": "core.launcher",
+            "method": "main",
+            "failure_policy": "abort"
+        },
+        "update.run": {
+            "module": "core.updater",
+            "method": "run",
+            "failure_policy": "abort"
+        },
+        "status.run": {
+            "module": "core.doctor",
+            "method": "run",
+            "failure_policy": "abort"
+        }
     },
-    "virtual.mount": {
-      "module": "core.virtualizer",
-      "method": "mount",
-      "config": "ai/peers.json",
-      "idempotent": true,
-      "failure_policy": "warn",
-      "state_key": "register"
-    },
-    "registry.apply": {
-      "module": "core.registrar",
-      "method": "apply",
-      "config": "context_menu.json",
-      "idempotent": true,
-      "failure_policy": "warn",
-      "state_key": "register"
-    },
-    "virtual.unmount": {
-      "module": "core.virtualizer",
-      "method": "unmount",
-      "idempotent": true,
-      "failure_policy": "continue"
-    },
-    "registry.remove": {
-      "module": "core.registrar",
-      "method": "remove",
-      "idempotent": true,
-      "failure_policy": "continue"
-    },
-    "scrub.run": {
-      "module": "core.scrubber",
-      "method": "run",
-      "idempotent": true,
-      "failure_policy": "abort"
-    },
-    "env.launch": {
-      "module": "core.launcher",
-      "method": "main",
-      "failure_policy": "abort"
-    },
-    "update.run": {
-      "module": "core.updater",
-      "method": "run",
-      "failure_policy": "abort"
+    "pipelines": {
+        "install": [
+            "provision.deploy",
+            "state.write"
+        ],
+        "register": [
+            "virtual.mount",
+            "registry.apply",
+            "state.write"
+        ],
+        "unregister": [
+            "registry.remove",
+            "virtual.unmount",
+            "state.prune"
+        ],
+        "cleanup": [
+            "scrub.run"
+        ],
+        "start": [
+            "env.launch"
+        ],
+        "init": [],
+        "update": [
+            "update.run"
+        ],
+        "status": [
+            "status.run"
+        ]
     }
-  },
-
-  "pipelines": {
-    "install":    ["provision.deploy", "state.write"],
-    "register":   ["virtual.mount", "registry.apply", "state.write"],
-    "unregister": ["registry.remove", "virtual.unmount", "state.prune"],
-    "cleanup":    ["scrub.run"],
-    "start":      ["env.launch"],
-    "init":       [],
-    "update":     ["update.run"]
-  }
 }
