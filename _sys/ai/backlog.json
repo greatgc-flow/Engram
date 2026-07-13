@@ -1144,11 +1144,13 @@
     {
       "id": "T31",
       "title": "P0/convenience: UPDATE.bat strands user at --propose-diff; T24 --apply not exposed; 'latest' artifact chosen by timestamp (race); no not_checked/manual coverage category",
-      "status": "active",
+      "status": "done",
       "priority": "medium",
       "category": "lifecycle",
       "owner": "unassigned",
-      "evidence_commit": [],
+      "evidence_commit": [
+        "8b864d1"
+      ],
       "supersedes": [],
       "source_refs": [],
       "next_action": "Raised 2026-07-13 from a human-requested install/update/cleanup MECE + convenience review (ag.deepthink + cx.deepthink design pass; cc.fable synthesis; human chose FULL P0 batch). update UX: Python-driven update flow exposing T24 apply/install behind confirmation using the exact proposal artifact path; add not_checked/manual result category; partial-install reporting Sequenced per cx: T28/T29 truthfulness+consistency first, then T31 update UX, T30 cleanup safety, then T32 status, then T33 manual. Admin: DOCUMENT-ONLY zero-admin rule + status advisory line (both peers rejected auto Defender exclusion as security-weakening/unmeasured). IMPLEMENTED 2026-07-13 (ag wrote - routed to ag since cx was quota-constrained on its weekly X-7D bucket - cc recovered from quarantine + reviewed core logic + verified). PART A: check_tool_updates.py discover_updates() now surfaces a not_checked list ({component,section,reason}) for every runtimes.json entry with no discovery_provider or provider=='manual' (the 5 runtimes python/nodejs/git/vscode/pwsh + tool agy that were silently skipped), so UPDATE no longer implies it checks everything; CLI summary adds 'not-checked: N'. PART B: new core/updater.py run(ctx)->dict: discovers + writes the proposal via check_tool_updates.run(propose_diff=True), uses the EXACT payload['artifact_dir'] (NOT a timestamp glob - cx-flagged race), prints planned changes + not_checked, prompts 'Apply? [y/N]' unless --yes/-y (declined prints the exact resume command and is NOT a failure), then calls T24 apply_proposal(artifact_dir, yes=True, install=--install). Exit-code mapping to the T28 dispatch result contract: 0->success, 1/2->failed, 4->incomplete (applied but INSTALL failed; prints backup path). --dry-run shows the proposal and applies nothing. PART C: dispatch.json gains an 'update' pipeline -> update.run op (core.updater.run) so update is now a first-class dispatch pipeline (was bypassing dispatch); UPDATE.bat reduced to a thin wrapper (Python-exists guard + `dispatch.bat update %*`). 6 new tests in test_updater.py (not_checked payload, zero-updates, dry-run-calls-apply-zero-times, --yes-calls-apply-with-exact-artifact_dir, exit4->incomplete, declined-prompt-no-apply) - all mocked, no network. Full suite 951 passed. Independent peer cross-review deferred (ag authored; cx quota-constrained) - risk contained by T24's sha256/backup/atomic-overwrite guards + confirmation + dry-run + comprehensive mocked tests; cc reviewed core logic.",
