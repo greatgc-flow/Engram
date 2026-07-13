@@ -91,6 +91,33 @@ To let routing use measured capability instead of only per-peer
 - This file is the canonical registry for the score table; the config fields
   reference it via `score_source`.
 
+## 4.5 Measured cx context capacity (DIR-004: `measured` supersedes external `declared`)
+
+Live measurement 2026-07-13 (operator OK'd token spend) resolving an external
+`declared` claim (a ChatGPT screenshot: "GPT-5.6 API context window = 1,050,000
+tokens / 128k output") against our actual tooling:
+
+| Source | cx (gpt-5.6) context | Kind |
+|---|---|---|
+| ChatGPT / API spec | 1,050,000 tok | `declared, external, unverified` |
+| `codex debug models` (our CLI) | **272,000** (`context_window`=`max_context_window`) | `machine-reported` |
+| single `codex exec` input hard cap | **1,048,576 chars ≈ 258k tok** (`input_too_large`, model-agnostic — 5.4 rejects identically) | `measured` |
+| sol live needle-in-haystack | ingested **248,371 input_tokens**, retrieved a needle at 92% depth | `measured` |
+
+**Conclusion (governs routing, DIR-004 measured>declared):** the 1.05M figure is a
+raw API-tier number **not reachable through our Codex CLI** — a single `exec` input
+hits the ~1 MiB char wall (~258k tok) first, and the CLI reports a 272k window.
+(The 272k window can still fill across multi-turn history/tool outputs, but no single
+injected document exceeds ~258k tok.) Effort (low..ultra) does **not** change context;
+capacity is flat ~272k across sol/terra/luna. Consequence: **there is no usable
+"bigger-context" cx specialty via our CLI** — the earlier gpt-5.4 (declared 1M)
+candidate is withdrawn (same 1 MiB input wall + lower reasoning tier). The only
+unused higher lever is sol `max`/`ultra` effort (context-flat; quality delta vs
+`xhigh` is unmeasured → a T44 `capability-core` question). Higher efforts are
+live-invocable (confirmed). This is a worked example of
+[`capability-leveling.md`](capability-leveling.md): a real external declaration,
+overridden by our measured operational reality.
+
 ## 5. Risks / caveats (DIR-004)
 
 - **Workload divergence:** a composite (math/knowledge/reasoning) may not track
