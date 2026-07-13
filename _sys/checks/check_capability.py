@@ -332,8 +332,11 @@ def check_reality_rules(reality: dict[str, Any]) -> list[str]:
             verification = axis_info.get("verification")
             scale = axis_info.get("scale")
             
-            # 1. Missing scale | source_kind | verification
-            if evidence_band != "ABSENT" and not all((scale, source_tag, verification)):
+            # 1. Missing scale | source_kind | verification.
+            # ABSENT and STALE carry no effective value (STALE = an expired/failed
+            # empirical with no declaration fallback), so scale is legitimately
+            # unset for them; only value-bearing bands must be fully qualified.
+            if evidence_band not in ("ABSENT", "STALE") and not all((scale, source_tag, verification)):
                 errors.append(f"{subject_id}/{axis_name}: missing scale|source_tag|verification")
 
             # 2. Illegal combos

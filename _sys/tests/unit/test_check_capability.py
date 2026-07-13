@@ -99,6 +99,48 @@ def test_declared_only_resolves_declared_band():
         check_peer_capability_canary.resolve_runtime_fingerprint = orig_resolve
 
 
+def test_failed_empirical_without_declaration_resolves_stale_and_passes_check():
+    """A FAILED empirical probe on an axis with no declaration (e.g. the real
+    ag.deepthink direct_file_write.safe_utf8.v1 spike that scored 80 and failed the
+    line-endings hard gate) resolves to STALE with no effective value, and
+    check_reality_rules must accept it (STALE carries no scale, like ABSENT)."""
+    now = datetime(2026, 7, 14, 12, 0, 0, tzinfo=timezone.utc)
+    orch = {"hub_nodes": []}
+    snap = {"profiles": []}
+    declarations = {"schema_version": 1, "subjects": {}}
+    fp = {
+        "peer": "ag", "profile": "deepthink",
+        "model_id": "Gemini 3.1 Pro (High)", "reasoning_effort": "high",
+        "adapter": "AgyAdapter", "invoke_args": ["-p"],
+        "profile_config_sha256": "c" * 64,
+        "binary": {"exists": True, "sha256": "d" * 64},
+    }
+    failed_entry = {
+        "schema_version": SCHEMA_VERSION,
+        "id": "cap-ag-deepthink-fail",
+        "peer": "ag", "profile": "deepthink",
+        "capability_id": CAPABILITY_ID,
+        "score": 80, "passed": False,
+        "measured_at": "2026-07-13T17:56:22Z",
+        "expires_at": "2026-07-20T17:56:22Z",
+        "source_tag": "empirical_probe",
+        "runtime_fingerprint": fp,
+    }
+    import check_peer_capability_canary
+    orig = check_peer_capability_canary.resolve_runtime_fingerprint
+    check_peer_capability_canary.resolve_runtime_fingerprint = lambda o, p, pr: fp
+    try:
+        reality = check_capability.resolve_capability_reality(orch, snap, declarations, [failed_entry], now)
+        axis = reality["subjects"]["ag.deepthink"]["axes"][CAPABILITY_ID]
+        assert axis["evidence_band"] == "STALE"
+        assert axis["effective_value"] is None
+        assert any(e["id"] == "cap-ag-deepthink-fail" for e in axis["stale_evidence"])
+        # The check must PASS on this overlay (the bug the real spike exposed).
+        assert check_capability.check_reality_rules(reality) == []
+    finally:
+        check_peer_capability_canary.resolve_runtime_fingerprint = orig
+
+
 def test_valid_empirical_supersedes_declaration_as_certified():
     """Valid empirical probe (passed + same fingerprint + not expired) supersedes declaration."""
     now = datetime(2026, 7, 13, 12, 0, 0, tzinfo=timezone.utc)

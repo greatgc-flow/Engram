@@ -71,12 +71,12 @@
       },
       "measurement_feasibility": {
         "performance": {
-          "status": "blocked_pending_pty_harness",
-          "reason_code": "agy_pty_harness_uncertified",
-          "source_kind": "declared",
-          "verification": "unverified",
-          "source_ref": "_sys/docs-v2/ops/capability-leveling.md#5.3",
-          "as_of": "2026-07-13"
+          "status": "measurable",
+          "source_kind": "measured",
+          "verification": "machine_observed",
+          "source_ref": "_sys/ai/knowledge/peer-capability-scores.jsonl",
+          "as_of": "2026-07-14",
+          "evidence_note": "agy PTY canary harness proven functional (T42 spike 2026-07-13, transport=pty exit 0). ag.deepthink measured direct_file_write.safe_utf8.v1 score 80/100 (FAILS line_endings_and_bom hard gate: agy normalizes CRLF); not certified-passing."
         }
       }
     },
@@ -105,12 +105,12 @@
       },
       "measurement_feasibility": {
         "performance": {
-          "status": "blocked_pending_pty_harness",
-          "reason_code": "agy_pty_harness_uncertified",
-          "source_kind": "declared",
-          "verification": "unverified",
-          "source_ref": "_sys/docs-v2/ops/capability-leveling.md#5.3",
-          "as_of": "2026-07-13"
+          "status": "measurable",
+          "source_kind": "measured",
+          "verification": "machine_observed",
+          "source_ref": "_sys/ai/knowledge/peer-capability-scores.jsonl",
+          "as_of": "2026-07-14",
+          "evidence_note": "agy PTY canary harness proven functional (T42 spike 2026-07-13, transport=pty exit 0). ag.deepthink measured direct_file_write.safe_utf8.v1 score 80/100 (FAILS line_endings_and_bom hard gate: agy normalizes CRLF); not certified-passing."
         }
       }
     },
