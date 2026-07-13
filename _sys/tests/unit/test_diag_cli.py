@@ -1116,7 +1116,7 @@ def test_fp1_profile_copy_regression(tmp_path, monkeypatch):
 
 
 # --------------------------------------------------------------------------
-# D9 - --watch-summary (design 2026-07-09 pretdd-prep, unanimous ag/cx/fable)
+# D9 - standalone --live HUD (--watch-summary remains a hidden compatibility alias)
 # --------------------------------------------------------------------------
 
 class _FakeTTY(io.StringIO):
@@ -1128,7 +1128,8 @@ class _FakeTTY(io.StringIO):
 
 
 def _fake_snapshot(peer="cc"):
-    return {"schema_version": 1, "peers": [{"raw": {
+    return {"schema_version": 1, "observed_at": "2026-07-13T10:00:00+00:00",
+            "profiles": [], "sessions": [], "peers": [{"peer": peer, "raw": {
         "peer": peer, "gate": None, "quarantined": None, "quarantine_reason": None,
         "model": "Unknown", "ctx_used": 0, "ctx_window": "Unknown", "ctx_pct": None,
         "cost": None, "source": "none", "agent_state": None, "plan_tier": None,
@@ -1137,110 +1138,235 @@ def _fake_snapshot(peer="cc"):
     }}]}
 
 
-def test_watch_summary_flag_parses_and_is_mutually_exclusive_with_watch():
+def test_live_flag_alias_interval_and_mutual_exclusion(capsys):
     diag = load_diag()
 
-    args = diag.parse_args(["--watch-summary"])
-    assert args.watch_summary is True
+    args = diag.parse_args(["--live"])
+    assert args.live is True
     assert args.watch is False
     assert args.interval is None
 
-    args = diag.parse_args(["--watch-summary", "3"])
-    assert args.watch_summary is True
+    args = diag.parse_args(["--live", "3"])
+    assert args.live is True
     assert args.interval == 3
 
+    args = diag.parse_args(["--live", "--interval", "3"])
+    assert args.live is True
+    assert args.interval == 3
+
+    compat = diag.parse_args(["--watch-summary", "3"])
+    assert compat.live is True
+    assert compat.watch_summary is True
+    assert compat.interval == 3
+
     with pytest.raises(SystemExit):
-        diag.parse_args(["--watch", "--watch-summary"])
+        diag.parse_args(["--watch", "--live"])
+
+    with pytest.raises(SystemExit) as exc:
+        diag.parse_args(["--live", "1"])
+    assert exc.value.code != 0
+    assert "minimum interval is 2" in capsys.readouterr().err
 
 
-def test_watch_summary_non_tty_first_tick_full_then_lightweight(monkeypatch):
+def test_watch_summary_alias_is_hidden_from_help(capsys):
     diag = load_diag()
-    monkeypatch.setattr(diag, "collect_snapshot", lambda: _fake_snapshot())
-    run_calls = []
 
-    def fake_run(cmd, **kwargs):
-        run_calls.append(cmd)
-        class Res:
-            stdout = ""
-        return Res()
+    with pytest.raises(SystemExit):
+        diag.parse_args(["--help"])
+    help_text = capsys.readouterr().out
+    assert "--live" in help_text
+    assert "--watch-summary" not in help_text
 
-    monkeypatch.setattr(diag.subprocess, "run", fake_run)
+
+def _session_row(peer, profile, last_used, pct=10.0, scope="room-proj-b"):
+    return {
+        "peer": peer,
+        "profile": f"{peer}.{profile}",
+        "last_used_at": last_used,
+        "context": {"utilization_pct": pct} if pct is not None else {},
+        "scope_key": f"{scope}:{peer}.{profile}",
+    }
+
+
+def _snapshot_with_sessions(rows):
+    snap = _fake_snapshot("cc")
+    peers = []
+    for row in rows:
+        if row["peer"] not in peers:
+            peers.append(row["peer"])
+    snap["sessions"] = rows
+    snap["peers"] = [
+        {"peer": peer, "raw": {**_fake_snapshot(peer)["peers"][0]["raw"]}}
+        for peer in peers
+    ]
+    return snap
+
+
+def test_live_non_tty_is_plain_sequential_and_collects_once_per_tick(monkeypatch):
+    diag = load_diag()
+    calls = []
+
+    def collect_snapshot(*, use_cache):
+        calls.append(use_cache)
+        return _fake_snapshot()
+
+    monkeypatch.setattr(diag, "collect_snapshot", collect_snapshot)
+    monkeypatch.setattr(
+        diag.subprocess,
+        "run",
+        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("hub.py spawned")),
+    )
     out = io.StringIO()
 
     diag.run_watch(interval=0, stdout=out, max_frames=3, summary_only=True, sleep=lambda s: None)
 
-    # hub.py status subprocess only spawned on the first (full) render.
-    assert len(run_calls) == 1
     text = out.getvalue()
-    # First frame includes the full dashboard framing; SUMMARY/FRAME appear at
-    # least 3 times total (once per frame).
-    assert text.count(" SUMMARY") >= 3
+    assert calls == [False, False, False]
+    assert text.count(" SUMMARY") == 3
+    assert text.count("RECENT ACTIVE SESSIONS") == 3
+    assert " PROFILES & ROUTING" not in text
+    assert " POLICY" not in text
+    assert "\033[" not in text
 
 
-def test_watch_summary_tty_skips_subprocess_after_first_tick(monkeypatch):
+def test_live_tty_blits_from_tick_zero_without_cursor_up_or_subprocess(monkeypatch):
     diag = load_diag()
-    monkeypatch.setattr(diag, "collect_snapshot", lambda: _fake_snapshot())
+    calls = []
+    monkeypatch.setattr(diag, "collect_snapshot", lambda *, use_cache: (calls.append(use_cache), _fake_snapshot())[1])
     monkeypatch.setattr(diag, "shutil", type("S", (), {
         "get_terminal_size": staticmethod(lambda: (80, 24)),
     }))
-    run_calls = []
-
-    def fake_run(cmd, **kwargs):
-        run_calls.append(cmd)
-        class Res:
-            stdout = ""
-        return Res()
-
-    monkeypatch.setattr(diag.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        diag.subprocess,
+        "run",
+        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("hub.py spawned")),
+    )
     out = _FakeTTY()
 
-    diag.run_watch(interval=0, stdout=out, max_frames=4, summary_only=True, sleep=lambda s: None)
-
-    assert len(run_calls) == 1
-
-
-def test_watch_summary_tty_repaints_in_place_with_dynamic_height(monkeypatch):
-    diag = load_diag()
-    monkeypatch.setattr(diag, "shutil", type("S", (), {
-        "get_terminal_size": staticmethod(lambda: (80, 24)),
-    }))
-    monkeypatch.setattr(diag.subprocess, "run", lambda *a, **kw: type("R", (), {"stdout": ""})())
-
-    snaps = iter([_fake_snapshot(), _fake_snapshot(), _fake_snapshot()])
-    monkeypatch.setattr(diag, "collect_snapshot", lambda: next(snaps))
-    out = _FakeTTY()
-
-    diag.run_watch(interval=0, stdout=out, max_frames=3, summary_only=True, sleep=lambda s: None)
+    diag.run_watch(interval=0, stdout=out, max_frames=2, summary_only=True, sleep=lambda s: None)
 
     text = out.getvalue()
-    # Ticks after the first must reposition the cursor up and clear-to-end
-    # before printing the new SUMMARY+FRAME block (no scroll).
-    assert "\033[J" in text
-    assert any(f"\033[{n}A" in text for n in range(1, 200))
+    assert calls == [False, False]
+    assert text.count("\033[H") == 2
+    assert text.count("\033[J") == 2
+    assert not any(f"\033[{n}A" in text for n in range(1, 200))
 
 
-def test_watch_summary_resize_forces_full_rerender(monkeypatch):
+def test_live_resize_recomputes_height_budget_without_full_dashboard(monkeypatch):
     diag = load_diag()
-    monkeypatch.setattr(diag, "collect_snapshot", lambda: _fake_snapshot())
-    run_calls = []
-
-    def fake_run(cmd, **kwargs):
-        run_calls.append(cmd)
-        class Res:
-            stdout = ""
-        return Res()
-
-    monkeypatch.setattr(diag.subprocess, "run", fake_run)
-
-    sizes = iter([(80, 24), (80, 24), (120, 40), (120, 40)])
+    rows = [
+        _session_row(peer, "deepthink", f"2026-07-13T0{9-rank}:00:00+00:00")
+        for rank in range(3)
+        for peer in ("cc", "ag", "cx")
+    ]
+    snap = _snapshot_with_sessions(rows)
+    monkeypatch.setattr(diag, "collect_snapshot", lambda *, use_cache: snap)
+    sizes = iter([(60, 16), (60, 30)])
     monkeypatch.setattr(diag, "shutil", type("S", (), {
         "get_terminal_size": staticmethod(lambda: next(sizes)),
     }))
-    out = _FakeTTY()
+    frames = []
+    monkeypatch.setattr(diag, "_blit_frame", lambda _out, text, _sync: frames.append(text))
 
-    diag.run_watch(interval=0, stdout=out, max_frames=3, summary_only=True, sleep=lambda s: None)
+    diag.run_watch(interval=0, stdout=_FakeTTY(), max_frames=2, summary_only=True, sleep=lambda s: None)
 
-    # tick0 (full render, sees size A) + tick1 (sees size B, resize forces
-    # another full render) = 2 subprocess spawns; tick2 (still size B) stays
-    # light and does not spawn hub.py status.
-    assert len(run_calls) == 2
+    assert len(frames) == 2
+    assert len(frames[0].splitlines()) <= 16
+    assert len(frames[1].splitlines()) <= 30
+    assert all(diag._dw(line) <= 60 for frame in frames for line in frame.splitlines())
+    assert frames[1].count("deepthink") > frames[0].count("deepthink")
+    assert " PROFILES & ROUTING" not in "".join(frames)
+
+
+def test_recent_sessions_sort_missing_last_and_cap_three(monkeypatch):
+    diag = load_diag()
+    monkeypatch.setattr(
+        diag,
+        "collect_snapshot",
+        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("renderer recollected")),
+    )
+    rows = [
+        _session_row("cc", "newest", "2026-07-13T09:59:00+00:00"),
+        _session_row("cc", "missing", "not-a-time"),
+        _session_row("cc", "middle", "2026-07-13T09:30:00+00:00"),
+        _session_row("cc", "oldest", "2026-07-13T09:00:00+00:00"),
+    ]
+    out = io.StringIO()
+
+    diag.render_recent_sessions(
+        out,
+        _snapshot_with_sessions(rows),
+        now=datetime(2026, 7, 13, 10, tzinfo=timezone.utc),
+        columns=80,
+    )
+
+    text = out.getvalue()
+    assert text.index("cc.newest") < text.index("cc.middle") < text.index("cc.oldest")
+    assert "cc.missing" not in text
+    assert text.count("cc.") == 3
+
+
+def test_recent_sessions_round_robin_and_exact_hidden_count():
+    diag = load_diag()
+    rows = [
+        _session_row(peer, f"p{rank}", f"2026-07-13T0{9-rank}:00:00+00:00")
+        for rank in range(3)
+        for peer in ("cc", "cx")
+    ]
+    out = io.StringIO()
+
+    diag.render_recent_sessions(
+        out,
+        _snapshot_with_sessions(rows),
+        now=datetime(2026, 7, 13, 10, tzinfo=timezone.utc),
+        columns=80,
+        line_budget=5,
+    )
+
+    text = out.getvalue()
+    assert "cc.p0" in text and "cx.p0" in text
+    assert "cc.p1" not in text and "cx.p1" not in text
+    assert "  +4 hidden" in text
+
+
+def test_recent_sessions_tiny_budget_uses_one_line_per_peer_digest():
+    diag = load_diag()
+    rows = [
+        _session_row(peer, f"p{rank}", f"2026-07-13T0{9-rank}:00:00+00:00")
+        for rank in range(3)
+        for peer in ("cc", "ag")
+    ]
+    out = io.StringIO()
+
+    diag.render_recent_sessions(
+        out,
+        _snapshot_with_sessions(rows),
+        now=datetime(2026, 7, 13, 10, tzinfo=timezone.utc),
+        columns=80,
+        line_budget=3,
+    )
+
+    lines = out.getvalue().splitlines()
+    assert len(lines) == 3
+    assert lines[0].startswith("RECENT ACTIVE SESSIONS")
+    assert lines[1].startswith("CC:") and lines[1].endswith("(3)")
+    assert lines[2].startswith("AG:") and lines[2].endswith("(3)")
+
+
+def test_recent_sessions_skips_peers_without_session_rows():
+    diag = load_diag()
+    snap = _snapshot_with_sessions([
+        _session_row("cc", "fable", "2026-07-13T09:59:00+00:00"),
+    ])
+    snap["peers"].append({"peer": "ag", "raw": _fake_snapshot("ag")["peers"][0]["raw"]})
+    out = io.StringIO()
+
+    diag.render_recent_sessions(
+        out,
+        snap,
+        now=datetime(2026, 7, 13, 10, tzinfo=timezone.utc),
+        columns=80,
+    )
+
+    assert "cc.fable" in out.getvalue()
+    assert "AG:" not in out.getvalue()

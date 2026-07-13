@@ -193,7 +193,9 @@ Legend:
 | `diag --sessions` | session reuse, active ids, resume risk |
 | `diag --project` | git/docs/tests/broker/consensus/locks status |
 | `diag --watch [seconds]` | human dashboard refresh; default 5s, minimum 2s |
-| `diag --interval <seconds>` | explicit refresh interval alias; same limits as `--watch` |
+| `diag --live [seconds]` | compact in-place SUMMARY → RECENT ACTIVE SESSIONS → FRAME HUD |
+| `diag --watch-summary [seconds]` | hidden compatibility alias for `--live`; not shown in CLI help |
+| `diag --interval <seconds>` | explicit interval alias for the selected `--watch` or `--live` mode |
 | `diag --json --watch` | NDJSON telemetry stream; no ANSI, no terminal clearing |
 
 ### 6.3 Profile Matrix
@@ -219,6 +221,15 @@ A profile's SUMMARY quota rows are filtered by its quota family (`snapshot._quot
 Final peer consensus (`cc.deepthink`, `ag.deepthink`, `cx.deepthink`) uses this contract:
 
 - `diag --watch` defaults to 5 seconds.
+- `diag --live` uses the same default and minimum intervals, and is mutually
+  exclusive with `--watch`.
+- The live HUD is standalone from tick zero: it renders only SUMMARY, RECENT
+  ACTIVE SESSIONS, and FRAME. It never renders the full dashboard or invokes
+  `hub.py status`.
+- RECENT ACTIVE SESSIONS consumes the current snapshot's active rows (not
+  historical sessions), groups them by peer, sorts newest first, and considers
+  at most three rows per peer. Height-constrained rows are allocated round-robin
+  so every peer's newest session is preferred before any peer's second or third.
 - The hard minimum interval is 2 seconds; lower requested values are rejected with a non-zero exit code and a clear error message.
 - Cheap local file reads may refresh every frame.
 - Local health/config/sqlite reads use a 5 second TTL by default.
@@ -250,6 +261,12 @@ Final peer consensus (`cc.deepthink`, `ag.deepthink`, `cx.deepthink`) uses this 
 - **`--watch` double-buffering**: no alt-screen (scrollback preserved); frame built
   off-screen then blitted with synchronized-output (`?2026h/l`, TTY-gated) + cursor-home
   + per-line `\033[K` + final `\033[J`, replacing the flickering `\033[2J`.
+- **`--live` no-scroll HUD**: every TTY tick collects a fresh uncached snapshot,
+  renders the complete compact frame off-screen, clips each line to the current
+  terminal width, and uses the same cursor-home blit from tick zero. The session
+  line budget is recomputed every tick as `terminal rows - SUMMARY lines - FRAME
+  lines - 1`; a resize therefore changes visible session rows without switching
+  to the full dashboard. Non-TTY output is an ANSI-free sequential frame stream.
 - **Freshness**: expensive sources (claude `/usage`, codex rate-limits) are cached
   `ttl.expensive_source_sec` (60s) to avoid per-frame subprocess hang. POLICY shows
   `quota probe age: cached Ns ago`; `diag --fresh` forces one bypass. TTL stays 60s.
@@ -317,6 +334,9 @@ Implementation should not start until these tests are written or explicitly stub
    - `diag --json` returns valid JSON.
    - `diag --profiles`, `--accounts`, `--tokens`, `--sessions`, and `--project` are read-only.
    - `diag --watch` throttles refresh and does not poll expensive sources faster than TTL.
+   - `diag --live` repaints only SUMMARY, recent active sessions, and FRAME from
+     tick zero; it consumes one fresh snapshot per tick and never invokes the
+     full dashboard renderer.
    - cheap local file sources may be refreshed every rendered frame.
    - local health/config/sqlite sources use a 5 second TTL.
    - expensive subprocess/API sources, including Codex app-server rate-limit reads, use a 60 second TTL.
@@ -324,7 +344,10 @@ Implementation should not start until these tests are written or explicitly stub
    - `diag --json` emits exactly one normalized JSON object and exits.
    - `diag --watch` defaults to 5 seconds and enforces a 2 second minimum interval.
    - `diag --watch <seconds>` with a value below 2 exits non-zero and emits a clear error message.
-   - `diag --interval <seconds>` is an alias for `diag --watch <seconds>` and enforces the same 2 second minimum.
+   - `diag --live <seconds>` and `diag --live --interval <seconds>` enforce the
+     same 2 second minimum; hidden `--watch-summary` remains behavior-compatible.
+   - `diag --interval <seconds>` selects the interval for the active `--watch`
+     or `--live` mode (and defaults to `--watch` when used alone).
    - `diag --json --watch` emits NDJSON without ANSI control sequences.
    - non-TTY output never includes terminal clearing or alternate-screen control sequences.
    - `Ctrl+C` restores terminal state and exits with code 130.

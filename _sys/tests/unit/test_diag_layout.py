@@ -5,6 +5,7 @@ lives ONLY in SUMMARY; PROFILES is topology-only; emoji cells use _dw/_pad.
 """
 import io
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 SYS_DIR = Path(__file__).resolve().parents[2]
@@ -42,6 +43,15 @@ def test_pad_display_width():
     assert diag._pad("中文", 6, align="right") == "  中文"
     colored = diag._c("text", "green")
     assert diag._pad(colored, 6) == colored + "  "     # pad after color, width by _dw
+
+
+def test_elide_display_preserves_complete_ansi_sequences():
+    diag = load_diag()
+    text = "\033[31m" + ("x" * 20) + "\033[0m"
+    elided = diag._elide_display(text, 10)
+    assert diag._dw(elided) == 10
+    assert "\033[31m" in elided
+    assert elided.endswith("\033[0m")
 
 
 def test_render_profiles_has_no_quota_columns():
@@ -93,3 +103,65 @@ def test_snapshot_absent_stays_literal():
     assert snapshot.format_quota_bucket({"used_frac": None}) == "absent"
     assert snapshot.format_quota_bucket("not-a-dict") == "absent"
     assert "[----------] 0%" in snapshot.format_quota_bucket({"used_frac": 0.0})
+
+
+def test_recent_session_rows_never_exceed_requested_display_width():
+    diag = load_diag()
+    snapshot = {
+        "peers": [{"peer": "cx"}],
+        "sessions": [{
+            "peer": "cx",
+            "profile": "cx.deepthink-profile-name-that-is-too-long",
+            "last_used_at": "2026-07-13T09:57:00+00:00",
+            "context": {},
+            "scope_key": "room-with-a-very-long-name-that-must-be-elided",
+        }],
+    }
+    out = io.StringIO()
+
+    diag.render_recent_sessions(
+        out,
+        snapshot,
+        now=datetime(2026, 7, 13, 10, tzinfo=timezone.utc),
+        columns=40,
+    )
+
+    lines = out.getvalue().splitlines()
+    assert lines
+    assert all(diag._dw(line) <= 40 for line in lines)
+    assert any("absent" in line for line in lines)
+
+
+def test_summary_frame_respects_terminal_height_budget_and_panel_order():
+    diag = load_diag()
+    raw = {
+        "peer": "cc", "gate": True, "quarantined": False,
+        "model": "model", "ctx_used": 10, "ctx_window": 100,
+        "ctx_pct": 10.0, "cost": None, "source": "cli_live",
+        "quotas": [], "empty": False, "ctx_known": True,
+    }
+    sessions = [{
+        "peer": "cc", "profile": f"cc.p{i}",
+        "last_used_at": f"2026-07-13T09:5{i}:00+00:00",
+        "context": {"utilization_pct": i},
+        "scope_key": f"room-{i}:cc.p{i}",
+    } for i in range(5)]
+    snapshot = {
+        "observed_at": "2026-07-13T10:00:00+00:00",
+        "peers": [{"peer": "cc", "raw": raw}],
+        "profiles": [],
+        "sessions": sessions,
+    }
+    out = io.StringIO()
+
+    diag.render_summary_frame(
+        out,
+        snapshot,
+        terminal_lines=20,
+        columns=80,
+        now=datetime(2026, 7, 13, 10, tzinfo=timezone.utc),
+    )
+
+    text = out.getvalue()
+    assert len(text.splitlines()) <= 19  # one row is deliberately reserved
+    assert text.index(" SUMMARY") < text.index("RECENT ACTIVE SESSIONS") < text.index(" FRAME")

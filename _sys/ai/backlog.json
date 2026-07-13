@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-13T12:30:00+09:00",
+  "updated_at": "2026-07-13T13:45:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -1185,6 +1185,22 @@
       "source_refs": [],
       "next_action": "Raised 2026-07-13 from a human-requested install/update/cleanup MECE + convenience review (ag.deepthink + cx.deepthink design pass; cc.fable synthesis; human chose FULL P0 batch). rewrite manual lifecycle sections after T28-T32 contracts settle: lifecycle-at-a-glance, install/register/status/update/cleanup, zero-admin rule + optional Defender exception, fix stale model table Sequenced per cx: T28/T29 truthfulness+consistency first, then T31 update UX, T30 cleanup safety, then T32 status, then T33 manual. Admin: DOCUMENT-ONLY zero-admin rule + status advisory line (both peers rejected auto Defender exclusion as security-weakening/unmeasured). IMPLEMENTED 2026-07-13 (cc editorial, encoding-safe terminal; outline ratified by cx+ag in the lifecycle discussion; validated by CHK-ENC + check_docs_mece). Rewrote docs-v2/user/manual.md lifecycle coverage: fixed Quick Start (was register-before-install + launched disabled gemini) to INSTALL -> register -> STATUS -> launch; added a Lifecycle-at-a-Glance table (purpose/mutates/admin/reversible); new sections for Install/Repair (idempotent, truthful outcomes, T29 Python pin), Host Registration (register/unregister, unregister-before-move, register.state.json ledger never deleted by cleanup), Status/Doctor (STATUS.bat --json, python hard-gate), Updating (T31 one-command discover->confirm->apply/install/dry-run + not_checked coverage + backup), Cleanup (T30 tier table + governance-preserved-at-Tier1 + active-session guard + never-orphan + --dry-run/--force + uninstall recipe), and the Zero-Admin Rule (everything user-space: SUBST/HKCU/junctions/portable-extract; admin ONLY for an optional Defender exclusion, not automated). Fixed the stale peer table to current reality (cx=gpt-5.6 luna/terra/sol per T26, removed disabled gc row, noted cc.fable arbiter + ag.opus/gptoss manual profiles). CHK-ENC clean, all check_docs_mece checks pass. Closes the T28-T33 lifecycle P0 batch.",
       "last_verified_at": "2026-07-13T10:00:00"
+    },
+    {
+      "id": "T34",
+      "title": "diag --live: standalone no-scroll HUD with per-peer recent sessions (max 3/peer)",
+      "status": "active",
+      "priority": "medium",
+      "category": "telemetry",
+      "owner": "unassigned",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/cli/diag.py",
+        "_sys/docs-v2/ops/diag-telemetry-architecture.md"
+      ],
+      "next_action": "Requested by human 2026-07-13: shorter option than --watch-summary + per-peer recent session info (max 3/peer) repainting without scroll. DESIGN DISCUSSED FIRST per human instruction (cx design pass + ag cross-check; human chose the clean-standalone-HUD option via AskUserQuestion). IMPLEMENTED (cx wrote - human asked cx be used maximally; cc recovered docs from quarantine, live-verified, committed). --watch-summary renamed to --live (hidden back-compat alias, help-suppressed; --interval still aliases; mutually exclusive with --watch; min-interval floor kept). --live is a CLEAN STANDALONE HUD: in-place double-buffered repaint from tick 0 rendering ONLY SUMMARY -> RECENT ACTIVE SESSIONS -> FRAME (full PROFILES/ALERTS/POLICY dashboard intentionally dropped for --live; also sidesteps the cursor-up overwrite bug). New pure helper render_recent_sessions(out, snapshot, *, now, columns, line_budget): groups snapshot['sessions'] by peer, sorts last_used desc (missing ts last), caps 3/peer, ROUND-ROBIN allocation within a DYNAMIC per-tick height budget = max(0, terminal_rows - exact_SUMMARY_lines - exact_FRAME_lines - 1), '+N hidden' overflow line, one-line-per-peer digest under a tight budget, skips peers with 0 sessions. Compact row PROFILE(20) AGE(5) CTX(7) SCOPE(rest), honest 'absent' for unknown ctx, ANSI-safe width clipping so no line wraps (no scroll). Sessions refresh via collect_snapshot(use_cache=False) each tick (not the 60s cache). Non-TTY = plain sequential frames, no ANSI. Normal one-shot dashboard untouched. cx empirical: 17 active sessions at 80x24 rendered as 22 rows, max width 80 (no scroll, evidence-backed). Docs updated: user/manual.md (diag --live in Check Peers) + ops/diag-telemetry-architecture.md (CLI table + watch contract + active-not-historical sessions). 74 focused diag tests + 7 net-new; full suite 968 passed; CHK-ENC clean.",
+      "last_verified_at": "2026-07-13T13:45:00"
     }
   ]
 }

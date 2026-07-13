@@ -175,9 +175,13 @@ hub peer-status                 # all peers at a glance (canonical status)
 hub peer-status                 # all peers at a glance (canonical status)
 hub health-precheck --peer ag   # before routing an ask to a peer
 diag                             # diagnostic dashboard (context, quotas, sessions, cost)
-diag --watch 5                   # live refresh view; default 5s, rejects values below 2s
+diag --live 5                    # compact no-scroll SUMMARY + recent-session HUD
 diag --json --watch 5            # NDJSON telemetry stream for automation
 ```
+
+`diag --live [seconds]` repaints a standalone SUMMARY → RECENT ACTIVE SESSIONS
+→ FRAME HUD in place. It shows at most three newest active sessions per peer,
+uses five seconds by default, and rejects intervals below two seconds.
 
 ### Ask a Peer
 ```

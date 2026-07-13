@@ -96,6 +96,39 @@ def _pad(s, width, align="left"):
     return s + " " * diff
 
 
+def _elide_display(value, width):
+    """Elide text to a display-cell width without splitting ANSI/wide cells."""
+    text = str(value)
+    if width is None or _dw(text) <= width:
+        return text
+    if width <= 0:
+        return ""
+    if width <= 3:
+        return "." * width
+    marker = "..."
+    target = width - _dw(marker)
+    used = 0
+    chars = []
+    had_ansi = False
+    pos = 0
+    while pos < len(text):
+        ansi = re.match(r"\x1b\[[0-9;?]*[a-zA-Z]", text[pos:])
+        if ansi:
+            chars.append(ansi.group(0))
+            pos += len(ansi.group(0))
+            had_ansi = True
+            continue
+        char = text[pos]
+        char_width = _dw(char)
+        if used + char_width > target:
+            break
+        chars.append(char)
+        used += char_width
+        pos += 1
+    reset = _ANSI["reset"] if had_ansi else ""
+    return "".join(chars) + marker + reset
+
+
 
 def _sev_color(used_frac):
     """Map a USED fraction (0..1) to a severity color name."""
@@ -292,10 +325,12 @@ def parse_args(argv=None):
     watch_group = parser.add_mutually_exclusive_group()
     watch_group.add_argument("--watch", nargs="?", const=-1.0, type=float, metavar="SECONDS",
                         help="refresh repeatedly; interval defaults to telemetry-config watch.default_interval_sec")
-    watch_group.add_argument("--watch-summary", nargs="?", const=-1.0, type=float, metavar="SECONDS",
-                        help="like --watch, but only SUMMARY+FRAME repaint each tick (no full-panel/hub.py-status re-render, no scroll)")
+    watch_group.add_argument("--live", nargs="?", const=-1.0, type=float, metavar="SECONDS",
+                        help="compact live SUMMARY + recent sessions + FRAME HUD")
+    watch_group.add_argument("--watch-summary", dest="watch_summary_compat", nargs="?",
+                        const=-1.0, type=float, metavar="SECONDS", help=argparse.SUPPRESS)
     parser.add_argument("--interval", type=float, metavar="SECONDS",
-                        help="alias for --watch/--watch-summary SECONDS")
+                        help="interval alias for --watch/--live SECONDS")
     parser.add_argument("--fresh", action="store_true",
                         help="force one bypass of the 60s expensive-source cache (quota/rate-limits)")
     parser.add_argument("--profiles", action="store_true", help="reserved profile detail view")
@@ -306,15 +341,17 @@ def parse_args(argv=None):
     parser.add_argument("--headroom", action="store_true", help="derived routing headroom view")
     args = parser.parse_args(argv)
 
-    watch_summary_mode = args.watch_summary is not None
+    live_value = args.live if args.live is not None else args.watch_summary_compat
+    live_mode = live_value is not None
     requested_interval = args.interval if args.interval is not None else (
-        args.watch_summary if watch_summary_mode else args.watch
+        live_value if live_mode else args.watch
     )
-    args.watch = requested_interval is not None and not watch_summary_mode
-    args.watch_summary = watch_summary_mode
-    # const sentinel (-1.0) = bare --watch/--watch-summary -> use config default interval (None).
+    args.watch = requested_interval is not None and not live_mode
+    args.live = live_mode
+    args.watch_summary = live_mode  # compatibility for callers using the old parsed attribute
+    # const sentinel (-1.0) = bare --watch/--live -> use config default interval (None).
     args.interval = None if requested_interval == -1.0 else requested_interval
-    if (args.watch or args.watch_summary) and args.interval is not None:
+    if (args.watch or args.live) and args.interval is not None:
         min_iv = telemetry_config()["watch"]["min_interval_sec"]
         if args.interval < min_iv:
             parser.error(f"minimum interval is {min_iv} seconds")
@@ -519,14 +556,180 @@ def render_frame_footer(stdout=None, snapshot=None, rendered_at=None):
         )
 
 
-def render_summary_frame(out, snapshot):
-    """Renders ONLY SUMMARY + FRAME (design 2026-07-09 §Topic A) for the
-    --watch-summary loop - deliberately skips every other panel and the
-    hub.py status subprocess call."""
-    with redirect_stdout(out):
-        infos = [p["raw"] for p in snapshot["peers"]]
+def _session_sort_key(row):
+    last_used = _frame_dt(row.get("last_used_at"))
+    return (
+        last_used is not None,
+        last_used.timestamp() if last_used is not None else float("-inf"),
+        str(row.get("profile") or ""),
+    )
+
+
+def _session_age_text(last_used_at, now):
+    last_used = _frame_dt(last_used_at)
+    if last_used is None:
+        return "?"
+    seconds = max(0, int((now - last_used).total_seconds()))
+    if seconds < 60:
+        return "now"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    if seconds < 86400:
+        return f"{seconds // 3600}h"
+    return f"{seconds // 86400}d"
+
+
+def _session_profile(row, peer):
+    profile = str(row.get("profile") or peer or "?")
+    if peer and profile not in (peer, "?") and "." not in profile:
+        profile = f"{peer}.{profile}"
+    return profile
+
+
+def _session_scope(row, profile):
+    scope = str(row.get("scope_key") or "-")
+    suffix = f":{profile}"
+    if scope.endswith(suffix):
+        scope = scope[:-len(suffix)] or "-"
+    return scope
+
+
+def _session_ctx_text(row):
+    pct = (row.get("context") or {}).get("utilization_pct")
+    return f"{pct:.0f}%" if isinstance(pct, (int, float)) else "absent"
+
+
+def _compact_session_row(row, peer, now, columns):
+    profile = _session_profile(row, peer)
+    age = _session_age_text(row.get("last_used_at"), now)
+    ctx = _session_ctx_text(row)
+    scope = _session_scope(row, profile)
+    if columns is None:
+        return f"{profile} {age} {ctx} {scope}"
+    profile_cell = _pad(_elide_display(profile, 20), 20)
+    prefix = f"{profile_cell} {_pad(age, 5, align='right')} {_pad(ctx, 7)}"
+    scope_width = columns - _dw(prefix) - 1
+    if scope_width <= 0:
+        return _elide_display(prefix, columns)
+    return f"{prefix} {_elide_display(scope, scope_width)}"
+
+
+def _session_digest(row, peer, count, now, columns):
+    profile = _session_profile(row, peer)
+    age = _session_age_text(row.get("last_used_at"), now)
+    ctx = _session_ctx_text(row)
+    scope = _session_scope(row, profile)
+    text = f"{str(peer).upper()}: {profile} {age} {ctx} {scope} ({count})"
+    return _elide_display(text, columns)
+
+
+def render_recent_sessions(out, snapshot, *, now=None, columns=80, line_budget=None):
+    """Compact active sessions from one supplied snapshot; never recollects."""
+    if line_budget is not None:
+        line_budget = max(0, int(line_budget))
+        if line_budget == 0:
+            return
+    rendered_now = _frame_dt() if now is None else _frame_dt(now)
+    rendered_now = rendered_now or _frame_dt()
+
+    groups = {}
+    for row in snapshot.get("sessions") or []:
+        if not isinstance(row, dict) or not row.get("peer"):
+            continue
+        groups.setdefault(str(row["peer"]), []).append(row)
+    if not groups:
+        out.write(_elide_display("RECENT ACTIVE SESSIONS none", columns) + "\n")
+        return
+
+    snapshot_peer_order = [
+        str(rec.get("peer")) for rec in snapshot.get("peers") or []
+        if isinstance(rec, dict) and rec.get("peer") in groups
+    ]
+    peer_order = snapshot_peer_order + sorted(set(groups) - set(snapshot_peer_order))
+    capped = {
+        peer: sorted(groups[peer], key=_session_sort_key, reverse=True)[:3]
+        for peer in peer_order
+    }
+
+    round_robin = []
+    for rank in range(3):
+        for peer in peer_order:
+            if rank < len(capped[peer]):
+                round_robin.append((peer, capped[peer][rank]))
+
+    title = _elide_display("RECENT ACTIVE SESSIONS (newest first; max 3/peer)", columns)
+    header_prefix = f"{_pad('PROFILE', 20)} {_pad('AGE', 5, align='right')} {_pad('CTX', 7)}"
+    header = header_prefix if columns is not None and _dw(header_prefix) >= columns else f"{header_prefix} SCOPE"
+    header = _elide_display(header, columns)
+
+    candidate_count = len(round_robin)
+    if line_budget is None:
+        selected = round_robin
+        hidden = 0
+    else:
+        available = max(0, line_budget - 2)
+        row_slots = available
+        if candidate_count > row_slots:
+            row_slots = max(0, row_slots - 1)
+
+        # If every peer cannot receive its newest detailed row, use a digest.
+        if row_slots < len(peer_order) and candidate_count > row_slots:
+            if line_budget >= 1 + len(peer_order):
+                lines = [title]
+                lines.extend(
+                    _session_digest(capped[peer][0], peer, len(capped[peer]), rendered_now, columns)
+                    for peer in peer_order
+                )
+            else:
+                items = []
+                for peer in peer_order:
+                    row = capped[peer][0]
+                    profile = _session_profile(row, peer)
+                    age = _session_age_text(row.get("last_used_at"), rendered_now)
+                    ctx = _session_ctx_text(row)
+                    items.append(f"{peer.upper()}:{profile}@{age}/{ctx}({len(capped[peer])})")
+                lines = [_elide_display("SESS " + " ".join(items), columns)]
+            out.write("\n".join(lines[:line_budget]) + "\n")
+            return
+
+        selected = round_robin[:row_slots]
+        hidden = candidate_count - len(selected)
+
+    lines = [title, header]
+    lines.extend(
+        _compact_session_row(row, peer, rendered_now, columns)
+        for peer, row in selected
+    )
+    if hidden:
+        lines.append(_elide_display(f"  +{hidden} hidden", columns))
+    if line_budget is not None:
+        lines = lines[:line_budget]
+    out.write("\n".join(lines) + "\n")
+
+
+def render_summary_frame(out, snapshot, *, terminal_lines=None, columns=80, now=None):
+    """Render the standalone live HUD: SUMMARY, recent sessions, then FRAME."""
+    summary_buf = io.StringIO()
+    with redirect_stdout(summary_buf):
+        infos = [p["raw"] for p in snapshot.get("peers") or []]
         render_summary(infos)
-    render_frame_footer(out, snapshot=snapshot)
+    summary_text = summary_buf.getvalue()
+
+    frame_buf = io.StringIO()
+    render_frame_footer(frame_buf, snapshot=snapshot, rendered_at=now)
+    frame_text = frame_buf.getvalue()
+
+    line_budget = None
+    if terminal_lines is not None:
+        summary_lines = len(summary_text.splitlines())
+        frame_lines = len(frame_text.splitlines())
+        line_budget = max(0, int(terminal_lines) - summary_lines - frame_lines - 1)
+
+    out.write(summary_text)
+    render_recent_sessions(
+        out, snapshot, now=now, columns=columns, line_budget=line_budget,
+    )
+    out.write(frame_text)
 
 
 def render_dashboard(stdout=None, watch_mode=False, snapshot=None):
@@ -692,8 +895,6 @@ def run_watch(interval=None, json_mode=False, stdout=None, sleep=time.sleep, max
     sync_mode = wcfg.get("sync_output", "auto")
     sync = is_tty and (sync_mode == "on" or (sync_mode == "auto"))
     frames = 0
-    prev_summary_lines = 0
-    prev_term_size = shutil.get_terminal_size() if is_tty else None
     try:
         if is_tty and not json_mode and not summary_only:
             out.write("\033[2J\033[H")  # one-time clear to start from a clean screen
@@ -701,41 +902,28 @@ def run_watch(interval=None, json_mode=False, stdout=None, sleep=time.sleep, max
             if json_mode:
                 emit_json_snapshot(out)
             elif summary_only:
-                # design 2026-07-09 §Topic A: first tick (and any tick after a
-                # terminal resize) does a full render; every other tick only
-                # recomputes collect_snapshot() (no hub.py status subprocess)
-                # and repaints SUMMARY+FRAME in place.
-                curr_term_size = shutil.get_terminal_size() if is_tty else None
-                is_resize = is_tty and curr_term_size != prev_term_size
-                if frames == 0 or is_resize:
-                    snap = collect_snapshot()
-                    if is_tty:
-                        buf = io.StringIO()
-                        render_dashboard(buf, watch_mode=True, snapshot=snap)
-                        _blit_frame(out, buf.getvalue(), sync)
-                    else:
-                        render_dashboard(out, watch_mode=True, snapshot=snap)
-                        out.flush()
-                    sbuf = io.StringIO()
-                    render_summary_frame(sbuf, snap)
-                    prev_summary_lines = len(sbuf.getvalue().rstrip("\n").split("\n"))
-                    prev_term_size = curr_term_size
+                # Standalone HUD from tick zero. Session state is intentionally
+                # collected uncached on every tick; only expensive sources keep
+                # their own source-level TTL.
+                snap = collect_snapshot(use_cache=False)
+                buf = io.StringIO()
+                if is_tty:
+                    term_size = shutil.get_terminal_size()
+                    render_summary_frame(
+                        buf,
+                        snap,
+                        terminal_lines=term_size[1],
+                        columns=term_size[0],
+                    )
+                    text = "\n".join(
+                        _elide_display(line, term_size[0])
+                        for line in buf.getvalue().rstrip("\n").splitlines()
+                    )
+                    _blit_frame(out, text, sync)
                 else:
-                    snap = collect_snapshot()
-                    sbuf = io.StringIO()
-                    render_summary_frame(sbuf, snap)
-                    text = sbuf.getvalue().rstrip("\n")
-                    if is_tty:
-                        seq = "\033[?2026h" if sync else ""
-                        if prev_summary_lines > 0:
-                            seq += f"\033[{prev_summary_lines}A"
-                        seq += "\033[J" + text + "\n"
-                        seq += "\033[?2026l" if sync else ""
-                        out.write(seq)
-                    else:
-                        out.write(text + "\n")
+                    render_summary_frame(buf, snap, columns=None)
+                    out.write(buf.getvalue().rstrip("\n") + "\n")
                     out.flush()
-                    prev_summary_lines = len(text.split("\n"))
             elif is_tty:
                 buf = io.StringIO()
                 render_dashboard(buf, watch_mode=True)
@@ -905,9 +1093,9 @@ def main(argv=None, stdout=None):
     out = stdout or sys.stdout
     if getattr(args, "fresh", False):
         clear_expensive_cache()  # opt-in: force one bypass of the 60s quota cache
-    if args.watch or args.watch_summary:
+    if args.watch or args.live:
         return run_watch(interval=args.interval, json_mode=args.json_mode, stdout=out,
-                          summary_only=args.watch_summary)
+                          summary_only=args.live)
     if args.json_mode:
         emit_json_snapshot(out)
         return 0
