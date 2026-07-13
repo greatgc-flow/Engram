@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-13T16:30:00+09:00",
+  "updated_at": "2026-07-13T17:15:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -1260,17 +1260,19 @@
     {
       "id": "T38",
       "title": "terminal_hard_exclude leaks: manual --to cc.*, subagent cc default, downward same-peer fallback burn terminal tokens",
-      "status": "proposed",
+      "status": "done",
       "priority": "medium",
       "category": "routing",
       "owner": "unassigned",
-      "evidence_commit": [],
+      "evidence_commit": [
+        "221f9fb"
+      ],
       "supersedes": [],
       "source_refs": [
         "_sys/core/hub.py",
         "_sys/ai/routing-config.json"
       ],
-      "next_action": "Found during the 2026-07-13 profile-policy MECE 끝장토론 (ag). terminal_hard_exclude only guards --to auto selection; it does NOT stop explicit --to cc.* asks, subagent spawns defaulting to cc, or the same_peer_downward_only fallback (cc.effort fail -> cc.standard) from burning terminal context. Closing these tightens the terminal-token-minimization invariant (docs-v2/ops/profile-policy.md §5). Taste call: some manual --to cc.* is legitimate operator choice, so this is a guard/warn, not a hard block. Defer to a routing R:10 round. [2026-07-13: decided + detailed to TDD-ready as D7 in docs-v2/ops/profile-policy-decisions.md.]",
+      "next_action": "Found during the 2026-07-13 profile-policy MECE 끝장토론 (ag). terminal_hard_exclude only guards --to auto selection; it does NOT stop explicit --to cc.* asks, subagent spawns defaulting to cc, or the same_peer_downward_only fallback (cc.effort fail -> cc.standard) from burning terminal context. Closing these tightens the terminal-token-minimization invariant (docs-v2/ops/profile-policy.md §5). Taste call: some manual --to cc.* is legitimate operator choice, so this is a guard/warn, not a hard block. Defer to a routing R:10 round. [2026-07-13: decided + detailed to TDD-ready as D7 in docs-v2/ops/profile-policy-decisions.md.] DONE: terminal-spend guard (--allow-terminal-spend + terminal_spend_guard telemetry, explicit/same_peer_fallback/worker_explicit_target reasons) landed in D7 (221f9fb).",
       "last_verified_at": "2026-07-13T15:45:00"
     },
     {
@@ -1293,32 +1295,36 @@
     {
       "id": "T39",
       "title": "P0: bulk_exclude/arbiter_models not enforced end-to-end (AUTO discards LB profile, _select_ask_profile re-picks)",
-      "status": "proposed",
+      "status": "done",
       "priority": "high",
       "category": "routing",
       "owner": "unassigned",
-      "evidence_commit": [],
+      "evidence_commit": [
+        "221f9fb"
+      ],
       "supersedes": [],
       "source_refs": [
         "_sys/core/hub.py",
         "_sys/core/snapshot.py"
       ],
-      "next_action": "VERIFIED by cx+ag 2026-07-13 (profile-policy decision round). hub.resolve_auto_target() (~4126) has the load balancer pick a correct non-excluded profile row but returns only the peer ({target: selected_peer}); _action_ask_inner (~4659) then calls _select_ask_profile(to, query) which re-runs textual analysis and can reintroduce a bulk-excluded/arbiter profile (cc.fable/ag.opus). So token_load_balancing.bulk_exclude_profiles + arbiter_models are bypassed. FIX = D7 step 2 in docs-v2/ops/profile-policy-decisions.md: resolve_auto_target returns the selected PROFILE id and _action_ask_inner bypasses _select_ask_profile when the effective target already carries a specific LB-chosen profile; session hysteresis keeps that exact representative. TDD-ready spec + tests in the decision doc.",
+      "next_action": "VERIFIED by cx+ag 2026-07-13 (profile-policy decision round). hub.resolve_auto_target() (~4126) has the load balancer pick a correct non-excluded profile row but returns only the peer ({target: selected_peer}); _action_ask_inner (~4659) then calls _select_ask_profile(to, query) which re-runs textual analysis and can reintroduce a bulk-excluded/arbiter profile (cc.fable/ag.opus). So token_load_balancing.bulk_exclude_profiles + arbiter_models are bypassed. FIX = D7 step 2 in docs-v2/ops/profile-policy-decisions.md: resolve_auto_target returns the selected PROFILE id and _action_ask_inner bypasses _select_ask_profile when the effective target already carries a specific LB-chosen profile; session hysteresis keeps that exact representative. TDD-ready spec + tests in the decision doc. DONE: fixed in D7 TDD batch (221f9fb); dedicated end-to-end tests (test_auto_route / test_terminal_spend_guard) prove the fix; 1022 unit + 71 contract pass.",
       "last_verified_at": "2026-07-13T16:15:00"
     },
     {
       "id": "T40",
       "title": "P0: terminal_hard_exclude keyed on active_coordinator, not human-interface terminal (cc drains tokens unthrottled)",
-      "status": "proposed",
+      "status": "done",
       "priority": "high",
       "category": "routing",
       "owner": "unassigned",
-      "evidence_commit": [],
+      "evidence_commit": [
+        "221f9fb"
+      ],
       "supersedes": [],
       "source_refs": [
         "_sys/core/hub.py"
       ],
-      "next_action": "VERIFIED by cx+ag 2026-07-13. hub.resolve_auto_target() (~4123) sets terminal_peer=_fresh_active_coordinator(...); with coordinator=cx, human_interface_peer=null, default=cc, terminal_hard_exclude excludes the COORDINATOR (cx) not the actual terminal (cc) - so cc makes bulk background calls and drains its own tokens while cx is wrongly blocked. FIX = D7 step 1: resolve the real terminal from the human-interface selection/state (reuse T20 _human_interface_peer_* eligibility), fail loud terminal_identity_absent if hard-exclude on but no trustworthy terminal. TDD-ready spec + test (coordinator=cx, terminal=cc -> AUTO excludes cc not cx) in docs-v2/ops/profile-policy-decisions.md.",
+      "next_action": "VERIFIED by cx+ag 2026-07-13. hub.resolve_auto_target() (~4123) sets terminal_peer=_fresh_active_coordinator(...); with coordinator=cx, human_interface_peer=null, default=cc, terminal_hard_exclude excludes the COORDINATOR (cx) not the actual terminal (cc) - so cc makes bulk background calls and drains its own tokens while cx is wrongly blocked. FIX = D7 step 1: resolve the real terminal from the human-interface selection/state (reuse T20 _human_interface_peer_* eligibility), fail loud terminal_identity_absent if hard-exclude on but no trustworthy terminal. TDD-ready spec + test (coordinator=cx, terminal=cc -> AUTO excludes cc not cx) in docs-v2/ops/profile-policy-decisions.md. DONE: fixed in D7 TDD batch (221f9fb); dedicated end-to-end tests (test_auto_route / test_terminal_spend_guard) prove the fix; 1022 unit + 71 contract pass.",
       "last_verified_at": "2026-07-13T16:15:00"
     },
     {
@@ -1375,6 +1381,24 @@
       ],
       "next_action": "TDD batch 2 (cx test-first, cc verified+committed feab3e0): intelligence_evidence on 7 table-supported profiles (all [decl], DIR-004), ag.deepthink profile_intent (accepted inversion, no 2M claim); diag --profiles INTEL column; declared metadata EXCLUDED from routing hash + equivalence test proves routing/arbiter unchanged. 1012 unit pass. Next: D7 (P0 T39/T40).",
       "last_verified_at": "2026-07-13T16:50:00"
+    },
+    {
+      "id": "T35g",
+      "title": "TDD D7 landed: P0 bulk/terminal exclusion enforced end-to-end + terminal-spend guard",
+      "status": "done",
+      "priority": "high",
+      "category": "routing",
+      "owner": "unassigned",
+      "evidence_commit": [
+        "221f9fb"
+      ],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/core/hub.py",
+        "_sys/core/snapshot.py"
+      ],
+      "next_action": "TDD batch 3 P0 (cx test-first, cc reviewed routing-critical diffs + verified, 221f9fb): T40 terminal identity now from human-interface selector not active_coordinator (fail-loud terminal_identity_absent); T39 AUTO returns+locks the LB profile via _load_balanced flag, bypasses _select_ask_profile; --allow-terminal-spend warn+telemetry. action_ask gained allow_terminal_spend+_load_balanced (order preserved), contract+hub_api snapshot updated. 1022 unit pass. Remaining deferred: D1/D5 (need evidence), D9/T36 (agy ctx spike).",
+      "last_verified_at": "2026-07-13T17:15:00"
     }
   ]
 }
