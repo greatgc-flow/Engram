@@ -1189,11 +1189,13 @@
     {
       "id": "T34",
       "title": "diag --live: standalone no-scroll HUD with per-peer recent sessions (max 3/peer)",
-      "status": "active",
+      "status": "done",
       "priority": "medium",
       "category": "telemetry",
       "owner": "unassigned",
-      "evidence_commit": [],
+      "evidence_commit": [
+        "079a996"
+      ],
       "supersedes": [],
       "source_refs": [
         "_sys/cli/diag.py",
