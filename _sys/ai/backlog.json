@@ -1159,11 +1159,13 @@
     {
       "id": "T32",
       "title": "P1 MECE gap: no user-facing STATUS/doctor lifecycle health command (SUBST mount? HKCU intact? python.exe? declared-vs-installed versions? active sessions?) + no admin advisory",
-      "status": "active",
+      "status": "done",
       "priority": "medium",
       "category": "lifecycle",
       "owner": "unassigned",
-      "evidence_commit": [],
+      "evidence_commit": [
+        "8d69836"
+      ],
       "supersedes": [],
       "source_refs": [],
       "next_action": "Raised 2026-07-13 from a human-requested install/update/cleanup MECE + convenience review (ag.deepthink + cx.deepthink design pass; cc.fable synthesis; human chose FULL P0 batch). add status/doctor pipeline: zero-network lifecycle health + machine-readable output + 'Elevation: standard user (expected)' advisory line Sequenced per cx: T28/T29 truthfulness+consistency first, then T31 update UX, T30 cleanup safety, then T32 status, then T33 manual. Admin: DOCUMENT-ONLY zero-admin rule + status advisory line (both peers rejected auto Defender exclusion as security-weakening/unmeasured). IMPLEMENTED 2026-07-13 (cc authored + LIVE-verified end-to-end; read-only diagnostic so no mutation risk - contrast T28/T30 which got ag review). New core/doctor.py run(ctx)->dict: a zero-network lifecycle health check reusing existing helpers - check_python (runtimes.json declared vs `python.exe --version` installed, the T29 invariant), check_components (declared tools/runtimes present on disk; tools counted present if under tools/ OR npm-global/{name}.cmd so npm-backed claude/codex aren't false-missing; missing is an advisory WARNING, never a hard fail), check_subst (mounted? detects both running-FROM-the-mount via base_dir drive letter AND target-resolves-to-base_dir), check_registration (HKCU context-menu entries via registrar._hkcu_key_state), check_sessions (scrubber._active_sessions_present), and check_elevation (ctypes IsUserAnAdmin -> 'standard user (expected; admin only for an optional Defender exclusion)' - the ratified document-only admin advisory). run() returns status=failed ONLY when python is broken (missing/declared!=installed) - the one hard gate; every other finding is informational so `status` doesn't false-fail on optional components. --json for machine-readable output. Wired as a first-class dispatch pipeline: dispatch.json status->status.run (core.doctor.run); new thin STATUS.bat wrapper. TWO issues cc caught + fixed during live smoke-testing before commit: (a) subst check falsely reported 'not mounted' when run FROM the P: mount (base_dir=P:\\ vs target=D:\\...) - fixed to also match the base_dir drive letter against subst keys; (b) _tool_postcondition-style check false-missed npm tools claude/codex - fixed to check npm-global too. Live run against the real env: python OK, subst mounted at P:, 5/5 HKCU present, only pwsh genuinely absent (optional, warning), Overall HEALTHY. 10 tests in test_doctor.py; dispatch status pipeline verified end-to-end; full suite 961 passed.",
