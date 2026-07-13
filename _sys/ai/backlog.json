@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-13T16:15:00+09:00",
+  "updated_at": "2026-07-13T16:30:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -1243,16 +1243,18 @@
     {
       "id": "T37",
       "title": "snapshot._quota_family_for_profile has stale ag.sonnet->3P mapping (no such profile)",
-      "status": "proposed",
+      "status": "done",
       "priority": "low",
       "category": "telemetry",
       "owner": "unassigned",
-      "evidence_commit": [],
+      "evidence_commit": [
+        "f2cbf5c"
+      ],
       "supersedes": [],
       "source_refs": [
         "_sys/core/snapshot.py"
       ],
-      "next_action": "Found during the 2026-07-13 profile-policy MECE 끝장토론 (ag). _quota_family_for_profile maps ag {opus,gptoss,sonnet}->3P- but ag has no 'sonnet' profile in orchestration.json. Harmless (dead mapping) but should be removed. Best fixed as part of the R:10 round that lifts quota_family into orchestration.json per profile (see docs-v2/ops/profile-policy.md §7). [2026-07-13: decided + detailed to TDD-ready as D4 in docs-v2/ops/profile-policy-decisions.md.]",
+      "next_action": "Found during the 2026-07-13 profile-policy MECE 끝장토론 (ag). _quota_family_for_profile maps ag {opus,gptoss,sonnet}->3P- but ag has no 'sonnet' profile in orchestration.json. Harmless (dead mapping) but should be removed. Best fixed as part of the R:10 round that lifts quota_family into orchestration.json per profile (see docs-v2/ops/profile-policy.md §7). [2026-07-13: decided + detailed to TDD-ready as D4 in docs-v2/ops/profile-policy-decisions.md.] DONE: fixed as part of D2+D4 batch (f2cbf5c).",
       "last_verified_at": "2026-07-13T15:45:00"
     },
     {
@@ -1335,6 +1337,25 @@
       ],
       "next_action": "Exhaustive cx+ag decision round + cc synthesis; D1-D9 verdicts + TDD-ready specs + 2 verified P0 defects (T39/T40) documented at docs-v2/ops/profile-policy-decisions.md; no config/code changed (separate TDD round).",
       "last_verified_at": "2026-07-13T16:15:00"
+    },
+    {
+      "id": "T35e",
+      "title": "TDD D2+D4 landed: profile_class + quota_families",
+      "status": "done",
+      "priority": "medium",
+      "category": "routing",
+      "owner": "unassigned",
+      "evidence_commit": [
+        "f2cbf5c"
+      ],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/ai/orchestration.json",
+        "_sys/checks/check_config.py",
+        "_sys/core/snapshot.py"
+      ],
+      "next_action": " IMPLEMENTED 2026-07-13 (TDD batch 1, cx test-first, cc recovered+verified+committed ). profile_class (tier|specialty) + quota_families (plural: cc.fable=[F,C]) added to all profiles; check_config validator (class/name coherence + reserve invariant); snapshot reads declared families (stale ag.sonnet removed); routing/arbiter/terminal untouched. 990 unit + 71 contract pass.",
+      "last_verified_at": "2026-07-13T16:30:00"
     }
   ]
 }
