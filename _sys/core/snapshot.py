@@ -1729,6 +1729,96 @@ def should_switch_session_peer(incumbent_abs, challenger_abs, switch_ratio=2.0,
     return challenger_abs >= switch_ratio * incumbent_abs
 
 
+def _capability_shadow_vector(vector):
+    """Return a valid Phase-3a requirement vector, else ``None``.
+
+    This is intentionally a narrow schema gate.  Invalid or absent task
+    metadata produces no shadow capability decision and cannot perturb live
+    balancing.
+    """
+    if not isinstance(vector, dict) or vector.get("schema_version") != 1:
+        return None
+    if vector.get("complexity") not in {"low", "medium", "high"}:
+        return None
+    requirements = vector.get("requirements")
+    if not isinstance(requirements, dict):
+        return None
+    axes = ("reasoning_correctness", "code_fidelity", "agentic_reliability", "long_context_quality")
+    for axis in axes:
+        requirement = requirements.get(axis)
+        if not isinstance(requirement, dict) or not isinstance(requirement.get("required"), bool):
+            return None
+    long_context = requirements["long_context_quality"]
+    minimum = long_context.get("minimum_length_tokens")
+    if not isinstance(minimum, int) or isinstance(minimum, bool) or minimum < 0:
+        return None
+    return vector
+
+
+def _capability_shadow_analysis(candidates, vector, reality, ask_id, explicit_target=False):
+    """Simulate T45 gates 5/6 without mutating candidates or weights.
+
+    The analysis consumes only the resolved overlay's certified empirical axes
+    and declared feasibility status.  Declared composite values are never read.
+    """
+    vector = _capability_shadow_vector(vector)
+    if vector is None:
+        return None
+    subjects = (reality or {}).get("subjects", {}) if isinstance(reality, dict) else {}
+    required = [axis for axis, rule in vector["requirements"].items() if rule.get("required")]
+    removed, would_rows = [], []
+    bulk_fitness = {}
+    explicit_target = bool(explicit_target)
+    for row in candidates:
+        profile = row.get("profile") or f"{row.get('peer')}.unknown"
+        bulk_fitness[profile] = 1.0  # H5 unset: declared-only is precisely neutral.
+        subject = subjects.get(profile) if isinstance(subjects, dict) else {}
+        axes = subject.get("axes", {}) if isinstance(subject, dict) else {}
+        feasibility = ((subject.get("measurement_feasibility") or {}).get("performance") or {}).get("status")
+        blocked = feasibility == "blocked_pending_pty_harness"
+        failed_axis = None
+        failed_reason = None
+        for axis in required:
+            observed = axes.get(axis) if isinstance(axes, dict) else None
+            valid_empirical = (
+                isinstance(observed, dict)
+                and observed.get("source_tag") == "empirical_probe"
+                and observed.get("evidence_band") == "CERTIFIED"
+            )
+            if not valid_empirical:
+                if blocked:
+                    continue  # feasibility-blocked is allowed, never stranded.
+                failed_axis, failed_reason = axis, "missing_score_measurable"
+                break
+            if axis == "long_context_quality":
+                minimum = vector["requirements"][axis]["minimum_length_tokens"]
+                context = row.get("context") or {}
+                window = context.get("window_tokens")
+                source = context.get("source_tag")
+                if source not in {"app_server", "statusline", "cli_live"} or not isinstance(window, (int, float)) or window < minimum:
+                    if blocked:
+                        continue
+                    failed_axis, failed_reason = axis, "context_unmeasured_or_insufficient"
+                    break
+        if failed_axis and not explicit_target:
+            removed.append({"profile": profile, "axis": failed_axis, "reason": failed_reason})
+        else:
+            would_rows.append(row)
+    empty = bool(candidates) and not would_rows
+    policy = "warn_then_allow" if explicit_target else ("fail_loud" if empty else ("hard_remove" if removed else "allow"))
+    return {
+        "event": "capability_route_shadow",
+        "ask_id": ask_id,
+        "would_candidates": [row.get("profile") for row in would_rows if row.get("profile")],
+        "removed": removed,
+        "missing_score_policy": policy,
+        "empty_result": empty,
+        "explicit_target_override": explicit_target,
+        "bulk_fitness": bulk_fitness,
+        "driving": False,
+    }
+
+
 def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", rng=None, inflight=None, task_tokens=0):
     """Token load balancer — Phase 1 (design: ops/token-load-balancing-design.md).
 
@@ -1860,6 +1950,18 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
     if not candidates:
         return _empty("no_eligible_candidate", premium_excluded)
 
+    # T45 gates 5/6: evaluate capability requirements and context fit only as
+    # a shadow.  ``candidates`` remains the live list for every calculation
+    # below; the resulting event is emitted through the normal hub telemetry
+    # loop after an actual selection is known.
+    capability_shadow = _capability_shadow_analysis(
+        candidates,
+        config.get("task_requirement_vector"),
+        config.get("capability_reality"),
+        ask_id,
+        explicit_target=config.get("explicit_target", False),
+    )
+
     # Peer-level aggregation: each peer's representative = its max-headroom row
     # (so multiple profiles of one peer are not double-weighted).
     representatives = {}
@@ -1990,6 +2092,10 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
             break
     if selected_peer is None:
         selected_peer = positive_peers[-1]
+
+    if capability_shadow is not None:
+        capability_shadow["actual_profile"] = representatives[selected_peer].get("profile")
+        shared_events.append(capability_shadow)
 
     return {
         "selected": representatives[selected_peer],

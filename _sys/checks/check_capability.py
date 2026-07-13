@@ -308,6 +308,10 @@ def resolve_capability_reality(
                 "reasoning_effort": row.get("effort") if row else "Unknown",
                 "adapter": "Unknown"
             },
+            # T45 consumes this declared operational feasibility annotation
+            # only to distinguish measurable profiles from PTY-blocked ones;
+            # it is not capability evidence and never supplies a score.
+            "measurement_feasibility": (decl_info or {}).get("measurement_feasibility"),
             "axes": resolved_axes
         }
 
