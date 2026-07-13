@@ -1099,11 +1099,13 @@
     {
       "id": "T28",
       "title": "P0: provisioner/install reports success on partial deployment (component failures printed, not aggregated); T24 --install trusts the false exit code",
-      "status": "active",
+      "status": "done",
       "priority": "high",
       "category": "lifecycle",
       "owner": "unassigned",
-      "evidence_commit": [],
+      "evidence_commit": [
+        "1ea2777"
+      ],
       "supersedes": [],
       "source_refs": [],
       "next_action": "Raised 2026-07-13 from a human-requested install/update/cleanup MECE + convenience review (ag.deepthink + cx.deepthink design pass; cc.fable synthesis; human chose FULL P0 batch). provision truthful-exit: aggregate component failures, validate postconditions, return nonzero on incomplete install/register/unregister Sequenced per cx: T28/T29 truthfulness+consistency first, then T31 update UX, T30 cleanup safety, then T32 status, then T33 manual. Admin: DOCUMENT-ONLY zero-admin rule + status advisory line (both peers rejected auto Defender exclusion as security-weakening/unmeasured). IMPLEMENTED 2026-07-13 (cx wrote, cc recovered from quarantine, ag cross-reviewed - and CAUGHT A P0 REGRESSION cc then fixed). provisioner.deploy() now returns an aggregate {installed/deferred/failed} classifying each component by status (_DEPLOY_SUCCESS_STATUSES={success,already_current}, _DEPLOY_DEFERRED_STATUSES={in_use/npm-retry}) plus cheap filesystem POSTCONDITIONS (_runtime/_tool/_peer_postcondition) so a component that reports success but whose binary/dir is absent -> postcondition_failed -> failed. dispatcher.py _result_failed() + run_pipeline now propagate a failed op to a nonzero exit (RuntimeError 'pipeline incomplete'), skip state.write/state.prune on any failure, and warn/continue policies return a failure dict instead of silently swallowing. registrar.apply/remove and virtualizer.mount/unmount now return truthful status. deferred-only install still exits 0. AG-CAUGHT REGRESSION (fixed by cc): cx's registrar truthfulness wrongly classified an EMPTY or MISSING context_menu.json (a valid 'context menus disabled' state) as failed -> would have broken a working install (apply) and unregister (remove) for anyone with no/empty context-menu config; cc changed both to warn+success and added 2 regression tests. ag REFINE (documented, not changed): skipping state.write on ANY failure loses partial state (mount-ok+registrar-fail); kept cx's skip-on-failure since virtualizer.unmount's subst-mapping fallback covers teardown and skipping avoids recording a misleading success-state. Full suite 941 passed.",
@@ -1112,11 +1114,13 @@
     {
       "id": "T29",
       "title": "P0: INSTALL.bat bumps declared Python version in runtimes.json while an older interpreter remains (extract only runs when python.exe missing)",
-      "status": "active",
+      "status": "done",
       "priority": "medium",
       "category": "lifecycle",
       "owner": "unassigned",
-      "evidence_commit": [],
+      "evidence_commit": [
+        "1ea2777"
+      ],
       "supersedes": [],
       "source_refs": [],
       "next_action": "Raised 2026-07-13 from a human-requested install/update/cleanup MECE + convenience review (ag.deepthink + cx.deepthink design pass; cc.fable synthesis; human chose FULL P0 batch). do not bump declared Python while old interpreter stays; until safe self-replacement, keep pin + report actionable update requirement Sequenced per cx: T28/T29 truthfulness+consistency first, then T31 update UX, T30 cleanup safety, then T32 status, then T33 manual. Admin: DOCUMENT-ONLY zero-admin rule + status advisory line (both peers rejected auto Defender exclusion as security-weakening/unmeasured). IMPLEMENTED 2026-07-13 (cx wrote INSTALL.bat, cc recovered+verified, ag AGREE). INSTALL.bat now reads the installed Python via `python --version` and compares to the declared pin: if an interpreter already exists it NEVER rewrites runtimes.json's python.version (prints an actionable 'newer X available; not auto-applied, safe in-place replacement not implemented' notice and keeps the pin). First-install persists a discovered version ONLY after extraction + version verification, with rollback (removes the new interpreter) if the runtimes.json write fails. --skip-update preserved. Invariant guaranteed: after INSTALL.bat, declared python.version == on-disk python.exe version (no silent desync). ag confirmed no declared!=on-disk path and the tokens=2 `python --version` parse is reliable.",
