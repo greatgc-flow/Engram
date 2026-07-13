@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-14T10:10:00Z",
+ "updated_at": "2026-07-14T10:40:00Z",
  "items": [
   {
    "id": "T7",
@@ -1485,11 +1485,13 @@
   {
    "id": "T45",
    "title": "Capability leveling: shadow purpose-fitness + D5 requirement-vector gate",
-   "status": "proposed",
+   "status": "done",
    "priority": "medium",
    "category": "routing",
    "owner": "unassigned",
-   "evidence_commit": [],
+   "evidence_commit": [
+    "70c3519"
+   ],
    "supersedes": [],
    "source_refs": [
     "_sys/core/snapshot.py",
@@ -1499,7 +1501,7 @@
     "_sys/docs-v2/ops/capability-leveling-decisions.md"
    ],
    "next_action": "capability-leveling.md Phase 3a / §7. Add gates 5 (measured-capability requirement), 6 (context-fit), 7 economics after profile-policy.md §4. Bulk: measured bulk_fitness = bounded weight multiplier only; declaration-only = neutral 1.0 (no migration regression). D5 complexity gate consumes a task requirement vector; hard-remove measurable-but-unmeasured candidates on required axes, but missing_score_policy=allow for FEASIBILITY-BLOCKED peers (ag pre-PTY) so D5 does not strand ag (ag's adopted refinement); fail-loud on empty; explicit target warn-then-allow; SHADOW events first. Declared/composite scores never enter any gate. D1/D5 real activation = Phase 3b, a separate R:10. [2026-07-13: detailed to TDD-ready in docs-v2/ops/capability-leveling-decisions.md §2 (cx spec + ag PTY/quota cross-check + cc synthesis); status ready.]",
-   "last_verified_at": "2026-07-13T15:55:00"
+   "last_verified_at": "2026-07-14T10:40:00"
   },
   {
    "id": "T46",
