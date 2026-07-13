@@ -334,3 +334,9 @@ To prevent "Vertical" (multi-instance) and "Horizontal" (parallel execution) con
 ### 10-3. File Naming
 - ALL system scripts (.bat) must use `lowercase-kebab-case.bat`.
 - No uppercase or mixed-case for system-level automation.
+
+## §11 — Capability Gate Rules (2026-07-13)
+
+- **Static AST-Checkable Gates**: Capability gates MUST be static, AST-checkable calls.
+- **No Dynamic Reflection**: Do not use dynamic reflection (`getattr`, etc.) or string-based routing maps for capability checks.
+
