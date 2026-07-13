@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -14,7 +15,13 @@ import check_peer_capability_canary as cpc  # noqa: E402
 
 
 VALID_FP = {
+    "peer": "cx",
+    "profile": "standard",
     "model_id": "test-model",
+    "reasoning_effort": "low",
+    "adapter": "CodexAdapter",
+    "invoke_args": ["exec", "{query}"],
+    "profile_config_sha256": "a" * 64,
     "binary": {"exists": True, "sha256": "abc123", "size": 123},
 }
 
@@ -171,6 +178,79 @@ def test_expired_or_fingerprint_mismatched_record_is_invalid(tmp_path):
         now=now,
         expected_runtime_fingerprint={"model_id": "other", "binary": {"exists": True, "sha256": "different"}},
     ) is False
+
+
+def test_same_runtime_rejects_same_model_binary_different_reasoning_effort():
+    changed = {**VALID_FP, "reasoning_effort": "high"}
+
+    assert cpc._same_runtime(VALID_FP, changed) is False
+
+
+def test_same_runtime_rejects_different_adapter():
+    changed = {**VALID_FP, "adapter": "AgyAdapter"}
+
+    assert cpc._same_runtime(VALID_FP, changed) is False
+
+
+def test_same_runtime_accepts_identical_v2_tuple():
+    assert cpc.runtime_fingerprint_valid(VALID_FP) is True
+    assert cpc._same_runtime(VALID_FP, dict(VALID_FP)) is True
+
+
+def test_legacy_runtime_fingerprint_is_invalid_and_stale():
+    legacy = {
+        "model_id": VALID_FP["model_id"],
+        "binary": dict(VALID_FP["binary"]),
+    }
+
+    assert cpc.runtime_fingerprint_valid(legacy) is False
+    assert cpc._same_runtime(legacy, VALID_FP) is False
+
+
+def test_record_with_changed_profile_config_hash_falls_back_from_empirical(tmp_path):
+    prior: list[dict] = []
+    now = datetime(2026, 7, 12, tzinfo=timezone.utc)
+    for index in range(3):
+        prior.append(_successful_entry(tmp_path, prior=prior, now=now + timedelta(seconds=index)))
+    expected = {**VALID_FP, "profile_config_sha256": "b" * 64}
+
+    assert cpc.is_capability_record_valid(
+        prior[-1], now=now + timedelta(seconds=3), expected_runtime_fingerprint=expected
+    ) is False
+
+
+def test_resolve_runtime_fingerprint_hashes_raw_profile_config_deterministically(monkeypatch):
+    profile = {
+        "profile_args": ["--model", "test-model"],
+        "reasoning_effort": "low",
+        "model_id": "test-model",
+        "intelligence_evidence": {"estimate": {"kind": "point", "value": 99}},
+    }
+    orch = {
+        "hub_nodes": [{
+            "node_id": "cx",
+            "type": "peer",
+            "adapter_class": "CodexAdapter",
+            "invoke": "codex",
+            "invoke_args": ["exec", "{query}"],
+            "profiles": {"standard": profile},
+        }]
+    }
+    monkeypatch.setattr(cpc, "real_binary", lambda _peer, _orch: Path("codex"))
+    monkeypatch.setattr(cpc, "fingerprint", lambda _binary: {"exists": True, "sha256": "binary"})
+
+    first = cpc.resolve_runtime_fingerprint(orch, "cx", "standard")
+    reordered = json.loads(json.dumps(orch, sort_keys=True))
+    second = cpc.resolve_runtime_fingerprint(reordered, "cx", "standard")
+    expected_hash = hashlib.sha256(
+        json.dumps(profile, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
+    assert first == second
+    assert first["profile_config_sha256"] == expected_hash
+    assert first["reasoning_effort"] == "low"
+    assert first["adapter"] == "CodexAdapter"
+    assert first["invoke_args"] == ["exec", "{query}"]
 
 
 def test_run_canary_uses_mock_invoker_and_writes_score_records(monkeypatch, tmp_path):

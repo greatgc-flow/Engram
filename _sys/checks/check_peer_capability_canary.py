@@ -11,7 +11,9 @@ for diagnostics only; they are never trusted as proof that a write succeeded.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -35,7 +37,7 @@ from hub_peer import get_adapter, normalize_orchestration  # noqa: E402
 
 
 CAPABILITY_ID = "direct_file_write.safe_utf8.v1"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 SOURCE_TAG = "empirical_probe"
 PASS_SCORE = 95
 REPEATABILITY_REQUIRED = 3
@@ -377,7 +379,20 @@ def runtime_fingerprint_valid(runtime_fingerprint: dict[str, Any] | None) -> boo
         return False
     binary = runtime_fingerprint.get("binary")
     return (
-        isinstance(binary, dict)
+        isinstance(runtime_fingerprint.get("peer"), str)
+        and bool(runtime_fingerprint["peer"].strip())
+        and isinstance(runtime_fingerprint.get("profile"), str)
+        and bool(runtime_fingerprint["profile"].strip())
+        and isinstance(runtime_fingerprint.get("model_id"), str)
+        and bool(runtime_fingerprint["model_id"].strip())
+        and isinstance(runtime_fingerprint.get("reasoning_effort"), str)
+        and bool(runtime_fingerprint["reasoning_effort"].strip())
+        and isinstance(runtime_fingerprint.get("adapter"), str)
+        and bool(runtime_fingerprint["adapter"].strip())
+        and isinstance(runtime_fingerprint.get("invoke_args"), list)
+        and isinstance(runtime_fingerprint.get("profile_config_sha256"), str)
+        and re.fullmatch(r"[0-9a-f]{64}", runtime_fingerprint["profile_config_sha256"]) is not None
+        and isinstance(binary, dict)
         and binary.get("exists") is True
         and isinstance(binary.get("sha256"), str)
         and bool(binary.get("sha256"))
@@ -385,12 +400,18 @@ def runtime_fingerprint_valid(runtime_fingerprint: dict[str, Any] | None) -> boo
 
 
 def _same_runtime(left: dict[str, Any] | None, right: dict[str, Any] | None) -> bool:
-    if not isinstance(left, dict) or not isinstance(right, dict):
+    if not runtime_fingerprint_valid(left) or not runtime_fingerprint_valid(right):
         return False
-    left_binary = left.get("binary") if isinstance(left.get("binary"), dict) else {}
-    right_binary = right.get("binary") if isinstance(right.get("binary"), dict) else {}
+    left_binary = left["binary"]
+    right_binary = right["binary"]
     return (
-        left.get("model_id") == right.get("model_id")
+        left.get("peer") == right.get("peer")
+        and left.get("profile") == right.get("profile")
+        and left.get("model_id") == right.get("model_id")
+        and left.get("reasoning_effort") == right.get("reasoning_effort")
+        and left.get("adapter") == right.get("adapter")
+        and left.get("invoke_args") == right.get("invoke_args")
+        and left.get("profile_config_sha256") == right.get("profile_config_sha256")
         and left_binary.get("sha256") == right_binary.get("sha256")
     )
 
@@ -576,12 +597,30 @@ def invoke_peer_native_write(
 
 def resolve_runtime_fingerprint(orch: dict, peer: str, profile: str) -> dict[str, Any]:
     model_id = None
+    reasoning_effort = None
+    adapter = None
     invoke_args: list[str] = []
+    profile_config_sha256 = None
     try:
         profile_node = _profile_node(orch, peer, profile)
         model_id = profile_node.get("model_id") or profile_node.get("runtime_model")
+        reasoning_effort = profile_node.get("reasoning_effort")
+        adapter = profile_node.get("adapter_class")
         invoke_args = list(profile_node.get("invoke_args") or [])
     except Exception:
+        pass
+    try:
+        raw_profile = next(
+            node.get("profiles", {}).get(profile)
+            for node in orch.get("hub_nodes", [])
+            if node.get("node_id") == peer and isinstance(node.get("profiles"), dict)
+        )
+        if isinstance(raw_profile, dict):
+            canonical = json.dumps(
+                raw_profile, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            )
+            profile_config_sha256 = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    except (StopIteration, TypeError, ValueError):
         pass
     try:
         binary = fingerprint(real_binary(peer, orch))
@@ -591,7 +630,10 @@ def resolve_runtime_fingerprint(orch: dict, peer: str, profile: str) -> dict[str
         "peer": peer,
         "profile": profile,
         "model_id": model_id,
+        "reasoning_effort": reasoning_effort,
+        "adapter": adapter,
         "invoke_args": invoke_args,
+        "profile_config_sha256": profile_config_sha256,
         "binary": binary,
     }
 
