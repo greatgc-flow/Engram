@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-13T14:45:00+09:00",
+  "updated_at": "2026-07-13T15:45:00+09:00",
   "items": [
     {
       "id": "T7",
@@ -1239,6 +1239,37 @@
       ],
       "next_action": "Found by ag during the 2026-07-13 diag MECE review: snapshot._session_context_measured only has log parsers for cx (codex rollout JSONL) and cc (claude), so ag sessions (agy.exe PTY) always render context as 'absent' - a diagnostic blind spot for Gemini allocations. Deferred out of the diag P0/P1 refactor (it is a data-collection feature, not a display fix): needs an agy session-log format reader. DIR-004: 'absent' is the honest current state, so this is an enhancement, not a correctness bug. TDD-ready when picked up: add an agy log reader to _session_context_measured returning measured used/window or honest absent.",
       "last_verified_at": "2026-07-13T14:30:00"
+    },
+    {
+      "id": "T37",
+      "title": "snapshot._quota_family_for_profile has stale ag.sonnet->3P mapping (no such profile)",
+      "status": "proposed",
+      "priority": "low",
+      "category": "telemetry",
+      "owner": "unassigned",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/core/snapshot.py"
+      ],
+      "next_action": "Found during the 2026-07-13 profile-policy MECE 끝장토론 (ag). _quota_family_for_profile maps ag {opus,gptoss,sonnet}->3P- but ag has no 'sonnet' profile in orchestration.json. Harmless (dead mapping) but should be removed. Best fixed as part of the R:10 round that lifts quota_family into orchestration.json per profile (see docs-v2/ops/profile-policy.md §7).",
+      "last_verified_at": "2026-07-13T15:45:00"
+    },
+    {
+      "id": "T38",
+      "title": "terminal_hard_exclude leaks: manual --to cc.*, subagent cc default, downward same-peer fallback burn terminal tokens",
+      "status": "proposed",
+      "priority": "medium",
+      "category": "routing",
+      "owner": "unassigned",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/core/hub.py",
+        "_sys/ai/routing-config.json"
+      ],
+      "next_action": "Found during the 2026-07-13 profile-policy MECE 끝장토론 (ag). terminal_hard_exclude only guards --to auto selection; it does NOT stop explicit --to cc.* asks, subagent spawns defaulting to cc, or the same_peer_downward_only fallback (cc.effort fail -> cc.standard) from burning terminal context. Closing these tightens the terminal-token-minimization invariant (docs-v2/ops/profile-policy.md §5). Taste call: some manual --to cc.* is legitimate operator choice, so this is a guard/warn, not a hard block. Defer to a routing R:10 round.",
+      "last_verified_at": "2026-07-13T15:45:00"
     }
   ]
 }
