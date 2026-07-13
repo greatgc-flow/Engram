@@ -94,12 +94,13 @@ def _iter_discoverable_entries(runtimes: dict[str, Any]):
                 continue
             provider = cfg.get("discovery_provider")
             if not provider or provider == "manual":
+                yield section, name, cfg, None, None, "no discovery_provider" if not provider else "manual"
                 continue
             discovery_id = cfg.get("discovery_id")
             if not discovery_id:
-                yield section, name, cfg, None, "missing discovery_id"
+                yield section, name, cfg, None, "missing discovery_id", None
                 continue
-            yield section, name, cfg, str(provider), None
+            yield section, name, cfg, str(provider), None, None
 
 
 def _update_entry_from_discovery(entry: dict[str, Any], discovery: dict[str, Any]) -> None:
@@ -127,9 +128,18 @@ def discover_updates() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         "up_to_date": [],
         "rate_limited": [],
         "errors": [],
+        "not_checked": [],
     }
 
-    for section, name, cfg, provider, config_error in _iter_discoverable_entries(runtimes):
+    for section, name, cfg, provider, config_error, not_checked_reason in _iter_discoverable_entries(runtimes):
+        if not_checked_reason:
+            payload["not_checked"].append({
+                "component": name,
+                "section": section,
+                "reason": not_checked_reason
+            })
+            continue
+
         if config_error:
             payload["errors"].append({"tool": name, "error": config_error})
             continue
@@ -389,6 +399,7 @@ def main(argv: list[str] | None = None) -> int:
             "up_to_date": [],
             "rate_limited": [],
             "errors": [{"error": str(exc)}],
+            "not_checked": [],
         }
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return EXIT_ERROR
@@ -399,6 +410,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[tool-updates] updates: {len(payload['updates_discovered'])}")
         print(f"[tool-updates] up-to-date: {len(payload['up_to_date'])}")
         print(f"[tool-updates] rate-limited: {len(payload['rate_limited'])}")
+        print(f"[tool-updates] not-checked: {len(payload['not_checked'])}")
         print(f"[tool-updates] errors: {len(payload['errors'])}")
 
     return EXIT_ERROR if payload["errors"] else EXIT_OK

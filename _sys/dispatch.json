@@ -48,6 +48,11 @@
       "module": "core.launcher",
       "method": "main",
       "failure_policy": "abort"
+    },
+    "update.run": {
+      "module": "core.updater",
+      "method": "run",
+      "failure_policy": "abort"
     }
   },
 
@@ -57,6 +62,7 @@
     "unregister": ["registry.remove", "virtual.unmount", "state.prune"],
     "cleanup":    ["scrub.run"],
     "start":      ["env.launch"],
-    "init":       []
+    "init":       [],
+    "update":     ["update.run"]
   }
 }
