@@ -308,3 +308,335 @@ def test_run_canary_uses_mock_invoker_and_writes_score_records(monkeypatch, tmp_
     lines = scores_path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 3
     assert json.loads(lines[-1])["passed"] is True
+
+
+def test_pty_invoker_uses_hub_daemon_reader_transport(monkeypatch, tmp_path):
+    orch = {
+        "hub_nodes": [{
+            "node_id": "ag.deepthink",
+            "type": "profile",
+            "adapter_class": "AgyAdapter",
+            "invoke": "agy",
+            "requires_pty": True,
+        }]
+    }
+    
+    called_args = []
+    class DummyPtyResult:
+        text = "T21_TARGET_VALUE_REPLACED"
+        elapsed = 5
+        exit_code = 0
+        timed_out = False
+        timeout_kind = None
+        transport_error = None
+        pid = 42
+
+    def fake_ask_with_pty(cmd, node_id, timeout_sec, process_env, quiet=False, ai_root=None, ask_id=None, cwd=None):
+        called_args.append((cmd, node_id, timeout_sec, cwd))
+        return DummyPtyResult()
+
+    import hub
+    monkeypatch.setattr(hub, "_ask_with_pty", fake_ask_with_pty)
+    
+    import sys
+    from types import ModuleType
+    mock_winpty = ModuleType("winpty")
+    monkeypatch.setitem(sys.modules, "winpty", mock_winpty)
+
+    res = cpc.invoke_peer_native_write_pty(
+        peer="ag",
+        profile="deepthink",
+        prompt="hello",
+        workspace=tmp_path,
+        orch=orch,
+        timeout=10,
+    )
+    assert len(called_args) == 1
+    assert called_args[0][0] == ["agy", "--dangerously-skip-permissions", "-p", "hello"]
+    assert called_args[0][1] == "ag.deepthink"
+    assert called_args[0][2] == 10
+    assert called_args[0][3] == str(tmp_path)
+
+
+def test_pty_invoker_sanitizes_agy_output_before_retention(monkeypatch, tmp_path):
+    orch = {
+        "hub_nodes": [{
+            "node_id": "ag.deepthink",
+            "type": "profile",
+            "adapter_class": "AgyAdapter",
+            "invoke": "agy",
+            "requires_pty": True,
+        }]
+    }
+    
+    class DummyPtyResult:
+        text = "\x1b[31mHello\rWorld\b!" * 300
+        elapsed = 5
+        exit_code = 0
+        timed_out = False
+        timeout_kind = None
+        transport_error = None
+        pid = 42
+
+    import hub
+    monkeypatch.setattr(hub, "_ask_with_pty", lambda *a, **kw: DummyPtyResult())
+    
+    import sys
+    from types import ModuleType
+    monkeypatch.setitem(sys.modules, "winpty", ModuleType("winpty"))
+
+    res = cpc.invoke_peer_native_write_pty(
+        peer="ag",
+        profile="deepthink",
+        prompt="hello",
+        workspace=tmp_path,
+        orch=orch,
+        timeout=10,
+    )
+    assert len(res.stdout) <= 2000
+    assert "\x1b[31m" not in res.stdout
+
+
+def test_pty_timeout_or_transport_error_cannot_pass(monkeypatch, tmp_path):
+    orch = {
+        "hub_nodes": [{
+            "node_id": "ag.deepthink",
+            "type": "profile",
+            "adapter_class": "AgyAdapter",
+            "invoke": "agy",
+            "requires_pty": True,
+        }]
+    }
+
+    class TimeoutResult:
+        text = "some output"
+        elapsed = 10
+        exit_code = None
+        timed_out = True
+        timeout_kind = "execution_deadline"
+        transport_error = None
+        pid = 42
+
+    import hub
+    monkeypatch.setattr(hub, "_ask_with_pty", lambda *a, **kw: TimeoutResult())
+    import sys
+    from types import ModuleType
+    monkeypatch.setitem(sys.modules, "winpty", ModuleType("winpty"))
+
+    res1 = cpc.invoke_peer_native_write_pty(
+        peer="ag",
+        profile="deepthink",
+        prompt="hello",
+        workspace=tmp_path,
+        orch=orch,
+        timeout=10,
+    )
+    assert res1.returncode != 0
+    assert res1.timeout_kind == "execution_deadline"
+    assert res1.transport_error is None
+
+    class TransportErrorResult:
+        text = ""
+        elapsed = 0
+        exit_code = None
+        timed_out = False
+        timeout_kind = None
+        transport_error = "pty_spawn_failed: access denied"
+        pid = -1
+
+    monkeypatch.setattr(hub, "_ask_with_pty", lambda *a, **kw: TransportErrorResult())
+    res2 = cpc.invoke_peer_native_write_pty(
+        peer="ag",
+        profile="deepthink",
+        prompt="hello",
+        workspace=tmp_path,
+        orch=orch,
+        timeout=10,
+    )
+    assert res2.returncode != 0
+    assert res2.transport_error == "pty_spawn_failed: access denied"
+
+
+def test_pty_artifacts_are_scored_by_same_t21_judge(monkeypatch, tmp_path):
+    called_workspace = []
+    orig_score_workspace = cpc.score_workspace
+    def fake_score_workspace(workspace, fixture):
+        called_workspace.append(workspace)
+        return orig_score_workspace(workspace, fixture)
+    monkeypatch.setattr(cpc, "score_workspace", fake_score_workspace)
+
+    def fake_invoker(peer, profile, prompt, workspace, orch, timeout):
+        _apply_success(workspace, cpc.prepare_fixture(workspace))
+        return cpc.PtyCompletedProcess(
+            returncode=0,
+            stdout="success",
+            stderr="",
+            transport="pty",
+        )
+
+    monkeypatch.setattr(cpc, "resolve_runtime_fingerprint", lambda orch, peer, profile: VALID_FP)
+
+    artifact_dir = tmp_path / "artifacts"
+    entry = cpc.run_one_pass(
+        peer="ag",
+        profile="deepthink",
+        orch={},
+        artifact_dir=artifact_dir,
+        runtime_fingerprint=VALID_FP,
+        prior_entries=[],
+        invoker=fake_invoker,
+    )
+    assert len(called_workspace) == 1
+    assert called_workspace[0] == artifact_dir / "workspace"
+    assert entry["passed"] is False
+    assert entry["base_passed"] is True
+
+
+def test_three_passes_certify_transport_with_transient_retry(monkeypatch, tmp_path):
+    attempts = 0
+    def fake_invoker(peer, profile, prompt, workspace, orch, timeout):
+        nonlocal attempts
+        attempts += 1
+        _apply_success(workspace, cpc.prepare_fixture(workspace))
+        if attempts in (1, 3):
+            return cpc.PtyCompletedProcess(
+                returncode=1,
+                stdout="timed out",
+                stderr="timeout",
+                transport="pty",
+                elapsed_sec=30,
+                exit_code=None,
+                timeout_kind="execution_deadline",
+                transport_error="transient timeout",
+            )
+        else:
+            return cpc.PtyCompletedProcess(
+                returncode=0,
+                stdout="success",
+                stderr="",
+                transport="pty",
+                elapsed_sec=5,
+                exit_code=0,
+                timeout_kind=None,
+                transport_error=None,
+            )
+
+    monkeypatch.setattr(cpc, "resolve_runtime_fingerprint", lambda orch, peer, profile: VALID_FP)
+    scores_path = tmp_path / "peer-capability-scores.jsonl"
+    artifact_root = tmp_path / "artifacts"
+
+    entries = cpc.run_canary(
+        peer="ag",
+        profile="deepthink",
+        orch={},
+        passes=3,
+        scores_path=scores_path,
+        artifact_root=artifact_root,
+        invoker=fake_invoker,
+        now=datetime(2026, 7, 12, tzinfo=timezone.utc),
+    )
+
+    assert attempts == 5
+    assert len(entries) == 5
+    assert entries[-1]["passed"] is True
+    assert entries[-1]["score"] == 100
+
+
+def test_ag_blocked_feasibility_survives_failed_or_missing_spike(monkeypatch, tmp_path):
+    dec_path = SYS_DIR / "_sys" / "ai" / "capability-declarations.json"
+    if dec_path.exists():
+        decs = json.loads(dec_path.read_text(encoding="utf-8"))
+        ag_deepthink = decs.get("subjects", {}).get("ag.deepthink", {})
+        feasibility = ag_deepthink.get("measurement_feasibility", {}).get("performance", {})
+        assert feasibility.get("status") == "blocked_pending_pty_harness"
+        assert feasibility.get("reason_code") == "agy_pty_harness_uncertified"
+
+
+def test_non_pty_profile_rejects_pty_transport(monkeypatch):
+    orch = {
+        "hub_nodes": [{
+            "node_id": "cx.standard",
+            "type": "profile",
+            "adapter_class": "CodexAdapter",
+            "invoke": "codex",
+            "requires_pty": False,
+        }]
+    }
+    monkeypatch.setattr(cpc, "_load_orchestration", lambda path: orch)
+    
+    res = cpc.main(["--peer", "cx.standard", "--transport", "pty", "--execute"])
+    assert res != 0
+
+
+def test_pty_cwd_is_cast_to_str(monkeypatch, tmp_path):
+    orch = {
+        "hub_nodes": [{
+            "node_id": "ag.deepthink",
+            "type": "profile",
+            "adapter_class": "AgyAdapter",
+            "invoke": "agy",
+            "requires_pty": True,
+        }]
+    }
+    
+    called_cwd = []
+    class DummyPtyResult:
+        text = "success"
+        elapsed = 1
+        exit_code = 0
+        timed_out = False
+        timeout_kind = None
+        transport_error = None
+        pid = 42
+
+    def fake_ask_with_pty(*args, **kwargs):
+        called_cwd.append(kwargs.get("cwd"))
+        return DummyPtyResult()
+
+    import hub
+    monkeypatch.setattr(hub, "_ask_with_pty", fake_ask_with_pty)
+    import sys
+    from types import ModuleType
+    monkeypatch.setitem(sys.modules, "winpty", ModuleType("winpty"))
+
+    cpc.invoke_peer_native_write_pty(
+        peer="ag",
+        profile="deepthink",
+        prompt="hello",
+        workspace=tmp_path,
+        orch=orch,
+        timeout=10,
+    )
+    
+    assert len(called_cwd) == 1
+    assert isinstance(called_cwd[0], str)
+    assert called_cwd[0] == str(tmp_path)
+
+
+def test_pty_import_failure_is_caught_as_transport_error(monkeypatch, tmp_path):
+    orch = {
+        "hub_nodes": [{
+            "node_id": "ag.deepthink",
+            "type": "profile",
+            "adapter_class": "AgyAdapter",
+            "invoke": "agy",
+            "requires_pty": True,
+        }]
+    }
+
+    import sys
+    monkeypatch.setitem(sys.modules, "winpty", None)
+    
+    res = cpc.invoke_peer_native_write_pty(
+        peer="ag",
+        profile="deepthink",
+        prompt="hello",
+        workspace=tmp_path,
+        orch=orch,
+        timeout=10,
+    )
+    
+    assert res.returncode != 0
+    assert res.transport_error is not None
+    assert "winpty" in res.transport_error
+

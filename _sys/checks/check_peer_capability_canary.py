@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -431,6 +432,12 @@ def _consecutive_base_passes(
             continue
         if not _same_runtime(entry.get("runtime_fingerprint"), runtime_fingerprint):
             break
+        
+        # Skip transient PTY errors so they don't reset consecutive progress
+        inv = entry.get("invocation", {})
+        if inv.get("transport") == "pty" and (inv.get("transport_error") is not None or inv.get("timeout_kind") is not None):
+            continue
+
         if not entry.get("base_passed", entry.get("passed")):
             break
         count += 1
@@ -595,6 +602,107 @@ def invoke_peer_native_write(
     )
 
 
+@dataclass(frozen=True)
+class PtyCompletedProcess:
+    returncode: int
+    stdout: str
+    stderr: str
+    transport: str = "pty"
+    elapsed_sec: int = 0
+    exit_code: int | None = None
+    timeout_kind: str | None = None
+    transport_error: str | None = None
+
+
+def invoke_peer_native_write_pty(
+    peer: str,
+    profile: str,
+    prompt: str,
+    workspace: Path,
+    orch: dict,
+    timeout: int | None,
+) -> PtyCompletedProcess:
+    try:
+        import winpty
+    except Exception as exc:
+        return PtyCompletedProcess(
+            returncode=1,
+            stdout="",
+            stderr=f"winpty import/DLL load failed: {exc}",
+            transport="pty",
+            elapsed_sec=0,
+            exit_code=1,
+            timeout_kind=None,
+            transport_error=f"winpty_import_failed: {exc}",
+        )
+
+    try:
+        profile_node = _profile_node(orch, peer, profile)
+        adapter = get_adapter(profile_node)
+        cmd, use_stdin = adapter.build_cmd(profile_node, prompt)
+        if cmd:
+            executable = Path(cmd[0])
+            if not executable.is_absolute() and executable.parts and executable.parts[0].casefold() == "_sys":
+                cmd[0] = str((_PORTABLE_ROOT / executable).resolve())
+        
+        import hub
+        timeout_sec = timeout or 300
+
+        # Scope AGY_CONFIG_HOME to THIS canary invocation only (a disposable home
+        # per workspace) so the PTY spike never pollutes the production agy session
+        # DB, and so the shared build_env() is not globally rerouted for other
+        # checks (check_versions / check_cli_canary rely on the real agy home).
+        pty_env = build_env()
+        agy_home = workspace / ".agy_config"
+        try:
+            agy_home.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        pty_env["AGY_CONFIG_HOME"] = str(agy_home)
+
+        res = hub._ask_with_pty(
+            cmd=cmd,
+            node_id=profile_node.get("node_id"),
+            timeout_sec=timeout_sec,
+            process_env=pty_env,
+            quiet=True,
+            ai_root=None,
+            cwd=str(workspace),
+        )
+        
+        timed_out = res.timed_out
+        transport_error = res.transport_error
+        exit_code = res.exit_code
+        
+        is_success = (not timed_out) and (transport_error is None) and (exit_code in {0, None})
+        returncode = 0 if is_success else (exit_code if exit_code is not None else 1)
+        
+        sanitized_text = adapter.parse_output(res.text, profile_node)
+        capped_stdout = sanitized_text[-2000:]
+        
+        return PtyCompletedProcess(
+            returncode=returncode,
+            stdout=capped_stdout,
+            stderr=transport_error or "",
+            transport="pty",
+            elapsed_sec=res.elapsed,
+            exit_code=exit_code,
+            timeout_kind=res.timeout_kind,
+            transport_error=transport_error,
+        )
+    except Exception as exc:
+        return PtyCompletedProcess(
+            returncode=1,
+            stdout="",
+            stderr=str(exc),
+            transport="pty",
+            elapsed_sec=0,
+            exit_code=1,
+            timeout_kind=None,
+            transport_error=f"pty_execution_failed: {exc}",
+        )
+
+
 def resolve_runtime_fingerprint(orch: dict, peer: str, profile: str) -> dict[str, Any]:
     model_id = None
     reasoning_effort = None
@@ -661,6 +769,16 @@ def run_one_pass(
             "stdout_tail": (result.stdout or "")[-2000:],
             "stderr_tail": (result.stderr or "")[-2000:],
         }
+        if hasattr(result, "transport"):
+            invocation["transport"] = result.transport
+        if hasattr(result, "elapsed_sec"):
+            invocation["elapsed_sec"] = result.elapsed_sec
+        if hasattr(result, "exit_code"):
+            invocation["exit_code"] = result.exit_code
+        if hasattr(result, "timeout_kind"):
+            invocation["timeout_kind"] = result.timeout_kind
+        if hasattr(result, "transport_error"):
+            invocation["transport_error"] = result.transport_error
     except Exception as exc:
         invocation = {"returncode": None, "error": str(exc)}
         (artifact_dir / "invocation_error.json").write_text(
@@ -706,24 +824,111 @@ def run_canary(
     prior_entries = load_score_entries(scores_path)
     new_entries: list[dict[str, Any]] = []
 
-    for idx in range(passes):
-        pass_now = run_started + timedelta(seconds=idx)
-        run_id = f"{pass_now.strftime('%Y%m%dT%H%M%S')}-{peer}-{profile}-{idx + 1}-{uuid.uuid4().hex[:8]}"
-        artifact_dir = artifact_root / run_id
-        entry = run_one_pass(
-            peer=peer,
-            profile=profile,
-            orch=orch,
-            artifact_dir=artifact_dir,
-            runtime_fingerprint=runtime_fingerprint,
-            prior_entries=prior_entries,
-            invoker=invoker,
-            timeout=timeout,
-            now=pass_now,
+    # Run the first pass to determine transport dynamically
+    pass_now = run_started + timedelta(seconds=1)
+    run_id = f"{pass_now.strftime('%Y%m%dT%H%M%S')}-{peer}-{profile}-1-{uuid.uuid4().hex[:8]}"
+    artifact_dir = artifact_root / run_id
+    entry = run_one_pass(
+        peer=peer,
+        profile=profile,
+        orch=orch,
+        artifact_dir=artifact_dir,
+        runtime_fingerprint=runtime_fingerprint,
+        prior_entries=prior_entries,
+        invoker=invoker,
+        timeout=timeout,
+        now=pass_now,
+    )
+    write_score_entry(entry, scores_path)
+    prior_entries.append(entry)
+    new_entries.append(entry)
+
+    invocation = entry.get("invocation", {})
+    is_pty = (invocation.get("transport") == "pty")
+
+    if is_pty:
+        total_attempts = 1
+        is_pass = (
+            entry.get("base_passed") is True
+            and entry.get("score", 0) >= PASS_SCORE
+            and not entry.get("hard_failures")
+            and runtime_fingerprint_valid(entry.get("runtime_fingerprint"))
+            and invocation.get("transport") == "pty"
+            and invocation.get("transport_error") is None
+            and invocation.get("timeout_kind") is None
         )
-        write_score_entry(entry, scores_path)
-        prior_entries.append(entry)
-        new_entries.append(entry)
+        passing_count = 1 if is_pass else 0
+
+        # If the first run failed but was not transient, break immediately
+        if not is_pass:
+            is_transient = (
+                invocation.get("error") is not None
+                or invocation.get("transport_error") is not None
+                or invocation.get("timeout_kind") is not None
+            )
+            if not is_transient:
+                return new_entries
+
+        while passing_count < passes and total_attempts < 5:
+            total_attempts += 1
+            pass_now = run_started + timedelta(seconds=total_attempts)
+            run_id = f"{pass_now.strftime('%Y%m%dT%H%M%S')}-{peer}-{profile}-{passing_count + 1}-{uuid.uuid4().hex[:8]}"
+            artifact_dir = artifact_root / run_id
+            entry = run_one_pass(
+                peer=peer,
+                profile=profile,
+                orch=orch,
+                artifact_dir=artifact_dir,
+                runtime_fingerprint=runtime_fingerprint,
+                prior_entries=prior_entries,
+                invoker=invoker,
+                timeout=timeout,
+                now=pass_now,
+            )
+            write_score_entry(entry, scores_path)
+            prior_entries.append(entry)
+            new_entries.append(entry)
+
+            invocation = entry.get("invocation", {})
+            is_pass = (
+                entry.get("base_passed") is True
+                and entry.get("score", 0) >= PASS_SCORE
+                and not entry.get("hard_failures")
+                and runtime_fingerprint_valid(entry.get("runtime_fingerprint"))
+                and invocation.get("transport") == "pty"
+                and invocation.get("transport_error") is None
+                and invocation.get("timeout_kind") is None
+            )
+
+            if is_pass:
+                passing_count += 1
+            else:
+                is_transient = (
+                    invocation.get("error") is not None
+                    or invocation.get("transport_error") is not None
+                    or invocation.get("timeout_kind") is not None
+                )
+                if not is_transient:
+                    break
+    else:
+        for idx in range(1, passes):
+            pass_now = run_started + timedelta(seconds=idx + 1)
+            run_id = f"{pass_now.strftime('%Y%m%dT%H%M%S')}-{peer}-{profile}-{idx + 1}-{uuid.uuid4().hex[:8]}"
+            artifact_dir = artifact_root / run_id
+            entry = run_one_pass(
+                peer=peer,
+                profile=profile,
+                orch=orch,
+                artifact_dir=artifact_dir,
+                runtime_fingerprint=runtime_fingerprint,
+                prior_entries=prior_entries,
+                invoker=invoker,
+                timeout=timeout,
+                now=pass_now,
+            )
+            write_score_entry(entry, scores_path)
+            prior_entries.append(entry)
+            new_entries.append(entry)
     return new_entries
 
 
@@ -748,10 +953,32 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--scores-path", type=Path, default=SCORES_PATH)
     parser.add_argument("--artifact-root", type=Path, default=ARTIFACT_ROOT)
     parser.add_argument("--orchestration", type=Path, default=_SYS_DIR / "ai" / "orchestration.json")
+    parser.add_argument("--transport", choices=["std", "pty"], default="std", help="Transport mode to use")
+    parser.add_argument("--execute", action="store_true", help="Gated execute switch (mandatory for real writes)")
     args = parser.parse_args(argv)
 
     peer, profile = _split_peer_profile(args.peer, args.profile)
     orch = _load_orchestration(args.orchestration)
+
+    try:
+        profile_node = _profile_node(orch, peer, profile)
+    except Exception as exc:
+        print(f"Error resolving profile: {exc}", file=sys.stderr)
+        return 1
+
+    if args.transport == "pty":
+        if not profile_node.get("requires_pty", False):
+            print("Error: --transport pty is valid only when the node has requires_pty=true", file=sys.stderr)
+            return 1
+
+    if not args.execute:
+        print("Dry-run mode: no changes will be written. Use --execute to run.")
+        return 0
+
+    invoker = invoke_peer_native_write
+    if args.transport == "pty":
+        invoker = invoke_peer_native_write_pty
+
     entries = run_canary(
         peer=peer,
         profile=profile,
@@ -759,6 +986,7 @@ def main(argv: list[str] | None = None) -> int:
         passes=args.passes,
         scores_path=args.scores_path,
         artifact_root=args.artifact_root,
+        invoker=invoker,
         timeout=args.timeout,
     )
     latest = entries[-1]
