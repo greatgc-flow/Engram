@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-13T16:55:00Z",
+ "updated_at": "2026-07-13T17:20:00Z",
  "items": [
   {
    "id": "T7",
@@ -1422,11 +1422,13 @@
   {
    "id": "T42",
    "title": "Capability leveling: PTY-native canary harness spike for ag/agy",
-   "status": "proposed",
+   "status": "done",
    "priority": "high",
    "category": "routing",
    "owner": "unassigned",
-   "evidence_commit": [],
+   "evidence_commit": [
+    "5686f88"
+   ],
    "supersedes": [],
    "source_refs": [
     "_sys/core/hub.py",
@@ -1435,8 +1437,8 @@
     "_sys/docs-v2/ops/capability-leveling.md",
     "_sys/docs-v2/ops/capability-leveling-decisions.md"
    ],
-   "next_action": "capability-leveling.md Phase 1.5 / §5.3 (ag's focal finding). agy on Windows is PTY-only (native WriteConsole); the current canary invoker uses plain subprocess.run -> agy hangs/crashes/no output. Build a PTY-native canary harness reusing hub._ask_with_pty daemon-reader queue; AgyAdapter.parse_output already sanitizes ANSI/CR/BS so artifacts are deterministically judgeable once driven. Certify the pywinpty path or keep ag performance-axis DECLARED-ONLY. Peer-level context IS statusline-measurable; session-level stays absent (see T36/D9). BLOCKS ag joining the measured level. [2026-07-13: detailed to TDD-ready in docs-v2/ops/capability-leveling-decisions.md §2 (cx spec + ag PTY/quota cross-check + cc synthesis); status ready.]",
-   "last_verified_at": "2026-07-13T15:55:00"
+   "next_action": "capability-leveling.md Phase 1.5 / §5.3 (ag's focal finding). agy on Windows is PTY-only (native WriteConsole); the current canary invoker uses plain subprocess.run -> agy hangs/crashes/no output. Build a PTY-native canary harness reusing hub._ask_with_pty daemon-reader queue; AgyAdapter.parse_output already sanitizes ANSI/CR/BS so artifacts are deterministically judgeable once driven. Certify the pywinpty path or keep ag performance-axis DECLARED-ONLY. Peer-level context IS statusline-measurable; session-level stays absent (see T36/D9). BLOCKS ag joining the measured level. [2026-07-13: detailed to TDD-ready in docs-v2/ops/capability-leveling-decisions.md §2 (cx spec + ag PTY/quota cross-check + cc synthesis); status ready.] [2026-07-13: harness CODE + 9 mocked tests IMPLEMENTED (5686f88); real --execute PTY spike (<=3 ag invocations) still PENDING operator run to certify or confirm declared-only.]",
+   "last_verified_at": "2026-07-13T17:20:00"
   },
   {
    "id": "T43",
