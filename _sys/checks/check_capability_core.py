@@ -7,6 +7,7 @@ All verdicts are derived from fixture artifacts, never model transcripts.
 """
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import math
@@ -27,10 +28,14 @@ from canary_budget import (  # noqa: E402
     reserve_canary_invocation,
 )
 from check_peer_capability_canary import (  # noqa: E402
+    build_prompt as build_agentic_prompt,
+    invoke_peer_native_write,
     prepare_fixture as prepare_agentic_fixture,
+    resolve_runtime_fingerprint,
     runtime_fingerprint_valid,
     score_workspace as score_agentic_workspace,
 )
+from check_cli_canary import _canary_quota  # noqa: E402
 
 
 CAPABILITY_CORE_ID = "capability-core.v1"
@@ -131,6 +136,43 @@ def prepare_core_fixture(workspace: Path) -> dict[str, Any]:
         "expected_code": _PATCHED_CODE,
         "agentic_fixture": prepare_agentic_fixture(workspace / "agentic"),
     }
+
+
+def build_capability_core_prompt(fixture: dict[str, Any], workspace: Path) -> str:
+    """Build the real native-tool prompt; artifact files are the sole oracle."""
+    agentic_prompt = build_agentic_prompt(Path(workspace) / "agentic")
+    return f"""[CAPABILITY_CORE_V1]
+This is an authorized capability canary in the disposable workspace: {workspace}
+Use native file tools. ALL writes must stay inside this workspace.
+
+REASONING: write reasoning_answers.json as a JSON object with EXACTLY these
+keys and string values. Answer: sum_17_25 = seventeen plus twenty-five;
+product_7_8 = seven times eight; difference_100_37 = one hundred minus
+thirty-seven; quotient_144_12 = one hundred forty-four divided by twelve as
+an integer. Keys: sum_17_25, product_7_8, difference_100_37, quotient_144_12.
+
+CODE: edit code/buggy_normalizer.py only as needed so normalize_name(value)
+returns value.strip().lower(); it currently returns value unchanged. Preserve
+the rest of the file byte-faithfully.
+
+AGENTIC: complete the existing T21 fixture under agentic/. Its full artifact
+contract follows; do not write outside this workspace:
+{agentic_prompt}
+"""
+
+
+def default_core_invoker(peer: str, profile: str, orch: dict, *, timeout: int | None = None) -> CoreInvoker:
+    """Curry T21's native CLI driver into the CoreInvoker interface."""
+    def invoke(workspace: Path, fixture: dict[str, Any]) -> dict[str, Any]:
+        prompt = build_capability_core_prompt(fixture, workspace)
+        result = invoke_peer_native_write(peer, profile, prompt, workspace, orch, timeout)
+        return {
+            "returncode": result.returncode,
+            "stdout": getattr(result, "stdout", ""),
+            "stderr": getattr(result, "stderr", ""),
+            # No usage is inferred from prompt text or process output.
+        }
+    return invoke
 
 
 def _score_reasoning(workspace: Path) -> tuple[int, bool, dict[str, bool]]:
@@ -320,3 +362,79 @@ def run_long_context(
     }
     _append_record(records_path, record)
     return {"status": "PASS" if scored["judgeable"] else "FAIL", **record}
+
+
+def _split_subject(value: str) -> tuple[str, str]:
+    if "." not in value:
+        raise ValueError("--peer must be peer.profile")
+    return tuple(value.split(".", 1))  # type: ignore[return-value]
+
+
+def _load_orchestration(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run shadow-only deterministic capability canaries")
+    parser.add_argument("--peer", required=True, help="Target as peer.profile")
+    parser.add_argument("--suite", choices=("core", "long_context"), default="core")
+    parser.add_argument("--passes", type=int, default=3)
+    parser.add_argument("--length", type=int, default=8000, choices=(8000, 32000, 128000))
+    parser.add_argument("--budget-cap", type=int)
+    parser.add_argument("--budget-window", type=float)
+    parser.add_argument("--reserve-floor", type=float)
+    parser.add_argument("--allowlist", default="", help="Comma-separated premium subjects")
+    parser.add_argument("--quota-remaining", type=float)
+    parser.add_argument("--quota-source", choices=("app_server", "statusline", "cli_live", "absent"))
+    parser.add_argument("--context-window", type=int)
+    parser.add_argument("--context-source", choices=("app_server", "statusline", "cli_live", "absent"))
+    parser.add_argument("--artifact-root", type=Path, default=_SYS_DIR / "data" / "capability-core")
+    parser.add_argument("--records-path", type=Path, default=_SYS_DIR / "ai" / "knowledge" / "peer-capability-scores.jsonl")
+    parser.add_argument("--orchestration", type=Path, default=_SYS_DIR / "ai" / "orchestration.json")
+    parser.add_argument("--timeout", type=int, default=300)
+    parser.add_argument("--execute", action="store_true", help="Mandatory: permits a native CLI invocation")
+    args = parser.parse_args(argv)
+    if not args.execute:
+        print("Dry-run: no workspace, ledger, or model invocation. Add --execute to run.")
+        return 0
+    try:
+        peer, profile = _split_subject(args.peer)
+        orch = _load_orchestration(args.orchestration)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    budget = {"cap": args.budget_cap, "window_hours": args.budget_window, "reserve_floor": args.reserve_floor}
+    quota = (
+        {"source_tag": args.quota_source or "absent", "remaining": args.quota_remaining}
+        if args.quota_source is not None or args.quota_remaining is not None
+        else _canary_quota(peer, profile)
+    )
+    allowlist = {item.strip() for item in args.allowlist.split(",") if item.strip()}
+    fingerprint = resolve_runtime_fingerprint(orch, peer, profile)
+    invoker = default_core_invoker(peer, profile, orch, timeout=args.timeout)
+    results = []
+    for index in range(max(1, args.passes)):
+        workspace = args.artifact_root / f"{args.suite}-{peer}-{profile}-{index + 1}"
+        if args.suite == "core":
+            result = run_capability_core(
+                peer=peer, profile=profile, orch=orch, ai_root=args.artifact_root / ".ai",
+                workspace=workspace, invoker=invoker, runtime_fingerprint=fingerprint,
+                budget=budget, quota=quota, execute=True, allowlist=allowlist,
+                records_path=args.records_path,
+            )
+        else:
+            capacity = {"source_tag": args.context_source or "absent", "window_tokens": args.context_window}
+            result = run_long_context(
+                peer=peer, profile=profile, orch=orch, ai_root=args.artifact_root / ".ai",
+                workspace=workspace, length_tokens=args.length, capacity=capacity, invoker=invoker,
+                budget=budget, quota=quota, execute=True, allowlist=allowlist, records_path=args.records_path,
+            )
+        results.append(result)
+        if result.get("status") != "PASS":
+            break
+    print(json.dumps(results[-1], ensure_ascii=False, sort_keys=True))
+    return 0 if results[-1].get("status") == "PASS" else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
