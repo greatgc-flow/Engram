@@ -616,6 +616,7 @@ class PtyCompletedProcess:
     transport: str = "pty"
     elapsed_sec: int = 0
     exit_code: int | None = None
+    timed_out: bool = False
     timeout_kind: str | None = None
     transport_error: str | None = None
 
@@ -646,19 +647,23 @@ def invoke_peer_native_write_pty(
         profile_node = _profile_node(orch, peer, profile)
         adapter = get_adapter(profile_node)
         workspace.mkdir(parents=True, exist_ok=True)
-        prompt_path = workspace / PTY_PROMPT_FILE
-        if prompt_path.exists():
-            prompt_path.chmod(stat.S_IREAD | stat.S_IWRITE)
-        prompt_path.write_text(prompt, encoding="utf-8")
-        prompt_path.chmod(stat.S_IREAD)
-        cmd, _use_stdin = adapter.build_cmd(profile_node, PTY_PROMPT_POINTER)
+        # Inline prompt (T49 revert): the prompt-via-file pointer roughly DOUBLED
+        # agy wall time (100-149s -> 252-300s, causing a false deadline) and did
+        # NOT fix the CRLF flakiness. Inline -p is the known-working baseline for
+        # this canary's prompt size; a byte-exact stdin delivery for larger
+        # prompts is a separate spike (T51).
+        cmd, _use_stdin = adapter.build_cmd(profile_node, prompt)
         if cmd:
             executable = Path(cmd[0])
             if not executable.is_absolute() and executable.parts and executable.parts[0].casefold() == "_sys":
                 cmd[0] = str((_PORTABLE_ROOT / executable).resolve())
         
         import hub
-        timeout_sec = timeout or 300
+        # 600s ceiling (ag): agy legitimately takes 100-300s for a multi-file
+        # byte-exact agentic task under a fresh config home; 300s false-timed-out
+        # a real run (T49). The prompt-DELIVERY method (inline -p hits cmdline
+        # limits; prompt-file doubled wall time) is a separate spike (T51).
+        timeout_sec = timeout or 600
 
         # Scope AGY_CONFIG_HOME to THIS canary invocation only (a disposable home
         # per workspace) so the PTY spike never pollutes the production agy session
@@ -699,6 +704,7 @@ def invoke_peer_native_write_pty(
             transport="pty",
             elapsed_sec=res.elapsed,
             exit_code=exit_code,
+            timed_out=bool(timed_out),
             timeout_kind=res.timeout_kind,
             transport_error=transport_error,
         )
@@ -787,6 +793,8 @@ def run_one_pass(
             invocation["elapsed_sec"] = result.elapsed_sec
         if hasattr(result, "exit_code"):
             invocation["exit_code"] = result.exit_code
+        if hasattr(result, "timed_out"):
+            invocation["timed_out"] = result.timed_out
         if hasattr(result, "timeout_kind"):
             invocation["timeout_kind"] = result.timeout_kind
         if hasattr(result, "transport_error"):
@@ -809,6 +817,11 @@ def run_one_pass(
         now=now,
         invocation=invocation,
     )
+    # A transport-unstable run (timeout / PTY error) produces partial artifacts;
+    # its score is a harness artifact, NOT a capability observation. Mark it so no
+    # reader mis-reads the score (T49: a deadline timeout was mis-read as agy=10).
+    if _is_transport_unstable(invocation):
+        entry["measurement_status"] = "transport_unstable"
     artifact_dir.mkdir(parents=True, exist_ok=True)
     (artifact_dir / "entry.json").write_text(
         json.dumps(entry, ensure_ascii=False, indent=2, sort_keys=True),
@@ -817,15 +830,25 @@ def run_one_pass(
     return entry
 
 
-def _is_transient_pty_entry(entry: dict[str, Any]) -> bool:
-    invocation = entry.get("invocation", {})
+def _is_transport_unstable(invocation: dict[str, Any]) -> bool:
+    """A PTY invocation that timed out or hit a transport error is a TRANSPORT
+    failure, not a capability observation. Its score is a harness artifact
+    (partial artifacts from a killed process) and MUST NOT be read as a
+    capability result or aggregated (T49 root cause: a 300s deadline timeout was
+    mis-scored as a capability 10). Keys on timed_out OR timeout_kind OR
+    transport_error so a dropped timed_out flag cannot hide a timeout."""
     return (
         invocation.get("transport") == "pty"
         and (
-            invocation.get("transport_error") is not None
+            invocation.get("timed_out") is True
             or invocation.get("timeout_kind") is not None
+            or invocation.get("transport_error") is not None
         )
     )
+
+
+def _is_transient_pty_entry(entry: dict[str, Any]) -> bool:
+    return _is_transport_unstable(entry.get("invocation", {}))
 
 
 def _is_complete_characterization_pass(entry: dict[str, Any]) -> bool:

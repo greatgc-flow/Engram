@@ -203,16 +203,23 @@ untrustworthy until a 3-pass `min-of-3` confirms it.
    ~46) is **NOT reproduced by measurement** — our canaries are too easy to expose
    any reasoning gap.
 3. The only axis that shows any difference is agentic file-write fidelity, and it
-   is **flaky** (ag 80→100). **CONFIRMED by the T49 `--characterize` run
-   (2026-07-14):** ag.deepthink across runs scored **10 / 80 / 80 / 100** —
-   `evidence_state = flaky`. The PTY prompt-via-file fix did **not** stabilize it
-   (pass 1 still 80 with a line-ending fail, pass 2 crashed to 10 with three
-   simultaneous hard failures), so ag's `agy` agentic reliability is **genuinely
-   non-deterministic**, not merely a winpty artifact. Per §4 of
-   [`hard-benchmark-decisions.md`](hard-benchmark-decisions.md), `flaky` is a
-   distinct evidence state (NOT a low point-score), and only `stable_certified`
-   may feed routing — so agy has **no trustworthy agentic score**, and cc.deepthink
-   (Opus, ~68) is the only stable non-perfect agentic result.
+   is **mildly flaky** for agy. **CORRECTED (2026-07-14, after artifact review —
+   the earlier "10/80/80/100 genuinely non-deterministic" claim was WRONG):** the
+   retained *complete* ag.deepthink observations are **95 / 80 / 80** — the 80s
+   fail `line_endings_and_bom` (CRLF), the **95 passes it cleanly**, so agy is
+   mildly flaky on CRLF preservation in an **80–95 band**, NOT a 10→100 collapse.
+   The alarming **"10" was a PTY DEADLINE timeout artifact** (a 300 s-deadline run
+   with empty stdout + partial artifacts, mis-scored as a capability 10 because
+   `PtyCompletedProcess` dropped the `timed_out` flag), and it was *caused* by the
+   T49 prompt-via-file change roughly **doubling agy's wall time** (100–149 s →
+   252–300 s) while not fixing CRLF. No `--characterize` aggregate was ever written
+   (the run was killed), so the four-number sequence conflated separate runs + a
+   timeout. Honest verdict (cx + ag consensus): **agy is mildly-flaky-80–95 on
+   CRLF, not broken; the harness corrupted the measurement.** A trustworthy agy
+   agentic score needs 3 complete same-runtime runs after the harness fixes
+   (timeout no longer scored as capability; a byte-exact prompt-delivery + seeded
+   config home — see backlog T51). cc.deepthink (Opus) remains a stable ~68 on the
+   same axis (its own UTF-8-roundtrip gap).
 4. **Consequence for D1:** measurement **cannot yet rank peers on reasoning**, so
    the Sol-as-arbiter decision remains undecidable from local data. Replacing the
    declared composite for reasoning-based routing needs a genuinely hard,

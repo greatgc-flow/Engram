@@ -344,32 +344,26 @@ def test_pty_invoker_uses_hub_daemon_reader_transport(monkeypatch, tmp_path):
     mock_winpty = ModuleType("winpty")
     monkeypatch.setitem(sys.modules, "winpty", mock_winpty)
 
-    prompt_path = tmp_path / cpc.PTY_PROMPT_FILE
-    try:
-        res = cpc.invoke_peer_native_write_pty(
-            peer="ag",
-            profile="deepthink",
-            prompt="full byte-exact fixture instructions",
-            workspace=tmp_path,
-            orch=orch,
-            timeout=10,
-        )
-        assert len(called_args) == 1
-        assert called_args[0][0] == [
-            "agy",
-            "--dangerously-skip-permissions",
-            "-p",
-            cpc.PTY_PROMPT_POINTER,
-        ]
-        assert "full byte-exact fixture instructions" not in called_args[0][0]
-        assert called_args[0][1] == "ag.deepthink"
-        assert called_args[0][2] == 10
-        assert called_args[0][3] == str(tmp_path)
-        assert prompt_path.read_text(encoding="utf-8") == "full byte-exact fixture instructions"
-        assert prompt_path.stat().st_mode & stat.S_IWUSR == 0
-    finally:
-        if prompt_path.exists():
-            prompt_path.chmod(stat.S_IREAD | stat.S_IWRITE)
+    res = cpc.invoke_peer_native_write_pty(
+        peer="ag",
+        profile="deepthink",
+        prompt="full byte-exact fixture instructions",
+        workspace=tmp_path,
+        orch=orch,
+        timeout=10,
+    )
+    assert len(called_args) == 1
+    # T49-revert: inline delivery — the full prompt is the -p arg (the prompt-via-
+    # file pointer doubled agy wall time and did not fix CRLF).
+    assert called_args[0][0] == [
+        "agy",
+        "--dangerously-skip-permissions",
+        "-p",
+        "full byte-exact fixture instructions",
+    ]
+    assert called_args[0][1] == "ag.deepthink"
+    assert called_args[0][2] == 10
+    assert called_args[0][3] == str(tmp_path)
 
 
 def test_pty_invoker_sanitizes_agy_output_before_retention(monkeypatch, tmp_path):
@@ -830,3 +824,42 @@ def test_characterize_cli_threads_requested_count_without_spawning(monkeypatch, 
     assert rc == 0
     assert captured["characterize"] == 4
     assert "stable_certified" in capsys.readouterr().out
+
+
+def test_pty_timeout_is_marked_transport_unstable_not_a_capability_score(monkeypatch, tmp_path):
+    """T49 root cause: a PTY DEADLINE timeout produced partial artifacts that were
+    mis-scored as a capability 10 (because PtyCompletedProcess dropped timed_out).
+    A timed-out run must be flagged measurement_status=transport_unstable and be
+    treated as transport-unstable (excluded from capability aggregation)."""
+    monkeypatch.setattr(cpc, "resolve_runtime_fingerprint", lambda orch, peer, profile: VALID_FP)
+
+    def timeout_invoker(peer, profile, prompt, workspace, orch, timeout):
+        # a deadline timeout: partial/empty workspace, timed_out True, deadline kind
+        return cpc.PtyCompletedProcess(
+            returncode=1, stdout="", stderr="", transport="pty",
+            elapsed_sec=600, exit_code=None, timed_out=True, timeout_kind="deadline",
+        )
+
+    entry = cpc.run_one_pass(
+        peer="ag", profile="deepthink", orch={}, artifact_dir=tmp_path / "art",
+        runtime_fingerprint=VALID_FP, prior_entries=[], invoker=timeout_invoker,
+    )
+    assert entry.get("measurement_status") == "transport_unstable"
+    assert cpc._is_transport_unstable(entry["invocation"]) is True
+    assert cpc._is_transient_pty_entry(entry) is True
+
+
+def test_is_transport_unstable_catches_timeout_kind_even_if_timed_out_missing(monkeypatch):
+    """Defense in depth: a dropped timed_out flag must NOT hide a timeout —
+    timeout_kind alone still marks the run transport-unstable (the exact shape of
+    the mis-scored T49 char-2 record: timeout_kind=deadline, timed_out absent)."""
+    assert cpc._is_transport_unstable(
+        {"transport": "pty", "timeout_kind": "deadline"}
+    ) is True
+    assert cpc._is_transport_unstable(
+        {"transport": "pty", "transport_error": "x"}
+    ) is True
+    # a clean run is NOT transport-unstable
+    assert cpc._is_transport_unstable(
+        {"transport": "pty", "exit_code": 0}
+    ) is False
