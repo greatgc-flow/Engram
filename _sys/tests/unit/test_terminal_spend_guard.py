@@ -177,3 +177,21 @@ def test_cli_threads_allow_terminal_spend_and_auto_lock(monkeypatch, tmp_path):
     hub.main()
     assert calls[-1][0][0] == "ag.gptoss"
     assert calls[-1][1]["_load_balanced"] is True
+
+
+def test_select_human_interface_peer_uses_tz_aware_now(monkeypatch):
+    """T50 regression: the default now must be tz-aware, else downstream
+    freshness / capability-record-expiry comparisons raise 'can't compare
+    offset-naive and offset-aware datetimes' once the ledger holds real
+    (tz-aware) records — which silently disabled the terminal-spend guard."""
+    seen = {}
+
+    def _capture(ai_root, peer, profile, now=None):
+        seen["now"] = now
+        return {"eligible": False, "peer": peer, "profile": profile}
+
+    monkeypatch.setattr(hub, "_human_interface_peer_eligibility", _capture)
+    monkeypatch.setattr(hub, "_load_orchestration", lambda *a, **k: {"hub_nodes": []})
+    hub._select_human_interface_peer(Path("."))
+    assert seen["now"] is not None
+    assert seen["now"].tzinfo is not None, "default now() must be tz-aware"

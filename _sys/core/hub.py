@@ -25,7 +25,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 try:
@@ -2544,7 +2544,11 @@ def _human_interface_peer_eligibility(
 
 def _select_human_interface_peer(ai_root: Path, now: datetime | None = None) -> dict:
     """Select the human-interface peer, fail-closed when nobody is eligible."""
-    now = now or datetime.now()
+    # tz-AWARE: downstream freshness + capability-record expiry checks compare
+    # against tz-aware ISO timestamps; a naive now() raised "can't compare
+    # offset-naive and offset-aware datetimes" once the empirical ledger held
+    # real (tz-aware) records, silently disabling the terminal-spend guard.
+    now = now or datetime.now(timezone.utc)
     orch = _load_orchestration()
     cfg = _human_interface_cfg()
     default_peer = str(cfg.get("human_interface_peer") or "cc")
