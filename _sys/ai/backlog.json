@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-14T14:30:00Z",
+ "updated_at": "2026-07-14T14:55:00Z",
  "items": [
   {
    "id": "T7",
@@ -1556,17 +1556,19 @@
   {
    "id": "T49",
    "title": "agentic canary: PTY prompt-via-file fix + full-distribution evidence_state; re-measure ag",
-   "status": "proposed",
+   "status": "done",
    "priority": "medium",
    "category": "routing",
    "owner": "unassigned",
-   "evidence_commit": [],
+   "evidence_commit": [
+    "ba930b6"
+   ],
    "supersedes": [],
    "source_refs": [
     "_sys/checks/check_peer_capability_canary.py",
     "_sys/docs-v2/ops/hard-benchmark-decisions.md"
    ],
-   "next_action": "ag root-cause (hard-benchmark-decisions.md §4): agy line_endings 80<->100 is likely winpty CRLF-mangling of the byte-exact prompt in PTY stdin, NOT a real agy gap -> the §4.6 ag=80 may be harness noise. FIX: write the fixture prompt to a read-only workspace file, agent reads it; PTY used only for process control. Store full distribution {runs,median,min,max,range,pass_rate,hard_failure_fingerprints,evidence_state in stable_certified|stable_failed|flaky|transport_unstable|insufficient}; flaky != low score; only stable_certified feeds D1. Re-measure ag after the fix.",
+   "next_action": "DONE ba930b6: --characterize N (force N passes through fails) + evidence_state distribution + PTY prompt-via-file. RE-MEASURED ag.deepthink 2026-07-14: scores 10/80/80/100 across runs -> evidence_state=FLAKY (prompt-file fix did NOT stabilize -> agy genuinely non-deterministic, not just winpty). agy has no trustworthy agentic score; flaky!=low, only stable_certified feeds routing. See intelligence-scores.md §4.8. ag root-cause (hard-benchmark-decisions.md §4): agy line_endings 80<->100 is likely winpty CRLF-mangling of the byte-exact prompt in PTY stdin, NOT a real agy gap -> the §4.6 ag=80 may be harness noise. FIX: write the fixture prompt to a read-only workspace file, agent reads it; PTY used only for process control. Store full distribution {runs,median,min,max,range,pass_rate,hard_failure_fingerprints,evidence_state in stable_certified|stable_failed|flaky|transport_unstable|insufficient}; flaky != low score; only stable_certified feeds D1. Re-measure ag after the fix.",
    "last_verified_at": "2026-07-14T14:30:00"
   },
   {

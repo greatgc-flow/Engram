@@ -203,7 +203,16 @@ untrustworthy until a 3-pass `min-of-3` confirms it.
    ~46) is **NOT reproduced by measurement** — our canaries are too easy to expose
    any reasoning gap.
 3. The only axis that shows any difference is agentic file-write fidelity, and it
-   is **flaky** (ag 80→100).
+   is **flaky** (ag 80→100). **CONFIRMED by the T49 `--characterize` run
+   (2026-07-14):** ag.deepthink across runs scored **10 / 80 / 80 / 100** —
+   `evidence_state = flaky`. The PTY prompt-via-file fix did **not** stabilize it
+   (pass 1 still 80 with a line-ending fail, pass 2 crashed to 10 with three
+   simultaneous hard failures), so ag's `agy` agentic reliability is **genuinely
+   non-deterministic**, not merely a winpty artifact. Per §4 of
+   [`hard-benchmark-decisions.md`](hard-benchmark-decisions.md), `flaky` is a
+   distinct evidence state (NOT a low point-score), and only `stable_certified`
+   may feed routing — so agy has **no trustworthy agentic score**, and cc.deepthink
+   (Opus, ~68) is the only stable non-perfect agentic result.
 4. **Consequence for D1:** measurement **cannot yet rank peers on reasoning**, so
    the Sol-as-arbiter decision remains undecidable from local data. Replacing the
    declared composite for reasoning-based routing needs a genuinely hard,
