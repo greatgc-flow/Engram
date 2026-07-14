@@ -15,6 +15,8 @@ import hashlib
 import json
 import re
 import shutil
+import stat
+import statistics
 import subprocess
 import sys
 import uuid
@@ -54,6 +56,8 @@ LF_FILE = "line_endings_lf.txt"
 LARGE_FILE = "large_partial_replace.txt"
 FAILURE_TARGET = "impossible_target_dir"
 FAILURE_REPORT = "failure_report.json"
+PTY_PROMPT_FILE = ".canary_prompt.txt"
+PTY_PROMPT_POINTER = "Read .canary_prompt.txt in the current workspace and follow it exactly."
 
 TARGET_TOKEN = "T21_TARGET_VALUE_ORIGINAL"
 TARGET_REPLACEMENT = "T21_TARGET_VALUE_REPLACED"
@@ -186,6 +190,7 @@ def prepare_fixture(workspace: Path) -> dict[str, Any]:
         "initial_bytes": initial_bytes,
         "expected_bytes": expected_bytes,
         "allowed_files": sorted([*expected_bytes.keys(), FAILURE_REPORT]),
+        "harness_files": [PTY_PROMPT_FILE],
         "large_initial_size_bytes": len(initial_bytes[LARGE_FILE]),
         "large_expected_size_bytes": len(expected_bytes[LARGE_FILE]),
     }
@@ -304,8 +309,9 @@ def _score_line_endings(workspace: Path, fixture: dict[str, Any]) -> dict[str, A
 def _score_target_scope(workspace: Path, fixture: dict[str, Any]) -> dict[str, Any]:
     observed = _snapshot_files(workspace)
     allowed = set(fixture["allowed_files"])
+    harness_files = set(fixture.get("harness_files", ()))
     expected = set(fixture["expected_bytes"])
-    observed_files = set(observed)
+    observed_files = set(observed) - harness_files
     extra_files = sorted(observed_files - allowed)
     missing_files = sorted(expected - observed_files)
     failure_dir = workspace / FAILURE_TARGET
@@ -639,7 +645,13 @@ def invoke_peer_native_write_pty(
     try:
         profile_node = _profile_node(orch, peer, profile)
         adapter = get_adapter(profile_node)
-        cmd, use_stdin = adapter.build_cmd(profile_node, prompt)
+        workspace.mkdir(parents=True, exist_ok=True)
+        prompt_path = workspace / PTY_PROMPT_FILE
+        if prompt_path.exists():
+            prompt_path.chmod(stat.S_IREAD | stat.S_IWRITE)
+        prompt_path.write_text(prompt, encoding="utf-8")
+        prompt_path.chmod(stat.S_IREAD)
+        cmd, _use_stdin = adapter.build_cmd(profile_node, PTY_PROMPT_POINTER)
         if cmd:
             executable = Path(cmd[0])
             if not executable.is_absolute() and executable.parts and executable.parts[0].casefold() == "_sys":
@@ -805,12 +817,191 @@ def run_one_pass(
     return entry
 
 
+def _is_transient_pty_entry(entry: dict[str, Any]) -> bool:
+    invocation = entry.get("invocation", {})
+    return (
+        invocation.get("transport") == "pty"
+        and (
+            invocation.get("transport_error") is not None
+            or invocation.get("timeout_kind") is not None
+        )
+    )
+
+
+def _is_complete_characterization_pass(entry: dict[str, Any]) -> bool:
+    invocation = entry.get("invocation", {})
+    return (
+        invocation.get("returncode") == 0
+        and invocation.get("error") is None
+        and not _is_transient_pty_entry(entry)
+    )
+
+
+def _characterization_score(entry: dict[str, Any]) -> int:
+    """Return artifact score without the cross-run repeatability bonus."""
+    return int(sum(
+        int(result.get("earned", 0))
+        for name, result in entry.get("subchecks", {}).items()
+        if name != "repeatability"
+    ))
+
+
+def build_characterization_record(
+    *,
+    peer: str,
+    profile: str,
+    runtime_fingerprint: dict[str, Any],
+    completed_entries: list[dict[str, Any]],
+    requested_runs: int,
+    attempts: int,
+    transport_exhausted: bool,
+    stopped_incomplete: bool,
+    now: datetime,
+) -> dict[str, Any]:
+    """Aggregate complete scored passes without converting flakiness to a score."""
+    runs = [_characterization_score(entry) for entry in completed_entries]
+    hard_failure_sets = [
+        tuple(sorted(
+            failure for failure in entry.get("hard_failures", [])
+            if failure != "runtime_fingerprint"
+        ))
+        for entry in completed_entries
+    ]
+    hard_failure_fingerprints = sorted({
+        "|".join(failures) for failures in hard_failure_sets if failures
+    })
+    base_results = [entry.get("base_passed") is True for entry in completed_entries]
+    fingerprints_stable = (
+        runtime_fingerprint_valid(runtime_fingerprint)
+        and all(_same_runtime(entry.get("runtime_fingerprint"), runtime_fingerprint)
+                for entry in completed_entries)
+    )
+
+    if len(completed_entries) < requested_runs:
+        evidence_state = (
+            "transport_unstable"
+            if transport_exhausted and not stopped_incomplete
+            else "insufficient"
+        )
+    elif len(set(base_results)) > 1 or len(set(hard_failure_sets)) > 1:
+        evidence_state = "flaky"
+    elif all(base_results) and all(not failures for failures in hard_failure_sets) and fingerprints_stable:
+        evidence_state = "stable_certified"
+    elif (
+        not any(base_results)
+        and len(set(hard_failure_sets)) == 1
+        and bool(hard_failure_sets[0])
+        and fingerprints_stable
+    ):
+        evidence_state = "stable_failed"
+    else:
+        evidence_state = "insufficient"
+
+    measured_at = _iso(now)
+    safe_capability = CAPABILITY_ID.replace(".", "-").replace("_", "-")
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "record_type": "capability_characterization",
+        "id": f"char-{now.strftime('%Y%m%d')}-{peer}-{profile}-{safe_capability}",
+        "capability_id": CAPABILITY_ID,
+        "peer": peer,
+        "profile": profile,
+        "runtime_fingerprint": runtime_fingerprint,
+        "runs": runs,
+        "median": statistics.median(runs) if runs else None,
+        "minimum": min(runs) if runs else None,
+        "maximum": max(runs) if runs else None,
+        "range": max(runs) - min(runs) if runs else None,
+        "pass_rate": (sum(base_results) / len(base_results)) if base_results else None,
+        "hard_failure_fingerprints": hard_failure_fingerprints,
+        "evidence_state": evidence_state,
+        "source_tag": SOURCE_TAG,
+        "measured_at": measured_at,
+        "requested_runs": requested_runs,
+        "attempts": attempts,
+        "shadow_only": True,
+    }
+
+
+def _run_characterization(
+    *,
+    peer: str,
+    profile: str,
+    orch: dict,
+    requested_runs: int,
+    scores_path: Path,
+    artifact_root: Path,
+    invoker: Invoker,
+    timeout: int | None,
+    run_started: datetime,
+    runtime_fingerprint: dict[str, Any],
+    prior_entries: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    max_attempts = requested_runs + 2
+    attempt_entries: list[dict[str, Any]] = []
+    completed_entries: list[dict[str, Any]] = []
+    attempts = 0
+    transient_seen = False
+    stopped_incomplete = False
+
+    while len(completed_entries) < requested_runs and attempts < max_attempts:
+        attempts += 1
+        pass_now = run_started + timedelta(seconds=attempts)
+        run_id = (
+            f"{pass_now.strftime('%Y%m%dT%H%M%S')}-{peer}-{profile}"
+            f"-char-{attempts}-{uuid.uuid4().hex[:8]}"
+        )
+        entry = run_one_pass(
+            peer=peer,
+            profile=profile,
+            orch=orch,
+            artifact_dir=artifact_root / run_id,
+            runtime_fingerprint=runtime_fingerprint,
+            prior_entries=prior_entries,
+            invoker=invoker,
+            timeout=timeout,
+            now=pass_now,
+        )
+        write_score_entry(entry, scores_path)
+        prior_entries.append(entry)
+        attempt_entries.append(entry)
+
+        if _is_transient_pty_entry(entry):
+            transient_seen = True
+            continue
+        if not _is_complete_characterization_pass(entry):
+            stopped_incomplete = True
+            break
+        completed_entries.append(entry)
+
+    transport_exhausted = (
+        transient_seen
+        and attempts >= max_attempts
+        and len(completed_entries) < requested_runs
+    )
+    aggregate_now = run_started + timedelta(seconds=attempts + 1)
+    aggregate = build_characterization_record(
+        peer=peer,
+        profile=profile,
+        runtime_fingerprint=runtime_fingerprint,
+        completed_entries=completed_entries,
+        requested_runs=requested_runs,
+        attempts=attempts,
+        transport_exhausted=transport_exhausted,
+        stopped_incomplete=stopped_incomplete,
+        now=aggregate_now,
+    )
+    write_score_entry(aggregate, scores_path)
+    return [*attempt_entries, aggregate]
+
+
 def run_canary(
     *,
     peer: str,
     profile: str,
     orch: dict,
     passes: int = REPEATABILITY_REQUIRED,
+    characterize: int | None = None,
     scores_path: Path = SCORES_PATH,
     artifact_root: Path = ARTIFACT_ROOT,
     invoker: Invoker = invoke_peer_native_write,
@@ -819,9 +1010,25 @@ def run_canary(
 ) -> list[dict[str, Any]]:
     if passes <= 0:
         raise ValueError("passes must be positive")
+    if characterize is not None and characterize <= 0:
+        raise ValueError("characterize must be positive")
     run_started = now or _utc_now()
     runtime_fingerprint = resolve_runtime_fingerprint(orch, peer, profile)
     prior_entries = load_score_entries(scores_path)
+    if characterize is not None:
+        return _run_characterization(
+            peer=peer,
+            profile=profile,
+            orch=orch,
+            requested_runs=characterize,
+            scores_path=scores_path,
+            artifact_root=artifact_root,
+            invoker=invoker,
+            timeout=timeout,
+            run_started=run_started,
+            runtime_fingerprint=runtime_fingerprint,
+            prior_entries=prior_entries,
+        )
     new_entries: list[dict[str, Any]] = []
 
     # Run the first pass to determine transport dynamically
@@ -948,7 +1155,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run direct-file-write UTF-8 capability canary")
     parser.add_argument("--peer", required=True, help="Peer id or peer.profile")
     parser.add_argument("--profile", default=None, help="Profile name; defaults to standard")
-    parser.add_argument("--passes", type=int, default=REPEATABILITY_REQUIRED)
+    run_mode = parser.add_mutually_exclusive_group()
+    run_mode.add_argument("--passes", type=int, default=REPEATABILITY_REQUIRED)
+    run_mode.add_argument(
+        "--characterize",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Run N complete scored passes and emit a shadow-only distribution record",
+    )
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--scores-path", type=Path, default=SCORES_PATH)
     parser.add_argument("--artifact-root", type=Path, default=ARTIFACT_ROOT)
@@ -984,6 +1199,7 @@ def main(argv: list[str] | None = None) -> int:
         profile=profile,
         orch=orch,
         passes=args.passes,
+        characterize=args.characterize,
         scores_path=args.scores_path,
         artifact_root=args.artifact_root,
         invoker=invoker,
@@ -991,6 +1207,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     latest = entries[-1]
     print(json.dumps(latest, ensure_ascii=False, indent=2, sort_keys=True))
+    if args.characterize is not None:
+        return 0 if latest.get("evidence_state") == "stable_certified" else 2
     return 0 if latest.get("passed") else 2
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import stat
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -343,19 +344,32 @@ def test_pty_invoker_uses_hub_daemon_reader_transport(monkeypatch, tmp_path):
     mock_winpty = ModuleType("winpty")
     monkeypatch.setitem(sys.modules, "winpty", mock_winpty)
 
-    res = cpc.invoke_peer_native_write_pty(
-        peer="ag",
-        profile="deepthink",
-        prompt="hello",
-        workspace=tmp_path,
-        orch=orch,
-        timeout=10,
-    )
-    assert len(called_args) == 1
-    assert called_args[0][0] == ["agy", "--dangerously-skip-permissions", "-p", "hello"]
-    assert called_args[0][1] == "ag.deepthink"
-    assert called_args[0][2] == 10
-    assert called_args[0][3] == str(tmp_path)
+    prompt_path = tmp_path / cpc.PTY_PROMPT_FILE
+    try:
+        res = cpc.invoke_peer_native_write_pty(
+            peer="ag",
+            profile="deepthink",
+            prompt="full byte-exact fixture instructions",
+            workspace=tmp_path,
+            orch=orch,
+            timeout=10,
+        )
+        assert len(called_args) == 1
+        assert called_args[0][0] == [
+            "agy",
+            "--dangerously-skip-permissions",
+            "-p",
+            cpc.PTY_PROMPT_POINTER,
+        ]
+        assert "full byte-exact fixture instructions" not in called_args[0][0]
+        assert called_args[0][1] == "ag.deepthink"
+        assert called_args[0][2] == 10
+        assert called_args[0][3] == str(tmp_path)
+        assert prompt_path.read_text(encoding="utf-8") == "full byte-exact fixture instructions"
+        assert prompt_path.stat().st_mode & stat.S_IWUSR == 0
+    finally:
+        if prompt_path.exists():
+            prompt_path.chmod(stat.S_IREAD | stat.S_IWRITE)
 
 
 def test_pty_invoker_sanitizes_agy_output_before_retention(monkeypatch, tmp_path):
@@ -640,3 +654,179 @@ def test_pty_import_failure_is_caught_as_transport_error(monkeypatch, tmp_path):
     assert res.transport_error is not None
     assert "winpty" in res.transport_error
 
+
+def test_pty_prompt_file_is_excluded_from_scope_scoring(tmp_path):
+    workspace = tmp_path / "workspace"
+    fixture = cpc.prepare_fixture(workspace)
+    _apply_success(workspace, fixture)
+    (workspace / cpc.PTY_PROMPT_FILE).write_text("harness payload", encoding="utf-8")
+
+    scored = cpc.score_workspace(workspace, fixture)
+
+    scope = scored["subchecks"]["target_scope"]
+    assert scope["passed"] is True
+    assert cpc.PTY_PROMPT_FILE not in scope["details"]["extra_files"]
+
+
+def _run_characterization(monkeypatch, tmp_path, pattern, *, requested=None):
+    attempts = []
+    outcomes = iter(pattern)
+
+    def fake_invoker(peer, profile, prompt, workspace, orch, timeout):
+        outcome = next(outcomes)
+        attempts.append(outcome)
+        fixture = cpc.prepare_fixture(workspace)
+        _apply_success(workspace, fixture)
+        if outcome == "hard_fail":
+            (workspace / cpc.LF_FILE).write_bytes(
+                cpc.LF_TEXT.replace("\n", "\r\n").encode("utf-8")
+            )
+        if outcome == "transport":
+            return cpc.PtyCompletedProcess(
+                returncode=1,
+                stdout="",
+                stderr="timeout",
+                timeout_kind="execution_deadline",
+                transport_error="transient timeout",
+            )
+        if outcome == "incomplete":
+            return cpc.PtyCompletedProcess(
+                returncode=1,
+                stdout="",
+                stderr="process failed",
+                exit_code=1,
+            )
+        return cpc.PtyCompletedProcess(returncode=0, stdout="ok", stderr="", exit_code=0)
+
+    monkeypatch.setattr(cpc, "resolve_runtime_fingerprint", lambda orch, peer, profile: VALID_FP)
+    scores_path = tmp_path / "scores.jsonl"
+    entries = cpc.run_canary(
+        peer="ag",
+        profile="deepthink",
+        orch={},
+        characterize=requested or len(pattern),
+        scores_path=scores_path,
+        artifact_root=tmp_path / "artifacts",
+        invoker=fake_invoker,
+        now=datetime(2026, 7, 14, tzinfo=timezone.utc),
+    )
+    return attempts, entries, [json.loads(line) for line in scores_path.read_text(encoding="utf-8").splitlines()]
+
+
+def test_characterize_runs_all_complete_passes_and_marks_variation_flaky(monkeypatch, tmp_path):
+    attempts, entries, records = _run_characterization(
+        monkeypatch,
+        tmp_path,
+        ["pass", "hard_fail", "pass"],
+    )
+
+    aggregate = entries[-1]
+    assert attempts == ["pass", "hard_fail", "pass"]
+    assert aggregate["runs"] == [95, 80, 95]
+    assert aggregate["evidence_state"] == "flaky"
+    assert aggregate["pass_rate"] == 2 / 3
+    assert aggregate["hard_failure_fingerprints"] == ["line_endings_and_bom"]
+    assert records[-1] == aggregate
+    assert len(records) == 4  # three additive per-pass records plus one aggregate
+    assert {
+        "capability_id", "peer", "profile", "runtime_fingerprint", "runs",
+        "median", "minimum", "maximum", "range", "pass_rate",
+        "hard_failure_fingerprints", "evidence_state", "source_tag", "measured_at",
+    } <= aggregate.keys()
+
+
+def test_characterize_all_pass_is_stable_certified(monkeypatch, tmp_path):
+    _attempts, entries, _records = _run_characterization(
+        monkeypatch,
+        tmp_path,
+        ["pass", "pass", "pass"],
+    )
+
+    aggregate = entries[-1]
+    assert aggregate["evidence_state"] == "stable_certified"
+    assert aggregate["pass_rate"] == 1.0
+    assert aggregate["hard_failure_fingerprints"] == []
+
+
+def test_characterize_repeated_same_hard_failure_is_stable_failed(monkeypatch, tmp_path):
+    _attempts, entries, _records = _run_characterization(
+        monkeypatch,
+        tmp_path,
+        ["hard_fail", "hard_fail", "hard_fail"],
+    )
+
+    aggregate = entries[-1]
+    assert aggregate["evidence_state"] == "stable_failed"
+    assert aggregate["runs"] == [80, 80, 80]
+    assert aggregate["hard_failure_fingerprints"] == ["line_endings_and_bom"]
+
+
+def test_characterize_retries_transport_but_counts_genuine_failure(monkeypatch, tmp_path):
+    attempts, entries, _records = _run_characterization(
+        monkeypatch,
+        tmp_path,
+        ["transport", "hard_fail", "pass"],
+        requested=2,
+    )
+
+    aggregate = entries[-1]
+    assert attempts == ["transport", "hard_fail", "pass"]
+    assert aggregate["runs"] == [80, 95]
+    assert aggregate["evidence_state"] == "flaky"
+
+
+def test_characterize_transport_attempt_budget_is_honest(monkeypatch, tmp_path):
+    attempts, entries, _records = _run_characterization(
+        monkeypatch,
+        tmp_path,
+        ["transport", "transport", "transport", "transport"],
+        requested=2,
+    )
+
+    aggregate = entries[-1]
+    assert len(attempts) == 4
+    assert aggregate["runs"] == []
+    assert aggregate["evidence_state"] == "transport_unstable"
+
+
+def test_characterize_nontransport_incomplete_is_insufficient(monkeypatch, tmp_path):
+    attempts, entries, _records = _run_characterization(
+        monkeypatch,
+        tmp_path,
+        ["incomplete", "pass", "pass"],
+        requested=2,
+    )
+
+    assert attempts == ["incomplete"]
+    assert entries[-1]["evidence_state"] == "insufficient"
+
+
+def test_characterize_cli_threads_requested_count_without_spawning(monkeypatch, tmp_path, capsys):
+    orch = {
+        "hub_nodes": [{
+            "node_id": "cx.standard",
+            "type": "profile",
+            "adapter_class": "CodexAdapter",
+            "invoke": "codex",
+        }]
+    }
+    captured = {}
+
+    def fake_run_canary(**kwargs):
+        captured.update(kwargs)
+        return [{"evidence_state": "stable_certified"}]
+
+    monkeypatch.setattr(cpc, "_load_orchestration", lambda path=None: orch)
+    monkeypatch.setattr(cpc, "run_canary", fake_run_canary)
+
+    rc = cpc.main([
+        "--peer", "cx.standard",
+        "--characterize", "4",
+        "--scores-path", str(tmp_path / "scores.jsonl"),
+        "--artifact-root", str(tmp_path / "artifacts"),
+        "--execute",
+    ])
+
+    assert rc == 0
+    assert captured["characterize"] == 4
+    assert "stable_certified" in capsys.readouterr().out
