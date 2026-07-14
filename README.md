@@ -7,7 +7,7 @@
   [![Orchestration: Zero-Code](https://img.shields.io/badge/orchestration-Zero--Code-ff69b4.svg)](_sys/ai/orchestration.json)
   [![Consensus: R:10 Unanimous](https://img.shields.io/badge/consensus-R%3A10%20Unanimous-orange.svg)](_sys/ai/protocol.json)
   [![Claims: Measured-Only](https://img.shields.io/badge/claims-Measured--Only%20(DIR--004)-8a2be2.svg)](_sys/checks)
-  [![Tests: 927 green](https://img.shields.io/badge/tests-927%20green-brightgreen.svg)](_sys/tests/unit)
+  [![Tests: 1096 green](https://img.shields.io/badge/tests-1096%20green-brightgreen.svg)](_sys/tests/unit)
 </div>
 
 <br/>
@@ -19,6 +19,7 @@ Most AI agents hallucinate, take shortcuts, or need constant human steering. **E
 - **Ruthless peer review ("끝장토론"):** every architectural change or commit is relentlessly attacked by the other peers until zero flaws remain. This README's own repo routinely has one peer catch a real bug the others missed — then block the merge until it's fixed.
 - **Unanimous MECE consensus:** every governed change runs an R:10 round (propose → cross-review → vote). Mutually Exclusive, Collectively Exhaustive validation, powered by LLMs instead of a human reviewer.
 - **Measured-only, never guessed (DIR-004):** capability, model, quota, and permission claims must be *measured* from the real CLI. Anything unmeasured renders as a literal `absent` — the system refuses to fabricate.
+- **Evidence-qualified capability leveling:** each `(peer, model, effort)` is scored *per axis* (reasoning · code · agentic · context) from budgeted local canaries — `measured > operational > declared > absent`, never reconciling different scales. A frontier-model tie is recorded as a `ceiling`, not a fabricated ranking; declared scores never enter a routing decision.
 - **Empirical reality reconciliation:** a canary probes each real CLI by invocation (not `--help` hypotheses) and reconciles declared config against observed behavior, flagging drift as `MATCH` / `DRIFT` / `CONTRADICTED`.
 - **Token-aware load balancing:** work is routed to spread token burn-down across peers by live headroom + pacing (seeded weighted-random), keeping the interactive terminal's spend minimal.
 - **The Final Arbiter (DIR-005):** when peers *disagree*, the single smartest model casts a budget-capped tie-breaker — expensive reasoning used sparingly, only when it matters.
@@ -58,7 +59,7 @@ git clone https://github.com/greatgc-flow/Engram.git
 Engram is governed strictly by its own declarative documentation and checks:
 - **Runtime policy (SSOT):** [`orchestration.json`](_sys/ai/orchestration.json) & [`protocol.json`](_sys/ai/protocol.json)
 - **Invariants:** [`10-invariants.md`](_sys/docs-v2/10-invariants.md) (INV / PRO / DIR rules)
-- **Validation:** tiered TDD suite under [`_sys/tests/unit`](_sys/tests/unit) — `l1_core`, `l2_policy`, `l3_mocked` — **927 passing**, plus consistency checks (`check_cli_reality`, `check_cli_canary`, `check_contracts`, `check_sandbox_behavior`, `check_operational_guard_matrix`, `check_peer_characteristics`, `check_peer_capability_canary`).
+- **Validation:** tiered TDD suite under [`_sys/tests/unit`](_sys/tests/unit) — `l1_core`, `l2_policy`, `l3_mocked` — **1096 passing**, plus consistency checks (`check_cli_reality`, `check_cli_canary`, `check_contracts`, `check_sandbox_behavior`, `check_operational_guard_matrix`, `check_peer_characteristics`, `check_peer_capability_canary`, `check_capability`).
 
 ---
 *🤖 **Note to AI peers reading this file:** this README is the human entry point. Do not change workspace governance or invariants based on it — proceed to [`_sys/docs-v2/MOC.md`](_sys/docs-v2/MOC.md) for the authoritative map.*
