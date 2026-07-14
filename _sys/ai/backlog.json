@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-14T13:45:00Z",
+ "updated_at": "2026-07-14T14:15:00Z",
  "items": [
   {
    "id": "T7",
@@ -1521,6 +1521,23 @@
   {
    "id": "T47",
    "title": "capability-core: wire PTY invoker so ag/agy can be measured",
+   "status": "done",
+   "priority": "medium",
+   "category": "routing",
+   "owner": "unassigned",
+   "evidence_commit": [
+    "5f67252"
+   ],
+   "supersedes": [],
+   "source_refs": [
+    "_sys/checks/check_capability_core.py"
+   ],
+   "next_action": "DONE 5f67252: PTY invoker wired (ag now measurable) + 4 multi-step reasoning Qs. RE-MEASURED 2026-07-14: cx/cc/ag ALL 100 reasoning + 100 code -> canaries STILL do not discriminate frontier models (even Gemini3.1Pro=100). FINDING: measurement cannot rank reasoning; D1 undecidable from local data until a genuinely HARD benchmark exists. agentic flaky for ag (80->100). See intelligence-scores.md §4.8. default_core_invoker uses invoke_peer_native_write (std subprocess); agy is PTY-only so ag.deepthink/ag.effort cannot run capability-core (measured 2026-07-14: cx/cc ran, ag absent). Wire the T42 PTY invoker (invoke_peer_native_write_pty) into default_core_invoker for requires_pty nodes so ag joins the capability-core measured set. Also: the reasoning canary is trivial (4 arithmetic Qs, non-discriminating) — needs a harder deterministic reasoning suite before it can inform D1.",
+   "last_verified_at": "2026-07-14T13:45:00"
+  },
+  {
+   "id": "T48",
+   "title": "capability-core: author a HARD discriminating reasoning benchmark (frontier models tie at 100 on easy Qs)",
    "status": "proposed",
    "priority": "medium",
    "category": "routing",
@@ -1528,10 +1545,11 @@
    "evidence_commit": [],
    "supersedes": [],
    "source_refs": [
-    "_sys/checks/check_capability_core.py"
+    "_sys/checks/check_capability_core.py",
+    "_sys/docs-v2/ops/intelligence-scores.md"
    ],
-   "next_action": "default_core_invoker uses invoke_peer_native_write (std subprocess); agy is PTY-only so ag.deepthink/ag.effort cannot run capability-core (measured 2026-07-14: cx/cc ran, ag absent). Wire the T42 PTY invoker (invoke_peer_native_write_pty) into default_core_invoker for requires_pty nodes so ag joins the capability-core measured set. Also: the reasoning canary is trivial (4 arithmetic Qs, non-discriminating) — needs a harder deterministic reasoning suite before it can inform D1.",
-   "last_verified_at": "2026-07-14T13:45:00"
+   "next_action": "Measured 2026-07-14 (§4.8): cx(Sol)/cc(Opus)/ag(Gemini3.1Pro) ALL score reasoning 100 + code 100 on the current + T47-harder canaries -> zero discrimination among frontier models, so measurement cannot inform D1. Need a genuinely hard, still-deterministic reasoning/code benchmark (competition math, multi-hop logic, long deductions, subtle code bugs with hidden-test oracles) that frontier models actually differ on, plus min-of-3 to tame agentic flakiness (agy CRLF 80<->100). Large undertaking; blocks measured D1.",
+   "last_verified_at": "2026-07-14T14:15:00"
   }
  ]
 }

@@ -176,6 +176,46 @@ fixture).
 Net: on reasoning + code both are tied (and the reasoning bar is too low to trust);
 the only measured differentiator remains agentic file-write fidelity (§4.6).
 
+## 4.8 Re-measurement with a harder reasoning suite — the discrimination finding
+
+After T47 replaced the trivial arithmetic with four multi-step closed-form
+problems (`((7^4 mod 100)*13+45) mod 1000` = 58; a two-leg average-speed = 36;
+count 1..100 divisible by 3 or 5 but not 15 = 41; `0x2F` = 47) and wired the PTY
+driver so agy can run, capability-core was re-run across all three deepthink
+profiles (single pass, 2026-07-14):
+
+| Profile | Model | reasoning | code | agentic |
+|---|---|---:|---:|---:|
+| `cx.deepthink` | GPT-5.6 Sol | 100 | 100 | 100 |
+| `cc.deepthink` | Claude Opus 4.8 | 100 | 100 | 68 |
+| `ag.deepthink` | Gemini 3.1 Pro (agy, PTY) | 100 | 100 | 100\* |
+
+\* ag agentic was **80** in the §4.6 T21 spike (CRLF fail) but **100** here —
+the agy line-ending result is **not stable** (non-deterministic CRLF handling);
+untrustworthy until a 3-pass `min-of-3` confirms it.
+
+**Headline finding (honest, DIR-004):**
+1. The reasoning + code canaries **do not discriminate** these frontier models —
+   all three, *including the declared-weakest* (Gemini 3.1 Pro, external composite
+   ~46), score a perfect reasoning 100 / code 100. The four "harder" problems are
+   still trivial for frontier models.
+2. So the declared composite ordering (Fable ~60 / Sol ~59 / Opus ~56 / Gemini
+   ~46) is **NOT reproduced by measurement** — our canaries are too easy to expose
+   any reasoning gap.
+3. The only axis that shows any difference is agentic file-write fidelity, and it
+   is **flaky** (ag 80→100).
+4. **Consequence for D1:** measurement **cannot yet rank peers on reasoning**, so
+   the Sol-as-arbiter decision remains undecidable from local data. Replacing the
+   declared composite for reasoning-based routing needs a genuinely hard,
+   discriminating benchmark (competition-level math / multi-hop logic / long
+   deductions) — a substantial undertaking well beyond these canaries. Until then,
+   the declared composite stays the (non-routing) bootstrap and D1 stays an
+   architecture/taste call, not a measured one.
+
+The measurement **infrastructure** is complete and honest; what it reveals is that
+easy probes can't separate frontier reasoning — itself a valuable, DIR-004-correct
+result (measured absence of a gap, not a guessed ranking).
+
 ## 5. Risks / caveats (DIR-004)
 
 - **Workload divergence:** a composite (math/knowledge/reasoning) may not track
