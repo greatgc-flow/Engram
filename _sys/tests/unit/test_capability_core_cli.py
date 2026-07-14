@@ -32,7 +32,7 @@ def _perfect(workspace, fixture):
 def test_core_prompt_names_reasoning_code_agentic_and_workspace(tmp_path):
     fixture = core.prepare_core_fixture(tmp_path)
     prompt = core.build_capability_core_prompt(fixture, tmp_path)
-    for key in ("sum_17_25", "product_7_8", "difference_100_37", "quotient_144_12", "reasoning_answers.json", "code/buggy_normalizer.py", "agentic"):
+    for key in ("r_modchain", "r_avgspeed", "r_count_3or5not15", "r_hex2dec_2F", "reasoning_answers.json", "code/buggy_normalizer.py", "agentic"):
         assert key in prompt
     assert "workspace" in prompt.lower() and "only" in prompt.lower()
 
@@ -60,6 +60,22 @@ def test_default_core_invoker_calls_native_driver_with_built_prompt(monkeypatch,
     assert called["peer"] == "cc" and called["profile"] == "standard"
     assert "reasoning_answers.json" in called["prompt"]
     assert result["returncode"] == 0
+
+
+def test_reasoning_key_and_pty_driver_selection(monkeypatch, tmp_path):
+    assert core._REASONING_ANSWERS == {"r_modchain": "58", "r_avgspeed": "36", "r_count_3or5not15": "41", "r_hex2dec_2F": "47"}
+    fixture = core.prepare_core_fixture(tmp_path)
+    (tmp_path / "reasoning_answers.json").write_text(json.dumps(fixture["reasoning_answers"]), encoding="utf-8")
+    assert core._score_reasoning(tmp_path)[0] == 100
+    (tmp_path / "reasoning_answers.json").write_text(json.dumps({"r_modchain": "58"}), encoding="utf-8")
+    assert core._score_reasoning(tmp_path)[0] == 25
+    calls = []
+    monkeypatch.setattr(core, "_profile_node", lambda _orch, _peer, profile: {"requires_pty": profile == "deepthink"})
+    monkeypatch.setattr(core, "invoke_peer_native_write", lambda *args: calls.append("std") or type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})())
+    monkeypatch.setattr(core, "invoke_peer_native_write_pty", lambda *args: calls.append("pty") or type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})())
+    core.default_core_invoker("cc", "standard", ORCH)(tmp_path, fixture)
+    core.default_core_invoker("ag", "deepthink", ORCH)(tmp_path, fixture)
+    assert calls == ["std", "pty"]
 
 
 def test_cli_execute_without_budget_flags_fails_closed(monkeypatch, tmp_path):

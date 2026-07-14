@@ -29,7 +29,9 @@ from canary_budget import (  # noqa: E402
 )
 from check_peer_capability_canary import (  # noqa: E402
     build_prompt as build_agentic_prompt,
+    _profile_node,
     invoke_peer_native_write,
+    invoke_peer_native_write_pty,
     prepare_fixture as prepare_agentic_fixture,
     resolve_runtime_fingerprint,
     runtime_fingerprint_valid,
@@ -45,10 +47,10 @@ MACHINE_CAPACITY_TAGS = {"app_server", "statusline", "cli_live"}
 _MACHINE_USAGE_TAGS = MACHINE_CAPACITY_TAGS
 _FALLBACK_BYTES_PER_TOKEN = 2
 _REASONING_ANSWERS = {
-    "sum_17_25": "42",
-    "product_7_8": "56",
-    "difference_100_37": "63",
-    "quotient_144_12": "12",
+    "r_modchain": "58",
+    "r_avgspeed": "36",
+    "r_count_3or5not15": "41",
+    "r_hex2dec_2F": "47",
 }
 _BUGGY_CODE = "def normalize_name(value):\n    return value\n"
 _PATCHED_CODE = "def normalize_name(value):\n    return value.strip().lower()\n"
@@ -146,10 +148,12 @@ This is an authorized capability canary in the disposable workspace: {workspace}
 Use native file tools. ALL writes must stay inside this workspace.
 
 REASONING: write reasoning_answers.json as a JSON object with EXACTLY these
-keys and string values. Answer: sum_17_25 = seventeen plus twenty-five;
-product_7_8 = seven times eight; difference_100_37 = one hundred minus
-thirty-seven; quotient_144_12 = one hundred forty-four divided by twelve as
-an integer. Keys: sum_17_25, product_7_8, difference_100_37, quotient_144_12.
+keys and string values. r_modchain: Compute ((7^4 mod 100) * 13 + 45) mod
+1000. r_avgspeed: A vehicle travels 60 km at 30 km/h, then 120 km at 40 km/h;
+give the average speed for the whole trip in km/h as an integer.
+r_count_3or5not15: How many integers from 1 to 100 inclusive are divisible
+by 3 or 5 but NOT by 15? r_hex2dec_2F: Give the decimal value of hexadecimal
+0x2F. Keys: r_modchain, r_avgspeed, r_count_3or5not15, r_hex2dec_2F.
 
 CODE: edit code/buggy_normalizer.py only as needed so normalize_name(value)
 returns value.strip().lower(); it currently returns value unchanged. Preserve
@@ -163,9 +167,11 @@ contract follows; do not write outside this workspace:
 
 def default_core_invoker(peer: str, profile: str, orch: dict, *, timeout: int | None = None) -> CoreInvoker:
     """Curry T21's native CLI driver into the CoreInvoker interface."""
+    use_pty = bool(_profile_node(orch, peer, profile).get("requires_pty"))
     def invoke(workspace: Path, fixture: dict[str, Any]) -> dict[str, Any]:
         prompt = build_capability_core_prompt(fixture, workspace)
-        result = invoke_peer_native_write(peer, profile, prompt, workspace, orch, timeout)
+        driver = invoke_peer_native_write_pty if use_pty else invoke_peer_native_write
+        result = driver(peer, profile, prompt, workspace, orch, timeout)
         return {
             "returncode": result.returncode,
             "stdout": getattr(result, "stdout", ""),
