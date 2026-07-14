@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-14T15:50:00Z",
+ "updated_at": "2026-07-14T16:30:00Z",
  "items": [
   {
    "id": "T7",
@@ -1591,6 +1591,22 @@
    ],
    "next_action": "Every hub ask this round emitted [HUB:WARN] terminal-spend guard unavailable: cant compare offset-naive and offset-aware datetimes (D7 terminal_spend_guard). Real tz bug: one datetime is naive, the other aware. Harmless (warns then proceeds) but the guard is effectively disabled. Fix: normalize both to tz-aware UTC before compare.",
    "last_verified_at": "2026-07-14T15:10:00"
+  },
+  {
+   "id": "T51",
+   "title": "agy PTY measurement umbrella: normalized invocation record + byte-exact stdin delivery + seeded config home; clean re-measure",
+   "status": "proposed",
+   "priority": "medium",
+   "category": "routing",
+   "owner": "unassigned",
+   "evidence_commit": [],
+   "supersedes": [],
+   "source_refs": [
+    "_sys/checks/check_peer_capability_canary.py",
+    "_sys/docs-v2/ops/intelligence-scores.md"
+   ],
+   "next_action": "From the T49 root-cause round-robin (cx+ag+cc, 2026-07-14, commit 69c0f45 fixed the immediate timeout mis-scoring + reverted to inline + 600s). Umbrella (same family as T36): (1) ONE normalized PTY invocation record used by all agy measurements {timed_out,timeout_kind,transport_error,exit_code,elapsed,output_bytes,prompt_delivery_mode(inline|file|stdin_pipe)+bytes+hash,config_home_path,brain_session_id,chunk_telemetry} + the shared _is_transport_unstable classifier (partly done). (2) prompt-DELIVERY spike: inline -p hits Windows cmdline limits for multi-KB byte-exact prompts (ag), prompt-file doubled wall time -> verify a byte-exact stdin delivery (agy -p - < file, explicit EOF). (3) SEED AGY_CONFIG_HOME with a pre-configured read-only profile to bypass agy onboarding (ag: fresh empty home per run causes re-onboarding -> CRLF non-determinism); audit files on-disk not via PTY stdout (ConPTY LF->CRLF mangling). (4) THEN re-measure agy with 3 complete same-runtime runs to get a trustworthy agentic score (current: mildly-flaky-80-95, uncertified). Only complete non-transport runs may become empirical evidence.",
+   "last_verified_at": "2026-07-14T16:30:00"
   }
  ]
 }
