@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-14T14:15:00Z",
+ "updated_at": "2026-07-14T14:30:00Z",
  "items": [
   {
    "id": "T7",
@@ -1538,6 +1538,24 @@
   {
    "id": "T48",
    "title": "capability-core: author a HARD discriminating reasoning benchmark (frontier models tie at 100 on easy Qs)",
+   "status": "done",
+   "priority": "medium",
+   "category": "routing",
+   "owner": "unassigned",
+   "supersedes": [],
+   "source_refs": [
+    "_sys/checks/check_capability_core.py",
+    "_sys/docs-v2/ops/intelligence-scores.md"
+   ],
+   "next_action": "DESIGN+DECISIONS DONE (cx design + ag cross-check + cc/fable synth) in docs-v2/ops/hard-benchmark-decisions.md 2026-07-14. HEADLINE: DECOUPLE D1 from a measured reasoning edge (frontier peers tie at ceiling; deterministic hard suite may never discriminate = open research). D1 -> ratify as architecture/provider-diversity R:10 call (Sol + X reserve), NOT measured. reasoning-hard.v1 build DEFERRED (regression infra only). code-hidden(T46)=no admin-free jail -> restricted-DSL or absent. Full architecture (parametric generators/oracle/discrimination-contract/calibration) documented if ever built.",
+   "last_verified_at": "2026-07-14T14:35:00",
+   "evidence_commit": [
+    "648e9db"
+   ]
+  },
+  {
+   "id": "T49",
+   "title": "agentic canary: PTY prompt-via-file fix + full-distribution evidence_state; re-measure ag",
    "status": "proposed",
    "priority": "medium",
    "category": "routing",
@@ -1545,11 +1563,26 @@
    "evidence_commit": [],
    "supersedes": [],
    "source_refs": [
-    "_sys/checks/check_capability_core.py",
-    "_sys/docs-v2/ops/intelligence-scores.md"
+    "_sys/checks/check_peer_capability_canary.py",
+    "_sys/docs-v2/ops/hard-benchmark-decisions.md"
    ],
-   "next_action": "Measured 2026-07-14 (§4.8): cx(Sol)/cc(Opus)/ag(Gemini3.1Pro) ALL score reasoning 100 + code 100 on the current + T47-harder canaries -> zero discrimination among frontier models, so measurement cannot inform D1. Need a genuinely hard, still-deterministic reasoning/code benchmark (competition math, multi-hop logic, long deductions, subtle code bugs with hidden-test oracles) that frontier models actually differ on, plus min-of-3 to tame agentic flakiness (agy CRLF 80<->100). Large undertaking; blocks measured D1.",
-   "last_verified_at": "2026-07-14T14:15:00"
+   "next_action": "ag root-cause (hard-benchmark-decisions.md §4): agy line_endings 80<->100 is likely winpty CRLF-mangling of the byte-exact prompt in PTY stdin, NOT a real agy gap -> the §4.6 ag=80 may be harness noise. FIX: write the fixture prompt to a read-only workspace file, agent reads it; PTY used only for process control. Store full distribution {runs,median,min,max,range,pass_rate,hard_failure_fingerprints,evidence_state in stable_certified|stable_failed|flaky|transport_unstable|insufficient}; flaky != low score; only stable_certified feeds D1. Re-measure ag after the fix.",
+   "last_verified_at": "2026-07-14T14:30:00"
+  },
+  {
+   "id": "T50",
+   "title": "terminal-spend guard: tz-aware datetime compare bug (offset-naive vs offset-aware)",
+   "status": "proposed",
+   "priority": "low",
+   "category": "routing",
+   "owner": "unassigned",
+   "evidence_commit": [],
+   "supersedes": [],
+   "source_refs": [
+    "_sys/core/hub.py"
+   ],
+   "next_action": "Every hub ask this round emitted [HUB:WARN] terminal-spend guard unavailable: cant compare offset-naive and offset-aware datetimes (D7 terminal_spend_guard). Real tz bug: one datetime is naive, the other aware. Harmless (warns then proceeds) but the guard is effectively disabled. Fix: normalize both to tz-aware UTC before compare.",
+   "last_verified_at": "2026-07-14T14:30:00"
   }
  ]
 }
