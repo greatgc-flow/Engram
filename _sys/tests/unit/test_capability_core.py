@@ -159,3 +159,30 @@ def test_aggregate_rejects_run_missing_an_axis(tmp_path):
     aggregate = core.aggregate_core_runs(entries, expected_runtime_fingerprint=FP)
     assert aggregate["valid"] is False
     assert aggregate["axis_scores"] == {"reasoning_correctness": None, "code_fidelity": None, "agentic_reliability": None}
+
+
+def test_capability_core_records_resolve_to_certified_axes_end_to_end(tmp_path, monkeypatch):
+    """T53 end-to-end (the integration the T52 audit found was never verified):
+    run_capability_core -> per-axis empirical records -> resolve_capability_reality
+    -> the overlay CERTIFIES each axis with its measured score."""
+    import check_capability
+    import check_peer_capability_canary
+    records_path = tmp_path / "ledger.jsonl"
+    _run_core(tmp_path / "run", records_path=records_path)
+    records = [json.loads(l) for l in records_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    per_axis = {r["capability_id"] for r in records if ":" in r.get("capability_id", "")}
+    assert per_axis == {
+        "capability-core.v1:reasoning_correctness",
+        "capability-core.v1:code_fidelity",
+        "capability-core.v1:agentic_reliability",
+    }
+    # resolver must match the record fingerprint to the subject's resolved one
+    monkeypatch.setattr(check_peer_capability_canary, "resolve_runtime_fingerprint", lambda o, p, pr: FP)
+    reality = check_capability.resolve_capability_reality(
+        ORCH, {"profiles": []}, {"schema_version": 1, "subjects": {}}, records, NOW,
+    )
+    axes = reality["subjects"]["cc.standard"]["axes"]
+    for axis in ("reasoning_correctness", "code_fidelity", "agentic_reliability"):
+        cap_id = f"capability-core.v1:{axis}"
+        assert axes[cap_id]["evidence_band"] == "CERTIFIED", axes[cap_id]
+        assert axes[cap_id]["effective_value"] == 100

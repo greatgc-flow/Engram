@@ -13,7 +13,7 @@ import json
 import math
 import shutil
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -36,6 +36,7 @@ from check_peer_capability_canary import (  # noqa: E402
     resolve_runtime_fingerprint,
     runtime_fingerprint_valid,
     score_workspace as score_agentic_workspace,
+    VALID_DAYS,
 )
 from check_cli_canary import _canary_quota  # noqa: E402
 
@@ -293,7 +294,37 @@ def run_capability_core(
         "shadow_only": True, "measured_at": now.isoformat(), "details": scored["details"],
     }
     _append_record(records_path, record)
+    # T53: also emit ONE single-axis empirical record PER AXIS so the T43 resolver
+    # (which is single-axis: capability_id/score/passed/expires_at/fingerprint) can
+    # actually CONSUME capability-core measurements. The multi-axis summary above is
+    # kept for observability but is skipped by the resolver (no numeric `score`).
+    _emit_per_axis_records(
+        records_path, peer, profile, runtime_fingerprint, scored, actual_tokens, now
+    )
     return {"status": "PASS" if scored["judgeable"] else "FAIL", **record}
+
+
+def _emit_per_axis_records(records_path, peer, profile, runtime_fingerprint, scored, actual_tokens, now):
+    """Append one single-axis empirical record per capability-core axis (T53).
+    Each is shaped like a T21 canary record so the resolver certifies it with the
+    axis score. `passed` = the axis was judgeable (a measured score of 68 is still
+    a valid CERTIFIED measurement; the score carries the value, not a pass/fail)."""
+    if not scored.get("judgeable"):
+        return
+    expires_at = (now + timedelta(days=VALID_DAYS)).isoformat()
+    for axis, axis_score in (scored.get("axis_scores") or {}).items():
+        if not isinstance(axis_score, (int, float)):
+            continue
+        _append_record(records_path, {
+            "schema_version": 1,
+            "capability_id": f"{CAPABILITY_CORE_ID}:{axis}",
+            "peer": peer, "profile": profile,
+            "runtime_fingerprint": runtime_fingerprint,
+            "score": axis_score, "passed": True,
+            "expires_at": expires_at, "actual_tokens": actual_tokens,
+            "source_tag": "empirical_probe", "shadow_only": True,
+            "measured_at": now.isoformat(),
+        })
 
 
 def estimate_tokens(text: str, tokenizer: Callable[[str], int] | None = None) -> int:
@@ -374,8 +405,15 @@ def run_long_context(
     actual_tokens = _machine_usage(invocation)
     consume_canary_reservation(Path(ai_root), reservation["reservation_id"], actual_tokens=actual_tokens, now=now)
     scored = _score_long_context(workspace, fixture)
+    # T53: a single-axis record the resolver can consume — carries a T41
+    # runtime_fingerprint (was missing -> would ValueError the resolver), plus
+    # score/passed/expires_at. long_context is inherently one axis.
+    fingerprint = resolve_runtime_fingerprint(orch, peer, profile)
     record = {
         "schema_version": 1, "capability_id": fixture["suite"], "peer": peer, "profile": profile,
+        "runtime_fingerprint": fingerprint,
+        "score": scored["score"], "passed": bool(scored["judgeable"]),
+        "expires_at": (now + timedelta(days=VALID_DAYS)).isoformat(),
         "axis_scores": {"long_context_quality": scored["score"]}, "subscores": scored,
         "actual_tokens": actual_tokens, "source_tag": "empirical_probe", "shadow_only": True,
         "measured_at": now.isoformat(),
