@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-15T09:45:00Z",
+ "updated_at": "2026-07-15T10:30:00Z",
  "items": [
   {
    "id": "T7",
@@ -1611,11 +1611,13 @@
   {
    "id": "T52",
    "title": "Fix ~11 defects from the 4-peer capability-leveling cross-audit (T41-T51)",
-   "status": "proposed",
+   "status": "done",
    "priority": "high",
    "category": "routing",
    "owner": "unassigned",
-   "evidence_commit": [],
+   "evidence_commit": [
+    "b704368"
+   ],
    "supersedes": [],
    "source_refs": [
     "_sys/checks/check_capability.py",
@@ -1624,8 +1626,25 @@
     "_sys/core/hub.py",
     "_sys/core/hub_peer.py"
    ],
-   "next_action": "4-peer cross-audit (cx+ag+ag.opus+cc, 2026-07-15) of the T41-T51 capability-leveling work found ~11 confirmed defects a single-terminal review missed. P0: (1) T44b capability-core records write axis_scores (not score/passed/expires_at) -> T43 resolver outputs CERTIFIED-but-None -> T45 mis-removes measurable profiles [check_capability.py:216,244 vs check_capability_core.py:275]; (2) long_context records lack runtime_fingerprint -> resolver raises ValueError, whole overlay fails [check_capability_core.py:363 vs check_capability.py:143]; (3) T49 timeout fix INCOMPLETE - run_canary inline transient checks (L1088/1097/1130/1139) + _consecutive_base_passes (L444) check timeout_kind but NOT timed_out -> generic timeout (timed_out=True,timeout_kind=None) mis-scored + no retry. P1: (4) runtime_fingerprint_valid requires reasoning_effort -> standard profiles (cc/cx.standard, None effort) always fail; (5) resolve_runtime_fingerprint StopIteration on normalized orch (profiles popped) -> profile_config_sha256=None -> invalid; (6) T50 tz fix incomplete: _human_interface_peer_eligibility default naive datetime.now() [hub.py:2466] + caller-supplied naive now preserved -> direct resolve_auto_target(now=naive) still raises; (7) T36 extract_session_id fallback uses host _agy_brain_dir() (production) but canary sets AGY_CONFIG_HOME only in subprocess -> returns production session uuid during canary [hub_peer.py:918]; (8) _score_reasoning crashes AttributeError on non-dict JSON e.g. a list [check_capability_core.py:190]; (9) aggregate_core_runs .get(axis,0) certifies incomplete axis_scores as valid [check_capability_core.py:240]. P2: (10) extract_usage/_agy_conversations_dir dont respect AGY_CONFIG_HOME [hub_peer.py:856,934]. CLEAN: canary_budget.py, check_cli_canary.py, capability-declarations.json, snapshot.py T45 shadow (live route byte-identical confirmed).",
-   "last_verified_at": "2026-07-15T09:45:00"
+   "next_action": "FIXED 9/11 (b704368): cx C1/C2 (resolver no-raise + no false-CERTIFIED), ag timeout-completion (#3/#5), reasoning_effort optional (#4), normalized-orch fingerprint (#6), C3 tz _ensure_aware, ag.opus #8 non-dict + #9 incomplete-axes. 8 regression tests, 1095 green. DEFERRED (latent, low value): #7/#10 AGY_CONFIG_HOME in extract_session_id/extract_usage/_agy_conversations_dir (not active in current flow) + FULL per-axis capability-core->overlay integration (records emit axis_scores; resolver is single-axis -> capability-core currently resolves ABSENT not consumed; shadow-only, no active harm). Original audit findings preserved above. 4-peer cross-audit (cx+ag+ag.opus+cc, 2026-07-15) of the T41-T51 capability-leveling work found ~11 confirmed defects a single-terminal review missed. P0: (1) T44b capability-core records write axis_scores (not score/passed/expires_at) -> T43 resolver outputs CERTIFIED-but-None -> T45 mis-removes measurable profiles [check_capability.py:216,244 vs check_capability_core.py:275]; (2) long_context records lack runtime_fingerprint -> resolver raises ValueError, whole overlay fails [check_capability_core.py:363 vs check_capability.py:143]; (3) T49 timeout fix INCOMPLETE - run_canary inline transient checks (L1088/1097/1130/1139) + _consecutive_base_passes (L444) check timeout_kind but NOT timed_out -> generic timeout (timed_out=True,timeout_kind=None) mis-scored + no retry. P1: (4) runtime_fingerprint_valid requires reasoning_effort -> standard profiles (cc/cx.standard, None effort) always fail; (5) resolve_runtime_fingerprint StopIteration on normalized orch (profiles popped) -> profile_config_sha256=None -> invalid; (6) T50 tz fix incomplete: _human_interface_peer_eligibility default naive datetime.now() [hub.py:2466] + caller-supplied naive now preserved -> direct resolve_auto_target(now=naive) still raises; (7) T36 extract_session_id fallback uses host _agy_brain_dir() (production) but canary sets AGY_CONFIG_HOME only in subprocess -> returns production session uuid during canary [hub_peer.py:918]; (8) _score_reasoning crashes AttributeError on non-dict JSON e.g. a list [check_capability_core.py:190]; (9) aggregate_core_runs .get(axis,0) certifies incomplete axis_scores as valid [check_capability_core.py:240]. P2: (10) extract_usage/_agy_conversations_dir dont respect AGY_CONFIG_HOME [hub_peer.py:856,934]. CLEAN: canary_budget.py, check_cli_canary.py, capability-declarations.json, snapshot.py T45 shadow (live route byte-identical confirmed).",
+   "last_verified_at": "2026-07-15T10:30:00"
+  },
+  {
+   "id": "T53",
+   "title": "capability-core per-axis overlay integration + AGY_CONFIG_HOME in session/usage readers",
+   "status": "proposed",
+   "priority": "low",
+   "category": "routing",
+   "owner": "unassigned",
+   "evidence_commit": [],
+   "supersedes": [],
+   "source_refs": [
+    "_sys/checks/check_capability_core.py",
+    "_sys/checks/check_capability.py",
+    "_sys/core/hub_peer.py"
+   ],
+   "next_action": "Deferred from T52 (b704368). (A) capability-core.v1 emits ONE multi-axis record (axis_scores) but the T43 resolver is single-axis (capability_id/score/passed/expires_at) -> capability-core measurements currently resolve ABSENT (skipped, not consumed). Proper integration: emit ONE empirical record PER AXIS (capability_id=capability-core.v1:reasoning_correctness etc. with score/passed/expires_at/runtime_fingerprint), and run_long_context must include runtime_fingerprint -> then the existing resolver assembles the vector. Shadow-only until then. (B) AGY_CONFIG_HOME honored by hub_peer.extract_session_id fallback / extract_usage / _agy_conversations_dir (currently only _agy_brain_dir respects it) so a custom-config-home ag invocation resolves the right brain/transcript dir (latent — not active in current flow).",
+   "last_verified_at": "2026-07-15T10:30:00"
   }
  ]
 }
