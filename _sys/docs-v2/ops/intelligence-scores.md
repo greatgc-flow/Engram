@@ -147,6 +147,35 @@ Actionable (measured, not guessed): for **byte-exact** file operations, codex
 each have a specific, reproducible fidelity gap worth a tooling fix. Only
 `cx.deepthink` is CERTIFIED; ag/cc records are honest fails, not absent.
 
+## 4.7 Measured capability-core (reasoning + code + agentic) — first run
+
+First `capability-core.v1` run (operator-approved, 2026-07-14; budget flags
+cap 10 / window 5h / floor 0.1, single pass each — NOT the 3-pass certified
+aggregate). Three deterministic axes in one invocation: reasoning (four closed-
+form arithmetic answers → `reasoning_answers.json`), code (patch `normalize_name`
+→ `value.strip().lower()`, exact-diff oracle), agentic (the T21 file-fidelity
+fixture).
+
+| Profile | Model | reasoning | code | agentic | Note |
+|---|---|---:|---:|---:|---|
+| `cx.deepthink` | GPT-5.6 Sol | 100 | 100 | 100 | all axes clean |
+| `cc.deepthink` | Claude Opus 4.8 | 100 | 100 | 68 | agentic = the §4.6 UTF-8 roundtrip gap |
+
+**Honest limitations (DIR-004):**
+- The **reasoning** canary is four trivial arithmetic questions — both peers max
+  it, so it does **not discriminate** reasoning capability. It proves the harness
+  works, not that Sol == Opus at reasoning. A harder, still-deterministic reasoning
+  suite is required before this axis can inform **D1** (arbiter reasoning-fitness).
+- The **code** axis uses the exact-patch oracle (T46) — it rewards the canonical
+  patch, not any functionally-correct one.
+- Single pass only; `min-of-3` certification not run.
+- `ag.deepthink` is **absent** here: `default_core_invoker` uses the std subprocess
+  driver, but agy is PTY-only — capability-core needs the PTY invoker wired (a gap;
+  T42's PTY driver exists but isn't yet plumbed into capability-core). Backlogged.
+
+Net: on reasoning + code both are tied (and the reasoning bar is too low to trust);
+the only measured differentiator remains agentic file-write fidelity (§4.6).
+
 ## 5. Risks / caveats (DIR-004)
 
 - **Workload divergence:** a composite (math/knowledge/reasoning) may not track

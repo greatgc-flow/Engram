@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-14T10:40:00Z",
+ "updated_at": "2026-07-14T13:45:00Z",
  "items": [
   {
    "id": "T7",
@@ -1517,6 +1517,21 @@
    ],
    "next_action": "T44b (commit e26c7f6) scores code_fidelity by exact-normalized-patch match against the sole allowlisted patch (untrusted candidate code is never executed, for safety). This penalizes a correct-but-textually-different patch (scores 0). Future refinement: run the hidden tests in a sandboxed subprocess to score functional correctness independent of exact diff. Requires a safe code-exec sandbox; deferred (Phase 2+ measurement quality).",
    "last_verified_at": "2026-07-14T10:10:00"
+  },
+  {
+   "id": "T47",
+   "title": "capability-core: wire PTY invoker so ag/agy can be measured",
+   "status": "proposed",
+   "priority": "medium",
+   "category": "routing",
+   "owner": "unassigned",
+   "evidence_commit": [],
+   "supersedes": [],
+   "source_refs": [
+    "_sys/checks/check_capability_core.py"
+   ],
+   "next_action": "default_core_invoker uses invoke_peer_native_write (std subprocess); agy is PTY-only so ag.deepthink/ag.effort cannot run capability-core (measured 2026-07-14: cx/cc ran, ag absent). Wire the T42 PTY invoker (invoke_peer_native_write_pty) into default_core_invoker for requires_pty nodes so ag joins the capability-core measured set. Also: the reasoning canary is trivial (4 arithmetic Qs, non-discriminating) — needs a harder deterministic reasoning suite before it can inform D1.",
+   "last_verified_at": "2026-07-14T13:45:00"
   }
  ]
 }
