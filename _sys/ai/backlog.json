@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-14T14:55:00Z",
+ "updated_at": "2026-07-14T15:10:00Z",
  "items": [
   {
    "id": "T7",
@@ -1506,7 +1506,7 @@
   {
    "id": "T46",
    "title": "capability-core code_fidelity: sandbox-execute hidden tests (vs exact-patch oracle)",
-   "status": "proposed",
+   "status": "dropped",
    "priority": "low",
    "category": "routing",
    "owner": "unassigned",
@@ -1515,7 +1515,7 @@
    "source_refs": [
     "_sys/checks/check_capability_core.py"
    ],
-   "next_action": "T44b (commit e26c7f6) scores code_fidelity by exact-normalized-patch match against the sole allowlisted patch (untrusted candidate code is never executed, for safety). This penalizes a correct-but-textually-different patch (scores 0). Future refinement: run the hidden tests in a sandboxed subprocess to score functional correctness independent of exact diff. Requires a safe code-exec sandbox; deferred (Phase 2+ measurement quality).",
+   "next_action": "SUPERSEDED by T48 (hard-benchmark-decisions.md §3): no admin-free code-exec jail exists on this portable Windows env, so sandboxed hidden-test execution is infeasible here. code_fidelity stays the exact-patch oracle; a restricted-DSL axis or absent are the only options. Not implementable as specified -> dropped.",
    "last_verified_at": "2026-07-14T10:10:00"
   },
   {
@@ -1574,17 +1574,19 @@
   {
    "id": "T50",
    "title": "terminal-spend guard: tz-aware datetime compare bug (offset-naive vs offset-aware)",
-   "status": "proposed",
+   "status": "done",
    "priority": "low",
    "category": "routing",
    "owner": "unassigned",
-   "evidence_commit": [],
+   "evidence_commit": [
+    "99c74fe"
+   ],
    "supersedes": [],
    "source_refs": [
     "_sys/core/hub.py"
    ],
    "next_action": "Every hub ask this round emitted [HUB:WARN] terminal-spend guard unavailable: cant compare offset-naive and offset-aware datetimes (D7 terminal_spend_guard). Real tz bug: one datetime is naive, the other aware. Harmless (warns then proceeds) but the guard is effectively disabled. Fix: normalize both to tz-aware UTC before compare.",
-   "last_verified_at": "2026-07-14T14:30:00"
+   "last_verified_at": "2026-07-14T15:10:00"
   }
  ]
 }
