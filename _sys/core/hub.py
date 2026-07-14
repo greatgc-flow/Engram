@@ -2457,6 +2457,19 @@ def _direct_write_capability_status(peer: str, profile: str, now: datetime) -> d
     }
 
 
+def _ensure_aware(now: datetime | None) -> datetime:
+    """Normalize now to tz-AWARE (T50/T52): a naive default OR a naive
+    caller-supplied now would raise 'can't compare offset-naive and offset-aware
+    datetimes' against the tz-aware ledger/lease timestamps downstream. Missing
+    -> aware UTC; a naive value is interpreted as local (matching the existing
+    _human_interface_ts_fresh normalization)."""
+    if now is None:
+        return datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        return now.astimezone()
+    return now
+
+
 def _human_interface_peer_eligibility(
     ai_root: Path,
     peer: str,
@@ -2464,7 +2477,7 @@ def _human_interface_peer_eligibility(
     now: datetime | None = None,
 ) -> dict:
     """Return measured eligibility for a peer/profile to hold human-interface duty."""
-    now = now or datetime.now()
+    now = _ensure_aware(now)
     orch = _load_orchestration()
     profile = _human_interface_profile_for_peer(orch, peer, profile)
     freshness_minutes = _human_interface_freshness_minutes()
@@ -2544,11 +2557,12 @@ def _human_interface_peer_eligibility(
 
 def _select_human_interface_peer(ai_root: Path, now: datetime | None = None) -> dict:
     """Select the human-interface peer, fail-closed when nobody is eligible."""
-    # tz-AWARE: downstream freshness + capability-record expiry checks compare
-    # against tz-aware ISO timestamps; a naive now() raised "can't compare
-    # offset-naive and offset-aware datetimes" once the empirical ledger held
-    # real (tz-aware) records, silently disabling the terminal-spend guard.
-    now = now or datetime.now(timezone.utc)
+    # tz-AWARE (T50/T52): downstream freshness + capability-record expiry checks
+    # compare against tz-aware ISO timestamps; a naive default OR caller-supplied
+    # now raised "can't compare offset-naive and offset-aware datetimes" once the
+    # empirical ledger held real (tz-aware) records, silently disabling the
+    # terminal-spend guard.
+    now = _ensure_aware(now)
     orch = _load_orchestration()
     cfg = _human_interface_cfg()
     default_peer = str(cfg.get("human_interface_peer") or "cc")

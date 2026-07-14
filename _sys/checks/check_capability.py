@@ -140,11 +140,24 @@ def resolve_capability_reality(
     # Validate declarations structure first
     validate_declarations(declarations, orch)
 
-    # Validate that all empirical records have a valid T41 fingerprint
-    for entry in score_entries:
-        if entry.get("source_tag") == "empirical_probe":
-            if not check_peer_capability_canary.runtime_fingerprint_valid(entry.get("runtime_fingerprint")):
-                raise ValueError(f"empirical record {entry.get('id')} lacking a valid T41 fingerprint")
+    # An empirical record without a valid T41 fingerprint is UNTRUSTED EVIDENCE —
+    # filter it out of resolution rather than raising (T52 C2: a single
+    # fingerprint-less record, e.g. a long_context.* record, would otherwise
+    # ValueError the ENTIRE overlay). check_reality_rules still flags it; resolve
+    # must degrade gracefully. Records missing a numeric single-axis `score`
+    # (e.g. multi-axis capability-core.v1 records that carry only axis_scores) are
+    # likewise not single-axis evidence and are skipped -> ABSENT, not a
+    # CERTIFIED-but-None band (T52 C1). Full per-axis integration is a follow-up.
+    score_entries = [
+        e for e in score_entries
+        if not (
+            e.get("source_tag") == "empirical_probe"
+            and (
+                not check_peer_capability_canary.runtime_fingerprint_valid(e.get("runtime_fingerprint"))
+                or not isinstance(e.get("score"), (int, float))
+            )
+        )
+    ]
 
     subjects = set(declarations.get("subjects", {}).keys())
     for entry in score_entries:

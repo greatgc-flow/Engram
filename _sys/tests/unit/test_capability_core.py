@@ -136,3 +136,26 @@ def test_phase2_never_changes_live_route(tmp_path):
 
     assert result["shadow_only"] is True
     assert json.dumps(route, sort_keys=True) == before
+
+
+def test_score_reasoning_does_not_crash_on_non_dict_json(tmp_path):
+    """T52 #8: a model that writes valid JSON that is not an object (a list) must
+    not crash _score_reasoning; it is not judgeable and scores 0."""
+    (tmp_path / "reasoning_answers.json").write_text('["58","36","41","47"]', encoding="utf-8")
+    score, judgeable, matches = core._score_reasoning(tmp_path)
+    assert score == 0
+    assert judgeable is False
+    assert all(v is False for v in matches.values())
+
+
+def test_aggregate_rejects_run_missing_an_axis(tmp_path):
+    """T52 #9: a run missing an axis (only reasoning_correctness) must NOT certify
+    with a silently-zeroed axis — aggregate is valid=False."""
+    entries = [
+        {"judgeable": True, "runtime_fingerprint": FP, "axis_scores": {"reasoning_correctness": 100, "code_fidelity": 100, "agentic_reliability": 100}},
+        {"judgeable": True, "runtime_fingerprint": FP, "axis_scores": {"reasoning_correctness": 100, "code_fidelity": 100, "agentic_reliability": 100}},
+        {"judgeable": True, "runtime_fingerprint": FP, "axis_scores": {"reasoning_correctness": 100}},
+    ]
+    aggregate = core.aggregate_core_runs(entries, expected_runtime_fingerprint=FP)
+    assert aggregate["valid"] is False
+    assert aggregate["axis_scores"] == {"reasoning_correctness": None, "code_fidelity": None, "agentic_reliability": None}

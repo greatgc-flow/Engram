@@ -392,8 +392,16 @@ def runtime_fingerprint_valid(runtime_fingerprint: dict[str, Any] | None) -> boo
         and bool(runtime_fingerprint["profile"].strip())
         and isinstance(runtime_fingerprint.get("model_id"), str)
         and bool(runtime_fingerprint["model_id"].strip())
-        and isinstance(runtime_fingerprint.get("reasoning_effort"), str)
-        and bool(runtime_fingerprint["reasoning_effort"].strip())
+        # reasoning_effort is OPTIONAL: standard/non-reasoning profiles (e.g.
+        # cc.standard, cx.standard) legitimately declare no effort (None). None
+        # IS a valid treatment and _same_runtime compares None==None (T52).
+        and (
+            runtime_fingerprint.get("reasoning_effort") is None
+            or (
+                isinstance(runtime_fingerprint.get("reasoning_effort"), str)
+                and bool(runtime_fingerprint["reasoning_effort"].strip())
+            )
+        )
         and isinstance(runtime_fingerprint.get("adapter"), str)
         and bool(runtime_fingerprint["adapter"].strip())
         and isinstance(runtime_fingerprint.get("invoke_args"), list)
@@ -439,9 +447,11 @@ def _consecutive_base_passes(
         if not _same_runtime(entry.get("runtime_fingerprint"), runtime_fingerprint):
             break
         
-        # Skip transient PTY errors so they don't reset consecutive progress
+        # Skip transient PTY errors (timeout/transport) so they don't reset
+        # consecutive progress — via the shared classifier so a generic timeout
+        # with timed_out=True but timeout_kind=None is also skipped (T52).
         inv = entry.get("invocation", {})
-        if inv.get("transport") == "pty" and (inv.get("transport_error") is not None or inv.get("timeout_kind") is not None):
+        if _is_transport_unstable(inv):
             continue
 
         if not entry.get("base_passed", entry.get("passed")):
@@ -735,18 +745,25 @@ def resolve_runtime_fingerprint(orch: dict, peer: str, profile: str) -> dict[str
         invoke_args = list(profile_node.get("invoke_args") or [])
     except Exception:
         pass
+    def _raw_profile(o: dict) -> dict | None:
+        for node in o.get("hub_nodes", []):
+            if node.get("node_id") == peer and isinstance(node.get("profiles"), dict):
+                return node["profiles"].get(profile)
+        return None
+
     try:
-        raw_profile = next(
-            node.get("profiles", {}).get(profile)
-            for node in orch.get("hub_nodes", [])
-            if node.get("node_id") == peer and isinstance(node.get("profiles"), dict)
-        )
+        raw_profile = _raw_profile(orch)
+        # A NORMALIZED orch has profiles popped from its root nodes (T52): reload
+        # the raw orchestration from disk so the hash stays the raw-profile hash
+        # (consistent across raw + normalized callers) instead of silently None.
+        if raw_profile is None and orch.get("_normalized"):
+            raw_profile = _raw_profile(_load_orchestration())
         if isinstance(raw_profile, dict):
             canonical = json.dumps(
                 raw_profile, ensure_ascii=False, sort_keys=True, separators=(",", ":")
             )
             profile_config_sha256 = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-    except (StopIteration, TypeError, ValueError):
+    except (StopIteration, TypeError, ValueError, OSError):
         pass
     try:
         binary = fingerprint(real_binary(peer, orch))
@@ -1084,17 +1101,18 @@ def run_canary(
             and not entry.get("hard_failures")
             and runtime_fingerprint_valid(entry.get("runtime_fingerprint"))
             and invocation.get("transport") == "pty"
-            and invocation.get("transport_error") is None
-            and invocation.get("timeout_kind") is None
+            and not _is_transport_unstable(invocation)
         )
         passing_count = 1 if is_pass else 0
 
-        # If the first run failed but was not transient, break immediately
+        # If the first run failed but was not transient, break immediately.
+        # _is_transport_unstable keys on timed_out OR timeout_kind OR
+        # transport_error, so a generic timeout (timed_out=True, timeout_kind
+        # None) is still treated as transient and retried (T52).
         if not is_pass:
             is_transient = (
                 invocation.get("error") is not None
-                or invocation.get("transport_error") is not None
-                or invocation.get("timeout_kind") is not None
+                or _is_transport_unstable(invocation)
             )
             if not is_transient:
                 return new_entries
@@ -1126,8 +1144,7 @@ def run_canary(
                 and not entry.get("hard_failures")
                 and runtime_fingerprint_valid(entry.get("runtime_fingerprint"))
                 and invocation.get("transport") == "pty"
-                and invocation.get("transport_error") is None
-                and invocation.get("timeout_kind") is None
+                and not _is_transport_unstable(invocation)
             )
 
             if is_pass:
@@ -1135,8 +1152,7 @@ def run_canary(
             else:
                 is_transient = (
                     invocation.get("error") is not None
-                    or invocation.get("transport_error") is not None
-                    or invocation.get("timeout_kind") is not None
+                    or _is_transport_unstable(invocation)
                 )
                 if not is_transient:
                     break

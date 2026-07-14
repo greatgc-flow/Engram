@@ -187,8 +187,14 @@ def _score_reasoning(workspace: Path) -> tuple[int, bool, dict[str, bool]]:
         answers = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         answers = {}
-    matches = {key: _normal((answers or {}).get(key, "")) == _normal(expected) for key, expected in _REASONING_ANSWERS.items()}
-    return 25 * sum(matches.values()), isinstance(answers, dict), matches
+    # Valid JSON that is not an object (e.g. a list "[...]") must not crash on
+    # .get() (T52). judgeable = the model produced a JSON object; a non-dict is
+    # not judgeable and scores 0.
+    judgeable = isinstance(answers, dict)
+    if not judgeable:
+        answers = {}
+    matches = {key: _normal(answers.get(key, "")) == _normal(expected) for key, expected in _REASONING_ANSWERS.items()}
+    return 25 * sum(matches.values()), judgeable, matches
 
 
 def _score_code(workspace: Path, fixture: dict[str, Any]) -> tuple[int, bool, dict[str, bool]]:
@@ -235,9 +241,17 @@ def aggregate_core_runs(entries: list[dict[str, Any]], *, expected_runtime_finge
         and all(entry.get("judgeable") and entry.get("runtime_fingerprint") == expected_runtime_fingerprint for entry in entries)
     )
     axes = ("reasoning_correctness", "code_fidelity", "agentic_reliability")
-    if not valid or any(not isinstance(entry.get("axis_scores"), dict) for entry in entries):
+    # Every run must carry ALL three axes as real numbers — a run missing an axis
+    # is INCOMPLETE and must not certify with a silently-zeroed axis (T52: the old
+    # .get(axis, 0) let {"reasoning_correctness": 100} certify with code/agentic 0).
+    complete = valid and all(
+        isinstance(entry.get("axis_scores"), dict)
+        and all(isinstance(entry["axis_scores"].get(axis), (int, float)) for axis in axes)
+        for entry in entries
+    )
+    if not complete:
         return {"valid": False, "axis_scores": {axis: None for axis in axes}}
-    return {"valid": True, "axis_scores": {axis: min(entry["axis_scores"].get(axis, 0) for entry in entries) for axis in axes}}
+    return {"valid": True, "axis_scores": {axis: min(entry["axis_scores"][axis] for entry in entries) for axis in axes}}
 
 
 def _append_record(path: Path | None, record: dict[str, Any]) -> None:

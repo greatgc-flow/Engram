@@ -863,3 +863,31 @@ def test_is_transport_unstable_catches_timeout_kind_even_if_timed_out_missing(mo
     assert cpc._is_transport_unstable(
         {"transport": "pty", "exit_code": 0}
     ) is False
+
+
+def test_runtime_fingerprint_valid_accepts_none_reasoning_effort():
+    """T52 #4: standard/non-reasoning profiles (cc.standard, cx.standard) declare
+    no reasoning_effort -> None is a valid treatment, must not fail the canary."""
+    fp = dict(VALID_FP)
+    fp["reasoning_effort"] = None
+    assert cpc.runtime_fingerprint_valid(fp) is True
+    # but a blank string is still invalid
+    fp["reasoning_effort"] = "  "
+    assert cpc.runtime_fingerprint_valid(fp) is False
+
+
+def test_consecutive_base_passes_skips_generic_timeout_without_timeout_kind():
+    """T52 #5: a timed-out PTY run (timed_out=True, timeout_kind=None) must be
+    skipped as transient in the consecutive count, not reset progress."""
+    fp = dict(VALID_FP)
+    prior = [
+        {"peer": "ag", "profile": "deepthink", "capability_id": cpc.CAPABILITY_ID,
+         "runtime_fingerprint": fp, "base_passed": True,
+         "invocation": {"transport": "pty"}},
+        {"peer": "ag", "profile": "deepthink", "capability_id": cpc.CAPABILITY_ID,
+         "runtime_fingerprint": fp, "base_passed": False,
+         "invocation": {"transport": "pty", "timed_out": True, "timeout_kind": None}},
+    ]
+    # current run passes; the timed-out prior must be skipped, not break the count
+    n = cpc._consecutive_base_passes("ag", "deepthink", fp, prior, True)
+    assert n == 2

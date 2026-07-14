@@ -519,3 +519,38 @@ def test_declared_capability_values_do_not_change_routing_decision(monkeypatch):
     plain_arb = snapshot.select_arbiter(plain_snap, routing_cfg)
     declared_arb = snapshot.select_arbiter({"profiles": declared_rows}, routing_cfg)
     assert plain_arb == declared_arb
+
+
+def test_resolver_skips_malformed_empirical_without_raising_or_false_certifying():
+    """T52 C1/C2: a long_context-style empirical record with NO runtime_fingerprint
+    must not ValueError the whole resolve (C2); a capability-core-style record with
+    a fingerprint but only axis_scores (no numeric `score`) must not resolve to a
+    CERTIFIED-but-None band (C1). Both are skipped -> the overlay degrades to
+    absent, never crashes or falsely certifies."""
+    now = datetime(2026, 7, 15, 12, 0, 0, tzinfo=timezone.utc)
+    orch = {"hub_nodes": []}
+    snap = {"profiles": []}
+    declarations = {"schema_version": 1, "subjects": {}}
+    good_fp = {
+        "peer": "cx", "profile": "deepthink", "model_id": "gpt-5.6-sol",
+        "reasoning_effort": "xhigh", "adapter": "CodexAdapter", "invoke_args": ["exec"],
+        "profile_config_sha256": "a" * 64, "binary": {"exists": True, "sha256": "b" * 64},
+    }
+    long_context = {
+        "source_tag": "empirical_probe", "peer": "cx", "profile": "deepthink",
+        "capability_id": "long_context.8k.v1", "axis_scores": {"long_context_quality": 100},
+        "measured_at": "2026-07-14T00:00:00Z",
+    }
+    capability_core = {
+        "source_tag": "empirical_probe", "peer": "cx", "profile": "deepthink",
+        "capability_id": "capability-core.v1", "runtime_fingerprint": good_fp,
+        "axis_scores": {"reasoning_correctness": 100}, "measured_at": "2026-07-14T00:00:00Z",
+    }
+    # must NOT raise
+    reality = check_capability.resolve_capability_reality(
+        orch, snap, declarations, [long_context, capability_core], now
+    )
+    # no axis anywhere is CERTIFIED with a None value
+    for subj in reality["subjects"].values():
+        for axis in subj["axes"].values():
+            assert not (axis["evidence_band"] == "CERTIFIED" and axis["effective_value"] is None)
