@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-14T15:10:00Z",
+ "updated_at": "2026-07-14T15:50:00Z",
  "items": [
   {
    "id": "T7",
@@ -1227,18 +1227,20 @@
   },
   {
    "id": "T36",
-   "title": "diag: ag session context always 'absent' (no agy PTY log reader in snapshot)",
-   "status": "proposed",
+   "title": "ag session observability: persist agy sessions (brain/<uuid>) + transcript context reader",
+   "status": "done",
    "priority": "low",
    "category": "telemetry",
    "owner": "unassigned",
-   "evidence_commit": [],
+   "evidence_commit": [
+    "629e47b"
+   ],
    "supersedes": [],
    "source_refs": [
     "_sys/core/snapshot.py"
    ],
-   "next_action": "Found by ag during the 2026-07-13 diag MECE review: snapshot._session_context_measured only has log parsers for cx (codex rollout JSONL) and cc (claude), so ag sessions (agy.exe PTY) always render context as 'absent' - a diagnostic blind spot for Gemini allocations. Deferred out of the diag P0/P1 refactor (it is a data-collection feature, not a display fix): needs an agy session-log format reader. DIR-004: 'absent' is the honest current state, so this is an enhancement, not a correctness bug. TDD-ready when picked up: add an agy log reader to _session_context_measured returning measured used/window or honest absent. [2026-07-13: decided + detailed to TDD-ready as D9 in docs-v2/ops/profile-policy-decisions.md.]",
-   "last_verified_at": "2026-07-13T14:30:00"
+   "next_action": "DONE 629e47b (B). Root cause: agy PTY stdout lacks conversations/<id>.db -> extract_session_id=None -> ag sessions never persisted -> invisible in diag. B FIX: extract_session_id falls back to newest _agy_brain_dir()/<uuid> by mtime (verified on real data). ag sessions now persist + show in diag (context honestly absent). C NOT built: MEASURED 15/15 newest ag sessions have empty transcripts + zero parseable usage -> agy exposes no session-token data -> context stays absent (DIR-004; D9 absent confirmed correct, not a missing reader). REDEFINED 2026-07-14 (root cause confirmed): agy PTY stdout has no conversations/<id>.db path -> AgyAdapter.extract_session_id returns None -> ag sessions NEVER persist (session_state.active empty since 2026-07-02 despite ~10 asks this session) -> diag RECENT SESSIONS (active-only) shows no ag; per-session context trivially absent. Original context-reader scope was moot without persistence. PLAN B+C (user-chosen): (B) extract_session_id fallback -> newest _agy_brain_dir()/<uuid> subdir by mtime = the session agy just wrote; (C) snapshot._session_context_measured ag branch -> read the session transcript via _agy_transcript_candidates/extract_usage (AgyAdapter usage infra already exists) for measured used/window or honest absent. TDD; verify a real ag ask persists + diag shows ag.",
+   "last_verified_at": "2026-07-14T15:50:00"
   },
   {
    "id": "T37",
