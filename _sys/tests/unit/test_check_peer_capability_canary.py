@@ -891,3 +891,31 @@ def test_consecutive_base_passes_skips_generic_timeout_without_timeout_kind():
     # current run passes; the timed-out prior must be skipped, not break the count
     n = cpc._consecutive_base_passes("ag", "deepthink", fp, prior, True)
     assert n == 2
+
+
+def test_pty_invocation_record_carries_diagnostic_fields(monkeypatch, tmp_path):
+    """T51: the PTY invocation record must carry prompt_delivery_mode / prompt_bytes
+    / config_home so a future agy measurement is diagnosable (the T49 slowdown was
+    an un-recorded prompt-delivery change)."""
+    orch = {"hub_nodes": [{
+        "node_id": "ag.deepthink", "type": "profile", "adapter_class": "AgyAdapter",
+        "invoke": "agy", "requires_pty": True,
+    }]}
+
+    class DummyPtyResult:
+        text = "ok"; elapsed = 3; exit_code = 0; timed_out = False
+        timeout_kind = None; transport_error = None; pid = 1
+
+    import hub
+    monkeypatch.setattr(hub, "_ask_with_pty", lambda **k: DummyPtyResult())
+    import sys as _sys
+    from types import ModuleType
+    monkeypatch.setitem(_sys.modules, "winpty", ModuleType("winpty"))
+
+    res = cpc.invoke_peer_native_write_pty(
+        peer="ag", profile="deepthink", prompt="hello world",
+        workspace=tmp_path, orch=orch, timeout=10,
+    )
+    assert res.prompt_delivery_mode == "inline"
+    assert res.prompt_bytes == len("hello world".encode("utf-8"))
+    assert res.config_home is not None and ".agy_config" in res.config_home

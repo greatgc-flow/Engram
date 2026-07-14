@@ -629,6 +629,12 @@ class PtyCompletedProcess:
     timed_out: bool = False
     timeout_kind: str | None = None
     transport_error: str | None = None
+    # T51 diagnostic fields — normalize the PTY measurement record so a future agy
+    # measurement is diagnosable (the T49 slowdown was an un-recorded prompt-
+    # delivery change; the config home governs session/CRLF behavior).
+    prompt_delivery_mode: str = "inline"
+    prompt_bytes: int = 0
+    config_home: str | None = None
 
 
 def invoke_peer_native_write_pty(
@@ -717,6 +723,9 @@ def invoke_peer_native_write_pty(
             timed_out=bool(timed_out),
             timeout_kind=res.timeout_kind,
             transport_error=transport_error,
+            prompt_delivery_mode="inline",
+            prompt_bytes=len(prompt.encode("utf-8")),
+            config_home=pty_env.get("AGY_CONFIG_HOME"),
         )
     except Exception as exc:
         return PtyCompletedProcess(
@@ -816,6 +825,9 @@ def run_one_pass(
             invocation["timeout_kind"] = result.timeout_kind
         if hasattr(result, "transport_error"):
             invocation["transport_error"] = result.transport_error
+        for field in ("prompt_delivery_mode", "prompt_bytes", "config_home"):
+            if hasattr(result, field):
+                invocation[field] = getattr(result, field)
     except Exception as exc:
         invocation = {"returncode": None, "error": str(exc)}
         (artifact_dir / "invocation_error.json").write_text(
