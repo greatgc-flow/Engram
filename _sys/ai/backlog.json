@@ -1510,7 +1510,9 @@
    "priority": "low",
    "category": "routing",
    "owner": "unassigned",
-   "evidence_commit": [],
+   "evidence_commit": [
+    "648e9db"
+   ],
    "supersedes": [],
    "source_refs": [
     "_sys/checks/check_capability_core.py"
