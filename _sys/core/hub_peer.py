@@ -168,6 +168,9 @@ def _claude_projects_dir() -> Path:
     return _SYS_DIR / "claude" / "config" / "projects"
 
 
+_UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
 def _agy_brain_dir() -> Path:
     config_dir = os.environ.get("AGY_CONFIG_HOME") or os.environ.get("GEMINI_DIR")
     if config_dir:
@@ -905,6 +908,22 @@ class AgyAdapter(BaseAdapter):
         match = re.search(r"conversations[/\\]([a-fA-F0-9\-]+)\.db", stdout, re.IGNORECASE)
         if match:
             return match.group(1)
+
+        # T36 fallback: agy's PTY-captured stdout does NOT surface the
+        # conversation-DB path, so extracting from stdout returns None and no
+        # session is ever persisted. Derive the id from the newest
+        # brain/<uuid> dir agy just wrote for this invocation (filesystem, not
+        # stdout). _UUID_RE guards against picking non-session directories.
+        try:
+            brain = _agy_brain_dir()
+            sessions = [
+                d for d in brain.iterdir()
+                if d.is_dir() and _UUID_RE.fullmatch(d.name)
+            ]
+            if sessions:
+                return max(sessions, key=lambda d: d.stat().st_mtime).name
+        except (OSError, FileNotFoundError):
+            pass
 
         return None
 

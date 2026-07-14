@@ -184,3 +184,41 @@ def test_codex_extract_usage_thread_mismatch_returns_empty():
         {"invoke_args": ["exec", "{query}", "--json"]},
         session_id="thread-1",
     ) == {}
+
+
+def test_agy_extract_session_id_falls_back_to_newest_brain_dir(tmp_path, monkeypatch):
+    """T36: agy's PTY stdout has no conversations/<id>.db path, so the id is
+    derived from the newest brain/<uuid> dir agy just wrote (else sessions never
+    persist and never show in diag)."""
+    import os, time
+    brain = tmp_path / "brain"
+    monkeypatch.setattr(hub_peer, "_agy_brain_dir", lambda: brain)
+    old = brain / "11111111-1111-4111-8111-111111111111"
+    new = brain / "22222222-2222-4222-8222-222222222222"
+    for d in (old, new):
+        d.mkdir(parents=True)
+    os.utime(old, (1_000_000, 1_000_000))
+    os.utime(new, (2_000_000, 2_000_000))
+    sid = hub_peer.AgyAdapter().extract_session_id("no db path here", {}, None)
+    assert sid == "22222222-2222-4222-8222-222222222222"
+
+
+def test_agy_extract_session_id_prefers_command_then_stdout_over_fallback(tmp_path, monkeypatch):
+    brain = tmp_path / "brain"
+    (brain / "33333333-3333-4333-8333-333333333333").mkdir(parents=True)
+    monkeypatch.setattr(hub_peer, "_agy_brain_dir", lambda: brain)
+    adapter = hub_peer.AgyAdapter()
+    # command id wins
+    assert adapter.extract_session_id("x", {}, "explicit-id") == "explicit-id"
+    # a real stdout DB path wins over the brain-dir fallback
+    assert adapter.extract_session_id(
+        "wrote conversations/abcdef12-0000-4000-8000-000000000000.db", {}, None
+    ) == "abcdef12-0000-4000-8000-000000000000"
+
+
+def test_agy_extract_session_id_ignores_non_uuid_dirs(tmp_path, monkeypatch):
+    brain = tmp_path / "brain"
+    (brain / "not-a-uuid").mkdir(parents=True)
+    (brain / "cache").mkdir(parents=True)
+    monkeypatch.setattr(hub_peer, "_agy_brain_dir", lambda: brain)
+    assert hub_peer.AgyAdapter().extract_session_id("nope", {}, None) is None
