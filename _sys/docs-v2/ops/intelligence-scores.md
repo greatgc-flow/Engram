@@ -220,6 +220,17 @@ untrustworthy until a 3-pass `min-of-3` confirms it.
    (timeout no longer scored as capability; a byte-exact prompt-delivery + seeded
    config home — see backlog T51). cc.deepthink (Opus) remains a stable ~68 on the
    same axis (its own UTF-8-roundtrip gap).
+
+   **FINAL clean re-measurement (2026-07-14, fixed harness — inline delivery, 600 s
+   ceiling, timeout-as-transport-unstable):** `--characterize 3` on ag.deepthink =
+   **runs [80, 80, 80], evidence_state `stable_failed`, range 0**, each 66–94 s (vs
+   the 252–300 s prompt-file runs — inline speed restored, no timeouts). So agy is
+   **NOT flaky** — it is **stable at 80 with a single reproducible limitation: it
+   does not preserve exact CRLF line endings** (`line_endings_and_bom`), while
+   passing UTF-8 roundtrip, targeted + 50 KB partial edit, truthful failure, and
+   scope every time. The earlier lone `95` was an outlier; the honest result is a
+   **stable CRLF-preservation gap, not non-determinism** — and a clean validation of
+   the T49 harness fixes.
 4. **Consequence for D1:** measurement **cannot yet rank peers on reasoning**, so
    the Sol-as-arbiter decision remains undecidable from local data. Replacing the
    declared composite for reasoning-based routing needs a genuinely hard,
