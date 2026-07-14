@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-15T10:30:00Z",
+ "updated_at": "2026-07-15T11:00:00Z",
  "items": [
   {
    "id": "T7",
@@ -1643,8 +1643,8 @@
     "_sys/checks/check_capability.py",
     "_sys/core/hub_peer.py"
    ],
-   "next_action": "Deferred from T52 (b704368). (A) capability-core.v1 emits ONE multi-axis record (axis_scores) but the T43 resolver is single-axis (capability_id/score/passed/expires_at) -> capability-core measurements currently resolve ABSENT (skipped, not consumed). Proper integration: emit ONE empirical record PER AXIS (capability_id=capability-core.v1:reasoning_correctness etc. with score/passed/expires_at/runtime_fingerprint), and run_long_context must include runtime_fingerprint -> then the existing resolver assembles the vector. Shadow-only until then. (B) AGY_CONFIG_HOME honored by hub_peer.extract_session_id fallback / extract_usage / _agy_conversations_dir (currently only _agy_brain_dir respects it) so a custom-config-home ag invocation resolves the right brain/transcript dir (latent — not active in current flow).",
-   "last_verified_at": "2026-07-15T10:30:00"
+   "next_action": "(A) DONE f85a94e: capability-core emits per-axis single-axis records (capability-core.v1:<axis>) + run_long_context carries runtime_fingerprint/score/passed/expires_at -> resolver now CERTIFIES capability-core axes; verified END-TO-END (the audit-flagged untested integration). (B) REMAINING (latent, low): AGY_CONFIG_HOME honored by hub_peer.extract_session_id fallback / extract_usage / _agy_conversations_dir (only _agy_brain_dir respects it) - not active in current flow.",
+   "last_verified_at": "2026-07-15T11:00:00"
   }
  ]
 }
