@@ -164,6 +164,42 @@ def test_render_summary_orders_quota_rows_by_used_fraction_descending():
     assert text.index("Z-high") < text.index("M-mid") < text.index("A-low")
 
 
+def test_quota_rows_sort_measured_pacing_before_used_fraction_without_fabricating_absent():
+    diag = load_diag()
+    quotas = [
+        {"label": "absent-high", "used_frac": 0.95, "reset": "later", "pacing": None},
+        {"label": "paced-low", "used_frac": 0.10, "reset": "later", "pacing": {"ratio": 1.10}},
+        {"label": "paced-high", "used_frac": 0.20, "reset": "later", "pacing": {"ratio": 1.50}},
+        {"label": "absent-mid", "used_frac": 0.50, "reset": "later", "pacing": {}},
+    ]
+    snapshot = {"peers": [{"peer": "cc", "raw": {
+        "peer": "cc", "source": "cli_live", "quotas": quotas,
+    }}]}
+    out = io.StringIO()
+
+    diag.render_live_quota_pools(out, snapshot, columns=120, line_budget=None)
+
+    text = out.getvalue()
+    assert text.index("paced-high") < text.index("paced-low")
+    assert text.index("paced-low") < text.index("absent-high") < text.index("absent-mid")
+
+    info = {
+        "peer": "cc", "cost": None, "source": "cli_live", "ctx_window": 1,
+        "ctx_used": 0, "ctx_pct": 0.0, "ctx_known": True, "gate": True,
+        "empty": False, "quotas": quotas,
+    }
+    summary = io.StringIO()
+    old = sys.stdout
+    sys.stdout = summary
+    try:
+        diag.render_summary([info])
+    finally:
+        sys.stdout = old
+    rendered = summary.getvalue()
+    assert rendered.index("paced-high") < rendered.index("paced-low")
+    assert rendered.index("paced-low") < rendered.index("absent-high") < rendered.index("absent-mid")
+
+
 def test_peer_state_precedence_quarantine_over_open():
     diag = load_diag()
     info = {

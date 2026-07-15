@@ -1553,10 +1553,31 @@ def test_live_pool_keypress_toggles_expanded_pools_on_next_tick(monkeypatch):
     )
 
     assert len(frames) == 3
-    assert "pools hidden (press 'p' to expand)" in frames[0]
-    assert "(all 5 pools; press 'p' to collapse)" in frames[1]
-    assert "P1" in frames[1]
-    assert "pools hidden (press 'p' to expand)" in frames[2]
+    assert "(all 5 pools; press 'p' to collapse)" in frames[0]
+    assert "P1" in frames[0]
+    assert "pools hidden (press 'p' to expand)" in frames[1]
+    assert "(all 5 pools; press 'p' to collapse)" in frames[2]
+
+
+def test_live_escape_key_exits_cleanly_before_frame_ceiling(monkeypatch):
+    diag = load_diag()
+    snapshot = _fake_snapshot()
+    monkeypatch.setattr(diag, "collect_snapshot", lambda *, use_cache: snapshot)
+    monkeypatch.setattr(diag, "shutil", type("S", (), {
+        "get_terminal_size": staticmethod(lambda: (80, 24)),
+    }))
+    frames = []
+    monkeypatch.setattr(diag, "_blit_frame", lambda _out, text, _sync: frames.append(text))
+    clock = [0.0]
+
+    result = diag.run_watch(
+        interval=2, stdout=_FakeTTY(), max_frames=5, summary_only=True,
+        key_reader=lambda: "\x1b", clock=lambda: clock[0],
+        sleep=lambda seconds: clock.__setitem__(0, clock[0] + seconds),
+    )
+
+    assert result == 0
+    assert len(frames) == 1
 
 
 def test_live_pool_keypress_is_disabled_for_non_tty_without_misleading_hint(monkeypatch):
@@ -1713,6 +1734,51 @@ def test_recent_sessions_wide_mode_shows_session_model_and_narrow_mode_omits_it(
     assert all(diag._dw(line) <= 120 for line in wide_lines)
     assert "MODEL" not in narrow.getvalue()
     assert "[decl] Exact Model" not in narrow.getvalue()
+
+
+def test_active_sessions_marks_only_eligible_terminal_profile_and_fails_closed(monkeypatch):
+    diag = load_diag()
+    import hub
+
+    rows = [
+        _session_row("cc", "deepthink", "2026-07-13T09:59:00+00:00"),
+        _session_row("cx", "effort", "2026-07-13T09:58:00+00:00"),
+    ]
+    snapshot = _snapshot_with_sessions(rows)
+    now = datetime(2026, 7, 13, 10, tzinfo=timezone.utc)
+    selector_roots = []
+
+    def eligible_selector(ai_root):
+        selector_roots.append(ai_root)
+        return {"peer": "cc", "profile": "deepthink", "eligible": True}
+
+    monkeypatch.setattr(
+        hub,
+        "_select_human_interface_peer",
+        eligible_selector,
+    )
+    marked = io.StringIO()
+    diag.render_active_sessions(marked, snapshot, now=now, columns=120)
+    assert selector_roots == [diag.PORTABLE_ROOT / ".ai"]
+    assert "cc.deepthink [TERM]" in marked.getvalue()
+    assert "cx.effort [TERM]" not in marked.getvalue()
+
+    narrow = io.StringIO()
+    diag.render_active_sessions(narrow, snapshot, now=now, columns=80)
+    assert "cc.deepthink [TERM]" in narrow.getvalue()
+
+    monkeypatch.setattr(hub, "_select_human_interface_peer", lambda ai_root: {"eligible": False})
+    ineligible = io.StringIO()
+    diag.render_active_sessions(ineligible, snapshot, now=now, columns=120)
+    assert "[TERM]" not in ineligible.getvalue()
+
+    def selector_error(_ai_root):
+        raise RuntimeError("selector unavailable")
+
+    monkeypatch.setattr(hub, "_select_human_interface_peer", selector_error)
+    errored = io.StringIO()
+    diag.render_active_sessions(errored, snapshot, now=now, columns=120)
+    assert "[TERM]" not in errored.getvalue()
 
 
 def test_recent_sessions_skips_peers_without_session_rows():

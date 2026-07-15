@@ -2,6 +2,7 @@ import os
 import argparse
 import io
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -310,6 +311,17 @@ def _arbiter_model_ids() -> set:
 # Rendering
 # --------------------------------------------------------------------------
 
+def _quota_display_sort_key(row):
+    """Prefer observed pacing pressure; never invent a value for absent pacing."""
+    used = row.get("used_frac")
+    pacing = row.get("pacing")
+    ratio = pacing.get("ratio") if isinstance(pacing, dict) else None
+    label = str(row.get("label") or row.get("pool") or "")
+    owner = str(row.get("owner") or "")
+    if isinstance(ratio, (int, float)) and not isinstance(ratio, bool) and math.isfinite(ratio):
+        return (0, -ratio, -used, label, owner)
+    return (1, 0, -used, label, owner)
+
 def render_summary(infos):
     """SUMMARY (nearest prompt): per-peer header + sorted quota continuation rows
     (label, glyph, pct, pace, reset), WARN>=0.90, glyph=absent(literal)/emoji."""
@@ -327,9 +339,9 @@ def render_summary(infos):
               f"{_pad(_ctx_cell_raw(info), 19)} {_pad(cost, 9)} {_pad(_source_code(info.get('source')), 12)}")
         visible_quotas = [
             quota for quota in (info.get("quotas") or [])
-            if quota.get("used_frac") is not None
+            if isinstance(quota.get("used_frac"), (int, float))
         ]
-        for q in sorted(visible_quotas, key=lambda x: (-x["used_frac"], str(x.get("label", "")))):
+        for q in sorted(visible_quotas, key=_quota_display_sort_key):
             uf = q.get("used_frac")
             glyph = _severity_glyph(used_frac=uf)
             pct = _pad(f"{uf * 100:.0f}%", 4, align="right")
@@ -725,7 +737,7 @@ def _live_quota_pool_rows(snapshot):
                 "reset": str(quota.get("reset") or "?"),
                 "source": source,
             })
-    return sorted(rows, key=lambda row: (-row["used_frac"], row["pool"], row["owner"]))
+    return sorted(rows, key=_quota_display_sort_key)
 
 
 def _live_quota_pool_line(row, columns):
@@ -894,14 +906,15 @@ def _session_ctx_text(row):
     return f"{pct:.0f}%" if isinstance(pct, (int, float)) else "absent"
 
 
-def _compact_session_row(row, peer, now, columns):
+def _compact_session_row(row, peer, now, columns, terminal_profile=None):
     profile = _session_profile(row, peer)
+    profile_label = f"{profile} [TERM]" if profile == terminal_profile else profile
     age = _session_age_text(row.get("last_used_at"), now)
     ctx = _session_ctx_text(row)
     room_state = _session_room_state(row, profile, now, None)
     if columns is None:
-        return f"{profile} {age} {ctx} {room_state}"
-    profile_cell = _pad(_elide_display(profile, 20), 20)
+        return f"{profile_label} {age} {ctx} {room_state}"
+    profile_cell = _pad(_elide_display(profile_label, 20), 20)
     prefix = f"{profile_cell} {_pad(age, 5, align='right')} {_pad(ctx, 7)}"
     if columns is not None and columns >= 120:
         model = _pad(_elide_display(str(row.get("model") or "absent"), 24), 24)
@@ -912,13 +925,30 @@ def _compact_session_row(row, peer, now, columns):
     return f"{prefix} {_session_room_state(row, profile, now, room_width)}"
 
 
-def _session_digest(row, peer, count, now, columns):
+def _session_digest(row, peer, count, now, columns, terminal_profile=None):
     profile = _session_profile(row, peer)
+    profile_label = f"{profile} [TERM]" if profile == terminal_profile else profile
     age = _session_age_text(row.get("last_used_at"), now)
     ctx = _session_ctx_text(row)
     room_state = _session_room_state(row, profile, now, None)
-    text = f"{str(peer).upper()}: {profile} {age} {ctx} {room_state} ({count})"
+    text = f"{str(peer).upper()}: {profile_label} {age} {ctx} {room_state} ({count})"
     return _elide_display(text, columns)
+
+
+def _active_terminal_profile():
+    """Return the eligible terminal profile, or absent if its measured state is unavailable."""
+    try:
+        import hub
+        selection = hub._select_human_interface_peer(PORTABLE_ROOT / ".ai")
+    except Exception:
+        return None
+    if not isinstance(selection, dict) or not selection.get("eligible"):
+        return None
+    peer = selection.get("peer")
+    profile = selection.get("profile")
+    if not isinstance(peer, str) or not peer or not isinstance(profile, str) or not profile:
+        return None
+    return f"{peer}.{profile}"
 
 
 def render_active_sessions(out, snapshot, *, now=None, columns=80, line_budget=None):
@@ -929,6 +959,7 @@ def render_active_sessions(out, snapshot, *, now=None, columns=80, line_budget=N
             return
     rendered_now = _frame_dt() if now is None else _frame_dt(now)
     rendered_now = rendered_now or _frame_dt()
+    terminal_profile = _active_terminal_profile()
 
     groups = {}
     for row in snapshot.get("sessions") or []:
@@ -981,7 +1012,10 @@ def render_active_sessions(out, snapshot, *, now=None, columns=80, line_budget=N
             if line_budget >= 1 + len(peer_order):
                 lines = [title]
                 lines.extend(
-                    _session_digest(capped[peer][0], peer, len(capped[peer]), rendered_now, columns)
+                    _session_digest(
+                        capped[peer][0], peer, len(capped[peer]), rendered_now, columns,
+                        terminal_profile=terminal_profile,
+                    )
                     for peer in digest_peer_order
                 )
             else:
@@ -989,10 +1023,11 @@ def render_active_sessions(out, snapshot, *, now=None, columns=80, line_budget=N
                 for peer in digest_peer_order:
                     row = capped[peer][0]
                     profile = _session_profile(row, peer)
+                    profile_label = f"{profile} [TERM]" if profile == terminal_profile else profile
                     age = _session_age_text(row.get("last_used_at"), rendered_now)
                     ctx = _session_ctx_text(row)
                     room_state = _session_room_state(row, profile, rendered_now, None)
-                    items.append(f"{peer.upper()}:{profile}@{age}/{ctx}/{room_state}({len(capped[peer])})")
+                    items.append(f"{peer.upper()}:{profile_label}@{age}/{ctx}/{room_state}({len(capped[peer])})")
                 lines = [_elide_display("SESS " + " ".join(items), columns)]
             out.write("\n".join(lines[:line_budget]) + "\n")
             return
@@ -1004,7 +1039,7 @@ def render_active_sessions(out, snapshot, *, now=None, columns=80, line_budget=N
 
     lines = [title, header]
     lines.extend(
-        _compact_session_row(row, peer, rendered_now, columns)
+        _compact_session_row(row, peer, rendered_now, columns, terminal_profile=terminal_profile)
         for peer, row in selected
     )
     if hidden:
@@ -1310,7 +1345,7 @@ def _windows_live_key_reader():
 
 
 def _wait_for_live_tick(interval, sleep, clock, key_reader, quota_expanded):
-    """Preserve tick cadence while accepting at most one pool toggle per wait."""
+    """Preserve tick cadence while accepting one pool toggle or a clean Escape exit."""
     deadline = clock() + interval
     handled = False
     while True:
@@ -1320,12 +1355,15 @@ def _wait_for_live_tick(interval, sleep, clock, key_reader, quota_expanded):
             except (OSError, EOFError):
                 key = None
                 handled = True
-            if isinstance(key, str) and key.lower() == "p":
-                quota_expanded = not quota_expanded
-                handled = True
+            if isinstance(key, str):
+                if key == "\x1b":
+                    return quota_expanded, True
+                if key.lower() == "p":
+                    quota_expanded = not quota_expanded
+                    handled = True
         remaining = deadline - clock()
         if remaining <= 0:
-            return quota_expanded
+            return quota_expanded, False
         sleep(min(0.1, remaining))
 
 
@@ -1346,7 +1384,7 @@ def run_watch(
     else:
         key_reader = None
     quota_toggle_available = key_reader is not None
-    quota_expanded = False
+    quota_expanded = True
     frames = 0
     try:
         if is_tty and not json_mode and not summary_only:
@@ -1376,7 +1414,10 @@ def run_watch(
                     )
                     _blit_frame(out, text, sync)
                 else:
-                    render_summary_frame(buf, snap, columns=None)
+                    render_summary_frame(
+                        buf, snap, columns=None, quota_expanded=quota_expanded,
+                        quota_toggle_available=False,
+                    )
                     out.write(buf.getvalue().rstrip("\n") + "\n")
                     out.flush()
             elif is_tty:
@@ -1390,9 +1431,11 @@ def run_watch(
             if max_frames is not None and frames >= max_frames:
                 break
             if summary_only and key_reader is not None:
-                quota_expanded = _wait_for_live_tick(
+                quota_expanded, exit_requested = _wait_for_live_tick(
                     interval, sleep, clock, key_reader, quota_expanded,
                 )
+                if exit_requested:
+                    break
             else:
                 sleep(interval)
     except KeyboardInterrupt:
