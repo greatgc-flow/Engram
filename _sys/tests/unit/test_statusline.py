@@ -16,6 +16,28 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent.parent
 SYS_DIR = ROOT / "_sys"
+STATUSLINE_SCRIPT = SYS_DIR / "ai" / "common" / "statusline" / "statusline-unified.sh"
+JQ_EXE = SYS_DIR / "tools" / "jq" / "jq.exe"
+
+
+def _production_quota_filter():
+    script = STATUSLINE_SCRIPT.read_text(encoding="utf-8")
+    marker = "QUOTA_FILTER=$(cat <<'JQ'\n"
+    assert marker in script
+    return script.split(marker, 1)[1].split("\nJQ\n)", 1)[0]
+
+
+def _render_quota_buckets(payload):
+    result = subprocess.run(
+        [str(JQ_EXE), "-r", _production_quota_filter()],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout.strip()
 
 
 class TestStatuslineSchema:
@@ -31,6 +53,19 @@ class TestStatuslineSchema:
         assert "fields" in data
         assert "peer_mapping" in data
         assert "separator" in data
+
+    def test_schema_v2_declares_canonical_repeated_quota_buckets(self):
+        schema_path = SYS_DIR / "ai" / "common" / "statusline" / "statusline-schema.json"
+        data = json.loads(schema_path.read_text(encoding="utf-8"))
+        quota = next(field for field in data["fields"] if field["id"] == "rate_limits")
+
+        assert data["schema_version"] == 2
+        assert quota["type"] == "repeated"
+        assert quota["item_format"] == "{label}:{used_pct}%"
+        assert quota["canonical_order"] == [
+            "C-5H", "C-7D", "F-7D", "G-5H", "G-7D", "3P-5H", "3P-7D",
+        ]
+        assert quota["fallback"] == "quota:N/A"
 
     def test_schema_has_required_fields(self):
         schema_path = SYS_DIR / "ai" / "common" / "statusline" / "statusline-schema.json"
@@ -92,6 +127,80 @@ class TestStatuslineScripts:
         ag = SYS_DIR / "antigravity" / "config" / "statusline-command.sh"
         content = ag.read_text(encoding="utf-8")
         assert '"ag"' in content, "ag adapter must pass peer_id 'ag'"
+
+
+class TestStatuslineQuotaBuckets:
+    """T55: shape-driven, peer-agnostic quota presentation."""
+
+    @staticmethod
+    def _base(**extra):
+        payload = {
+            "model_name": "Fixture",
+            "cwd": "C:/fixture",
+            "context_used_tokens": 0,
+            "context_total_tokens": 0,
+        }
+        payload.update(extra)
+        return payload
+
+    def test_cc_without_real_fable_bucket_omits_f7d(self):
+        rendered = _render_quota_buckets(self._base(
+            rate_5h_pct=105,
+            rate_limits={"seven_day": {"used_percentage": 14}},
+        ))
+
+        assert rendered == "C-5H:105% C-7D:14%"
+        assert "F-7D" not in rendered
+
+    def test_cc_real_fable_weekly_bucket_is_rendered_in_canonical_order(self):
+        rendered = _render_quota_buckets(self._base(rate_limits={
+            "five_hour": {"used_percent": 10},
+            "seven_day": 20,
+            "fable_weekly_unusable": {"used_percentage": "unknown"},
+            "FableSevenDay": {"used_percentage": 12},
+        }))
+
+        assert rendered == "C-5H:10% C-7D:20% F-7D:12%"
+
+    def test_ag_renders_all_four_buckets_and_preserves_zero(self):
+        rendered = _render_quota_buckets(self._base(quota={
+            "gemini-5h": {"remaining_fraction": 1.0},
+            "gemini-weekly": {"remaining_fraction": 0.58},
+            "3p-5h": {"remaining_fraction": 1.0},
+            "3p-weekly": {"remaining_fraction": 0.98},
+        }))
+
+        assert rendered == "G-5H:0% G-7D:42% 3P-5H:0% 3P-7D:2%"
+
+    def test_invalid_shapes_are_skipped_and_valid_alias_fallback_wins(self):
+        rendered = _render_quota_buckets(self._base(
+            rate_5h_pct="garbage",
+            rate_limits={"five_hour": {"used_percent": 7}},
+            quota={
+                "gemini-weekly": {"used_percentage": "not-a-number"},
+                "3p-weekly": {"used_percent": 2},
+            },
+        ))
+
+        assert rendered == "C-5H:7% 3P-7D:2%"
+
+    def test_individually_missing_buckets_are_omitted(self):
+        rendered = _render_quota_buckets(self._base(
+            quota={"gemini-weekly": {"used_percentage": 33}},
+        ))
+
+        assert rendered == "G-7D:33%"
+
+    def test_no_observed_bucket_uses_single_quota_na_fallback(self):
+        rendered = _render_quota_buckets(self._base(
+            rate_limits={"five_hour": {"used_percentage": "unknown"}},
+            quota={"3p-5h": None},
+        ))
+
+        assert rendered == "quota:N/A"
+
+    def test_quota_filter_is_peer_agnostic(self):
+        assert "PEER_ID" not in _production_quota_filter()
 
 
 class TestStatuslineConfig:

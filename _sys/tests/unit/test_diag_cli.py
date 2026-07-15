@@ -165,6 +165,31 @@ Current week (Fable): 14% used · resets Jul 7, 10pm (Asia/Seoul)
     assert all("resets" not in row["reset"].lower() for row in rows)
 
 
+def test_statusline_json_real_fable_weekly_reaches_diag_normalization(monkeypatch, tmp_path):
+    snapshot = load_snapshot()
+    fake_sys = tmp_path / "_sys"
+    live_file = fake_sys / "claude" / "config" / "status_input.log"
+    live_file.parent.mkdir(parents=True)
+    live_file.write_text(json.dumps({
+        "model": {"display_name": "Fable"},
+        "rate_limits": {
+            "five_hour": {"used_percentage": 10},
+            "fable_weekly": {"used_percentage": 12},
+        },
+    }), encoding="utf-8")
+    peer_dir = tmp_path / "cc"
+    peer_dir.mkdir()
+    monkeypatch.setattr(snapshot, "SYS_DIR", fake_sys)
+    monkeypatch.setattr(snapshot, "_cached_claude_usage_quotas", lambda: None)
+
+    record = snapshot.gather_peer("cc", {"cc": peer_dir})
+
+    by_label = {row["label"]: row for row in record["quotas"]}
+    assert by_label["C-5H"]["used_frac"] == pytest.approx(0.10)
+    assert by_label["F-7D"]["used_frac"] == pytest.approx(0.12)
+    assert by_label["F-7D"]["source"] == "cc"
+
+
 def test_parse_claude_usage_multiline_output_from_terminal_shape():
     diag = load_diag()
     text = """

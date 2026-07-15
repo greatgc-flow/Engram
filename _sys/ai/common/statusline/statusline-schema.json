@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "description": "Unified statusline field schema. All peers SHOULD display these fields in this order.",
   "fields": [
     {
@@ -26,10 +26,20 @@
     {
       "id": "rate_limits",
       "label": "Rate Limits",
-      "format": "5h:{five_pct}% 7d:{week_pct}%",
+      "type": "repeated",
+      "item_format": "{label}:{used_pct}%",
+      "canonical_order": [
+        "C-5H",
+        "C-7D",
+        "F-7D",
+        "G-5H",
+        "G-7D",
+        "3P-5H",
+        "3P-7D"
+      ],
       "required": true,
-      "fallback": "5h:N/A 7d:N/A",
-      "example": "5h:15% 7d:8%"
+      "fallback": "quota:N/A",
+      "example": "C-5H:15% C-7D:8% F-7D:3%"
     },
     {
       "id": "hub_status",

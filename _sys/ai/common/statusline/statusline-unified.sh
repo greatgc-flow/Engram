@@ -7,7 +7,7 @@
 #
 # This script receives peer-specific JSON on stdin and formats
 # it into the unified statusline format:
-#   {peer}:{model} | ctx:{used}k/{total}k ({pct}%) | {dir} ({branch}) | 5h:{X}% 7d:{Y}%
+#   {peer}:{model} | ctx:{used}k/{total}k ({pct}%) | {dir} ({branch}) | {quota buckets}
 #
 # Peer adapters (cc/ag) call this script with their own JSON.
 # ============================================================
@@ -57,39 +57,62 @@ location="$short_cwd"
 [ -n "$git_branch" ] && location="$short_cwd ($git_branch)"
 
 # ── 4. Rate Limits ────────────────────────────────────────
-five_pct=$(echo "$input" | jq -r '.rate_5h_pct // .rate_limits.five_hour.used_percentage // (if .quota."gemini-5h".remaining_fraction != null then (1 - .quota."gemini-5h".remaining_fraction) * 100 else empty end) // empty')
-week_pct=$(echo "$input" | jq -r '.rate_7d_pct // .rate_limits.seven_day.used_percentage // (if .quota."gemini-weekly".remaining_fraction != null then (1 - .quota."gemini-weekly".remaining_fraction) * 100 else empty end) // empty')
-five_reset=$(echo "$input" | jq -r '.rate_5h_reset // .rate_limits.five_hour.reset_at // .rate_limits.five_hour.resets_at // .quota."gemini-5h".reset_time // empty')
-week_reset=$(echo "$input" | jq -r '.rate_7d_reset // .rate_limits.seven_day.reset_at // .rate_limits.seven_day.resets_at // .quota."gemini-weekly".reset_time // empty')
+# T55_QUOTA_FILTER_BEGIN
+QUOTA_FILTER=$(cat <<'JQ'
+def path_value($path):
+  try getpath($path) catch null;
 
-rate_parts=""
-if [ -n "$five_pct" ]; then
-  rate_parts=$(printf "5h:%.0f%%" "$five_pct")
-  if [ -n "$five_reset" ]; then
-    if [[ "$five_reset" =~ ^[0-9]+$ ]]; then
-      reset_hm=$(date -d "@$five_reset" +"%H:%M" 2>/dev/null)
-    else
-      reset_hm=$(date -d "$five_reset" +"%H:%M" 2>/dev/null || echo "$five_reset" | grep -oE '[0-9]{2}:[0-9]{2}' | head -1)
-    fi
-    [ -n "$reset_hm" ] && rate_parts="${rate_parts}[↻${reset_hm}]"
-  fi
-else
-  rate_parts="5h:N/A"
-fi
-if [ -n "$week_pct" ]; then
-  week_str=$(printf "7d:%.0f%%" "$week_pct")
-  if [ -n "$week_reset" ]; then
-    if [[ "$week_reset" =~ ^[0-9]+$ ]]; then
-      reset_md=$(date -d "@$week_reset" +"%m/%d" 2>/dev/null)
-    else
-      reset_md=$(date -d "$week_reset" +"%m/%d" 2>/dev/null || echo "$week_reset" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | awk -F'-' '{print $2"/"$3}' | head -1)
-    fi
-    [ -n "$reset_md" ] && week_str="${week_str}[↻${reset_md}]"
-  fi
-  rate_parts="${rate_parts} ${week_str}"
-else
-  rate_parts="${rate_parts} 7d:N/A"
-fi
+def as_percent:
+  if type == "number" then .
+  elif type == "object" then
+    if (.used_percentage | type) == "number" then .used_percentage
+    elif (.used_percent | type) == "number" then .used_percent
+    elif (.remaining_fraction | type) == "number" then
+      (1 - .remaining_fraction) * 100
+    else empty
+    end
+  else empty
+  end;
+
+def first_percent($values):
+  first($values[] | as_percent);
+
+def bucket($label; $values):
+  (first_percent($values)) as $value
+  | "\($label):\($value | round)%";
+
+def fable_weekly_value:
+  try (
+    .rate_limits
+    | if type == "object" then
+        first(
+          to_entries[]
+          | select(
+              (.key | ascii_downcase | contains("fable"))
+              and (.key | ascii_downcase | test("weekly|seven|7d"))
+            )
+          | .value
+          | as_percent
+        )
+      else empty
+      end
+  ) catch empty;
+
+[
+  bucket("C-5H"; [.rate_5h_pct, path_value(["rate_limits", "five_hour"])]),
+  bucket("C-7D"; [.rate_7d_pct, path_value(["rate_limits", "seven_day"])]),
+  bucket("F-7D"; [fable_weekly_value]),
+  bucket("G-5H"; [path_value(["quota", "gemini-5h"])]),
+  bucket("G-7D"; [path_value(["quota", "gemini-weekly"])]),
+  bucket("3P-5H"; [path_value(["quota", "3p-5h"])]),
+  bucket("3P-7D"; [path_value(["quota", "3p-weekly"])])
+]
+| if length == 0 then "quota:N/A" else join(" ") end
+JQ
+)
+# T55_QUOTA_FILTER_END
+
+rate_parts=$(printf '%s' "$input" | jq -r "$QUOTA_FILTER" 2>/dev/null || printf 'quota:N/A')
 
 # ── 5. Hub Status (optional) ─────────────────────────────
 hub_str=""
