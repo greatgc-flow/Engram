@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-15T05:15:00Z",
+ "updated_at": "2026-07-15T05:35:00Z",
  "items": [
   {
    "id": "T7",
@@ -1691,32 +1691,36 @@
   {
    "id": "T56",
    "title": "pacing_penalty_enabled: true explicit + fix stale P2-pending pacing docs",
-   "status": "proposed",
+   "status": "done",
    "priority": "low",
    "category": "routing",
    "owner": "unassigned",
-   "evidence_commit": [],
+   "evidence_commit": [
+    "a1fea98"
+   ],
    "supersedes": [],
    "source_refs": [
     "_sys/docs-v2/ops/quota-balance-decisions.md"
    ],
-   "next_action": "routing-config.json has no pacing_penalty_enabled key; snapshot.py defaults it True (H_eff=H_base/max(1,pacing)). Make it EXPLICIT (config truthfulness) and fix any stale P2-pending/opt-in pacing doc/comment. NO behavior change — documents the current default.",
-   "last_verified_at": "2026-07-15T05:00:00+00:00"
+   "next_action": "DONE a1fea98 (T56+T57 combined round): routing-config.json has no pacing_penalty_enabled key; snapshot.py defaults it True (H_eff=H_base/max(1,pacing)). Make it EXPLICIT (config truthfulness) and fix any stale P2-pending/opt-in pacing doc/comment. NO behavior change — documents the current default.",
+   "last_verified_at": "2026-07-15T05:35:00+00:00"
   },
   {
    "id": "T57",
    "title": "load_balance_route telemetry enrichment (pacing/probabilities/families/reserve-clamp)",
-   "status": "proposed",
+   "status": "done",
    "priority": "low",
    "category": "routing",
    "owner": "unassigned",
-   "evidence_commit": [],
+   "evidence_commit": [
+    "a1fea98"
+   ],
    "supersedes": [],
    "source_refs": [
     "_sys/docs-v2/ops/quota-balance-decisions.md"
    ],
-   "next_action": "enrich the load_balance_route routing-metric to record pacing_applied, probabilities, representative_profiles, the selected profile quota_families, and reserve-clamp status, so the AUTO distribution is auditable + the next family-spread decision is measured. Prereq to any family-spread term (deferred).",
-   "last_verified_at": "2026-07-15T05:00:00+00:00"
+   "next_action": "DONE a1fea98 (T56+T57 combined round): enrich the load_balance_route routing-metric to record pacing_applied, probabilities, representative_profiles, the selected profile quota_families, and reserve-clamp status, so the AUTO distribution is auditable + the next family-spread decision is measured. Prereq to any family-spread term (deferred).",
+   "last_verified_at": "2026-07-15T05:35:00+00:00"
   }
  ]
 }
