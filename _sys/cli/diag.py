@@ -316,21 +316,21 @@ def render_summary(infos):
     print("\n" + "=" * 60)
     print(_c(" SUMMARY", "bold"))
     print("=" * 60)
-    headers = [_pad("PEER", 5), _pad("STATE", 11), _pad("MODEL", 24),
+    headers = [_pad("PEER", 5), _pad("STATE", 11),
                _pad("CONTEXT(used/win %)", 19), _pad("COST", 9), _pad("SRC", 12)]
     print(_c(" ".join(headers).rstrip(), "dim"))
     for info in infos:
         peer = info["peer"].upper()
-        model = info["model"] or "Unknown"
-        model = _elide_display(model, 24)
         cost = f"${info['cost']:.4f}" if isinstance(info["cost"], (int, float)) else "-"
         state_cell = _peer_state_cell(info)
-        print(f"{_pad(peer, 5)} {state_cell} {_pad(model, 24)} "
+        print(f"{_pad(peer, 5)} {state_cell} "
               f"{_pad(_ctx_cell_raw(info), 19)} {_pad(cost, 9)} {_pad(_source_code(info.get('source')), 12)}")
-        for q in sorted(info.get("quotas") or [], key=lambda x: str(x.get("label", ""))):
+        visible_quotas = [
+            quota for quota in (info.get("quotas") or [])
+            if quota.get("used_frac") is not None
+        ]
+        for q in sorted(visible_quotas, key=lambda x: (-x["used_frac"], str(x.get("label", "")))):
             uf = q.get("used_frac")
-            if uf is None:
-                continue
             glyph = _severity_glyph(used_frac=uf)
             pct = _pad(f"{uf * 100:.0f}%", 4, align="right")
             pace = _pad(_pacing_cell(q.get("pacing")), 12)
@@ -644,6 +644,17 @@ def _session_sort_key(row):
     )
 
 
+def _session_display_sort_key(peer, row):
+    """Global newest-first display order; selection remains peer-fair."""
+    last_used = _frame_dt(row.get("last_used_at"))
+    return (
+        last_used is None,
+        -(last_used.timestamp()) if last_used is not None else 0.0,
+        _session_profile(row, peer),
+        str(row.get("scope_key") or ""),
+    )
+
+
 def _session_age_text(last_used_at, now):
     last_used = _frame_dt(last_used_at)
     if last_used is None:
@@ -710,6 +721,9 @@ def _compact_session_row(row, peer, now, columns):
         return f"{profile} {age} {ctx} {room_state}"
     profile_cell = _pad(_elide_display(profile, 20), 20)
     prefix = f"{profile_cell} {_pad(age, 5, align='right')} {_pad(ctx, 7)}"
+    if columns is not None and columns >= 120:
+        model = _pad(_elide_display(str(row.get("model") or "absent"), 24), 24)
+        prefix = f"{prefix} {model}"
     room_width = columns - _dw(prefix) - 1
     if room_width <= 0:
         return _elide_display(prefix, columns)
@@ -761,6 +775,8 @@ def render_recent_sessions(out, snapshot, *, now=None, columns=80, line_budget=N
 
     title = _elide_display("RECENT SESSIONS (newest first; max 3/peer)", columns)
     header_prefix = f"{_pad('PROFILE', 20)} {_pad('AGE', 5, align='right')} {_pad('CTX', 7)}"
+    if columns is not None and columns >= 120:
+        header_prefix = f"{header_prefix} {_pad('MODEL', 24)}"
     header = header_prefix if columns is not None and _dw(header_prefix) >= columns else f"{header_prefix} ROOM / STATE"
     header = _elide_display(header, columns)
 
@@ -776,15 +792,19 @@ def render_recent_sessions(out, snapshot, *, now=None, columns=80, line_budget=N
 
         # If every peer cannot receive its newest detailed row, use a digest.
         if row_slots < len(peer_order) and candidate_count > row_slots:
+            digest_peer_order = sorted(
+                peer_order,
+                key=lambda peer: _session_display_sort_key(peer, capped[peer][0]),
+            )
             if line_budget >= 1 + len(peer_order):
                 lines = [title]
                 lines.extend(
                     _session_digest(capped[peer][0], peer, len(capped[peer]), rendered_now, columns)
-                    for peer in peer_order
+                    for peer in digest_peer_order
                 )
             else:
                 items = []
-                for peer in peer_order:
+                for peer in digest_peer_order:
                     row = capped[peer][0]
                     profile = _session_profile(row, peer)
                     age = _session_age_text(row.get("last_used_at"), rendered_now)
@@ -797,6 +817,8 @@ def render_recent_sessions(out, snapshot, *, now=None, columns=80, line_budget=N
 
         selected = round_robin[:row_slots]
         hidden = candidate_count - len(selected)
+
+    selected = sorted(selected, key=lambda item: _session_display_sort_key(*item))
 
     lines = [title, header]
     lines.extend(

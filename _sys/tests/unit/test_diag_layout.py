@@ -103,7 +103,7 @@ def test_render_profiles_renders_declared_intelligence_or_absent():
     assert "absent" in text
 
 
-def test_render_summary_sorted_continuation_rows_and_glyphs():
+def test_render_summary_uses_peer_facts_and_urgent_quota_order():
     diag = load_diag()
     infos = [{
         "peer": "cc", "model": "Opus", "cost": 0.5, "source": "cli_live",
@@ -126,11 +126,42 @@ def test_render_summary_sorted_continuation_rows_and_glyphs():
         sys.stdout = old
         diag._COLOR = old_color
     text = out.getvalue()
-    assert text.index("C-5H") < text.index("C-7D") < text.index("F-5H")  # sorted
+    lines = text.splitlines()
+    header_index = next(i for i, line in enumerate(lines) if "PEER" in line and "CONTEXT" in line)
+    header = lines[header_index]
+    peer_line = lines[header_index + 1]
+    assert "MODEL" not in header
+    assert "Opus" not in peer_line
+    assert text.index("C-5H") < text.index("C-7D") < text.index("F-5H")
     assert "\U0001F6AB" in text   # 🚫 saturated (>=1.0)
     assert "\U0001F534" in text   # 🔴 (>=0.90)
     assert "\U0001F7E2" in text   # 🟢 (0%)
     assert "WARN" in text         # >=0.90
+
+
+def test_render_summary_orders_quota_rows_by_used_fraction_descending():
+    diag = load_diag()
+    info = {
+        "peer": "cc", "model": "must-not-render", "cost": None, "source": "cli_live",
+        "ctx_window": 1000, "ctx_used": 100, "ctx_pct": 10.0, "ctx_known": True,
+        "gate": True, "empty": False,
+        "quotas": [
+            {"label": "A-low", "used_frac": 0.10, "reset": "later", "pacing": None},
+            {"label": "Z-high", "used_frac": 0.90, "reset": "later", "pacing": None},
+            {"label": "M-mid", "used_frac": 0.50, "reset": "later", "pacing": None},
+        ],
+    }
+    out = io.StringIO()
+    old = sys.stdout
+    sys.stdout = out
+    try:
+        diag.render_summary([info])
+    finally:
+        sys.stdout = old
+
+    text = out.getvalue()
+    assert "must-not-render" not in text
+    assert text.index("Z-high") < text.index("M-mid") < text.index("A-low")
 
 
 def test_peer_state_precedence_quarantine_over_open():

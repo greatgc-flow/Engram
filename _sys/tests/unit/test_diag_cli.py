@@ -1451,12 +1451,51 @@ def test_recent_sessions_round_robin_and_exact_hidden_count():
     assert "  +4 hidden" in text
 
 
+def test_recent_sessions_display_globally_newest_first_after_fair_selection():
+    diag = load_diag()
+    rows = [
+        _session_row("cc", "old", "2026-07-13T09:10:00+00:00"),
+        _session_row("ag", "new", "2026-07-13T09:50:00+00:00"),
+        _session_row("cx", "middle", "2026-07-13T09:25:00+00:00"),
+    ]
+    out = io.StringIO()
+
+    diag.render_recent_sessions(
+        out, _snapshot_with_sessions(rows),
+        now=datetime(2026, 7, 13, 10, tzinfo=timezone.utc), columns=80,
+    )
+
+    text = out.getvalue()
+    assert text.index("ag.new") < text.index("cx.middle") < text.index("cc.old")
+
+
+def test_recent_sessions_budget_keeps_one_newest_row_per_peer_before_display_sort():
+    diag = load_diag()
+    rows = [
+        _session_row(peer, f"p{rank}", f"2026-07-13T{hour:02d}:{minute-rank:02d}:00+00:00")
+        for peer, hour, minute in (("cc", 9, 10), ("ag", 9, 50), ("cx", 9, 25))
+        for rank in range(2)
+    ]
+    out = io.StringIO()
+
+    diag.render_recent_sessions(
+        out, _snapshot_with_sessions(rows),
+        now=datetime(2026, 7, 13, 10, tzinfo=timezone.utc), columns=80,
+        line_budget=6,
+    )
+
+    text = out.getvalue()
+    assert all(f"{peer}.p0" in text for peer in ("cc", "ag", "cx"))
+    assert all(f"{peer}.p1" not in text for peer in ("cc", "ag", "cx"))
+    assert text.index("ag.p0") < text.index("cx.p0") < text.index("cc.p0")
+
+
 def test_recent_sessions_tiny_budget_uses_one_line_per_peer_digest():
     diag = load_diag()
     rows = [
-        _session_row(peer, f"p{rank}", f"2026-07-13T0{9-rank}:00:00+00:00")
+        _session_row(peer, f"p{rank}", f"2026-07-13T{hour-rank:02d}:00:00+00:00")
+        for peer, hour in (("cc", 9), ("ag", 10))
         for rank in range(3)
-        for peer in ("cc", "ag")
     ]
     out = io.StringIO()
 
@@ -1471,8 +1510,28 @@ def test_recent_sessions_tiny_budget_uses_one_line_per_peer_digest():
     lines = out.getvalue().splitlines()
     assert len(lines) == 3
     assert lines[0].startswith("RECENT SESSIONS")
-    assert lines[1].startswith("CC:") and lines[1].endswith("(3)")
-    assert lines[2].startswith("AG:") and lines[2].endswith("(3)")
+    assert lines[1].startswith("AG:") and lines[1].endswith("(3)")
+    assert lines[2].startswith("CC:") and lines[2].endswith("(3)")
+
+
+def test_recent_sessions_wide_mode_shows_session_model_and_narrow_mode_omits_it():
+    diag = load_diag()
+    row = _session_row("cc", "deepthink", "2026-07-13T09:59:00+00:00")
+    row["model"] = "[decl] Exact Model"
+    snapshot = _snapshot_with_sessions([row])
+    wide = io.StringIO()
+    narrow = io.StringIO()
+    now = datetime(2026, 7, 13, 10, tzinfo=timezone.utc)
+
+    diag.render_recent_sessions(wide, snapshot, now=now, columns=120)
+    diag.render_recent_sessions(narrow, snapshot, now=now, columns=80)
+
+    wide_lines = wide.getvalue().splitlines()
+    assert "MODEL" in wide_lines[1]
+    assert "[decl] Exact Model" in wide.getvalue()
+    assert all(diag._dw(line) <= 120 for line in wide_lines)
+    assert "MODEL" not in narrow.getvalue()
+    assert "[decl] Exact Model" not in narrow.getvalue()
 
 
 def test_recent_sessions_skips_peers_without_session_rows():
