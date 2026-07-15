@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-15T07:20:00Z",
+ "updated_at": "2026-07-15T07:40:00Z",
  "items": [
   {
    "id": "T7",
@@ -1790,6 +1790,23 @@
    ],
    "next_action": "DONE b75f834 -- press p/P while --live runs to toggle QUOTA POOLS between capped and fully-expanded (uncapped) on the next tick; non-blocking msvcrt poll preserves refresh cadence; Windows-TTY-only, gracefully absent elsewhere (no misleading hint text). Testable via run_watch(key_reader=..., clock=...) seam. Live-verified with TTY-simulated stdout + real msvcrt reader. 1141 green.",
    "last_verified_at": "2026-07-15T07:20:00+00:00"
+  },
+  {
+   "id": "T62",
+   "title": "diag --live: default-expanded pools, Esc exit, pacing sort, terminal session marker",
+   "status": "done",
+   "priority": "low",
+   "category": "telemetry",
+   "owner": "unassigned",
+   "evidence_commit": [
+    "cdf2d7d"
+   ],
+   "supersedes": [],
+   "source_refs": [
+    "_sys/cli/diag.py"
+   ],
+   "next_action": "DONE cdf2d7d -- (1) pools start expanded, p collapses; (2) Esc exits --live cleanly (rc=0, distinct from Ctrl+C 130); (3) quota sort = pacing desc then used desc, shared across SUMMARY+live QUOTA POOLS, absent pacing never fabricated; (4) ACTIVE SESSIONS marks the terminals own session [TERM] via hub._select_human_interface_peer, fail-closed. Live-verified all 4. 1144 green.",
+   "last_verified_at": "2026-07-15T07:40:00+00:00"
   }
  ]
 }
