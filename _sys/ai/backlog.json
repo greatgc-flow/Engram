@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-15T05:35:00Z",
+ "updated_at": "2026-07-15T05:50:00Z",
  "items": [
   {
    "id": "T7",
@@ -1721,6 +1721,23 @@
    ],
    "next_action": "DONE a1fea98 (T56+T57 combined round): enrich the load_balance_route routing-metric to record pacing_applied, probabilities, representative_profiles, the selected profile quota_families, and reserve-clamp status, so the AUTO distribution is auditable + the next family-spread decision is measured. Prereq to any family-spread term (deferred).",
    "last_verified_at": "2026-07-15T05:35:00+00:00"
+  },
+  {
+   "id": "T58",
+   "title": "diag --live MECE redesign: SUMMARY granularity fix + urgency/recency sort order",
+   "status": "done",
+   "priority": "medium",
+   "category": "telemetry",
+   "owner": "unassigned",
+   "evidence_commit": [
+    "b6df6c3"
+   ],
+   "supersedes": [],
+   "source_refs": [
+    "_sys/cli/diag.py"
+   ],
+   "next_action": "DONE b6df6c3: 끝장토론 cx(design)+ag(fairness/aesthetics cross-check)+cc(synth). Removed MODEL from SUMMARY peer row (was a profile-level fact wrongly shown at peer granularity -> the operators felt unit mismatch). Quota sub-rows sorted by urgency (-used_frac,label) not alphabetical. RECENT SESSIONS: selection stays round-robin (peer-fairness preserved per ag), but rendered DISPLAY order is now true global last_used_at desc (title \"newest first\" is now honest). Digest mode ordered by newest-session-ts. Wide terminals (>=120 cols) show a session MODEL column. Presentation-only, live-verified. 6 new tests, 1126 green.",
+   "last_verified_at": "2026-07-15T05:50:00+00:00"
   }
  ]
 }
