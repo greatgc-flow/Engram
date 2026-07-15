@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-15T05:00:00Z",
+ "updated_at": "2026-07-15T05:15:00Z",
  "items": [
   {
    "id": "T7",
@@ -1674,17 +1674,19 @@
   {
    "id": "T55",
    "title": "statusline all-buckets shape-driven formatter (+ schema v2 + fixtures)",
-   "status": "proposed",
+   "status": "done",
    "priority": "medium",
    "category": "routing",
    "owner": "unassigned",
-   "evidence_commit": [],
+   "evidence_commit": [
+    "f1f0bc7"
+   ],
    "supersedes": [],
    "source_refs": [
     "_sys/docs-v2/ops/quota-balance-decisions.md"
    ],
-   "next_action": "the handoff (ops/statusline-quota-display-handoff-2026-07-15.md) unapplied impl. In _sys/ai/common/statusline/statusline-unified.sh build ONE canonical bucket list (C-5H/C-7D/F-7D/G-5H/G-7D/3P-5H/3P-7D) with NO PEER_ID branch: first valid numeric per label, accept used_percentage/used_percent/remaining_fraction[(1-r)*100], %-only, 0% preserved, missing omitted, quota:N/A only if none, NEVER fabricate F-7D. AG JSON uses remaining_fraction + keys 3p-5h/3p-weekly/gemini-5h/gemini-weekly. Presentation-only (no snapshot/diag/routing/CX change). schema v2 (statusline-schema.json) + tests (test_statusline.py CC-no-F / CC-real-fable_weekly / all-4-AG / 0%-preserved / partial-omit / quota:N/A / end-to-end F-7D normalization). Guard set -euo pipefail against shape mismatch; add a width fixture.",
-   "last_verified_at": "2026-07-15T05:00:00+00:00"
+   "next_action": "DONE f1f0bc7: statusline-unified.sh shape-driven all-buckets formatter (C/F/G/3P), remaining_fraction->%, 0% preserved, F-7D never fabricated, shape-safe; schema v2; SSOT fix; 9 new tests, 1119 green. Presentation-only. the handoff (ops/statusline-quota-display-handoff-2026-07-15.md) unapplied impl. In _sys/ai/common/statusline/statusline-unified.sh build ONE canonical bucket list (C-5H/C-7D/F-7D/G-5H/G-7D/3P-5H/3P-7D) with NO PEER_ID branch: first valid numeric per label, accept used_percentage/used_percent/remaining_fraction[(1-r)*100], %-only, 0% preserved, missing omitted, quota:N/A only if none, NEVER fabricate F-7D. AG JSON uses remaining_fraction + keys 3p-5h/3p-weekly/gemini-5h/gemini-weekly. Presentation-only (no snapshot/diag/routing/CX change). schema v2 (statusline-schema.json) + tests (test_statusline.py CC-no-F / CC-real-fable_weekly / all-4-AG / 0%-preserved / partial-omit / quota:N/A / end-to-end F-7D normalization). Guard set -euo pipefail against shape mismatch; add a width fixture.",
+   "last_verified_at": "2026-07-15T05:15:00+00:00"
   },
   {
    "id": "T56",
