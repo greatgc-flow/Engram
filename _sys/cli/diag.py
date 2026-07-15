@@ -635,6 +635,126 @@ def render_frame_footer(stdout=None, snapshot=None, rendered_at=None):
         )
 
 
+def _live_raw_peer(rec):
+    """Return the normalized peer's raw record for the compact live HUD."""
+    raw = rec.get("raw") if isinstance(rec, dict) else None
+    return raw if isinstance(raw, dict) else (rec if isinstance(rec, dict) else {})
+
+
+def render_live_peer_health(out, snapshot, columns):
+    """Render peer-granularity health only; session/profile facts stay elsewhere."""
+    lines = [_elide_display("-- PEER HEALTH --", columns)]
+    for rec in snapshot.get("peers") or []:
+        info = _live_raw_peer(rec)
+        peer = str(info.get("peer") or (rec.get("peer") if isinstance(rec, dict) else "?") or "?").upper()
+        state = _peer_state_cell(info)
+        lines.append(_elide_display(f"{_pad(peer, 5)} {state}", columns))
+    out.write("\n".join(lines) + "\n")
+
+
+def _live_quota_pool_rows(snapshot):
+    """Collect measured quota-pool rows for the live account/pool section."""
+    rows = []
+    for rec in snapshot.get("peers") or []:
+        info = _live_raw_peer(rec)
+        owner = str(info.get("peer") or (rec.get("peer") if isinstance(rec, dict) else "?") or "?")
+        source = _source_code(info.get("source"))
+        for quota in info.get("quotas") or []:
+            if not isinstance(quota, dict):
+                continue
+            used = quota.get("used_frac")
+            if not isinstance(used, (int, float)):
+                continue
+            rows.append({
+                "owner": owner,
+                "pool": str(quota.get("label") or "absent"),
+                "used_frac": used,
+                "pacing": quota.get("pacing"),
+                "reset": str(quota.get("reset") or "?"),
+                "source": source,
+            })
+    return sorted(rows, key=lambda row: (-row["used_frac"], row["pool"], row["owner"]))
+
+
+def _live_quota_pool_line(row, columns):
+    used = _pad(f"{row['used_frac'] * 100:.0f}%", 4, align="right")
+    pace = _pad(_pacing_cell(row.get("pacing")), 12)
+    text = (f"{_pad(str(row['owner']).upper(), 6)} {_pad(row['pool'], 12)} {used} {pace} "
+            f"{_pad(row['reset'], 20)} {_pad(row['source'], 12)}")
+    return _elide_display(text, columns)
+
+
+def render_live_quota_pools(out, snapshot, columns, line_budget=None):
+    """Render globally-urgent quota pools, with an optional compact cap."""
+    if line_budget is not None:
+        line_budget = max(0, int(line_budget))
+        if line_budget == 0:
+            return
+    rows = _live_quota_pool_rows(snapshot)
+    section_header = _elide_display("-- QUOTA POOLS --", columns)
+    column_header = _elide_display("OWNER  POOL         USED PACE         RESET                SRC", columns)
+    if not rows:
+        out.write(section_header + "\n" + _elide_display("  none", columns) + "\n")
+        return
+
+    if line_budget is None:
+        selected = rows
+        hidden = 0
+    else:
+        slots = max(0, line_budget - 2)
+        if len(rows) > slots:
+            slots = max(0, slots - 1)
+        selected = rows[:slots]
+        hidden = len(rows) - len(selected)
+
+    lines = [section_header, column_header]
+    lines.extend(_live_quota_pool_line(row, columns) for row in selected)
+    if hidden:
+        lines.append(_elide_display(f"  +{hidden} pools hidden", columns))
+    out.write("\n".join(lines[:line_budget] if line_budget is not None else lines) + "\n")
+
+
+def render_routing_alerts(out, snapshot, columns, rendered_at=None):
+    """Render only active limited-reset alerts; omit the section when empty."""
+    rendered = _frame_dt() if rendered_at is None else _frame_dt(rendered_at)
+    rows = _limited_reset_rows(snapshot, rendered)
+    if not rows:
+        return
+    lines = [_elide_display("-- ROUTING ALERTS --", columns)]
+    for row in rows[:2]:
+        remaining = row.get("remaining_sec")
+        remaining_txt = _rel(remaining) if isinstance(remaining, int) else "absent"
+        lines.append(_elide_display(
+            f"{_pad(str(row.get('profile') or 'absent'), 22)} {remaining_txt} resets {_fmt_frame_dt(row.get('reset_at'))}",
+            columns,
+        ))
+    if len(rows) > 2:
+        lines.append(_elide_display(f"  +{len(rows) - 2} alerts hidden", columns))
+    out.write("\n".join(lines) + "\n")
+
+
+def render_observation(out, snapshot, rendered_at, columns):
+    """Render live snapshot/cache provenance, excluding routing alerts."""
+    rendered = _frame_dt() if rendered_at is None else _frame_dt(rendered_at)
+    tc = telemetry_config()
+    ttl = tc.get("ttl", {})
+    snapshot_ttl = ttl.get("snapshot_sec", "absent")
+    local_ttl = ttl.get("local_sec", "absent")
+    expensive_ttl = ttl.get("expensive_source_sec", "absent")
+    snapshot_age = _snapshot_age_seconds(snapshot, rendered)
+    snapshot_age_txt = f"{snapshot_age}s" if isinstance(snapshot_age, int) else "absent"
+    expensive_age = expensive_source_age_sec()
+    expensive_age_txt = f"{expensive_age}s" if isinstance(expensive_age, int) else "absent"
+    ttl_line = (
+        f"TTL snapshot refreshed {_fmt_frame_dt(snapshot.get('observed_at'))} "
+        f"(age {snapshot_age_txt} / TTL {snapshot_ttl}s); local TTL {local_ttl}s; "
+        f"expensive quota cache {expensive_age_txt} / TTL {expensive_ttl}s"
+    )
+    out.write(_elide_display("-- OBSERVATION --", columns) + "\n")
+    out.write(_elide_display(ttl_line, columns) + "\n")
+    out.write(_elide_display(f"RENDERED {_fmt_frame_dt(rendered)}", columns) + "\n")
+
+
 def _session_sort_key(row):
     last_used = _frame_dt(row.get("last_used_at"))
     return (
@@ -739,7 +859,7 @@ def _session_digest(row, peer, count, now, columns):
     return _elide_display(text, columns)
 
 
-def render_recent_sessions(out, snapshot, *, now=None, columns=80, line_budget=None):
+def render_active_sessions(out, snapshot, *, now=None, columns=80, line_budget=None):
     """Compact recent sessions from one supplied snapshot; never recollects."""
     if line_budget is not None:
         line_budget = max(0, int(line_budget))
@@ -754,7 +874,7 @@ def render_recent_sessions(out, snapshot, *, now=None, columns=80, line_budget=N
             continue
         groups.setdefault(str(row["peer"]), []).append(row)
     if not groups:
-        out.write(_elide_display("RECENT SESSIONS none", columns) + "\n")
+        out.write(_elide_display("ACTIVE SESSIONS none", columns) + "\n")
         return
 
     snapshot_peer_order = [
@@ -773,7 +893,7 @@ def render_recent_sessions(out, snapshot, *, now=None, columns=80, line_budget=N
             if rank < len(capped[peer]):
                 round_robin.append((peer, capped[peer][rank]))
 
-    title = _elide_display("RECENT SESSIONS (newest first; max 3/peer)", columns)
+    title = _elide_display("ACTIVE SESSIONS (active registry; max 3/peer)", columns)
     header_prefix = f"{_pad('PROFILE', 20)} {_pad('AGE', 5, align='right')} {_pad('CTX', 7)}"
     if columns is not None and columns >= 120:
         header_prefix = f"{header_prefix} {_pad('MODEL', 24)}"
@@ -832,29 +952,56 @@ def render_recent_sessions(out, snapshot, *, now=None, columns=80, line_budget=N
     out.write("\n".join(lines) + "\n")
 
 
+# Compatibility surface for callers that still use the former live-renderer name.
+render_recent_sessions = render_active_sessions
+
+
 def render_summary_frame(out, snapshot, *, terminal_lines=None, columns=80, now=None):
-    """Render the standalone live HUD: SUMMARY, recent sessions, then FRAME."""
-    summary_buf = io.StringIO()
-    with redirect_stdout(summary_buf):
-        infos = [p["raw"] for p in snapshot.get("peers") or []]
-        render_summary(infos)
-    summary_text = summary_buf.getvalue()
+    """Render the standalone live HUD in peer, pool, session, alert, provenance order."""
+    rendered_at = _frame_dt() if now is None else _frame_dt(now)
+    rendered_at = rendered_at or _frame_dt()
 
-    frame_buf = io.StringIO()
-    render_frame_footer(frame_buf, snapshot=snapshot, rendered_at=now)
-    frame_text = frame_buf.getvalue()
+    peer_buf = io.StringIO()
+    render_live_peer_health(peer_buf, snapshot, columns)
+    peer_text = peer_buf.getvalue()
 
-    line_budget = None
-    if terminal_lines is not None:
-        summary_lines = len(summary_text.splitlines())
-        frame_lines = len(frame_text.splitlines())
-        line_budget = max(0, int(terminal_lines) - summary_lines - frame_lines - 1)
+    alert_buf = io.StringIO()
+    render_routing_alerts(alert_buf, snapshot, columns, rendered_at=rendered_at)
+    alert_text = alert_buf.getvalue()
 
-    out.write(summary_text)
-    render_recent_sessions(
-        out, snapshot, now=now, columns=columns, line_budget=line_budget,
+    observation_buf = io.StringIO()
+    render_observation(observation_buf, snapshot, rendered_at, columns)
+    observation_text = observation_buf.getvalue()
+
+    if terminal_lines is None:
+        quota_budget = None
+        session_budget = None
+    else:
+        fixed_lines = sum(len(text.splitlines()) for text in (peer_text, alert_text, observation_text))
+        available = max(0, int(terminal_lines) - fixed_lines)
+        session_floor = 3 if snapshot.get("sessions") else 1
+        quota_budget = min(5, max(0, available - session_floor))
+
+    quota_buf = io.StringIO()
+    render_live_quota_pools(quota_buf, snapshot, columns, line_budget=quota_budget)
+    quota_text = quota_buf.getvalue()
+
+    if terminal_lines is None:
+        session_budget = None
+    else:
+        remaining = max(0, int(terminal_lines) - fixed_lines - len(quota_text.splitlines()))
+        session_budget = remaining
+
+    session_buf = io.StringIO()
+    render_active_sessions(
+        session_buf, snapshot, now=rendered_at, columns=columns, line_budget=session_budget,
     )
-    out.write(frame_text)
+
+    out.write(peer_text)
+    out.write(quota_text)
+    out.write(session_buf.getvalue())
+    out.write(alert_text)
+    out.write(observation_text)
 
 
 def _compact_room_status(status_text):

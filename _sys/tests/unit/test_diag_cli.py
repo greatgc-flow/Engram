@@ -1082,11 +1082,11 @@ def test_recent_session_views_mark_closed_lease_state():
     diag.render_recent_sessions(
         hud, snapshot, now=datetime(2026, 7, 3, 10, tzinfo=timezone.utc), columns=80,
     )
-    assert "RECENT SESSIONS" in hud.getvalue()
+    assert "ACTIVE SESSIONS" in hud.getvalue()
     assert "ROOM / STATE" in hud.getvalue()
     assert "[CLOSED]" in hud.getvalue()
     assert "[CLOSED]" in full.getvalue()
-    assert "ACTIVE SESSIONS" not in hud.getvalue()
+    assert "RECENT SESSIONS" not in hud.getvalue()
 
 
 def test_open_lease_requires_unexpired_timestamp_for_open_state():
@@ -1344,8 +1344,10 @@ def test_live_non_tty_is_plain_sequential_and_collects_once_per_tick(monkeypatch
 
     text = out.getvalue()
     assert calls == [False, False, False]
-    assert text.count(" SUMMARY") == 3
-    assert text.count("RECENT SESSIONS") == 3
+    assert text.count("PEER HEALTH") == 3
+    assert text.count("QUOTA POOLS") == 3
+    assert text.count("ACTIVE SESSIONS") == 3
+    assert text.count("OBSERVATION") == 3
     assert " PROFILES & ROUTING" not in text
     assert " POLICY" not in text
     assert "\033[" not in text
@@ -1509,7 +1511,7 @@ def test_recent_sessions_tiny_budget_uses_one_line_per_peer_digest():
 
     lines = out.getvalue().splitlines()
     assert len(lines) == 3
-    assert lines[0].startswith("RECENT SESSIONS")
+    assert lines[0].startswith("ACTIVE SESSIONS")
     assert lines[1].startswith("AG:") and lines[1].endswith("(3)")
     assert lines[2].startswith("CC:") and lines[2].endswith("(3)")
 

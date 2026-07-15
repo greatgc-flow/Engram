@@ -320,5 +320,124 @@ def test_summary_frame_respects_terminal_height_budget_and_panel_order():
     )
 
     text = out.getvalue()
-    assert len(text.splitlines()) <= 19  # one row is deliberately reserved
-    assert text.index(" SUMMARY") < text.index("RECENT SESSIONS") < text.index(" FRAME")
+    assert len(text.splitlines()) <= 20
+    assert text.index("PEER HEALTH") < text.index("QUOTA POOLS") < text.index("ACTIVE SESSIONS") < text.index("OBSERVATION")
+
+
+def test_live_peer_health_contains_only_peer_and_state():
+    diag = load_diag()
+    snapshot = {"peers": [{"peer": "cc", "raw": {
+        "peer": "cc", "gate": True, "quarantined": False,
+        "model": "must-not-render", "ctx_used": 99, "ctx_window": 100,
+        "ctx_pct": 99.0, "cost": 12.34, "source": "cli_live",
+    }}]}
+    out = io.StringIO()
+
+    diag.render_live_peer_health(out, snapshot, columns=80)
+
+    text = out.getvalue()
+    assert "PEER HEALTH" in text and "CC" in text and "OPEN" in text
+    assert "must-not-render" not in text
+    assert "99/100" not in text
+    assert "$12.3400" not in text
+
+
+def test_live_quota_pools_is_global_urgent_order_and_reports_hidden_count():
+    diag = load_diag()
+    snapshot = {"peers": [
+        {"peer": "cc", "raw": {"peer": "cc", "source": "cli_live", "quotas": [
+            {"label": "C-low", "used_frac": 0.10, "pacing": None, "reset": "later"},
+            {"label": "C-high", "used_frac": 0.90, "pacing": None, "reset": "soon"},
+        ]}},
+        {"peer": "ag", "raw": {"peer": "ag", "source": "statusline", "quotas": [
+            {"label": "A-mid", "used_frac": 0.50, "pacing": None, "reset": "later"},
+            {"label": "A-low", "used_frac": 0.20, "pacing": None, "reset": "later"},
+            {"label": "A-unknown", "used_frac": None, "pacing": None, "reset": "?"},
+        ]}},
+    ]}
+    out = io.StringIO()
+
+    # budget=5: 2 header lines (section + column) + 2 detail rows + 1 hidden-count line
+    diag.render_live_quota_pools(out, snapshot, columns=80, line_budget=5)
+
+    text = out.getvalue()
+    assert text.index("C-high") < text.index("A-mid")
+    assert "C-low" not in text
+    assert "+2 pools hidden" in text
+    assert "A-unknown" not in text
+
+
+def test_live_routing_alerts_omits_empty_and_caps_limited_resets():
+    diag = load_diag()
+    rendered = datetime(2026, 7, 8, 10, tzinfo=timezone.utc)
+    empty = io.StringIO()
+    diag.render_routing_alerts(empty, {"peers": [], "profiles": []}, columns=80, rendered_at=rendered)
+    assert empty.getvalue() == ""
+
+    snapshot = {
+        "profiles": [{"profile": f"ag.p{i}"} for i in range(3)],
+        "peers": [{"peer": "ag", "domains": {"health": {"profiles": {
+            f"p{i}": {"rate_limit_state": {
+                "limited": True, "reset_at": f"2026-07-08T10:{10 + i:02d}:00+00:00",
+            }} for i in range(3)
+        }}}}],
+    }
+    out = io.StringIO()
+    diag.render_routing_alerts(out, snapshot, columns=80, rendered_at=rendered)
+    text = out.getvalue()
+    assert "ROUTING ALERTS" in text
+    assert "ag.p0" in text and "ag.p1" in text and "ag.p2" not in text
+    assert "+1 alerts hidden" in text
+
+
+def test_live_observation_has_only_ttl_and_rendered_provenance(monkeypatch):
+    diag = load_diag()
+    monkeypatch.setattr(diag, "expensive_source_age_sec", lambda: 17)
+    out = io.StringIO()
+
+    diag.render_observation(
+        out,
+        {"observed_at": "2026-07-08T09:59:55+00:00"},
+        datetime(2026, 7, 8, 10, tzinfo=timezone.utc),
+        columns=80,
+    )
+
+    text = out.getvalue()
+    assert "OBSERVATION" in text and "TTL snapshot" in text and "RENDERED" in text
+    assert "LIMITED RESETS" not in text
+
+
+def test_live_five_section_frame_fits_80x24_with_multiple_peers_pools_and_sessions():
+    diag = load_diag()
+    raw_peers = []
+    sessions = []
+    for peer, used in (("cc", (0.90, 0.40, 0.10)), ("ag", (0.80, 0.30)), ("cx", (0.70, 0.20))):
+        raw_peers.append({"peer": peer, "raw": {
+            "peer": peer, "gate": True, "quarantined": False, "source": "cli_live",
+            "quotas": [
+                {"label": f"{peer}-{index}", "used_frac": value, "pacing": None, "reset": "later"}
+                for index, value in enumerate(used)
+            ],
+        }})
+        sessions.extend({
+            "peer": peer, "profile": f"{peer}.p{index}",
+            "last_used_at": f"2026-07-13T09:{50 - index:02d}:00+00:00",
+            "context": {"utilization_pct": float(index)},
+            "scope_key": f"room:{peer}.p{index}",
+        } for index in range(3))
+    snapshot = {"observed_at": "2026-07-13T10:00:00+00:00", "peers": raw_peers,
+                "profiles": [], "sessions": sessions}
+    out = io.StringIO()
+
+    diag.render_summary_frame(
+        out, snapshot, terminal_lines=24, columns=80,
+        now=datetime(2026, 7, 13, 10, tzinfo=timezone.utc),
+    )
+
+    lines = out.getvalue().splitlines()
+    assert len(lines) <= 24
+    assert all(diag._dw(line) <= 80 for line in lines)
+    assert "PEER HEALTH" in out.getvalue()
+    assert "QUOTA POOLS" in out.getvalue()
+    assert "ACTIVE SESSIONS" in out.getvalue()
+    assert "OBSERVATION" in out.getvalue()
