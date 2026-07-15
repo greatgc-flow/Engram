@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-15T06:40:00Z",
+ "updated_at": "2026-07-15T07:00:00Z",
  "items": [
   {
    "id": "T7",
@@ -1756,6 +1756,23 @@
    ],
    "next_action": "DONE ec5a5fc — (1)+(2) fixed: health_observed_at/health_age_sec tracked separately from health.json mtime (was borrowing live_file mtime); _capture_profile_from_active_session() resolves measured model/context via EXACT session_id match against session_state[active] (model-name matching rejected as unreliable); unmatched captures get a conservative basis=measured_unattributed_active_capture fallback for context only (preserves --to auto headroom), model NEVER falls back to default without an exact match. Live-verified: PEER HEALTH now shows genuine per-peer health age. (3) session-associated COST wiring NOT done -- needs a peer-by-peer feasibility check (does any peer even emit a session-scoped cost field?) and is lower-value now that --live dropped COST entirely (T58); left as a separate low-priority idea if ever needed, not spawned as a new item. From the diag info-architecture 끝장토론 (cx design, T58/c2bd73e, 2026-07-15). Real bugs FLAGGED but not fixed in the Phase-1 presentation-only round: (1) health observed_at is mis-normalized -> when a live status file exists its mtime becomes the SHARED observed_at even though health was read from a DIFFERENT file (health.json) [snapshot.py ~L677, ~L1600] -- gives false freshness confidence. (2) profile normalization copies the ROOT-level context/model into the configured DEFAULT profile, assuming the default profile was the one actually captured; a specialty-profile session (e.g. cc.fable, ag.opus) invalidates that assumption and can misattribute context/model to the wrong profile [snapshot.py ~L1084, ~L1135] -- a genuine headroom-calc bug. (3) COST was removed from --live because it is a raw single-capture snapshot with no billing-period aggregation and no session-ID association; if session-level burn-rate is wanted, wire an actual session-associated cost field (verify which peers even emit one) rather than displaying the misleading global one. Each needs its own investigation + TDD fix; not a quick patch.",
    "last_verified_at": "2026-07-15T06:40:00+00:00"
+  },
+  {
+   "id": "T60",
+   "title": "diag polish: rebrand title, self-documenting hidden-pools, packed PEER HEALTH",
+   "status": "done",
+   "priority": "low",
+   "category": "telemetry",
+   "owner": "unassigned",
+   "evidence_commit": [
+    "66d1c50"
+   ],
+   "supersedes": [],
+   "source_refs": [
+    "_sys/cli/diag.py"
+   ],
+   "next_action": "DONE 66d1c50 -- 3 operator-requested fixes: (1) title Antigravity->Engram Multi-Peer Diagnostics; (2) +N pools hidden -> +N pools hidden; run diag for all (plain diag already uncapped, no new flag needed); (3) PEER HEALTH 5 lines->1-2 packed lines, abnormal-state-first sort+color, guaranteed no-peer-dropped wrap. Live-verified 80x24 render 24->20 lines. 4 new tests, 1138 green.",
+   "last_verified_at": "2026-07-15T07:00:00+00:00"
   }
  ]
 }
