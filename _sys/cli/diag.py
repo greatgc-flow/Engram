@@ -641,14 +641,35 @@ def _live_raw_peer(rec):
     return raw if isinstance(raw, dict) else (rec if isinstance(rec, dict) else {})
 
 
+def _health_age_text(value):
+    if not isinstance(value, (int, float)):
+        return "absent"
+    seconds = max(0, int(value))
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    if seconds < 86400:
+        return f"{seconds // 3600}h"
+    return f"{seconds // 86400}d"
+
+
 def render_live_peer_health(out, snapshot, columns):
     """Render peer-granularity health only; session/profile facts stay elsewhere."""
-    lines = [_elide_display("-- PEER HEALTH --", columns)]
+    lines = [
+        _elide_display("-- PEER HEALTH --", columns),
+        _elide_display(f"{_pad('PEER', 5)} {_pad('HEALTH', 11)} AGE", columns),
+    ]
     for rec in snapshot.get("peers") or []:
         info = _live_raw_peer(rec)
         peer = str(info.get("peer") or (rec.get("peer") if isinstance(rec, dict) else "?") or "?").upper()
         state = _peer_state_cell(info)
-        lines.append(_elide_display(f"{_pad(peer, 5)} {state}", columns))
+        health = (rec.get("domains") or {}).get("health") if isinstance(rec, dict) else {}
+        health_age = (health or {}).get("age_sec")
+        if not isinstance(health_age, (int, float)):
+            health_age = info.get("health_age_sec")
+        lines.append(_elide_display(
+            f"{_pad(peer, 5)} {state} {_health_age_text(health_age)}", columns))
     out.write("\n".join(lines) + "\n")
 
 

@@ -1,6 +1,7 @@
 import importlib.util
 import io
 import json
+import os
 import shutil
 import sys
 import time
@@ -188,6 +189,43 @@ def test_statusline_json_real_fable_weekly_reaches_diag_normalization(monkeypatc
     assert by_label["C-5H"]["used_frac"] == pytest.approx(0.10)
     assert by_label["F-7D"]["used_frac"] == pytest.approx(0.12)
     assert by_label["F-7D"]["source"] == "cc"
+
+
+def test_health_freshness_uses_health_file_not_newer_statusline(monkeypatch, tmp_path):
+    snapshot = load_snapshot()
+    diag = load_diag()
+    fake_sys = tmp_path / "_sys"
+    live_file = fake_sys / "claude" / "config" / "status_input.log"
+    live_file.parent.mkdir(parents=True)
+    live_file.write_text(json.dumps({
+        "context_used_tokens": 10,
+        "context_total_tokens": 100,
+    }), encoding="utf-8")
+    peer_dir = tmp_path / "cc"
+    peer_dir.mkdir()
+    health_file = peer_dir / "health.json"
+    health_file.write_text(json.dumps({
+        "availability": {"gate_open": True, "quarantined": False},
+    }), encoding="utf-8")
+    now = time.time()
+    os.utime(live_file, (now - 5, now - 5))
+    os.utime(health_file, (now - 3600, now - 3600))
+    monkeypatch.setattr(snapshot, "SYS_DIR", fake_sys)
+    monkeypatch.setattr(snapshot, "_cached_claude_usage_quotas", lambda: None)
+
+    info = snapshot.gather_peer("cc", {"cc": peer_dir})
+    record = snapshot.normalize_peer(info)
+    out = io.StringIO()
+    diag.render_live_peer_health(out, {"peers": [record]}, columns=80)
+
+    live_observed = datetime.fromisoformat(info["observed_at"])
+    health_observed = datetime.fromisoformat(info["health_observed_at"])
+    assert live_observed.timestamp() == pytest.approx(now - 5, abs=2)
+    assert health_observed.timestamp() == pytest.approx(now - 3600, abs=2)
+    assert info["health_age_sec"] > info["age_sec"] + 3000
+    assert record["domains"]["health"]["source"]["observed_at"] == info["health_observed_at"]
+    assert "1h" in out.getvalue()
+    assert "5s" not in out.getvalue()
 
 
 def test_parse_claude_usage_multiline_output_from_terminal_shape():
@@ -585,6 +623,7 @@ def test_profile_rows_split_cc_fable_quota_and_context_sources():
         "peer": "cc", "source": "live", "gate": True, "quarantined": False,
         "model": "Opus", "ctx_used": 100, "ctx_window": 1000000, "ctx_pct": 0.01,
         "ctx_known": True, "cost": None, "agent_state": "idle", "plan_tier": "Pro",
+        "capture_session_id": "session-deepthink", "capture_profile": "cc.deepthink",
         "sessions": None, "total_tokens": None, "empty": False, "errors": [],
         "quotas": [
             {"label": "C-5H", "used_frac": 0.1, "reset": "x"},
@@ -609,6 +648,95 @@ def test_profile_rows_split_cc_fable_quota_and_context_sources():
     assert rows["cc.fable"]["context"]["window_tokens"] == 200000
     assert rows["cc.fable"]["sources"]["context"] == "orchestration"
     assert [b["label"] for b in rows["cc.fable"]["quota"]["buckets"]] == ["C-5H", "F-5H"]
+
+
+def test_profile_rows_attribute_capture_by_exact_session_id_not_default(monkeypatch, tmp_path):
+    snapshot = load_snapshot()
+    fake_sys = tmp_path / "_sys"
+    live_file = fake_sys / "claude" / "config" / "status_input.log"
+    live_file.parent.mkdir(parents=True)
+    live_file.write_text(json.dumps({
+        "session_id": "session-fable",
+        "model": {"display_name": "Measured Fable"},
+        "context_window": {
+            "context_window_size": 200000,
+            "total_input_tokens": 20000,
+            "total_output_tokens": 0,
+            "used_percentage": 10,
+        },
+    }), encoding="utf-8")
+    peer_dir = tmp_path / "cc"
+    peer_dir.mkdir()
+    (peer_dir / "health.json").write_text(json.dumps({
+        "availability": {"gate_open": True, "quarantined": False},
+    }), encoding="utf-8")
+    (peer_dir / "session_state.json").write_text(json.dumps({
+        "active": {
+            "room:cc.fable": {
+                "scope_key": "room:cc.fable",
+                "session_id": "session-fable",
+                "status": "active",
+            },
+        },
+    }), encoding="utf-8")
+    monkeypatch.setattr(snapshot, "SYS_DIR", fake_sys)
+    monkeypatch.setattr(snapshot, "_cached_claude_usage_quotas", lambda: None)
+    info = snapshot.gather_peer("cc", {"cc": peer_dir})
+    record = snapshot.normalize_peer(info)
+    orch = {"hub_nodes": [{
+        "node_id": "cc", "type": "peer", "enabled": True,
+        "default_profile": "deepthink",
+        "profiles": {
+            "deepthink": {
+                "model_id": "Declared Opus", "runtime_context_window": 1000000,
+                "routing_state": "eligible",
+            },
+            "fable": {
+                "model_id": "Declared Fable", "runtime_context_window": 200000,
+                "routing_state": "eligible",
+            },
+        },
+    }]}
+
+    rows = {row["profile"]: row for row in snapshot._build_profile_rows(
+        orch, [record], "2026-07-15T00:00:00+00:00")}
+
+    assert info["capture_profile"] == "cc.fable"
+    assert rows["cc.fable"]["context"]["basis"] == "measured_active_profile"
+    assert rows["cc.fable"]["model"] == "Measured Fable"
+    assert rows["cc.deepthink"]["context"]["basis"] == "declared_profile_capacity"
+    assert rows["cc.deepthink"]["model"] == "Declared Opus"
+
+
+def test_unmatched_capture_is_kept_at_peer_level_and_not_claimed_by_default_profile():
+    snapshot = load_snapshot()
+    info = {
+        "peer": "cc", "source": "live", "gate": True, "quarantined": False,
+        "model": "Measured Unknown Owner", "ctx_used": 20, "ctx_window": 200,
+        "ctx_pct": 10.0, "ctx_known": True, "cost": None,
+        "capture_session_id": "unmatched-session", "capture_profile": None,
+        "sessions": None, "total_tokens": None, "empty": False, "errors": [],
+        "quotas": [],
+    }
+    record = snapshot.normalize_peer(info)
+    orch = {"hub_nodes": [{
+        "node_id": "cc", "type": "peer", "enabled": True,
+        "default_profile": "deepthink",
+        "profiles": {"deepthink": {
+            "model_id": "Declared Opus", "runtime_context_window": 1000,
+            "routing_state": "eligible",
+        }},
+    }]}
+
+    row = snapshot._build_profile_rows(
+        orch, [record], "2026-07-15T00:00:00+00:00")[0]
+
+    assert record["domains"]["context"]["basis"] == "measured_unattributed_active_capture"
+    assert row["context"]["basis"] == "measured_unattributed_active_capture"
+    assert row["context"]["used_tokens"] == 20
+    assert row["context"]["source"]["confidence"] == "last_known"
+    assert row["model"] == "Declared Opus"
+    assert row["context"]["basis"] != "measured_active_profile"
 
 
 def test_profile_rows_assign_ag_manual_profiles_to_3p_quota_pool():

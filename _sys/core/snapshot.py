@@ -631,6 +631,30 @@ def _read_json_file(path):
         return {}, None
 
 
+def _capture_profile_from_active_session(peer_id, peer_dir, session_id):
+    """Resolve a capture to a profile only through an exact active-session id.
+
+    Model/display-name matching is intentionally excluded: aliases and sibling
+    profiles can share a model, so it is not reliable provenance (DIR-004).
+    """
+    if not session_id:
+        return None
+    state, _ = _read_json_file(Path(peer_dir) / "session_state.json")
+    active = state.get("active") if isinstance(state, dict) else None
+    if not isinstance(active, dict):
+        return None
+    matches = set()
+    for scope_key, entry in active.items():
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("session_id") or "") != str(session_id):
+            continue
+        profile_id = _profile_id_from_scope(entry.get("scope_key") or scope_key, peer_id)
+        if str(profile_id).startswith(f"{peer_id}."):
+            matches.add(str(profile_id))
+    return next(iter(matches)) if len(matches) == 1 else None
+
+
 _AG_QUOTA_LABELS = {
     "gemini-5h": "G-5H", "gemini-weekly": "G-7D",
     "3p-5h": "3P-5H", "3p-weekly": "3P-7D",
@@ -645,6 +669,8 @@ def gather_peer(peer, peer_dirs):
         "cost": None, "source": "none", "agent_state": None, "plan_tier": None,
         "quotas": [], "sessions": None, "total_tokens": None, "empty": True,
         "ctx_known": False, "errors": [],
+        "health_observed_at": None, "health_age_sec": None,
+        "capture_session_id": None, "capture_profile": None,
     }
 
     # Live state log (cc/ag publish one; cx is queried live below).
@@ -668,6 +694,19 @@ def gather_peer(peer, peer_dirs):
             health_data = json.loads(health_file.read_text(encoding="utf-8"))
         except Exception:
             health_data = {}
+        try:
+            health_mtime = health_file.stat().st_mtime
+            info["health_observed_at"] = datetime.fromtimestamp(
+                health_mtime, tz=timezone.utc).astimezone().isoformat()
+            info["health_age_sec"] = max(0, int(time.time() - health_mtime))
+        except OSError:
+            pass
+
+    capture_session_id = data.get("session_id") if isinstance(data, dict) else None
+    if capture_session_id is not None and str(capture_session_id).strip():
+        info["capture_session_id"] = str(capture_session_id)
+        info["capture_profile"] = _capture_profile_from_active_session(
+            peer, peer_dirs[peer], info["capture_session_id"])
 
     if not data and not health_data:
         return info
@@ -1082,24 +1121,31 @@ def _build_profile_rows(orch, peer_records, observed_at):
         root_health = domains.get("health") or {}
         health_profiles = root_health.get("profiles") or {}
         default_profile = node.get("default_profile")
+        capture_profile = (peer_rec.get("raw") or {}).get("capture_profile")
         for profile_name, prof in (node.get("profiles") or {}).items():
+            profile_id = f"{peer_id}.{profile_name}"
             model = prof.get("model_id") or prof.get("runtime_model")
             effort = prof.get("reasoning_effort")
             declared_ctx = prof.get("runtime_context_window") or prof.get("context_window")
-            use_active_ctx = (
-                profile_name == default_profile
-                and isinstance(root_ctx.get("window_tokens"), (int, float))
-            )
+            has_measured_ctx = isinstance(root_ctx.get("window_tokens"), (int, float))
+            attributed_capture = profile_id == capture_profile
+            unattributed_representative = capture_profile is None and profile_name == default_profile
+            use_active_ctx = has_measured_ctx and (
+                attributed_capture or unattributed_representative)
             if use_active_ctx:
                 ctx_tag = _source_tag(peer_rec, "context")
                 context = {
                     "window_tokens": root_ctx.get("window_tokens"),
                     "used_tokens": root_ctx.get("used_tokens"),
                     "utilization_pct": root_ctx.get("utilization_pct"),
-                    "basis": "measured_active_profile",
+                    "basis": (
+                        "measured_active_profile" if attributed_capture
+                        else "measured_unattributed_active_capture"
+                    ),
                     **_profile_source(root_ctx.get("source", {}).get("kind", "live"), ctx_tag,
                                       root_ctx.get("source", {}).get("observed_at", observed_at),
-                                      root_ctx.get("source", {}).get("confidence", "exact")),
+                                      root_ctx.get("source", {}).get("confidence", "exact")
+                                      if attributed_capture else "last_known"),
                 }
             elif isinstance(declared_ctx, (int, float)):
                 context = {
@@ -1132,10 +1178,10 @@ def _build_profile_rows(orch, peer_records, observed_at):
             else:
                 quota = {"buckets": [], **_profile_source("unknown", "absent", observed_at, "unknown")}
 
-            # measured > declared (FP-2): the ACTIVE profile shows the live model
-            # from the peer snapshot, source-tagged; non-active keep the declared
-            # orchestration value (rendered "[decl]" downstream).
-            is_active = profile_name == default_profile
+            # Measured > declared only when the capture's exact session id was
+            # resolved to this profile. Unattributed captures remain peer-level;
+            # model-name guessing would silently poison profile headroom (T59).
+            is_active = profile_id == capture_profile
             measured_model = peer_rec.get("model")
             if is_active and measured_model and measured_model != "Unknown":
                 model = str(measured_model)
@@ -1154,7 +1200,7 @@ def _build_profile_rows(orch, peer_records, observed_at):
             if state == "eligible" and not _profile_health_gate_open(profile_health):
                 state = "blocked"
             rows.append({
-                "profile": f"{peer_id}.{profile_name}",
+                "profile": profile_id,
                 "peer": peer_id,
                 "profile_name": profile_name,
                 "profile_class": prof.get("profile_class"),
@@ -1552,6 +1598,14 @@ def normalize_peer(info, now=None):
         "window_tokens": window if isinstance(window, (int, float)) else None,
         "used_tokens": info.get("ctx_used") if ctx_known else None,
         "utilization_pct": pct if isinstance(pct, (int, float)) else None,
+        "basis": (
+            "measured_attributed_session_capture"
+            if ctx_known and info.get("capture_profile")
+            else "measured_unattributed_active_capture" if ctx_known
+            else "unavailable"
+        ),
+        "capture_session_id": info.get("capture_session_id"),
+        "capture_profile": info.get("capture_profile"),
         "source": _source_meta(kind if ctx_known else "unknown", observed, _LOCAL_TTL_SEC, ctx_conf),
     }
 
@@ -1598,11 +1652,13 @@ def normalize_peer(info, now=None):
     }
 
     # Health / gate ---------------------------------------------------------
+    health_observed = info.get("health_observed_at") or observed
     health = {
         "gate_open": info.get("gate"),
         "quarantined": info.get("quarantined"),
         "profiles": info.get("profile_health") or {},
-        "source": _source_meta("cached", observed, _LOCAL_TTL_SEC,
+        "age_sec": info.get("health_age_sec") if isinstance(info.get("health_age_sec"), int) else None,
+        "source": _source_meta("cached", health_observed, _LOCAL_TTL_SEC,
                                "last_known" if not info.get("empty") else "unknown"),
     }
 
