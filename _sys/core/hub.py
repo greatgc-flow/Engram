@@ -1779,6 +1779,70 @@ def _write_peer_health(peer_id: str, data: dict, ai_root: Path | None, health_di
         health_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _surface_pre_dispatch_failure(
+    ai_root: Path | None,
+    target: str,
+    reason: str,
+    recovery_peer: str | None = None,
+) -> None:
+    """State honestly that no peer process started and record that boundary."""
+    if recovery_peer:
+        next_step = f"use 'peer-recover --peer {recovery_peer}' or '--to auto'"
+    else:
+        next_step = "restore peer health/headroom or specify an explicit healthy '--to'"
+    print(
+        f"[HUB:SKIP] {target} not invoked "
+        f"(target_not_invoked=true; phase=pre_dispatch): {next_step}",
+        file=sys.stderr,
+    )
+    if ai_root:
+        try:
+            _record_routing_metric(
+                ai_root,
+                "direct_ask",
+                selected_peer=target,
+                outcome="failure",
+                failure_reason=reason,
+                dispatch_phase="pre_dispatch",
+                execution_certainty="not_started",
+                target_not_invoked=True,
+            )
+        except Exception as exc:
+            print(f"[HUB:WARN] pre-dispatch metric unavailable: {exc}", file=sys.stderr)
+
+
+def _surface_post_spawn_failure(
+    ai_root: Path | None,
+    target: str,
+    reason: str,
+    latency_sec: int | None,
+    profile_id: str | None,
+) -> None:
+    """Surface the replay-unsafe boundary after a child may have executed."""
+    print(
+        f"[HUB:ERROR] {target} failed after dispatch "
+        "(execution_state=uncertain; automatic retry suppressed to avoid "
+        "duplicate side effects)",
+        file=sys.stderr,
+    )
+    if ai_root:
+        try:
+            _record_routing_metric(
+                ai_root,
+                "direct_ask",
+                selected_peer=target,
+                profile_id=profile_id,
+                outcome="failure",
+                latency_sec=latency_sec,
+                failure_reason=reason,
+                dispatch_phase="post_spawn",
+                execution_certainty="uncertain",
+                retry_suppressed_reason="duplicate_execution_risk",
+            )
+        except Exception as exc:
+            print(f"[HUB:WARN] post-spawn metric unavailable: {exc}", file=sys.stderr)
+
+
 def _ask_health_precheck(peer_id: str, ai_root: Path | None) -> None:
     if ai_root is None:
         return
@@ -1836,6 +1900,7 @@ def _ask_health_precheck(peer_id: str, ai_root: Path | None) -> None:
 
     if status == "RED" or not gate_open:
         reason = data.get("session_health", {}).get("last_failure_reason") or "health_gate_closed"
+        _surface_pre_dispatch_failure(ai_root, peer_id, reason, recovery_peer=peer_id)
         
         if availability.get("gate_open") is False and isinstance(rls, dict) and rls.get("limited"):
             reset_at = rls.get("reset_at", "unknown time")
@@ -4806,6 +4871,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                 # If the peer is actually healthy, precheck returns and this is a real routing fail.
                 root_to = to.split(".")[0]
                 _ask_health_precheck(root_to, ai_root)
+                _surface_pre_dispatch_failure(
+                    ai_root, to, "profile_routing_failed", recovery_peer=root_to
+                )
                 print(f"[HUB:ERROR] profile routing failed: {exc}", file=sys.stderr)
                 sys.exit(1)
             raise
@@ -4861,6 +4929,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     # is_routable() is the authoritative gate: checks explicit enabled:false AND
     # Parent disablement propagates to generated profile nodes.
     if not is_routable(to, orch=_orch_for_gate):
+        _surface_pre_dispatch_failure(
+            ai_root, to, "target_disabled", recovery_peer=to.split(".", 1)[0]
+        )
         print(f"[ERROR] ask target disabled by default: {to}", file=sys.stderr)
         sys.exit(1)
     node = nodes.get(to, {})
@@ -4940,9 +5011,17 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                 failover_model = gate_result.get("failover_model") or _default_routable_peer_id(
                     exclude=[to, original_to, health_peer])
                 if not failover_model:
+                    _surface_pre_dispatch_failure(
+                        ai_root, to, "context_failover_no_target",
+                        recovery_peer=health_peer,
+                    )
                     print("[HUB:ERROR] ContextGate requested failover but no routable fallback peer is available", file=sys.stderr)
                     sys.exit(1)
                 if explicit_profile:
+                    _surface_pre_dispatch_failure(
+                        ai_root, to, "context_failover_explicit_profile",
+                        recovery_peer=health_peer,
+                    )
                     print(
                         f"[HUB:ERROR] explicit profile immutable; ContextGate requested failover from {to} to {failover_model}",
                         file=sys.stderr,
@@ -4969,6 +5048,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
 
             elif action == "reject":
                 msg = gate_result.get("message", "context limit exceeded")
+                _surface_pre_dispatch_failure(
+                    ai_root, to, "context_gate_reject", recovery_peer=health_peer
+                )
                 if _HUB_ERROR_AVAILABLE and _HubError is not None:
                     _HubError.report("CONTEXT_GATE_REJECT", peer=health_peer, message=msg)
                 else:
@@ -5189,12 +5271,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     _append_ask_history(
                         ai_root, to, saved_query_file_path, output_file, None, False, reason
                     )
-                    if ai_root:
-                        _record_routing_metric(
-                            ai_root, "direct_ask", selected_peer=to,
-                            profile_id=_resolve_profile_id(to), outcome="failure",
-                            latency_sec=None, failure_reason=reason,
-                        )
+                    _surface_pre_dispatch_failure(
+                        ai_root, to, reason, recovery_peer=health_peer
+                    )
                     _update_pty_thread(f"failed ({reason})")
                     print(f"[HUB:ERROR] {detail}", file=sys.stderr)
                     sys.exit(1)
@@ -5223,8 +5302,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                 detail = f"ask timeout after {elapsed}s (kind={result.timeout_kind})"
                 _record_ask_failure(health_peer, reason, detail, elapsed, ai_root, profile_key=profile_key)
                 _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
-                if ai_root:
-                    _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=elapsed, failure_reason=reason)
+                _surface_post_spawn_failure(
+                    ai_root, to, reason, elapsed, _resolve_profile_id(to)
+                )
                 _update_pty_thread(f"failed ({reason})")
                 print(f"[HUB:ERROR] {detail}", file=sys.stderr)
                 sys.exit(1)
@@ -5235,8 +5315,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                 extra["last_invocation_exit_code"] = result.exit_code
                 _record_ask_failure(health_peer, reason, result.transport_error, elapsed, ai_root, extra, profile_key=profile_key)
                 _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
-                if ai_root:
-                    _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=elapsed, failure_reason=reason)
+                _surface_post_spawn_failure(
+                    ai_root, to, reason, elapsed, _resolve_profile_id(to)
+                )
                 _update_pty_thread(f"failed ({reason})")
                 print(f"[HUB:ERROR] {result.transport_error}", file=sys.stderr)
                 sys.exit(1)
@@ -5250,8 +5331,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                 ec_label = "unknown" if result.exit_code is None else str(result.exit_code)
                 _record_ask_failure(health_peer, reason, output or f"exit {ec_label}", elapsed, ai_root, extra, profile_key=profile_key)
                 _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
-                if ai_root:
-                    _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=elapsed, failure_reason=reason)
+                _surface_post_spawn_failure(
+                    ai_root, to, reason, elapsed, _resolve_profile_id(to)
+                )
                 _update_pty_thread(f"failed ({reason})")
                 if reason in _TRANSIENT_REASONS:
                     rls = extra.get("rate_limit_state", {})
@@ -5267,8 +5349,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                 detail = f"{to} exited successfully but returned no usable response"
                 _record_ask_failure(health_peer, reason, detail, elapsed, ai_root, profile_key=profile_key)
                 _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
-                if ai_root:
-                    _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=elapsed, failure_reason=reason)
+                _surface_post_spawn_failure(
+                    ai_root, to, reason, elapsed, _resolve_profile_id(to)
+                )
                 _update_pty_thread(f"failed ({reason})")
                 print(f"[HUB:ERROR] {detail}", file=sys.stderr)
                 sys.exit(1)
@@ -5529,16 +5612,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     _append_ask_history(
                         ai_root, to, saved_query_file_path, output_file, elapsed, False, reason
                     )
-                    if ai_root:
-                        _record_routing_metric(
-                            ai_root,
-                            "direct_ask",
-                            selected_peer=to,
-                            profile_id=_resolve_profile_id(to),
-                            outcome="failure",
-                            latency_sec=elapsed,
-                            failure_reason=reason,
-                        )
+                    _surface_post_spawn_failure(
+                        ai_root, to, reason, elapsed, _resolve_profile_id(to)
+                    )
                     print(f"[HUB:ERROR] {detail}", file=sys.stderr)
                     sys.exit(1)
                 if proc.returncode == 0:
@@ -5556,6 +5632,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     lease_status = "failed"
                     _record_ask_failure(health_peer, reason, clean_err or output, elapsed, ai_root, extra, profile_key=profile_key)
                     _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
+                    _surface_post_spawn_failure(
+                        ai_root, to, reason, elapsed, _resolve_profile_id(to)
+                    )
                     if reason in _TRANSIENT_REASONS:
                         rls = extra.get("rate_limit_state", {})
                         reset_at = rls.get("reset_at", "unknown time") if isinstance(rls, dict) else "unknown time"
@@ -5569,6 +5648,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                 reason, extra = _classify_ask_failure(clean_err_r + "\n" + output)
                 _record_ask_failure(health_peer, reason, clean_err_r, elapsed, ai_root, extra, profile_key=profile_key)
                 _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
+                _surface_post_spawn_failure(
+                    ai_root, to, reason, elapsed, _resolve_profile_id(to)
+                )
                 if reason in _TRANSIENT_REASONS:
                     rls = extra.get("rate_limit_state", {})
                     reset_at = rls.get("reset_at", "unknown time") if isinstance(rls, dict) else "unknown time"
@@ -5582,8 +5664,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
             lease_status = "failed"
             _record_ask_failure(health_peer, reason, clean_err or output, elapsed, ai_root, extra, profile_key=profile_key)
             _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
-            if ai_root:
-                _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=elapsed, failure_reason=reason)
+            _surface_post_spawn_failure(
+                ai_root, to, reason, elapsed, _resolve_profile_id(to)
+            )
             if reason in _TRANSIENT_REASONS:
                 rls = extra.get("rate_limit_state", {})
                 reset_at = rls.get("reset_at", "unknown time") if isinstance(rls, dict) else "unknown time"
@@ -5599,16 +5682,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
             _append_ask_history(
                 ai_root, to, saved_query_file_path, output_file, elapsed, False, reason
             )
-            if ai_root:
-                _record_routing_metric(
-                    ai_root,
-                    "direct_ask",
-                    selected_peer=to,
-                    profile_id=_resolve_profile_id(to),
-                    outcome="failure",
-                    latency_sec=elapsed,
-                    failure_reason=reason,
-                )
+            _surface_post_spawn_failure(
+                ai_root, to, reason, elapsed, _resolve_profile_id(to)
+            )
             print(f"[HUB:ERROR] {detail}", file=sys.stderr)
             sys.exit(1)
         else:
@@ -5686,8 +5762,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         detail = f"ask timeout after {reported_timeout}s"
         _record_ask_failure(health_peer, "terminal_timeout", detail, reported_timeout, ai_root, profile_key=profile_key)
         _append_ask_history(ai_root, to, saved_query_file_path, output_file, reported_timeout, False, "terminal_timeout")
-        if ai_root:
-            _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=reported_timeout, failure_reason="terminal_timeout")
+        _surface_post_spawn_failure(
+            ai_root, to, "terminal_timeout", reported_timeout, _resolve_profile_id(to)
+        )
         print(f"[HUB:ERROR] {detail}", file=sys.stderr)
         sys.exit(1)
     except SandboxSpawnDeniedError as e:
@@ -5697,8 +5774,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         lease_status = "failed"
         _record_ask_failure(health_peer, "sandbox_spawn_denied", str(e), elapsed, ai_root, profile_key=profile_key)
         _append_ask_history(ai_root, to, saved_query_file_path, output_file, None, False, "sandbox_spawn_denied")
-        if ai_root:
-            _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=None, failure_reason="sandbox_spawn_denied")
+        _surface_pre_dispatch_failure(
+            ai_root, to, "sandbox_spawn_denied", recovery_peer=health_peer
+        )
         print(f"[HUB:GATE] {to} sandbox denied spawn (transient) — reroute/failover", file=sys.stderr)
         sys.exit(0)
     except Exception as e:
@@ -5707,8 +5785,14 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         reason, extra = _classify_ask_failure(str(e))
         _record_ask_failure(health_peer, reason, str(e), None, ai_root, extra, profile_key=profile_key)
         _append_ask_history(ai_root, to, saved_query_file_path, output_file, None, False, reason)
-        if ai_root:
-            _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=None, failure_reason=reason)
+        if proc is not None:
+            _surface_post_spawn_failure(
+                ai_root, to, reason, None, _resolve_profile_id(to)
+            )
+        else:
+            _surface_pre_dispatch_failure(
+                ai_root, to, reason, recovery_peer=health_peer
+            )
         if reason in _TRANSIENT_REASONS:
             rls = extra.get("rate_limit_state", {})
             reset_at = rls.get("reset_at", "unknown time") if isinstance(rls, dict) else "unknown time"
@@ -5720,6 +5804,10 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         if not isinstance(exc, SystemExit):
             lease_status = "failed"
             _record_ask_failure(health_peer, "fatal_error", f"interrupted: {type(exc).__name__}", None, ai_root, profile_key=profile_key)
+            if proc is not None:
+                _surface_post_spawn_failure(
+                    ai_root, to, "fatal_error", None, _resolve_profile_id(to)
+                )
         raise
     finally:
         pid = proc.pid if proc is not None else -1
@@ -9406,6 +9494,11 @@ def main() -> None:
                 effective_target = res["target"]
                 print(f"[HUB] LOAD-BALANCED auto -> {effective_target} (weights {res.get('weights')})")
             else:
+                _surface_pre_dispatch_failure(
+                    ai_root_opt,
+                    "auto",
+                    str(res.get("reason") or "no_eligible_candidate"),
+                )
                 print(f"[HUB:WARN] auto routing unavailable ({res.get('reason')}); specify an explicit --to", file=sys.stderr)
                 sys.exit(1)
         action_ask(effective_target, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file, session_policy=args.session_policy, explicit_scope=args.scope, origin=origin, allow_governed_mutation=getattr(args, "allow_governed_mutation", False), force_tier0=getattr(args, "force_tier0", False), allow_terminal_spend=getattr(args, "allow_terminal_spend", False), _load_balanced=load_balanced)
