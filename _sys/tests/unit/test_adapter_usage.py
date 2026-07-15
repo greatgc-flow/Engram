@@ -132,6 +132,52 @@ def test_agy_extract_usage_session_mismatch_returns_empty(tmp_path, monkeypatch)
     assert hub_peer.AgyAdapter().extract_usage("", {}, session_id=session_id) == {}
 
 
+def test_agy_conversations_dir_honors_custom_home_and_default(monkeypatch, tmp_path):
+    custom_home = tmp_path / "agy-home"
+    monkeypatch.setenv("AGY_CONFIG_HOME", str(custom_home))
+    monkeypatch.setenv("GEMINI_DIR", str(tmp_path / "ignored-gemini-home"))
+
+    assert hub_peer._agy_conversations_dir() == custom_home / "conversations"
+
+    monkeypatch.delenv("AGY_CONFIG_HOME")
+    monkeypatch.delenv("GEMINI_DIR")
+    assert hub_peer._agy_conversations_dir() == (
+        hub_peer._SYS_DIR / "antigravity" / "config" / "conversations"
+    )
+
+
+def test_agy_transcript_candidates_share_custom_config_home(monkeypatch, tmp_path):
+    session_id = "custom-session"
+    custom_home = tmp_path / "agy-home"
+    monkeypatch.setenv("AGY_CONFIG_HOME", str(custom_home))
+    monkeypatch.delenv("GEMINI_DIR", raising=False)
+
+    assert hub_peer._agy_transcript_candidates(session_id) == [
+        custom_home / "brain" / session_id / ".system_generated" / "logs" / "transcript.jsonl",
+        custom_home / "conversations" / session_id / "transcript.jsonl",
+    ]
+
+
+def test_agy_extract_usage_reads_custom_home_conversation(monkeypatch, tmp_path):
+    session_id = "custom-session"
+    custom_home = tmp_path / "agy-home"
+    monkeypatch.setenv("AGY_CONFIG_HOME", str(custom_home))
+    monkeypatch.delenv("GEMINI_DIR", raising=False)
+    _write_jsonl(
+        custom_home / "conversations" / session_id / "transcript.jsonl",
+        [{
+            "conversationId": session_id,
+            "usage": {"prompt_tokens": 12, "completion_tokens": 7},
+        }],
+    )
+
+    assert hub_peer.AgyAdapter().extract_usage("", {}, session_id=session_id) == {
+        "input_tokens": 12,
+        "output_tokens": 7,
+        "reasoning_tokens": None,
+    }
+
+
 def test_codex_extract_usage_parses_jsonl_stream():
     stdout = "\n".join(
         [
@@ -201,6 +247,16 @@ def test_agy_extract_session_id_falls_back_to_newest_brain_dir(tmp_path, monkeyp
     os.utime(new, (2_000_000, 2_000_000))
     sid = hub_peer.AgyAdapter().extract_session_id("no db path here", {}, None)
     assert sid == "22222222-2222-4222-8222-222222222222"
+
+
+def test_agy_extract_session_id_fallback_honors_custom_home(tmp_path, monkeypatch):
+    custom_home = tmp_path / "agy-home"
+    session_id = "44444444-4444-4444-8444-444444444444"
+    (custom_home / "brain" / session_id).mkdir(parents=True)
+    monkeypatch.setenv("AGY_CONFIG_HOME", str(custom_home))
+    monkeypatch.delenv("GEMINI_DIR", raising=False)
+
+    assert hub_peer.AgyAdapter().extract_session_id("no db path", {}, None) == session_id
 
 
 def test_agy_extract_session_id_prefers_command_then_stdout_over_fallback(tmp_path, monkeypatch):

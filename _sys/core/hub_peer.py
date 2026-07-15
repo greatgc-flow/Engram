@@ -856,6 +856,9 @@ _AGY_CSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 def _agy_conversations_dir() -> Path:
     """agy's durable conversation store (id = <id>.db filename). Module-level so
     tests can monkeypatch it."""
+    config_dir = os.environ.get("AGY_CONFIG_HOME") or os.environ.get("GEMINI_DIR")
+    if config_dir:
+        return Path(config_dir) / "conversations"
     return _SYS_DIR / "antigravity" / "config" / "conversations"
 
 
