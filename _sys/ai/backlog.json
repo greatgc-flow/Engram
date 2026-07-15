@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-15T07:00:00Z",
+ "updated_at": "2026-07-15T07:20:00Z",
  "items": [
   {
    "id": "T7",
@@ -1773,6 +1773,23 @@
    ],
    "next_action": "DONE 66d1c50 -- 3 operator-requested fixes: (1) title Antigravity->Engram Multi-Peer Diagnostics; (2) +N pools hidden -> +N pools hidden; run diag for all (plain diag already uncapped, no new flag needed); (3) PEER HEALTH 5 lines->1-2 packed lines, abnormal-state-first sort+color, guaranteed no-peer-dropped wrap. Live-verified 80x24 render 24->20 lines. 4 new tests, 1138 green.",
    "last_verified_at": "2026-07-15T07:00:00+00:00"
+  },
+  {
+   "id": "T61",
+   "title": "diag --live: p-keypress toggle to expand QUOTA POOLS inline",
+   "status": "done",
+   "priority": "low",
+   "category": "telemetry",
+   "owner": "unassigned",
+   "evidence_commit": [
+    "b75f834"
+   ],
+   "supersedes": [],
+   "source_refs": [
+    "_sys/cli/diag.py"
+   ],
+   "next_action": "DONE b75f834 -- press p/P while --live runs to toggle QUOTA POOLS between capped and fully-expanded (uncapped) on the next tick; non-blocking msvcrt poll preserves refresh cadence; Windows-TTY-only, gracefully absent elsewhere (no misleading hint text). Testable via run_watch(key_reader=..., clock=...) seam. Live-verified with TTY-simulated stdout + real msvcrt reader. 1141 green.",
+   "last_verified_at": "2026-07-15T07:20:00+00:00"
   }
  ]
 }
