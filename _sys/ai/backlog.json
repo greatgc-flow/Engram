@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-15T04:20:00Z",
+ "updated_at": "2026-07-15T04:30:00Z",
  "items": [
   {
    "id": "T7",
@@ -1656,18 +1656,20 @@
   {
    "id": "T54",
    "title": "failover error surfacing: dispatch_phase + execution_certainty + retry_suppressed_reason",
-   "status": "proposed",
+   "status": "done",
    "priority": "low",
    "category": "routing",
    "owner": "unassigned",
-   "evidence_commit": [],
+   "evidence_commit": [
+    "6721a98"
+   ],
    "supersedes": [],
    "source_refs": [
     "_sys/core/hub.py",
     "_sys/docs-v2/general/routing.md"
    ],
-   "next_action": "From the D4 re-eval (cx, 2026-07-15). NOT a retry engine (D4 stays deferred — unsafe without enforceable idempotency). Small surfacing patch so a failed ask is clearly actionable: pre-dispatch block -> message target_not_invoked=true + suggest peer-recover / --to auto; post-spawn failure -> execution_state=uncertain; automatic retry suppressed to avoid duplicate side effects. Telemetry fields: dispatch_phase(pre_dispatch|post_spawn), execution_certainty(not_started|uncertain), retry_suppressed_reason(duplicate_execution_risk). Low urgency; makes the safety boundary obvious + preserves manual peer-recover.",
-   "last_verified_at": "2026-07-15T04:10:00+00:00"
+   "next_action": "DONE 6721a98: failover error surfacing (surfacing+telemetry ONLY, not a retry engine — D4 stays deferred). Pre-dispatch block -> target_not_invoked=true/phase=pre_dispatch/not_started + peer-recover|--to auto hint; post-spawn failure -> execution_state=uncertain/retry_suppressed/post_spawn (PTY child-start unprovable -> conservatively post_spawn). No route/exit/signature change. From the D4 re-eval (cx, 2026-07-15). NOT a retry engine (D4 stays deferred — unsafe without enforceable idempotency). Small surfacing patch so a failed ask is clearly actionable: pre-dispatch block -> message target_not_invoked=true + suggest peer-recover / --to auto; post-spawn failure -> execution_state=uncertain; automatic retry suppressed to avoid duplicate side effects. Telemetry fields: dispatch_phase(pre_dispatch|post_spawn), execution_certainty(not_started|uncertain), retry_suppressed_reason(duplicate_execution_risk). Low urgency; makes the safety boundary obvious + preserves manual peer-recover.",
+   "last_verified_at": "2026-07-15T04:30:00+00:00"
   }
  ]
 }
