@@ -125,6 +125,33 @@ gap. This means the **§4.6 ag score of 80 may be invalid harness noise.**
   **`flaky` ≠ a low score**; only `stable_certified` feeds D1. Transport failures
   retry (≤5 attempts for 3 complete runs); a genuine scored failure never retries.
 
+### 4.1 agy has NO byte-exact large-prompt delivery — a hard-benchmark PREREQUISITE (T51)
+
+Empirically verified (ag, 2026-07-15) — `agy` cannot receive a large byte-exact
+prompt for the hard benchmark:
+- **STDIN: unsupported.** `echo x | agy --dangerously-skip-permissions -p -` → the
+  model sees an empty prompt (answers "How can I help you today?"). `AgyAdapter.
+  build_cmd` documents inline-only (`use_stdin=False`).
+- **No native prompt-file flag** (`--prompt-file` / `-f` / `@file`) in `agy --help`.
+- **PTY stdin is mangled** on Windows ConPTY (CR/LF translation, echo, no clean
+  EOF) — not a byte-exact channel.
+- **Inline `-p <text>`** hits the ~8191-char Windows command-line limit + arg
+  escaping — fine for the *small* current canary (agy runs 80/80/80 inline), but
+  unusable for a hard-benchmark-sized prompt.
+
+So a large byte-exact agy measurement is **BLOCKED on an ABSENT agy capability, not
+a harness bug**. cx + ag both ruled STOP: T51 ends at the diagnostic-record slice
+(landed — `prompt_delivery_mode`/`prompt_bytes`/`config_home` on the PTY invocation
+record + the shared `_is_transport_unstable` classifier). Prerequisites before any
+hard benchmark that needs agy: (a) a native `agy --prompt-file`/stdin capability, or
+(b) a proven byte-exact PTY-write conformance probe (no-token, local). A **seeded
+read-only `AGY_CONFIG_HOME`** (a `settings.json` with `toolPermission`/
+`trustedWorkspaces`; auth via env/G1 credits, no seeded secrets) is a feasible
+future fix to stop fresh-home re-onboarding CRLF-nondeterminism — not needed now.
+Cross-provider diagnostics should share ONE dependency-light record + classifier
+(cx: use a `config_home_kind` of `default|ipc_stateless|canary_disposable`, not a
+raw path), applied without coupling normal asks to canary code.
+
 ---
 
 ## 5. Phasing & what is NOT worth building now

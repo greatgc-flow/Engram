@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-15T11:00:00Z",
+ "updated_at": "2026-07-15T12:40:00Z",
  "items": [
   {
    "id": "T7",
@@ -1595,18 +1595,20 @@
   {
    "id": "T51",
    "title": "agy PTY measurement umbrella: normalized invocation record + byte-exact stdin delivery + seeded config home; clean re-measure",
-   "status": "proposed",
+   "status": "done",
    "priority": "medium",
    "category": "routing",
    "owner": "unassigned",
-   "evidence_commit": [],
+   "evidence_commit": [
+    "2b70a68"
+   ],
    "supersedes": [],
    "source_refs": [
     "_sys/checks/check_peer_capability_canary.py",
     "_sys/docs-v2/ops/intelligence-scores.md"
    ],
-   "next_action": "From the T49 root-cause round-robin (cx+ag+cc, 2026-07-14, commit 69c0f45 fixed the immediate timeout mis-scoring + reverted to inline + 600s). Umbrella (same family as T36): (1) ONE normalized PTY invocation record used by all agy measurements {timed_out,timeout_kind,transport_error,exit_code,elapsed,output_bytes,prompt_delivery_mode(inline|file|stdin_pipe)+bytes+hash,config_home_path,brain_session_id,chunk_telemetry} + the shared _is_transport_unstable classifier (partly done). (2) prompt-DELIVERY spike: inline -p hits Windows cmdline limits for multi-KB byte-exact prompts (ag), prompt-file doubled wall time -> verify a byte-exact stdin delivery (agy -p - < file, explicit EOF). (3) SEED AGY_CONFIG_HOME with a pre-configured read-only profile to bypass agy onboarding (ag: fresh empty home per run causes re-onboarding -> CRLF non-determinism); audit files on-disk not via PTY stdout (ConPTY LF->CRLF mangling). (4) THEN re-measure agy with 3 complete same-runtime runs to get a trustworthy agentic score (current: mildly-flaky-80-95, uncertified). Only complete non-transport runs may become empirical evidence.",
-   "last_verified_at": "2026-07-14T16:30:00"
+   "next_action": "DONE 2b70a68 (diagnostic-record slice: prompt_delivery_mode/prompt_bytes/config_home + shared _is_transport_unstable). 4-peer round (cx+ag empirical, ag.opus 3P errored) ruled STOP: agy has NO byte-exact large-prompt delivery (stdin unsupported [empirically: echo x|agy -p - sees empty], no --prompt-file flag, ConPTY-mangled, inline hits 8191-char limit) -> hard-benchmark large agy prompt is BLOCKED on an ABSENT agy capability, NOT a harness bug. Documented hard-benchmark-decisions.md §4.1. Prereq before a hard benchmark needing agy: native agy --prompt-file/stdin OR a proven byte-exact PTY-write conformance probe; seeded read-only AGY_CONFIG_HOME feasible (no creds) to stop re-onboarding CRLF-nondeterminism. From the T49 root-cause round-robin (cx+ag+cc, 2026-07-14, commit 69c0f45 fixed the immediate timeout mis-scoring + reverted to inline + 600s). Umbrella (same family as T36): (1) ONE normalized PTY invocation record used by all agy measurements {timed_out,timeout_kind,transport_error,exit_code,elapsed,output_bytes,prompt_delivery_mode(inline|file|stdin_pipe)+bytes+hash,config_home_path,brain_session_id,chunk_telemetry} + the shared _is_transport_unstable classifier (partly done). (2) prompt-DELIVERY spike: inline -p hits Windows cmdline limits for multi-KB byte-exact prompts (ag), prompt-file doubled wall time -> verify a byte-exact stdin delivery (agy -p - < file, explicit EOF). (3) SEED AGY_CONFIG_HOME with a pre-configured read-only profile to bypass agy onboarding (ag: fresh empty home per run causes re-onboarding -> CRLF non-determinism); audit files on-disk not via PTY stdout (ConPTY LF->CRLF mangling). (4) THEN re-measure agy with 3 complete same-runtime runs to get a trustworthy agentic score (current: mildly-flaky-80-95, uncertified). Only complete non-transport runs may become empirical evidence.",
+   "last_verified_at": "2026-07-15T12:40:00"
   },
   {
    "id": "T52",
