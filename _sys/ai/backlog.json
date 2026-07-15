@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-15T04:30:00Z",
+ "updated_at": "2026-07-15T05:00:00Z",
  "items": [
   {
    "id": "T7",
@@ -1670,6 +1670,51 @@
    ],
    "next_action": "DONE 6721a98: failover error surfacing (surfacing+telemetry ONLY, not a retry engine — D4 stays deferred). Pre-dispatch block -> target_not_invoked=true/phase=pre_dispatch/not_started + peer-recover|--to auto hint; post-spawn failure -> execution_state=uncertain/retry_suppressed/post_spawn (PTY child-start unprovable -> conservatively post_spawn). No route/exit/signature change. From the D4 re-eval (cx, 2026-07-15). NOT a retry engine (D4 stays deferred — unsafe without enforceable idempotency). Small surfacing patch so a failed ask is clearly actionable: pre-dispatch block -> message target_not_invoked=true + suggest peer-recover / --to auto; post-spawn failure -> execution_state=uncertain; automatic retry suppressed to avoid duplicate side effects. Telemetry fields: dispatch_phase(pre_dispatch|post_spawn), execution_certainty(not_started|uncertain), retry_suppressed_reason(duplicate_execution_risk). Low urgency; makes the safety boundary obvious + preserves manual peer-recover.",
    "last_verified_at": "2026-07-15T04:30:00+00:00"
+  },
+  {
+   "id": "T55",
+   "title": "statusline all-buckets shape-driven formatter (+ schema v2 + fixtures)",
+   "status": "proposed",
+   "priority": "medium",
+   "category": "routing",
+   "owner": "unassigned",
+   "evidence_commit": [],
+   "supersedes": [],
+   "source_refs": [
+    "_sys/docs-v2/ops/quota-balance-decisions.md"
+   ],
+   "next_action": "the handoff (ops/statusline-quota-display-handoff-2026-07-15.md) unapplied impl. In _sys/ai/common/statusline/statusline-unified.sh build ONE canonical bucket list (C-5H/C-7D/F-7D/G-5H/G-7D/3P-5H/3P-7D) with NO PEER_ID branch: first valid numeric per label, accept used_percentage/used_percent/remaining_fraction[(1-r)*100], %-only, 0% preserved, missing omitted, quota:N/A only if none, NEVER fabricate F-7D. AG JSON uses remaining_fraction + keys 3p-5h/3p-weekly/gemini-5h/gemini-weekly. Presentation-only (no snapshot/diag/routing/CX change). schema v2 (statusline-schema.json) + tests (test_statusline.py CC-no-F / CC-real-fable_weekly / all-4-AG / 0%-preserved / partial-omit / quota:N/A / end-to-end F-7D normalization). Guard set -euo pipefail against shape mismatch; add a width fixture.",
+   "last_verified_at": "2026-07-15T05:00:00+00:00"
+  },
+  {
+   "id": "T56",
+   "title": "pacing_penalty_enabled: true explicit + fix stale P2-pending pacing docs",
+   "status": "proposed",
+   "priority": "low",
+   "category": "routing",
+   "owner": "unassigned",
+   "evidence_commit": [],
+   "supersedes": [],
+   "source_refs": [
+    "_sys/docs-v2/ops/quota-balance-decisions.md"
+   ],
+   "next_action": "routing-config.json has no pacing_penalty_enabled key; snapshot.py defaults it True (H_eff=H_base/max(1,pacing)). Make it EXPLICIT (config truthfulness) and fix any stale P2-pending/opt-in pacing doc/comment. NO behavior change — documents the current default.",
+   "last_verified_at": "2026-07-15T05:00:00+00:00"
+  },
+  {
+   "id": "T57",
+   "title": "load_balance_route telemetry enrichment (pacing/probabilities/families/reserve-clamp)",
+   "status": "proposed",
+   "priority": "low",
+   "category": "routing",
+   "owner": "unassigned",
+   "evidence_commit": [],
+   "supersedes": [],
+   "source_refs": [
+    "_sys/docs-v2/ops/quota-balance-decisions.md"
+   ],
+   "next_action": "enrich the load_balance_route routing-metric to record pacing_applied, probabilities, representative_profiles, the selected profile quota_families, and reserve-clamp status, so the AUTO distribution is auditable + the next family-spread decision is measured. Prereq to any family-spread term (deferred).",
+   "last_verified_at": "2026-07-15T05:00:00+00:00"
   }
  ]
 }
