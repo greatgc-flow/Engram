@@ -441,3 +441,64 @@ def test_live_five_section_frame_fits_80x24_with_multiple_peers_pools_and_sessio
     assert "QUOTA POOLS" in out.getvalue()
     assert "ACTIVE SESSIONS" in out.getvalue()
     assert "OBSERVATION" in out.getvalue()
+
+
+def test_live_peer_health_packs_into_one_line_and_sorts_abnormal_first():
+    """T60: PEER HEALTH is packed into as few lines as fit, abnormal states first."""
+    diag = load_diag()
+    snapshot = {"peers": [
+        {"peer": "cc", "domains": {"health": {"age_sec": 28}},
+         "raw": {"peer": "cc", "gate": True, "quarantined": False}},
+        {"peer": "cx", "domains": {"health": {"age_sec": 38}},
+         "raw": {"peer": "cx", "gate": True, "quarantined": True}},
+        {"peer": "ag", "domains": {"health": {"age_sec": 31}},
+         "raw": {"peer": "ag", "gate": True, "quarantined": False}},
+    ]}
+    out = io.StringIO()
+    diag.render_live_peer_health(out, snapshot, columns=80)
+    text = out.getvalue()
+    lines = text.splitlines()
+    assert len(lines) == 1
+    assert "-- PEER HEALTH --" in lines[0]
+    # abnormal (CX:QUARANTINE) sorts before the OPEN peers
+    assert text.index("CX:QUARANTINE") < text.index("CC:OPEN")
+    assert text.index("CX:QUARANTINE") < text.index("AG:OPEN")
+    assert "38s" in text and "28s" in text and "31s" in text
+
+
+def test_live_peer_health_wraps_when_it_does_not_fit_narrow_columns():
+    diag = load_diag()
+    snapshot = {"peers": [
+        {"peer": p, "domains": {"health": {"age_sec": 5}},
+         "raw": {"peer": p, "gate": True, "quarantined": False}}
+        for p in ("cc", "cx", "ag")
+    ]}
+    out = io.StringIO()
+    diag.render_live_peer_health(out, snapshot, columns=20)
+    lines = out.getvalue().splitlines()
+    assert len(lines) > 1
+    for line in lines:
+        assert len(line) <= 20 or "..." in line
+    # every peer still appears somewhere (none dropped by the wrap)
+    joined = "\n".join(lines)
+    assert "CC:OPEN" in joined and "CX:OPEN" in joined and "AG:OPEN" in joined
+
+
+def test_live_quota_pools_hidden_line_points_to_full_diag():
+    diag = load_diag()
+    snapshot = {"peers": [
+        {"peer": "cc", "raw": {"peer": "cc", "source": "cli_live", "quotas": [
+            {"label": f"P{i}", "used_frac": 0.1 * i, "pacing": None, "reset": "later"}
+            for i in range(1, 6)
+        ]}},
+    ]}
+    out = io.StringIO()
+    diag.render_live_quota_pools(out, snapshot, columns=80, line_budget=4)
+    text = out.getvalue()
+    assert "pools hidden; run diag for all" in text
+
+
+def test_dashboard_title_is_engram_not_antigravity(monkeypatch, tmp_path):
+    diag = load_diag()
+    assert "Engram Multi-Peer Diagnostics" in Path(diag.__file__).read_text(encoding="utf-8")
+    assert "Antigravity Collaboration Environment Diagnostics" not in Path(diag.__file__).read_text(encoding="utf-8")

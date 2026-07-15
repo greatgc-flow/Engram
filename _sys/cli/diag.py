@@ -654,22 +654,53 @@ def _health_age_text(value):
     return f"{seconds // 86400}d"
 
 
+_HEALTH_STATE_COLOR = {"OPEN": "green", "QUARANTINE": "red", "GATE SHUT": "yellow"}
+_HEALTH_STATE_RANK = {"QUARANTINE": 0, "GATE SHUT": 1, "UNKNOWN": 2, "OPEN": 3}
+
+
+def _peer_health_token(rec):
+    """One (sort_rank, peer, colored_display_token, raw_token) tuple per peer.
+    Abnormal states sort first; state text is elided defensively (T60) even
+    though today's vocabulary is short/fixed (_peer_state_label)."""
+    info = _live_raw_peer(rec)
+    peer = str(info.get("peer") or (rec.get("peer") if isinstance(rec, dict) else "?") or "?").upper()
+    state = _elide_display(_peer_state_label(info), 12)
+    health = (rec.get("domains") or {}).get("health") if isinstance(rec, dict) else {}
+    health_age = (health or {}).get("age_sec")
+    if not isinstance(health_age, (int, float)):
+        health_age = info.get("health_age_sec")
+    raw = f"{peer}:{state}({_health_age_text(health_age)})"
+    colored = _c(raw, _HEALTH_STATE_COLOR.get(state, "dim")) if state in _HEALTH_STATE_COLOR else raw
+    rank = _HEALTH_STATE_RANK.get(state, 2)
+    return (rank, peer, colored, raw)
+
+
 def render_live_peer_health(out, snapshot, columns):
-    """Render peer-granularity health only; session/profile facts stay elsewhere."""
-    lines = [
-        _elide_display("-- PEER HEALTH --", columns),
-        _elide_display(f"{_pad('PEER', 5)} {_pad('HEALTH', 11)} AGE", columns),
-    ]
-    for rec in snapshot.get("peers") or []:
-        info = _live_raw_peer(rec)
-        peer = str(info.get("peer") or (rec.get("peer") if isinstance(rec, dict) else "?") or "?").upper()
-        state = _peer_state_cell(info)
-        health = (rec.get("domains") or {}).get("health") if isinstance(rec, dict) else {}
-        health_age = (health or {}).get("age_sec")
-        if not isinstance(health_age, (int, float)):
-            health_age = info.get("health_age_sec")
-        lines.append(_elide_display(
-            f"{_pad(peer, 5)} {state} {_health_age_text(health_age)}", columns))
+    """Render peer-granularity health only, packed into as few lines as fit
+    (T60): abnormal peers sort first and stay colored/visible; wraps to
+    additional bounded lines (each segment guaranteed at least one per line,
+    so a narrow terminal never drops a peer) rather than truncating."""
+    tokens = sorted(
+        (_peer_health_token(rec) for rec in snapshot.get("peers") or []),
+        key=lambda t: (t[0], t[1]),
+    )
+    if not tokens:
+        out.write(_elide_display("-- PEER HEALTH -- none", columns) + "\n")
+        return
+
+    segments = [("-- PEER HEALTH --", _dw("-- PEER HEALTH --"))]
+    segments.extend((colored, _dw(raw)) for _rank, _peer, colored, raw in tokens)
+
+    lines, current, current_width = [], [], 0
+    for seg, width in segments:
+        add_width = width + (2 if current else 0)
+        if columns is not None and current and current_width + add_width > columns:
+            lines.append("  ".join(current))
+            current, current_width, add_width = [], 0, width
+        current.append(seg)
+        current_width += add_width
+    if current:
+        lines.append("  ".join(current))
     out.write("\n".join(lines) + "\n")
 
 
@@ -731,7 +762,7 @@ def render_live_quota_pools(out, snapshot, columns, line_budget=None):
     lines = [section_header, column_header]
     lines.extend(_live_quota_pool_line(row, columns) for row in selected)
     if hidden:
-        lines.append(_elide_display(f"  +{hidden} pools hidden", columns))
+        lines.append(_elide_display(f"  +{hidden} pools hidden; run diag for all", columns))
     out.write("\n".join(lines[:line_budget] if line_budget is not None else lines) + "\n")
 
 
@@ -1120,7 +1151,7 @@ def render_dashboard(stdout=None, watch_mode=False, snapshot=None):
 
     with redirect_stdout(out):
         print("=" * 60)
-        print(_c(" Antigravity Collaboration Environment Diagnostics", "bold"))
+        print(_c(" Engram Multi-Peer Diagnostics", "bold"))
         print("=" * 60)
         print(_c(_elide_display(" Reset times shown in local time. Set NO_COLOR=1 to disable color.", columns), "dim"))
 
