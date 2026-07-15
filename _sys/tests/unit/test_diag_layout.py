@@ -498,6 +498,35 @@ def test_live_quota_pools_hidden_line_points_to_full_diag():
     assert "pools hidden; run diag for all" in text
 
 
+def test_live_quota_pools_expand_toggle_shows_all_or_hides_with_truthful_hint():
+    diag = load_diag()
+    snapshot = {"peers": [{"peer": "cc", "raw": {
+        "peer": "cc", "source": "cli_live", "quotas": [
+            {"label": f"P{i}", "used_frac": 0.1 * i, "pacing": None, "reset": "later"}
+            for i in range(1, 6)
+        ],
+    }}]}
+    collapsed = io.StringIO()
+    expanded = io.StringIO()
+
+    diag.render_live_quota_pools(
+        collapsed, snapshot, columns=80, line_budget=4,
+        expanded=False, toggle_available=True,
+    )
+    diag.render_live_quota_pools(
+        expanded, snapshot, columns=80, line_budget=4,
+        expanded=True, toggle_available=True,
+    )
+
+    collapsed_text = collapsed.getvalue()
+    expanded_text = expanded.getvalue()
+    assert "P1" not in collapsed_text
+    assert "pools hidden (press 'p' to expand)" in collapsed_text
+    assert "(all 5 pools; press 'p' to collapse)" in expanded_text
+    assert all(f"P{i}" in expanded_text for i in range(1, 6))
+    assert "pools hidden" not in expanded_text
+
+
 def test_dashboard_title_is_engram_not_antigravity(monkeypatch, tmp_path):
     diag = load_diag()
     assert "Engram Multi-Peer Diagnostics" in Path(diag.__file__).read_text(encoding="utf-8")

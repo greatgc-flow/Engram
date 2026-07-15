@@ -736,20 +736,28 @@ def _live_quota_pool_line(row, columns):
     return _elide_display(text, columns)
 
 
-def render_live_quota_pools(out, snapshot, columns, line_budget=None):
+def render_live_quota_pools(
+    out, snapshot, columns, line_budget=None, *, expanded=False, toggle_available=False,
+):
     """Render globally-urgent quota pools, with an optional compact cap."""
-    if line_budget is not None:
+    if line_budget is not None and not expanded:
         line_budget = max(0, int(line_budget))
         if line_budget == 0:
             return
     rows = _live_quota_pool_rows(snapshot)
-    section_header = _elide_display("-- QUOTA POOLS --", columns)
+    section_header = "-- QUOTA POOLS --"
+    if expanded:
+        suffix = f" (all {len(rows)} pools"
+        if toggle_available:
+            suffix += "; press 'p' to collapse"
+        section_header += suffix + ")"
+    section_header = _elide_display(section_header, columns)
     column_header = _elide_display("OWNER  POOL         USED PACE         RESET                SRC", columns)
     if not rows:
         out.write(section_header + "\n" + _elide_display("  none", columns) + "\n")
         return
 
-    if line_budget is None:
+    if expanded or line_budget is None:
         selected = rows
         hidden = 0
     else:
@@ -762,8 +770,10 @@ def render_live_quota_pools(out, snapshot, columns, line_budget=None):
     lines = [section_header, column_header]
     lines.extend(_live_quota_pool_line(row, columns) for row in selected)
     if hidden:
-        lines.append(_elide_display(f"  +{hidden} pools hidden; run diag for all", columns))
-    out.write("\n".join(lines[:line_budget] if line_budget is not None else lines) + "\n")
+        hidden_text = f"  +{hidden} pools hidden"
+        hidden_text += " (press 'p' to expand)" if toggle_available else "; run diag for all"
+        lines.append(_elide_display(hidden_text, columns))
+    out.write("\n".join(lines[:line_budget] if line_budget is not None and not expanded else lines) + "\n")
 
 
 def render_routing_alerts(out, snapshot, columns, rendered_at=None):
@@ -1008,7 +1018,10 @@ def render_active_sessions(out, snapshot, *, now=None, columns=80, line_budget=N
 render_recent_sessions = render_active_sessions
 
 
-def render_summary_frame(out, snapshot, *, terminal_lines=None, columns=80, now=None):
+def render_summary_frame(
+    out, snapshot, *, terminal_lines=None, columns=80, now=None,
+    quota_expanded=False, quota_toggle_available=False,
+):
     """Render the standalone live HUD in peer, pool, session, alert, provenance order."""
     rendered_at = _frame_dt() if now is None else _frame_dt(now)
     rendered_at = rendered_at or _frame_dt()
@@ -1035,7 +1048,14 @@ def render_summary_frame(out, snapshot, *, terminal_lines=None, columns=80, now=
         quota_budget = min(5, max(0, available - session_floor))
 
     quota_buf = io.StringIO()
-    render_live_quota_pools(quota_buf, snapshot, columns, line_budget=quota_budget)
+    render_live_quota_pools(
+        quota_buf,
+        snapshot,
+        columns,
+        line_budget=quota_budget,
+        expanded=quota_expanded,
+        toggle_available=quota_toggle_available,
+    )
     quota_text = quota_buf.getvalue()
 
     if terminal_lines is None:
@@ -1274,7 +1294,45 @@ def _blit_frame(out, text, sync):
     out.flush()
 
 
-def run_watch(interval=None, json_mode=False, stdout=None, sleep=time.sleep, max_frames=None, summary_only=False):
+def _windows_live_key_reader():
+    """Return a non-blocking Windows-console key reader, or absent elsewhere."""
+    if os.name != "nt":
+        return None
+    try:
+        import msvcrt
+    except ImportError:
+        return None
+
+    def read_key():
+        return msvcrt.getwch() if msvcrt.kbhit() else None
+
+    return read_key
+
+
+def _wait_for_live_tick(interval, sleep, clock, key_reader, quota_expanded):
+    """Preserve tick cadence while accepting at most one pool toggle per wait."""
+    deadline = clock() + interval
+    handled = False
+    while True:
+        if not handled:
+            try:
+                key = key_reader()
+            except (OSError, EOFError):
+                key = None
+                handled = True
+            if isinstance(key, str) and key.lower() == "p":
+                quota_expanded = not quota_expanded
+                handled = True
+        remaining = deadline - clock()
+        if remaining <= 0:
+            return quota_expanded
+        sleep(min(0.1, remaining))
+
+
+def run_watch(
+    interval=None, json_mode=False, stdout=None, sleep=time.sleep, max_frames=None,
+    summary_only=False, key_reader=None, clock=time.monotonic,
+):
     out = stdout or sys.stdout
     wcfg = telemetry_config()["watch"]
     if interval is None:
@@ -1283,6 +1341,12 @@ def run_watch(interval=None, json_mode=False, stdout=None, sleep=time.sleep, max
     is_tty = bool(getattr(out, "isatty", lambda: False)())
     sync_mode = wcfg.get("sync_output", "auto")
     sync = is_tty and (sync_mode == "on" or (sync_mode == "auto"))
+    if summary_only and is_tty and not json_mode:
+        key_reader = key_reader or _windows_live_key_reader()
+    else:
+        key_reader = None
+    quota_toggle_available = key_reader is not None
+    quota_expanded = False
     frames = 0
     try:
         if is_tty and not json_mode and not summary_only:
@@ -1303,6 +1367,8 @@ def run_watch(interval=None, json_mode=False, stdout=None, sleep=time.sleep, max
                         snap,
                         terminal_lines=term_size[1],
                         columns=term_size[0],
+                        quota_expanded=quota_expanded,
+                        quota_toggle_available=quota_toggle_available,
                     )
                     text = "\n".join(
                         _elide_display(line, term_size[0])
@@ -1323,7 +1389,12 @@ def run_watch(interval=None, json_mode=False, stdout=None, sleep=time.sleep, max
             frames += 1
             if max_frames is not None and frames >= max_frames:
                 break
-            sleep(interval)
+            if summary_only and key_reader is not None:
+                quota_expanded = _wait_for_live_tick(
+                    interval, sleep, clock, key_reader, quota_expanded,
+                )
+            else:
+                sleep(interval)
     except KeyboardInterrupt:
         return 130
     return 0

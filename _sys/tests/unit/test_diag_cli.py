@@ -1530,6 +1530,57 @@ def test_live_resize_recomputes_height_budget_without_full_dashboard(monkeypatch
     assert " PROFILES & ROUTING" not in "".join(frames)
 
 
+def test_live_pool_keypress_toggles_expanded_pools_on_next_tick(monkeypatch):
+    diag = load_diag()
+    snapshot = _fake_snapshot()
+    snapshot["peers"][0]["raw"]["quotas"] = [
+        {"label": f"P{i}", "used_frac": i / 10, "pacing": None, "reset": "later"}
+        for i in range(1, 6)
+    ]
+    monkeypatch.setattr(diag, "collect_snapshot", lambda *, use_cache: snapshot)
+    monkeypatch.setattr(diag, "shutil", type("S", (), {
+        "get_terminal_size": staticmethod(lambda: (80, 24)),
+    }))
+    frames = []
+    monkeypatch.setattr(diag, "_blit_frame", lambda _out, text, _sync: frames.append(text))
+    keys = iter(["p", "p"])
+    clock = [0.0]
+
+    diag.run_watch(
+        interval=2, stdout=_FakeTTY(), max_frames=3, summary_only=True,
+        key_reader=lambda: next(keys, None), clock=lambda: clock[0],
+        sleep=lambda seconds: clock.__setitem__(0, clock[0] + seconds),
+    )
+
+    assert len(frames) == 3
+    assert "pools hidden (press 'p' to expand)" in frames[0]
+    assert "(all 5 pools; press 'p' to collapse)" in frames[1]
+    assert "P1" in frames[1]
+    assert "pools hidden (press 'p' to expand)" in frames[2]
+
+
+def test_live_pool_keypress_is_disabled_for_non_tty_without_misleading_hint(monkeypatch):
+    diag = load_diag()
+    snapshot = _fake_snapshot()
+    snapshot["peers"][0]["raw"]["quotas"] = [
+        {"label": f"P{i}", "used_frac": i / 10, "pacing": None, "reset": "later"}
+        for i in range(1, 6)
+    ]
+    monkeypatch.setattr(diag, "collect_snapshot", lambda *, use_cache: snapshot)
+    sleeps = []
+    key_calls = []
+    out = io.StringIO()
+
+    diag.run_watch(
+        interval=2, stdout=out, max_frames=2, summary_only=True,
+        key_reader=lambda: key_calls.append("called") or "p", sleep=sleeps.append,
+    )
+
+    assert sleeps == [2]
+    assert key_calls == []
+    assert "press 'p'" not in out.getvalue()
+
+
 def test_recent_sessions_sort_missing_last_and_cap_three(monkeypatch):
     diag = load_diag()
     monkeypatch.setattr(
