@@ -1,6 +1,6 @@
 {
  "schema_version": 1,
- "updated_at": "2026-07-15T04:00:00Z",
+ "updated_at": "2026-07-15T04:10:00Z",
  "items": [
   {
    "id": "T7",
@@ -256,9 +256,9 @@
     "backlog_reorg_2026_07_04.md",
     "pretdd-prep-2026-07-08-round2.md"
    ],
-   "next_action": "DEFER (ag+cc.fable unanimous, 2026-07-08): D5's per-profile health gating plus the existing pre-dispatch headroom failover ranking (hub.py:3925, r-f291 W4) already cover 'don't route to a dead profile'. A transparent runtime auto-retry/re-route engine can't distinguish 'never executed' from 'executed but response lost', so re-dispatching non-idempotent mutating asks risks double execution. Narrower version if ever wanted: retry only explicitly read-only/idempotent asks, fail-fast with clear error surfacing otherwise - not worth building now absent measured failure-rate evidence (DIR-004).",
+   "next_action": "RE-AFFIRMED DEFER 2026-07-15 (cx independent re-eval + original ag+cc.fable = 3-way). This sessions observed ask failures are (a) pre-dispatch RED/quarantine — already safe via --to auto / fail-closed explicit targets — and (b) post-spawn timeout/nonzero-exit/killed = execution UNCERTAIN (side effects may exist) -> never auto-retry a mutating ask (double-execution). A safe narrow failover would need enforced read-only execution OR an end-to-end idempotency key honored by the peer/tool; those prerequisites are ABSENT, so a flag now would advertise safety the hub cannot provide. 31/31 targeted tests confirm existing pre-dispatch failover + fail-closed behavior. Real (non-urgent) gap = better ERROR SURFACING (see T54), not a retry engine. STILL not worth building (DIR-004: no enforceable idempotency).",
    "risk": null,
-   "last_verified_at": "2026-07-08T17:00:00+09:00"
+   "last_verified_at": "2026-07-15T04:10:00+00:00"
   },
   {
    "id": "D5",
@@ -1649,6 +1649,22 @@
    ],
    "next_action": "(A) DONE f85a94e: capability-core emits per-axis single-axis records (capability-core.v1:<axis>) + run_long_context carries runtime_fingerprint/score/passed/expires_at -> resolver now CERTIFIES capability-core axes; verified END-TO-END (the audit-flagged untested integration). (B) REMAINING (latent, low): AGY_CONFIG_HOME honored by hub_peer.extract_session_id fallback / extract_usage / _agy_conversations_dir (only _agy_brain_dir respects it) - not active in current flow.",
    "last_verified_at": "2026-07-15T02:00:00+00:00"
+  },
+  {
+   "id": "T54",
+   "title": "failover error surfacing: dispatch_phase + execution_certainty + retry_suppressed_reason",
+   "status": "proposed",
+   "priority": "low",
+   "category": "routing",
+   "owner": "unassigned",
+   "evidence_commit": [],
+   "supersedes": [],
+   "source_refs": [
+    "_sys/core/hub.py",
+    "_sys/docs-v2/general/routing.md"
+   ],
+   "next_action": "From the D4 re-eval (cx, 2026-07-15). NOT a retry engine (D4 stays deferred — unsafe without enforceable idempotency). Small surfacing patch so a failed ask is clearly actionable: pre-dispatch block -> message target_not_invoked=true + suggest peer-recover / --to auto; post-spawn failure -> execution_state=uncertain; automatic retry suppressed to avoid duplicate side effects. Telemetry fields: dispatch_phase(pre_dispatch|post_spawn), execution_certainty(not_started|uncertain), retry_suppressed_reason(duplicate_execution_risk). Low urgency; makes the safety boundary obvious + preserves manual peer-recover.",
+   "last_verified_at": "2026-07-15T04:10:00+00:00"
   }
  ]
 }
