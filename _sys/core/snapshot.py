@@ -1827,8 +1827,8 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
     whenever any non-terminal peer has headroom >= floor — the "terminal tokens
     always minimal" requirement), numeric cost tie-break, and a DETERMINISTIC
     seeded weighted-random draw (seed = sha256(snapshot_hash:ask_id)) so every
-    decision is reproducible and auditable. Pure; no I/O. (P1 omits pacing=P2,
-    in-flight deduction/task-size=P1.5, warm-up=P2.)
+    decision is reproducible and auditable. Pure; no I/O. Pacing and in-flight
+    deductions are live; warm-up remains future work.
 
     Returns an audit dict: selected row/peer, per-peer weights + probabilities,
     seed, draw, terminal_excluded reason, candidate peers, and a reason code.
@@ -1972,8 +1972,8 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
             representatives[peer] = r
     peers = list(representatives.keys())
 
-    # Effective headroom = H_base / max(1, pacing) (P2, opt-in), then numeric cost
-    # tie-break. Pacing de-weights a peer burning faster than its reset allows;
+    # Effective headroom = H_base / max(1, pacing), then numeric cost tie-break.
+    # The pacing penalty is default-on (and explicitly enabled in routing config);
     # absent pacing = 1.0 (no penalty, DIR-004). Terminal exclusion compares H_eff.
     pacing_enabled = config.get("pacing_penalty_enabled", True)
     h_eff, pacing_applied = {}, {}

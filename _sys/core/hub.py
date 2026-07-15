@@ -4321,10 +4321,23 @@ def resolve_auto_target(ai_root, config=None, snapshot_obj=None, now=None, task_
             snap_hash = snapshot.snapshot_hash(snap)
             if ai_root:
                 try:
+                    quota_families = selected_row.get("quota_families")
+                    if not isinstance(quota_families, (list, tuple)):
+                        quota_families = []
+                    reserve_clamp_applied = any(
+                        event.get("event") == "shared_quota_reserve_clamp"
+                        for event in (decision.get("telemetry_events") or [])
+                        if isinstance(event, dict)
+                    )
                     _record_routing_metric(ai_root, "load_balance_route", target=target,
                                            selected_peer=final_peer,
                                            terminal_peer=terminal_peer,
                                            weights=decision.get("weights"),
+                                           pacing_applied=decision.get("pacing_applied"),
+                                           probabilities=decision.get("probabilities"),
+                                           representative_profiles=representatives,
+                                           quota_families=list(quota_families),
+                                           reserve_clamp_applied=reserve_clamp_applied,
                                            affinity=decision.get("affinity_applied"),
                                            hysteresis=hyst, snapshot_hash=snap_hash)
                 except Exception:

@@ -713,6 +713,28 @@ def test_pacing_penalty_halves_headroom(monkeypatch):
     assert result["pacing_applied"]["cx"] == 1.0
 
 
+def test_pacing_default_and_explicit_true_are_byte_identical(monkeypatch):
+    """T56: the explicit config key preserves the established default-on behavior."""
+    rows = [
+        _row_pacing("ag", 0.40, pacing_max=2.0),
+        _row_pacing("cx", 0.20, pacing_max=1.0),
+    ]
+    monkeypatch.setattr(snapshot, "_derive_headroom_rows", lambda _snapshot: copy.deepcopy(rows))
+
+    implicit = snapshot.select_load_balanced_peer({}, CONFIG, ask_id="pacing-explicit")
+    explicit = snapshot.select_load_balanced_peer(
+        {}, {**CONFIG, "pacing_penalty_enabled": True}, ask_id="pacing-explicit"
+    )
+
+    assert implicit == explicit
+
+
+def test_live_routing_config_declares_pacing_penalty_enabled():
+    """T56: the live config documents the default instead of relying on fallback."""
+    routing = json.loads((SYS_DIR / "ai" / "routing-config.json").read_text(encoding="utf-8"))
+    assert routing["token_load_balancing"]["pacing_penalty_enabled"] is True
+
+
 def test_pacing_below_one_has_no_penalty(monkeypatch):
     _patch_rows(monkeypatch, [
         _row_pacing("ag", 0.20, pacing_max=0.5),

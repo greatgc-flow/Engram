@@ -3,6 +3,7 @@
 Opt-in routing; existing explicit --to is untouched. ag designed this; the
 terminal applied it (peers do not write governed files — LL-005).
 """
+import copy
 import sys
 from pathlib import Path
 
@@ -65,6 +66,50 @@ def test_enabled_selector_returns_ag_and_logs(monkeypatch, tmp_path):
     assert metrics[0][0] == "load_balance_route"
     assert metrics[0][1]["target"] == "ag.gptoss"
     assert metrics[0][1]["snapshot_hash"] == "hash123"
+
+
+def test_load_balance_route_metric_is_enriched_without_changing_auto_route(monkeypatch, tmp_path):
+    """T57: telemetry is additive; the selected route is unchanged by recording it."""
+    config = {"enabled": True, "terminal_hard_exclude": False}
+    decision = {
+        "selected_peer": "ag",
+        "selected": {
+            "peer": "ag", "profile": "ag.gptoss", "quota_families": ["3P"],
+        },
+        "representative_profiles": {"ag": "ag.gptoss", "cx": "cx.effort"},
+        "weights": {"ag": 0.6, "cx": 0.4},
+        "probabilities": {"ag": 0.6, "cx": 0.4},
+        "pacing_applied": {"ag": 1.25, "cx": 1.0},
+        "telemetry_events": [{"event": "shared_quota_reserve_clamp", "profile": "cx.effort"}],
+        "reason": "selected",
+    }
+
+    class DummySnapshot:
+        def collect_snapshot(self, *a, **k):
+            return {"nodes": {}}
+        def select_load_balanced_peer(self, snap, cfg, terminal_peer=None, ask_id="", **kw):
+            return copy.deepcopy(decision)
+        def snapshot_hash(self, snap):
+            return "hash-enriched"
+
+    monkeypatch.setattr(hub, "snapshot", DummySnapshot())
+    monkeypatch.setattr(hub, "_SNAPSHOT_AVAILABLE", True)
+    metrics = []
+    monkeypatch.setattr(
+        hub, "_record_routing_metric", lambda _root, event, **fields: metrics.append((event, fields))
+    )
+
+    first = hub.resolve_auto_target(tmp_path, config=config)
+    first_metric = next(fields for event, fields in metrics if event == "load_balance_route")
+    metrics.clear()
+    second = hub.resolve_auto_target(tmp_path, config=config)
+
+    assert first == second
+    assert first_metric["pacing_applied"] == {"ag": 1.25, "cx": 1.0}
+    assert sum(first_metric["probabilities"].values()) == 1.0
+    assert first_metric["representative_profiles"] == {"ag": "ag.gptoss", "cx": "cx.effort"}
+    assert first_metric["quota_families"] == ["3P"]
+    assert first_metric["reserve_clamp_applied"] is True
 
 
 def test_enabled_selector_returns_none(monkeypatch, tmp_path):

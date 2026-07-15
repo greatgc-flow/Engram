@@ -164,8 +164,9 @@
     }
   },
   "token_load_balancing": {
-    "_doc": "Token load balancer (ops/token-load-balancing-design.md). P1 live: capability-filtered peer-level headroom, HARD terminal exclusion, cost tie-break, seeded weighted-random. P1.5/P2/P3 pending.",
+    "_doc": "Token load balancer (ops/token-load-balancing-design.md). Live: capability-filtered peer-level headroom, default-on pacing and in-flight deductions, HARD terminal exclusion, cost tie-break, seeded weighted-random. P3 remains pending.",
     "enabled": true,
+    "pacing_penalty_enabled": true,
     "effective_headroom_floor": 0.1,
     "terminal_hard_exclude": true,
     "cost_map": {
