@@ -93,7 +93,7 @@ def test_dependency_group_is_binding_absent_when_any_window_cannot_be_classified
 
     assert len(groups) == 1
     assert groups[0]["state"] == "absent"
-    assert "binding absent" in d._quota_dependency_group_text(groups[0]).lower()
+    assert "≥0.00x" in d._quota_dependency_group_text(groups[0])
 
 
 def test_summary_and_live_share_one_dependency_group_payload(capsys):
@@ -129,7 +129,9 @@ def test_summary_and_live_share_one_dependency_group_payload(capsys):
     assert live_text.count("C-pool") == 1
     assert expected_payload in summary
     assert expected_payload in live_text
-    assert "(5H 20% 0.55x)" in expected_payload
+    assert "20% 0.55x" in expected_payload
+    assert "35% 2.25x" in expected_payload
+    assert "2.06x" in expected_payload
 
 
 def test_real_binary_rejects_wrapper_and_unknown():

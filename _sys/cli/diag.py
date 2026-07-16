@@ -392,6 +392,8 @@ def _quota_dependency_groups(rows):
                     reset_sec = (reset_dt - datetime.now(reset_dt.tzinfo)).total_seconds()
             reset_hours = reset_sec / 3600.0 if isinstance(reset_sec, (int, float)) else None
             eta = time_to_exhaustion(row.get("used_frac"), ratio, window_hours)
+            row["_eta_full"] = eta
+            row["_reset_hours"] = reset_hours
             if eta is None or reset_hours is None:
                 classifiable = False
             classified.append({
@@ -417,37 +419,57 @@ def _quota_dependency_groups(rows):
 
 
 def _quota_dependency_group_text(group):
-    """Render one dependency group as a single line: binding bucket foreground,
-    other same-pool windows demoted to a parenthetical. Plain text (no color
-    codes) so render_summary/_live share byte-identical group payloads.
-    'absent' still prints every bucket's real numbers -- unable to determine
-    WHICH bucket binds is not the same as having no data to show (DIR-004
-    governs guessing, not omitting known values)."""
+    """Render one dependency group as a single line (fixed order 5H | 7D)
+    with the 'URG' composite index (reset_hours / eta_full)."""
     prefix = group["pool"]
-    primary = group["primary"]
-    p_suffix = primary.get("_suffix") or "?"
-    p_used = primary.get("used_frac")
-    p_pct = f"{p_used * 100:.0f}%" if isinstance(p_used, (int, float)) else "?"
-    p_ratio = (primary.get("pacing") or {}).get("ratio")
-    p_pace = f"{p_ratio:.2f}x" if isinstance(p_ratio, (int, float)) else "?"
-    if group["state"] == "binding":
-        label = "BINDS"
-    elif group["state"] == "safe":
-        label = "SAFE"
+    buckets = [group["primary"]] + group.get("secondary", [])
+    buckets.sort(key=lambda b: str(b.get("_suffix") or ""))
+
+    valid_urgs = []
+    for b in buckets:
+        eta = b.get("_eta_full")
+        res = b.get("_reset_hours")
+        if eta is not None and res is not None:
+            if eta <= 0:
+                valid_urgs.append((99.99, b))
+            else:
+                valid_urgs.append((min(res / eta, 99.99), b))
+
+    if not valid_urgs:
+        urg_text = "absent"
+        max_urg_bucket = None
     else:
-        label = "binding absent"
-    text = f"{prefix}-pool {label}: {p_suffix} {p_pct} {p_pace}"
-    secondary_bits = []
-    for row in group.get("secondary") or []:
-        s_suffix = row.get("_suffix") or "?"
-        s_used = row.get("used_frac")
-        s_pct = f"{s_used * 100:.0f}%" if isinstance(s_used, (int, float)) else "?"
-        s_ratio = (row.get("pacing") or {}).get("ratio")
-        s_pace = f"{s_ratio:.2f}x" if isinstance(s_ratio, (int, float)) else "?"
-        secondary_bits.append(f"({s_suffix} {s_pct} {s_pace})")
-    if secondary_bits:
-        text += " " + " ".join(secondary_bits)
-    return text
+        max_urg_val, max_urg_bucket = max(valid_urgs, key=lambda x: x[0])
+        urg_fmt = f"{max_urg_val:.2f}x"
+        if len(valid_urgs) < len(buckets):
+            urg_fmt = f"≥{urg_fmt}"
+        if max_urg_val >= 1.00:
+            glyph = "🔴"
+        elif max_urg_val >= 0.80:
+            glyph = "🟡"
+        else:
+            glyph = "🟢"
+        urg_text = f"{glyph} {urg_fmt}"
+
+    pool_str = _pad(f"{prefix}-pool", 9)
+    urg_str = _pad(urg_text, 10)
+
+    bucket_strs = []
+    for b in buckets:
+        marker = "▸" if b is max_urg_bucket else " "
+        uf = b.get("used_frac")
+        if not isinstance(uf, (int, float)):
+            s = f"{marker}absent"
+            bucket_strs.append(_pad(s, 12))
+        else:
+            pct = f"{uf * 100:.0f}%"
+            ratio = (b.get("pacing") or {}).get("ratio")
+            pace = f"{ratio:.2f}x" if isinstance(ratio, (int, float)) else "?"
+            s = f"{marker}{_pad(pct, 3, 'right')} {pace}"
+            bucket_strs.append(_pad(s, 10))
+
+    buckets_joined = " |".join(bucket_strs)
+    return f"{pool_str} {urg_str} {buckets_joined}"
 
 def render_summary(infos):
     """SUMMARY (nearest prompt): per-peer header + sorted quota continuation rows

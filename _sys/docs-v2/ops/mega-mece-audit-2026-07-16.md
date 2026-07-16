@@ -156,3 +156,25 @@ Problem: if the peer currently serving as the human-interface/terminal role runs
    - Fix `_select_human_interface_peer()` (hub.py:2633-2645): it currently tries the configured default (`cc`) FIRST unconditionally (`reason: "configured_default"`) before evaluating anything else -- a recorded handoff away from cc would silently snap back the instant cc's own eligibility returns. A fresh recorded handoff must outrank the configured default; default becomes the tie-break, not the trump card.
 4. **Reserve floor: `5%`, explicitly config-tagged `declared_unverified`** (same shape/precedent as the existing `shared_quota_reserve` block) -- blocks new delegated dispatch once the serving family's remaining headroom crosses the floor, but always permits the handoff/control-plane actions themselves. To be replaced by a measured p95-based value once real handoff-cost telemetry exists; the design must state plainly that 5% is a policy safety rail, not evidence of measured sufficiency (this is what resolved the one real disagreement in the debate -- three peers initially held "0%, DIR-004 forbids any unmeasured number," and were persuaded only once the honesty tag was made explicit, plus an unrebutted "0% risks thrashing right at the 0.8 trigger line" argument).
 5. **No forced mid-session eviction.** A sitting terminal crossing the cap becomes `handoff_required`: loses the ability to issue NEW delegated dispatches, but keeps full control-plane/local-command capability to complete its own handoff cleanly -- consistent with tonight's own observed reality (CC kept functioning fine at 2.25x). Fail-open exception: if literally every eligible peer is over-cap simultaneously, the sitting terminal remains as least-bad (logged), rather than creating a total vacancy with nobody in control.
+
+---
+
+## Quota display v2 (post-ship refinement, 5-way debate, 3 rounds to unanimous)
+
+After Track4/5 Q1 shipped (dynamic binding-first reordering), the user reviewed live output and pushed back: swapping which window (5H/7D) appears first per row breaks scannability. Requested fixed positions plus a single composite urgency index. New 5-way debate, same panel.
+
+**Converged design (5/5 unanimous):**
+1. **Fixed order**: always render `5H` then `7D` in the same position -- never reordered by which one binds. Binding information moves to a marker (`▸`) on the binding bucket in its fixed slot, not by repositioning.
+2. **Composite index "URG"**: `URG = max_i(reset_hours_i / eta_full_i)` over a pool's buckets (`eta_full` = `time_to_exhaustion()`, already shipped). This is the continuous form of the existing binary binding test (`eta < reset_hours`) -- `URG >= 1.00` means the pool projects to exhaust before its own reset. Two independent peers (ag.effort, cc.fable) derived this identical ratio unprompted in Round A; by Round B all 5 converged on it, rejecting both a raw max-pacing-ratio composite (loses reset-timing context) and a categorical-only label (loses triage gradation between e.g. binding-at-1.06x vs binding-at-5.0x).
+3. **Format**: 2-decimal float + "x" suffix (e.g. "2.21x", "0.16x") -- matches the format already used for pacing ratios elsewhere in the same row, avoiding an integer that could misread as a percentage. Zero burn -> "0.00x". Some buckets absent -> "≥" lower-bound prefix (never guessed higher). All buckets absent -> "absent".
+4. **Thresholds**: 🔴 URG >= 1.00x, 🟡 URG >= 0.80x, 🟢 else -- mirrors the existing pacing-ratio glyph convention.
+
+**Example render** (live numbers from the debate):
+```
+POOL         URG          5H              7D
+AG  3P-pool  🔴 2.21x     0%  0.00x   |▸ 67% 1.02x
+CC  C-pool   🟢 0.16x    ▸18% 0.22x   |   2% 0.08x
+CX  X-pool   🟢 ≥0.00x   absent       |▸  0% 0.00x
+```
+
+**Implementation pointers**: add pure `quota_urgency()`/`URG` computation beside `time_to_exhaustion()` in `_sys/core/quota.py` (or compute inline in the grouping function, reusing `time_to_exhaustion()` and each bucket's `reset_hours` -- both already available inside `_quota_dependency_groups()`). Rewrite `_quota_dependency_group_text()` in `_sys/cli/diag.py` to the fixed-column render above; `_quota_dependency_groups()`'s classification (`binding`/`safe`/`absent` state, `primary`/`secondary` buckets) stays the SSOT, URG is a display-layer computation on top of it. `render_summary()` and `render_live_quota_pools()` continue sharing the same text function (no-drift property preserved).
