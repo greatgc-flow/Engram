@@ -427,7 +427,7 @@ def _quota_dependency_group_text(group):
         s_pct = f"{s_used * 100:.0f}%" if isinstance(s_used, (int, float)) else "?"
         s_ratio = (row.get("pacing") or {}).get("ratio")
         s_pace = f"{s_ratio:.2f}x" if isinstance(s_ratio, (int, float)) else "?"
-        secondary_bits.append(f"({s_suffix} {s_pct}% {s_pace})")
+        secondary_bits.append(f"({s_suffix} {s_pct} {s_pace})")
     if secondary_bits:
         text += " " + " ".join(secondary_bits)
     return text
@@ -451,13 +451,25 @@ def render_summary(infos):
             quota for quota in (info.get("quotas") or [])
             if isinstance(quota.get("used_frac"), (int, float))
         ]
-        for q in sorted(visible_quotas, key=_quota_display_sort_key):
-            uf = q.get("used_frac")
+        rows = [{"pool": q.get("label"), **q} for q in visible_quotas]
+        groups = _quota_dependency_groups(rows)
+
+        def group_sort_key(group):
+            state_rank = {"binding": 0, "safe": 1, "absent": 2}.get(group.get("state"), 3)
+            primary = group.get("primary") or {}
+            ratio = (primary.get("pacing") or {}).get("ratio")
+            ratio_val = ratio if isinstance(ratio, (int, float)) else -1.0
+            used = primary.get("used_frac")
+            used_val = used if isinstance(used, (int, float)) else -1.0
+            return (state_rank, -ratio_val, -used_val, group.get("pool", ""))
+
+        for group in sorted(groups, key=group_sort_key):
+            primary = group.get("primary") or {}
+            uf = primary.get("used_frac")
             glyph = _severity_glyph(used_frac=uf)
-            pct = _pad(f"{uf * 100:.0f}%", 4, align="right")
-            pace = _pad(_pacing_cell(q.get("pacing")), 12)
-            warn = "  " + _c("WARN", "red", "bold") if uf >= QUOTA_CRIT_FRAC else ""
-            print(f"  ↳ {_pad(q.get('label', ''), 6)} {_pad(glyph, 2)} {pct} {pace} resets {q.get('reset') or '?'}{warn}")
+            text = _quota_dependency_group_text(group)
+            warn = "  " + _c("WARN", "red", "bold") if isinstance(uf, (int, float)) and uf >= QUOTA_CRIT_FRAC else ""
+            print(f"  ↳ {_pad(glyph, 2)} {text}{warn}")
 
     print(_c(_source_legend(), "dim"))
 
@@ -827,35 +839,58 @@ def render_live_peer_health(out, snapshot, columns):
 
 
 def _live_quota_pool_rows(snapshot):
-    """Collect measured quota-pool rows for the live account/pool section."""
-    rows = []
+    """Collect measured quota-pool groups for the live account/pool section."""
+    groups = []
     for rec in snapshot.get("peers") or []:
         info = _live_raw_peer(rec)
         owner = str(info.get("peer") or (rec.get("peer") if isinstance(rec, dict) else "?") or "?")
         source = _source_code(info.get("source"))
+        
+        peer_rows = []
         for quota in info.get("quotas") or []:
             if not isinstance(quota, dict):
                 continue
             used = quota.get("used_frac")
             if not isinstance(used, (int, float)):
                 continue
-            rows.append({
+            row = {
                 "owner": owner,
                 "pool": str(quota.get("label") or "absent"),
                 "used_frac": used,
                 "pacing": quota.get("pacing"),
                 "reset": str(quota.get("reset") or "?"),
                 "source": source,
-            })
-    return sorted(rows, key=_quota_display_sort_key)
+                "reset_in_seconds": quota.get("reset_in_seconds"),
+            }
+            for k, v in quota.items():
+                if k not in row:
+                    row[k] = v
+            peer_rows.append(row)
+            
+        peer_groups = _quota_dependency_groups(peer_rows)
+        for g in peer_groups:
+            g["owner"] = owner
+            g["source"] = source
+        groups.extend(peer_groups)
+
+    def group_sort_key(group):
+        state_rank = {"binding": 0, "safe": 1, "absent": 2}.get(group.get("state"), 3)
+        primary = group.get("primary") or {}
+        ratio = (primary.get("pacing") or {}).get("ratio")
+        ratio_val = ratio if isinstance(ratio, (int, float)) else -1.0
+        used = primary.get("used_frac")
+        used_val = used if isinstance(used, (int, float)) else -1.0
+        return (state_rank, -ratio_val, -used_val, group.get("pool", ""), group.get("owner", ""))
+
+    return sorted(groups, key=group_sort_key)
 
 
-def _live_quota_pool_line(row, columns):
-    used = _pad(f"{row['used_frac'] * 100:.0f}%", 4, align="right")
-    pace = _pad(_pacing_cell(row.get("pacing")), 12)
-    text = (f"{_pad(str(row['owner']).upper(), 6)} {_pad(row['pool'], 12)} {used} {pace} "
-            f"{_pad(row['reset'], 20)} {_pad(row['source'], 12)}")
-    return _elide_display(text, columns)
+def _live_quota_pool_line(group, columns):
+    owner = group.get("owner", "")
+    owner_padded = _pad(str(owner).upper(), 6)
+    text = _quota_dependency_group_text(group)
+    line = f"{owner_padded} {text}"
+    return _elide_display(line, columns)
 
 
 def render_live_quota_pools(
@@ -874,7 +909,7 @@ def render_live_quota_pools(
             suffix += "; press 'p' to collapse"
         section_header += suffix + ")"
     section_header = _elide_display(section_header, columns)
-    column_header = _elide_display("OWNER  POOL         USED PACE         RESET                SRC", columns)
+    column_header = _elide_display("OWNER  DEPENDENCY GROUP", columns)
     if not rows:
         out.write(section_header + "\n" + _elide_display("  none", columns) + "\n")
         return

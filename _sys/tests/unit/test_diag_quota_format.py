@@ -96,15 +96,6 @@ def test_dependency_group_is_binding_absent_when_any_window_cannot_be_classified
     assert "binding absent" in d._quota_dependency_group_text(groups[0]).lower()
 
 
-@pytest.mark.xfail(
-    reason="_quota_dependency_groups/_quota_dependency_group_text are built and "
-    "unit-tested (see the tests above), but NOT yet wired into render_summary/"
-    "render_live_quota_pools -- that wiring touches ~10 existing tests' sort-order/"
-    "line-budget/hidden-count assumptions on the live operator dashboard and is "
-    "deliberately left for a reviewed follow-up pass rather than a solo overnight "
-    "reformat. See mega-mece-audit-2026-07-16.md Track4/5 Q1 P1a.",
-    strict=True,
-)
 def test_summary_and_live_share_one_dependency_group_payload(capsys):
     d = _diag()
     quotas = [

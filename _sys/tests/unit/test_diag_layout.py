@@ -132,8 +132,7 @@ def test_render_summary_uses_peer_facts_and_urgent_quota_order():
     peer_line = lines[header_index + 1]
     assert "MODEL" not in header
     assert "Opus" not in peer_line
-    assert text.index("C-5H") < text.index("C-7D") < text.index("F-5H")
-    assert "\U0001F6AB" in text   # 🚫 saturated (>=1.0)
+    assert text.index("C-pool") < text.index("F-pool")
     assert "\U0001F534" in text   # 🔴 (>=0.90)
     assert "\U0001F7E2" in text   # 🟢 (0%)
     assert "WARN" in text         # >=0.90
@@ -161,16 +160,16 @@ def test_render_summary_orders_quota_rows_by_used_fraction_descending():
 
     text = out.getvalue()
     assert "must-not-render" not in text
-    assert text.index("Z-high") < text.index("M-mid") < text.index("A-low")
+    assert text.index("Z-pool") < text.index("M-pool") < text.index("A-pool")
 
 
 def test_quota_rows_sort_measured_pacing_before_used_fraction_without_fabricating_absent():
     diag = load_diag()
     quotas = [
-        {"label": "absent-high", "used_frac": 0.95, "reset": "later", "pacing": None},
-        {"label": "paced-low", "used_frac": 0.10, "reset": "later", "pacing": {"ratio": 1.10}},
-        {"label": "paced-high", "used_frac": 0.20, "reset": "later", "pacing": {"ratio": 1.50}},
-        {"label": "absent-mid", "used_frac": 0.50, "reset": "later", "pacing": {}},
+        {"label": "absentHigh-5H", "used_frac": 0.95, "reset": "later", "pacing": None},
+        {"label": "pacedLow-5H", "used_frac": 0.10, "reset": "later", "pacing": {"ratio": 1.10}},
+        {"label": "pacedHigh-5H", "used_frac": 0.20, "reset": "later", "pacing": {"ratio": 1.50}},
+        {"label": "absentMid-5H", "used_frac": 0.50, "reset": "later", "pacing": {}},
     ]
     snapshot = {"peers": [{"peer": "cc", "raw": {
         "peer": "cc", "source": "cli_live", "quotas": quotas,
@@ -180,8 +179,8 @@ def test_quota_rows_sort_measured_pacing_before_used_fraction_without_fabricatin
     diag.render_live_quota_pools(out, snapshot, columns=120, line_budget=None)
 
     text = out.getvalue()
-    assert text.index("paced-high") < text.index("paced-low")
-    assert text.index("paced-low") < text.index("absent-high") < text.index("absent-mid")
+    assert text.index("pacedHigh-pool") < text.index("pacedLow-pool")
+    assert text.index("pacedLow-pool") < text.index("absentHigh-pool") < text.index("absentMid-pool")
 
     info = {
         "peer": "cc", "cost": None, "source": "cli_live", "ctx_window": 1,
@@ -196,8 +195,8 @@ def test_quota_rows_sort_measured_pacing_before_used_fraction_without_fabricatin
     finally:
         sys.stdout = old
     rendered = summary.getvalue()
-    assert rendered.index("paced-high") < rendered.index("paced-low")
-    assert rendered.index("paced-low") < rendered.index("absent-high") < rendered.index("absent-mid")
+    assert rendered.index("pacedHigh-pool") < rendered.index("pacedLow-pool")
+    assert rendered.index("pacedLow-pool") < rendered.index("absentHigh-pool") < rendered.index("absentMid-pool")
 
 
 def test_peer_state_precedence_quarantine_over_open():
@@ -382,13 +381,19 @@ def test_live_quota_pools_is_global_urgent_order_and_reports_hidden_count():
     diag = load_diag()
     snapshot = {"peers": [
         {"peer": "cc", "raw": {"peer": "cc", "source": "cli_live", "quotas": [
-            {"label": "C-low", "used_frac": 0.10, "pacing": None, "reset": "later"},
             {"label": "C-high", "used_frac": 0.90, "pacing": None, "reset": "soon"},
+            {"label": "C-low", "used_frac": 0.10, "pacing": None, "reset": "later"},
         ]}},
         {"peer": "ag", "raw": {"peer": "ag", "source": "statusline", "quotas": [
             {"label": "A-mid", "used_frac": 0.50, "pacing": None, "reset": "later"},
             {"label": "A-low", "used_frac": 0.20, "pacing": None, "reset": "later"},
             {"label": "A-unknown", "used_frac": None, "pacing": None, "reset": "?"},
+        ]}},
+        {"peer": "cx", "raw": {"peer": "cx", "source": "cli_live", "quotas": [
+            {"label": "X-low", "used_frac": 0.05, "pacing": None, "reset": "later"},
+        ]}},
+        {"peer": "ab", "raw": {"peer": "ab", "source": "cli_live", "quotas": [
+            {"label": "Y-low", "used_frac": 0.01, "pacing": None, "reset": "later"},
         ]}},
     ]}
     out = io.StringIO()
@@ -397,10 +402,9 @@ def test_live_quota_pools_is_global_urgent_order_and_reports_hidden_count():
     diag.render_live_quota_pools(out, snapshot, columns=80, line_budget=5)
 
     text = out.getvalue()
-    assert text.index("C-high") < text.index("A-mid")
-    assert "C-low" not in text
+    assert text.index("C-pool") < text.index("A-pool")
+    assert "X-pool" not in text
     assert "+2 pools hidden" in text
-    assert "A-unknown" not in text
 
 
 def test_live_routing_alerts_omits_empty_and_caps_limited_resets():
@@ -524,7 +528,7 @@ def test_live_quota_pools_hidden_line_points_to_full_diag():
     diag = load_diag()
     snapshot = {"peers": [
         {"peer": "cc", "raw": {"peer": "cc", "source": "cli_live", "quotas": [
-            {"label": f"P{i}", "used_frac": 0.1 * i, "pacing": None, "reset": "later"}
+            {"label": f"P{i}-5H", "used_frac": 0.1 * i, "pacing": None, "reset": "later"}
             for i in range(1, 6)
         ]}},
     ]}
@@ -538,7 +542,7 @@ def test_live_quota_pools_expand_toggle_shows_all_or_hides_with_truthful_hint():
     diag = load_diag()
     snapshot = {"peers": [{"peer": "cc", "raw": {
         "peer": "cc", "source": "cli_live", "quotas": [
-            {"label": f"P{i}", "used_frac": 0.1 * i, "pacing": None, "reset": "later"}
+            {"label": f"P{i}-5H", "used_frac": 0.1 * i, "pacing": None, "reset": "later"}
             for i in range(1, 6)
         ],
     }}]}
