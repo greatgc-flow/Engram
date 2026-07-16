@@ -480,6 +480,11 @@ def render_summary(infos):
     headers = [_pad("PEER", 5), _pad("STATE", 11),
                _pad("CONTEXT(used/win %)", 19), _pad("COST", 9), _pad("SRC", 12)]
     print(_c(" ".join(headers).rstrip(), "dim"))
+    quota_header = (
+        "      " + _pad("POOL", 9) + " " + _pad("URG", 10)
+        + " " + _pad("5H", 10) + " " + _pad("7D", 10)
+    )
+    print(_c(quota_header, "dim"))
     for info in infos:
         peer = info["peer"].upper()
         cost = f"${info['cost']:.4f}" if isinstance(info["cost"], (int, float)) else "-"
@@ -948,7 +953,11 @@ def render_live_quota_pools(
             suffix += "; press 'p' to collapse"
         section_header += suffix + ")"
     section_header = _elide_display(section_header, columns)
-    column_header = _elide_display("OWNER  DEPENDENCY GROUP", columns)
+    column_header = _elide_display(
+        _pad("OWNER", 6) + " " + _pad("POOL", 9) + " " + _pad("URG", 10)
+        + " " + _pad("5H", 10) + " " + _pad("7D", 10),
+        columns,
+    )
     if not rows:
         out.write(section_header + "\n" + _elide_display("  none", columns) + "\n")
         return
