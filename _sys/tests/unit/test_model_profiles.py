@@ -233,7 +233,7 @@ def test_cc_and_cx_profiles_are_locally_verified():
     expected = {
         "cc": {
             "standard": {"model_id": "claude-haiku-4-5-20251001", "context": 200000, "validated_at": "2026-06-20"},
-            "effort": {"model_id": "claude-sonnet-4-6", "context": 200000, "validated_at": "2026-06-20"},
+            "effort": {"model_id": "claude-sonnet-4-6", "context": 1000000, "validated_at": "2026-06-20"},
             "deepthink": {"model_id": "claude-opus-4-8", "context": 1000000, "validated_at": "2026-06-20"},
         },
         "cx": {
