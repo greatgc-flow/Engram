@@ -186,7 +186,7 @@ def test_select_human_interface_peer_uses_tz_aware_now(monkeypatch):
     (tz-aware) records — which silently disabled the terminal-spend guard."""
     seen = {}
 
-    def _capture(ai_root, peer, profile, now=None):
+    def _capture(ai_root, peer, profile, now=None, is_current_terminal=False):
         seen["now"] = now
         return {"eligible": False, "peer": peer, "profile": profile}
 

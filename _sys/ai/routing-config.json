@@ -221,6 +221,11 @@
       "enabled": true,
       "max_ratio": 1.0,
       "unknown_policy": "deny"
+    },
+    "terminal_quota_reserve": {
+      "_doc": "declared_unverified (mega-mece-audit-2026-07-16 terminal-quota-exhaustion design, 5-way debate, 4 rounds to unanimous): a small policy safety rail so the serving terminal always keeps enough headroom to complete its own handoff -- NOT a measured-adequate claim. Blocks new delegated dispatch once the terminal's family headroom crosses this floor, but always permits handoff/control-plane actions. To be replaced by a measured p95-based value once real handoff-cost telemetry exists.",
+      "enabled": true,
+      "reserve_fraction": 0.05
     }
   },
   "final_arbiter": {

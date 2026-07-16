@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-07-13T19:11:50",
+  "generated_at": "2026-07-16T13:54:01",
   "source": "hub.py",
-  "count": 83,
+  "count": 85,
   "signatures": {
     "_lease_cfg": {
       "params": {
@@ -1503,6 +1503,37 @@
           "kind": "POSITIONAL_OR_KEYWORD",
           "default": null,
           "annotation": "str | None"
+        }
+      },
+      "return": "None"
+    },
+    "action_terminal_duty_sweep": {
+      "params": {
+        "ai_root": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": "Path"
+        }
+      },
+      "return": "None"
+    },
+    "action_terminal_handoff": {
+      "params": {
+        "ai_root": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": "Path"
+        },
+        "current_peer": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": "str"
+        },
+        "next_peer": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": "str"
+        },
+        "reason": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "default": "",
+          "annotation": "str"
         }
       },
       "return": "None"

@@ -2540,6 +2540,7 @@ def _human_interface_peer_eligibility(
     peer: str,
     profile: str | None = None,
     now: datetime | None = None,
+    is_current_terminal: bool = False,
 ) -> dict:
     """Return measured eligibility for a peer/profile to hold human-interface duty."""
     now = _ensure_aware(now)
@@ -2615,6 +2616,31 @@ def _human_interface_peer_eligibility(
         result["reason"] = capability["reason"]
         return result
 
+    if not is_current_terminal and _SNAPSHOT_AVAILABLE and getattr(snapshot, "pacing_admission_for_profile", None):
+        try:
+            cfg = _load_balancer_config()
+            pacing_gate = cfg.get("pacing_hard_gate", {})
+            if pacing_gate.get("enabled", False):
+                snap = (getattr(snapshot, "_SNAPSHOT_CACHE", {}) or {}).get("snapshot")
+                if not snap:
+                    snap = snapshot.collect_snapshot(use_cache=True)
+                if snap:
+                    profiles = snap.get("profiles", [])
+                    raw_prof = next((p for p in profiles if p.get("profile") == profile and p.get("peer") == peer), None)
+                    if not raw_prof:
+                        raw_prof = next((p for p in profiles if p.get("peer") == peer and not p.get("profile")), None)
+                    if raw_prof:
+                        adm = snapshot.pacing_admission_for_profile(raw_prof, cfg)
+                        unknown_policy = pacing_gate.get("unknown_policy", "deny")
+                        allowed_states = {"allow"}
+                        if unknown_policy == "allow":
+                            allowed_states.add("unknown")
+                        if adm not in allowed_states:
+                            result["reason"] = f"pacing_over_cap ({adm})"
+                            return result
+        except Exception:
+            pass
+
     result["eligible"] = True
     result["reason"] = "eligible"
     return result
@@ -2632,9 +2658,36 @@ def _select_human_interface_peer(ai_root: Path, now: datetime | None = None) -> 
     cfg = _human_interface_cfg()
     default_peer = str(cfg.get("human_interface_peer") or "cc")
 
+    # A real handoff away from the configured default must stick, not
+    # silently snap back the instant the default regains eligibility
+    # (mega-mece-audit-2026-07-16 terminal-quota-exhaustion design, point 5).
+    # Only takes effect when the recorded terminal actually DIVERGES from
+    # the configured default -- the common case (recorded == default) falls
+    # straight through to the unchanged configured_default path below.
+    state = _read_json(ai_root / "state.json") if ai_root else {}
+    recorded_peer = state.get("human_interface_peer")
+    evaluated = []
+    if recorded_peer and recorded_peer != default_peer:
+        recorded_profile = _human_interface_profile_for_peer(orch, recorded_peer)
+        recorded_result = _human_interface_peer_eligibility(
+            ai_root, recorded_peer, recorded_profile, now=now, is_current_terminal=True,
+        )
+        evaluated.append(recorded_result)
+        if recorded_result["eligible"]:
+            return {
+                "peer": recorded_peer,
+                "profile": recorded_profile,
+                "reason": "active_recorded_terminal",
+                "eligible": True,
+                "evaluated": evaluated,
+            }
+
     default_profile = _human_interface_profile_for_peer(orch, default_peer)
-    default_result = _human_interface_peer_eligibility(ai_root, default_peer, default_profile, now=now)
-    evaluated = [default_result]
+    default_result = _human_interface_peer_eligibility(
+        ai_root, default_peer, default_profile, now=now,
+        is_current_terminal=(default_peer == recorded_peer),
+    )
+    evaluated.append(default_result)
     if default_result["eligible"]:
         return {
             "peer": default_peer,
@@ -2647,7 +2700,7 @@ def _select_human_interface_peer(ai_root: Path, now: datetime | None = None) -> 
     candidates = []
     for index, node in enumerate(orch.get("hub_nodes", [])):
         peer = node.get("node_id")
-        if not peer or peer == default_peer or node.get("type", "peer") != "peer":
+        if not peer or peer == default_peer or peer == recorded_peer or node.get("type", "peer") != "peer":
             continue
         profile = _human_interface_profile_for_peer(orch, peer)
         item = _human_interface_peer_eligibility(ai_root, peer, profile, now=now)
@@ -4991,6 +5044,73 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                 if not snap:
                     snap = snapshot.collect_snapshot(use_cache=True)
                 if snap:
+                    # TERMINAL SELF-CHECK (Dispatch-piggybacked)
+                    try:
+                        state_path = ai_root / "state.json" if ai_root else Path(".ai/state.json")
+                        state = _read_json(state_path)
+                        dispatcher_peer = state.get("human_interface_peer")
+                        if dispatcher_peer:
+                            dispatcher_prof = _human_interface_profile_for_peer(_orch_for_gate, dispatcher_peer)
+                            d_raw_profile = next(
+                                (p for p in snap.get("profiles", []) if p.get("profile") == dispatcher_prof and p.get("peer") == dispatcher_peer),
+                                None
+                            )
+                            if not d_raw_profile:
+                                d_raw_profile = next(
+                                    (p for p in snap.get("profiles", []) if p.get("peer") == dispatcher_peer and not p.get("profile")),
+                                    None
+                                )
+                            if d_raw_profile:
+                                # Are we asking for terminal handoff? (which usually bypasses
+                                # _action_ask_inner via its own CLI branch, but check just in
+                                # case). Computed once, ahead of both checks below.
+                                is_handoff = False
+                                if query_file:
+                                    try:
+                                        raw_q = Path(query_file).read_text("utf-8")
+                                        if "terminal-handoff" in raw_q:
+                                            is_handoff = True
+                                    except Exception:
+                                        pass
+
+                                d_adm = snapshot.pacing_admission_for_profile(d_raw_profile, cfg)
+                                if d_adm != "allow":
+                                    print(f"[HUB:WARN] terminal pacing over cap ({d_adm}) -- yield recommended", file=sys.stderr)
+
+                                    if d_adm == "over_cap" and not is_handoff:
+                                        _surface_pre_dispatch_failure(
+                                            ai_root, to, "terminal_pacing_exhausted", recovery_peer=health_peer
+                                        )
+                                        print(f"[ERROR] dispatched ask refused: terminal {dispatcher_peer} is at pacing over_cap.", file=sys.stderr)
+                                        sys.exit(1)
+
+                                # terminal_quota_reserve (declared_unverified, routing-config.json):
+                                # block new delegated dispatch once the terminal's OWN remaining
+                                # headroom crosses the reserve floor, even if pacing itself is still
+                                # under the hard-gate ratio -- a separate, earlier signal than
+                                # pacing_admission_for_profile's ratio-based over_cap check.
+                                reserve_cfg = cfg.get("terminal_quota_reserve", {})
+                                if reserve_cfg.get("enabled", False) and not is_handoff:
+                                    reserve_fraction = float(reserve_cfg.get("reserve_fraction", 0.0))
+                                    buckets = ((d_raw_profile.get("quota") or {}).get("buckets") or [])
+                                    for b in buckets:
+                                        if not isinstance(b, dict):
+                                            continue
+                                        used = b.get("used_frac")
+                                        if isinstance(used, (int, float)) and (1.0 - float(used)) < reserve_fraction:
+                                            _surface_pre_dispatch_failure(
+                                                ai_root, to, "terminal_quota_reserve_breached", recovery_peer=health_peer
+                                            )
+                                            print(
+                                                f"[ERROR] dispatched ask refused: terminal {dispatcher_peer} "
+                                                f"is within its {reserve_fraction:.0%} reserve floor "
+                                                f"(bucket {b.get('label')} at {used:.0%} used) -- run terminal-handoff.",
+                                                file=sys.stderr,
+                                            )
+                                            sys.exit(1)
+                    except Exception as e:
+                        print(f"[HUB:WARN] Terminal pacing self-check failed: {e}", file=sys.stderr)
+
                     prof_id = profile_decision.get("selected_profile") if profile_decision else None
                     if not prof_id and "." in to:
                         prof_id = to.split(".", 1)[1]
@@ -6741,6 +6861,41 @@ def action_leader_claim(ai_root: Path, agent: str, reason: str = "", domain: str
     
     _log_p2p("LEADER-CLAIM", f"agent={agent} status=PENDING until={challenge_until}", from_node=agent)
     print(f"[HUB] LEADER-CLAIM {agent} | status=PENDING | challenge_until={challenge_until}")
+
+
+def action_terminal_handoff(ai_root: Path, current_peer: str, next_peer: str, reason: str = "") -> None:
+    """Atomically transfers human-interface and active-coordinator leadership to a new peer."""
+    state_path = ai_root / "state.json"
+    
+    with _get_lock(ai_root, "state"):
+        state = _read_json(state_path)
+        
+        state["human_interface_peer"] = next_peer
+        state["active_console_peer"] = next_peer
+        state["leader"] = next_peer
+        state["active_coordinator"] = next_peer
+        
+        state["leadership"] = {
+            "peer": next_peer,
+            "status": "ACTIVE",
+            "domain": reason or "terminal_handoff",
+            "reason": reason or "terminal_handoff",
+            "claimed_at": _now()
+        }
+        state["human_interface_assignment_time"] = _now()
+        
+        history = state.get("coordinator_history", [])
+        history.append({"peer": next_peer, "at": _now(), "room": state.get("room_id")})
+        state["coordinator_history"] = history[-10:]
+        
+        state["updated_at"] = _now()
+        _write_state(ai_root, state)
+        
+    entry = f"[{_now()}] [TERMINAL-HANDOFF] {current_peer} handed off terminal duty to {next_peer}. Reason: {reason or 'none'}"
+    _append_handoff_item(ai_root, "ACTIVE_THREADS", entry)
+    
+    _log_p2p("TERMINAL-HANDOFF", f"from={current_peer} to={next_peer} reason={reason or 'none'}", from_node=current_peer)
+    print(f"[HUB] TERMINAL-HANDOFF complete | to={next_peer} | reason={reason or 'none'}")
 
 
 def action_discover(ai_root: Path, needs: str, effort: str = "mid") -> None:
@@ -9128,6 +9283,29 @@ def action_lock_status(ai_root: Path) -> None:
         print(f"{name}\t{item.get('owner','')}\t{item.get('scope','')}\t{item.get('locked_at','')}")
 
 
+def action_terminal_duty_sweep(ai_root: Path) -> None:
+    """Watchdog: sweeps for a confirmed stale/silent terminal and selects a safe replacement via terminal-handoff."""
+    state_path = ai_root / "state.json"
+    state = _read_json(state_path)
+    current_terminal = state.get("human_interface_peer")
+    if not current_terminal:
+        return
+        
+    freshness_minutes = _human_interface_freshness_minutes()
+    now = _now()
+    fresh, reason = _human_interface_assignment_fresh(ai_root, current_terminal, now, freshness_minutes)
+    
+    if fresh:
+        return
+        
+    print(f"[HUB:SWEEP] Terminal {current_terminal} is stale ({reason}). Selecting replacement.")
+    result = _select_human_interface_peer(ai_root, now)
+    next_peer = result.get("peer")
+    if next_peer and next_peer != current_terminal:
+        action_terminal_handoff(ai_root, current_terminal, next_peer, reason="sweep_stale_terminal")
+    else:
+        print("[HUB:SWEEP] No valid replacement found or replacement is the same.")
+
 def action_health_sweep(ai_root: Path) -> None:
     swept = 0
     for node in _load_orchestration().get("hub_nodes", []):
@@ -9463,7 +9641,7 @@ def main() -> None:
         prog="hub",
         description="AI collaboration hub - Protocol v4.2",
     )
-    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-all", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "thread-promote", "alert-raise", "proposal-add", "proposal-vote", "proposal-list", "broker-submit", "broker-drain", "broker-status", "update-signatures", "arbiter-review"])
+    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-all", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "terminal-handoff", "terminal-duty-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "thread-promote", "alert-raise", "proposal-add", "proposal-vote", "proposal-list", "broker-submit", "broker-drain", "broker-status", "update-signatures", "arbiter-review"])
     parser.add_argument("--ai-root", dest="ai_root",
                         help="Explicit .ai root; pins HUB_AI_ROOT for this process (deterministic; avoids the cwd-phantom bug)")
     parser.add_argument("--needs")
@@ -9728,6 +9906,10 @@ def main() -> None:
         action_health_precheck(ai_root, args.needs, args.peer)
     elif act == "health-sweep":
         action_health_sweep(ai_root)
+    elif act == "terminal-duty-sweep":
+        action_terminal_duty_sweep(ai_root)
+    elif act == "terminal-handoff":
+        action_terminal_handoff(ai_root, args.agent or "unknown", args.peer or "unknown", args.reason or "")
     elif act == "append-handoff":
         action_append_handoff(ai_root, args.section, args.text)
     elif act == "task-checkpoint":
