@@ -1277,6 +1277,41 @@ def _profile_pacing_max(profile):
             ratios.append(float(r))
     return max(ratios) if ratios else 1.0
 
+def pacing_admission_for_profile(profile, config):
+    """
+    Returns "allow", "over_cap", or "unknown" based on pacing <= max_ratio hard gate.
+    DIR-004: Never assume "safe" for unmeasured. Returns "unknown" when absent.
+    """
+    pacing_gate = config.get("pacing_hard_gate", {})
+    if not pacing_gate.get("enabled", False):
+        return "allow"
+    
+    max_ratio = float(pacing_gate.get("max_ratio", 1.0))
+    
+    buckets = ((profile.get("quota") or {}).get("buckets") or [])
+    has_valid = False
+    
+    for b in buckets:
+        if not isinstance(b, dict): continue
+        pacing = b.get("pacing")
+        
+        elapsed_frac = pacing.get("elapsed_frac") if isinstance(pacing, dict) else None
+        used_frac = b.get("used_frac")
+        
+        r = pacing.get("ratio") if isinstance(pacing, dict) else None
+        if not isinstance(r, (int, float)):
+            r = b.get("pacing_ratio")
+            
+        if isinstance(r, (int, float)) and isinstance(used_frac, (int, float)) and isinstance(elapsed_frac, (int, float)):
+            has_valid = True
+            if float(used_frac) > 0.10 and float(elapsed_frac) > 0.10 and float(r) > max_ratio:
+                return "over_cap"
+                
+    if not has_valid:
+        return "unknown"
+        
+    return "allow"
+
 
 def _derive_headroom_rows(snapshot):
     """Derived routing headroom. Missing inputs remain absent, never estimated."""
@@ -1508,7 +1543,17 @@ QUOTA_WARN_FRAC = telemetry_config()["display"]["warn_frac"]
 QUOTA_CRIT_FRAC = telemetry_config()["display"]["crit_frac"]
 
 
-STALE_THRESHOLD_SEC = 300
+def _stale_threshold_sec():
+    try:
+        proto = json.loads((SYS_DIR / "ai" / "protocol.json").read_text(encoding="utf-8"))
+        comm = proto.get("communication_policy", {})
+        zmap = comm.get("zombie_profile_map") or {}
+        base = comm.get("zombie_timeout_sec", 600)
+        return max([base] + list(zmap.values()))
+    except Exception:
+        return 900
+
+STALE_THRESHOLD_SEC = _stale_threshold_sec()
 
 
 def _governance_params():
@@ -1978,6 +2023,38 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
     if not eligible:
         return _empty("no_eligible_candidate")
 
+    # Hard admission gate: pacing <= 1.0
+    pacing_gate = config.get("pacing_hard_gate", {})
+    if pacing_gate.get("enabled", False):
+        unknown_policy = pacing_gate.get("unknown_policy", "deny")
+        allowed_states = {"allow"}
+        if unknown_policy == "allow":
+            allowed_states.add("unknown")
+
+        # pacing_admission_for_profile expects a RAW profile dict (quota.buckets),
+        # matching _profile_pacing_max's calling convention -- `eligible` rows
+        # come from _derive_headroom_rows() and do NOT carry quota.buckets, so
+        # look the raw profile back up by id (else every row reads as "unknown").
+        raw_profiles_by_id = {
+            p.get("profile"): p for p in snapshot.get("profiles", []) if p.get("profile")
+        }
+
+        new_eligible = []
+        pacing_excluded = []
+        for r in eligible:
+            raw_profile = raw_profiles_by_id.get(r.get("profile")) or {}
+            adm = pacing_admission_for_profile(raw_profile, config)
+            if adm in allowed_states:
+                new_eligible.append(r)
+            else:
+                pacing_excluded.append(r.get("profile") or r.get("peer"))
+        
+        eligible = new_eligible
+        if not eligible:
+            out = _empty("no_eligible_candidate")
+            out["pacing_excluded"] = pacing_excluded
+            return out
+
     # Profile-level bulk exclusion (distinct from the peer-level arbiter_models
     # exclusion below): drop ONLY the listed profile rows, keeping the rest of
     # their peer's profiles bulk-eligible. Used for a premium model that shares a
@@ -2181,7 +2258,7 @@ def select_load_balanced_peer(snapshot, config, terminal_peer=None, ask_id="", r
 # FINAL_OPINION record. Live invocation (calling the arbiter, applying its
 # verdict, budget persistence) is a later increment.
 
-def select_arbiter(snapshot, config):
+def select_arbiter(snapshot, config, context=None):
     """Pick the arbiter (premium/smartest model) for a final-opinion pass: the
     FIRST entry of config.arbiter_models (ordered priority) that is currently
     usable — an entry is usable if some row in _derive_headroom_rows matches it
@@ -2191,17 +2268,54 @@ def select_arbiter(snapshot, config):
     consensus)."""
     arbiter_models = config.get("arbiter_models", []) or []
     usable = {}
+    over_cap = {}
+    
+    pacing_gate = config.get("pacing_hard_gate", {})
+    unknown_policy = pacing_gate.get("unknown_policy", "deny")
+    allowed_states = {"allow"}
+    if unknown_policy == "allow":
+        allowed_states.add("unknown")
+
+    # See select_load_balanced_peer's identical note: pacing_admission_for_profile
+    # needs the RAW profile (quota.buckets), not a _derive_headroom_rows row.
+    raw_profiles_by_id = {
+        p.get("profile"): p for p in snapshot.get("profiles", []) if p.get("profile")
+    }
+
     for r in _derive_headroom_rows(snapshot):
         if r.get("state") != "eligible" or not isinstance(r.get("headroom"), (int, float)):
             continue
         prof, peer = r.get("profile"), r.get("peer")
-        if prof is not None:
-            usable[prof] = True
-        if peer is not None:
-            usable.setdefault(peer, True)
+
+        if pacing_gate.get("enabled", False):
+            raw_profile = raw_profiles_by_id.get(prof) or {}
+            adm = pacing_admission_for_profile(raw_profile, config)
+        else:
+            adm = "allow"
+        
+        if adm in allowed_states:
+            if prof is not None:
+                usable[prof] = True
+            if peer is not None:
+                usable.setdefault(peer, True)
+        elif adm == "over_cap":
+            if prof is not None:
+                over_cap[prof] = True
+            if peer is not None:
+                over_cap.setdefault(peer, True)
+                
     for entry in arbiter_models:
         if usable.get(entry):
             return entry
+            
+    # Carve-out: If none allowed, check over-cap ones IF dissent/high_risk
+    kind = (context or {}).get("kind")
+    if kind in ("dissent", "high_risk"):
+        for entry in arbiter_models:
+            if over_cap.get(entry):
+                # We return it. The caller must log pacing_cap_override.
+                return entry
+                
     return None
 
 
@@ -2227,10 +2341,10 @@ def evaluate_arbiter_trigger(context, config, invocations_this_window=0):
     return {"fire": True, "reason": "triggered", "kind": kind, "authority": authority}
 
 
-def build_final_opinion_record(round_id, arbiter, kind, authority, verdict, dissent_summary=None):
+def build_final_opinion_record(round_id, arbiter, kind, authority, verdict, dissent_summary=None, pacing_cap_override=False):
     """Structured, JSON-serializable FINAL_OPINION record (later persisted to the
     consensus record / routing_metrics by the live-wiring increment)."""
-    return {
+    rec = {
         "type": "FINAL_OPINION",
         "round_id": round_id,
         "arbiter": arbiter,
@@ -2240,3 +2354,6 @@ def build_final_opinion_record(round_id, arbiter, kind, authority, verdict, diss
         "dissent_summary": dissent_summary,
         "ts": datetime.now().astimezone().isoformat(),
     }
+    if pacing_cap_override:
+        rec["pacing_cap_override"] = True
+    return rec

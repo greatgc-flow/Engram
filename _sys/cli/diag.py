@@ -19,6 +19,7 @@ PORTABLE_ROOT = SYS_DIR.parent
 
 sys.path.insert(0, str(SYS_DIR / "core"))
 import snapshot as _snapshot
+from quota import time_to_exhaustion
 from snapshot import (
     telemetry_config, clear_expensive_cache, expensive_source_age_sec,
     SNAPSHOT_TTL_SEC, _SNAPSHOT_CACHE,
@@ -249,6 +250,23 @@ def _arbiter_model_ids() -> set:
     return {str(model) for model in models} if isinstance(models, list) else set()
 
 
+def _failover_excluded_profile_ids() -> set:
+    """arbiter_models + bulk_exclude_profiles: profiles that must never be shown
+    as an automatic failover target, matching hub._snapshot_failover_choice()'s
+    runtime exclusions (mega-mece-audit-2026-07-16 Track2-cx finding #1)."""
+    data, _observed = _read_json_file(SYS_DIR / "ai" / "routing-config.json")
+    if not isinstance(data, dict):
+        return set()
+    balancing = data.get("token_load_balancing")
+    if not isinstance(balancing, dict):
+        return set()
+    excluded = set(_arbiter_model_ids())
+    bulk = balancing.get("bulk_exclude_profiles")
+    if isinstance(bulk, list):
+        excluded.update(str(p) for p in bulk)
+    return excluded
+
+
 
 
 
@@ -321,6 +339,98 @@ def _quota_display_sort_key(row):
     if isinstance(ratio, (int, float)) and not isinstance(ratio, bool) and math.isfinite(ratio):
         return (0, -ratio, -used, label, owner)
     return (1, 0, -used, label, owner)
+
+
+_WINDOW_HOURS_BY_SUFFIX = {"5H": 5.0, "7D": 168.0}
+
+
+def _pool_prefix_suffix(pool_label):
+    """'3P-5H' -> ('3P', '5H'). No '-' -> (label, None), never guessed."""
+    text = str(pool_label or "")
+    if "-" not in text:
+        return text, None
+    prefix, suffix = text.rsplit("-", 1)
+    return prefix, suffix
+
+
+def _quota_dependency_groups(rows):
+    """Group same-pool time-windows (e.g. a peer's own 5H/7D) so the binding
+    (soonest-to-exhaust-before-its-own-reset) bucket can be foregrounded and
+    the rest demoted. Genuinely separate pools a peer draws from (ag's G-*
+    Gemini vs 3P-* opus/gptoss) stay in separate groups -- never collapsed.
+    A group is 'absent' (never guessed, DIR-004) if any of its buckets lacks
+    the inputs (pacing ratio, reset, recognized window suffix) needed to
+    classify it. See mega-mece-audit-2026-07-16.md Track4/5 Q1."""
+    order = []
+    buckets = {}
+    for row in rows or []:
+        prefix, suffix = _pool_prefix_suffix(row.get("pool"))
+        if prefix not in buckets:
+            buckets[prefix] = []
+            order.append(prefix)
+        buckets[prefix].append(dict(row, _suffix=suffix))
+
+    groups = []
+    for prefix in order:
+        classified = []
+        classifiable = True
+        for row in buckets[prefix]:
+            window_hours = _WINDOW_HOURS_BY_SUFFIX.get(row.get("_suffix"))
+            pacing = row.get("pacing")
+            ratio = pacing.get("ratio") if isinstance(pacing, dict) else None
+            reset_sec = row.get("reset_in_seconds")
+            reset_hours = reset_sec / 3600.0 if isinstance(reset_sec, (int, float)) else None
+            eta = time_to_exhaustion(row.get("used_frac"), ratio, window_hours)
+            if eta is None or reset_hours is None:
+                classifiable = False
+            classified.append({
+                "row": row, "eta": eta, "reset_hours": reset_hours,
+                "ratio": ratio if isinstance(ratio, (int, float)) else -1.0,
+            })
+
+        if not classifiable:
+            state = "absent"
+            primary = max(classified, key=lambda c: c["ratio"])["row"]
+        else:
+            binding = [c for c in classified if c["eta"] < c["reset_hours"]]
+            if binding:
+                state = "binding"
+                primary = min(binding, key=lambda c: c["eta"])["row"]
+            else:
+                state = "safe"
+                primary = max(classified, key=lambda c: c["ratio"])["row"]
+
+        secondary = [c["row"] for c in classified if c["row"] is not primary]
+        groups.append({"pool": prefix, "state": state, "primary": primary, "secondary": secondary})
+    return groups
+
+
+def _quota_dependency_group_text(group):
+    """Render one dependency group as a single line: binding bucket foreground,
+    other same-pool windows demoted to a parenthetical. Plain text (no color
+    codes) so render_summary/_live share byte-identical group payloads."""
+    prefix = group["pool"]
+    if group["state"] == "absent":
+        return f"{prefix}-pool  binding absent"
+    primary = group["primary"]
+    p_suffix = primary.get("_suffix") or "?"
+    p_used = primary.get("used_frac")
+    p_pct = f"{p_used * 100:.0f}%" if isinstance(p_used, (int, float)) else "?"
+    p_ratio = (primary.get("pacing") or {}).get("ratio")
+    p_pace = f"{p_ratio:.2f}x" if isinstance(p_ratio, (int, float)) else "?"
+    label = "BINDS" if group["state"] == "binding" else "SAFE"
+    text = f"{prefix}-pool {label}: {p_suffix} {p_pct} {p_pace}"
+    secondary_bits = []
+    for row in group.get("secondary") or []:
+        s_suffix = row.get("_suffix") or "?"
+        s_used = row.get("used_frac")
+        s_pct = f"{s_used * 100:.0f}%" if isinstance(s_used, (int, float)) else "?"
+        s_ratio = (row.get("pacing") or {}).get("ratio")
+        s_pace = f"{s_ratio:.2f}x" if isinstance(s_ratio, (int, float)) else "?"
+        secondary_bits.append(f"({s_suffix} {s_pct}% {s_pace})")
+    if secondary_bits:
+        text += " " + " ".join(secondary_bits)
+    return text
 
 def render_summary(infos):
     """SUMMARY (nearest prompt): per-peer header + sorted quota continuation rows
@@ -1134,7 +1244,9 @@ def _compact_room_status(status_text):
 
 
 def _next_target_line(snapshot):
-    target = _next_headroom_target(_derive_headroom_rows(snapshot))
+    excluded = _failover_excluded_profile_ids()
+    rows = [r for r in _derive_headroom_rows(snapshot) if r.get("profile") not in excluded]
+    target = _next_headroom_target(rows)
     if not target:
         return "NEXT FAILOVER TARGET: absent"
     risk = " TIER RISK" if target.get("tier_risk") else ""
@@ -1158,12 +1270,35 @@ def render_attention(stdout=None, snapshot=None):
             lines.append(f"[CRIT] {peer}: QUARANTINE peer is quarantined")
         elif health.get("gate_open") is False:
             lines.append(f"[WARN] {peer}: GATE_SHUT gate is closed")
+    registry_path = SYS_DIR / "ai" / "model-registry.json"
+    try:
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    except Exception:
+        registry = {}
+    limits = {
+        mid: m.get("context_limit")
+        for mid, m in (registry.get("models") or {}).items()
+        if isinstance(m, dict)
+    }
+
+    seen_profiles = set()
     for row in snapshot.get("sessions") or []:
-        pct = (row.get("context") or {}).get("utilization_pct")
-        if isinstance(pct, (int, float)) and pct > 100:
-            lines.append(
-                f"[CRIT] {row.get('profile') or '?'}: SESSION_CONTEXT_OVER_CAPACITY {pct:.0f}%"
-            )
+        prof = row.get("profile") or "?"
+        if prof in seen_profiles:
+            continue
+        seen_profiles.add(prof)
+        
+        ctx = row.get("context") or {}
+        used = ctx.get("used")
+        model_id = row.get("model")
+        limit = limits.get(model_id) or ctx.get("window")
+        
+        if isinstance(used, (int, float)) and isinstance(limit, (int, float)) and limit > 0:
+            pct = (used / limit) * 100.0
+            if pct > 100:
+                lines.append(
+                    f"[CRIT] {prof}: SESSION_CONTEXT_OVER_CAPACITY {pct:.0f}%"
+                )
     if not lines:
         lines.append("(no alerts)")
     out.write("\n".join(lines) + "\n")
@@ -1496,7 +1631,8 @@ def render_headroom(stdout=None, snapshot=None, include_target=True):
         snapshot = collect_snapshot()
     rows = _derive_headroom_rows(snapshot)
     if include_target:
-        target = _next_headroom_target(rows)
+        excluded = _failover_excluded_profile_ids()
+        target = _next_headroom_target([r for r in rows if r.get("profile") not in excluded])
         if target:
             risk = " TIER RISK" if target.get("tier_risk") else ""
             out.write(f"NEXT {target.get('profile')} headroom {_fmt_remaining(target.get('headroom'))}{risk}\n")

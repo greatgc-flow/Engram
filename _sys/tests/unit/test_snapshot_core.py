@@ -172,3 +172,30 @@ def test_snapshot_failover_respects_exclude_and_eligibility():
     }
     assert snapshot.snapshot_failover_target(exclude=["ag"], snapshot=snap) is None
     assert snapshot.snapshot_failover_target(snapshot=snap)["profile"] == "ag.standard"
+
+
+
+def test_compute_alerts_source_stale_dynamic_threshold(monkeypatch):
+    import snapshot
+    
+    # Mock _governance_params to not crash
+    monkeypatch.setattr(snapshot, "_governance_params", lambda: {})
+    
+    # Set the dynamic STALE_THRESHOLD_SEC via monkeypatch
+    monkeypatch.setattr(snapshot, "STALE_THRESHOLD_SEC", 900)
+    
+    record = {
+        "raw": {"age_sec": 890},
+        "domains": {}
+    }
+    
+    alerts = snapshot._compute_alerts(record)
+    assert not any(a["code"] == "SOURCE_STALE" for a in alerts)
+    
+    record_stale = {
+        "raw": {"age_sec": 910},
+        "domains": {}
+    }
+    
+    alerts_stale = snapshot._compute_alerts(record_stale)
+    assert any(a["code"] == "SOURCE_STALE" for a in alerts_stale)

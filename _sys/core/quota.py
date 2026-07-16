@@ -1,4 +1,5 @@
 import time
+import math
 from datetime import datetime
 
 def get_remaining_seconds(reset_in_seconds=None, resets_at_iso=None, now_ts=None):
@@ -53,4 +54,27 @@ def calculate_pacing(used_frac: float, remaining_seconds: float, window_hours: f
     else:
         status, indicator = "safe", "🟢"
         
-    return {"ratio": round(pacing_ratio, 2), "status": status, "indicator": indicator}
+    return {"ratio": round(pacing_ratio, 2), "status": status, "indicator": indicator, "elapsed_frac": elapsed_frac}
+
+
+def time_to_exhaustion(used_frac, pacing_ratio, window_hours):
+    """Return projected hours until a quota bucket reaches 100%.
+
+    The projection uses only measured bucket inputs. ``None`` means the
+    projection is absent; a zero measured burn rate means exhaustion is
+    infinitely far away. Values are intentionally not rounded here so callers
+    can compare the projection with the bucket's own reset precisely.
+    """
+    values = (used_frac, pacing_ratio, window_hours)
+    if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in values):
+        return None
+    used_frac, pacing_ratio, window_hours = map(float, values)
+    if not all(math.isfinite(value) for value in (used_frac, pacing_ratio, window_hours)):
+        return None
+    if used_frac < 0.0 or pacing_ratio < 0.0 or window_hours <= 0.0:
+        return None
+    if used_frac >= 1.0:
+        return 0.0
+    if pacing_ratio == 0.0:
+        return math.inf
+    return (1.0 - used_frac) * window_hours / pacing_ratio

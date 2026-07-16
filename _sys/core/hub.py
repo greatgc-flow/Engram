@@ -2716,7 +2716,18 @@ def _snapshot_failover_choice(ai_root: Path | None, exclude: list[str]) -> tuple
     try:
         snap = snapshot.collect_snapshot(use_cache=True)
         snap_hash = snapshot.snapshot_hash(snap)
-        row = snapshot.snapshot_failover_target(exclude=exclude, snapshot=snap)
+        
+        full_exclude = set(exclude) if exclude else set()
+        balancer_cfg = _load_balancer_config()
+        full_exclude.update(balancer_cfg.get("arbiter_models", []) or [])
+        full_exclude.update(balancer_cfg.get("bulk_exclude_profiles", []) or [])
+        if ai_root:
+            state = _read_json(ai_root / "state.json")
+            terminal_peer = state.get("human_interface_peer")
+            if terminal_peer:
+                full_exclude.add(terminal_peer)
+                
+        row = snapshot.snapshot_failover_target(exclude=list(full_exclude), snapshot=snap)
         if ai_root:
             _record_routing_metric(
                 ai_root,
@@ -4474,13 +4485,21 @@ def arbiter_decide(ai_root, context, config, snapshot_obj=None, now=None) -> dic
         return decision
     snap = snapshot_obj if snapshot_obj is not None else \
         (getattr(snapshot, "_SNAPSHOT_CACHE", {}) or {}).get("snapshot")
-    arbiter = snapshot.select_arbiter(snap, config) if snap is not None else None
+    arbiter = snapshot.select_arbiter(snap, config, context=context) if snap is not None else None
     if arbiter is None:
         decision["fire"] = False
         decision["reason"] = "no_arbiter_available"
         decision["arbiter"] = None
         return decision
     decision["arbiter"] = arbiter
+    if snap is not None:
+        target_row = None
+        for r in snapshot._derive_headroom_rows(snap):
+            if r.get("profile") == arbiter or r.get("peer") == arbiter:
+                target_row = r
+                break
+        if target_row and snapshot.pacing_admission_for_profile(target_row, config) == "over_cap":
+            decision["pacing_cap_override"] = True
     return decision
 
 
@@ -4550,6 +4569,7 @@ def invoke_arbiter(ai_root, decision, context, config, invoker, now=None):
         authority=decision.get("authority"),
         verdict=verdict_text,
         dissent_summary=condensed,
+        pacing_cap_override=decision.get("pacing_cap_override", False),
     )
     try:
         path = ai_root / "final_opinions.jsonl"
@@ -4796,7 +4816,14 @@ def _sweep_stale_ask_temp_dirs(temp_root: Path, max_age_sec: int = 3600) -> None
             return
         cutoff = time.time() - max_age_sec
         for entry in temp_root.iterdir():
-            if not entry.is_dir() or not entry.name.startswith("ask_"):
+            # Name-prefix check FIRST (cheap, no syscall) so is_dir()/stat() --
+            # a real filesystem call each, possibly slow on a synced/portable
+            # drive -- only runs for the handful of "ask_*" candidates instead
+            # of every entry in a temp dir that can accumulate thousands of
+            # unrelated files (found via mega-mece-audit-2026-07-16 P1b
+            # verification: this ordering alone made a routine sweep exceed
+            # 60s against 5700+ real entries).
+            if not entry.name.startswith("ask_") or not entry.is_dir():
                 continue
             try:
                 if entry.stat().st_mtime < cutoff:
@@ -4954,6 +4981,61 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
 
     health_peer = hub_peer.root_peer_id(to, orch=_orch_for_gate) if _HUB_PEER_AVAILABLE else None
     health_peer = health_peer or to
+    
+    if _SNAPSHOT_AVAILABLE and getattr(snapshot, "pacing_admission_for_profile", None) is not None:
+        try:
+            cfg = _load_balancer_config()
+            pacing_gate = cfg.get("pacing_hard_gate", {})
+            if pacing_gate.get("enabled", False):
+                snap = (getattr(snapshot, "_SNAPSHOT_CACHE", {}) or {}).get("snapshot")
+                if not snap:
+                    snap = snapshot.collect_snapshot(use_cache=True)
+                if snap:
+                    prof_id = profile_decision.get("selected_profile") if profile_decision else None
+                    if not prof_id and "." in to:
+                        prof_id = to.split(".", 1)[1]
+                    peer_id = profile_decision.get("root_peer") if profile_decision else to.split(".")[0]
+                    
+                    target_row = None
+                    for r in snapshot._derive_headroom_rows(snap):
+                        r_prof = r.get("profile")
+                        r_peer = r.get("peer")
+                        if prof_id and r_prof == prof_id:
+                            target_row = r
+                            break
+                        if not prof_id and r_peer == peer_id and r_prof is None:
+                            target_row = r
+                            break
+                    if not target_row and not prof_id:
+                        for r in snapshot._derive_headroom_rows(snap):
+                            if r.get("peer") == peer_id:
+                                target_row = r
+                                break
+                    if target_row:
+                        # pacing_admission_for_profile needs the RAW profile
+                        # (quota.buckets); target_row is a _derive_headroom_rows
+                        # row and never carries that field (else this always
+                        # reads "unknown" and unknown_policy=deny rejects every
+                        # target -- caught in P1b verification).
+                        raw_profile = next(
+                            (p for p in snap.get("profiles", []) if p.get("profile") == target_row.get("profile")),
+                            None,
+                        ) or {}
+                        adm = snapshot.pacing_admission_for_profile(raw_profile, cfg)
+                        unknown_policy = pacing_gate.get("unknown_policy", "deny")
+                        allowed_states = {"allow"}
+                        if unknown_policy == "allow":
+                            allowed_states.add("unknown")
+                            
+                        if adm not in allowed_states:
+                            _surface_pre_dispatch_failure(
+                                ai_root, to, "pacing_cap_exceeded", recovery_peer=health_peer
+                            )
+                            print(f"[ERROR] ask target {to} rejected by pacing admission gate (>1.0)", file=sys.stderr)
+                            sys.exit(1)
+        except Exception as e:
+            print(f"[HUB:WARN] pacing gate error: {e}", file=sys.stderr)
+
     adapter = hub_peer.get_adapter(node) if _HUB_PEER_AVAILABLE else None
     requires_pty = node.get("requires_pty", False)
     exe_name = node.get("invoke", to)

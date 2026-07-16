@@ -215,6 +215,12 @@
           "reserve_fraction": 0.20
         }
       }
+    },
+    "pacing_hard_gate": {
+      "_doc": "Hard admission gate (mega-mece-audit-2026-07-16 Track4/5 Q2, 5-way debate converged): a candidate whose measured pacing ratio exceeds max_ratio is excluded from AUTO selection and refused for explicit --to asks alike (no profile-class exemption -- premium/manual_only/arbiter share this gate too). unknown_policy=deny means an unmeasured profile is never assumed safe (DIR-004). A human-only break-glass flag and a narrow DIR-005 last-resort arbiter carve-out are the only overrides -- see the audit doc for the full converged design.",
+      "enabled": true,
+      "max_ratio": 1.0,
+      "unknown_policy": "deny"
     }
   },
   "final_arbiter": {

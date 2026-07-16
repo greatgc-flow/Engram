@@ -567,3 +567,30 @@ def test_dashboard_title_is_engram_not_antigravity(monkeypatch, tmp_path):
     diag = load_diag()
     assert "Engram Multi-Peer Diagnostics" in Path(diag.__file__).read_text(encoding="utf-8")
     assert "Antigravity Collaboration Environment Diagnostics" not in Path(diag.__file__).read_text(encoding="utf-8")
+
+
+
+def test_render_attention_session_over_capacity(monkeypatch):
+    diag = load_diag()
+    render_attention = diag.render_attention
+    import io
+    snap = {
+        "sessions": [
+            {"profile": "p1", "model": "m1", "context": {"used": 150, "window": 100}},
+            {"profile": "p1", "model": "m1", "context": {"used": 200, "window": 100}},
+            {"profile": "p2", "model": "m2", "context": {"used": 150, "window": 200}},
+        ]
+    }
+    
+    def fake_read_text(self, *a, **kw):
+        return '{"models": {"m1": {"context_limit": 100}}}'
+        
+    monkeypatch.setattr(Path, "read_text", fake_read_text)
+    
+    buf = io.StringIO()
+    render_attention(buf, snapshot=snap)
+    out = buf.getvalue()
+    
+    assert "[CRIT] p1: SESSION_CONTEXT_OVER_CAPACITY 150%" in out
+    assert "[CRIT] p1: SESSION_CONTEXT_OVER_CAPACITY 200%" not in out
+    assert "[CRIT] p2: SESSION_CONTEXT_OVER_CAPACITY" not in out

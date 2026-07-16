@@ -193,6 +193,11 @@ class TestDepthAndPeerScopeOnActionAskInner:
         monkeypatch.setattr(hub, "_load_orchestration", lambda: {})
         monkeypatch.setattr(hub, "is_routable", lambda node_id, orch=None: True)
         monkeypatch.setattr(hub, "_HUB_PEER_AVAILABLE", False)
+        # Pacing hard gate (mega-mece-audit-2026-07-16 P1b) reads live cached
+        # snapshot state -- an unrelated subsystem for this guard-placement
+        # test, same as the other stubs above; disable it so the test doesn't
+        # flake on whatever pacing the real environment happens to be at.
+        monkeypatch.setattr(hub, "_SNAPSHOT_AVAILABLE", False)
 
         class _PastGuardSentinel(Exception):
             pass
