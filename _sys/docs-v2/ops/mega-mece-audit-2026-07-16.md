@@ -178,3 +178,18 @@ CX  X-pool   🟢 ≥0.00x   absent       |▸  0% 0.00x
 ```
 
 **Implementation pointers**: add pure `quota_urgency()`/`URG` computation beside `time_to_exhaustion()` in `_sys/core/quota.py` (or compute inline in the grouping function, reusing `time_to_exhaustion()` and each bucket's `reset_hours` -- both already available inside `_quota_dependency_groups()`). Rewrite `_quota_dependency_group_text()` in `_sys/cli/diag.py` to the fixed-column render above; `_quota_dependency_groups()`'s classification (`binding`/`safe`/`absent` state, `primary`/`secondary` buckets) stays the SSOT, URG is a display-layer computation on top of it. `render_summary()` and `render_live_quota_pools()` continue sharing the same text function (no-drift property preserved).
+
+---
+
+## Narrow-terminal degradation for quota pool lines (5-way debate, 3 rounds to unanimous)
+
+User asked whether `diag` handles narrow terminal widths. Found: `render_live_quota_pools()` only had naive tail-truncation (`_elide_display()`, drops whatever's at the end regardless of importance); `render_summary()` had zero width handling at all.
+
+**Converged design (5/5 unanimous):**
+1. **Field-aware candidate generation, not tail-truncation.** Generate tier candidates in priority order, pick the richest whose `_dw()` fits the budget (robust to variable pool-name/reset-text length -- a fixed column-count breakpoint table would be fragile). `_elide_display()` survives only as the absolute last-resort safety net below the narrowest semantic tier.
+2. **Priority ladder** (drop order as width shrinks): reset-time suffix first -> pace ratios inside window slots (keep used%, keep `▸`/`~` markers) -> the numeric URG index and the non-binding window drop TOGETHER, leaving `OWNER POOL <glyph> ▸<window-label> <pct>` (e.g. `AG 3P 🔴 ▸7D 67%`) as the narrowest semantic floor. Nominal widths (fit-based selection is authoritative, these are for tests/docs): T0≈76 full+reset, T1≈62 drop reset, T2≈46 drop pace ratios, T3≈32 glyph+labeled-binding-window only.
+   - Resolution history: Round A split 3 ways (drop-windows-keep-URG / drop-URG-keep-windows / keep-everything-compress). Round B converged 3-2 toward drop-URG-keep-binding-window, with cc.fable switching camps citing DIR-004: "URG is *derived*; used% is *measured* -- when width forces a choice, the raw fact outlives the synthesis." A final round resolved the last 2 holdouts (cx.effort, cx.deepthink), who conceded that the non-binding window's value "does not change the immediate operator action" once a different bucket has already proven to bind, and that explicit window labeling is required regardless once two-slot geometry can't fit (position stops encoding which window it is).
+3. **TTY detection**: `columns = shutil.get_terminal_size().columns if sys.stdout.isatty() else None` for `render_summary()` (piped/redirected/logged output gets full, unlimited data -- logs want completeness, not narrowing). `render_live_quota_pools()` keeps its existing caller-supplied `columns` unchanged (already inherently an interactive-TTY context).
+4. **Header-tier sync**: column headers must track the same tier as the rows (a header advertising "5H 7D" over rows that dropped those slots is a rendering bug). One shared `_quota_columns_for_tier(tier)` feeds both header and row construction in both render paths. **Tier is selected ONCE per section** (the tightest tier any row in that section needs), not per-row, so columns stay aligned across rows.
+
+**Implementation pointers**: one shared candidate-generating formatter (extends `_quota_dependency_group_text()`) used by both `render_summary()` and `_live_quota_pool_line()`/`render_live_quota_pools()` -- same no-drift principle as the rest of tonight's quota work.

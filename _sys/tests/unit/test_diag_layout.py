@@ -598,3 +598,52 @@ def test_render_attention_session_over_capacity(monkeypatch):
     assert "[CRIT] p1: SESSION_CONTEXT_OVER_CAPACITY 150%" in out
     assert "[CRIT] p1: SESSION_CONTEXT_OVER_CAPACITY 200%" not in out
     assert "[CRIT] p2: SESSION_CONTEXT_OVER_CAPACITY" not in out
+
+def test_quota_narrow_terminal_degradation_tiers():
+    diag = load_diag()
+    group = {
+        "pool": "ag",
+        "primary": {
+            "label": "ag",
+            "_suffix": "5H",
+            "used_frac": 0.5,
+            "pacing": {"ratio": 1.7},
+            "_eta_full": 5.0,
+            "_reset_hours": 3.0,
+        },
+        "secondary": [
+            {
+                "label": "ag",
+                "_suffix": "7D",
+                "used_frac": 0.8,
+                "pacing": {"ratio": 0.9},
+                "_eta_full": 10.0,
+                "_reset_hours": 12.0,
+            }
+        ]
+    }
+    
+    # Tier 0: full
+    t0 = diag._quota_dependency_group_text(group, tier=0)
+    assert "resets" in t0
+    assert "1.70x" in t0
+    assert "1.20x" in t0
+    
+    # Tier 1: drop reset
+    t1 = diag._quota_dependency_group_text(group, tier=1)
+    assert "resets" not in t1
+    assert "1.70x" in t1
+    assert "1.20x" in t1
+    
+    # Tier 2: drop pacing
+    t2 = diag._quota_dependency_group_text(group, tier=2)
+    assert "1.70x" not in t2
+    assert "1.20x" in t2
+    assert "50%" in t2
+    assert "80%" in t2
+    
+    # Tier 3: binding-only floor
+    t3 = diag._quota_dependency_group_text(group, tier=3)
+    assert "7D" in t3  # Because 12/10 = 1.2x (max urg)
+    assert "5H" not in t3
+    

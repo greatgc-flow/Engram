@@ -447,8 +447,29 @@ def _borrow_missing_windows(groups):
                 g.setdefault("secondary", []).append(borrowed)
     return groups
 
+def _quota_columns_for_tier(tier):
+    if tier <= 1:
+        return _pad("URG", 10) + " " + _pad("5H", 10) + " " + _pad("7D", 10)
+    elif tier == 2:
+        return _pad("URG", 10) + " " + _pad("5H", 6) + " " + _pad("7D", 6)
+    else:
+        return _pad("BINDING", 12)
 
-def _quota_dependency_group_text(group):
+def _select_quota_tier(groups, budget, prefix_len=0):
+    if budget is None:
+        return 0
+    for tier in range(4):
+        fits = True
+        for group in groups:
+            text = _quota_dependency_group_text(group, tier=tier)
+            if prefix_len + _dw(text) > budget:
+                fits = False
+                break
+        if fits:
+            return tier
+    return 3
+
+def _quota_dependency_group_text(group, tier=0):
     """Render one dependency group as a single line (fixed order 5H | 7D)
     with the 'URG' composite index (reset_hours / eta_full). Buckets
     borrowed from a sibling pool (_borrow_missing_windows) render with a
@@ -488,7 +509,21 @@ def _quota_dependency_group_text(group):
         urg_text = f"{glyph} {urg_fmt}"
 
     pool_str = _pad(f"{prefix}-pool", 9)
+    
+    if tier >= 3:
+        b = max_urg_bucket if max_urg_bucket else buckets[0] if buckets else {}
+        uf = b.get("used_frac")
+        if not isinstance(uf, (int, float)):
+            s = "absent"
+        else:
+            s = f"{uf * 100:.0f}%"
+        marker = "~" if b.get("_borrowed") else "▸"
+        suffix = b.get("_suffix", "??")
+        binding_str = f"{glyph} {marker}{suffix} {s}"
+        return f"{pool_str} {binding_str}"
+
     urg_str = _pad(urg_text, 10)
+    bucket_pad = 6 if tier == 2 else 10
 
     # Fixed slots by window suffix (5H, then 7D) -- a pool with only one
     # real window (e.g. cx's X-7D) must render its bucket under the 7D
@@ -499,26 +534,31 @@ def _quota_dependency_group_text(group):
     for suffix in ("5H", "7D"):
         b = by_suffix.get(suffix)
         if b is None:
-            bucket_strs.append(_pad("--", 10))
+            bucket_strs.append(_pad("--", bucket_pad))
             continue
         borrowed = b.get("_borrowed")
         marker = "~" if borrowed else ("▸" if b is max_urg_bucket else " ")
         uf = b.get("used_frac")
         if not isinstance(uf, (int, float)):
             s = f"{marker}absent"
-            bucket_strs.append(_pad(s, 12))
+            bucket_strs.append(_pad(s, bucket_pad + 2))
         else:
             pct = f"{uf * 100:.0f}%"
             ratio = (b.get("pacing") or {}).get("ratio")
-            pace = f"{ratio:.2f}x" if isinstance(ratio, (int, float)) else "?"
-            s = f"{marker}{_pad(pct, 3, 'right')} {pace}"
-            if borrowed:
-                s += f"({b.get('_from_pool')})"
-            bucket_strs.append(_pad(s, 10))
+            if tier >= 2:
+                s = f"{marker}{pct}"
+                if borrowed:
+                    s += f"({b.get('_from_pool')})"
+            else:
+                pace = f"{ratio:.2f}x" if isinstance(ratio, (int, float)) else "?"
+                s = f"{marker}{_pad(pct, 3, 'right')} {pace}"
+                if borrowed:
+                    s += f"({b.get('_from_pool')})"
+            bucket_strs.append(_pad(s, bucket_pad))
 
     buckets_joined = " |".join(bucket_strs)
     reset_str = ""
-    if max_urg_bucket is not None:
+    if tier == 0 and max_urg_bucket is not None:
         res = max_urg_bucket.get("_reset_hours")
         if isinstance(res, (int, float)):
             reset_str = f"  resets {_rel(res * 3600.0)}"
@@ -533,11 +573,25 @@ def render_summary(infos):
     headers = [_pad("PEER", 5), _pad("STATE", 11),
                _pad("CONTEXT(used/win %)", 19), _pad("COST", 9), _pad("SRC", 12)]
     print(_c(" ".join(headers).rstrip(), "dim"))
-    quota_header = (
-        "      " + _pad("POOL", 9) + " " + _pad("URG", 10)
-        + " " + _pad("5H", 10) + " " + _pad("7D", 10)
-    )
+    if sys.stdout.isatty():
+        columns = shutil.get_terminal_size().columns
+    else:
+        columns = None
+
+    all_groups = []
+    for info in infos:
+        visible_quotas = [
+            quota for quota in (info.get("quotas") or [])
+            if isinstance(quota.get("used_frac"), (int, float))
+        ]
+        rows = [{"pool": q.get("label"), **q} for q in visible_quotas]
+        all_groups.extend(_borrow_missing_windows(_quota_dependency_groups(rows)))
+        
+    tier = _select_quota_tier(all_groups, columns, prefix_len=13)
+
+    quota_header = "      " + _pad("POOL", 9) + " " + _quota_columns_for_tier(tier)
     print(_c(quota_header, "dim"))
+    
     for info in infos:
         peer = info["peer"].upper()
         cost = f"${info['cost']:.4f}" if isinstance(info["cost"], (int, float)) else "-"
@@ -564,9 +618,12 @@ def render_summary(infos):
             primary = group.get("primary") or {}
             uf = primary.get("used_frac")
             glyph = _severity_glyph(used_frac=uf)
-            text = _quota_dependency_group_text(group)
+            text = _quota_dependency_group_text(group, tier=tier)
             warn = "  " + _c("WARN", "red", "bold") if isinstance(uf, (int, float)) and uf >= QUOTA_CRIT_FRAC else ""
-            print(f"  ↳ {_pad(glyph, 2)} {text}{warn}")
+            line = f"  ↳ {_pad(glyph, 2)} {text}{warn}"
+            if columns is not None:
+                line = _elide_display(line, columns)
+            print(line)
 
     print(_c(_source_legend(), "dim"))
 
@@ -982,12 +1039,12 @@ def _live_quota_pool_rows(snapshot):
     return sorted(groups, key=group_sort_key)
 
 
-def _live_quota_pool_line(group, columns):
+def _live_quota_pool_line(group, columns, tier):
     owner = group.get("owner", "")
     owner_padded = _pad(str(owner).upper(), 6)
-    text = _quota_dependency_group_text(group)
+    text = _quota_dependency_group_text(group, tier=tier)
     line = f"{owner_padded} {text}"
-    return _elide_display(line, columns)
+    return _elide_display(line, columns) if columns is not None else line
 
 
 def render_live_quota_pools(
@@ -1005,14 +1062,15 @@ def render_live_quota_pools(
         if toggle_available:
             suffix += "; press 'p' to collapse"
         section_header += suffix + ")"
-    section_header = _elide_display(section_header, columns)
-    column_header = _elide_display(
-        _pad("OWNER", 6) + " " + _pad("POOL", 9) + " " + _pad("URG", 10)
-        + " " + _pad("5H", 10) + " " + _pad("7D", 10),
-        columns,
-    )
+    section_header = _elide_display(section_header, columns) if columns is not None else section_header
+    
+    tier = _select_quota_tier(rows, columns, prefix_len=7)
+    header_str = _pad("OWNER", 6) + " " + _pad("POOL", 9) + " " + _quota_columns_for_tier(tier)
+    column_header = _elide_display(header_str, columns) if columns is not None else header_str
+
     if not rows:
-        out.write(section_header + "\n" + _elide_display("  none", columns) + "\n")
+        none_str = _elide_display("  none", columns) if columns is not None else "  none"
+        out.write(section_header + "\n" + none_str + "\n")
         return
 
     if expanded or line_budget is None:
@@ -1026,7 +1084,7 @@ def render_live_quota_pools(
         hidden = len(rows) - len(selected)
 
     lines = [section_header, column_header]
-    lines.extend(_live_quota_pool_line(row, columns) for row in selected)
+    lines.extend(_live_quota_pool_line(row, columns, tier) for row in selected)
     if hidden:
         hidden_text = f"  +{hidden} pools hidden"
         hidden_text += " (press 'p' to expand)" if toggle_available else "; run diag for all"
