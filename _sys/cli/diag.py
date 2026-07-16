@@ -379,6 +379,17 @@ def _quota_dependency_groups(rows):
             pacing = row.get("pacing")
             ratio = pacing.get("ratio") if isinstance(pacing, dict) else None
             reset_sec = row.get("reset_in_seconds")
+            if not isinstance(reset_sec, (int, float)):
+                # Fall back to reset_at (ISO timestamp) when reset_in_seconds
+                # wasn't populated by the source -- both express the same
+                # fact, and dropping real used_frac/pacing data to "absent"
+                # just because this one field is missing is over-applying
+                # DIR-004 (caught live: cc/cx quotas carry reset_at but not
+                # reset_in_seconds, so every cc/cx group rendered as a bare
+                # "binding absent" with none of their real numbers shown).
+                reset_dt = _parse_reset(row.get("reset_at"))
+                if reset_dt is not None:
+                    reset_sec = (reset_dt - datetime.now(reset_dt.tzinfo)).total_seconds()
             reset_hours = reset_sec / 3600.0 if isinstance(reset_sec, (int, float)) else None
             eta = time_to_exhaustion(row.get("used_frac"), ratio, window_hours)
             if eta is None or reset_hours is None:
@@ -408,17 +419,23 @@ def _quota_dependency_groups(rows):
 def _quota_dependency_group_text(group):
     """Render one dependency group as a single line: binding bucket foreground,
     other same-pool windows demoted to a parenthetical. Plain text (no color
-    codes) so render_summary/_live share byte-identical group payloads."""
+    codes) so render_summary/_live share byte-identical group payloads.
+    'absent' still prints every bucket's real numbers -- unable to determine
+    WHICH bucket binds is not the same as having no data to show (DIR-004
+    governs guessing, not omitting known values)."""
     prefix = group["pool"]
-    if group["state"] == "absent":
-        return f"{prefix}-pool  binding absent"
     primary = group["primary"]
     p_suffix = primary.get("_suffix") or "?"
     p_used = primary.get("used_frac")
     p_pct = f"{p_used * 100:.0f}%" if isinstance(p_used, (int, float)) else "?"
     p_ratio = (primary.get("pacing") or {}).get("ratio")
     p_pace = f"{p_ratio:.2f}x" if isinstance(p_ratio, (int, float)) else "?"
-    label = "BINDS" if group["state"] == "binding" else "SAFE"
+    if group["state"] == "binding":
+        label = "BINDS"
+    elif group["state"] == "safe":
+        label = "SAFE"
+    else:
+        label = "binding absent"
     text = f"{prefix}-pool {label}: {p_suffix} {p_pct} {p_pace}"
     secondary_bits = []
     for row in group.get("secondary") or []:
