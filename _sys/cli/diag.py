@@ -517,7 +517,12 @@ def _quota_dependency_group_text(group):
             bucket_strs.append(_pad(s, 10))
 
     buckets_joined = " |".join(bucket_strs)
-    return f"{pool_str} {urg_str} {buckets_joined}"
+    reset_str = ""
+    if max_urg_bucket is not None:
+        res = max_urg_bucket.get("_reset_hours")
+        if isinstance(res, (int, float)):
+            reset_str = f"  resets {_rel(res * 3600.0)}"
+    return f"{pool_str} {urg_str} {buckets_joined}{reset_str}"
 
 def render_summary(infos):
     """SUMMARY (nearest prompt): per-peer header + sorted quota continuation rows
