@@ -490,8 +490,17 @@ def _quota_dependency_group_text(group):
     pool_str = _pad(f"{prefix}-pool", 9)
     urg_str = _pad(urg_text, 10)
 
+    # Fixed slots by window suffix (5H, then 7D) -- a pool with only one
+    # real window (e.g. cx's X-7D) must render its bucket under the 7D
+    # column, not wherever it happens to fall in a positional list, else
+    # the column start drifts row to row (reported by the user 2026-07-16).
+    by_suffix = {b.get("_suffix"): b for b in buckets}
     bucket_strs = []
-    for b in buckets:
+    for suffix in ("5H", "7D"):
+        b = by_suffix.get(suffix)
+        if b is None:
+            bucket_strs.append(_pad("--", 10))
+            continue
         borrowed = b.get("_borrowed")
         marker = "~" if borrowed else ("▸" if b is max_urg_bucket else " ")
         uf = b.get("used_frac")
