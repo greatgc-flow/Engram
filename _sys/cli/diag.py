@@ -418,15 +418,50 @@ def _quota_dependency_groups(rows):
     return groups
 
 
+def _borrow_missing_windows(groups):
+    """When a peer's pool reports only one window (cx's X-7D has no X-5H at
+    all; cc.fable's F-7D has no F-5H), fill the empty slot from a sibling
+    pool of the SAME owner if it has that window -- e.g. cc.fable draws
+    from both the F and C quota_families (orchestration.json), so its
+    F-pool's missing 5H can show C-5H as relevant context. Duplication is
+    intentional (user request, 2026-07-16): "중복되어도 좋으니 영향도 있으면
+    표기해줘". Borrowed buckets are tagged so they never enter this pool's
+    OWN URG math -- they're a cross-reference, not this pool's accounting."""
+    all_buckets_by_suffix = {}
+    for g in groups:
+        for b in [g["primary"]] + g.get("secondary", []):
+            all_buckets_by_suffix.setdefault(b.get("_suffix"), []).append((g["pool"], b))
+
+    for g in groups:
+        present = {b.get("_suffix") for b in [g["primary"]] + g.get("secondary", [])}
+        for suffix in ("5H", "7D"):
+            if suffix in present:
+                continue
+            candidates = [
+                (pool, b) for pool, b in all_buckets_by_suffix.get(suffix, [])
+                if pool != g["pool"]
+            ]
+            if candidates:
+                src_pool, src_bucket = candidates[0]
+                borrowed = dict(src_bucket, _borrowed=True, _from_pool=src_pool)
+                g.setdefault("secondary", []).append(borrowed)
+    return groups
+
+
 def _quota_dependency_group_text(group):
     """Render one dependency group as a single line (fixed order 5H | 7D)
-    with the 'URG' composite index (reset_hours / eta_full)."""
+    with the 'URG' composite index (reset_hours / eta_full). Buckets
+    borrowed from a sibling pool (_borrow_missing_windows) render with a
+    '~' marker and source-pool tag, and never count toward URG -- they are
+    informational context, not this pool's own accounting."""
     prefix = group["pool"]
     buckets = [group["primary"]] + group.get("secondary", [])
     buckets.sort(key=lambda b: str(b.get("_suffix") or ""))
 
     valid_urgs = []
     for b in buckets:
+        if b.get("_borrowed"):
+            continue
         eta = b.get("_eta_full")
         res = b.get("_reset_hours")
         if eta is not None and res is not None:
@@ -435,13 +470,14 @@ def _quota_dependency_group_text(group):
             else:
                 valid_urgs.append((min(res / eta, 99.99), b))
 
+    own_buckets = [b for b in buckets if not b.get("_borrowed")]
     if not valid_urgs:
         urg_text = "absent"
         max_urg_bucket = None
     else:
         max_urg_val, max_urg_bucket = max(valid_urgs, key=lambda x: x[0])
         urg_fmt = f"{max_urg_val:.2f}x"
-        if len(valid_urgs) < len(buckets):
+        if len(valid_urgs) < len(own_buckets):
             urg_fmt = f"≥{urg_fmt}"
         if max_urg_val >= 1.00:
             glyph = "🔴"
@@ -456,7 +492,8 @@ def _quota_dependency_group_text(group):
 
     bucket_strs = []
     for b in buckets:
-        marker = "▸" if b is max_urg_bucket else " "
+        borrowed = b.get("_borrowed")
+        marker = "~" if borrowed else ("▸" if b is max_urg_bucket else " ")
         uf = b.get("used_frac")
         if not isinstance(uf, (int, float)):
             s = f"{marker}absent"
@@ -466,6 +503,8 @@ def _quota_dependency_group_text(group):
             ratio = (b.get("pacing") or {}).get("ratio")
             pace = f"{ratio:.2f}x" if isinstance(ratio, (int, float)) else "?"
             s = f"{marker}{_pad(pct, 3, 'right')} {pace}"
+            if borrowed:
+                s += f"({b.get('_from_pool')})"
             bucket_strs.append(_pad(s, 10))
 
     buckets_joined = " |".join(bucket_strs)
@@ -496,7 +535,7 @@ def render_summary(infos):
             if isinstance(quota.get("used_frac"), (int, float))
         ]
         rows = [{"pool": q.get("label"), **q} for q in visible_quotas]
-        groups = _quota_dependency_groups(rows)
+        groups = _borrow_missing_windows(_quota_dependency_groups(rows))
 
         def group_sort_key(group):
             state_rank = {"binding": 0, "safe": 1, "absent": 2}.get(group.get("state"), 3)
@@ -911,7 +950,7 @@ def _live_quota_pool_rows(snapshot):
                     row[k] = v
             peer_rows.append(row)
             
-        peer_groups = _quota_dependency_groups(peer_rows)
+        peer_groups = _borrow_missing_windows(_quota_dependency_groups(peer_rows))
         for g in peer_groups:
             g["owner"] = owner
             g["source"] = source
