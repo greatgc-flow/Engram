@@ -227,7 +227,7 @@ each request among `standard`, `effort`, and `deepthink`.
 ## Token Load-Balancing & Final Arbiter
 
 - **Token Load-Balancing**: Activated via `--to auto` during an ask, the hub evaluates each peer's real-time headroom, pacing penalties, and quota state to route the ask to the healthiest peer. It automatically deduplicates in-flight requests and excludes premium or terminal-only models from the bulk rotation. See `_sys/docs/history/ops/token-load-balancing-design.md` for detail.
-- **Final Arbiter**: When a consensus round shows dissent, or an R:10 human-gate unanimity requirement fails (`r10_final`), the hub automatically summons a budget-capped premium arbiter profile (e.g., `cc.fable`) to make the final binding determination. Unanimous routine rounds bypass the arbiter entirely to conserve premium tokens.
+- **Final Arbiter**: When a consensus round shows dissent, or an R:10 human-gate unanimity requirement fails (`r10_final`), the hub automatically summons a budget-capped premium arbiter profile (e.g., `cc.fable`) to record a written opinion (`.ai/final_opinions.jsonl`) on the already-finalized round. This is currently **advisory only** — the opinion is not mechanically applied back onto the round's outcome — intended to give a human or a future round strong second-opinion input, not to silently override consensus. Unanimous routine rounds bypass the arbiter entirely to conserve premium tokens.
 
 ---
 

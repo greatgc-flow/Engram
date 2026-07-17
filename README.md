@@ -22,7 +22,7 @@ Most AI agents hallucinate, take shortcuts, or need constant human steering. **E
 - **Evidence-qualified capability leveling:** each `(peer, model, effort)` is scored *per axis* (reasoning · code · agentic · context) from budgeted local canaries — `measured > operational > declared > absent`, never reconciling different scales. A frontier-model tie is recorded as a `ceiling`, not a fabricated ranking; declared scores never enter a routing decision.
 - **Empirical reality reconciliation:** a canary probes each real CLI by invocation (not `--help` hypotheses) and reconciles declared config against observed behavior, flagging drift as `MATCH` / `DRIFT` / `CONTRADICTED`.
 - **Token-aware load balancing:** work is routed to spread token burn-down across peers by live headroom + pacing (seeded weighted-random), keeping the interactive terminal's spend minimal.
-- **The Final Arbiter (DIR-005):** when peers *disagree*, the single smartest model casts a budget-capped tie-breaker — expensive reasoning used sparingly, only when it matters.
+- **The Final Arbiter (DIR-005):** when peers *disagree*, the single smartest model casts a budget-capped advisory opinion on the round — expensive reasoning spent sparingly, only when it matters, for a human (or a future round) to weigh.
 - **Governed-mutation guard:** a hash + phantom-write watch blocks any peer from silently editing protocol, orchestration, or docs outside a sanctioned consensus window.
 
 ## 👥 The Peer Network
