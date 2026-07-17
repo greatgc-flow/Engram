@@ -508,7 +508,9 @@
                                                            "thread-react",
                                                            "proposal-add",
                                                            "proposal-vote",
-                                                           "broker-drain"
+                                                           "broker-drain",
+                                                           "directive-add",
+                                                           "directive-clear"
                                                        ],
                               "semi_governed_hub_actions":  [
                                                                 "leader-claim",
@@ -548,15 +550,12 @@
                                                             "context-fill",
                                                             "preflight",
                                                             "context-hash",
-                                                            "context-ack",
                                                             "task-status",
                                                             "lock-status",
                                                             "profile-validate",
                                                             "model-status",
                                                             "transient-scan",
-                                                            "directive-add",
                                                             "directive-list",
-                                                            "directive-clear",
                                                             "feedback-list",
                                                             "artifact-status",
                                                             "lessons-list",
