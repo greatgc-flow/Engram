@@ -744,7 +744,7 @@
                                                       }
                            },
     "autonomous_maintenance":  {
-                                   "_doc":  "Phase 1 of self-evolution.md: declarative schedule for self_care.py and lifecycle scripts.",
+                                   "_doc":  "Phase 1 of self-evolution.md: declarative schedule for self_care.py and lifecycle scripts. IMPORTANT (clarified 2026-07-17, 3-peer closure review): despite the name, this is NOT a wall-clock/cron scheduler -- there is no background dispatcher that fires on a timer. 'enabled' means self_care.py fires at the ctx_start.py/ctx_end.py lifecycle HOOK POINTS (session_start/session_end), which only run when a human/wrapper actually invokes ctx-start.bat/ctx-end.bat. If those scripts are never run, self-care never fires, regardless of 'enabled'. Treat as manual-trigger-at-a-named-hookpoint, not autonomous-on-a-timer.",
                                    "enabled":  true,
                                    "trigger":  "session_start",
                                    "schedule":  {
