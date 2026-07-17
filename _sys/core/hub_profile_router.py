@@ -24,7 +24,6 @@ class ProfileDecision:
     confidence: float
     explicit: bool = False
     classifier_triggered: bool = True
-    promoted: bool = False
     fallback_from: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
@@ -161,19 +160,28 @@ def _profile_for_score(
     standard_evidence: bool,
     config: dict,
 ) -> str:
+    """Determine the profile. Intentional 3-way trichotomy (mega-mece-audit-
+    2026-07-16 item C, 5-way unanimous): the medium band deliberately
+    defers to the configured `ambiguous_default` rather than having its own
+    distinct selection logic -- that IS the design, not a gap to fill with
+    new threshold math.
+
+    Scores:
+    - below effort_score (with standard_evidence): standard.
+    - at/above deepthink_score: deepthink.
+    - everything else (the ambiguous medium band): config['ambiguous_default'].
+    """
     thresholds = config.get("thresholds", {})
     # If standard evidence is clearly met, use the cheapest option
     if standard_evidence and score < int(thresholds.get("effort_score", 3)):
         return "standard"
-        
-    # If it meets effort threshold but not deepthink, use effort (if explicitly configured to use effort as intermediate)
-    # However, user requested default to deepthink unless "certain" (standard). 
+
+    # If it meets deepthink threshold explicitly
     if score >= int(thresholds.get("deepthink_score", 8)):
         return "deepthink"
-    if score >= int(thresholds.get("effort_score", 3)):
-        # If config explicitly still wants effort, we can honor it, but let's change ambiguous default
-        pass
 
+    # Ambiguous medium band: deliberately deferred to the configured
+    # default, never a fabricated distinct branch.
     signals.append("ambiguous_default")
     return str(config.get("ambiguous_default", "deepthink"))
 
@@ -262,21 +270,6 @@ def select_profile_node(
         )
         confidence = min(1.0, 0.5 + (distance * 0.1) + (len(signals) * 0.05))
 
-    promoted = False
-    failure_cfg = config.get("failure_promotion", {})
-    allowed_failure_reasons = set(failure_cfg.get("allowed_reasons", []))
-    if (
-        tagged is None
-        and failure_cfg.get("enabled", True)
-        and consecutive_failures >= int(failure_cfg.get("consecutive_threshold", 2))
-        and consecutive_failure_reason in allowed_failure_reasons
-    ):
-        current_index = profile_order.index(requested)
-        if current_index < len(profile_order) - 1:
-            requested = profile_order[current_index + 1]
-            promoted = True
-            signals.append("failure_promotion")
-
     selected, fallback_from = _eligible_profile(root, requested, profile_order, health)
     if not selected:
         raise ProfileRoutingError(f"no eligible profile found for peer '{root_id}'")
@@ -290,6 +283,5 @@ def select_profile_node(
         score=score,
         signals=tuple(signals),
         confidence=round(confidence, 3),
-        promoted=promoted,
         fallback_from=fallback_from,
     )

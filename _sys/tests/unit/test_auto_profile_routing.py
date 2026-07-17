@@ -68,31 +68,6 @@ def test_explicit_profile_tag_overrides_scoring():
     assert "explicit_tag" in decision.signals
 
 
-def test_failure_feedback_promotes_at_most_one_tier():
-    decision = select("cx", "Show repository status.", failures=2)
-    assert decision.node_id == "cx.effort"
-    assert decision.promoted is True
-
-    already_deep = select(
-        "cx",
-        "Redesign the architecture and perform an exhaustive review.",
-        failures=10,
-    )
-    assert already_deep.node_id == "cx.deepthink"
-
-
-def test_infrastructure_failure_does_not_promote():
-    decision = hub_profile_router.select_profile_node(
-        "cx",
-        "Show repository status.",
-        orchestration=_orch(),
-        routing_config=_routing(),
-        consecutive_failures=5,
-        consecutive_failure_reason="rate_limit",
-    )
-    assert decision.node_id == "cx.standard"
-    assert decision.promoted is False
-
 
 def test_blocked_selected_profile_falls_down_within_same_peer():
     orch = _orch()
@@ -240,3 +215,30 @@ def test_explicit_profile_blocks_unexpired_profile_cooldown():
         assert "fable" in str(exc)
     else:
         raise AssertionError("unexpired explicit profile cooldown must stay blocked")
+
+
+def test_profile_for_score_boundaries():
+    """mega-mece-audit-2026-07-16 item C: the medium band is an intentional
+    fallthrough to config['ambiguous_default'], not a distinct branch."""
+    config = {"thresholds": {"effort_score": 3, "deepthink_score": 8}}
+
+    # Standard: score < 3 AND standard_evidence = True
+    assert hub_profile_router._profile_for_score(2, [], True, config) == "standard"
+    assert hub_profile_router._profile_for_score(0, [], True, config) == "standard"
+
+    # Ambiguous medium-band (3-7) with no ambiguous_default configured:
+    # falls back to the function's own built-in default ("deepthink").
+    assert hub_profile_router._profile_for_score(3, [], True, config) == "deepthink"
+    assert hub_profile_router._profile_for_score(7, [], True, config) == "deepthink"
+
+    # Deepthink: score >= 8, regardless of ambiguous_default
+    assert hub_profile_router._profile_for_score(8, [], True, config) == "deepthink"
+
+    # Ambiguous medium-band respects an explicitly configured default --
+    # this is the real routing-config.json behavior (ambiguous_default:
+    # "effort"), proving the fallthrough is config-driven, not hardcoded.
+    effort_default_config = {**config, "ambiguous_default": "effort"}
+    signals: list[str] = []
+    assert hub_profile_router._profile_for_score(5, signals, True, effort_default_config) == "effort"
+    assert "ambiguous_default" in signals
+    assert hub_profile_router._profile_for_score(15, [], True, config) == "deepthink"
