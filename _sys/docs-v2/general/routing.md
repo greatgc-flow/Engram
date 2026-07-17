@@ -65,7 +65,7 @@ Each peer may use multiple underlying models based on task characteristics. Mode
 explicit peer.profile -> preserve
 simple evidence       -> standard
 implementation        -> effort
-ambiguous / default   -> deepthink
+ambiguous / default   -> effort
 high risk             -> deepthink
 blocked selection     -> same-peer downward fallback
 ```

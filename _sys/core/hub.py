@@ -4436,7 +4436,9 @@ def _shadow_log_load_balance(ai_root: Path | None, actual_peer: str, origin: str
             return
         terminal_peer = None
         try:
-            terminal_peer = _fresh_active_coordinator(_read_json(ai_root / "state.json") or {})
+            selection = _select_human_interface_peer(ai_root)
+            if selection and selection.get("eligible") and selection.get("peer"):
+                terminal_peer = str(selection["peer"])
         except Exception:
             pass
         ask_id = _short_id("lb-")

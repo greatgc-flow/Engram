@@ -224,6 +224,13 @@ each request among `standard`, `effort`, and `deepthink`.
 
 ---
 
+## Token Load-Balancing & Final Arbiter
+
+- **Token Load-Balancing**: Activated via `--to auto` during an ask, the hub evaluates each peer's real-time headroom, pacing penalties, and quota state to route the ask to the healthiest peer. It automatically deduplicates in-flight requests and excludes premium or terminal-only models from the bulk rotation. See `_sys/docs/history/ops/token-load-balancing-design.md` for detail.
+- **Final Arbiter**: When a consensus round shows dissent, or an R:10 human-gate unanimity requirement fails (`r10_final`), the hub automatically summons a budget-capped premium arbiter profile (e.g., `cc.fable`) to make the final binding determination. Unanimous routine rounds bypass the arbiter entirely to conserve premium tokens.
+
+---
+
 ## Collaboration Rate (collab_rate)
 
 Current value: `_sys/ai/protocol.json["collab_rate"]["current"]`

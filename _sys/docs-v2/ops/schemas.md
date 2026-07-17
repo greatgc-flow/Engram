@@ -30,7 +30,7 @@ It must not contain model profiles, logical lifecycle, votes, or roles.
     "capability_class": "trusted_ipc_mutation",
     "profiles": {
       "standard": {
-        "model_id": "gpt-5.4-mini",
+        "model_id": "gpt-5.6-luna",
         "reasoning_effort": "low",
         "routing_state": "eligible",
         "profile_args": []
