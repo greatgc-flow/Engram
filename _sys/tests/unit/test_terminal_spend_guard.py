@@ -147,6 +147,7 @@ def test_action_ask_threads_terminal_spend_and_lb_flags(monkeypatch, tmp_path):
     hub.action_ask(
         "ag.gptoss", "q", None, 10, tmp_path,
         allow_governed_mutation=True,
+        governed_mutation_reason="test",
         allow_terminal_spend=True,
         _load_balanced=True,
     )

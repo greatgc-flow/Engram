@@ -4787,7 +4787,7 @@ def _maybe_run_arbiter_on_finalize(ai_root, data) -> None:
         print(f"[HUB:WARN] arbiter auto-wire error on finalize: {exc}", file=sys.stderr)
 
 
-def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False, force_tier0: bool = False, allow_terminal_spend: bool = False, _load_balanced: bool = False) -> None:
+def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False, governed_mutation_reason: str | None = None, force_tier0: bool = False, allow_terminal_spend: bool = False, _load_balanced: bool = False) -> None:
     """Public entry: wraps _action_ask_inner with the LL-20260703-005 governed-
     mutation guard. Governed files are hashed before the peer executes and re-
     hashed in a crash-safe finally that covers BOTH the PTY (_ask_with_pty, ag)
@@ -4795,7 +4795,21 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     `allow_governed_mutation=True` (authorized broker/consensus execution) skips
     the guard. Peers NEVER write governed files during advisory asks in this
     architecture (delegation returns CONTENT; the terminal writes it), so any
-    change in the window is out-of-band."""
+    change in the window is out-of-band.
+
+    `allow_governed_mutation` was previously an ungated bypass -- any CLI caller
+    could pass it with no record of who or why (found live during the 2026-07-17
+    closure review, confirmed independently by 3 peers). It now REQUIRES a
+    non-empty `governed_mutation_reason`; a bypass request without one is treated
+    as unauthorized and fails closed (the hash guard still runs). Every granted
+    bypass is logged as a high-severity audit event. This is a minimal
+    audit-trail fix, not the full scoped-capability system the review
+    recommended as the root fix -- see mega-mece-audit-2026-07-16.md follow-up."""
+    if allow_governed_mutation and not (governed_mutation_reason or "").strip():
+        _log_p2p("WARN", "governed_mutation_denied: --allow-governed-mutation used without --governed-mutation-reason; guard NOT bypassed", from_node="GUARD")
+        allow_governed_mutation = False
+    elif allow_governed_mutation:
+        _log_p2p("AUDIT", f"governed_mutation_bypass_granted: origin={origin} reason={governed_mutation_reason!r}", from_node="GUARD")
     gov_pre: dict[str, str] | None = None
     phantom_pre: set[str] | None = None
     if not allow_governed_mutation:
@@ -9722,7 +9736,9 @@ def main() -> None:
                         help="Session reuse policy: auto=use node config, reuse=always reuse, fresh=always new, none=disable")
     parser.add_argument("--allow-governed-mutation", dest="allow_governed_mutation",
                         action="store_true",
-                        help="Authorize a peer to mutate governed files during this ask (broker/consensus execution); skips the LL-20260703-005 out-of-band mutation guard")
+                        help="Authorize a peer to mutate governed files during this ask (broker/consensus execution); skips the LL-20260703-005 out-of-band mutation guard. REQUIRES --governed-mutation-reason.")
+    parser.add_argument("--governed-mutation-reason", dest="governed_mutation_reason", default=None,
+                        help="Required alongside --allow-governed-mutation: a short justification, recorded in the audit log.")
     parser.add_argument("--allow-terminal-spend", dest="allow_terminal_spend",
                         action="store_true",
                         help="Acknowledge an explicit ask that spends tokens on the human-interface terminal peer")
@@ -9783,7 +9799,7 @@ def main() -> None:
                 )
                 print(f"[HUB:WARN] auto routing unavailable ({res.get('reason')}); specify an explicit --to", file=sys.stderr)
                 sys.exit(1)
-        action_ask(effective_target, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file, session_policy=args.session_policy, explicit_scope=args.scope, origin=origin, allow_governed_mutation=getattr(args, "allow_governed_mutation", False), force_tier0=getattr(args, "force_tier0", False), allow_terminal_spend=getattr(args, "allow_terminal_spend", False), _load_balanced=load_balanced)
+        action_ask(effective_target, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file, session_policy=args.session_policy, explicit_scope=args.scope, origin=origin, allow_governed_mutation=getattr(args, "allow_governed_mutation", False), governed_mutation_reason=getattr(args, "governed_mutation_reason", None), force_tier0=getattr(args, "force_tier0", False), allow_terminal_spend=getattr(args, "allow_terminal_spend", False), _load_balanced=load_balanced)
         return
     if args.action == "ask-all":
         ai_root_opt = None

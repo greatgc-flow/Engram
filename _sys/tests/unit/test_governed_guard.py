@@ -95,8 +95,22 @@ def test_allow_governed_mutation_skips_guard(monkeypatch, tmp_path):
                         lambda *a, **k: called.__setitem__("snap", called["snap"] + 1) or real(*a, **k))
     # _action_ask_inner is heavy; stub it so we only exercise the wrapper guard.
     monkeypatch.setattr(hub, "_action_ask_inner", lambda *a, **k: None)
-    hub.action_ask("cc", "q", None, 10, tmp_path / ".ai", allow_governed_mutation=True)
+    hub.action_ask("cc", "q", None, 10, tmp_path / ".ai", allow_governed_mutation=True,
+                    governed_mutation_reason="test: authorized broker execution")
     assert called["snap"] == 0  # guarded snapshot never taken when authorized
+
+
+def test_allow_governed_mutation_without_reason_fails_closed(monkeypatch, tmp_path):
+    """2026-07-17: allow_governed_mutation=True with no reason must NOT bypass the
+    guard -- the flag was found live as an ungated bypass with no audit trail."""
+    called = {"snap": 0}
+    real = hub._snapshot_governed_hashes
+    monkeypatch.setattr(hub, "_snapshot_governed_hashes",
+                        lambda *a, **k: called.__setitem__("snap", called["snap"] + 1) or real(*a, **k))
+    monkeypatch.setattr(hub, "_action_ask_inner", lambda *a, **k: None)
+    hub.action_ask("cc", "q", None, 10, tmp_path / ".ai", allow_governed_mutation=True,
+                    governed_mutation_reason=None)
+    assert called["snap"] >= 1  # guard still runs (pre + post snapshot): no reason == not authorized
 
 
 def test_guard_runs_when_not_authorized(monkeypatch, tmp_path):

@@ -99,6 +99,10 @@ class TestActionAskContract:
         assert p["origin"].default == "terminal"
         # LL-20260703-005 guard param (2026-07-03): default False = guard active.
         assert p["allow_governed_mutation"].default is False
+        # 2026-07-17 closure-review fix: bypass now requires a recorded reason;
+        # default None = no bypass (fail-closed if allow_governed_mutation=True
+        # is passed without one).
+        assert p["governed_mutation_reason"].default is None
         # T3 human override (2026-07-12): default False = oversized-ask hard reject active.
         assert p["force_tier0"].default is False
         # D7 terminal-spend acknowledgement remains opt-in and non-interactive.
@@ -108,7 +112,8 @@ class TestActionAskContract:
         params = list(p.keys())
         assert params.index("_escalation_depth") == params.index("_depth") + 1
         assert params.index("origin") == params.index("_escalation_depth") + 1
-        assert params.index("force_tier0") == params.index("allow_governed_mutation") + 1
+        assert params.index("governed_mutation_reason") == params.index("allow_governed_mutation") + 1
+        assert params.index("force_tier0") == params.index("governed_mutation_reason") + 1
         assert params.index("allow_terminal_spend") == params.index("force_tier0") + 1
         assert params.index("_load_balanced") == params.index("allow_terminal_spend") + 1
 

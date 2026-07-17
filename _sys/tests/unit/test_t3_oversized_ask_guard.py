@@ -324,6 +324,7 @@ class TestForceTier0Threading:
         hub.action_ask(
             "ag", "query", None, 60, tmp_path,
             allow_governed_mutation=True,
+            governed_mutation_reason="test",
             force_tier0=True,
         )
 

@@ -88,6 +88,7 @@ def test_post_spawn_nonzero_is_uncertain_and_never_rerouted(tmp_path, capsys):
                 explicit_scope=None,
                 origin="test",
                 allow_governed_mutation=True,
+                governed_mutation_reason="test",
             )
 
     assert exc.value.code == 1  # unchanged from the existing nonzero path

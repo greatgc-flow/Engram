@@ -88,7 +88,8 @@ def test_phantom_check_skipped_when_allowed(tmp_path):
 
     with patch.object(hub, "_REPO_ROOT", tmp_path), \
          patch.object(hub, "_action_ask_inner", side_effect=simulate_ask):
-        hub.action_ask("cc", "q", None, 10, ai_root, allow_governed_mutation=True)
+        hub.action_ask("cc", "q", None, 10, ai_root, allow_governed_mutation=True,
+                        governed_mutation_reason="test: authorized broker execution")
 
     assert not (ai_root / "operational_errors.jsonl").exists()
 
