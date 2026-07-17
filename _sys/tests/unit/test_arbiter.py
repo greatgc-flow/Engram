@@ -83,8 +83,7 @@ def test_select_arbiter_matches_profile_id_or_peer_id(monkeypatch, arbiter_model
 
 @pytest.mark.parametrize(("kind", "authority"), [
     ("dissent", "override"),
-    ("high_risk", "override"),
-    ("r10_final", "advisory"),
+    ("r10_final", "override"),
 ])
 def test_evaluate_arbiter_trigger_fires_for_configured_kinds_with_budget(kind, authority):
     result = snapshot.evaluate_arbiter_trigger({"kind": kind}, CONFIG, invocations_this_window=0)

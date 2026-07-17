@@ -2325,7 +2325,7 @@ def evaluate_arbiter_trigger(context, config, invocations_this_window=0):
     (user-ratified 2026-07-04), else 'advisory'."""
     kind = (context or {}).get("kind")
     triggers = config.get("triggers", []) or []
-    authority = "override" if kind in ("dissent", "high_risk") else "advisory"
+    authority = "override" if kind in ("dissent", "r10_final") else "advisory"
     try:
         budget = int(config.get("invocation_budget_5h", 5))
     except (TypeError, ValueError):

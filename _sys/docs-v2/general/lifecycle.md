@@ -110,6 +110,18 @@ A read is NOT zero-token if it triggers a model call, network request, or side-e
 
 ---
 
+## 7.5 Session Policy Modes
+
+The `hub.py ask` command supports four `session_policy` modes that interact with a node's configured `session_mode` capability:
+- `auto`: Uses whatever capability the node declares (reuses if node supports `reuse`, otherwise fresh).
+- `reuse`: Forces reuse. Raises a `ValueError` if the target node lacks the capability.
+- `fresh`: Forces a new session, regardless of node capability.
+- `none`: Disables session management for the ask.
+
+**Fleet usage note:** Currently, all active peers in the production fleet declare `session_mode: "reuse"`. Because of this, `auto` and `reuse` currently yield identical behavior in practice, and `fresh` and `none` both yield non-reused sessions. This is a fleet homogeneity artifact, not a code defect; all four logical branches are wired and enforced by `hub._session_reuse_enabled()`.
+
+---
+
 ## 8. Stable Fingerprint
 
 **Source:** `adapter.session_fingerprint(node)`

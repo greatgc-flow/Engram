@@ -4526,7 +4526,7 @@ def arbiter_decide(ai_root, context, config, snapshot_obj=None, now=None) -> dic
     snapshot — never a fresh collect in a decision path. Returns the trigger
     decision augmented with `arbiter` (id or None) + `budget_count`."""
     kind = (context or {}).get("kind")
-    authority = "override" if kind in ("dissent", "high_risk") else "advisory"
+    authority = "override" if kind in ("dissent", "r10_final") else "advisory"
     if not _SNAPSHOT_AVAILABLE or snapshot is None:
         return {"fire": False, "reason": "snapshot_unavailable", "kind": kind,
                 "authority": authority, "arbiter": None, "budget_count": 0}
@@ -4666,8 +4666,15 @@ def detect_dissent(consensus_round) -> dict:
                 if vote in ("disagree", "abstain"):
                     reason = v.get("reason")
                     blockers.append(f"{peer}: {reason}" if reason else f"{peer}: {vote}")
+        if unanimous_agree:
+            kind = "routine"
+        elif rnd.get("outcome") == "human_gate_unanimity_failed":
+            kind = "r10_final"
+        else:
+            kind = "dissent"
+            
         return {
-            "kind": "routine" if unanimous_agree else "dissent",
+            "kind": kind,
             "round_id": round_id,
             "proposal": proposal,
             "positions": positions,
@@ -4766,7 +4773,7 @@ def _maybe_run_arbiter_on_finalize(ai_root, data) -> None:
         result = run_arbiter_on_round(ai_root, data, config=cfg)
         round_id = (data or {}).get("round_id")
         if result.get("fired"):
-            print(f"[HUB] ARBITER auto-review fired on {round_id} (dissent/high_risk)")
+            print(f"[HUB] ARBITER auto-review fired on {round_id} (dissent/r10_final)")
         else:
             reason = result.get("reason")
             # Only surface a note when it was gated ON but did not fire for a

@@ -124,3 +124,20 @@ def test_round_id_passthrough_and_proposal_from_subject():
 
     assert ctx["round_id"] == "r-1005"
     assert ctx["proposal"] == "promote arbiter hook"
+
+def test_unanimity_failure_is_r10_final():
+    ctx = hub.detect_dissent({
+        "round_id": "r-1006",
+        "subject": "merge branch",
+        "voters": ["cc", "ag", "cx"],
+        "votes": {
+            "cc": {"vote": "agree", "reason": "ok"},
+            "ag": {"vote": "disagree", "reason": "missing regression test"},
+            "cx": {"vote": "agree", "reason": "ok"},
+        },
+        "outcome": "human_gate_unanimity_failed"
+    })
+
+    assert ctx["kind"] == "r10_final"
+    assert ctx["positions"]["ag"] == "disagree"
+    assert ctx["blockers"] == ["ag: missing regression test"]

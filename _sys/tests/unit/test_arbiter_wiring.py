@@ -101,7 +101,7 @@ def test_arbiter_decide_no_arbiter_available_when_selector_returns_none(monkeypa
 
     result = hub.arbiter_decide(
         ai_root,
-        {"kind": "high_risk"},
+        {"kind": "r10_final"},
         CONFIG,
         snapshot_obj={"profiles": []},
         now=NOW,
@@ -109,7 +109,7 @@ def test_arbiter_decide_no_arbiter_available_when_selector_returns_none(monkeypa
 
     assert result["fire"] is False
     assert result["reason"] == "no_arbiter_available"
-    assert result["kind"] == "high_risk"
+    assert result["kind"] == "r10_final"
     assert result["authority"] == "override"
     assert result["arbiter"] is None
     assert result["budget_count"] == 0
