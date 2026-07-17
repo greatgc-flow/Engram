@@ -175,6 +175,23 @@ def _real_binary(peer):
     return str(resolved)
 
 
+def _kill_process_tree_windows(pid: int) -> None:
+    """Kill pid AND its full descendant tree. `codex.cmd` -> cmd.exe -> node.exe ->
+    codex.exe is a 3+ level chain; a bare proc.kill() on the Popen handle only
+    kills the immediate cmd.exe wrapper, orphaning node.exe/codex.exe forever.
+    Found live 2026-07-17 (closure review, cx.deepthink): 558 orphaned node.exe +
+    558 codex.exe processes (~41GB working set), accumulating ~1/minute at the
+    probe's TTL cadence with none ever reaped. taskkill /T reaps the whole tree;
+    no psutil dependency needed (this module doesn't otherwise import it)."""
+    if not pid or pid < 0:
+        return
+    try:
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                        capture_output=True, timeout=10)
+    except Exception:
+        pass
+
+
 def _codex_binary():
     """Back-compat alias = real Codex CLI. NEVER our `_sys/cli` wrapper.
 
@@ -255,10 +272,7 @@ def _codex_rate_limits(deadline_sec=None):
         pass
     finally:
         if proc and proc.poll() is None:
-            try:
-                proc.kill()
-            except Exception:
-                pass
+            _kill_process_tree_windows(proc.pid)
     return None
 
 

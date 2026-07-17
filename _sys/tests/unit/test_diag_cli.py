@@ -111,6 +111,7 @@ def test_codex_rate_limits_deadline_survives_blocking_readline(monkeypatch):
         def __init__(self):
             self.stdin = FakeStdin()
             self.stdout = BlockingStdout()
+            self.pid = 999999  # 2026-07-17: tree-kill uses proc.pid, not proc.kill()
             self.killed = False
 
         def poll(self):
@@ -119,12 +120,19 @@ def test_codex_rate_limits_deadline_survives_blocking_readline(monkeypatch):
         def kill(self):
             self.killed = True
 
+    killed_pids = []
     monkeypatch.setattr(shutil, "which", lambda _name: "codex")
     monkeypatch.setattr(diag.subprocess, "Popen", lambda *args, **kwargs: FakeProc())
+    # _kill_process_tree_windows uses taskkill (subprocess.run), not proc.kill() --
+    # diag.subprocess and snapshot's subprocess are the same shared module object,
+    # so patching diag.subprocess.run here intercepts it.
+    monkeypatch.setattr(diag.subprocess, "run",
+                        lambda args, **kwargs: killed_pids.append(args[-1]))
 
     started = time.monotonic()
     assert diag._codex_rate_limits(deadline_sec=0.05) is None
     assert time.monotonic() - started < 0.15
+    assert killed_pids == ["999999"]  # full tree killed via taskkill, not just proc.kill()
 
 def test_codex_rate_limits_are_cached_for_expensive_ttl(monkeypatch):
     diag = load_diag()
