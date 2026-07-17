@@ -3169,6 +3169,25 @@ def _record_pty_chunk_arrival_metric(
         pass
 
 
+# Post-progress zombie tightening (2026-07-17 closure review, 4-peer converged
+# measurement): PTY-init noise across all 88 historical pty_chunk_arrival records
+# was 23 bytes (usually 4+19 split); 100 bytes gives comfortable margin above
+# that floor before treating output as "genuine progress" and tightening the
+# silence-kill window. See the in-loop comment in _ask_with_pty for the full
+# rationale.
+_POST_PROGRESS_NOISE_FLOOR_BYTES = 100
+_POST_PROGRESS_ZOMBIE_SEC = 300
+
+
+def _effective_zombie_timeout_sec(zombie_timeout_sec: int, progress_bytes_seen: int) -> int:
+    """Pure decision function for the post-progress zombie tightening (see
+    _ask_with_pty's in-loop comment for full rationale). Extracted so the
+    threshold logic is unit-testable without mocking the PTY read loop."""
+    if progress_bytes_seen > _POST_PROGRESS_NOISE_FLOOR_BYTES:
+        return min(zombie_timeout_sec, _POST_PROGRESS_ZOMBIE_SEC)
+    return zombie_timeout_sec
+
+
 def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: dict, quiet: bool = False, ai_root: Path | None = None, ask_id: str | None = None, cwd: str | None = None) -> "_PtyAskResult":
     """pywinpty로 pseudo-TTY 실행 — WriteConsole() API 우회 (agy 등 TUI CLI 전용).
 
@@ -3253,6 +3272,7 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
     deadline = t0 + (timeout_sec if timeout_sec > 0 else float("inf"))
     last_renew = t0
     last_activity = t0  # any chunk resets the silent-zombie clock
+    progress_bytes_seen = 0  # cumulative PTY bytes; see post-progress zombie note below
     startup_warning_emitted = False
     timed_out = False
     timeout_kind: str | None = None
@@ -3290,8 +3310,24 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
 
         # 4. silent-stall guard. The same zombie window applies from process
         #    start and after every output chunk; there is no separate startup
-        #    fast-fail window.
-        if now - last_activity >= zombie_timeout_sec:
+        #    fast-fail window -- EXCEPT: once genuine progress has been seen
+        #    (progress_bytes_seen > _POST_PROGRESS_NOISE_FLOOR_BYTES, i.e. past
+        #    PTY-init noise, which measured 2026-07-17 at 23 bytes/first chunk
+        #    across all 88 historical records), the effective window tightens to
+        #    _POST_PROGRESS_ZOMBIE_SEC. Found live 2026-07-17 (closure review,
+        #    4/4 responding peers independently converged on ~300s): a stalled
+        #    ag run can go fully silent mid-stream after real progress and never
+        #    resume, but the full 600/900s cold-start window was still applied
+        #    from the LAST chunk, wasting ~300-600s of dead time before the kill
+        #    (measured case: last chunk at 383s, killed at 983s -- 599.6s of
+        #    pure waste). A raw "after any chunk" rule was deliberately rejected
+        #    (ag.deepthink's caution) because it would re-arm on PTY-init noise
+        #    alone and recreate the retired startup_profile_map false-positive
+        #    regression (2026-07-11, killed 3 real cx calls at 180s). Applies
+        #    ONLY to the silence-based kill; the cold-start zombie_timeout_sec
+        #    and the hard deadline (#1 above) are unchanged.
+        effective_zombie_timeout_sec = _effective_zombie_timeout_sec(zombie_timeout_sec, progress_bytes_seen)
+        if now - last_activity >= effective_zombie_timeout_sec:
             timed_out = True
             timeout_kind = "zombie"
             break
@@ -3322,6 +3358,7 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
             dequeued_at = time.monotonic()
             chunks.append(payload)
             last_activity = dequeued_at
+            progress_bytes_seen = int(bytes_total)
             if pty_telemetry_enabled:
                 pty_chunk_samples.append({
                     "read_elapsed_sec": round(max(0.0, read_at - pty_telemetry_t0), 6),
