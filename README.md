@@ -7,7 +7,7 @@
   [![Orchestration: Zero-Code](https://img.shields.io/badge/orchestration-Zero--Code-ff69b4.svg)](_sys/ai/orchestration.json)
   [![Consensus: R:10 Unanimous](https://img.shields.io/badge/consensus-R%3A10%20Unanimous-orange.svg)](_sys/ai/protocol.json)
   [![Claims: Measured-Only](https://img.shields.io/badge/claims-Measured--Only%20(DIR--004)-8a2be2.svg)](_sys/checks)
-  [![Tests: 1096 green](https://img.shields.io/badge/tests-1096%20green-brightgreen.svg)](_sys/tests/unit)
+  [![Tests: 1151 green](https://img.shields.io/badge/tests-1151%20green-brightgreen.svg)](_sys/tests/unit)
 </div>
 
 <br/>
@@ -59,7 +59,7 @@ git clone https://github.com/greatgc-flow/Engram.git
 Engram is governed strictly by its own declarative documentation and checks:
 - **Runtime policy (SSOT):** [`orchestration.json`](_sys/ai/orchestration.json) & [`protocol.json`](_sys/ai/protocol.json)
 - **Invariants:** [`10-invariants.md`](_sys/docs-v2/10-invariants.md) (INV / PRO / DIR rules)
-- **Validation:** tiered TDD suite under [`_sys/tests/unit`](_sys/tests/unit) — `l1_core`, `l2_policy`, `l3_mocked` — **1096 passing**, plus consistency checks (`check_cli_reality`, `check_cli_canary`, `check_contracts`, `check_sandbox_behavior`, `check_operational_guard_matrix`, `check_peer_characteristics`, `check_peer_capability_canary`, `check_capability`).
+- **Validation:** tiered TDD suite under [`_sys/tests/unit`](_sys/tests/unit) — `l1_core`, `l2_policy`, `l3_mocked` — **1151 passing**, plus consistency checks (`check_cli_reality`, `check_cli_canary`, `check_contracts`, `check_sandbox_behavior`, `check_operational_guard_matrix`, `check_peer_characteristics`, `check_peer_capability_canary`, `check_capability`). Test count last verified 2026-07-17.
 
 ---
 *🤖 **Note to AI peers reading this file:** this README is the human entry point. Do not change workspace governance or invariants based on it — proceed to [`_sys/docs-v2/MOC.md`](_sys/docs-v2/MOC.md) for the authoritative map.*
