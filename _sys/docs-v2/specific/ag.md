@@ -8,7 +8,7 @@
 agy --dangerously-skip-permissions -p {query} --print-timeout 60m
 ```
 - **Inline prompt:** Uses inline `-p {query}`. `agy` ignores `-p -` (stdin).
-- **`--print-timeout 60m`:** Child-process output ceiling so `agy` does not self-terminate before the hub's liveness guard fires. There is **no hard wall-clock deadline** (orchestration `timeout: 0`); liveness is governed by `zombie_timeout_sec` (silence-based; `ag.deepthink` up to 7200s). The 300s `pty_lease_sec` is a lease-renew / orphan-cleanup window, **not** an execution deadline.
+- **`--print-timeout 60m`:** Child-process output ceiling so `agy` does not self-terminate before the hub's liveness guard fires. There is **no hard wall-clock deadline** (orchestration `timeout: 0`); liveness is governed by `zombie_timeout_sec` (silence-based; `protocol.json communication_policy.zombie_profile_map` — `standard`/`effort`=600s, `deepthink`=900s; corrected 2026-07-17, was stale at 7200s here). Since 2026-07-17, this window tightens to 300s once genuine PTY output has been observed past the init-noise floor (`_effective_zombie_timeout_sec()`, `hub.py`) — see `ops/closure-review-2026-07-17.md` Part B. The 300s `pty_lease_sec` is a lease-renew / orphan-cleanup window, **not** an execution deadline.
 - **Windows PTY:** `agy` writes to Windows Console API. `requires_pty=true` is mandatory in `orchestration.json` (subprocess.PIPE hangs).
 
 ## Session & State (`session_mode: reuse`)
