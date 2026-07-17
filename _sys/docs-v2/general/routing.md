@@ -27,7 +27,7 @@ Each tracked root peer owns exactly three MECE profiles:
 - `effort`: balanced profile (intermediate);
 - `deepthink`: highest verified reasoning setting (DEFAULT).
 
-Runtime normalization generates `{peer}.{profile}` children. Root IDs stay stable and use the `deepthink` profile by default in direct terminals. Root asks through the hub are classified automatically (defaulting to `deepthink` unless certain). Effective enablement is recursive and fail-closed.
+Runtime normalization generates `{peer}.{profile}` children. Root asks through the hub are classified automatically per the Decision Contract in §2.2 (ambiguous requests default to `effort`, not `deepthink` — `deepthink` is reserved for high-risk/explicit selection). Effective enablement is recursive and fail-closed.
 
 ## 2. Peer-Level & Model-Level Routing
 
@@ -70,7 +70,7 @@ high risk             -> deepthink
 blocked selection     -> same-peer downward fallback
 ```
 
-Root peer terminals start at `deepthink`. Root peer asks through hub.py are classified automatically, defaulting to `deepthink` for all requests unless simple evidence triggers `standard`. Explicit profile nodes are immutable.
+Root peer asks through hub.py are classified automatically per the Decision Contract above: explicit selection is preserved, simple evidence triggers `standard`, implementation work and ambiguous/default requests use `effort`, and only high-risk work triggers `deepthink`. Explicit profile nodes are immutable.
 
 See `_sys/docs/history/ops/automatic-profile-routing-2026-06-20.md` (archived decision record) for signals, fallback rules, tests, and benchmark.
 
