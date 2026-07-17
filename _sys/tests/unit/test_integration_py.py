@@ -207,22 +207,27 @@ class TestIntegrationP2P:
         
         self._run(vpy, hub, ["health-update", "--peer", "ag", "--status", "GREEN"], root)
         self._run(vpy, hub, ["health-update", "--peer", "cc", "--status", "GREEN"], root)
+        self._run(vpy, hub, ["health-update", "--peer", "cx", "--status", "GREEN"], root)
 
         self._run(vpy, hub, ["init-session", "--agent", "cc"], root)
         self._run(vpy, hub, ["init-session", "--agent", "ag"], root)
-        
-        # 1. 제안 (Propose)
-        self._run(vpy, hub, ["consensus-propose", "--subject", "feat-implementation", "--voters", "cc,ag", "--from", "cc"], root)
-        
+
+        # 1. 제안 (Propose) -- full canonical voter set (cc,ag,cx). A --voters
+        # subset that silently dropped cx used to be accepted and could
+        # "FINALIZE" as unanimous without cx ever being asked; the 2026-07-17
+        # INV-03 fix now rejects a non-canonical --voters subset at R:10.
+        self._run(vpy, hub, ["consensus-propose", "--subject", "feat-implementation", "--voters", "cc,ag,cx", "--from", "cc"], root)
+
         # 2. Final Call 메시지 전송 (Convention)
         fc_msg = "PLAN:[1.edit, 2.test] RISK:Low FC:r-1234:SUMMARY=Ready to execute. VOTE?"
         self._run(vpy, hub, ["send", "--from", "cc", "--to", "ag", "--msg", fc_msg, "--type", "DIRECTIVE"], root)
-        
+
         # 3. 투표 (Vote)
         rounds = list((root / ".ai/consensus").glob("*.json"))
         rid = json.loads(rounds[0].read_text("utf-8"))["round_id"]
         self._run(vpy, hub, ["consensus-vote", "--round-id", rid, "--voter", "cc", "--vote", "agree"], root)
         self._run(vpy, hub, ["consensus-vote", "--round-id", rid, "--voter", "ag", "--vote", "agree"], root)
+        self._run(vpy, hub, ["consensus-vote", "--round-id", rid, "--voter", "cx", "--vote", "agree"], root)
         
         # 4. 결과 및 상태 확인
         status = self._out(vpy, hub, ["status"], root)

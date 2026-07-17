@@ -6204,14 +6204,17 @@ def action_consensus_propose(ai_root: Path, subject: str, voters: list[str], pro
             print(f"[HUB:BLOCK] subject '{subject}' has been rejected {MAX_ROUNDS} times. [ESCALATE] to human (MAX_ROUNDS exceeded).", file=sys.stderr)
             sys.exit(3)
             
-        snapshot_voters = []
-        for v in voters:
-            # allow_stale=True: a peer idling to STALE (aged health, not RED) must
-            # still be a valid voter — otherwise a long session silently empties
-            # the voter list and consensus cannot run (peer-recover was the manual
-            # workaround). RED / gate-closed peers are still excluded.
-            if _healthy_peer(v, ai_root=ai_root, allow_stale=True):
-                snapshot_voters.append(v)
+        # INV-03 fix (2026-07-17 closure review, unanimously confirmed by 3 peers):
+        # RED peers used to be silently dropped from the voter snapshot here, so a
+        # RED-at-proposal-time peer's absence was never counted -- "unanimous"
+        # finalized among the survivors without ever satisfying INV-03's "offline
+        # peer auto-abstain does NOT satisfy unanimity; human override required."
+        # The full supplied voter list (canonical, or an explicit --voters subset)
+        # is now snapshotted as-is; _decide_consensus's existing, already-tested
+        # mid_round_closed check (test_decide_consensus_red_voter_escalates)
+        # forces human_gate the first time a RED voter is seen, whether RED at
+        # proposal time or RED mid-round -- one code path, not two.
+        snapshot_voters = list(voters)
             
     round_id = _short_id("r-")
     data = {"round_id": round_id, "subject": subject, "proposed_by": proposed_by, "proposed_at": _now(), 
@@ -9850,6 +9853,21 @@ def main() -> None:
             voters = [v.strip() for v in args.voters.split(",") if v.strip()]
         else:
             voters = canonical_voters
+        # INV-03 fix (2026-07-17 closure review): at R:10 ("Mandatory Every Step"
+        # unanimous consensus), an arbitrary --voters subset used to silently
+        # replace the canonical voter set with no validation -- letting a caller
+        # engineer a "unanimous" round that never asked one or more real peers.
+        # Below R:10, a narrower --voters subset is a legitimate, intentional
+        # scoping (not every decision requires full-fleet consensus).
+        current_collab_rate = int((proto_cfg.get("collab_rate", {}) or {}).get("current", 0) or 0)
+        if args.voters and current_collab_rate >= 10 and set(voters) != set(canonical_voters):
+            print(
+                f"[HUB:ERR] --voters {sorted(voters)} does not match the canonical R:10 voter set "
+                f"{sorted(canonical_voters)}. At COLLAB_RATE=10 every canonical peer must be a voter "
+                f"(INV-03); omit --voters to use the canonical set.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         action_consensus_propose(ai_root, args.subject, voters, args.from_ or default_proposer)
     elif act == "consensus-vote": action_consensus_vote(ai_root, args.round_id, args.voter, args.vote_val, args.reason)
     elif act == "consensus-check": action_consensus_check(ai_root, args.round_id)

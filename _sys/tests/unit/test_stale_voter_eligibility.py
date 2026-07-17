@@ -4,6 +4,7 @@ A peer idling to HEALTH=STALE (aged bookkeeping, not RED) must remain a valid
 consensus VOTER, or a long session silently empties the voter list and consensus
 cannot run. Routing keeps the strict default (STALE ineligible).
 """
+import json
 import sys
 from pathlib import Path
 
@@ -64,3 +65,21 @@ def test_decide_consensus_red_voter_escalates(monkeypatch, tmp_path):
     data = _all_agree_round()
     assert hub._decide_consensus(tmp_path, data) is True
     assert data["status"] == "escalated"
+
+
+def test_propose_no_longer_drops_red_peers_from_voter_snapshot(monkeypatch, tmp_path):
+    """INV-03 fix (2026-07-17 closure review): a RED-at-proposal-time peer used
+    to be silently excluded from the voter snapshot in action_consensus_propose,
+    so its absence was never counted -- "unanimous" could finalize among the
+    survivors without ever satisfying INV-03 ("offline peer auto-abstain does
+    NOT satisfy unanimity; human override required"). The full supplied voter
+    list must now be snapshotted as-is; RED-voter escalation is handled
+    uniformly downstream by _decide_consensus (see the test above)."""
+    ai_root = tmp_path / ".ai"
+    ai_root.mkdir()
+    monkeypatch.setattr(hub, "_peer_effective_health", lambda v, ai_root=None: ("RED", {}))
+    hub.action_consensus_propose(ai_root, "subj", ["cc", "ag", "cx"], "cc")
+    rounds = list((ai_root / "consensus").glob("*.json"))
+    assert len(rounds) == 1
+    data = json.loads(rounds[0].read_text("utf-8"))
+    assert set(data["voters"]) == {"cc", "ag", "cx"}  # RED peer (cx) NOT dropped

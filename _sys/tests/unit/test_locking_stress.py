@@ -107,9 +107,17 @@ class TestLockingStress:
             assert a in state["members"], f"Agent {a} missing from members list"
 
     def test_concurrent_consensus_votes(self, test_env):
-        """Verify 4 processes voting concurrently don't corrupt the consensus file."""
+        """Verify concurrent processes voting don't corrupt the consensus file.
+
+        Uses the real canonical R:10 voter set (cc/ag/cx), not synthetic names --
+        this test invokes the real hub.py against the real protocol.json (no
+        isolated config), so a synthetic --voters subset is now rejected by the
+        2026-07-17 INV-03 fix (arbitrary --voters must match canonical at R:10).
+        Still a genuine concurrent-write stress test with 3 truly parallel
+        subprocesses racing on the same round file's lock.
+        """
         self.run_hub_cmd(test_env, ["init-session", "--agent", "admin"])
-        voters = [f"v_{i}" for i in range(4)]  # 4 voters, not 8, to keep memory bounded
+        voters = ["cc", "ag", "cx"]
         self.run_hub_cmd(test_env, [
             "consensus-propose", "--subject", "parallel-vote",
             "--voters", ",".join(voters)
@@ -129,5 +137,5 @@ class TestLockingStress:
             assert res.returncode == 0, f"Voter {i} failed: {res.stderr}"
 
         updated_round = json.loads(round_files[0].read_text("utf-8"))
-        assert len(updated_round["votes"]) == 4
+        assert len(updated_round["votes"]) == 3
         assert updated_round["status"] == "finalized"
