@@ -104,6 +104,10 @@ Peer IDs: `ag` (agy), `cx` (Codex)
 Ask any peer to "Write the complete new file content".
 Apply output directly using Write tool → Verify with `git diff HEAD`.
 
+### Peer Dispatch Safety (lessons from 2026-07-18 incident)
+- **Never reuse an IPC query file that already failed/zombied.** Reuse-after-failure measured at ~45x the zombie rate of a fresh file (55.6% vs 2.7%). Always write a new uniquely-named file per attempt, even for a retry of the same question.
+- **When dispatching the same prompt to multiple peers as independent voices**, explicitly state in the prompt: "You are one of N independent voices. The terminal collects and cross-compiles all responses — do not dispatch further hub.py asks yourself." Peers have misread ambiguous scene-setting language as an instruction to self-orchestrate, causing real quarantine/side effects — don't rely on implicit context to prevent this.
+
 ### Console Output Format (Peer Response + Claude Judgment)
 
 Mandatory format after every peer call:
