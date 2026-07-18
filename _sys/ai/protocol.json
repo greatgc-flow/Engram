@@ -278,7 +278,10 @@
                                                                                     ]
                                                           },
                                "current_collab_rate":  10,
-                               "ipc_query_file_naming":  "{peer_id}-{YYYYMMDDHHMMSS}-{rand4}.txt"
+                               "ipc_query_file_naming":  "{peer_id}-{YYYYMMDDHHMMSS}-{tag}.txt",
+                               "_ipc_query_file_naming_doc":  "The {tag} segment is any short descriptive label (e.g. `r2a`, `zombie1`, `trial1`) -- it does NOT need to be exactly 4 random chars. Corrected 2026-07-18: the original {rand4} example was read literally by _is_ephemeral_query_file's regex (exactly 4 alphanumeric chars), but in practice almost every dispatch ever made (terminal and peers alike) used a descriptive tag of a different length, so the single-use auto-delete path silently never fired for ~655 accumulated files back to 2026-06-20. Any {peer_id}-{14-digit-timestamp}-{anything}.txt in ipc/ is now correctly treated as single-use.",
+                               "staged_query_file_warn_age_hours":  1,
+                               "_staged_query_file_warn_age_doc":  "A query file whose name does NOT match ipc_query_file_naming (see _is_ephemeral_query_file in hub.py) is deliberately preserved after use, so a failed ask can be retried against the same --query-file. Found live 2026-07-18: a 2-day-old staged file from the 2026-07-16 mega-audit was silently re-dispatched with no visible signal that a STALE, previously-attempted request was being reused rather than a fresh one -- this correlated with an unrelated dispatch stalling ~21 minutes on lock contention. Any staged-file reuse now prints a console notice; reuse older than this many hours also logs a staged_query_file_stale_reuse telemetry event (routing_metrics.jsonl) for later audit."
                            },
     "runtime":  {
                     "ask_default_timeout_sec":  180,

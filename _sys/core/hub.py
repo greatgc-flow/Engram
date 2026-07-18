@@ -3629,17 +3629,81 @@ def _is_ephemeral_query_file(path: Path) -> bool:
     """True only for hub-auto-named, single-use query files.
 
     Ephemeral scheme (protocol.json active_constraints.ipc_query_file_naming):
-      {peer_id}-{YYYYMMDDHHMMSS}-{rand4}.txt  inside an `ipc/` dir
-      (peer_id may carry a profile suffix, e.g. cc.deepthink-...).
+      {peer_id}-{YYYYMMDDHHMMSS}-{tag}.txt  inside an `ipc/` dir
+      (peer_id may carry a profile suffix, e.g. cc.deepthink-...; tag is any
+      non-empty run of [a-z0-9_-], NOT required to be exactly 4 chars).
     Plus ask-all fan-out temp files: hub-ask-all-{peer}-{8hex}.txt (any dir).
-    Staged/named query files are preserved so a failed ask can be retried
-    against the same --query-file (root cause: IPC single-use unlink bug).
+    Staged/named query files (no 14-digit timestamp component at all, e.g.
+    `ping-ag.txt`, `probe-cx.txt`) are preserved so a failed ask can be
+    retried against the same --query-file (root cause: IPC single-use
+    unlink bug).
+
+    2026-07-18 fix: the tag segment used to require EXACTLY 4 alphanumeric
+    characters ([a-z0-9]{4}), matching only the literal {rand4} example in
+    protocol.json's naming doc. In practice virtually every dispatch (by the
+    terminal AND by peers) uses a short DESCRIPTIVE tag instead (e.g. `r2a`,
+    `zombie1`, `trial1`, `synth1`) which is essentially never exactly 4 chars
+    -- so the "single-use auto-delete" design had been silently failing for
+    nearly the entire project's history. Found live: _sys/ai/ipc/ had ~655
+    files accumulated back to 2026-06-20, effectively none of which were ever
+    ephemeral in practice, including a 2-day-old file from the 2026-07-16
+    mega-audit that was silently reused as if fresh. Broadened the tag
+    segment to any non-empty [a-z0-9_-]+ run; the 14-digit-timestamp
+    requirement (which hand-named staged files like `ping-ag.txt` don't have)
+    remains the real signal that a file is an auto-generated single-use
+    dispatch, not the tag's exact length.
     """
     return bool(
         (path.parent.name.lower() == "ipc"
-         and re.fullmatch(r"[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*-\d{14}-[a-z0-9]{4}\.txt", path.name, re.IGNORECASE))
+         and re.fullmatch(r"[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*-\d{14}-[a-z0-9_-]+\.txt", path.name, re.IGNORECASE))
         or re.fullmatch(r"hub-ask-all-[a-z0-9_.-]+-[0-9a-f]{8}\.txt", path.name, re.IGNORECASE)
     )
+
+
+def _staged_query_file_age_hours(path: Path, now: float | None = None) -> float | None:
+    """Age in hours of a staged (non-ephemeral, preserved-for-retry) query file,
+    or None if it doesn't exist / can't be stat'd. Pure, testable."""
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return None
+    ref = now if now is not None else time.time()
+    return max(0.0, (ref - mtime) / 3600.0)
+
+
+def _notify_staged_query_file_reuse(qf: Path, to: str, ai_root: Path | None) -> None:
+    """Console-visible signal + telemetry whenever a NAMED/staged query file
+    (not the hub's own single-use ephemeral pattern) is dispatched. Found live
+    2026-07-18: a 2-day-old staged file from the 2026-07-16 mega-audit was
+    silently re-dispatched with zero visible indication it was a stale retry,
+    not a fresh request -- correlated with an unrelated dispatch stalling ~21
+    minutes on lock contention. This makes every staged-file reuse an explicit,
+    greppable event instead of an invisible one, satisfying 'clearly manage the
+    original request and its call target' (2026-07-18 user request)."""
+    age_hours = _staged_query_file_age_hours(qf)
+    warn_age = float((_load_protocol_cfg().get("active_constraints", {}) or {}).get(
+        "staged_query_file_warn_age_hours", 1))
+    age_str = f"{age_hours:.1f}h" if age_hours is not None else "unknown age"
+    print(
+        f"[HUB:NOTICE] staged query file reused (not single-use): {qf} -> {to} (age={age_str}). "
+        "This file survived because its name doesn't match the ephemeral pattern -- it is being "
+        "treated as an intentional retry of a previously-attempted request.",
+        file=sys.stderr,
+    )
+    if age_hours is not None and age_hours >= warn_age:
+        print(
+            f"[HUB:WARN] staged query file is {age_str} old (>= {warn_age}h threshold) -- "
+            "verify this retry is still wanted before trusting the result.",
+            file=sys.stderr,
+        )
+        if ai_root:
+            try:
+                _record_routing_metric(
+                    ai_root, "staged_query_file_stale_reuse",
+                    query_file=str(qf), target=to, age_hours=round(age_hours, 2),
+                )
+            except Exception:
+                pass
 
 
 def _oversized_ask_limits() -> tuple[int, int]:
@@ -4990,6 +5054,8 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         query = "\n".join(lines[body_start:]) if body_start > 0 else raw_content
         if _is_ephemeral_query_file(qf):
             qf.unlink(missing_ok=True)
+        else:
+            _notify_staged_query_file_reuse(qf, to, ai_root)
 
     requested_to = to
     user_query_raw = query
@@ -6093,7 +6159,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
             shutil.rmtree(ask_temp_dir, ignore_errors=True)
 
 
-def _read_query_arg(query: str, query_file: str | None) -> str:
+def _read_query_arg(query: str, query_file: str | None, ai_root: Path | None = None, to: str = "unknown") -> str:
     if query_file:
         qf = Path(query_file)
         if not qf.exists():
@@ -6101,6 +6167,8 @@ def _read_query_arg(query: str, query_file: str | None) -> str:
         text = qf.read_text(encoding="utf-8")
         if _is_ephemeral_query_file(qf):
             qf.unlink(missing_ok=True)
+        else:
+            _notify_staged_query_file_reuse(qf, to, ai_root)
         return text
     return query or ""
 
@@ -6131,7 +6199,7 @@ def action_ask_all(query: str, query_file: str | None, timeout_sec: int, ai_root
     """모든 활성 피어에게 동일 쿼리를 병렬 브로드캐스트하고 응답을 출력한다."""
     import threading
 
-    query_text = _read_query_arg(query, query_file)
+    query_text = _read_query_arg(query, query_file, ai_root=ai_root, to="ask-all")
     orch = _load_orchestration()
     exclude_set = set(exclude or [])
     peers = [
@@ -6189,7 +6257,7 @@ def action_ask_all(query: str, query_file: str | None, timeout_sec: int, ai_root
 
 
 def action_ask_coordinator(ai_root: Path, query: str, query_file: str | None, timeout_sec: int, from_peer: str, quiet: bool = False, output_file: str | None = None) -> None:
-    query_text = _read_query_arg(query, query_file)
+    query_text = _read_query_arg(query, query_file, ai_root=ai_root, to="coordinator")
     state = _read_json(ai_root / "state.json")
     coordinator = state.get("active_coordinator") or state.get("leader")
     orch = _load_orchestration()

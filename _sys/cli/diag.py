@@ -885,6 +885,36 @@ def _limited_reset_rows(snapshot, now=None):
     ))
 
 
+def _ipc_staged_files_line() -> str:
+    """One-line count of staged (non-single-use) query files sitting in
+    _sys/ai/ipc/, with how many are older than the configured warn threshold.
+
+    Found live 2026-07-18: ~655 files had accumulated back to 2026-06-20
+    because _is_ephemeral_query_file()'s naming regex didn't match real-world
+    tag usage, so the 'single-use auto-delete' path silently never fired for
+    most dispatches. Fixed at the source (hub.py), but this line gives
+    ongoing visibility so a growing backlog is never silently invisible
+    again. Crash-safe: never blocks the rest of the frame render."""
+    try:
+        import importlib
+        import sys as _sys
+        core_dir = str(SYS_DIR / "core")
+        if core_dir not in _sys.path:
+            _sys.path.insert(0, core_dir)
+        hub = importlib.import_module("hub")
+        ipc_dir = SYS_DIR / "ai" / "ipc"
+        if not ipc_dir.is_dir():
+            return "IPC staged files: absent (no ipc/ dir)\n"
+        now = time.time()
+        warn_hours = float((hub._load_protocol_cfg().get("active_constraints", {}) or {}).get(
+            "staged_query_file_warn_age_hours", 1))
+        staged = [p for p in ipc_dir.glob("*.txt") if not hub._is_ephemeral_query_file(p)]
+        stale = [p for p in staged if (hub._staged_query_file_age_hours(p, now=now) or 0) >= warn_hours]
+        return f"IPC staged files: {len(staged)} ({len(stale)} >= {warn_hours:.0f}h old)\n"
+    except Exception:
+        return "IPC staged files: absent (count unavailable)\n"
+
+
 def render_frame_footer(stdout=None, snapshot=None, rendered_at=None):
     out = stdout or sys.stdout
     snapshot = snapshot or {}
@@ -908,6 +938,7 @@ def render_frame_footer(stdout=None, snapshot=None, rendered_at=None):
         f"local TTL {local_ttl}s; expensive quota cache {expensive_age_txt} / TTL {expensive_ttl}s\n"
     )
     out.write(f"RENDERED {_fmt_frame_dt(rendered)}\n")
+    out.write(_ipc_staged_files_line())
 
     rows = _limited_reset_rows(snapshot, rendered)
     if not rows:

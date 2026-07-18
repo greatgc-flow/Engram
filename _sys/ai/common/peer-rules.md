@@ -16,7 +16,7 @@ Terminal reads raw `_sys/` state files ONLY when the task is explicitly "audit r
 These apply to every peer (cc, ag, cx). Peer-specific deltas live in `_sys/docs-v2/specific/{peer}.md`; full policy is in `_sys/docs-v2/` (SSOT).
 
 - **Peer equality:** all peers are governance-equal; any peer may communicate directly with the human. No fixed coordinator (`protocol.json["workload"]["user_communication"]`).
-- **IPC is English-only.** Query files: `_sys/ai/ipc/{peer_id}-{YYYYMMDDHHMMSS}-{rand4}.txt`; invoke via `hub.py ask --to {peer} --query-file ...`.
+- **IPC is English-only.** Query files: `_sys/ai/ipc/{peer_id}-{YYYYMMDDHHMMSS}-{tag}.txt` (tag = any short descriptive label, not required to be 4 random chars); invoke via `hub.py ask --to {peer} --query-file ...`. This exact pattern (peer_id + 14-digit timestamp + tag) is what makes a query file single-use/auto-deleted after read — a file missing the timestamp is treated as an intentionally staged/reusable file and is preserved (2026-07-18 clarification).
 - **Session start:** read SSOT pointers only on a fresh interactive session. **IPC/sub-agent asks SKIP startup** — answer the USER QUERY directly, do not re-orient to the repo mission.
 - **Health self-report:** `hub.py health-update --peer {id} --status GREEN|YELLOW|RED` at start/end. Never edit `health.json` directly.
 
