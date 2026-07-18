@@ -3671,6 +3671,40 @@ def _staged_query_file_age_hours(path: Path, now: float | None = None) -> float 
     return max(0.0, (ref - mtime) / 3600.0)
 
 
+def _staged_query_file_prior_failures(qf: Path, ai_root: Path | None) -> int:
+    """Count prior ask_history.jsonl records (by filename, path-style agnostic)
+    for this staged file that ended in failure. Crash-safe; never raises.
+
+    Added 2026-07-18 after a forensic deep-dive (cx.effort) found this to be a
+    dramatically stronger risk signal than mere file age: joining PTY telemetry
+    to ask_history by timestamp+peer, the zombie rate for REUSED query-file PTY
+    attempts was 5/9 (55.6%) versus 2/75 (2.7%) for first-time/unique files --
+    odds ratio ~45.6, one-sided Fisher p=0.0000786. One specific staged file
+    zombied 3 out of 3 times it was ever dispatched. Reusing an
+    already-failed prompt is empirically the single strongest predictor of a
+    zombie found this session, well above simple staleness-by-age."""
+    if not ai_root:
+        return 0
+    path = ai_root / "ask_history.jsonl"
+    if not path.exists():
+        return 0
+    target_name = qf.name
+    count = 0
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    entry = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                qfp = entry.get("query_file")
+                if qfp and Path(qfp).name == target_name and entry.get("success") is False:
+                    count += 1
+    except OSError:
+        return 0
+    return count
+
+
 def _notify_staged_query_file_reuse(qf: Path, to: str, ai_root: Path | None) -> None:
     """Console-visible signal + telemetry whenever a NAMED/staged query file
     (not the hub's own single-use ephemeral pattern) is dispatched. Found live
@@ -3690,6 +3724,24 @@ def _notify_staged_query_file_reuse(qf: Path, to: str, ai_root: Path | None) -> 
         "treated as an intentional retry of a previously-attempted request.",
         file=sys.stderr,
     )
+    prior_failures = _staged_query_file_prior_failures(qf, ai_root)
+    if prior_failures > 0:
+        print(
+            f"[HUB:WARN] this exact file has FAILED {prior_failures} prior time(s) "
+            "(ask_history.jsonl). Empirically, re-dispatching an already-failed prompt "
+            "unchanged has a ~20x higher zombie rate than a fresh dispatch (measured "
+            "2026-07-18: 55.6% vs 2.7%). Consider writing a fresh query file instead of "
+            "reusing this one verbatim.",
+            file=sys.stderr,
+        )
+        if ai_root:
+            try:
+                _record_routing_metric(
+                    ai_root, "staged_query_file_prior_failure_reuse",
+                    query_file=str(qf), target=to, prior_failures=prior_failures,
+                )
+            except Exception:
+                pass
     if age_hours is not None and age_hours >= warn_age:
         print(
             f"[HUB:WARN] staged query file is {age_str} old (>= {warn_age}h threshold) -- "
