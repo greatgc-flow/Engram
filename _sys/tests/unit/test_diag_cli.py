@@ -834,6 +834,7 @@ def test_dashboard_follows_action_first_section_order(monkeypatch):
             < text.index(" SUMMARY")
             < text.index(" HEADROOM")
             < text.index(" RECENT SESSIONS")
+            < text.index(" USAGE")
             < text.index(" PROFILES & ROUTING")
             < text.index(" POLICY")
             < text.index(" FRAME"))

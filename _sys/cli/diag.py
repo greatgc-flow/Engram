@@ -1624,6 +1624,7 @@ def render_dashboard(stdout=None, watch_mode=False, snapshot=None):
             (" SUMMARY", lambda target: _render_summary_to(target, infos)),
             (" HEADROOM", lambda target: render_headroom(target, snapshot=snapshot, include_target=False)),
             (" RECENT SESSIONS", lambda target: render_sessions(target, snapshot=snapshot)),
+            (" USAGE", lambda target: render_usage(target)),
             (" PROFILES & ROUTING", lambda target: render_profiles(target, snapshot=snapshot)),
             (" POLICY", lambda target: render_policy(target)),
         ]
