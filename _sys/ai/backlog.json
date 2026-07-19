@@ -1980,12 +1980,14 @@
     {
       "id": "T72",
       "title": "consensus rounds escalate to human_gate after the first vote instead of finalizing on unanimity",
-      "status": "active",
+      "status": "done",
       "priority": "high",
       "category": "governance",
       "owner": "unassigned",
-      "blocker": "implemented and verified in the 2026-07-19 working tree; add real evidence_commit and mark done after commit",
-      "evidence_commit": [],
+      "blocker": null,
+      "evidence_commit": [
+        "52e292c"
+      ],
       "supersedes": [],
       "source_refs": [
         "_sys/tests/unit/test_locking_stress.py::TestLockingStress::test_concurrent_consensus_votes",
