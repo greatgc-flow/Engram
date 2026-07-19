@@ -18,6 +18,17 @@ from _sys.core import hub
 # that calls action_ask patches _terminal_spend_guard to a no-op so it can
 # never reach that code path -- these tests are about ask/lease/PTY behavior,
 # not the terminal-spend-guard subsystem.
+#
+# Same class of bug, different mechanism: _action_ask_inner also has its own
+# separate pacing_hard_gate check (unrelated to _terminal_spend_guard) that
+# calls snapshot.collect_snapshot()/pacing_admission_for_profile() directly.
+# This reads THIS MACHINE's real, current cc pacing ratio -- so a real busy
+# day (this session alone made hundreds of real asks) can push it over the
+# gate's max_ratio and reject a "to=cc" ask that has nothing to do with
+# pacing at all. Every test also forces _SNAPSHOT_AVAILABLE=False, which
+# every snapshot-dependent optional gate (pacing included) checks first and
+# skips cleanly when false -- broader and more future-proof than patching
+# each gate individually.
 
 def test_at1_lease_closed_on_failure(tmp_path):
     """A subprocess ask that raises/exits nonzero still closes its lease."""
@@ -30,7 +41,8 @@ def test_at1_lease_closed_on_failure(tmp_path):
          patch("_sys.core.hub._kill_process_tree") as mock_kill, \
          patch("_sys.core.hub._record_ask_failure") as mock_record_failure, \
          patch("_sys.core.hub._append_ask_history"), \
-         patch("_sys.core.hub._terminal_spend_guard"):
+         patch("_sys.core.hub._terminal_spend_guard"), \
+         patch("_sys.core.hub._SNAPSHOT_AVAILABLE", False):
 
         # Setup mock process that fails
         mock_proc = MagicMock()
@@ -80,7 +92,8 @@ def test_at1_process_tree_reaped_on_timeout(tmp_path):
          patch("_sys.core.hub._record_ask_failure"), \
          patch("_sys.core.hub._append_ask_history"), \
          patch("_sys.core.hub._lease_close"), \
-         patch("_sys.core.hub._terminal_spend_guard"):
+         patch("_sys.core.hub._terminal_spend_guard"), \
+         patch("_sys.core.hub._SNAPSHOT_AVAILABLE", False):
 
         # Setup mock process that times out immediately (streaming reader raises).
         mock_proc = MagicMock()
@@ -121,7 +134,8 @@ def test_at1_health_written_before_exit(tmp_path):
          patch("_sys.core.hub._kill_process_tree") as mock_kill, \
          patch("_sys.core.hub._append_ask_history"), \
          patch("_sys.core.hub._lease_close"), \
-         patch("_sys.core.hub._terminal_spend_guard"):
+         patch("_sys.core.hub._terminal_spend_guard"), \
+         patch("_sys.core.hub._SNAPSHOT_AVAILABLE", False):
 
         # Setup mock process that raises an exception
         mock_popen.side_effect = PermissionError("Cannot execute")
@@ -160,7 +174,8 @@ def test_at1_pty_success_not_reaped(tmp_path):
          patch("_sys.core.hub._append_ask_history"), \
          patch("_sys.core.hub._lease_close") as mock_lease_close, \
          patch("_sys.core.hub._runtime_cfg", return_value={"ag": {"requires_pty": True}}), \
-         patch("_sys.core.hub._terminal_spend_guard"):
+         patch("_sys.core.hub._terminal_spend_guard"), \
+         patch("_sys.core.hub._SNAPSHOT_AVAILABLE", False):
         
         from _sys.core.hub import _PtyAskResult
         mock_ask.return_value = _PtyAskResult(
@@ -204,7 +219,8 @@ def test_at1_terminal_timeout_not_permanent_red(tmp_path):
          patch("_sys.core.hub._lease_close"), \
          patch("_sys.core.hub._load_orchestration", return_value={"hub_nodes": [{"type": "peer", "node_id": "cc", "enabled": True}]}), \
          patch("_sys.core.hub._peer_sys_dir", return_value=cc_dir), \
-         patch("_sys.core.hub._terminal_spend_guard"):
+         patch("_sys.core.hub._terminal_spend_guard"), \
+         patch("_sys.core.hub._SNAPSHOT_AVAILABLE", False):
 
         mock_proc = MagicMock()
         mock_proc.pid = 999
@@ -265,7 +281,8 @@ def test_w1_missing_query_file_fails_loudly(tmp_path, capsys):
     hub.ensure_ai_dir(ai_root)
 
     with patch("_sys.core.hub._append_ask_history") as mock_history, \
-         patch("_sys.core.hub._terminal_spend_guard"):
+         patch("_sys.core.hub._terminal_spend_guard"), \
+         patch("_sys.core.hub._SNAPSHOT_AVAILABLE", False):
         with pytest.raises(SystemExit) as exc:
             hub.action_ask(
                 to="cc",
