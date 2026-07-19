@@ -343,6 +343,14 @@ def _quota_display_sort_key(row):
 
 _WINDOW_HOURS_BY_SUFFIX = {"5H": 5.0, "7D": 168.0}
 
+# Reserve room in every bucket cell for the longest possible borrowed-pool
+# annotation (see _borrow_missing_windows), e.g. "(3P)" = 4 chars. Without
+# this reserved room, a borrowed cell like "~10% 0.25x(C)" overflows its
+# fixed bucket_pad width, _pad() returns it unpadded (diff <= 0), and every
+# column after it drifts right on that one row only -- misaligning it
+# against every other row at the same tier (reported by the user 2026-07-19).
+_BUCKET_ANNOT_RESERVE = 4
+
 
 def _pool_prefix_suffix(pool_label):
     """'3P-5H' -> ('3P', '5H'). No '-' -> (label, None), never guessed."""
@@ -449,9 +457,11 @@ def _borrow_missing_windows(groups):
 
 def _quota_columns_for_tier(tier):
     if tier <= 1:
-        return _pad("URG", 10) + " " + _pad("5H", 10) + " " + _pad("7D", 10)
+        w = 10 + _BUCKET_ANNOT_RESERVE
+        return _pad("URG", 10) + " " + _pad("5H", w) + " " + _pad("7D", w)
     elif tier == 2:
-        return _pad("URG", 10) + " " + _pad("5H", 6) + " " + _pad("7D", 6)
+        w = 6 + _BUCKET_ANNOT_RESERVE
+        return _pad("URG", 10) + " " + _pad("5H", w) + " " + _pad("7D", w)
     else:
         return _pad("BINDING", 12)
 
@@ -523,7 +533,10 @@ def _quota_dependency_group_text(group, tier=0):
         return f"{pool_str} {binding_str}"
 
     urg_str = _pad(urg_text, 10)
-    bucket_pad = 6 if tier == 2 else 10
+    # Every bucket cell at this tier -- "--", "absent", normal, or borrowed
+    # with a "(pool)" annotation -- must share ONE width so the "|" divider
+    # and the 7D column land in the same place on every row.
+    bucket_pad = (6 if tier == 2 else 10) + _BUCKET_ANNOT_RESERVE
 
     # Fixed slots by window suffix (5H, then 7D) -- a pool with only one
     # real window (e.g. cx's X-7D) must render its bucket under the 7D
@@ -541,7 +554,7 @@ def _quota_dependency_group_text(group, tier=0):
         uf = b.get("used_frac")
         if not isinstance(uf, (int, float)):
             s = f"{marker}absent"
-            bucket_strs.append(_pad(s, bucket_pad + 2))
+            bucket_strs.append(_pad(s, bucket_pad))
         else:
             pct = f"{uf * 100:.0f}%"
             ratio = (b.get("pacing") or {}).get("ratio")
