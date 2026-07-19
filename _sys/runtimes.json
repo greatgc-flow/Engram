@@ -1,161 +1,250 @@
 {
-    "_comment":  "Runtime version and download URL registry. Single source of truth for INSTALL.bat and setup.py.",
-    "runtimes":  {
-                     "python":  {
-                                    "version":  "3.14.5",
-                                    "url":  "https://www.python.org/ftp/python/3.14.5/python-3.14.5-embed-amd64.zip",
-                                    "get_pip_url":  "https://bootstrap.pypa.io/get-pip.py"
-                                },
-                     "nodejs":  {
-                                    "version":  "22.22.3",
-                                    "url":  "https://nodejs.org/dist/v22.22.3/node-v22.22.3-win-x64.zip",
-                                    "install_mechanism":  "zip_tool",
-                                    "archive_layout":  "preserve_tree",
-                                    "strip_components":  1,
-                                    "preserve_paths":  ["npm-global"]
-                                },
-                     "git":  {
-                                 "version":  "2.49.0",
-                                 "url":  "https://github.com/git-for-windows/git/releases/download/v2.49.0.windows.1/PortableGit-2.49.0-64-bit.7z.exe",
-                                 "install_mechanism":  "sfx_exe"
-                             },
-                     "vscode":  {
-                                    "version":  "1.100.2",
-                                    "url":  "https://update.code.visualstudio.com/1.100.2/win32-x64-archive/stable",
-                                    "install_mechanism":  "zip_tool",
-                                    "archive_layout":  "preserve_tree",
-                                    "strip_components":  0
-                                },
-                     "pwsh":  {
-                                  "version":  "7.6.2",
-                                  "url":  "https://github.com/PowerShell/PowerShell/releases/download/v7.6.2/PowerShell-7.6.2-win-x64.zip",
-                                  "install_mechanism":  "zip_tool",
-                                  "archive_layout":  "preserve_tree",
-                                  "strip_components":  0
-                              }
-                 },
-    "tools":  {
-                  "ripgrep":  {
-                                  "version":  "15.1.0",
-                                  "url":  "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-pc-windows-msvc.zip",
-                                  "type":  "zip",
-                                  "bin":  "rg.exe",
-                                  "discovery_provider":  "github_releases",
-                                  "discovery_id":  "BurntSushi/ripgrep",
-                                  "install_mechanism":  "zip_tool",
-                                  "canary":  {"argv": ["rg.exe", "--version"], "timeout_sec": 5, "expect_regex": "ripgrep"}
-                              },
-                  "bat":  {
-                              "version":  "0.26.1",
-                              "url":  "https://github.com/sharkdp/bat/releases/download/v0.26.1/bat-v0.26.1-x86_64-pc-windows-msvc.zip",
-                              "type":  "zip",
-                              "bin":  "bat.exe",
-                              "discovery_provider":  "github_releases",
-                              "discovery_id":  "sharkdp/bat",
-                              "install_mechanism":  "zip_tool",
-                              "canary":  {"argv": ["bat.exe", "--version"], "timeout_sec": 5, "expect_regex": "bat"}
-                          },
-                  "fd":  {
-                             "version":  "10.4.2",
-                             "url":  "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-x86_64-pc-windows-msvc.zip",
-                             "type":  "zip",
-                             "bin":  "fd.exe",
-                             "discovery_provider":  "github_releases",
-                             "discovery_id":  "sharkdp/fd",
-                             "install_mechanism":  "zip_tool",
-                             "canary":  {"argv": ["fd.exe", "--version"], "timeout_sec": 5, "expect_regex": "fd"}
-                         },
-                  "delta":  {
-                                "version":  "0.19.2",
-                                "url":  "https://github.com/dandavison/delta/releases/download/0.19.2/delta-0.19.2-x86_64-pc-windows-msvc.zip",
-                                "type":  "zip",
-                                "bin":  "delta.exe",
-                                "discovery_provider":  "github_releases",
-                                "discovery_id":  "dandavison/delta",
-                                "install_mechanism":  "zip_tool",
-                                "canary":  {"argv": ["delta.exe", "--version"], "timeout_sec": 5, "expect_regex": "delta"}
-                            },
-                  "fzf":  {
-                              "version":  "0.73.1",
-                              "url":  "https://github.com/junegunn/fzf/releases/download/v0.73.1/fzf-0.73.1-windows_amd64.zip",
-                              "type":  "zip",
-                              "bin":  "fzf.exe",
-                              "discovery_provider":  "github_releases",
-                              "discovery_id":  "junegunn/fzf",
-                              "install_mechanism":  "zip_tool",
-                              "canary":  {"argv": ["fzf.exe", "--version"], "timeout_sec": 5, "expect_regex": "\\d+\\.\\d+\\.\\d+"}
-                          },
-                  "jq":  {
-                             "version":  "1.8.1",
-                             "url":  "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-windows-amd64.exe",
-                             "type":  "exe",
-                             "bin":  "jq.exe",
-                             "discovery_provider":  "github_releases",
-                             "discovery_id":  "jqlang/jq",
-                             "install_mechanism":  "exe_tool",
-                             "canary":  {"argv": ["jq.exe", "--version"], "timeout_sec": 5, "expect_regex": "jq"}
-                         },
-                  "gh":  {
-                             "version":  "2.93.0",
-                             "url":  "https://github.com/cli/cli/releases/download/v2.93.0/gh_2.93.0_windows_amd64.zip",
-                             "type":  "zip",
-                             "bin":  "gh.exe",
-                             "discovery_provider":  "github_releases",
-                             "discovery_id":  "cli/cli",
-                             "install_mechanism":  "zip_tool",
-                             "canary":  {"argv": ["gh.exe", "--version"], "timeout_sec": 5, "expect_regex": "gh version"}
-                         },
-                  "sqlite":  {
-                                 "version":  "3.53.1",
-                                 "url":  "https://www.sqlite.org/2026/sqlite-tools-win-x64-3530100.zip",
-                                 "type":  "zip",
-                                 "bin":  "sqlite3.exe",
-                                 "discovery_provider":  "sqlite_org_page",
-                                 "discovery_id":  "sqlite-tools-win-x64",
-                                 "install_mechanism":  "zip_tool",
-                                 "canary":  {"argv": ["sqlite3.exe", "--version"], "timeout_sec": 5, "expect_regex": "\\d+\\.\\d+\\.\\d+"}
-                             },
-                  "agy":  {
-                                  "version":  "1.0.7",
-                                  "url":  "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.0.7-5436940900761600/windows-x64/cli_windows_x64.exe",
-                                  "type":  "exe",
-                                  "bin":  "agy.exe",
-                                  "sha512":  "6b4f91bf174e795fac0f11387a7c6d3973eb2b76a4af00f0a17740ba73a73a37b809c35af5ca8fa277e64b28183b2da147af5d9f4b2ee7ad3f230a9806211638e78",
-                                  "install_subdir":  "tools/agy",
-                                  "discovery_provider":  "manual",
-                                  "install_mechanism":  "exe_tool",
-                                  "canary":  {"argv": ["agy.exe", "--version"], "timeout_sec": 5, "expect_regex": "\\d+\\.\\d+\\.\\d+"}
-                              },
-                  "oh-my-posh":  {
-                                     "version":  "29.14.0",
-                                     "url":  "https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v29.14.0/posh-windows-amd64.exe",
-                                     "type":  "exe",
-                                     "bin":  "oh-my-posh.exe",
-                                     "discovery_provider":  "github_releases",
-                                     "discovery_id":  "JanDeDobbeleer/oh-my-posh",
-                                     "install_mechanism":  "exe_tool",
-                                     "canary":  {"argv": ["oh-my-posh.exe", "--version"], "timeout_sec": 5, "expect_regex": "\\d+\\.\\d+\\.\\d+"},
-                                     "extras":  [
-                                                    {
-                                                        "url":  "https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v29.14.0/themes.zip",
-                                                        "type":  "zip",
-                                                        "dest":  "themes"
-                                                    }
-                                                ]
-                                 },
-                  "claude":  {
-                                 "version":  "2.1.206",
-                                 "discovery_provider":  "npm",
-                                 "discovery_id":  "@anthropic-ai/claude-code",
-                                 "install_mechanism":  "npm_peer",
-                                 "canary":  {"argv": ["claude.cmd", "--version"], "timeout_sec": 10, "expect_regex": "\\d+\\.\\d+\\.\\d+"}
-                             },
-                  "codex":  {
-                                "version":  "0.144.1",
-                                "discovery_provider":  "npm",
-                                "discovery_id":  "@openai/codex",
-                                "install_mechanism":  "npm_peer",
-                                "canary":  {"argv": ["codex.cmd", "--version"], "timeout_sec": 10, "expect_regex": "\\d+\\.\\d+\\.\\d+"}
-                            }
-              }
+    "_comment": "Runtime version and download URL registry. Single source of truth for INSTALL.bat and setup.py.",
+    "runtimes": {
+        "python": {
+            "version": "3.14.5",
+            "url": "https://www.python.org/ftp/python/3.14.5/python-3.14.5-embed-amd64.zip",
+            "get_pip_url": "https://bootstrap.pypa.io/get-pip.py"
+        },
+        "nodejs": {
+            "version": "22.22.3",
+            "url": "https://nodejs.org/dist/v22.22.3/node-v22.22.3-win-x64.zip",
+            "install_mechanism": "zip_tool",
+            "archive_layout": "preserve_tree",
+            "strip_components": 1,
+            "preserve_paths": [
+                "npm-global"
+            ]
+        },
+        "git": {
+            "version": "2.49.0",
+            "url": "https://github.com/git-for-windows/git/releases/download/v2.49.0.windows.1/PortableGit-2.49.0-64-bit.7z.exe",
+            "install_mechanism": "sfx_exe"
+        },
+        "vscode": {
+            "version": "1.100.2",
+            "url": "https://update.code.visualstudio.com/1.100.2/win32-x64-archive/stable",
+            "install_mechanism": "zip_tool",
+            "archive_layout": "preserve_tree",
+            "strip_components": 0
+        },
+        "pwsh": {
+            "version": "7.6.2",
+            "url": "https://github.com/PowerShell/PowerShell/releases/download/v7.6.2/PowerShell-7.6.2-win-x64.zip",
+            "install_mechanism": "zip_tool",
+            "archive_layout": "preserve_tree",
+            "strip_components": 0
+        }
+    },
+    "tools": {
+        "ripgrep": {
+            "version": "15.2.0",
+            "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-pc-windows-msvc.zip",
+            "type": "zip",
+            "bin": "rg.exe",
+            "discovery_provider": "github_releases",
+            "discovery_id": "BurntSushi/ripgrep",
+            "install_mechanism": "zip_tool",
+            "canary": {
+                "argv": [
+                    "rg.exe",
+                    "--version"
+                ],
+                "timeout_sec": 5,
+                "expect_regex": "ripgrep"
+            }
+        },
+        "bat": {
+            "version": "0.26.1",
+            "url": "https://github.com/sharkdp/bat/releases/download/v0.26.1/bat-v0.26.1-x86_64-pc-windows-msvc.zip",
+            "type": "zip",
+            "bin": "bat.exe",
+            "discovery_provider": "github_releases",
+            "discovery_id": "sharkdp/bat",
+            "install_mechanism": "zip_tool",
+            "canary": {
+                "argv": [
+                    "bat.exe",
+                    "--version"
+                ],
+                "timeout_sec": 5,
+                "expect_regex": "bat"
+            }
+        },
+        "fd": {
+            "version": "10.4.2",
+            "url": "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-x86_64-pc-windows-msvc.zip",
+            "type": "zip",
+            "bin": "fd.exe",
+            "discovery_provider": "github_releases",
+            "discovery_id": "sharkdp/fd",
+            "install_mechanism": "zip_tool",
+            "canary": {
+                "argv": [
+                    "fd.exe",
+                    "--version"
+                ],
+                "timeout_sec": 5,
+                "expect_regex": "fd"
+            }
+        },
+        "delta": {
+            "version": "0.19.2",
+            "url": "https://github.com/dandavison/delta/releases/download/0.19.2/delta-0.19.2-x86_64-pc-windows-msvc.zip",
+            "type": "zip",
+            "bin": "delta.exe",
+            "discovery_provider": "github_releases",
+            "discovery_id": "dandavison/delta",
+            "install_mechanism": "zip_tool",
+            "canary": {
+                "argv": [
+                    "delta.exe",
+                    "--version"
+                ],
+                "timeout_sec": 5,
+                "expect_regex": "delta"
+            }
+        },
+        "fzf": {
+            "version": "0.74.1",
+            "url": "https://github.com/junegunn/fzf/releases/download/v0.74.1/fzf-0.74.1-windows_amd64.zip",
+            "type": "zip",
+            "bin": "fzf.exe",
+            "discovery_provider": "github_releases",
+            "discovery_id": "junegunn/fzf",
+            "install_mechanism": "zip_tool",
+            "canary": {
+                "argv": [
+                    "fzf.exe",
+                    "--version"
+                ],
+                "timeout_sec": 5,
+                "expect_regex": "\\d+\\.\\d+\\.\\d+"
+            }
+        },
+        "jq": {
+            "version": "jq-1.8.2",
+            "url": "https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-windows-amd64.exe",
+            "type": "exe",
+            "bin": "jq.exe",
+            "discovery_provider": "github_releases",
+            "discovery_id": "jqlang/jq",
+            "install_mechanism": "exe_tool",
+            "canary": {
+                "argv": [
+                    "jq.exe",
+                    "--version"
+                ],
+                "timeout_sec": 5,
+                "expect_regex": "jq"
+            }
+        },
+        "gh": {
+            "version": "2.96.0",
+            "url": "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_windows_amd64.zip",
+            "type": "zip",
+            "bin": "gh.exe",
+            "discovery_provider": "github_releases",
+            "discovery_id": "cli/cli",
+            "install_mechanism": "zip_tool",
+            "canary": {
+                "argv": [
+                    "gh.exe",
+                    "--version"
+                ],
+                "timeout_sec": 5,
+                "expect_regex": "gh version"
+            }
+        },
+        "sqlite": {
+            "version": "3.53.3",
+            "url": "https://www.sqlite.org/2026/sqlite-tools-win-x64-3530300.zip",
+            "type": "zip",
+            "bin": "sqlite3.exe",
+            "discovery_provider": "sqlite_org_page",
+            "discovery_id": "sqlite-tools-win-x64",
+            "install_mechanism": "zip_tool",
+            "canary": {
+                "argv": [
+                    "sqlite3.exe",
+                    "--version"
+                ],
+                "timeout_sec": 5,
+                "expect_regex": "\\d+\\.\\d+\\.\\d+"
+            },
+            "sha3_256": "b943f8ec7ab77433df44520a27ea65744a792e68a25c05b48823168496b3ccdb"
+        },
+        "agy": {
+            "version": "1.0.7",
+            "url": "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.0.7-5436940900761600/windows-x64/cli_windows_x64.exe",
+            "type": "exe",
+            "bin": "agy.exe",
+            "sha512": "6b4f91bf174e795fac0f11387a7c6d3973eb2b76a4af00f0a17740ba73a73a37b809c35af5ca8fa277e64b28183b2da147af5d9f4b2ee7ad3f230a9806211638e78",
+            "install_subdir": "tools/agy",
+            "discovery_provider": "manual",
+            "install_mechanism": "exe_tool",
+            "canary": {
+                "argv": [
+                    "agy.exe",
+                    "--version"
+                ],
+                "timeout_sec": 5,
+                "expect_regex": "\\d+\\.\\d+\\.\\d+"
+            }
+        },
+        "oh-my-posh": {
+            "version": "29.33.0",
+            "url": "https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v29.33.0/posh-windows-amd64.exe",
+            "type": "exe",
+            "bin": "oh-my-posh.exe",
+            "discovery_provider": "github_releases",
+            "discovery_id": "JanDeDobbeleer/oh-my-posh",
+            "install_mechanism": "exe_tool",
+            "canary": {
+                "argv": [
+                    "oh-my-posh.exe",
+                    "--version"
+                ],
+                "timeout_sec": 5,
+                "expect_regex": "\\d+\\.\\d+\\.\\d+"
+            },
+            "extras": [
+                {
+                    "url": "https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v29.33.0/themes.zip",
+                    "type": "zip",
+                    "dest": "themes"
+                }
+            ]
+        },
+        "claude": {
+            "version": "2.1.215",
+            "discovery_provider": "npm",
+            "discovery_id": "@anthropic-ai/claude-code",
+            "install_mechanism": "npm_peer",
+            "canary": {
+                "argv": [
+                    "claude.cmd",
+                    "--version"
+                ],
+                "timeout_sec": 10,
+                "expect_regex": "\\d+\\.\\d+\\.\\d+"
+            },
+            "url": "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.215.tgz"
+        },
+        "codex": {
+            "version": "0.144.6",
+            "discovery_provider": "npm",
+            "discovery_id": "@openai/codex",
+            "install_mechanism": "npm_peer",
+            "canary": {
+                "argv": [
+                    "codex.cmd",
+                    "--version"
+                ],
+                "timeout_sec": 10,
+                "expect_regex": "\\d+\\.\\d+\\.\\d+"
+            },
+            "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.144.6.tgz"
+        }
+    }
 }
