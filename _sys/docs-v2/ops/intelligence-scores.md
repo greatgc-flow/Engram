@@ -6,6 +6,12 @@
 > Discussion: cx.deepthink + ag.deepthink, synthesized by cc; human directed
 > "document first, apply later."
 >
+> **Update 2026-07-19:** §4.1 (ag.deepthink inversion) is RESOLVED — Option A
+> empirically confirmed unavailable, Option B already live in orchestration.json.
+> §4.2 (arbiter_models expansion) remains OPEN and unapplied (explicitly an R:10
+> decision per its own text) — `routing-config.json`'s `arbiter_models` is still
+> `["cc.fable", "cc.deepthink"]`, cx.deepthink not included.
+>
 > **SUPERSEDED-IN-SPIRIT (2026-07-13):** the single composite scalar below is now
 > the **declared bootstrap layer** of the capability-leveling framework
 > (`ops/capability-leveling.md`). It is `declared/unverified` and **never enters a
@@ -53,19 +59,22 @@ truth in telemetry.
 
 ## 4. Recommendations (NOT yet applied)
 
-### 4.1 ag.deepthink inversion — two options
-- **Option A (preferred if available):** switch `ag.deepthink` to **Gemini 3.5
-  Pro** (composite ~57-58 per ag), which clears the inversion and outscores Opus
-  4.8. **Blocked on a measurement:** confirm Gemini 3.5 Pro is actually available
-  to the agy CLI (DIR-004 — do not declare it usable until a real invocation
-  succeeds), analogous to how the T26 cx migration was gated on `codex debug
-  models` + a live canary.
-- **Option B (fallback):** keep Gemini 3.1 Pro at `ag.deepthink`, but document in
-  orchestration.json that this tier is chosen for **long-context (2M window),
-  multi-turn instruction following, and tool-call fidelity resilience**, not raw
-  composite superiority over Flash. Rationale (ag): Pro-tier models are typically
-  more robust than Flash under complex multi-turn/JSON/tool workflows even when a
-  single-shot composite score is lower.
+### 4.1 ag.deepthink inversion — RESOLVED 2026-07-19 (Option B, empirically forced)
+- **Option A confirmed UNAVAILABLE** [measured, 2026-07-19]: `agy models` does
+  not list a "Gemini 3.5 Pro" entry (catalog is exactly: Gemini 3.5 Flash
+  Low/Medium/High, Gemini 3.1 Pro Low/High, Claude Sonnet 4.6 Thinking, Claude
+  Opus 4.6 Thinking, GPT-OSS 120B Medium) — a live canary confirms this is not
+  just an unlisted-but-invokable model either: `agy --model "Gemini 3.5 Pro" -p
+  "..."` fails hard with `Error: invalid --model "Gemini 3.5 Pro": model Gemini
+  3.5 Pro is not recognized as a known model or custom model in settings`.
+  Option A is not a live choice through this CLI; do not re-propose it without a
+  new agy version/catalog change.
+- **Option B is therefore the only viable path, and is already applied**:
+  `orchestration.json`'s `ag.deepthink` profile carries a `profile_intent` block
+  (`selection_basis: "resilience_over_external_composite"`,
+  `tier_score_exception.status: "accepted_policy_exception"`) keeping Gemini 3.1
+  Pro at `ag.deepthink` for long-context/multi-turn/tool-call resilience rather
+  than raw composite score. No further action needed on this sub-item.
 
 ### 4.2 Arbiter policy
 - The DIR-005 `arbiter_models` list currently holds the premium Claude profiles
