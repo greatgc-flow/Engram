@@ -2018,6 +2018,48 @@
       "next_action": "DONE. It was never an I/O hang -- it was an unbounded memory-growth infinite loop (measured live: one repro process hit 16GB+ RAM within seconds via Get-Process sampling, growing ~1GB/5s). Root cause, reproduced deterministically OUTSIDE pytest with faulthandler.dump_traceback_later for accurate periodic stack sampling (not pytest-timeout's misleading single-shot async-exception capture, which was the earlier session's red herring): `patch(\"...subprocess.Popen\")` patches the real, global `subprocess` module (hub.subprocess IS subprocess), which also replaces snapshot.py's OWN unrelated Popen usage whenever action_ask happens to reach _terminal_spend_guard -> _select_human_interface_peer -> collect_snapshot -> _codex_rate_limits. That function's reader thread does `while True: line = proc.stdout.readline(); if not line: break` -- against a MagicMock, readline() always returns a new truthy child Mock, so the loop never terminates, spinning as fast as possible while its queue grows unbounded. Explains the apparent non-determinism: _terminal_spend_guard only sometimes reaches that code path (cache/eligibility state dependent), so it looked like environmental flakiness across many earlier (wrong) hypotheses (OOM-guard/concurrent-load, SUBST-drive I/O, AV scanning -- all real observations, none the actual cause). FIX: every action_ask-calling test in test_at1_transaction.py now patches hub._terminal_spend_guard to a no-op (irrelevant to what these tests actually verify). Also hardened snapshot.py's _reader with an `or proc.poll() is not None` bail-out as defense-in-depth for a real hung subprocess. Verified: test_at1_transaction.py 7/7 green in ~1.5s across 3 repeated runs (previously 60s+ hangs); full suite 1185/1185 green in one clean run.",
       "risk": null,
       "last_verified_at": "2026-07-19T21:15:00+09:00"
+    },
+    {
+      "id": "T74",
+      "title": "orphaned Claude Code background-session daemon (Agent View /background) ran unsupervised 4+ days",
+      "status": "done",
+      "priority": "high",
+      "category": "lifecycle",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [
+        "78442e2"
+      ],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/claude/config/settings.json",
+        "_sys/cli/diag.py",
+        "_sys/ai/user-directives.md"
+      ],
+      "next_action": "DONE. Session cdd137d8 spawned 2026-07-15 via /background (confirmed: daemon.log \"bg spawned cdd137d8 (slash)\"), ran unsupervised ~4 days, ~2h accumulated CPU, autonomously edited runtimes.json and dispatched peer pings. 3-way consensus (ag+cx+cc.fable, all AGREE) found the primary mechanism was Claude Code's Agent View background-session supervisor, not remoteControlAtStartup alone (cx correction). Fix: disableAgentView=true + remoteControlAtStartup=false in settings.json (prevents recurrence going forward); diag.py gained _detect_stale_bg_daemons() advisory ATTENTION check (flags any --bg-pty-host process >4h old, flag-only, never auto-kill); DIR-006 codified in user-directives.md (unanimous consensus required at direction/plan altitude, survives session loss). User approved terminating the confirmed orphan and its respawn; left two unrelated D:\\workspace background sessions and the daemon manager process alone (out of scope, user declined touching them).",
+      "risk": null,
+      "last_verified_at": "2026-07-19T22:55:00+09:00"
+    },
+    {
+      "id": "T75",
+      "title": "diag shows zero AG quota pools whenever the passive statusline log goes stale",
+      "status": "done",
+      "priority": "medium",
+      "category": "diag",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [
+        "7df80ae"
+      ],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/core/snapshot.py",
+        "_sys/cli/diag.py",
+        "_sys/tests/unit/test_ag_quota_fallback.py"
+      ],
+      "next_action": "DONE. Root cause (3-way consensus, all agreed): ag has no active quota probe (unlike cc's /usage CLI and cx's app-server RPC) -- quota comes only from ag_statusline_stdin.log, updated only when an ag session's statusline renders; `diag --fresh` never reached ag at all. fable empirically confirmed the log self-heals to full data the instant any ag session runs. Fix: gather_peer() falls back to a persisted last-good quota frame (_sys/data/temp/ag_last_good_quota.json) instead of dropping to zero rows when the live frame lacks a usable quota key; SOURCE_STALE downgraded warn->info for ag specifically (expected-when-idle, not a collector failure); diag renders stale-fallback buckets with a distinct \"†\" marker so they're never confused with a fresh reading. Live-verified: diag --fresh now shows both AG quota pools (3P-pool, G-pool) where it previously showed none.",
+      "risk": null,
+      "last_verified_at": "2026-07-19T22:55:00+09:00"
     }
   ]
 }
