@@ -1976,6 +1976,45 @@
       ],
       "next_action": "DONE 521b22c. Incident [empirical_probe]: ag was latched at entrypoint_ok=false/status=RED/reason=cli_not_found and a real ask was blocked although its configured _sys\\tools\\agy\\agy.exe existed; from a non-root cwd, shutil.which returned None while the new helper resolved that file. Fix: _resolve_invoke_cli anchors separator-containing relative invokes to the portable root, adds PATHEXT fallback (is_file(), not exists(), per cx's review -- a same-named directory can no longer false-match), supplies the absolute executable to ask dispatch and live health refresh, and recovers RED/gate closure only when the recorded cause is cli_not_found. Verification: 6 focused TDD cases (test_hub_invoke_resolution.py) + full non-flaky suite (1167) green.",
       "last_verified_at": "2026-07-19T19:47:59+09:00"
+    },
+    {
+      "id": "T72",
+      "title": "consensus rounds escalate to human_gate after the first vote instead of finalizing on unanimity",
+      "status": "deferred",
+      "priority": "high",
+      "category": "governance",
+      "owner": "unassigned",
+      "blocker": "root cause not isolated yet -- needs someone to trace why _peer_effective_health() ever returns RED for these tests' voters",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/tests/unit/test_locking_stress.py::TestLockingStress::test_concurrent_consensus_votes",
+        "_sys/tests/unit/test_integration_py.py::TestIntegrationP2P::test_scenario_final_call_protocol",
+        "_sys/core/hub.py::_decide_consensus"
+      ],
+      "next_action": "FOUND, NOT FIXED [empirical_probe]. Both tests set up cc/ag/cx with fresh health-update GREEN, propose a 3-voter round, then vote agree -- and the round closes 'escalated/human_gate' after just the FIRST vote (1/3), never waiting for the other two. Root cause candidate: _decide_consensus's mid_round_closed check (`any(_peer_effective_health(v, ai_root=ai_root)[0] == 'RED' for v in voters)`, added by the T63/INV-03 fix, evidence_commit b56da31, 2026-07-17) is true for at least one voter even though the test just set it GREEN. CONFIRMED NOT caused by today's session's work: reproduced identically against hub.py as of commit 50f362b (before T71's _resolve_invoke_cli change) via a temporary git worktree -- same 'escalated' result, so this predates 2026-07-19 entirely and is unrelated to interactive_default_profile/ca-removal/diag/T71. Likely candidates needing investigation: (a) a stale/quarantined flag left over in the isolated test ai_root's default health.json template that health-update doesn't clear, (b) a race between the health-update calls and the vote's _peer_effective_health read in these tests' subprocess-based harness. Both failures reproduce standalone (not suite-order-dependent) except test_failover_error_surfacing.py::test_post_spawn_nonzero_is_uncertain_and_never_rerouted, which is a THIRD, separate suite-order-only flake (passes standalone, failed once in a full-suite run) -- not investigated further, likely shared test-fixture state pollution.",
+      "risk": "if this is a real logic bug (not just a test fixture issue), it means R:10 unanimous rounds could be silently forced to human_gate in production too whenever any voter's health read races/misfires -- worth prioritizing over its 'deferred' label suggests",
+      "last_verified_at": "2026-07-19T21:15:00+09:00"
+    },
+    {
+      "id": "T73",
+      "title": "test_at1_transaction.py intermittently hangs 60s+ under pytest despite the same call completing in ~50-100ms standalone",
+      "status": "deferred",
+      "priority": "low",
+      "category": "tests",
+      "owner": "unassigned",
+      "blocker": "non-deterministic; couldn't get a stable repro to trace with ProcMon-level tooling this session",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/tests/unit/test_at1_transaction.py",
+        "_sys/core/hub.py::_governed_files",
+        "_sys/core/hub.py::_snapshot_governed_hashes",
+        "_sys/tests/unit/conftest.py::MemoryGuard"
+      ],
+      "next_action": "NOT ACTIONABLE without deeper OS-level tracing. Direct standalone calls to hub._governed_files()/_snapshot_governed_hashes() consistently complete in 50-100ms (261 files, 3.1MB) [measured]. Yet test_at1_transaction.py's tests intermittently hang there under pytest -- sometimes all 7 pass cleanly (e.g. in the 2026-07-19 full-suite run: 1179 passed including all AT1 tests), sometimes the exact same call hangs 60s+ triggering pytest-timeout's stack dump, and once triggered conftest.py's MemoryGuard hard os._exit(1) when concurrent load (3 live CLI canaries + git + other subprocesses running in parallel this session) pushed available RAM below 512MB. Suspected: Windows/SUBST-drive (P:\\ -> D:\\PortableDev (v2.0), confirmed a fast local NVMe SSD, not a slow medium) file-I/O contention, possibly AV real-time scanning triggered by rapid small-file opens. Mitigation for now: don't run heavy concurrent processes alongside this test file; if it hangs, it's very likely transient, not a real deadlock.",
+      "risk": "low -- doesn't block real work, just occasionally makes a full test run slower/flakier than expected",
+      "last_verified_at": "2026-07-19T21:15:00+09:00"
     }
   ]
 }
