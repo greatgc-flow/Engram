@@ -2001,12 +2001,14 @@
     {
       "id": "T73",
       "title": "test_at1_transaction.py intermittently hangs 60s+ under pytest despite the same call completing in ~50-100ms standalone",
-      "status": "active",
+      "status": "done",
       "priority": "low",
       "category": "tests",
       "owner": "unassigned",
-      "blocker": "implemented and verified in the 2026-07-19 working tree; add real evidence_commit and mark done after commit",
-      "evidence_commit": [],
+      "blocker": null,
+      "evidence_commit": [
+        "828f2da"
+      ],
       "supersedes": [],
       "source_refs": [
         "_sys/tests/unit/test_at1_transaction.py",
