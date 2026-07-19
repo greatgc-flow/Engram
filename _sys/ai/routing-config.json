@@ -180,9 +180,10 @@
     "_shadow_doc": "shadow_log=True logs what the balancer WOULD pick (routing_metrics.jsonl event=load_balance_shadow) without driving routing; enabled=False keeps actual routing unchanged. Validate distribution before flipping enabled.",
     "arbiter_models": [
       "cc.fable",
-      "cc.deepthink"
+      "cc.deepthink",
+      "cx.deepthink"
     ],
-    "_arbiter_doc": "arbiter_models: premium/smartest profiles (cc.fable=Mythos-tier, cc.deepthink=Opus). Structurally EXCLUDED from bulk routing per listed profile, while a bare peer id remains an intentional whole-peer exclusion, so expensive models never do routine work (DIR-005). Also the candidate pool for the final-arbiter pass (later increment).",
+    "_arbiter_doc": "arbiter_models: premium/smartest profiles (cc.fable=Mythos-tier, cc.deepthink=Opus, cx.deepthink=Sol). Structurally EXCLUDED from bulk routing per listed profile, while a bare peer id remains an intentional whole-peer exclusion, so expensive models never do routine work (DIR-005). Also the candidate pool for the final-arbiter pass (later increment). cx.deepthink added 2026-07-19 (user-authorized, per intelligence-scores.md §4.2): external composite has Sol (~59) effectively co-top with Fable (~60), so excluding it left the arbiter/bulk-exclusion pool narrower than measured capability would suggest.",
     "bulk_exclude_profiles": [
       "ag.opus"
     ],
@@ -197,6 +198,10 @@
         },
         "C": {
           "reserve_for": ["cc.fable", "cc.deepthink"],
+          "reserve_fraction": 0.20
+        },
+        "X": {
+          "reserve_for": ["cx.deepthink"],
           "reserve_fraction": 0.20
         }
       }
