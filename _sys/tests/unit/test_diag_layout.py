@@ -4,8 +4,9 @@ Design: _sys/docs/history/ops/diag-redesign-design.md (ag impl, cx-GO). Quota
 lives ONLY in SUMMARY; PROFILES is topology-only; emoji cells use _dw/_pad.
 """
 import io
+import json
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SYS_DIR = Path(__file__).resolve().parents[2]
@@ -646,4 +647,58 @@ def test_quota_narrow_terminal_degradation_tiers():
     t3 = diag._quota_dependency_group_text(group, tier=3)
     assert "7D" in t3  # Because 12/10 = 1.2x (max urg)
     assert "5H" not in t3
+
+
+def _write_ask_history(tmp_path, records):
+    """records may contain raw strings (written verbatim, to test malformed-line
+    handling) alongside dicts (JSON-encoded)."""
+    ai_root = tmp_path / ".ai"
+    ai_root.mkdir()
+    lines = [r if isinstance(r, str) else json.dumps(r) for r in records]
+    (ai_root / "ask_history.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return tmp_path
+
+
+def test_ask_history_usage_stats_aggregates_and_windows(tmp_path):
+    diag = load_diag()
+    now = datetime.now()
+    fresh = now.isoformat()
+    stale = (now - timedelta(hours=48)).isoformat()
+    root = _write_ask_history(tmp_path, [
+        {"ts": fresh, "peer_id": "ag", "profile_id": "ag.deepthink", "success": True},
+        {"ts": fresh, "peer_id": "ag", "profile_id": "ag.deepthink", "success": True},
+        {"ts": fresh, "peer_id": "ag", "profile_id": "ag.deepthink", "success": False},
+        {"ts": stale, "peer_id": "ag", "profile_id": "ag.deepthink", "success": False},  # outside 24h window
+        "not json at all",       # invalid JSON must not crash aggregation
+        "[1, 2, 3]",              # valid JSON but not a record (no .get) must not crash either
+    ])
+    rows = diag._ask_history_usage_stats(hours=24, ai_root=root / ".ai")
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["profile"] == "ag.deepthink"
+    assert row["count"] == 3          # stale record excluded by the 24h window
+    assert row["success"] == 2
+    assert row["failed"] == 1
+    assert abs(row["fail_pct"] - (1 / 3 * 100.0)) < 0.01
+
+
+def test_ask_history_usage_stats_missing_file_returns_empty(tmp_path):
+    diag = load_diag()
+    rows = diag._ask_history_usage_stats(hours=24, ai_root=tmp_path / "nonexistent" / ".ai")
+    assert rows == []
+
+
+def test_render_usage_flags_high_failure_rate(tmp_path):
+    diag = load_diag()
+    now = datetime.now().isoformat()
+    root = _write_ask_history(tmp_path, [
+        {"ts": now, "peer_id": "cc", "profile_id": "cc.fable", "success": False},
+        {"ts": now, "peer_id": "cc", "profile_id": "cc.fable", "success": True},
+    ])
+    buf = io.StringIO()
+    diag.render_usage(buf, hours=24, ai_root=root / ".ai")
+    out = buf.getvalue()
+    assert "cc.fable" in out
+    assert "!cc.fable" in out  # 50% fail rate >= 20% threshold gets flagged
+    assert "50.0%" in out
     

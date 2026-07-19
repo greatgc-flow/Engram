@@ -717,6 +717,8 @@ def parse_args(argv=None):
     parser.add_argument("--accounts", action="store_true", help="reserved account detail view")
     parser.add_argument("--tokens", action="store_true", help="reserved token detail view")
     parser.add_argument("--sessions", action="store_true", help="reserved session detail view")
+    parser.add_argument("--usage", action="store_true",
+                        help="recent per-profile ask counts/success/fail from ask_history.jsonl")
     parser.add_argument("--project", action="store_true", help="reserved project detail view")
     parser.add_argument("--headroom", action="store_true", help="derived routing headroom view")
     args = parser.parse_args(argv)
@@ -1945,6 +1947,79 @@ def render_sessions(stdout=None, snapshot=None):
         )
 
 
+_USAGE_WINDOW_HOURS = 24
+
+
+def _ask_history_usage_stats(hours=_USAGE_WINDOW_HOURS, ai_root=None):
+    """Aggregate recent per-profile ask outcomes from .ai/ask_history.jsonl
+    (measured, not guessed -- DIR-004). Returns rows sorted by ask count desc:
+    {"profile", "count", "success", "failed", "fail_pct", "last_ts"}.
+    Malformed/unparseable lines are skipped rather than failing the view."""
+    root = Path(ai_root) if ai_root is not None else (PORTABLE_ROOT / ".ai")
+    path = root / "ask_history.jsonl"
+    if not path.exists():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    cutoff = datetime.now() - timedelta(hours=hours)
+    stats = {}
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(rec, dict):
+            continue
+        ts_raw = rec.get("ts")
+        try:
+            ts = datetime.fromisoformat(ts_raw) if ts_raw else None
+        except ValueError:
+            ts = None
+        if ts is None or ts < cutoff:
+            continue
+        profile = str(rec.get("profile_id") or rec.get("peer_id") or "?")
+        row = stats.setdefault(profile, {"profile": profile, "count": 0,
+                                          "success": 0, "failed": 0, "last_ts": None})
+        row["count"] += 1
+        if rec.get("success") is False:
+            row["failed"] += 1
+        else:
+            row["success"] += 1
+        if row["last_ts"] is None or (ts_raw and ts_raw > row["last_ts"]):
+            row["last_ts"] = ts_raw
+
+    rows = list(stats.values())
+    for row in rows:
+        row["fail_pct"] = (row["failed"] / row["count"] * 100.0) if row["count"] else 0.0
+    rows.sort(key=lambda r: (-r["count"], r["profile"]))
+    return rows
+
+
+def render_usage(stdout=None, hours=_USAGE_WINDOW_HOURS, ai_root=None):
+    """Recent per-profile ask usage (count/success/fail) -- answers "is this
+    profile actually being used, and is it reliable lately" directly from
+    measured ask_history, rather than the quota panel's pacing-ratio proxy."""
+    out = stdout or sys.stdout
+    rows = _ask_history_usage_stats(hours=hours, ai_root=ai_root)
+    out.write(f"[USAGE] last {hours}h, by profile (measured from .ai/ask_history.jsonl)\n")
+    if not rows:
+        out.write("  (no asks recorded in window)\n")
+        return
+    out.write(f"{'PROFILE':<16} {'COUNT':>5} {'OK':>5} {'FAIL':>5} {'FAIL%':>7}  LAST_ASK\n")
+    for row in rows:
+        fail_pct = row["fail_pct"]
+        marker = "!" if fail_pct >= 20.0 else " "
+        out.write(
+            f"{marker}{row['profile']:<15} {row['count']:>5} {row['success']:>5} "
+            f"{row['failed']:>5} {fail_pct:>6.1f}%  {row['last_ts'] or '-'}\n"
+        )
+
+
 def _git_project_status():
     """Read-only git working-tree summary. Bounded, no shell, no network,
     GIT_OPTIONAL_LOCKS=0 (never writes index). Degrades to 'unknown' on failure."""
@@ -1991,6 +2066,8 @@ def main(argv=None, stdout=None):
         render_tokens(out); return 0
     if args.sessions:
         render_sessions(out); return 0
+    if args.usage:
+        render_usage(out); return 0
     if args.project:
         render_project(out); return 0
     if args.headroom:
