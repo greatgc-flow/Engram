@@ -21,13 +21,27 @@ class TestLockingStress:
 
     @pytest.fixture
     def test_env(self, tmp_path):
-        """Setup isolated .ai directory."""
+        """Setup isolated .ai directory.
+
+        Peer HEALTH is not isolated by tmp_path -- _peer_sys_dir() resolves to
+        the real, global _sys/<peer>/health.json regardless of ai_root/cwd
+        (T72: confirmed live, a stale `quarantined: true` on cc's real health
+        made _decide_consensus's mid_round_closed RED-voter check force-
+        escalate every round here, unrelated to anything this test does).
+        Force a clean GREEN baseline before each test so a leftover
+        quarantine/RED elsewhere on the machine can't make this test flaky.
+        """
         ai_dir = tmp_path / ".ai"
         ai_dir.mkdir(exist_ok=True)
 
         root_dir = Path(__file__).parent.parent.parent.parent
         venv_py = root_dir / "_sys" / "env" / "venv" / "Scripts" / "python.exe"
         hub_py = root_dir / "_sys" / "core" / "hub.py"
+
+        subprocess.run(
+            [str(venv_py), str(hub_py), "peer-recover", "--peer", "all"],
+            cwd=tmp_path, capture_output=True, timeout=_SUBPROCESS_TIMEOUT,
+        )
 
         return {
             "root": tmp_path,

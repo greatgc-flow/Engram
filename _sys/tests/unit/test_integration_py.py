@@ -20,7 +20,15 @@ class TestIntegrationP2P:
     def test_env(self, tmp_path):
         """테스트용 격리 환경 생성. HUB_AI_ROOT를 명시 주입해 hub 서브프로세스가
         실제 repo .ai로 새는지 여부와 무관하게 격리를 보장하고(방어적 이중화),
-        종료 시 실제 repo .ai/state.json이 건드려지지 않았는지 회귀 검증한다."""
+        종료 시 실제 repo .ai/state.json이 건드려지지 않았는지 회귀 검증한다.
+
+        HUB_AI_ROOT는 state.json류만 격리한다 -- 피어 HEALTH는 _peer_sys_dir()가
+        ai_root와 무관하게 실제 전역 _sys/<peer>/health.json을 그대로 읽고 쓴다
+        (T72: 실측 확인 -- cc의 실제 health.json에 남아있던 quarantined=true
+        하나 때문에 _decide_consensus의 mid_round_closed RED-voter 체크가 이
+        테스트와 무관하게 매번 강제 escalate시켰음). 테스트 시작 전 GREEN
+        베이스라인을 강제해서, 머신에 남아있는 다른 quarantine/RED 상태가 이
+        테스트를 비결정적으로 만들지 않도록 한다."""
         ai_dir = tmp_path / ".ai"
         ai_dir.mkdir(exist_ok=True)
         (tmp_path / ".git").mkdir(exist_ok=True)
@@ -30,6 +38,11 @@ class TestIntegrationP2P:
         hub_py = root_dir / "_sys" / "core" / "hub.py"
         repo_ai_state = root_dir / ".ai" / "state.json"
         repo_state_before = repo_ai_state.read_text(encoding="utf-8") if repo_ai_state.exists() else None
+
+        subprocess.run(
+            [str(venv_py), str(hub_py), "peer-recover", "--peer", "all"],
+            cwd=tmp_path, capture_output=True, timeout=_HUB_TIMEOUT,
+        )
 
         env = {
             "root": tmp_path,

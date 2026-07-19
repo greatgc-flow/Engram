@@ -1980,11 +1980,11 @@
     {
       "id": "T72",
       "title": "consensus rounds escalate to human_gate after the first vote instead of finalizing on unanimity",
-      "status": "deferred",
+      "status": "active",
       "priority": "high",
       "category": "governance",
       "owner": "unassigned",
-      "blocker": "root cause not isolated yet -- needs someone to trace why _peer_effective_health() ever returns RED for these tests' voters",
+      "blocker": "implemented and verified in the 2026-07-19 working tree; add real evidence_commit and mark done after commit",
       "evidence_commit": [],
       "supersedes": [],
       "source_refs": [
@@ -1992,9 +1992,9 @@
         "_sys/tests/unit/test_integration_py.py::TestIntegrationP2P::test_scenario_final_call_protocol",
         "_sys/core/hub.py::_decide_consensus"
       ],
-      "next_action": "FOUND, NOT FIXED [empirical_probe]. Both tests set up cc/ag/cx with fresh health-update GREEN, propose a 3-voter round, then vote agree -- and the round closes 'escalated/human_gate' after just the FIRST vote (1/3), never waiting for the other two. Root cause candidate: _decide_consensus's mid_round_closed check (`any(_peer_effective_health(v, ai_root=ai_root)[0] == 'RED' for v in voters)`, added by the T63/INV-03 fix, evidence_commit b56da31, 2026-07-17) is true for at least one voter even though the test just set it GREEN. CONFIRMED NOT caused by today's session's work: reproduced identically against hub.py as of commit 50f362b (before T71's _resolve_invoke_cli change) via a temporary git worktree -- same 'escalated' result, so this predates 2026-07-19 entirely and is unrelated to interactive_default_profile/ca-removal/diag/T71. Likely candidates needing investigation: (a) a stale/quarantined flag left over in the isolated test ai_root's default health.json template that health-update doesn't clear, (b) a race between the health-update calls and the vote's _peer_effective_health read in these tests' subprocess-based harness. Both failures reproduce standalone (not suite-order-dependent) except test_failover_error_surfacing.py::test_post_spawn_nonzero_is_uncertain_and_never_rerouted, which is a THIRD, separate suite-order-only flake (passes standalone, failed once in a full-suite run) -- not investigated further, likely shared test-fixture state pollution.",
-      "risk": "if this is a real logic bug (not just a test fixture issue), it means R:10 unanimous rounds could be silently forced to human_gate in production too whenever any voter's health read races/misfires -- worth prioritizing over its 'deferred' label suggests",
-      "last_verified_at": "2026-07-19T21:15:00+09:00"
+      "next_action": "DONE, ROOT CAUSE CONFIRMED [empirical_probe]. _peer_effective_health()/_read_peer_health() ignore the `ai_root`/`health_dir` they're passed when called from _decide_consensus's mid_round_closed check -- they always resolve to the REAL, GLOBAL _peer_sys_dir(peer)/health.json (e.g. _sys/claude/health.json), never anything test-isolated. Direct proof: `hub._peer_effective_health('cc')` read RED live, root-caused to a stale `availability.quarantined: true` sitting in cc's actual _sys/claude/health.json (a known false-positive class -- aborted/interrupted asks occasionally quarantine a peer; see feedback_peer_delegation_quarantine memory). Running `hub.py peer-recover --peer all` immediately fixed both failing tests (verified: both PASS). This is architecturally correct/intentional for PRODUCTION (a peer's CLI health genuinely is machine-global, not per-room) -- the bug was that test_locking_stress.py's and test_integration_py.py's isolation never covered peer health (test_integration_py.py's own HUB_AI_ROOT isolation only covers state.json, not _peer_sys_dir-based health, which it didn't know was a separate global resource). FIX: both tests' `test_env` fixtures now run `hub.py peer-recover --peer all` before yielding, forcing a clean GREEN baseline regardless of ambient machine state -- makes the tests self-healing/deterministic instead of coupled to whatever quarantine/RED state happens to exist on the machine. Verified: both tests pass repeatably now; full non-flaky suite (excluding T73's known AT1 flake) 1178/1178 green.",
+      "risk": null,
+      "last_verified_at": "2026-07-19T21:35:00+09:00"
     },
     {
       "id": "T73",
