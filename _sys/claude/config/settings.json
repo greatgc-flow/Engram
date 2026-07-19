@@ -33,6 +33,7 @@
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
   "theme": "auto",
-  "remoteControlAtStartup": true,
+  "remoteControlAtStartup": false,
+  "disableAgentView": true,
   "agentPushNotifEnabled": true
 }

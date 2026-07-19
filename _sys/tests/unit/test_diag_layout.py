@@ -6,6 +6,7 @@ lives ONLY in SUMMARY; PROFILES is topology-only; emoji cells use _dw/_pad.
 import io
 import json
 import sys
+import pytest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -701,4 +702,47 @@ def test_render_usage_flags_high_failure_rate(tmp_path):
     assert "cc.fable" in out
     assert "!cc.fable" in out  # 50% fail rate >= 20% threshold gets flagged
     assert "50.0%" in out
+
+
+class _FakeProc:
+    def __init__(self, pid, cmdline, create_time):
+        self.info = {"pid": pid, "cmdline": cmdline, "create_time": create_time}
+
+
+def test_detect_stale_bg_daemons_flags_old_bg_pty_host(monkeypatch):
+    diag = load_diag()
+    now = 1_000_000.0
+    monkeypatch.setattr(diag.time, "time", lambda: now)
+    procs = [
+        # Old bg-pty-host: 5h old, over the 4h default threshold -- flagged.
+        _FakeProc(111, ["claude.exe", "--bg-pty-host", r"\\.\pipe\cc-daemon-x"], now - 5 * 3600),
+        # Recent bg-pty-host: 1h old -- NOT flagged.
+        _FakeProc(222, ["claude.exe", "--bg-pty-host", r"\\.\pipe\cc-daemon-y"], now - 1 * 3600),
+        # Old but not a bg-pty-host process at all -- NOT flagged.
+        _FakeProc(333, ["python.exe", "some_script.py"], now - 10 * 3600),
+    ]
+    monkeypatch.setattr(diag.psutil, "process_iter", lambda fields: iter(procs))
+    result = diag._detect_stale_bg_daemons()
+    assert [r["pid"] for r in result] == [111]
+    assert result[0]["age_hours"] == pytest.approx(5.0)
+
+
+def test_detect_stale_bg_daemons_no_psutil_returns_empty(monkeypatch):
+    diag = load_diag()
+    monkeypatch.setattr(diag, "psutil", None)
+    assert diag._detect_stale_bg_daemons() == []
+
+
+def test_render_attention_surfaces_stale_bg_daemon(monkeypatch):
+    diag = load_diag()
+    monkeypatch.setattr(
+        diag, "_detect_stale_bg_daemons", lambda: [{"pid": 999, "age_hours": 6.2}]
+    )
+    monkeypatch.setattr(diag, "collect_snapshot", lambda: {"peers": []})
+    buf = io.StringIO()
+    diag.render_attention(buf)
+    out = buf.getvalue()
+    assert "STALE_BG_DAEMON" in out
+    assert "pid=999" in out
+    assert "6.2h" in out
     

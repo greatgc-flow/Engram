@@ -67,6 +67,19 @@
 - Design: `_sys/docs/history/ops/token-load-balancing-design.md` (Smartest-Model Final Arbiter section).
 - Reconciles with the peer-equality protocol clause as an explicit, scoped, human-ratified carve-out.
 
+### DIR-006: Unanimous Consensus Required at Direction/Plan Altitude, Not Per-Tool-Call
+
+- Effective: 2026-07-19
+- Status: ACTIVE
+- Ratification: user-ratified 2026-07-19 ("get everyone's unanimous agreement on direction before proceeding — I always want it this way") after a 3-way consensus round (ag.deepthink + cx.deepthink + cc.fable, all AGREE) on this exact rule's scoping.
+- Rule:
+  1. Unanimous agreement of the active R:10 voters (ag, cx, cc) is REQUIRED before starting any new distinct task/direction, any architectural decision, any change to standing config/directives, or any destructive/irreversible action.
+  2. Individual tool calls and edits inside an already-agreed plan do NOT require a fresh consensus round — re-open consensus only on a material deviation (scope growth, a different approach, touching files/systems outside the agreed surface).
+  3. A fast user go-ahead (e.g. "ㄱㄱㄱ") means "run the consensus round quickly," NOT "skip it." Only an explicit override phrase ("skip consensus", "override unanimity") waives peer consensus; enthusiasm or speed alone never does. Once a plan IS finalized, "ㄱㄱㄱ" after that point authorizes proceeding with execution without re-voting each step.
+  4. On non-unanimous outcome: DIR-005's arbiter resolves dissent, or escalate to the user. A peer that's unreachable/quarantined is not implicit agreement — proceed on unanimity of reachable voters (minimum 2) with the absence logged, or hold if the decision is high-risk.
+  5. Codified here (not left to peer memory) specifically because an un-codified process rule is exactly the kind of thing a long-running or forked session never hears about (see the 2026-07-19 orphaned-session incident that prompted this directive).
+- Source: 2026-07-19 3-way consensus round (orphan-session-diag-quota-consensus-2026-07-19 scope) on the user's standing-default request.
+
 ## Revoked Directives
 
 None.

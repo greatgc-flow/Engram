@@ -13,6 +13,11 @@ from contextlib import redirect_stdout
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
+try:
+    import psutil
+except ImportError:
+    psutil = None  # type: ignore[assignment]
+
 CLI_DIR = Path(__file__).parent
 SYS_DIR = CLI_DIR.parent
 PORTABLE_ROOT = SYS_DIR.parent
@@ -550,7 +555,8 @@ def _quota_dependency_group_text(group, tier=0):
             bucket_strs.append(_pad("--", bucket_pad))
             continue
         borrowed = b.get("_borrowed")
-        marker = "~" if borrowed else ("▸" if b is max_urg_bucket else " ")
+        stale_fallback = b.get("stale_fallback")
+        marker = "†" if stale_fallback else ("~" if borrowed else ("▸" if b is max_urg_bucket else " "))
         uf = b.get("used_frac")
         if not isinstance(uf, (int, float)):
             s = f"{marker}absent"
@@ -1494,12 +1500,52 @@ def _next_target_line(snapshot):
             f"headroom {_fmt_remaining(target.get('headroom'))}{risk}")
 
 
+_STALE_BG_DAEMON_HOURS = 4
+
+
+def _detect_stale_bg_daemons(threshold_hours=_STALE_BG_DAEMON_HOURS):
+    """Flag long-running Claude Code background-session daemons (spawned via
+    the /background slash command / Agent View) alive past threshold_hours.
+
+    Advisory only -- flag, never auto-kill (2026-07-19 incident: a session
+    spawned 2026-07-15 via /background sat unsupervised for 4+ days,
+    autonomously editing files and dispatching peer asks with nobody
+    watching -- see DIR-006 and user-directives.md). Not correlated against
+    hub.py's ask-lease store: bg-pty-host workers are a separate, orthogonal
+    mechanism from hub-dispatched ask leases, so no lease ever legitimately
+    covers one -- age is the only available signal here.
+    """
+    if psutil is None:
+        return []
+    now = time.time()
+    out = []
+    for proc in psutil.process_iter(["pid", "cmdline", "create_time"]):
+        try:
+            info = proc.info
+            cmdline = info.get("cmdline") or []
+            if not any("bg-pty-host" in str(part) for part in cmdline):
+                continue
+            age_hours = (now - info["create_time"]) / 3600.0
+            if age_hours < threshold_hours:
+                continue
+            out.append({"pid": info["pid"], "age_hours": age_hours})
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+    return out
+
+
 def render_attention(stdout=None, snapshot=None):
     """Attention strip: alerts, unavailable peers, over-cap sessions, target."""
     out = stdout or sys.stdout
     snapshot = snapshot if snapshot is not None else collect_snapshot()
     lines = []
     severity = {"critical": "CRIT", "warn": "WARN", "info": "INFO"}
+    for daemon in _detect_stale_bg_daemons():
+        lines.append(
+            f"[WARN] claude-bg: STALE_BG_DAEMON pid={daemon['pid']} "
+            f"age={daemon['age_hours']:.1f}h -- background session older than "
+            f"{_STALE_BG_DAEMON_HOURS}h, verify it's intentional (2026-07-19 orphan incident)"
+        )
     for rec in snapshot.get("peers") or []:
         peer = rec.get("peer") or "?"
         for alert in rec.get("alerts") or []:
