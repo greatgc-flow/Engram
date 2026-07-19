@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from peer_console import peer_default_args
+from peer_console import interactive_profile_banner, peer_default_args
 
 _CLI_DIR = Path(__file__).parent
 _SYS_DIR = _CLI_DIR.parent
@@ -90,6 +90,9 @@ def main() -> None:
     try:
         _health(env, "GREEN")
         cli_args = peer_default_args("ag", sys.argv[1:])
+        banner = interactive_profile_banner("ag")
+        if banner:
+            print(banner)
         proc = subprocess.Popen([str(_AGY_EXE), *cli_args], env=env)
         _health(env, "GREEN", pid=proc.pid)
         proc.wait()

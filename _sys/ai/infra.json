@@ -18,7 +18,6 @@
     "bat_locations": {
         "_comment": "Launcher bat files for each peer (relative to BASE_DIR)",
         "cc": "_sys/cli/claude.bat",
-        "ca": "_sys/cli/claude.bat",
         "ag": "_sys/cli/agy.bat",
         "cx": "_sys/cli/codex.bat",
         "hub": "_sys/cli/hub.bat",

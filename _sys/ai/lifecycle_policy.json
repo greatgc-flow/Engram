@@ -4,7 +4,6 @@
   "identity": {
     "fallback_by_node": {
       "cc": ["cx", "ag"],
-      "ca": ["cx", "cc"],
       "ag": ["cc", "cx"],
       "cx": ["cc", "ag"]
     }

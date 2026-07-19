@@ -7,6 +7,6 @@
   "capabilities": ["verification", "correctness-check", "side-effect-analysis"],
   "input_contract": "Path or content of artifact to verify + verification criteria (optional)",
   "output_contract": "VERDICT (PASS|FAIL|WARN) / ISSUES list / NOTES",
-  "compatible_peers": ["ca", "cx", "cc"],
+  "compatible_peers": ["cx", "cc"],
   "tags": ["qa", "validation"]
 }

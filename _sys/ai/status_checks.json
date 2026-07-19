@@ -22,9 +22,6 @@
         "permission_mode_flag": "--permission-mode"
       }
     },
-    "ca": {
-      "inherits": "cc"
-    },
     "ag": {
       "safe_checks": [
         {"id": "ag.version", "class": "version_only", "command": "agy --version", "effect_class": "read_only"},

@@ -78,6 +78,8 @@
       "session_mode": "reuse",
       "timeout": 0,
       "default_profile": "deepthink",
+      "interactive_default_profile": "effort",
+      "_interactive_default_profile_note": "Used only by cli/peer_console.py for human-driven interactive terminal launches (claude.bat etc). hub.py IPC ask still uses default_profile (deepthink) unchanged. Per-session override (e.g. /model) always wins; this only sets the launch-time seed. Added 2026-07-19.",
       "capability_class": "tool_scoped_mutation",
       "profiles": {
         "standard": {
@@ -99,19 +101,20 @@
           ]
         },
         "effort": {
-          "model_id": "claude-sonnet-4-6",
+          "model_id": "claude-sonnet-5",
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["C"],
           "runtime_context_window": 1000000,
-          "validated_at": "2026-06-20",
+          "validated_at": "2026-07-19",
           "validation_method": "successful_invocation",
+          "_validation_note": "model_id updated 2026-07-19 from stale claude-sonnet-4-6 to claude-sonnet-5; confirmed via direct canary invocation (claude.cmd --model claude-sonnet-5 --effort high -p ... -> exit 0, correct reply).",
           "reasoning_effort": "high",
           "cost_tier": "mid",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "claude-sonnet-4-6",
+            "claude-sonnet-5",
             "--effort",
             "high"
           ]
@@ -172,68 +175,6 @@
       "pattern": "std_cli_stdio"
     },
     {
-      "node_id": "ca",
-      "aliases": [
-        "claude-alt"
-      ],
-      "type": "peer",
-      "enabled": false,
-      "adapter_class": "ClaudeAdapter",
-      "invoke": "claude",
-      "invoke_args": [
-        "--append-system-prompt",
-        "[INV-31] PROACTIVE COLLABORATION REQUIRED: You must proactively consult and cross-verify with other active peers (cc, cx, ag) autonomously using the hub or subagent tools for any complex task, MECE validation, or architectural decision. Do not wait for the user to explicitly ask you to collaborate.",
-        "-p",
-        "{query}",
-        "--dangerously-skip-permissions"
-      ],
-      "memory": "short-term",
-      "timeout": 0,
-      "default_profile": "deepthink",
-      "capability_class": "tool_scoped_mutation",
-      "profiles": {
-        "standard": {
-          "model_id": "claude-haiku-4-5-20251001",
-          "profile_class": "tier",
-          "reasoning_effort": "low",
-          "cost_tier": "low",
-          "routing_state": "blocked",
-          "profile_args": [
-            "--model",
-            "claude-haiku-4-5-20251001",
-            "--effort",
-            "low"
-          ]
-        },
-        "effort": {
-          "model_id": "claude-sonnet-4-6",
-          "profile_class": "tier",
-          "reasoning_effort": "high",
-          "cost_tier": "mid",
-          "routing_state": "blocked",
-          "profile_args": [
-            "--model",
-            "claude-sonnet-4-6",
-            "--effort",
-            "high"
-          ]
-        },
-        "deepthink": {
-          "model_id": "claude-opus-4-8",
-          "profile_class": "tier",
-          "reasoning_effort": "max",
-          "cost_tier": "high",
-          "routing_state": "blocked",
-          "profile_args": [
-            "--model",
-            "claude-opus-4-8",
-            "--effort",
-            "max"
-          ]
-        }
-      }
-    },
-    {
       "node_id": "ag",
       "aliases": [
         "antigravity",
@@ -260,6 +201,8 @@
       "session_mode": "reuse",
       "timeout": 0,
       "default_profile": "deepthink",
+      "interactive_default_profile": "effort",
+      "_interactive_default_profile_note": "Used only by cli/peer_console.py for human-driven interactive terminal launches (agy.bat etc). hub.py IPC ask still uses default_profile (deepthink) unchanged. Per-session override always wins; this only sets the launch-time seed. Added 2026-07-19.",
       "capability_class": "unsandboxed_trusted_mutation",
       "profiles": {
         "standard": {
@@ -394,6 +337,8 @@
       "session_mode": "reuse",
       "timeout": 0,
       "default_profile": "deepthink",
+      "interactive_default_profile": "effort",
+      "_interactive_default_profile_note": "Used only by cli/peer_console.py for human-driven interactive terminal launches (codex.bat etc). hub.py IPC ask still uses default_profile (deepthink) unchanged. Per-session override always wins; this only sets the launch-time seed. Added 2026-07-19.",
       "capability_class": "sandboxed_mutation",
       "profiles": {
         "standard": {
@@ -484,9 +429,7 @@
       "ag",
       "cx"
     ],
-    "inactive_default_voters": [
-      "ca"
-    ],
+    "inactive_default_voters": [],
     "default_proposer": "rotating"
   },
   "check_gate": {

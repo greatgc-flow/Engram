@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from peer_console import peer_default_args
+from peer_console import interactive_profile_banner, peer_default_args
 
 _CLI_DIR = Path(__file__).parent
 _SYS_DIR = _CLI_DIR.parent
@@ -56,6 +56,9 @@ def main() -> None:
         print(fill.stdout)
     subprocess.run([_PYTHON, str(_HUB), "status"], env=env)
     cli_args = peer_default_args("cc", sys.argv[1:])
+    banner = interactive_profile_banner("cc")
+    if banner:
+        print(banner)
     result = subprocess.run(
         ["cmd", "/c", str(_CLAUDE_CMD), *cli_args],
         env=env,

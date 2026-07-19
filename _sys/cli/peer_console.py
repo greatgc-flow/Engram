@@ -13,16 +13,43 @@ _ORCHESTRATION = Path(__file__).parent.parent / "ai" / "orchestration.json"
 
 
 def _default_profile_args(peer_id: str) -> list[str]:
+    """Profile args for interactive console launches (claude.bat etc).
+
+    Prefers interactive_default_profile (typically "effort") over
+    default_profile ("deepthink", used by hub.py IPC ask) — an interactive
+    session has a human present to catch a bad answer, so it doesn't need the
+    top tier by default. A per-session override (e.g. /model) still wins,
+    since _append_profile_defaults never replaces an already-present flag.
+    """
     try:
         data = json.loads(_ORCHESTRATION.read_text(encoding="utf-8"))
         node = next(
             item for item in data.get("hub_nodes", [])
             if item.get("node_id") == peer_id
         )
-        def_prof = node.get("default_profile", "deepthink")
-        return list(node.get("profiles", {}).get(def_prof, {}).get("profile_args", []))
+        prof = node.get("interactive_default_profile") or node.get("default_profile", "deepthink")
+        return list(node.get("profiles", {}).get(prof, {}).get("profile_args", []))
     except (OSError, ValueError, StopIteration, TypeError):
         return []
+
+
+def interactive_profile_banner(peer_id: str) -> str | None:
+    """Human-readable 'launching as: {peer}.{profile} (--model ...)' label,
+    or None if no profile is configured for this peer's console launch."""
+    try:
+        data = json.loads(_ORCHESTRATION.read_text(encoding="utf-8"))
+        node = next(
+            item for item in data.get("hub_nodes", [])
+            if item.get("node_id") == peer_id
+        )
+        prof = node.get("interactive_default_profile") or node.get("default_profile", "deepthink")
+        args = node.get("profiles", {}).get(prof, {}).get("profile_args", [])
+        if "--model" not in args:
+            return None
+        model = args[args.index("--model") + 1]
+        return f"[profile] {peer_id}.{prof} (--model {model}) — this session's default; override anytime with this CLI's own model switch"
+    except (OSError, ValueError, StopIteration, TypeError, IndexError):
+        return None
 
 
 def _append_profile_defaults(args: list[str], peer_id: str) -> list[str]:
