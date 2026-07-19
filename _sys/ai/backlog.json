@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-19T09:55:00Z",
+  "updated_at": "2026-07-19T10:47:59Z",
   "items": [
     {
       "id": "T63",
@@ -1957,6 +1957,23 @@
       "next_action": "DESIGN ONLY, not implemented (user request 2026-07-19: design now, build later). cx.effort + ag.effort both independently converged on the same option when asked in parallel 2026-07-19: diag periodically writes a redacted static snapshot (text/HTML) to a file, synced off-machine via a channel the owner already trusts (local cloud-sync client folder e.g. OneDrive/Syncthing, or a private chat webhook) -- deliberately NOT a new local HTTP listener/SSH tunnel/VPN (`diag --serve` was explicitly rejected: adds a live network surface and is useless anyway if the host machine is down, unlike a cached snapshot). Distinct in scope from the unanimous REJECT of 'server-izing Engram' earlier the same day (see project_external_server_ization_review_2026_07_19 memory / INV-17, PRO-05/13, PRO-12) -- that was multi-tenant third-party dispatch exposure; this is single-owner read-only status only. Combined implementation spec from both peers: write only on state-change (not every --watch tick), debounce >= 15-30s minimum interval to avoid sync-client flooding/disk wear, redact tokens/paths/host identifiers before writing, prefix output with an explicit freshness timestamp so a stale cached snapshot is never mistaken for live. Blocked on: which concrete sync target the user actually wants (no cloud-sync client or webhook is currently wired into this repo -- confirmed via grep, would be new).",
       "risk": "a stale snapshot could be mistaken for live status if the freshness timestamp is dropped or ignored by the viewer",
       "last_verified_at": "2026-07-19T18:55:00+09:00"
+    },
+    {
+      "id": "T71",
+      "title": "cwd-independent peer invoke resolution and cli_not_found health-latch recovery",
+      "status": "active",
+      "priority": "high",
+      "category": "lifecycle",
+      "owner": "unassigned",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/core/hub.py",
+        "_sys/tests/unit/test_hub_invoke_resolution.py",
+        "_sys/ai/orchestration.json"
+      ],
+      "next_action": "IMPLEMENTED and documented in the 2026-07-19 working tree; after commit, add the real evidence_commit and mark done. Incident [empirical_probe]: ag was latched at entrypoint_ok=false/status=RED/reason=cli_not_found and a real ask was blocked although its configured _sys\\tools\\agy\\agy.exe existed; from a non-root cwd, shutil.which returned None while the new helper resolved that file. Fix: _resolve_invoke_cli anchors separator-containing relative invokes to the portable root, adds PATHEXT fallback, supplies the absolute executable to ask dispatch and live health refresh, and recovers RED/gate closure only when the recorded cause is cli_not_found. Verification: py_compile passed and all 6 focused TDD cases passed via a direct fixture harness; normal pytest remained TEST NEEDED in this cx sandbox because basetemp setup failed with WinError 5 before test bodies. Review note: exists() also accepts a directory-valued invoke; current config is a regular file, so is_file() is low-priority hardening rather than an incident blocker.",
+      "last_verified_at": "2026-07-19T19:47:59+09:00"
     }
   ]
 }

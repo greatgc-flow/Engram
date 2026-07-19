@@ -5513,7 +5513,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         cmd, use_stdin = _BaseAdapter().build_cmd(node, query)
 
     is_resume_attempt = session_id is not None
-    exe = shutil.which(cmd[0])
+    exe = _resolve_invoke_cli(cmd[0]) or shutil.which(cmd[0])
     if not exe:
         print(f"[ERROR] {cmd[0]} CLI not found in PATH", file=sys.stderr)
         _record_ask_failure(health_peer, "cli_not_found", f"{cmd[0]} CLI not found in PATH", None, ai_root, profile_key=profile_key)
@@ -6803,9 +6803,35 @@ def _derive_gate_state(check_results: dict, gate_rule: dict) -> str:
     return "unknown"
 
 
+def _resolve_invoke_cli(invoke_cmd: str) -> str | None:
+    """Resolve a peer's `invoke` command to an existing executable path.
+
+    cwd-independent: relative paths (containing a path separator) are resolved
+    against the portable root (parent of this script's `_sys` dir), not the
+    process's current working directory — otherwise the resolution silently
+    fails whenever hub.py is invoked from outside the portable root, even
+    though the CLI genuinely exists (see backlog T71).
+    """
+    if not invoke_cmd:
+        return None
+    candidate = Path(invoke_cmd)
+    if not candidate.is_absolute() and (os.sep in invoke_cmd or "/" in invoke_cmd):
+        portable_root = Path(__file__).resolve().parent.parent.parent
+        candidate = portable_root / invoke_cmd
+        if candidate.is_file():
+            return str(candidate)
+        if not candidate.suffix:
+            for ext in os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";"):
+                ext_candidate = candidate.with_suffix(ext.lower())
+                if ext_candidate.is_file():
+                    return str(ext_candidate)
+        return None
+    # Absolute path or bare command name — normal resolution rules apply.
+    return shutil.which(invoke_cmd)
+
+
 def _refresh_peer_health_live(peer_name: str, peer_dir: Path, invoke_cmd: str, ai_root: Path | None) -> None:
     """Zero-token live refresh: STALE 마커 + CLI 존재 확인 → health.json 업데이트."""
-    import shutil as _shutil
     _, data = _read_peer_health(peer_name)
     changed = False
 
@@ -6821,7 +6847,7 @@ def _refresh_peer_health_live(peer_name: str, peer_dir: Path, invoke_cmd: str, a
             changed = True
 
     # 2. CLI 바이너리 존재 확인 (zero-token)
-    cli_found = bool(_shutil.which(invoke_cmd)) if invoke_cmd else False
+    cli_found = bool(_resolve_invoke_cli(invoke_cmd))
     prev_entrypoint = data.get("availability", {}).get("entrypoint_ok")
     if prev_entrypoint != cli_found:
         data.setdefault("availability", {})["entrypoint_ok"] = cli_found
@@ -6831,6 +6857,12 @@ def _refresh_peer_health_live(peer_name: str, peer_dir: Path, invoke_cmd: str, a
             data["availability"]["gate_open"] = False
             data.setdefault("context_health", {})["status"] = "RED"
             data.setdefault("session_health", {})["last_failure_reason"] = "cli_not_found"
+        elif data.get("session_health", {}).get("last_failure_reason") == "cli_not_found":
+            # CLI가 다시 발견됨: cli_not_found로 인한 RED/닫힌 게이트만 자동 복구.
+            # 다른 원인(quarantine 등)으로 인한 RED는 건드리지 않는다 (cx 자문 반영).
+            data["availability"]["gate_open"] = True
+            data.setdefault("context_health", {})["status"] = "GREEN"
+            data["session_health"]["last_failure_reason"] = None
 
     if changed:
         _write_peer_health(peer_name, data, ai_root)
