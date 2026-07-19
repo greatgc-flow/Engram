@@ -115,7 +115,7 @@
       "confidence": "documented",
       "validated_at": "2026-06-19"
     },
-    "claude-sonnet-4-6": {
+    "claude-sonnet-5": {
       "provider": "anthropic",
       "context_limit": 1000000,
       "output_limit": 64000,
@@ -123,8 +123,9 @@
       "pricing_usd_per_1m": {"input": 3.0, "output": 15.0},
       "status": "GA",
       "failover_to": "claude-haiku-4-5-20251001",
-      "confidence": "documented",
-      "validated_at": "2026-06-19"
+      "confidence": "declared",
+      "validated_at": "2026-07-19",
+      "_note": "Superseded claude-sonnet-4-6 entry 2026-07-19 (see orchestration.json cc.effort _validation_note). context_limit/output_limit/pricing carried forward from the prior entry, not independently re-verified for this specific id."
     },
     "claude-haiku-4-5-20251001": {
       "provider": "anthropic",

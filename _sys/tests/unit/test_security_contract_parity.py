@@ -52,14 +52,19 @@ def test_forbidden_flag_violation_is_detected(monkeypatch):
 
 def test_disabled_peer_is_skipped(monkeypatch):
     orch = copy.deepcopy(_real_orch())
-    # Give the DISABLED ca alias an impossible contract; it must NOT false-fail.
-    ca = _peer(orch, "ca")
-    assert ca.get("enabled") is False
-    ca["security_contract"] = {"required_effective_args": ["--impossible"],
-                               "forbidden_effective_args": [], "sandbox_semantics": None}
+    # Synthesize a disabled peer (clone of cc) with an impossible contract;
+    # it must NOT false-fail. No real disabled peer ships in orchestration.json
+    # any more (the dormant "ca" alias was retired 2026-07-19), so this test
+    # constructs its own fixture instead of relying on one being present.
+    disabled = copy.deepcopy(_peer(orch, "cc"))
+    disabled["node_id"] = "zz-disabled-test"
+    disabled["enabled"] = False
+    disabled["security_contract"] = {"required_effective_args": ["--impossible"],
+                                      "forbidden_effective_args": [], "sandbox_semantics": None}
+    orch["hub_nodes"].append(disabled)
     monkeypatch.setattr(hub, "_load_orchestration", lambda: orch)
     errs = hub._check_flag_parity()
-    assert not any("ca" in e for e in errs)
+    assert not any("zz-disabled-test" in e for e in errs)
 
 
 def test_absent_contract_is_skipped(monkeypatch):

@@ -211,6 +211,8 @@
           "profile_class": "tier",
           "quota_families": ["G"],
           "runtime_context_window": 1048576,
+          "validated_at": "2026-07-19",
+          "validation_method": "successful_invocation",
           "reasoning_effort": "low",
           "cost_tier": "low",
           "routing_state": "eligible",
@@ -233,6 +235,8 @@
             "as_of": "2026-07-13"
           },
           "runtime_context_window": 1048576,
+          "validated_at": "2026-07-19",
+          "validation_method": "successful_invocation",
           "reasoning_effort": "high",
           "cost_tier": "mid",
           "routing_state": "eligible",
@@ -266,6 +270,8 @@
             "source_ref": "_sys/docs-v2/ops/profile-policy.md#2-capability-tiering"
           },
           "runtime_context_window": 1048576,
+          "validated_at": "2026-07-19",
+          "validation_method": "successful_invocation",
           "reasoning_effort": "high",
           "cost_tier": "high",
           "routing_state": "eligible",

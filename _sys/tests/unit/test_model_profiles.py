@@ -17,11 +17,6 @@ EXPECTED_PROFILE_POLICY = {
         "deepthink": ("tier", ["C"]),
         "fable": ("specialty", ["F", "C"]),
     },
-    "ca": {
-        "standard": ("tier", []),
-        "effort": ("tier", []),
-        "deepthink": ("tier", []),
-    },
     "ag": {
         "standard": ("tier", ["G"]),
         "effort": ("tier", ["G"]),
@@ -132,10 +127,6 @@ def test_d3_declared_intelligence_evidence_is_limited_and_normalized():
     }
     assert "intelligence_evidence" not in roots["cc"]["profiles"]["standard"]
     assert "intelligence_evidence" not in roots["ag"]["profiles"]["opus"]
-    assert all(
-        "intelligence_evidence" not in profile
-        for profile in roots["ca"]["profiles"].values()
-    )
 
 
 def test_d6_ag_deepthink_intent_is_declared_and_normalized():
@@ -233,7 +224,7 @@ def test_cc_and_cx_profiles_are_locally_verified():
     expected = {
         "cc": {
             "standard": {"model_id": "claude-haiku-4-5-20251001", "context": 200000, "validated_at": "2026-06-20"},
-            "effort": {"model_id": "claude-sonnet-4-6", "context": 1000000, "validated_at": "2026-06-20"},
+            "effort": {"model_id": "claude-sonnet-5", "context": 1000000, "validated_at": "2026-07-19"},
             "deepthink": {"model_id": "claude-opus-4-8", "context": 1000000, "validated_at": "2026-06-20"},
         },
         "cx": {

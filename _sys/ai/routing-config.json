@@ -84,12 +84,12 @@
     "R02": {
       "_label": "Consensus Framer",
       "primary": "ag::effort::none::none",
-      "fallback": "cc::claude-sonnet-4-6::medium::none",
+      "fallback": "cc::claude-sonnet-5::medium::none",
       "weight": 1.0
     },
     "R03": {
       "_label": "Planner/Architect",
-      "primary": "cc::claude-sonnet-4-6::medium::none",
+      "primary": "cc::claude-sonnet-5::medium::none",
       "fallback": "cx::effort::none::none",
       "weight": 1.0
     },
@@ -114,18 +114,18 @@
     "R07": {
       "_label": "Code Mutator",
       "primary": "cx::effort::none::workspace-write",
-      "fallback": "cc::claude-sonnet-4-6::medium::none",
+      "fallback": "cc::claude-sonnet-5::medium::none",
       "weight": 1.0
     },
     "R08": {
       "_label": "Test Author",
-      "primary": "cc::claude-sonnet-4-6::low::none",
+      "primary": "cc::claude-sonnet-5::low::none",
       "fallback": "ag::standard::none::none",
       "weight": 1.0
     },
     "R09": {
       "_label": "Verifier",
-      "primary": "cc::claude-sonnet-4-6::medium::none",
+      "primary": "cc::claude-sonnet-5::medium::none",
       "fallback": "ag::effort::none::none",
       "weight": 1.0
     },
@@ -137,7 +137,7 @@
     },
     "R11": {
       "_label": "Knowledge Synthesizer",
-      "primary": "cc::claude-sonnet-4-6::medium::none",
+      "primary": "cc::claude-sonnet-5::medium::none",
       "fallback": "ag::effort::none::none",
       "weight": 1.0
     },
