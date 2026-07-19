@@ -1961,18 +1961,20 @@
     {
       "id": "T71",
       "title": "cwd-independent peer invoke resolution and cli_not_found health-latch recovery",
-      "status": "active",
+      "status": "done",
       "priority": "high",
       "category": "lifecycle",
       "owner": "unassigned",
-      "evidence_commit": [],
+      "evidence_commit": [
+        "521b22c"
+      ],
       "supersedes": [],
       "source_refs": [
         "_sys/core/hub.py",
         "_sys/tests/unit/test_hub_invoke_resolution.py",
         "_sys/ai/orchestration.json"
       ],
-      "next_action": "IMPLEMENTED and documented in the 2026-07-19 working tree; after commit, add the real evidence_commit and mark done. Incident [empirical_probe]: ag was latched at entrypoint_ok=false/status=RED/reason=cli_not_found and a real ask was blocked although its configured _sys\\tools\\agy\\agy.exe existed; from a non-root cwd, shutil.which returned None while the new helper resolved that file. Fix: _resolve_invoke_cli anchors separator-containing relative invokes to the portable root, adds PATHEXT fallback, supplies the absolute executable to ask dispatch and live health refresh, and recovers RED/gate closure only when the recorded cause is cli_not_found. Verification: py_compile passed and all 6 focused TDD cases passed via a direct fixture harness; normal pytest remained TEST NEEDED in this cx sandbox because basetemp setup failed with WinError 5 before test bodies. Review note: exists() also accepts a directory-valued invoke; current config is a regular file, so is_file() is low-priority hardening rather than an incident blocker.",
+      "next_action": "DONE 521b22c. Incident [empirical_probe]: ag was latched at entrypoint_ok=false/status=RED/reason=cli_not_found and a real ask was blocked although its configured _sys\\tools\\agy\\agy.exe existed; from a non-root cwd, shutil.which returned None while the new helper resolved that file. Fix: _resolve_invoke_cli anchors separator-containing relative invokes to the portable root, adds PATHEXT fallback (is_file(), not exists(), per cx's review -- a same-named directory can no longer false-match), supplies the absolute executable to ask dispatch and live health refresh, and recovers RED/gate closure only when the recorded cause is cli_not_found. Verification: 6 focused TDD cases (test_hub_invoke_resolution.py) + full non-flaky suite (1167) green.",
       "last_verified_at": "2026-07-19T19:47:59+09:00"
     }
   ]
