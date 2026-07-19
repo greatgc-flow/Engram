@@ -680,6 +680,34 @@ _AG_QUOTA_LABELS = {
     "3p-5h": "3P-5H", "3p-weekly": "3P-7D",
 }
 
+# ag has no active quota probe (unlike cc's /usage CLI call and cx's app-server
+# RPC) -- its quota is read passively from ag_statusline_stdin.log, which only
+# updates when an ag session's statusline renders. A partial/init statusline
+# frame (or simply no ag session running recently) can leave that file with no
+# usable "quota" key, which used to drop straight to zero quota rows / ABS in
+# diag even though a perfectly good quota reading was seen minutes/hours ago.
+# This cache preserves the last frame that DID have real quota data, so a gap
+# degrades to "stale but shown" instead of "gone" (2026-07-19, cx design).
+_AG_LAST_GOOD_QUOTA_PATH = SYS_DIR / "data" / "temp" / "ag_last_good_quota.json"
+
+
+def _load_ag_last_good_quota():
+    try:
+        return json.loads(_AG_LAST_GOOD_QUOTA_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _save_ag_last_good_quota(quotas, observed_at):
+    try:
+        _AG_LAST_GOOD_QUOTA_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _AG_LAST_GOOD_QUOTA_PATH.write_text(
+            json.dumps({"quotas": quotas, "observed_at": observed_at}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
 
 def gather_peer(peer, peer_dirs):
     """Collect a normalized metrics dict for one peer."""
@@ -827,6 +855,19 @@ def gather_peer(peer, peer_dirs):
                 "reset_in_seconds": reset_sec,
                 "source": "ag",
             })
+        if peer == "ag" and quotas:
+            _save_ag_last_good_quota(quotas, info.get("observed_at"))
+    elif peer == "ag":
+        # No usable "quota" key in the current live frame (statusline hasn't
+        # rendered recently, or rendered a partial/init frame) -- fall back to
+        # the last frame that DID have real quota data instead of showing zero
+        # pools. Tag it so callers (diag) can render it as stale-but-real
+        # rather than indistinguishable from a fresh reading.
+        cached = _load_ag_last_good_quota()
+        if cached and cached.get("quotas"):
+            quotas = [dict(q, stale_fallback=True) for q in cached["quotas"]]
+            info["quota_observed_at"] = cached.get("observed_at")
+            info["quota_stale_fallback"] = True
     if "rate_limits" in data and isinstance(data["rate_limits"], dict):  # cc
         rl = data["rate_limits"]
         for key, q in rl.items():
@@ -1609,7 +1650,14 @@ def _compute_alerts(record):
         quota_tag = _source_tag(record, "quota")
         if quota_tag in ("cli_live", "app_server"):
             msg += f" — but quota source is {quota_tag} (freshly measured)"
-        alerts.append(_alert("warn", "SOURCE_STALE", msg))
+        # ag has no active quota probe (passive statusline-log only) -- going
+        # stale for an hour simply means no ag session ran recently, which is
+        # expected/idle behavior, not a collector problem. WARN-ing on every
+        # idle hour is alert fatigue for a designed characteristic (2026-07-19
+        # consensus, fable+cx). Falls back to last-good quota (see
+        # _load_ag_last_good_quota) so the reading itself isn't lost either.
+        sev = "info" if record.get("peer") == "ag" else "warn"
+        alerts.append(_alert(sev, "SOURCE_STALE", msg))
 
     ctx = dom.get("context", {})
     util = ctx.get("utilization_pct")
