@@ -242,7 +242,13 @@ def _codex_rate_limits(deadline_sec=None):
             try:
                 while True:
                     line = proc.stdout.readline()
-                    if not line:
+                    # `not line` alone assumes a well-behaved pipe (real subprocess
+                    # closing stdout -> b""); also bail once the process itself has
+                    # exited, so a readline() that keeps returning something
+                    # non-empty-but-meaningless (e.g. T73: a mocked stdout in tests
+                    # that don't isolate subprocess.Popen from this module) can't
+                    # spin this thread and its queue unbounded.
+                    if not line or proc.poll() is not None:
                         break
                     q.put(line)
             except Exception:

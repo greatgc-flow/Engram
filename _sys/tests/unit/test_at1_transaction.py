@@ -6,6 +6,19 @@ from unittest.mock import patch, MagicMock
 # The module to test
 from _sys.core import hub
 
+# T73: patch("...subprocess.Popen") patches the real, global subprocess module
+# (hub.subprocess IS the subprocess module), which also poisons snapshot.py's
+# OWN unrelated subprocess.Popen usage if action_ask happens to trigger
+# _terminal_spend_guard -> _select_human_interface_peer -> collect_snapshot ->
+# _codex_rate_limits. That function's reader thread does
+# `while True: line = proc.stdout.readline(); if not line: break` -- against a
+# MagicMock, readline() always returns a new (truthy) child Mock, so the loop
+# never terminates: a real, deterministic infinite loop + unbounded queue growth
+# (confirmed live: one repro run hit 16GB+ RAM in seconds). Every test below
+# that calls action_ask patches _terminal_spend_guard to a no-op so it can
+# never reach that code path -- these tests are about ask/lease/PTY behavior,
+# not the terminal-spend-guard subsystem.
+
 def test_at1_lease_closed_on_failure(tmp_path):
     """A subprocess ask that raises/exits nonzero still closes its lease."""
     ai_root = tmp_path / ".ai"
@@ -16,8 +29,9 @@ def test_at1_lease_closed_on_failure(tmp_path):
          patch("_sys.core.hub._lease_close") as mock_lease_close, \
          patch("_sys.core.hub._kill_process_tree") as mock_kill, \
          patch("_sys.core.hub._record_ask_failure") as mock_record_failure, \
-         patch("_sys.core.hub._append_ask_history"):
-        
+         patch("_sys.core.hub._append_ask_history"), \
+         patch("_sys.core.hub._terminal_spend_guard"):
+
         # Setup mock process that fails
         mock_proc = MagicMock()
         mock_proc.pid = 12345
@@ -65,7 +79,8 @@ def test_at1_process_tree_reaped_on_timeout(tmp_path):
          patch("_sys.core.hub._kill_process_tree") as mock_kill, \
          patch("_sys.core.hub._record_ask_failure"), \
          patch("_sys.core.hub._append_ask_history"), \
-         patch("_sys.core.hub._lease_close"):
+         patch("_sys.core.hub._lease_close"), \
+         patch("_sys.core.hub._terminal_spend_guard"):
 
         # Setup mock process that times out immediately (streaming reader raises).
         mock_proc = MagicMock()
@@ -105,8 +120,9 @@ def test_at1_health_written_before_exit(tmp_path):
          patch("_sys.core.hub._record_ask_failure") as mock_record_failure, \
          patch("_sys.core.hub._kill_process_tree") as mock_kill, \
          patch("_sys.core.hub._append_ask_history"), \
-         patch("_sys.core.hub._lease_close"):
-        
+         patch("_sys.core.hub._lease_close"), \
+         patch("_sys.core.hub._terminal_spend_guard"):
+
         # Setup mock process that raises an exception
         mock_popen.side_effect = PermissionError("Cannot execute")
         
@@ -143,7 +159,8 @@ def test_at1_pty_success_not_reaped(tmp_path):
          patch("_sys.core.hub._record_ask_success"), \
          patch("_sys.core.hub._append_ask_history"), \
          patch("_sys.core.hub._lease_close") as mock_lease_close, \
-         patch("_sys.core.hub._runtime_cfg", return_value={"ag": {"requires_pty": True}}):
+         patch("_sys.core.hub._runtime_cfg", return_value={"ag": {"requires_pty": True}}), \
+         patch("_sys.core.hub._terminal_spend_guard"):
         
         from _sys.core.hub import _PtyAskResult
         mock_ask.return_value = _PtyAskResult(
@@ -186,7 +203,8 @@ def test_at1_terminal_timeout_not_permanent_red(tmp_path):
          patch("_sys.core.hub._append_ask_history"), \
          patch("_sys.core.hub._lease_close"), \
          patch("_sys.core.hub._load_orchestration", return_value={"hub_nodes": [{"type": "peer", "node_id": "cc", "enabled": True}]}), \
-         patch("_sys.core.hub._peer_sys_dir", return_value=cc_dir):
+         patch("_sys.core.hub._peer_sys_dir", return_value=cc_dir), \
+         patch("_sys.core.hub._terminal_spend_guard"):
 
         mock_proc = MagicMock()
         mock_proc.pid = 999
@@ -246,7 +264,8 @@ def test_w1_missing_query_file_fails_loudly(tmp_path, capsys):
     ai_root.mkdir()
     hub.ensure_ai_dir(ai_root)
 
-    with patch("_sys.core.hub._append_ask_history") as mock_history:
+    with patch("_sys.core.hub._append_ask_history") as mock_history, \
+         patch("_sys.core.hub._terminal_spend_guard"):
         with pytest.raises(SystemExit) as exc:
             hub.action_ask(
                 to="cc",

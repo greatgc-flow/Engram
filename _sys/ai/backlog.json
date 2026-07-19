@@ -2001,21 +2001,20 @@
     {
       "id": "T73",
       "title": "test_at1_transaction.py intermittently hangs 60s+ under pytest despite the same call completing in ~50-100ms standalone",
-      "status": "deferred",
+      "status": "active",
       "priority": "low",
       "category": "tests",
       "owner": "unassigned",
-      "blocker": "non-deterministic; couldn't get a stable repro to trace with ProcMon-level tooling this session",
+      "blocker": "implemented and verified in the 2026-07-19 working tree; add real evidence_commit and mark done after commit",
       "evidence_commit": [],
       "supersedes": [],
       "source_refs": [
         "_sys/tests/unit/test_at1_transaction.py",
-        "_sys/core/hub.py::_governed_files",
-        "_sys/core/hub.py::_snapshot_governed_hashes",
-        "_sys/tests/unit/conftest.py::MemoryGuard"
+        "_sys/core/snapshot.py::_codex_rate_limits._reader",
+        "_sys/core/hub.py::_terminal_spend_guard"
       ],
-      "next_action": "NOT ACTIONABLE without deeper OS-level tracing. Direct standalone calls to hub._governed_files()/_snapshot_governed_hashes() consistently complete in 50-100ms (261 files, 3.1MB) [measured]. Yet test_at1_transaction.py's tests intermittently hang there under pytest -- sometimes all 7 pass cleanly (e.g. in the 2026-07-19 full-suite run: 1179 passed including all AT1 tests), sometimes the exact same call hangs 60s+ triggering pytest-timeout's stack dump, and once triggered conftest.py's MemoryGuard hard os._exit(1) when concurrent load (3 live CLI canaries + git + other subprocesses running in parallel this session) pushed available RAM below 512MB. Suspected: Windows/SUBST-drive (P:\\ -> D:\\PortableDev (v2.0), confirmed a fast local NVMe SSD, not a slow medium) file-I/O contention, possibly AV real-time scanning triggered by rapid small-file opens. Mitigation for now: don't run heavy concurrent processes alongside this test file; if it hangs, it's very likely transient, not a real deadlock.",
-      "risk": "low -- doesn't block real work, just occasionally makes a full test run slower/flakier than expected",
+      "next_action": "DONE. It was never an I/O hang -- it was an unbounded memory-growth infinite loop (measured live: one repro process hit 16GB+ RAM within seconds via Get-Process sampling, growing ~1GB/5s). Root cause, reproduced deterministically OUTSIDE pytest with faulthandler.dump_traceback_later for accurate periodic stack sampling (not pytest-timeout's misleading single-shot async-exception capture, which was the earlier session's red herring): `patch(\"...subprocess.Popen\")` patches the real, global `subprocess` module (hub.subprocess IS subprocess), which also replaces snapshot.py's OWN unrelated Popen usage whenever action_ask happens to reach _terminal_spend_guard -> _select_human_interface_peer -> collect_snapshot -> _codex_rate_limits. That function's reader thread does `while True: line = proc.stdout.readline(); if not line: break` -- against a MagicMock, readline() always returns a new truthy child Mock, so the loop never terminates, spinning as fast as possible while its queue grows unbounded. Explains the apparent non-determinism: _terminal_spend_guard only sometimes reaches that code path (cache/eligibility state dependent), so it looked like environmental flakiness across many earlier (wrong) hypotheses (OOM-guard/concurrent-load, SUBST-drive I/O, AV scanning -- all real observations, none the actual cause). FIX: every action_ask-calling test in test_at1_transaction.py now patches hub._terminal_spend_guard to a no-op (irrelevant to what these tests actually verify). Also hardened snapshot.py's _reader with an `or proc.poll() is not None` bail-out as defense-in-depth for a real hung subprocess. Verified: test_at1_transaction.py 7/7 green in ~1.5s across 3 repeated runs (previously 60s+ hangs); full suite 1185/1185 green in one clean run.",
+      "risk": null,
       "last_verified_at": "2026-07-19T21:15:00+09:00"
     }
   ]
