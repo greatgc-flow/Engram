@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-18T15:45:00Z",
+  "updated_at": "2026-07-19T09:55:00Z",
   "items": [
     {
       "id": "T63",
@@ -1940,6 +1940,23 @@
       ],
       "next_action": "DONE cdf2d7d -- (1) pools start expanded, p collapses; (2) Esc exits --live cleanly (rc=0, distinct from Ctrl+C 130); (3) quota sort = pacing desc then used desc, shared across SUMMARY+live QUOTA POOLS, absent pacing never fabricated; (4) ACTIVE SESSIONS marks the terminals own session [TERM] via hub._select_human_interface_peer, fail-closed. Live-verified all 4. 1144 green.",
       "last_verified_at": "2026-07-15T07:40:00+00:00"
+    },
+    {
+      "id": "T70",
+      "title": "diag: off-machine snapshot access for the owner (single-user, no new network listener)",
+      "status": "deferred",
+      "priority": "low",
+      "category": "diag",
+      "owner": "unassigned",
+      "blocker": "waiting on user to pick a concrete sync target (local cloud-sync client vs chat webhook) before implementation",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/cli/diag.py"
+      ],
+      "next_action": "DESIGN ONLY, not implemented (user request 2026-07-19: design now, build later). cx.effort + ag.effort both independently converged on the same option when asked in parallel 2026-07-19: diag periodically writes a redacted static snapshot (text/HTML) to a file, synced off-machine via a channel the owner already trusts (local cloud-sync client folder e.g. OneDrive/Syncthing, or a private chat webhook) -- deliberately NOT a new local HTTP listener/SSH tunnel/VPN (`diag --serve` was explicitly rejected: adds a live network surface and is useless anyway if the host machine is down, unlike a cached snapshot). Distinct in scope from the unanimous REJECT of 'server-izing Engram' earlier the same day (see project_external_server_ization_review_2026_07_19 memory / INV-17, PRO-05/13, PRO-12) -- that was multi-tenant third-party dispatch exposure; this is single-owner read-only status only. Combined implementation spec from both peers: write only on state-change (not every --watch tick), debounce >= 15-30s minimum interval to avoid sync-client flooding/disk wear, redact tokens/paths/host identifiers before writing, prefix output with an explicit freshness timestamp so a stale cached snapshot is never mistaken for live. Blocked on: which concrete sync target the user actually wants (no cloud-sync client or webhook is currently wired into this repo -- confirmed via grep, would be new).",
+      "risk": "a stale snapshot could be mistaken for live status if the freshness timestamp is dropped or ignored by the viewer",
+      "last_verified_at": "2026-07-19T18:55:00+09:00"
     }
   ]
 }
