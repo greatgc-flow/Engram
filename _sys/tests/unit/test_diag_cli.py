@@ -1200,10 +1200,13 @@ def test_session_rows_active_only_with_lease_and_context(tmp_path, monkeypatch):
         }],
     }), encoding="utf-8")
     leases = {
-        "cx.deepthink": {
+        # T83: keyed by lease_id (uuid), matched via entry["peer_id"].
+        "11111111-1111-1111-1111-111111111111": {
+            "peer_id": "cx.deepthink",
             "status": "closed",
             "expires_at": "2026-07-03T09:30:00",
             "heartbeat_at": None,
+            "started_at": "2026-07-03T09:00:00",
         }
     }
 

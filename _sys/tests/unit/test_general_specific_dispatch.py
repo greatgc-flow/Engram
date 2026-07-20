@@ -21,6 +21,7 @@ DISPATCH_FUNCTIONS = frozenset({
     "_session_state_path",
     "_load_session_state",
     "_save_session_state",
+    "_mutate_session_state",
     "_get_active_session",
     "_set_active_session",
     "_retire_session",

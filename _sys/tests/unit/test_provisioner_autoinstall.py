@@ -637,7 +637,8 @@ class TestLeaseGate:
         ai_dir.mkdir()
         future = (pv.datetime.datetime.now() + pv.datetime.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
         (ai_dir / "leases.json").write_text(json.dumps({
-            "cx": {"status": "open", "expires_at": future, "pid": 123}
+            # T83: keyed by lease_id (uuid), matched via entry["peer_id"].
+            "11111111-1111-1111-1111-111111111111": {"peer_id": "cx", "status": "open", "expires_at": future, "pid": 123}
         }), encoding="utf-8")
 
         assert pv._is_peer_leased(sys_dir, "cx") is True
@@ -650,7 +651,7 @@ class TestLeaseGate:
         ai_dir.mkdir()
         past = (pv.datetime.datetime.now() - pv.datetime.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
         (ai_dir / "leases.json").write_text(json.dumps({
-            "cx": {"status": "open", "expires_at": past}
+            "11111111-1111-1111-1111-111111111111": {"peer_id": "cx", "status": "open", "expires_at": past}
         }), encoding="utf-8")
 
         assert pv._is_peer_leased(sys_dir, "cx") is False
@@ -662,7 +663,7 @@ class TestLeaseGate:
         ai_dir.mkdir()
         future = (pv.datetime.datetime.now() + pv.datetime.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
         (ai_dir / "leases.json").write_text(json.dumps({
-            "cx": {"status": "closed", "expires_at": future}
+            "11111111-1111-1111-1111-111111111111": {"peer_id": "cx", "status": "closed", "expires_at": future}
         }), encoding="utf-8")
 
         assert pv._is_peer_leased(sys_dir, "cx") is False

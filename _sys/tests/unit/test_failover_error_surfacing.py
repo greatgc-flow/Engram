@@ -62,7 +62,7 @@ def test_post_spawn_nonzero_is_uncertain_and_never_rerouted(tmp_path, capsys):
         patch("_sys.core.hub._spawn_process", return_value=proc),
         patch("_sys.core.hub._stream_process_output", return_value=(b"", b"fatal")),
         patch("_sys.core.hub._lease_sweep"),
-        patch("_sys.core.hub._lease_open"),
+        patch("_sys.core.hub._lease_open", return_value="lease-test-1"),
         patch("_sys.core.hub._lease_close") as lease_close,
         patch("_sys.core.hub._ask_health_precheck"),
         patch("_sys.core.hub._guard_action"),
@@ -103,6 +103,6 @@ def test_post_spawn_nonzero_is_uncertain_and_never_rerouted(tmp_path, capsys):
     assert post_metric["selected_peer"] == "cc.standard"
     assert post_metric["execution_certainty"] == "uncertain"
     assert post_metric["retry_suppressed_reason"] == "duplicate_execution_risk"
-    lease_close.assert_called_with(ai_root, "cc.standard", 12345, "failed")
+    lease_close.assert_called_with(ai_root, "lease-test-1", 12345, "failed")
     failover_choice.assert_not_called()
 

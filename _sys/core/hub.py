@@ -507,12 +507,15 @@ def _normalize_runtime_files(ai_root: Path) -> None:
     # routable (active). Profile nodes (e.g. cc.fable) are judged by their root (cc).
     # Retired/legacy/non-routable IDs (e.g. gc, ca) are dropped without hardcoding
     # names — derived from orchestration routing policy, not a static list.
+    # T83: leases.json is keyed by lease_id (uuid), not peer_id — match on
+    # entry["peer_id"], never the dict key.
     filtered_leases = {
-        node_id: value
-        for node_id, value in leases.items()
-        if node_id in configured
-        and node_id.split(".")[0] in active_roots
-        and node_id not in retired
+        lease_id: value
+        for lease_id, value in leases.items()
+        if isinstance(value, dict)
+        and value.get("peer_id") in configured
+        and str(value.get("peer_id", "")).split(".")[0] in active_roots
+        and value.get("peer_id") not in retired
     }
     if leases != filtered_leases:
         _write_json(leases_path, filtered_leases)
@@ -3066,6 +3069,7 @@ class _PtyAskResult:
     timeout_kind: str | None
     pid: int
     transport_error: str | None = None
+    lease_id: str | None = None
 
 
 def _pty_chunk_telemetry_cfg() -> tuple[bool, int]:
@@ -3237,8 +3241,9 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
             )
 
     pid = p.pid
+    lease_id: str | None = None
     if ai_root:
-        _lease_open(ai_root, node_id, pid, lease, ask_id=ask_id)
+        lease_id = _lease_open(ai_root, node_id, pid, lease, ask_id=ask_id)
 
     out_q: "queue.Queue" = queue.Queue()
     pty_telemetry_enabled, pty_telemetry_max_chunks = _pty_chunk_telemetry_cfg()
@@ -3291,8 +3296,11 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
             break
 
         # 2. lease renewal on heartbeat cadence
-        if ai_root and now - last_renew >= heartbeat_sec:
-            _lease_renew(ai_root, node_id, lease)
+        if ai_root and lease_id and now - last_renew >= heartbeat_sec:
+            try:
+                _lease_renew(ai_root, lease_id, pid, lease)
+            except LeaseOwnershipError:
+                pass  # lease was closed/reclaimed elsewhere; renewal is best-effort
             last_renew = now
 
         # 3. non-lethal startup visibility: warn once if the peer has produced
@@ -3445,6 +3453,7 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
         timeout_kind=timeout_kind,
         pid=pid,
         transport_error=transport_error,
+        lease_id=lease_id,
     )
 
 
@@ -3505,6 +3514,24 @@ def _save_session_state(peer_id: str, data: dict, ai_root: Path | None = None) -
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _mutate_session_state(peer_id: str, ai_root: Path | None, mutator) -> dict:
+    """T83: read-modify-write session_state.json under ONE lock acquisition.
+    Replaces the old pattern (_load_session_state, unlocked, followed by
+    _save_session_state, locked only around the write) that let two
+    concurrent writers both read the same stale base state -- the loser's
+    change was silently dropped. `mutator(data)` mutates `data` in place;
+    its return value is ignored. Returns the mutated data."""
+    path = _session_state_path(peer_id)
+    lock_root = ai_root if ai_root else find_ai_root()
+    with _get_lock(lock_root, f"ss_{peer_id}"):
+        data = _read_json(path) if path.exists() else {
+            "_version": "1.0", "peer_id": peer_id, "active": {}, "history": [],
+        }
+        mutator(data)
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return data
+
+
 def _get_active_session(peer_id: str, scope_key: str) -> dict | None:
     active = _load_session_state(peer_id).get("active", {})
     entry = active.get(scope_key)
@@ -3521,18 +3548,18 @@ def _get_active_session(peer_id: str, scope_key: str) -> dict | None:
 
 
 def _set_active_session(peer_id: str, scope_key: str, session_id: str, ask_id: str, ai_root: Path | None = None, fingerprint: str | None = None) -> None:
-    data = _load_session_state(peer_id)
-    existing = data.get("active", {}).get(scope_key, {})
-    data.setdefault("active", {})[scope_key] = {
-        "session_id": session_id,
-        "scope_key": scope_key,
-        "created_at": existing.get("created_at") or _now(),
-        "last_used_at": _now(),
-        "last_ask_id": ask_id,
-        "status": "active",
-        "fingerprint": fingerprint or existing.get("fingerprint"),
-    }
-    _save_session_state(peer_id, data, ai_root)
+    def _mutator(data: dict) -> None:
+        existing = data.get("active", {}).get(scope_key, {})
+        data.setdefault("active", {})[scope_key] = {
+            "session_id": session_id,
+            "scope_key": scope_key,
+            "created_at": existing.get("created_at") or _now(),
+            "last_used_at": _now(),
+            "last_ask_id": ask_id,
+            "status": "active",
+            "fingerprint": fingerprint or existing.get("fingerprint"),
+        }
+    _mutate_session_state(peer_id, ai_root, _mutator)
 
 
 def _store_session_from_result(adapter, node, raw_text, command_session_id, scope_key,
@@ -3560,22 +3587,33 @@ def _resolve_usage_session_id(adapter, node, raw_text, command_session_id) -> st
 
 
 def _retire_session(peer_id: str, scope_key: str, reason: str, ai_root: Path | None = None) -> None:
-    data = _load_session_state(peer_id)
-    entry = data.get("active", {}).pop(scope_key, None)
-    if entry:
-        entry["status"] = "retired"
-        entry["retired_at"] = _now()
-        entry["retire_reason"] = reason
-        hist = data.setdefault("history", [])
-        hist.append(entry)
-        data["history"] = hist[-50:]
-        _save_session_state(peer_id, data, ai_root)
+    def _mutator(data: dict) -> None:
+        entry = data.get("active", {}).pop(scope_key, None)
+        if entry:
+            entry["status"] = "retired"
+            entry["retired_at"] = _now()
+            entry["retire_reason"] = reason
+            hist = data.setdefault("history", [])
+            hist.append(entry)
+            data["history"] = hist[-50:]
+    _mutate_session_state(peer_id, ai_root, _mutator)
 
 
 def _clear_peer_sessions(peer_id: str, reason: str, ai_root: Path | None = None) -> None:
-    data = _load_session_state(peer_id)
-    for scope_key in list(data.get("active", {}).keys()):
-        _retire_session(peer_id, scope_key, reason, ai_root)
+    """T83: retires every active scope_key in ONE lock acquisition/transaction,
+    not N recursive ones (the old implementation called _retire_session in a
+    loop, each iteration its own separate read-modify-write)."""
+    def _mutator(data: dict) -> None:
+        for scope_key in list(data.get("active", {}).keys()):
+            entry = data.get("active", {}).pop(scope_key, None)
+            if entry:
+                entry["status"] = "retired"
+                entry["retired_at"] = _now()
+                entry["retire_reason"] = reason
+                hist = data.setdefault("history", [])
+                hist.append(entry)
+                data["history"] = hist[-50:]
+    _mutate_session_state(peer_id, ai_root, _mutator)
 
 
 def _compute_scope_key(ai_root: Path | None, explicit_scope: str | None = None) -> str:
@@ -3958,6 +3996,7 @@ def _emit_peer_silent_startup_warning(
 
 def _stream_process_output(proc, cmd, input_bytes, heartbeat_sec, zombie_timeout_sec,
                            timeout_sec, ai_root, to, lease_timeout_sec,
+                           lease_id: str | None = None,
                            _clock=time.monotonic, _sleep=time.sleep):
     """Read a subprocess' stdout/stderr INCREMENTALLY via background threads so a
     streaming peer (e.g. `codex exec --json`, which emits `thread.started` within
@@ -4039,8 +4078,11 @@ def _stream_process_output(proc, cmd, input_bytes, heartbeat_sec, zombie_timeout
         if now - last_activity >= zombie_timeout_sec:
             _kill_process_tree(proc.pid)
             raise subprocess.TimeoutExpired(cmd, zombie_timeout_sec)
-        if ai_root and now - last_renew >= heartbeat_sec:
-            _lease_renew(ai_root, to, lease_timeout_sec)
+        if ai_root and lease_id and now - last_renew >= heartbeat_sec:
+            try:
+                _lease_renew(ai_root, lease_id, proc.pid, lease_timeout_sec)
+            except LeaseOwnershipError:
+                pass  # lease was closed/reclaimed elsewhere; renewal is best-effort
             last_renew = now
         _sleep(slice_sec)
 
@@ -5861,12 +5903,18 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
             _record_ask_failure(health_peer, "fatal_error", f"unexpected crash: {type(exc).__name__}", None, ai_root, profile_key=profile_key)
             raise
         finally:
-            # CONDITION-2: close the lease EXACTLY ONCE using result.pid.
+            # CONDITION-2: close the lease EXACTLY ONCE using result.lease_id/pid.
             # If _ask_with_pty never returned (result is None), the lease was
-            # never opened (or its pid is unknown) → skip: no double close, no
-            # wrong/missing pid. _lease_sweep reclaims any orphan.
-            if result is not None and ai_root:
-                _lease_close(ai_root, to, result.pid, lease_status)
+            # never opened (or its lease_id is unknown) → skip: no double close,
+            # no wrong/missing pid. _lease_sweep reclaims any orphan. T83: a
+            # close error must surface (not be silently swallowed) without
+            # masking whatever exception is already propagating through this
+            # finally block.
+            if result is not None and ai_root and result.lease_id:
+                try:
+                    _lease_close(ai_root, result.lease_id, result.pid, lease_status)
+                except LeaseOwnershipError as _lease_exc:
+                    print(f"[HUB:WARN] lease close ownership error: {_lease_exc}", file=sys.stderr)
             # Delete the staged prompt file (guarded), regardless of outcome.
             if staged and staged_path is not None:
                 try:
@@ -5880,6 +5928,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     # ── Subprocess path (with optional session-retry) ──────────
     heartbeat_sec, lease_timeout_sec, zombie_timeout_sec = _lease_cfg(to)
     lease_status = "open"
+    lease_id: str | None = None
     t0 = time.monotonic()
     proc = None  # ensure defined for finally
 
@@ -5900,7 +5949,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
             env=process_env,
             cwd=proc_cwd,
         )
-        _lease_open(ai_root, to, proc.pid, lease_timeout_sec, ask_id=ask_id, ask_query_file=saved_query_file_path)
+        lease_id = _lease_open(ai_root, to, proc.pid, lease_timeout_sec, ask_id=ask_id, ask_query_file=saved_query_file_path)
 
         input_bytes = query.encode("utf-8") if use_stdin else None
         # Incremental streaming read: sees partial output and applies one unified
@@ -5908,7 +5957,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         try:
             raw_out, raw_err = _stream_process_output(
                 proc, cmd, input_bytes, heartbeat_sec, zombie_timeout_sec,
-                timeout_sec, ai_root, to, lease_timeout_sec)
+                timeout_sec, ai_root, to, lease_timeout_sec, lease_id=lease_id)
         except subprocess.TimeoutExpired:
             lease_status = "timeout"
             raise
@@ -5969,7 +6018,11 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
             if fail_type == "permanent":
                 print(f"[HUB:WARN] {to} session resume failed (permanent: {fail_type}), retrying fresh", file=sys.stderr)
                 _retire_session(health_peer, scope_key, "resume_failed", ai_root)
-                _lease_close(ai_root, to, proc.pid, "retry")
+                if lease_id:
+                    try:
+                        _lease_close(ai_root, lease_id, proc.pid, "retry")
+                    except LeaseOwnershipError as _lease_exc:
+                        print(f"[HUB:WARN] lease close ownership error: {_lease_exc}", file=sys.stderr)
 
                 fresh = adapter.build_session_cmd(node, query, None)
                 fresh_cmd = fresh.cmd
@@ -5984,13 +6037,15 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     env=process_env,
                     cwd=proc_cwd,
                 )
-                _lease_open(ai_root, to, proc.pid, lease_timeout_sec, ask_id=ask_id + "-r")
+                # A retry is a genuinely distinct attempt -- it gets its own
+                # fresh lease_id, never reusing the closed one (T83).
+                lease_id = _lease_open(ai_root, to, proc.pid, lease_timeout_sec, ask_id=ask_id + "-r")
                 t1 = time.monotonic()
                 try:
                     retry_input = query.encode("utf-8") if fresh_use_stdin else None
                     raw_out, raw_err = _stream_process_output(
                         proc, fresh_cmd, retry_input, heartbeat_sec, zombie_timeout_sec,
-                        timeout_sec, ai_root, to, lease_timeout_sec)
+                        timeout_sec, ai_root, to, lease_timeout_sec, lease_id=lease_id)
                 except subprocess.TimeoutExpired:
                     raise
                 elapsed = int(time.monotonic() - t0)
@@ -6206,7 +6261,11 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         pid = proc.pid if proc is not None else -1
         if proc is not None and proc.returncode is None:
             _kill_process_tree(proc)
-        _lease_close(ai_root, to, pid, lease_status)
+        if lease_id:
+            try:
+                _lease_close(ai_root, lease_id, pid, lease_status)
+            except LeaseOwnershipError as _lease_exc:
+                print(f"[HUB:WARN] lease close ownership error: {_lease_exc}", file=sys.stderr)
         if ask_temp_dir and ask_temp_dir.exists():
             shutil.rmtree(ask_temp_dir, ignore_errors=True)
 
@@ -8974,14 +9033,27 @@ def _lease_cfg(node_id: str | None = None) -> tuple[int, int, int]:
     return h, l, z
 
 
-def _lease_open(ai_root: Path | None, peer_id: str, pid: int, lease_timeout_sec: int, ask_id: str | None = None, ask_query_file: str | None = None) -> None:
+class LeaseOwnershipError(Exception):
+    """Raised by _lease_renew/_lease_close when lease_id is unknown, or the
+    caller's pid doesn't match the lease's stored pid. T83: replaces the old
+    silent no-op-on-mismatch, which masked a clobbered lease instead of
+    surfacing it."""
+
+
+def _lease_open(ai_root: Path | None, peer_id: str, pid: int, lease_timeout_sec: int, ask_id: str | None = None, ask_query_file: str | None = None) -> str | None:
+    """Returns the new lease_id (used as the leases.json dict key), or None if
+    ai_root is falsy. T83: keyed by a fresh uuid4, not peer_id (old bug:
+    concurrent same-peer asks clobbered each other) and not ask_id (rejected:
+    _short_id() is uuid4().hex[:4], only 65536 values, a real collision risk
+    under concurrent load)."""
     if not ai_root:
-        return
+        return None
     state = _read_json(ai_root / "state.json") if (ai_root / "state.json").exists() else {}
     room_id = state.get("room_id")
     started = _now()
     from datetime import timedelta
     expires = (datetime.fromisoformat(started) + timedelta(seconds=lease_timeout_sec)).isoformat()[:19]
+    lease_id = str(uuid.uuid4())
     entry = {
         "ask_id": ask_id or _short_id("ask-"),
         "peer_id": peer_id,
@@ -8995,32 +9067,44 @@ def _lease_open(ai_root: Path | None, peer_id: str, pid: int, lease_timeout_sec:
     }
     with _get_lock(ai_root, "leases"):
         data = _read_json(_leases_path(ai_root)) if _leases_path(ai_root).exists() else {}
-        data[peer_id] = entry
+        data[lease_id] = entry
         _write_json(_leases_path(ai_root), data)
+    return lease_id
 
 
-def _lease_renew(ai_root: Path | None, peer_id: str, lease_timeout_sec: int) -> None:
-    if not ai_root:
+def _lease_renew(ai_root: Path | None, lease_id: str | None, pid: int, lease_timeout_sec: int) -> None:
+    """T83: keyed by lease_id, pid-checked. Raises LeaseOwnershipError on an
+    unknown lease_id or pid mismatch rather than silently doing nothing (old
+    _lease_open had no ownership check at all)."""
+    if not ai_root or not lease_id:
         return
     from datetime import timedelta
     now = _now()
     expires = (datetime.fromisoformat(now) + timedelta(seconds=lease_timeout_sec)).isoformat()[:19]
     with _get_lock(ai_root, "leases"):
         data = _read_json(_leases_path(ai_root)) if _leases_path(ai_root).exists() else {}
-        if peer_id in data:
-            data[peer_id]["heartbeat_at"] = now
-            data[peer_id]["expires_at"] = expires
-            _write_json(_leases_path(ai_root), data)
+        entry = data.get(lease_id)
+        if entry is None or entry.get("pid") != pid:
+            raise LeaseOwnershipError(f"lease_id={lease_id!r} pid={pid} not found or pid mismatch")
+        entry["heartbeat_at"] = now
+        entry["expires_at"] = expires
+        _write_json(_leases_path(ai_root), data)
 
 
-def _lease_close(ai_root: Path | None, peer_id: str, pid: int, status: str) -> None:
-    if not ai_root:
+def _lease_close(ai_root: Path | None, lease_id: str | None, pid: int, status: str) -> None:
+    """T83: keyed by lease_id, pid-checked. Raises LeaseOwnershipError on an
+    unknown lease_id or pid mismatch rather than the old silent no-op, which
+    masked a clobbered lease's close (the survivor's heartbeat kept renewing
+    the clobbered entry, corrupting its evidence)."""
+    if not ai_root or not lease_id:
         return
     with _get_lock(ai_root, "leases"):
         data = _read_json(_leases_path(ai_root)) if _leases_path(ai_root).exists() else {}
-        if peer_id in data and data[peer_id].get("pid") == pid:
-            data[peer_id]["status"] = status
-            _write_json(_leases_path(ai_root), data)
+        entry = data.get(lease_id)
+        if entry is None or entry.get("pid") != pid:
+            raise LeaseOwnershipError(f"lease_id={lease_id!r} pid={pid} not found or pid mismatch")
+        entry["status"] = status
+        _write_json(_leases_path(ai_root), data)
 
 
 def _kill_tree_no_psutil(pid: int) -> None:
@@ -9083,11 +9167,11 @@ def _lease_sweep(ai_root: Path | None) -> None:
     if not ai_root or not _leases_path(ai_root).exists():
         return
     now_dt = datetime.fromisoformat(_now())
-    expired: list[tuple[str, dict]] = []
+    expired: list[dict] = []
     with _get_lock(ai_root, "leases"):
         data = _read_json(_leases_path(ai_root))
         changed = False
-        for peer_id, entry in data.items():
+        for lease_id, entry in data.items():
             if entry.get("status") != "open":
                 continue
             expires_str = entry.get("expires_at", "")
@@ -9097,14 +9181,15 @@ def _lease_sweep(ai_root: Path | None) -> None:
                 if datetime.fromisoformat(expires_str) < now_dt:
                     entry["status"] = "expired"
                     changed = True
-                    expired.append((peer_id, dict(entry)))
+                    expired.append(dict(entry, lease_id=lease_id))
             except Exception:
                 pass
         if changed:
             _write_json(_leases_path(ai_root), data)
     # Slow operations and operations that may acquire other locks must not run
     # while leases.lock is held.
-    for peer_id, entry in expired:
+    for entry in expired:
+        peer_id = entry.get("peer_id", "?")
         pid = entry.get("pid")
         if pid:
             # Reuse the shared tree-killer: it is psutil-None safe (crashes were
@@ -9782,7 +9867,8 @@ def action_lease_status(ai_root: Path) -> None:
     print(f"{'Peer':<8} {'Status':<10} {'PID':<8} {'Alive':<6} {'Expires':<20} {'Heartbeat':<20}")
     print("-" * 78)
     now_dt = datetime.fromisoformat(_now())
-    for peer_id, entry in data.items():
+    for entry in data.values():
+        peer_id = entry.get("peer_id", "?")
         pid = entry.get("pid", 0)
         status = entry.get("status", "?")
         expires = entry.get("expires_at", "")[:19]

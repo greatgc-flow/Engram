@@ -553,8 +553,9 @@ def _is_peer_leased(sys_dir: Path, peer_or_tool: str) -> bool:
     currently-open, non-expired lease matching peer_or_tool. "nodejs" is
     treated as leased if ANY peer has an open lease, since all npm-based
     peer CLIs live inside nodejs's own npm-global directory. Lease schema
-    (hub.py's _lease_open/_lease_close): keyed by peer_id, fields include
-    status ("open" while active), expires_at (naive local-time string,
+    (hub.py's _lease_open/_lease_close): keyed by lease_id (uuid4, T83),
+    each entry's "peer_id" field is what matches peer_or_tool here; other
+    fields include status ("open" while active), expires_at (naive local-time string,
     "%Y-%m-%dT%H:%M:%S" - hub.py's _now() uses datetime.now(), no tz)."""
     leases_path = sys_dir.parent / ".ai" / "leases.json"
     if not leases_path.exists():
@@ -565,10 +566,12 @@ def _is_peer_leased(sys_dir: Path, peer_or_tool: str) -> bool:
         return False
 
     now = datetime.datetime.now()
-    for peer_id, lease in leases.items():
+    for lease in leases.values():
         if not isinstance(lease, dict) or lease.get("status") != "open":
             continue
-        if peer_or_tool != "nodejs" and peer_id != peer_or_tool:
+        # T83: leases.json is keyed by lease_id (uuid), not peer_id -- match by
+        # entry["peer_id"], never the dict key.
+        if peer_or_tool != "nodejs" and lease.get("peer_id") != peer_or_tool:
             continue
         expires_at = lease.get("expires_at")
         if not expires_at:

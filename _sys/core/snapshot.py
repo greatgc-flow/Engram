@@ -1651,6 +1651,20 @@ def _session_context_measured(peer_id, entry, profile_row, observed_at):
     return _absent()
 
 
+def _find_lease_for_peer(leases: dict, peer_id: str) -> dict:
+    """T83: leases.json is keyed by lease_id (uuid), not peer_id -- a peer can
+    now have multiple concurrent lease entries. Prefer an unexpired open
+    lease, otherwise fall back to the newest terminal one, matching by
+    entry["peer_id"] rather than the dict key."""
+    candidates = [v for v in leases.values() if isinstance(v, dict) and v.get("peer_id") == peer_id]
+    if not candidates:
+        return {}
+    open_candidates = [c for c in candidates if c.get("status") == "open"]
+    pool = open_candidates or candidates
+    pool.sort(key=lambda c: c.get("started_at") or "", reverse=True)
+    return pool[0]
+
+
 def _build_session_rows(peers, peer_dirs, profiles, observed_at):
     """Active session rows with lease/context attached. History stays out."""
     leases, lease_observed = _read_json_file(PORTABLE_ROOT / ".ai" / "leases.json")
@@ -1666,7 +1680,7 @@ def _build_session_rows(peers, peer_dirs, profiles, observed_at):
             if not isinstance(entry, dict):
                 continue
             profile_id = _profile_id_from_scope(entry.get("scope_key") or scope_key, peer_id)
-            lease = leases.get(profile_id) or leases.get(peer_id) or {}
+            lease = _find_lease_for_peer(leases, profile_id) or _find_lease_for_peer(leases, peer_id)
             profile_row = profiles_by_id.get(profile_id)
             ctx = _session_context_measured(peer_id, entry, profile_row, observed_at)
             measured_model = ctx.pop("measured_model", None)
