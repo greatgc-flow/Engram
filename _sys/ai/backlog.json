@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-20T00:55:00Z",
+  "updated_at": "2026-07-20T01:15:00Z",
   "items": [
     {
       "id": "T63",
@@ -2121,6 +2121,27 @@
       "next_action": "DONE. cx found (empirical_probe) two real bugs in one function. (1) auto_refresh_observed() gated on check_cli_canary.check_and_update_budget(), a deprecated shim documented to always return False -- every auto-refresh call skipped every peer, unconditionally, forever; the real budget system (canary_budget.reserve_canary_invocation, per profile inside run_canary()) was never reached. Removed the dead outer gate; broadened downstream SKIP classification to surface the real denial reason. (2) load_observed_models() only ever CONFIRMS already-declared models (a PASS proves acceptance, not enumeration -- can never discover a new model or prove a full catalog). Live-checked all 3 peer CLIs: cc/cx have no model-listing subcommand (and both treat a stray bare arg as a live prompt, so guessing one risks a real paid spend), but agy.exe has a genuine free `models` subcommand -- live-verified it prints ag's real 8-model catalog. Added probe_enumerated_models(), strictly opt-in via a new declared orchestration.json field (model_enumeration_argv, set only on ag), superseding the confirm-only list when available (models_source: enumerated vs confirmed).",
       "risk": null,
       "last_verified_at": "2026-07-20T09:55:00+09:00"
+    },
+    {
+      "id": "T79",
+      "title": "profiles have no declared intent field distinguishing an unintentional stale model_id from a deliberate moving target",
+      "status": "done",
+      "priority": "medium",
+      "category": "config",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [
+        "0a370ac"
+      ],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/checks/check_config.py",
+        "_sys/ai/orchestration.json",
+        "_sys/tests/unit/test_config_validator.py"
+      ],
+      "next_action": "DONE (infrastructure only, no consumer yet). cx design from the absent-audit consensus: added selection_mode (pinned|track_family_current|manual_exception), required on every enabled profile, validated in check_config.py; manual_exception additionally requires a non-empty selection_mode_reason. Declared honestly on all 12 current profiles as 'pinned' -- every declared model_id in this system today is an exact pin, no family-tracking alias exists anywhere, so this is truthful, not aspirational. No behavior changes yet: this is the field Task 10's freshness-sweep is designed to read to decide alert severity (a pinned profile going stale is a real problem; a track_family_current one drifting is expected) -- intentionally deferred to that task per the original plan, since it's the actual consumer.",
+      "risk": null,
+      "last_verified_at": "2026-07-20T10:15:00+09:00"
     }
   ]
 }
