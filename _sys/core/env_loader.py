@@ -11,7 +11,9 @@ class EnvironmentLoader:
             
         with open(self.config_path, 'r', encoding='utf-8') as f:
             self.config = json.load(f)
-            
+            if not isinstance(self.config, dict):
+                self.config = {}
+
         self.paths = {}
         self.env_vars = {}
         
@@ -68,7 +70,9 @@ def load_json_env(config_path: str):
     """Loads environment configuration directly from JSON and updates os.environ"""
     with open(config_path, 'r', encoding='utf-8') as f:
         config = json.load(f)
-        
+        if not isinstance(config, dict):
+            config = {}
+
     paths = config.get("paths", {})
     env_vars = config.get("env_vars", {})
     
