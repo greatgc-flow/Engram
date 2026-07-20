@@ -81,7 +81,7 @@ def check_backlog(live: bool = True) -> list[str]:
             errors.append(f"Item '{item_id}' has invalid status '{status}'")
 
         if status in {"done", "dropped", "superseded"}:
-            evidence = item.get("evidence_commit", [])
+            evidence = item.get("evidence_commit", []) or []
             if not evidence:
                 errors.append(f"Item '{item_id}' ({status}) requires a non-empty 'evidence_commit' list")
 
@@ -92,7 +92,7 @@ def check_backlog(live: bool = True) -> list[str]:
 
     for item in items:
         item_id = item.get("id")
-        supersedes = item.get("supersedes", [])
+        supersedes = item.get("supersedes", []) or []
         for target in supersedes:
             if target not in item_ids:
                 errors.append(f"Item '{item_id}' supersedes unknown target '{target}'")
