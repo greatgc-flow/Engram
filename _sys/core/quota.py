@@ -37,7 +37,10 @@ def calculate_pacing(used_frac: float, remaining_seconds: float, window_hours: f
         
     if remaining_seconds is None or remaining_seconds < 0:
         return {"ratio": 0.0, "status": "unknown", "indicator": ""}
-        
+
+    if window_hours <= 0.0:
+        return {"ratio": 0.0, "status": "unknown", "indicator": ""}
+
     total_seconds = window_hours * 3600.0
     elapsed_seconds = max(0.0, total_seconds - remaining_seconds)
     elapsed_frac = elapsed_seconds / total_seconds
