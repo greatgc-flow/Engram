@@ -195,6 +195,7 @@ class HubError:
         print(f"  작업   : {action_str}", file=sys.stderr)
         print(f"  원인   : {message}", file=sys.stderr)
         if remediation:
+            remediation = remediation.replace("{peer}", peer_str)
             print(f"  해결   : {remediation}", file=sys.stderr)
         if stacktrace and cls._show_stacktrace():
             print(f"\n  [스택트레이스]", file=sys.stderr)
