@@ -184,7 +184,7 @@ def _set_peer_junctions(base_dir: Path, peer_id: str, peer: dict, sys_dir: Path)
         host_env     = host_j.get("host_env")
         host_dirname = host_j.get("host_dirname")
         portable_sub = host_j.get("portable_subpath", "config")
-        if host_env in os.environ:
+        if host_env and host_env in os.environ:
             host_path     = Path(os.environ[host_env]) / host_dirname
             portable_path = sub / portable_sub
             portable_path.mkdir(parents=True, exist_ok=True)
@@ -217,7 +217,7 @@ def _remove_peer_junctions(base_dir: Path, peer_id: str, peer: dict, sys_dir: Pa
     if host_j:
         host_env     = host_j.get("host_env")
         host_dirname = host_j.get("host_dirname")
-        if host_env in os.environ:
+        if host_env and host_env in os.environ:
             host_path = Path(os.environ[host_env]) / host_dirname
             if not _remove_junction(host_path):
                 errors.append(f"{peer_id}: host junction remains at {host_path}")
@@ -394,7 +394,7 @@ def _cli_apply(sys_dir: Path, base_dir: Path, force: bool) -> None:
         if force:
             # Remove existing host junction before re-creating
             host_j = peer_cfg.get("host_junction")
-            if host_j and host_j.get("host_env") in os.environ:
+            if host_j and host_j.get("host_env") and host_j.get("host_env") in os.environ:
                 host_path = Path(os.environ[host_j["host_env"]]) / host_j.get("host_dirname", "")
                 _remove_junction(host_path)
         _set_peer_junctions(base_dir, peer_id, peer_cfg, sys_dir)
@@ -409,7 +409,7 @@ def _cli_status(sys_dir: Path, base_dir: Path) -> None:
     for peer_id, peer_cfg in peers.items():
         sub = sys_dir / peer_cfg.get("sys_subdir", peer_id)
         host_j = peer_cfg.get("host_junction")
-        if host_j and host_j.get("host_env") in os.environ:
+        if host_j and host_j.get("host_env") and host_j.get("host_env") in os.environ:
             host_path = Path(os.environ[host_j["host_env"]]) / host_j.get("host_dirname", "")
             portable  = sub / host_j.get("portable_subpath", "config")
             exists    = host_path.exists()
