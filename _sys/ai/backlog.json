@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-20T08:45:00Z",
+  "updated_at": "2026-07-20T13:00:00Z",
   "items": [
     {
       "id": "T63",
@@ -2207,12 +2207,12 @@
     {
       "id": "T83",
       "title": "hub.py lease/session-state concurrency bug: peer_id-keyed leases clobber, session read-modify-write races",
-      "status": "active",
+      "status": "done",
       "priority": "medium",
       "category": "hub",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": ["190fe5f"],
       "supersedes": [],
       "source_refs": [
         "_sys/core/hub.py",
