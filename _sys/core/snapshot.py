@@ -709,6 +709,49 @@ def _save_ag_last_good_quota(quotas, observed_at):
         pass
 
 
+# ag's statusline log is overwrite-only (single latest frame) but DOES carry
+# exact per-session context/token data while it's live -- _session_context_
+# measured (RECENT SESSIONS) previously had no ag branch at all and fell
+# straight to absent for every ag row, even one from seconds ago. This is
+# T75's pattern applied to a second data class (2026-07-19/20 absent-audit
+# A2, fable+cx dissent from treating it as structural): persist a small,
+# TTL-bounded per-session_id map so a session's real data survives past the
+# moment its statusline frame gets overwritten by the next one.
+_AG_SESSION_CONTEXT_PATH = SYS_DIR / "data" / "temp" / "ag_session_context.json"
+_AG_SESSION_CONTEXT_MAX_ENTRIES = 50
+
+
+def _load_ag_session_context(session_id):
+    if not session_id:
+        return None
+    try:
+        store = json.loads(_AG_SESSION_CONTEXT_PATH.read_text(encoding="utf-8"))
+        return store.get(str(session_id))
+    except Exception:
+        return None
+
+
+def _save_ag_session_context(session_id, used_tokens, window_tokens, model, observed_at):
+    if not session_id:
+        return
+    try:
+        _AG_SESSION_CONTEXT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            store = json.loads(_AG_SESSION_CONTEXT_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            store = {}
+        store[str(session_id)] = {
+            "used_tokens": used_tokens, "window_tokens": window_tokens,
+            "model": model, "observed_at": observed_at,
+        }
+        if len(store) > _AG_SESSION_CONTEXT_MAX_ENTRIES:
+            ordered = sorted(store.items(), key=lambda kv: kv[1].get("observed_at") or "")
+            store = dict(ordered[-_AG_SESSION_CONTEXT_MAX_ENTRIES:])
+        _AG_SESSION_CONTEXT_PATH.write_text(json.dumps(store, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def gather_peer(peer, peer_dirs):
     """Collect a normalized metrics dict for one peer."""
     info = {
@@ -971,6 +1014,13 @@ def gather_peer(peer, peer_dirs):
     if (info["ctx_pct"] is None and info["ctx_known"]
             and isinstance(info["ctx_window"], (int, float)) and info["ctx_window"]):
         info["ctx_pct"] = round(info["ctx_used"] / info["ctx_window"] * 100, 1)
+
+    if peer == "ag" and info["capture_session_id"] and info["ctx_known"]:
+        window_val = info["ctx_window"] if isinstance(info["ctx_window"], (int, float)) else None
+        _save_ag_session_context(
+            info["capture_session_id"], info["ctx_used"], window_val,
+            info["model"], info.get("observed_at"),
+        )
     return info
 
 
@@ -1493,9 +1543,12 @@ def _profile_id_from_scope(scope_key, peer_id):
 
 def _session_context_measured(peer_id, entry, profile_row, observed_at):
     """Per-session context/model read from a REAL per-session source only (FP-1).
-    cx: state_5.sqlite threads(id)->rollout_path; cc: projects/*/<session_id>.jsonl.
-    No per-session source (ag, missing file, unknown id) => absent — a profile
-    aggregate is NEVER copied into a session row (DIR-004)."""
+    cx: state_5.sqlite threads(id)->rollout_path; cc: projects/*/<session_id>.jsonl;
+    ag: persisted statusline capture (see _save_ag_session_context — ag's own
+    live log is overwrite-only, so gather_peer() snapshots each session_id's
+    frame before it's lost). No per-session source (missing file, unknown id,
+    never captured) => absent — a profile aggregate is NEVER copied into a
+    session row (DIR-004)."""
     session_id = entry.get("session_id")
     window = ((profile_row or {}).get("context") or {}).get("window_tokens")
 
@@ -1575,6 +1628,24 @@ def _session_context_measured(peer_id, entry, profile_row, observed_at):
                         }
             except Exception:
                 pass
+        return _absent()
+
+    if peer_id == "ag":
+        cached = _load_ag_session_context(session_id)
+        if cached and isinstance(cached.get("used_tokens"), (int, float)):
+            used = cached["used_tokens"]
+            win = cached.get("window_tokens")
+            win = win if isinstance(win, (int, float)) else (
+                window if isinstance(window, (int, float)) else None)
+            pct = round(used / win * 100, 1) if isinstance(win, (int, float)) and win else None
+            return {
+                "used_tokens": used,
+                "window_tokens": win,
+                "utilization_pct": pct,
+                "source": _source_meta("cached", observed_at, _LOCAL_TTL_SEC, "last_known"),
+                "source_tag": "ag_session_cache",
+                "measured_model": cached.get("model"),
+            }
         return _absent()
 
     return _absent()
