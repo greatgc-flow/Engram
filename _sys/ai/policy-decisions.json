@@ -60,6 +60,38 @@
           "expected": true
         }
       ]
+    },
+    {
+      "decision_id": "h1-h2-canary-budget-ratification-2026-07-20",
+      "title": "Ratify H1 (canary reserve_floor) and H2 (canary budget_cap + window_hours)",
+      "status": "applied",
+      "decided_at": "2026-07-20",
+      "decided_by": ["user", "ag", "cx", "cc.fable"],
+      "evidence_refs": [
+        "_sys/docs-v2/ops/capability-leveling-decisions.md#h1-h2-ratification-2026-07-20"
+      ],
+      "applied_commit": "f1a5c9d",
+      "supersedes": null,
+      "checks": [
+        {
+          "kind": "json_value",
+          "path": "_sys/ai/orchestration.json",
+          "pointer": "/canary_config/budget_cap",
+          "expected": 4
+        },
+        {
+          "kind": "json_value",
+          "path": "_sys/ai/orchestration.json",
+          "pointer": "/canary_config/budget_window_hours",
+          "expected": 12
+        },
+        {
+          "kind": "json_value",
+          "path": "_sys/ai/orchestration.json",
+          "pointer": "/canary_config/reserve_floor",
+          "expected": 0.25
+        }
+      ]
     }
   ]
 }

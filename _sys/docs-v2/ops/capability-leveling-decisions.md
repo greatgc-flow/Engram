@@ -19,8 +19,8 @@ never a guessed default (DIR-004).
 
 | # | Unratified value | Blocks | Default until ratified |
 |---|---|---|---|
-| H1 | numeric **capability-measurement reserve floor** (quota fraction below which auto-measure is denied) | T44 execution | deny all auto-measure (fail-closed) |
-| H2 | **budget cap + window** for capability canaries | T44 execution | 0 invocations (disabled) |
+| H1 | numeric **capability-measurement reserve floor** (quota fraction below which auto-measure is denied) | T44 execution | **RATIFIED 2026-07-20: reserve_floor=0.25** (see below) |
+| H2 | **budget cap + window** for capability canaries | T44 execution | **RATIFIED 2026-07-20: budget_cap=4, budget_window_hours=12** (see below) |
 | H3 | **premium/arbiter measurement allowlist** | T44 premium spend | empty (no premium auto-measure) |
 | H4 | **canonical cross-provider tokenizer** for 8k/32k/128k payload construction | T44 long_context | **conservative byte→token fallback ratio** (ag), never crash |
 | H5 | **non-neutral `bulk_fitness` formula + bounds** | T45 live weighting | neutral 1.0 for every profile |
@@ -28,6 +28,24 @@ never a guessed default (DIR-004).
 
 Nothing in T41–T45 activates D1 or D5 on live routing. Phase 3b (D1 re-decision +
 calibrated D5) remains a separate R:10 round.
+
+### H1/H2 ratification (2026-07-20)
+
+Ratified via 3-way independent review (ag, cx, cc.fable) + explicit user sign-off,
+triggered by a live P0: `hub.py freshness-sweep` (T81) found cc.effort's declared
+model (`claude-sonnet-5`) CONTRADICTED against a stale 2026-07-12 observed-models
+capture, structurally unfixable while `canary_config` stayed absent/fail-closed.
+
+`orchestration.json.canary_config`: `budget_cap=4`, `budget_window_hours=12`,
+`reserve_floor=0.25`. cap=4 (ag+cx unanimous — cc's 4 tier profiles + no free
+model-enumeration command means cap=3 would falsely CONTRADICT the omitted 4th
+profile). window=12h (cc.fable's arbitration — a 24h window lets one complete cc
+fan-out camp the global cap for a full day and structurally starves cx across
+sweep cycles; 12h lets cc's reservations expire before the next ~20h sweep tick).
+reserve_floor=0.25 (cx's grounding, fable concurred — matches the strictest
+existing `shared_quota_reserve` family value; checked per-subject, never a
+cross-peer aggregate). Full reasoning + evidence: `_sys/ai/policy-decisions.json`
+decision `h1-h2-canary-budget-ratification-2026-07-20`; commit `f1a5c9d`.
 
 ---
 
