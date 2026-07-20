@@ -92,6 +92,30 @@
           "expected": 0.25
         }
       ]
+    },
+    {
+      "decision_id": "engram-refactor-blueprint-shrink-2026-07-20",
+      "title": "Shrink the Engram peer-collaboration-first refactor to a small v1; shelve the full architecture behind an activation gate",
+      "status": "applied",
+      "decided_at": "2026-07-20",
+      "decided_by": ["user", "ag", "cx", "cc.fable"],
+      "evidence_refs": [
+        "_sys/docs-v2/ops/engram-refactor-blueprint-2026-07-20.md"
+      ],
+      "applied_commit": "e58ad54",
+      "supersedes": null,
+      "checks": [
+        {
+          "kind": "text_contains",
+          "path": "_sys/docs-v2/ops/engram-refactor-blueprint-2026-07-20.md",
+          "expected_substring": "SHELVED — NOT AUTHORIZED FOR IMPLEMENTATION"
+        },
+        {
+          "kind": "text_contains",
+          "path": "_sys/docs-v2/00-MANIFEST.md",
+          "expected_substring": "ops/engram-refactor-blueprint-2026-07-20.md"
+        }
+      ]
     }
   ]
 }
