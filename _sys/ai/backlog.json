@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-20T04:50:00Z",
+  "updated_at": "2026-07-20T08:45:00Z",
   "items": [
     {
       "id": "T63",
@@ -2186,6 +2186,41 @@
       "next_action": "DONE. Final item from the absent-audit consensus, intentionally built last (needed T76-T80's fixes as real building blocks). Added `hub.py freshness-sweep`: a single daily-cadence entry point across CLI tool version freshness (check_tool_updates --propose-diff), AI CLI reality drift (check_cli_reality auto-refresh, now real per T78), and policy decision drift (check_policy_ledger per T80). Mirrors the existing health-sweep/lesson-sweep action convention; added to _SYSTEM_EXEMPT_ACTIONS in both hub.py and its independent operational_guard_matrix.py mirror. Strictly detection-only (every sub-check is already propose/detect-only, never mutates orchestration.json/runtimes.json), findings go to PENDING_ISSUES, self-gated to a 20h min interval (--force override), each sub-check independently exception-guarded. Live-verified end to end against the real .ai root (safe -- canary_config.budget_cap unset makes real AI spend structurally impossible, confirmed via 'skipped_budget_disabled'); found a REAL P0 (cc's declared claude-sonnet-5 vs a stale 2026-07-12 observed-models capture still showing claude-sonnet-4-6) -- proof the mechanism works. Refreshing that stale capture is a separate unratified budget-policy decision (H1/H2), intentionally out of scope here.",
       "risk": null,
       "last_verified_at": "2026-07-20T11:20:00+09:00"
+    },
+    {
+      "id": "T82",
+      "title": "evaluate Engram blueprint activation gate (peer-collaboration-first refactor)",
+      "status": "deferred",
+      "priority": "low",
+      "category": "architecture",
+      "owner": "unassigned",
+      "blocker": "waiting on the 5-part activation gate in the blueprint doc (named accountable-owner integration + committed delivery intent + concrete unsatisfiable use case + executable conformance fixtures + maintenance/funding commitment), OR a monolith-caused operational failure that reopens review (still requires fresh R:10 approval either way)",
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/docs-v2/ops/engram-refactor-blueprint-2026-07-20.md"
+      ],
+      "next_action": "DO NOT IMPLEMENT without re-checking the activation gate in the blueprint doc §0 first. 10-round mandatory-minimum debate (user-requested reframing of Engram: portable-dev-env as secondary, peer-collaboration hub as primary, easy-install/embeddable-by-other-apps as the goal) unanimously converged rounds 1-6 on a full distributed architecture (JSONL/MCP wire protocol, PeerAdapter/UsageProvider split, effect-based governance tiers, client attribution), then unanimously REVERSED rounds 6-7 after a mandated red-team pass found zero validated second consumer while real operational failures sat unaddressed. Full shelved design preserved in the blueprint doc for if/when the gate fires. This backlog item is 'evaluate the gate', not 'implement Engram' -- do not reopen implementation on this item alone; a genuine trigger firing requires a fresh R:10 round citing which trigger and against which named consumer or measured failure.",
+      "risk": "building any of the shelved architecture without the gate firing is the exact speculative-infrastructure failure mode this debate spent rounds 6-10 correcting",
+      "last_verified_at": "2026-07-20T17:45:00+09:00"
+    },
+    {
+      "id": "T83",
+      "title": "hub.py lease/session-state concurrency bug: peer_id-keyed leases clobber, session read-modify-write races",
+      "status": "active",
+      "priority": "medium",
+      "category": "hub",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/core/hub.py",
+        "_sys/docs-v2/ops/engram-refactor-blueprint-2026-07-20.md"
+      ],
+      "next_action": "Found and empirically reproduced during the Engram refactor debate (see blueprint doc SS2), independent of that debate's shelved architecture -- this is a real bug in TODAY's code, fix on the current tree. (1) _lease_open writes data[peer_id]=entry (hub.py:8998), keyed by peer_id alone -- two concurrent asks to the same peer/profile clobber each other's lease. (2) _lease_close guards on pid match (hub.py:9021) but silently no-ops on mismatch instead of raising. (3) _lease_renew (hub.py:9010) has NO pid guard at all -- the survivor's heartbeat keeps renewing the clobbered entry. (4) _set_active_session reads before _save_session_state's ss_{peer_id} lock (hub.py:3501-3524) -- lost-update race. [empirical_probe, 2026-07-20]: cx.deepthink reproduced the lease clobber live via a disposable non-production probe (two opens for the same peer, distinct ask IDs/PIDs -> only one record survived; closing the first PID left the second's record open). Fix design (full consensus, 3-way unanimous): _lease_open generates str(uuid.uuid4()) as an independent lease_id dict key (NOT peer_id, NOT ask_id -- ask_id's default _short_id() is uuid.uuid4().hex[:4], only 65536 values, a real birthday-bound collision risk verified against hub.py:1061-1062); _lease_renew/_lease_close require the exact lease_id, raise a typed ownership error on mismatch (never silent no-op); a new _mutate_session_state(peer_id, ai_root, mutator) transactional helper (lock->load->apply->atomic-write all inside the lock) replaces the unlocked-read pattern. Consumers to update: _lease_sweep, action_lease_status, _normalize_runtime_files, snapshot._build_session_rows, provisioner._is_peer_leased (match by entry['peer_id'], never dict key). Legacy peer-keyed records get read-compat until they close/expire naturally. Full regression suite spec is in the blueprint doc SS1 item 2. DIR-003: test_contracts.py updates land in the same commit if _lease_cfg/_build_session_cmd/any action_* signature changes.",
+      "risk": "masked today by the 'one coordinator per room' usage pattern; surfaces the moment two profiles sharing a root peer's lease handling run concurrently (e.g. via multi-client access, or two profiles of the same peer used concurrently)",
+      "last_verified_at": "2026-07-20T17:45:00+09:00"
     }
   ]
 }
