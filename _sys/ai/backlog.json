@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-20T02:20:00Z",
+  "updated_at": "2026-07-20T04:50:00Z",
   "items": [
     {
       "id": "T63",
@@ -1949,7 +1949,9 @@
       "category": "diag",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "9b24527"
+      ],
       "supersedes": [],
       "source_refs": [
         "_sys/cli/diag.py"
