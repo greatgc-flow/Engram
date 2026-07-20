@@ -42,6 +42,10 @@ def _update_health_json(health_file: Path, size_mb: float, status: str) -> None:
     """Update the Claude runtime health manifest."""
     try:
         data = json.loads(health_file.read_text(encoding="utf-8")) if health_file.exists() else {}
+    except Exception:
+        data = {}
+
+    try:
         ts = datetime.now().strftime("%Y%m%d%H%M%S")
         data["context_health"] = {
             "jsonl_mb": size_mb,
@@ -56,6 +60,10 @@ def _update_health_json(health_file: Path, size_mb: float, status: str) -> None:
 def _mark_health_error(health_file: Path, dt: str) -> None:
     try:
         data = json.loads(health_file.read_text(encoding="utf-8")) if health_file.exists() else {}
+    except Exception:
+        data = {}
+
+    try:
         data.setdefault("session_health", {})["last_failure_reason"] = f"context_health_failed_{dt}"
         health_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception:
