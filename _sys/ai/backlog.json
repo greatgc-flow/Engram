@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-20T01:40:00Z",
+  "updated_at": "2026-07-20T02:20:00Z",
   "items": [
     {
       "id": "T63",
@@ -2163,6 +2163,27 @@
       "next_action": "DONE. cx design from the absent-audit consensus, motivated by a real incident: intelligence-scores.md's status banner said the arbiter_models expansion (commit ab3af8f) was 'OPEN and unapplied' for hours after it had actually landed -- nobody re-checked the banner against real config, caught only by chance. Added policy-decisions.json (lightweight, git-tracked: decision_id/status/evidence_refs/applied_commit/checks) and check_policy_ledger.py, which re-verifies every 'applied' decision's checks (json_value pointer-into-config, or text_contains in a doc) against live file contents. Wired into the local pre-commit hook (CHK-LEDGER) alongside CHK-01/02/ENC/CONST. Seeded with 3 real decisions from this session, all verified clean against the live tree (working infrastructure, not a stub). Note: .git/hooks/pre-commit is local-machine config (not git-tracked), same pre-existing limitation as CHK-ENC/CHK-CONST -- not introduced by this change.",
       "risk": null,
       "last_verified_at": "2026-07-20T10:40:00+09:00"
+    },
+    {
+      "id": "T81",
+      "title": "no single scheduled entry point to detect CLI tool / AI model / policy drift",
+      "status": "done",
+      "priority": "medium",
+      "category": "hub",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [
+        "6660b2f"
+      ],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/core/hub.py",
+        "_sys/core/operational_guard_matrix.py",
+        "_sys/tests/unit/test_freshness_sweep.py"
+      ],
+      "next_action": "DONE. Final item from the absent-audit consensus, intentionally built last (needed T76-T80's fixes as real building blocks). Added `hub.py freshness-sweep`: a single daily-cadence entry point across CLI tool version freshness (check_tool_updates --propose-diff), AI CLI reality drift (check_cli_reality auto-refresh, now real per T78), and policy decision drift (check_policy_ledger per T80). Mirrors the existing health-sweep/lesson-sweep action convention; added to _SYSTEM_EXEMPT_ACTIONS in both hub.py and its independent operational_guard_matrix.py mirror. Strictly detection-only (every sub-check is already propose/detect-only, never mutates orchestration.json/runtimes.json), findings go to PENDING_ISSUES, self-gated to a 20h min interval (--force override), each sub-check independently exception-guarded. Live-verified end to end against the real .ai root (safe -- canary_config.budget_cap unset makes real AI spend structurally impossible, confirmed via 'skipped_budget_disabled'); found a REAL P0 (cc's declared claude-sonnet-5 vs a stale 2026-07-12 observed-models capture still showing claude-sonnet-4-6) -- proof the mechanism works. Refreshing that stale capture is a separate unratified budget-policy decision (H1/H2), intentionally out of scope here.",
+      "risk": null,
+      "last_verified_at": "2026-07-20T11:20:00+09:00"
     }
   ]
 }
