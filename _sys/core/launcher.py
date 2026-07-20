@@ -194,7 +194,8 @@ def main(ctx: dict) -> None:
     def log(msg: str) -> None:
         print(msg)
         try:
-            log_file.write_text(log_file.read_text(encoding="utf-8") + msg + "\n" if log_file.exists() else msg + "\n", encoding="utf-8")
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(msg + "\n")
         except Exception:
             pass
 
