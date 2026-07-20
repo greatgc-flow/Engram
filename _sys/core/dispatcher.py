@@ -117,10 +117,12 @@ def _run_operation(op_id: str, op_cfg: dict, ctx: dict):
         raise
 
     if _result_failed(result):
-        detail = result.get("detail") or result.get("failed") or result
+        detail = (result.get("detail") or result.get("failed") or result) if isinstance(result, dict) else result
         print(f"  [Error] Operation '{op_id}' returned failure: {detail}")
         if failure not in ("continue", "warn"):
             raise RuntimeError(f"operation '{op_id}' failed: {detail}")
+        if not isinstance(result, dict):
+            result = {"status": "failed", "operation": op_id, "detail": detail}
     return result
 
 
