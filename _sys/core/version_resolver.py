@@ -47,7 +47,10 @@ def _save_cache(cache_path: Path, cache: dict[str, Any]) -> None:
 
 
 def _cache_get(cache: dict[str, Any], provider: str, discovery_id: str) -> dict[str, Any]:
-    entry = cache.get(provider, {}).get(discovery_id, {})
+    provider_cache = cache.get(provider, {})
+    if not isinstance(provider_cache, dict):
+        provider_cache = {}
+    entry = provider_cache.get(discovery_id, {})
     return entry if isinstance(entry, dict) else {}
 
 
