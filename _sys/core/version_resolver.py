@@ -176,11 +176,38 @@ def _gh_api_latest(discovery_id: str, etag: str | None) -> tuple[int, dict[str, 
     return status_code, headers, body
 
 
+# Order matters: "x86_64"/"amd64"/"x64" must be checked before the generic
+# "x86" marker, since "x86" is a substring of "x86_64" (a false match there
+# would misclassify a 64-bit asset as 32-bit).
+_ARM_ASSET_MARKERS = ("aarch64", "arm64", "armv7", "armhf")
+_X64_ASSET_MARKERS = ("x86_64", "x86-64", "amd64", "x64")
+_X86_ASSET_MARKERS = ("i686", "i386", "x86")
+_CHECKSUM_ASSET_MARKERS = ("sha256", "sha512", "checksums", ".sig", ".asc", ".sbom")
+
+
+def _classify_windows_asset_arch(name: str) -> str:
+    if any(marker in name for marker in _ARM_ASSET_MARKERS):
+        return "arm"
+    if any(marker in name for marker in _X64_ASSET_MARKERS):
+        return "x64"
+    if any(marker in name for marker in _X86_ASSET_MARKERS):
+        return "x86"
+    return "unknown"
+
+
 def _pick_windows_asset(release: dict[str, Any]) -> str | None:
+    """Deterministic asset selection: filter to real Windows archives/binaries,
+    hard-exclude ARM builds and checksum/signature files, then prefer an
+    explicit 64-bit x86 build. Previously this ranked assets by a substring
+    score that missed "aarch64" (only checked "arm64") and missed "x86_64"
+    (only checked "x64"/"amd64"), so a real x86_64 build and a real aarch64
+    build could tie -- picking whichever GitHub happened to list first in
+    that release's asset order (confirmed live: an aarch64 ripgrep build was
+    proposed for an x86_64 machine, see runtimes.json history)."""
     assets = release.get("assets", [])
     if not isinstance(assets, list):
         return None
-    ranked: list[tuple[int, str]] = []
+    candidates: list[tuple[str, str]] = []
     for asset in assets:
         if not isinstance(asset, dict):
             continue
@@ -188,20 +215,21 @@ def _pick_windows_asset(release: dict[str, Any]) -> str | None:
         url = asset.get("browser_download_url")
         if not url:
             continue
-        score = 0
-        if "win" in name or "windows" in name:
-            score += 10
-        if "x64" in name or "amd64" in name:
-            score += 5
-        if name.endswith((".zip", ".exe", ".7z.exe")):
-            score += 2
-        if "arm64" in name or "sha" in name or "checksums" in name:
-            score -= 10
-        ranked.append((score, str(url)))
-    if not ranked:
-        return None
-    ranked.sort(key=lambda item: item[0], reverse=True)
-    return ranked[0][1] if ranked[0][0] > 0 else None
+        if not ("win" in name or "windows" in name):
+            continue
+        if any(marker in name for marker in _CHECKSUM_ASSET_MARKERS):
+            continue
+        if not name.endswith((".zip", ".exe", ".7z")):
+            continue
+        arch = _classify_windows_asset_arch(name)
+        if arch == "arm":
+            continue
+        candidates.append((arch, str(url)))
+    for wanted in ("x64", "x86", "unknown"):
+        for arch, url in candidates:
+            if arch == wanted:
+                return url
+    return None
 
 
 def _github_from_http_result(

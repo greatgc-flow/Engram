@@ -171,3 +171,81 @@ def test_sqlite_page_parse_success_with_sha3(monkeypatch):
     assert result["url"] == "https://www.sqlite.org/2026/sqlite-tools-win-x64-3530100.zip"
     assert result["checksum_algo"] == "sha3_256"
     assert result["checksum_value"] == "abcdef012345"
+
+
+def _asset(name, url=None):
+    return {"name": name, "browser_download_url": url or f"https://example/{name}"}
+
+
+def test_classify_windows_asset_arch_x64_markers():
+    for name in ("ripgrep-15.2.0-x86_64-pc-windows-msvc.zip", "gh_2.96.0_windows_amd64.zip",
+                 "tool-windows-x64.exe", "tool-x86-64-win.zip"):
+        assert vr._classify_windows_asset_arch(name) == "x64", name
+
+
+def test_classify_windows_asset_arch_arm_markers():
+    for name in ("ripgrep-15.2.0-aarch64-pc-windows-msvc.zip", "tool-windows-arm64.exe",
+                 "tool-armv7-windows.zip"):
+        assert vr._classify_windows_asset_arch(name) == "arm", name
+
+
+def test_classify_windows_asset_arch_x86_32bit_not_confused_with_x64():
+    assert vr._classify_windows_asset_arch("tool-i686-pc-windows-msvc.zip") == "x86"
+    assert vr._classify_windows_asset_arch("tool-i386-windows.zip") == "x86"
+
+
+def test_pick_windows_asset_prefers_x86_64_regardless_of_asset_order():
+    # Regression for the live incident: a real x86_64 build and a real
+    # aarch64 build used to tie under the old substring-score heuristic
+    # ("arm64" check missed "aarch64", "x64"/"amd64" check missed "x86_64"),
+    # so whichever GitHub listed first in the release payload won.
+    release_arm_first = {"assets": [
+        _asset("ripgrep-15.2.0-aarch64-pc-windows-msvc.zip", "https://x/aarch64.zip"),
+        _asset("ripgrep-15.2.0-x86_64-pc-windows-msvc.zip", "https://x/x86_64.zip"),
+    ]}
+    release_x64_first = {"assets": [
+        _asset("ripgrep-15.2.0-x86_64-pc-windows-msvc.zip", "https://x/x86_64.zip"),
+        _asset("ripgrep-15.2.0-aarch64-pc-windows-msvc.zip", "https://x/aarch64.zip"),
+    ]}
+    assert vr._pick_windows_asset(release_arm_first) == "https://x/x86_64.zip"
+    assert vr._pick_windows_asset(release_x64_first) == "https://x/x86_64.zip"
+
+
+def test_pick_windows_asset_excludes_arm_even_when_only_candidate():
+    release = {"assets": [_asset("tool-windows-arm64.zip")]}
+    assert vr._pick_windows_asset(release) is None
+
+
+def test_pick_windows_asset_excludes_checksum_and_signature_files():
+    release = {"assets": [
+        _asset("tool-windows-amd64.zip.sha256"),
+        _asset("checksums.txt"),
+        _asset("tool-windows-amd64.zip.sig"),
+        _asset("tool-windows-amd64.zip", "https://x/real.zip"),
+    ]}
+    assert vr._pick_windows_asset(release) == "https://x/real.zip"
+
+
+def test_pick_windows_asset_falls_back_to_x86_when_no_x64_build_exists():
+    release = {"assets": [_asset("tool-i686-pc-windows-msvc.zip", "https://x/x86.zip")]}
+    assert vr._pick_windows_asset(release) == "https://x/x86.zip"
+
+
+def test_pick_windows_asset_ignores_non_windows_and_non_archive_assets():
+    release = {"assets": [
+        _asset("tool-linux-amd64.tar.gz"),
+        _asset("tool-macos-amd64.tar.gz"),
+        _asset("README.md"),
+        _asset("tool-windows-amd64.exe", "https://x/win.exe"),
+    ]}
+    assert vr._pick_windows_asset(release) == "https://x/win.exe"
+
+
+def test_pick_windows_asset_no_windows_assets_returns_none():
+    release = {"assets": [_asset("tool-linux-amd64.tar.gz")]}
+    assert vr._pick_windows_asset(release) is None
+
+
+def test_pick_windows_asset_non_list_assets_returns_none():
+    assert vr._pick_windows_asset({"assets": "not-a-list"}) is None
+    assert vr._pick_windows_asset({}) is None
