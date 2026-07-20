@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-20T01:15:00Z",
+  "updated_at": "2026-07-20T01:40:00Z",
   "items": [
     {
       "id": "T63",
@@ -2142,6 +2142,27 @@
       "next_action": "DONE (infrastructure only, no consumer yet). cx design from the absent-audit consensus: added selection_mode (pinned|track_family_current|manual_exception), required on every enabled profile, validated in check_config.py; manual_exception additionally requires a non-empty selection_mode_reason. Declared honestly on all 12 current profiles as 'pinned' -- every declared model_id in this system today is an exact pin, no family-tracking alias exists anywhere, so this is truthful, not aspirational. No behavior changes yet: this is the field Task 10's freshness-sweep is designed to read to decide alert severity (a pinned profile going stale is a real problem; a track_family_current one drifting is expected) -- intentionally deferred to that task per the original plan, since it's the actual consumer.",
       "risk": null,
       "last_verified_at": "2026-07-20T10:15:00+09:00"
+    },
+    {
+      "id": "T80",
+      "title": "prose policy docs silently diverge from applied config with no machine check",
+      "status": "done",
+      "priority": "medium",
+      "category": "policy",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [
+        "8a0d0b1"
+      ],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/ai/policy-decisions.json",
+        "_sys/checks/check_policy_ledger.py",
+        "_sys/tests/unit/test_check_policy_ledger.py"
+      ],
+      "next_action": "DONE. cx design from the absent-audit consensus, motivated by a real incident: intelligence-scores.md's status banner said the arbiter_models expansion (commit ab3af8f) was 'OPEN and unapplied' for hours after it had actually landed -- nobody re-checked the banner against real config, caught only by chance. Added policy-decisions.json (lightweight, git-tracked: decision_id/status/evidence_refs/applied_commit/checks) and check_policy_ledger.py, which re-verifies every 'applied' decision's checks (json_value pointer-into-config, or text_contains in a doc) against live file contents. Wired into the local pre-commit hook (CHK-LEDGER) alongside CHK-01/02/ENC/CONST. Seeded with 3 real decisions from this session, all verified clean against the live tree (working infrastructure, not a stub). Note: .git/hooks/pre-commit is local-machine config (not git-tracked), same pre-existing limitation as CHK-ENC/CHK-CONST -- not introduced by this change.",
+      "risk": null,
+      "last_verified_at": "2026-07-20T10:40:00+09:00"
     }
   ]
 }
