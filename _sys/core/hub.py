@@ -7341,7 +7341,7 @@ def _has_finalized_consensus(ai_root: Path) -> bool:
     return False
 
 
-_SYSTEM_EXEMPT_ACTIONS = {"consensus-sweep", "health-sweep", "health-update", "health-check",
+_SYSTEM_EXEMPT_ACTIONS = {"consensus-sweep", "health-sweep", "freshness-sweep", "health-update", "health-check",
                           "health-precheck", "transient-scan", "lease-sweep", "lesson-sweep",
                           "update-signatures", "init-session", "end-session", "context-fill",
                           "context-hash", "context-ack", "peer-recover", "peer-quarantine"}
@@ -9539,6 +9539,110 @@ def action_health_sweep(ai_root: Path) -> None:
     print(f"[HUB] HEALTH-SWEEP stale={swept}")
 
 
+_FRESHNESS_SWEEP_STATE_NAME = "freshness_sweep_state.json"
+_FRESHNESS_SWEEP_MIN_INTERVAL_HOURS = 20.0
+
+
+def _freshness_sweep_state_path(ai_root: Path) -> Path:
+    return ai_root / _FRESHNESS_SWEEP_STATE_NAME
+
+
+def action_freshness_sweep(ai_root: Path, force: bool = False, now_ts: float | None = None) -> None:
+    """Task 10 (2026-07-19/20 absent-audit consensus): a single detection-only
+    entry point, meant to run on a daily cadence, across the three drift
+    sources built this session -- CLI tool version freshness (Task 6's
+    deterministic asset picker), AI CLI reality drift (Task 7's now-working
+    auto-refresh, itself real-budget-gated via canary_budget), and policy
+    decision drift (Task 9's ledger). NEVER auto-applies anything -- every
+    sub-check here is already a propose/detect-only path (check_tool_updates
+    --propose-diff writes a proposal artifact, never touches the real
+    runtimes.json; check_cli_reality never mutates orchestration.json;
+    check_policy_ledger only reads). Findings go to PENDING_ISSUES so a peer
+    picks them up in the next handoff; nothing here is a substitute for a
+    human/consensus decision to actually apply a change.
+
+    Self-gated to _FRESHNESS_SWEEP_MIN_INTERVAL_HOURS so a stray extra
+    invocation doesn't re-spend the same real HTTP/subprocess/canary-budget
+    cost twice in one day -- mirrors the "budget-guarded" requirement at the
+    single entry point rather than trusting every sub-check's own gating.
+    """
+    now_ts = now_ts if now_ts is not None else time.time()
+    state_path = _freshness_sweep_state_path(ai_root)
+    state = _read_json(state_path)
+    last_run_ts = state.get("last_run_ts")
+    if not force and isinstance(last_run_ts, (int, float)):
+        age_hours = (now_ts - last_run_ts) / 3600.0
+        if age_hours < _FRESHNESS_SWEEP_MIN_INTERVAL_HOURS:
+            print(f"[HUB] FRESHNESS-SWEEP skipped (last run {age_hours:.1f}h ago, "
+                  f"min interval {_FRESHNESS_SWEEP_MIN_INTERVAL_HOURS}h; use --force to override)")
+            return
+
+    findings: list[str] = []
+    checks_run: list[str] = []
+
+    sys_dir = Path(__file__).resolve().parent.parent  # _sys/
+    checks_dir = str(sys_dir / "checks")
+    if checks_dir not in sys.path:
+        sys.path.insert(0, checks_dir)
+
+    # B.1: CLI tool version freshness -- propose-diff only, never installs or
+    # touches the real runtimes.json (writes a dated artifact under _archive/).
+    try:
+        import check_tool_updates
+        result = check_tool_updates.run(propose_diff=True)
+        discovered = result.get("updates_discovered") or []
+        checks_run.append("tool-updates")
+        if discovered:
+            names = ", ".join(sorted(u.get("tool", "?") for u in discovered))
+            findings.append(f"tool-updates: {len(discovered)} update(s) available ({names})")
+        if result.get("errors"):
+            findings.append(f"tool-updates: {len(result['errors'])} discovery error(s)")
+    except Exception as exc:
+        findings.append(f"tool-updates: sweep failed: {type(exc).__name__}: {exc}")
+
+    # B.2: AI CLI reality drift -- auto_refresh_observed is itself real-
+    # budget-gated (canary_budget.reserve_canary_invocation per profile) and
+    # interval-gated per peer; run() with live=False is a cheap read of the
+    # already-captured observed file, no new subprocess calls.
+    try:
+        import check_cli_reality
+        refresh_results = check_cli_reality.auto_refresh_observed(ai_root=ai_root, now_ts=now_ts)
+        checks_run.append("cli-reality")
+        denied = {p: r for p, r in refresh_results.items() if r not in ("interval_not_expired", "refreshed")}
+        if denied:
+            findings.append(f"cli-reality: refresh denied for {denied}")
+        report = check_cli_reality.run(live=False)
+        drift = report.get("drift_summary", {})
+        if drift.get("total"):
+            findings.append(
+                f"cli-reality: {drift['total']} drift item(s) "
+                f"(P0={drift.get('p0', 0)} P1={drift.get('p1', 0)})"
+            )
+    except Exception as exc:
+        findings.append(f"cli-reality: sweep failed: {type(exc).__name__}: {exc}")
+
+    # B.3: policy decision ledger drift -- read-only.
+    try:
+        import check_policy_ledger
+        ledger_errors = check_policy_ledger.check_policy_ledger()
+        checks_run.append("policy-ledger")
+        if ledger_errors:
+            findings.append(f"policy-ledger: {len(ledger_errors)} drift item(s)")
+    except Exception as exc:
+        findings.append(f"policy-ledger: sweep failed: {type(exc).__name__}: {exc}")
+
+    now_str = _now()
+    _write_json(state_path, {
+        "last_run_ts": now_ts,
+        "last_run_at": now_str,
+        "checks_run": checks_run,
+        "findings": findings,
+    })
+    for f in findings:
+        _append_handoff_item(ai_root, "PENDING_ISSUES", f"{now_str} freshness-sweep: {f}")
+    print(f"[HUB] FRESHNESS-SWEEP checks={len(checks_run)} findings={len(findings)}")
+
+
 def _check_flag_parity() -> list[str]:
     """Verify live adapter commands and peer_console defaults agree on security flags."""
     import importlib.util
@@ -9856,9 +9960,11 @@ def main() -> None:
         prog="hub",
         description="AI collaboration hub - Protocol v4.2",
     )
-    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-all", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "terminal-handoff", "terminal-duty-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "thread-promote", "alert-raise", "proposal-add", "proposal-vote", "proposal-list", "broker-submit", "broker-drain", "broker-status", "update-signatures", "arbiter-review"])
+    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-all", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "freshness-sweep", "terminal-handoff", "terminal-duty-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "thread-promote", "alert-raise", "proposal-add", "proposal-vote", "proposal-list", "broker-submit", "broker-drain", "broker-status", "update-signatures", "arbiter-review"])
     parser.add_argument("--ai-root", dest="ai_root",
                         help="Explicit .ai root; pins HUB_AI_ROOT for this process (deterministic; avoids the cwd-phantom bug)")
+    parser.add_argument("--force", action="store_true",
+                        help="freshness-sweep: bypass the min-interval gate and run now")
     parser.add_argument("--needs")
     parser.add_argument("--effort", default="mid")
     parser.add_argument("--agent")
@@ -10138,6 +10244,8 @@ def main() -> None:
         action_health_precheck(ai_root, args.needs, args.peer)
     elif act == "health-sweep":
         action_health_sweep(ai_root)
+    elif act == "freshness-sweep":
+        action_freshness_sweep(ai_root, force=args.force)
     elif act == "terminal-duty-sweep":
         action_terminal_duty_sweep(ai_root)
     elif act == "terminal-handoff":

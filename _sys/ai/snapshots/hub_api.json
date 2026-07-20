@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-07-17T16:31:19",
+  "generated_at": "2026-07-20T11:14:18",
   "source": "hub.py",
-  "count": 85,
+  "count": 86,
   "signatures": {
     "_lease_cfg": {
       "params": {
@@ -819,6 +819,25 @@
           "kind": "POSITIONAL_OR_KEYWORD",
           "default": "",
           "annotation": "str"
+        }
+      },
+      "return": "None"
+    },
+    "action_freshness_sweep": {
+      "params": {
+        "ai_root": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": "Path"
+        },
+        "force": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "default": false,
+          "annotation": "bool"
+        },
+        "now_ts": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "default": null,
+          "annotation": "float | None"
         }
       },
       "return": "None"

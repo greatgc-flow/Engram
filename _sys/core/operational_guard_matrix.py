@@ -25,7 +25,7 @@ RECOVERY_COORDINATOR_STATES = ("RED", "STALE", "RATE_LIMITED", "MISSING")
 # Mirrors hub.py's _SYSTEM_EXEMPT_ACTIONS exactly (kept as an independent literal,
 # not imported from hub.py, so this oracle can't silently inherit a hub.py bug).
 SYSTEM_EXEMPT_ACTIONS = {
-    "consensus-sweep", "health-sweep", "health-update", "health-check",
+    "consensus-sweep", "health-sweep", "freshness-sweep", "health-update", "health-check",
     "health-precheck", "transient-scan", "lease-sweep", "lesson-sweep",
     "update-signatures", "init-session", "end-session", "context-fill",
     "context-hash", "context-ack", "peer-recover", "peer-quarantine",
