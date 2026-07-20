@@ -251,6 +251,12 @@ class TestRunNoLive:
 
 class TestAutoRefresh:
     def test_auto_refresh_logic(self, monkeypatch, tmp_path):
+        # 2026-07-20: check_and_update_budget() is a deprecated shim that
+        # always returns False -- auto_refresh_observed() no longer gates on
+        # it (that was the actual bug: every refresh silently skipped
+        # forever). Real budget denial now flows through run_canary()'s own
+        # per-profile canary_budget reservation, expressed here as SKIP
+        # verdicts, matching production behavior exactly.
         from datetime import datetime, timezone
 
         orch = {
@@ -269,20 +275,20 @@ class TestAutoRefresh:
                 return {"sha256": "hash_v1"}
             return {"sha256": "unknown"}
         monkeypatch.setattr(ccr, "fingerprint", mock_fingerprint)
+        monkeypatch.setattr(ccr, "probe_enumerated_models", lambda peer, orch, timeout=20: None)
 
-        # Mock check_and_update_budget
+        # Mock run_canary: budget_ok toggles between real PASS verdicts and
+        # the SKIP verdicts run_canary itself returns on a real budget denial.
         budget_ok = True
-        def mock_check_budget(*args, **kwargs):
-            return budget_ok
-
-        # Mock run_canary
         probes_called = []
+
         def mock_run_canary(*args, **kwargs):
             probes_called.append(kwargs.get('peers'))
-            return [{"peer": "ag", "status": "PASS", "model": "Model-A", "profile": "p1"}]
+            if budget_ok:
+                return [{"peer": "ag", "status": "PASS", "model": "Model-A", "profile": "p1"}]
+            return [{"peer": "ag", "profile": "p1", "status": "SKIP", "reason": "budget"}]
 
         import check_cli_canary
-        monkeypatch.setattr(check_cli_canary, "check_and_update_budget", mock_check_budget)
         monkeypatch.setattr(check_cli_canary, "run_canary", mock_run_canary)
 
         # Scenario 1: changed hash (no existing data) -> proceeds to probe
@@ -297,6 +303,7 @@ class TestAutoRefresh:
         saved = json.loads(observed_file.read_text(encoding="utf-8"))
         assert saved["ag"]["fingerprint"] == "hash_v1"
         assert "Model-A" in saved["ag"]["models"]
+        assert saved["ag"]["models_source"] == "confirmed"
 
         # Scenario 2: under 24h old AND hash unchanged -> no refresh
         now_1h = now + 3600
@@ -316,12 +323,14 @@ class TestAutoRefresh:
 
         # Scenario 4 (T16): same expired-but-unchanged case again (>= 24h
         # past scenario 3's refresh, since captured_at was just bumped), but
-        # budget is exhausted -> must not probe, must report skipped_budget.
+        # the real budget ledger denies (run_canary returns all-SKIP) ->
+        # must report the real denial reason, not silently succeed.
         now_50h = now + 50 * 3600
         budget_ok = False
         res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now_50h)
         assert res["ag"] == "skipped_budget"
-        assert len(probes_called) == 0
+        assert ["ag"] in probes_called
+        probes_called.clear()
 
         # Scenario 5: changed hash -> proceeds to probe, but budget exhausted
         def mock_fingerprint_v2(path):
@@ -329,10 +338,182 @@ class TestAutoRefresh:
         monkeypatch.setattr(ccr, "fingerprint", mock_fingerprint_v2)
         res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now_25h)
         assert res["ag"] == "skipped_budget"
-        assert len(probes_called) == 0
+        assert ["ag"] in probes_called
+        probes_called.clear()
 
         # Scenario 6: changed hash, budget ok -> refreshed
         budget_ok = True
         res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now_25h)
         assert res["ag"] == "refreshed"
         assert ["ag"] in probes_called
+
+    def test_auto_refresh_never_calls_deprecated_budget_shim(self, monkeypatch, tmp_path):
+        # Regression: the old gate called check_and_update_budget(), which
+        # always returns False, silently skipping every refresh forever.
+        # Assert the deprecated shim is never even invoked anymore.
+        from datetime import datetime, timezone
+
+        orch = {
+            "canary_config": {"budget_cap": 10, "budget_window_hours": 5.0},
+            "hub_nodes": [
+                {"node_id": "ag", "type": "peer", "enabled": True, "invoke": str(tmp_path / "ag.exe")},
+            ],
+        }
+        ai_root = tmp_path / ".ai"
+        ai_root.mkdir()
+        monkeypatch.setattr(ccr, "fingerprint", lambda path: {"sha256": "hash_v1"})
+        monkeypatch.setattr(ccr, "probe_enumerated_models", lambda peer, orch, timeout=20: None)
+
+        import check_cli_canary
+
+        def fail_if_called(*_a, **_k):
+            raise AssertionError("check_and_update_budget must not be called anymore")
+        monkeypatch.setattr(check_cli_canary, "check_and_update_budget", fail_if_called)
+        monkeypatch.setattr(
+            check_cli_canary, "run_canary",
+            lambda *a, **k: [{"peer": "ag", "status": "PASS", "model": "Model-A", "profile": "p1"}])
+
+        now = datetime.now(timezone.utc).timestamp()
+        res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now)
+        assert res["ag"] == "refreshed"
+
+    def test_auto_refresh_skip_reason_reflects_real_denial_kind(self, monkeypatch, tmp_path):
+        from datetime import datetime, timezone
+
+        orch = {"hub_nodes": [
+            {"node_id": "ag", "type": "peer", "enabled": True, "invoke": str(tmp_path / "ag.exe")},
+        ]}
+        ai_root = tmp_path / ".ai"
+        ai_root.mkdir()
+        monkeypatch.setattr(ccr, "fingerprint", lambda path: {"sha256": "hash_v1"})
+        monkeypatch.setattr(ccr, "probe_enumerated_models", lambda peer, orch, timeout=20: None)
+
+        import check_cli_canary
+        monkeypatch.setattr(
+            check_cli_canary, "run_canary",
+            lambda *a, **k: [{"peer": "ag", "profile": "p1", "status": "SKIP", "reason": "quota_absent"}])
+
+        now = datetime.now(timezone.utc).timestamp()
+        res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now)
+        assert res["ag"] == "skipped_quota_absent"
+
+    def test_auto_refresh_uses_enumerated_catalog_when_available(self, monkeypatch, tmp_path):
+        from datetime import datetime, timezone
+
+        orch = {"hub_nodes": [
+            {"node_id": "ag", "type": "peer", "enabled": True, "invoke": str(tmp_path / "ag.exe"),
+             "model_enumeration_argv": ["models"]},
+        ]}
+        ai_root = tmp_path / ".ai"
+        ai_root.mkdir()
+        observed_file = ai_root / "cli-reality-observed.json"
+        monkeypatch.setattr(ccr, "fingerprint", lambda path: {"sha256": "hash_v1"})
+
+        import check_cli_canary
+        monkeypatch.setattr(
+            check_cli_canary, "run_canary",
+            lambda *a, **k: [{"peer": "ag", "status": "PASS", "model": "Confirmed-Model", "profile": "p1"}])
+        monkeypatch.setattr(
+            ccr, "probe_enumerated_models",
+            lambda peer, orch, timeout=20: ["Real-Model-A", "Real-Model-B"])
+
+        now = datetime.now(timezone.utc).timestamp()
+        res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now)
+        assert res["ag"] == "refreshed"
+
+        import json
+        saved = json.loads(observed_file.read_text(encoding="utf-8"))
+        assert saved["ag"]["models"] == ["Real-Model-A", "Real-Model-B"]
+        assert saved["ag"]["models_source"] == "enumerated"
+
+
+class _FakeCompletedProcess:
+    def __init__(self, returncode=0, stdout=""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = ""
+
+
+class TestProbeEnumeratedModels:
+    """agy.exe has a real `models` subcommand (see AGY_REAL_MODELS -- a live
+    capture at the top of this file); cc/cx have no equivalent and both treat
+    an unmatched bare argument as a live prompt, so enumeration must be
+    strictly opt-in via a declared model_enumeration_argv, never attempted
+    on a peer that hasn't declared one."""
+
+    def test_no_declared_argv_returns_none_without_any_subprocess_call(self, monkeypatch, tmp_path):
+        orch = {"hub_nodes": [
+            {"node_id": "cc", "type": "peer", "enabled": True, "invoke": str(tmp_path / "cc.exe")},
+        ]}
+
+        def fail_if_called(*_a, **_k):
+            raise AssertionError("must not invoke subprocess for a peer with no declared argv")
+        monkeypatch.setattr(ccr.subprocess, "run", fail_if_called)
+
+        assert ccr.probe_enumerated_models("cc", orch) is None
+
+    def test_declared_argv_parses_stdout_lines(self, monkeypatch, tmp_path):
+        bin_path = tmp_path / "ag.exe"
+        bin_path.write_text("stub", encoding="utf-8")
+        orch = {"hub_nodes": [
+            {"node_id": "ag", "type": "peer", "enabled": True, "invoke": str(bin_path),
+             "model_enumeration_argv": ["models"]},
+        ]}
+        captured_argv = []
+
+        def fake_run(argv, capture_output=None, text=None, timeout=None):
+            captured_argv.extend(argv)
+            return _FakeCompletedProcess(returncode=0, stdout="\n".join(AGY_REAL_MODELS) + "\n")
+        monkeypatch.setattr(ccr.subprocess, "run", fake_run)
+
+        result = ccr.probe_enumerated_models("ag", orch)
+        assert result == AGY_REAL_MODELS
+        assert captured_argv == [str(bin_path), "models"]
+
+    def test_nonzero_exit_returns_none(self, monkeypatch, tmp_path):
+        bin_path = tmp_path / "ag.exe"
+        bin_path.write_text("stub", encoding="utf-8")
+        orch = {"hub_nodes": [
+            {"node_id": "ag", "type": "peer", "enabled": True, "invoke": str(bin_path),
+             "model_enumeration_argv": ["models"]},
+        ]}
+        monkeypatch.setattr(
+            ccr.subprocess, "run",
+            lambda *a, **k: _FakeCompletedProcess(returncode=1, stdout=""))
+        assert ccr.probe_enumerated_models("ag", orch) is None
+
+    def test_empty_stdout_returns_none(self, monkeypatch, tmp_path):
+        bin_path = tmp_path / "ag.exe"
+        bin_path.write_text("stub", encoding="utf-8")
+        orch = {"hub_nodes": [
+            {"node_id": "ag", "type": "peer", "enabled": True, "invoke": str(bin_path),
+             "model_enumeration_argv": ["models"]},
+        ]}
+        monkeypatch.setattr(
+            ccr.subprocess, "run",
+            lambda *a, **k: _FakeCompletedProcess(returncode=0, stdout="   \n\n"))
+        assert ccr.probe_enumerated_models("ag", orch) is None
+
+    def test_subprocess_failure_returns_none(self, monkeypatch, tmp_path):
+        bin_path = tmp_path / "ag.exe"
+        bin_path.write_text("stub", encoding="utf-8")
+        orch = {"hub_nodes": [
+            {"node_id": "ag", "type": "peer", "enabled": True, "invoke": str(bin_path),
+             "model_enumeration_argv": ["models"]},
+        ]}
+
+        def raise_timeout(*_a, **_k):
+            raise ccr.subprocess.TimeoutExpired(cmd="ag.exe", timeout=20)
+        monkeypatch.setattr(ccr.subprocess, "run", raise_timeout)
+        assert ccr.probe_enumerated_models("ag", orch) is None
+
+    def test_missing_binary_returns_none_without_subprocess_call(self, monkeypatch, tmp_path):
+        orch = {"hub_nodes": [
+            {"node_id": "ag", "type": "peer", "enabled": True, "invoke": str(tmp_path / "does_not_exist.exe"),
+             "model_enumeration_argv": ["models"]},
+        ]}
+
+        def fail_if_called(*_a, **_k):
+            raise AssertionError("must not invoke subprocess for a nonexistent binary")
+        monkeypatch.setattr(ccr.subprocess, "run", fail_if_called)
+        assert ccr.probe_enumerated_models("ag", orch) is None

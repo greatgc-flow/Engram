@@ -235,6 +235,44 @@ def probe_version(peer: str, orch: dict | None = None, timeout: int = 20) -> str
     return m.group(0) if m else None
 
 
+def probe_enumerated_models(peer: str, orch: dict | None = None, timeout: int = 20) -> list[str] | None:
+    """Run a peer's REAL, declared model-enumeration command (orchestration.json
+    hub_nodes[].model_enumeration_argv) and return its full real catalog, or
+    None if the peer has no declared enumeration capability or the probe
+    failed. Strictly opt-in per peer: only agy.exe currently has a genuine
+    non-interactive `models` subcommand (free, no quota spend); cc/cx have no
+    equivalent and both treat an unrecognized bare argument as a live prompt,
+    so this never guesses an argv for a peer that hasn't declared one -- that
+    would silently spend a real paid invocation instead of failing safely.
+    This is TRUE enumeration (the peer's whole real catalog), unlike the
+    canary path in load_observed_models() which only ever CONFIRMS models
+    that were already declared (see build_observed_capture's caveat)."""
+    if orch is None:
+        orch_path = SYS_DIR / "ai" / "orchestration.json"
+        orch = json.loads(orch_path.read_text(encoding="utf-8"))
+    node = next((n for n in orch.get("hub_nodes", []) if n.get("node_id") == peer), None)
+    argv = (node or {}).get("model_enumeration_argv")
+    if not isinstance(argv, list) or not argv:
+        return None
+    try:
+        binary = real_binary(peer, orch)
+    except (KeyError, ValueError, FileNotFoundError):
+        return None
+    if is_wrapper(binary) or not binary.exists():
+        return None
+    try:
+        out = subprocess.run(
+            [str(binary), *argv],
+            capture_output=True, text=True, timeout=timeout,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    models = [line.strip() for line in (out.stdout or "").splitlines() if line.strip()]
+    return models or None
+
+
 def load_observed_models(peer: str) -> list[str] | None:
     """Load a provenance-tagged verified capture of a peer's real model list from
     `.ai/cli-reality-observed.json` if present, else None (=> ABSENT). We do NOT
@@ -296,7 +334,9 @@ def auto_refresh_observed(
 ) -> dict[str, str]:
     """Auto-refresh cli-reality-observed.json if interval expired or hash changed.
     Uses SHA256 of the real CLI binary as the cache key to skip expensive real-invocation probes.
-    Reuses check_cli_canary budget mechanism.
+    Real budget enforcement happens inside check_cli_canary.run_canary() (per-profile
+    canary_budget.reserve_canary_invocation calls) -- this function no longer gates
+    on its own copy of the budget first.
     """
     from datetime import timezone
     if orch is None:
@@ -309,9 +349,9 @@ def auto_refresh_observed(
         ai_root = _AI_DIR
     if now_ts is None:
         now_ts = datetime.now(timezone.utc).timestamp()
-    
+
     import check_cli_canary
-    
+
     observed_path = ai_root / "cli-reality-observed.json"
     observed_data = {}
     if observed_path.exists():
@@ -320,7 +360,6 @@ def auto_refresh_observed(
         except Exception:
             pass
 
-    cap, window_hours = check_cli_canary.get_budget_config(orch)
     results = {}
     needs_save = False
 
@@ -349,9 +388,15 @@ def auto_refresh_observed(
                 results[peer] = "interval_not_expired"
                 continue
 
-        if not check_cli_canary.check_and_update_budget(ai_root, now_ts, cap, window_hours):
-            results[peer] = "skipped_budget"
-            continue
+        # 2026-07-20 absent-audit follow-up: this used to gate here on
+        # check_cli_canary.check_and_update_budget(), a deprecated
+        # compatibility shim that always returns False by design (its
+        # docstring: "fail closed" for callers not yet migrated to
+        # canary_budget). That made auto-refresh skip every peer,
+        # unconditionally, forever -- the real budget system
+        # (canary_budget.reserve_canary_invocation, per profile) was never
+        # reached. run_canary() below already reserves against that real
+        # ledger per profile; no separate gate is needed here.
 
         # Probe
         now_dt = datetime.fromtimestamp(now_ts, timezone.utc)
@@ -364,8 +409,16 @@ def auto_refresh_observed(
         )
 
         capture = check_cli_canary.build_observed_capture(verdicts, now=now_dt)
-        if peer in capture:
-            peer_data = capture[peer]
+        enumerated = probe_enumerated_models(peer, orch)
+        if peer in capture or enumerated:
+            peer_data = capture.get(peer, {"models": [], "captured_at": now_dt.isoformat(), "provenance": []})
+            peer_data["models_source"] = "confirmed"
+            if enumerated:
+                # True catalog beats invocation-confirmation of already-declared
+                # IDs: use it as the models list so CONTRADICTED can fire against
+                # the peer's real full catalog, not just what happened to PASS.
+                peer_data["models"] = sorted(enumerated)
+                peer_data["models_source"] = "enumerated"
             peer_data["fingerprint"] = current_fp
             observed_data[peer] = peer_data
             results[peer] = "refreshed"
@@ -374,14 +427,17 @@ def auto_refresh_observed(
             # T16: run_canary's own per-profile fan-out now respects the
             # budget too (is_explicit-only bypass), so a peer with no PASS
             # verdicts might be a real probe failure OR the whole fan-out
-            # getting budget-capped internally - classify honestly rather
-            # than always calling it a failure.
+            # getting budget/quota-capped internally - classify honestly
+            # rather than always calling it a failure. reserve_canary_
+            # invocation can deny for several real reasons (budget,
+            # budget_disabled, quota_absent, quota_below_reserve_floor,
+            # invalid_request) -- any all-SKIP outcome is a denial, not a
+            # probe failure, so surface the actual reason instead of
+            # collapsing them all to one label or losing them to "failed".
             peer_verdicts = [v for v in verdicts if v.get("peer") == peer]
-            if peer_verdicts and all(
-                v.get("status") == "SKIP" and v.get("reason") == "budget"
-                for v in peer_verdicts
-            ):
-                results[peer] = "skipped_budget"
+            if peer_verdicts and all(v.get("status") == "SKIP" for v in peer_verdicts):
+                reasons = sorted({v.get("reason", "unknown") for v in peer_verdicts})
+                results[peer] = f"skipped_{'+'.join(reasons)}"
             else:
                 results[peer] = "probe_failed"
 

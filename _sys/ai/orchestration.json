@@ -197,6 +197,8 @@
       },
       "adapter_class": "AgyAdapter",
       "invoke": "_sys\\tools\\agy\\agy.exe",
+      "model_enumeration_argv": ["models"],
+      "_model_enumeration_argv_note": "agy.exe has a real, free (no API call, no quota spend), non-interactive `models` subcommand that prints its full real model catalog -- check_cli_reality.probe_enumerated_models() uses this for TRUE catalog enumeration instead of invocation-confirmation-only. Explicitly opt-in per peer: cc/cx have no equivalent subcommand, and both take a bare positional arg as a live prompt when no subcommand matches, so blindly trying `<binary> models` on them would silently spend a real paid invocation instead of failing safely.",
       "invoke_args": [
         "--dangerously-skip-permissions",
         "-p",
