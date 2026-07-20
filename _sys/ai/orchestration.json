@@ -16,6 +16,12 @@
   "legacy": {
     "config_file": "local.config.bat"
   },
+  "canary_config": {
+    "budget_cap": 4,
+    "budget_window_hours": 12,
+    "reserve_floor": 0.25,
+    "_ratified_2026_07_20": "H1 (reserve_floor) and H2 (budget_cap + budget_window_hours) per _sys/docs-v2/ops/capability-leveling-decisions.md §0 -- previously deliberately unratified/fail-closed (canary_config absent -> every canary_budget.reserve_canary_invocation() call denied with reason=budget_disabled, by design). Ratified via 3-way independent review (ag, cx, cc.fable) + user sign-off, triggered by a real freshness-sweep P0 (cc.effort's declared model claude-sonnet-5 CONTRADICTED against a stale 2026-07-12 observed-models capture, unfixable while budget stayed fail-closed). cap=4 (ag+cx unanimous: cc has 4 tier profiles and no free model-enumeration command, so cap=3 lets a partial fan-out mark the omitted 4th profile falsely CONTRADICTED -- worse than staying closed). window_hours=12 (cc.fable's arbitration: with cap=4 and a 24h window, one complete cc fan-out camps the global budget for a full day and structurally starves cx every cycle per iteration-order bias; 12h lets cc's reservations expire before the next ~20h freshness-sweep tick, so cx gets a full budget on alternating sweeps -- resolves cx's own 'fair coverage' concern via the window choice itself). reserve_floor=0.25 (cx's grounding, fable concurred: matches the STRICTEST existing routing-config.json shared_quota_reserve family value (3P=0.25), so canary spend is never authorized below any threshold existing policy already treats as protective; checked per-(peer,profile) subject against its own measured quota_remaining, never a cross-peer aggregate -- an incorrect cross-peer-starvation concern raised mid-round was checked against canary_budget.py source and does not hold). Live-verified before applying: cc/cx/ag's canary-relevant profiles all report a valid (non-absent) quota_source_tag with real remaining fraction well above 0.25."
+  },
   "profile_contract": {
     "node_id_format": "{peer}.{profile}",
     "required_profiles": [
