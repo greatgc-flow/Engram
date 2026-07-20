@@ -84,6 +84,7 @@
       "profiles": {
         "standard": {
           "model_id": "claude-haiku-4-5-20251001",
+          "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["C"],
@@ -102,6 +103,7 @@
         },
         "effort": {
           "model_id": "claude-sonnet-5",
+          "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["C"],
@@ -129,6 +131,7 @@
         },
         "deepthink": {
           "model_id": "claude-opus-4-8",
+          "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["C"],
@@ -155,6 +158,7 @@
         },
         "fable": {
           "model_id": "claude-fable-5",
+          "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "specialty",
           "quota_families": ["F", "C"],
@@ -217,6 +221,7 @@
       "profiles": {
         "standard": {
           "runtime_model": "Gemini 3.5 Flash (Low)",
+          "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["G"],
@@ -233,6 +238,7 @@
         },
         "effort": {
           "runtime_model": "Gemini 3.5 Flash (High)",
+          "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["G"],
@@ -257,6 +263,7 @@
         },
         "deepthink": {
           "runtime_model": "Gemini 3.1 Pro (High)",
+          "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["G"],
@@ -293,6 +300,7 @@
         "opus": {
           "runtime_model": "Claude Opus 4.6 (Thinking)",
           "registry_model_id": "claude-opus-4-6",
+          "selection_mode": "pinned",
           "model_availability": "cli_listed",
           "profile_class": "specialty",
           "quota_families": ["3P"],
@@ -310,6 +318,7 @@
         },
         "gptoss": {
           "runtime_model": "GPT-OSS 120B (Medium)",
+          "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "specialty",
           "quota_families": ["3P"],
@@ -361,6 +370,7 @@
       "profiles": {
         "standard": {
           "model_id": "gpt-5.6-luna",
+          "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["X"],
@@ -387,6 +397,7 @@
         },
         "effort": {
           "model_id": "gpt-5.6-terra",
+          "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["X"],
@@ -413,6 +424,7 @@
         },
         "deepthink": {
           "model_id": "gpt-5.6-sol",
+          "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["X"],

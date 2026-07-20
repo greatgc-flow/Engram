@@ -12,18 +12,21 @@ def _valid_profiles():
             "routing_state": "eligible",
             "profile_class": "tier",
             "quota_families": ["X"],
+            "selection_mode": "pinned",
         },
         "effort": {
             "model_id": "medium",
             "routing_state": "eligible",
             "profile_class": "tier",
             "quota_families": ["X"],
+            "selection_mode": "pinned",
         },
         "deepthink": {
             "model_id": "large",
             "routing_state": "eligible",
             "profile_class": "tier",
             "quota_families": ["X"],
+            "selection_mode": "pinned",
         },
     }
 
@@ -201,6 +204,7 @@ def test_shared_family_reserve_invariant_rejects_unreserved_protected_profile(tm
         "profile_class": "specialty",
         "quota_families": ["X"],
         "routing_state": "manual_only",
+        "selection_mode": "pinned",
     }
     node = {"node_id": "xx", "type": "peer", "enabled": True, "profiles": profiles}
     routing = {
@@ -226,6 +230,7 @@ def test_specialty_bulk_profile_does_not_require_reserve_by_class_alone(tmp_path
         "profile_class": "specialty",
         "quota_families": ["X"],
         "routing_state": "eligible",
+        "selection_mode": "pinned",
     }
     node = {"node_id": "xx", "type": "peer", "enabled": True, "profiles": profiles}
     _write_config_set(tmp_path / "ai", node=node)
@@ -308,3 +313,63 @@ def test_profile_intent_accepts_documented_ag_deepthink_inversion(tmp_path):
     profiles["deepthink"]["profile_intent"] = _ag_deepthink_intent()
     _write_config_set(tmp_path / "ai", node={"node_id": "ag", "type": "peer", "profiles": profiles})
     assert validate_config(tmp_path / "ai")
+
+
+# Task 8 (2026-07-20 absent-audit consensus): selection_mode lets freshness/
+# drift checks tell an unintentionally stale model_id (a real problem) apart
+# from a deliberately moving-target or overridden one (expected).
+def test_selection_mode_required_for_enabled_profile(tmp_path):
+    profiles = _valid_profiles()
+    del profiles["standard"]["selection_mode"]
+    node = {"node_id": "xx", "type": "peer", "enabled": True, "profiles": profiles}
+    _write_config_set(tmp_path / "ai", node=node)
+    assert not validate_config(tmp_path / "ai")
+
+
+def test_selection_mode_not_required_for_disabled_profile(tmp_path):
+    profiles = _valid_profiles()
+    for profile in profiles.values():
+        del profile["selection_mode"]
+        profile.pop("quota_families")
+        profile["routing_state"] = "blocked"
+    node = {"node_id": "xx", "type": "peer", "enabled": False, "profiles": profiles}
+    _write_config_set(tmp_path / "ai", node=node)
+    assert validate_config(tmp_path / "ai")
+
+
+def test_selection_mode_rejects_unknown_value(tmp_path):
+    profiles = _valid_profiles()
+    profiles["standard"]["selection_mode"] = "auto_latest"
+    node = {"node_id": "xx", "type": "peer", "enabled": True, "profiles": profiles}
+    _write_config_set(tmp_path / "ai", node=node)
+    assert not validate_config(tmp_path / "ai")
+
+
+@pytest.mark.parametrize("selection_mode", ["pinned", "track_family_current"])
+def test_selection_mode_accepts_pinned_and_track_family_current(tmp_path, selection_mode):
+    profiles = _valid_profiles()
+    profiles["standard"]["selection_mode"] = selection_mode
+    node = {"node_id": "xx", "type": "peer", "enabled": True, "profiles": profiles}
+    _write_config_set(tmp_path / "ai", node=node)
+    assert validate_config(tmp_path / "ai")
+
+
+def test_selection_mode_manual_exception_requires_reason(tmp_path):
+    profiles = _valid_profiles()
+    profiles["standard"]["selection_mode"] = "manual_exception"
+    node = {"node_id": "xx", "type": "peer", "enabled": True, "profiles": profiles}
+    _write_config_set(tmp_path / "ai", node=node)
+    assert not validate_config(tmp_path / "ai")
+
+    profiles["standard"]["selection_mode_reason"] = "vendor deprecated the pinned id without notice; holding this override until replacement is chosen"
+    (tmp_path / "ai" / "orchestration.json").write_text(json.dumps({"hub_nodes": [node]}))
+    assert validate_config(tmp_path / "ai")
+
+
+def test_selection_mode_manual_exception_rejects_blank_reason(tmp_path):
+    profiles = _valid_profiles()
+    profiles["standard"]["selection_mode"] = "manual_exception"
+    profiles["standard"]["selection_mode_reason"] = "   "
+    node = {"node_id": "xx", "type": "peer", "enabled": True, "profiles": profiles}
+    _write_config_set(tmp_path / "ai", node=node)
+    assert not validate_config(tmp_path / "ai")

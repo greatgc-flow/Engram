@@ -13,6 +13,7 @@ VALID_PROFILE_INTENT_WORKLOADS = {
 }
 VALID_TIER_SCORE_EXCEPTION_KINDS = {"external_composite_inversion"}
 VALID_TIER_SCORE_EXCEPTION_STATUSES = {"accepted_policy_exception"}
+VALID_SELECTION_MODES = {"pinned", "track_family_current", "manual_exception"}
 
 def dict_raise_on_duplicates(ordered_pairs):
     d = {}
@@ -119,6 +120,31 @@ def validate_config(ai_dir: Path | str) -> bool:
                     )
                 if len(quota_families) != len(set(quota_families)):
                     log_error(f"orchestration.json: profile '{profile_id}' has duplicate quota families")
+
+            # Task 8 (2026-07-20 absent-audit consensus, cx design): a
+            # profile's model_id can go stale for two very different reasons
+            # -- an unintentional miss (real problem) or a deliberate
+            # moving-target/override (expected). Freshness/drift checks can't
+            # tell those apart without an explicit declared intent, so every
+            # enabled profile must declare one.
+            selection_mode = profile.get("selection_mode")
+            if enabled and selection_mode is None:
+                log_error(
+                    f"orchestration.json: enabled profile '{profile_id}' must declare "
+                    "a selection_mode (pinned|track_family_current|manual_exception)"
+                )
+            elif selection_mode is not None and selection_mode not in VALID_SELECTION_MODES:
+                log_error(
+                    f"orchestration.json: profile '{profile_id}' selection_mode must be one of "
+                    f"{sorted(VALID_SELECTION_MODES)}"
+                )
+            elif selection_mode == "manual_exception":
+                reason = profile.get("selection_mode_reason")
+                if not isinstance(reason, str) or not reason.strip():
+                    log_error(
+                        f"orchestration.json: profile '{profile_id}' selection_mode="
+                        "manual_exception requires a non-empty selection_mode_reason"
+                    )
 
             # D3: declared intelligence evidence is optional metadata only. It
             # is deliberately validated here, but never becomes routing input.
