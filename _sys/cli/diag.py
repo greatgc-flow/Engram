@@ -175,6 +175,24 @@ def _source_legend():
             "PROBE=empirical_probe DECL=declared, unverified ABS=absent")
 
 
+# 3-way consensus (2026-07-19/20 absent-audit, A5): compact display forms for
+# snapshot.py's context "reason" codes, so a bare "absent" (which used to hide
+# both "nothing to measure right now" and "measurement pipeline is broken" --
+# the exact ambiguity that hid T75 for weeks) becomes a legible, investigable
+# signal instead of wallpaper.
+_ABSENT_REASON_DISPLAY = {
+    "no_session": "n/a",
+    "not_observed": "pending",
+    "source_unavailable": "unsupported",
+    "probe_failed": "error",
+    "stale": "stale",
+}
+
+
+def _absent_reason_display(reason):
+    return _ABSENT_REASON_DISPLAY.get(reason, "absent")
+
+
 def _intelligence_display(evidence):
     """Compact, explicitly declared D3 evidence label for profile detail."""
     if not isinstance(evidence, dict):
@@ -1894,7 +1912,7 @@ def render_profiles(stdout=None, snapshot=None):
         tier = str(row.get("cost_tier") or "absent")[:5]
         ctx = row.get("context") or {}
         win = ctx.get("window_tokens")
-        ctx_val = _short(win) if win is not None else "absent"
+        ctx_val = _short(win) if win is not None else _absent_reason_display(ctx.get("reason"))
         state = row.get("state") or "unknown"
         src = f"c:{_source_code(sources.get('context'))} q:{_source_code(sources.get('quota'))}"
         intelligence = _elide_display(_intelligence_display(row.get("intelligence_evidence")), 15)

@@ -745,4 +745,16 @@ def test_render_attention_surfaces_stale_bg_daemon(monkeypatch):
     assert "STALE_BG_DAEMON" in out
     assert "pid=999" in out
     assert "6.2h" in out
+
+
+def test_absent_reason_display_compact_forms():
+    diag = load_diag()
+    assert diag._absent_reason_display("no_session") == "n/a"
+    assert diag._absent_reason_display("not_observed") == "pending"
+    assert diag._absent_reason_display("source_unavailable") == "unsupported"
+    assert diag._absent_reason_display("probe_failed") == "error"
+    assert diag._absent_reason_display("stale") == "stale"
+    # Unknown/missing reason must never fabricate a code -- honest fallback.
+    assert diag._absent_reason_display(None) == "absent"
+    assert diag._absent_reason_display("something_new") == "absent"
     

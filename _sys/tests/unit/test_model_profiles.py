@@ -32,6 +32,7 @@ EXPECTED_PROFILE_POLICY = {
 }
 
 INTELLIGENCE_EVIDENCE = {
+    "cc.effort": {"kind": "point", "value": 53.0},
     "cc.deepthink": {"kind": "point", "value": 56.0},
     "cc.fable": {"kind": "point", "value": 60.0},
     "ag.effort": {"kind": "point", "value": 50.0},

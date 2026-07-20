@@ -105,6 +105,14 @@
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["C"],
+          "intelligence_evidence": {
+            "estimate": {"kind": "point", "value": 53.0, "approximate": true},
+            "scale": "external_composite",
+            "source_kind": "declared",
+            "verification": "unverified",
+            "source_ref": "_sys/docs-v2/ops/intelligence-scores.md#1-source-data-dir-004-declared-unverified",
+            "as_of": "2026-07-13"
+          },
           "runtime_context_window": 1000000,
           "validated_at": "2026-07-19",
           "validation_method": "successful_invocation",
@@ -282,6 +290,7 @@
         },
         "opus": {
           "runtime_model": "Claude Opus 4.6 (Thinking)",
+          "registry_model_id": "claude-opus-4-6",
           "model_availability": "cli_listed",
           "profile_class": "specialty",
           "quota_families": ["3P"],
@@ -291,6 +300,7 @@
           "routing_state": "manual_only",
           "source": "check_cli_reality:2026-07-03",
           "_routing_note": "PREMIUM — stays manual_only AND is profile-bulk-excluded via routing-config token_load_balancing.bulk_exclude_profiles=['ag.opus'] (DIR-005). Manual/arbiter/escalation only; never auto/bulk. Shares the 3P quota family with ag.gptoss.",
+          "_registry_link_note": "registry_model_id links to model-registry.json's claude-opus-4-6 entry (1M ctx, vendor-documented) for snapshot.py's DECL context-limit fallback -- runtime_model stays the exact agy CLI --model operand, unrelated to the registry key (T-absent-audit 2026-07-19/20 A4).",
           "profile_args": [
             "--model",
             "Claude Opus 4.6 (Thinking)"

@@ -8,9 +8,15 @@
 >
 > **Update 2026-07-19:** §4.1 (ag.deepthink inversion) is RESOLVED — Option A
 > empirically confirmed unavailable, Option B already live in orchestration.json.
-> §4.2 (arbiter_models expansion) remains OPEN and unapplied (explicitly an R:10
-> decision per its own text) — `routing-config.json`'s `arbiter_models` is still
-> `["cc.fable", "cc.deepthink"]`, cx.deepthink not included.
+> §4.2 (arbiter_models expansion) is now also APPLIED — user-authorized 2026-07-19,
+> `routing-config.json`'s `arbiter_models` is `["cc.fable", "cc.deepthink",
+> "cx.deepthink"]` (commit `ab3af8f`). Both action items in this doc are closed;
+> it stays only as the score-table/rationale reference for §4.1/§4.2's decisions.
+> **Lesson (caught 2026-07-19/20 by cx during the absent-audit consensus round):
+> this exact banner sat stale for hours after §4.2 actually landed** — a live
+> example of the prose-doc-vs-applied-config divergence the policy decision
+> ledger (T-absent-audit item, backlog) exists to prevent. Don't just apply a
+> decision — come back and close its own tracking doc in the same pass.
 >
 > **SUPERSEDED-IN-SPIRIT (2026-07-13):** the single composite scalar below is now
 > the **declared bootstrap layer** of the capability-leveling framework

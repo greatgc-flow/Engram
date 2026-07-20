@@ -1037,6 +1037,25 @@ def _source_meta(kind, observed_at, ttl_sec, confidence):
     return {"kind": kind, "observed_at": observed_at, "ttl_sec": ttl_sec, "confidence": confidence}
 
 
+_MODEL_REGISTRY_CACHE = None
+
+
+def _load_model_registry():
+    """Cached model-registry.json (vendor-documented model facts). Used as a
+    DECL fallback for a profile's context limit when orchestration.json has
+    no direct runtime_context_window/context_window (e.g. ag.opus, whose CLI
+    operand string isn't a registry key -- linked via registry_model_id
+    instead). Never used as a measured source."""
+    global _MODEL_REGISTRY_CACHE
+    if _MODEL_REGISTRY_CACHE is None:
+        try:
+            data = json.loads((SYS_DIR / "ai" / "model-registry.json").read_text(encoding="utf-8"))
+            _MODEL_REGISTRY_CACHE = data.get("models") or {}
+        except Exception:
+            _MODEL_REGISTRY_CACHE = {}
+    return _MODEL_REGISTRY_CACHE
+
+
 def _source_tag(record, domain_name):
     """Specific source tag for profile rows; missing data stays absent."""
     if domain_name == "quota":
@@ -1188,6 +1207,10 @@ def _build_profile_rows(orch, peer_records, observed_at):
             model = prof.get("model_id") or prof.get("runtime_model")
             effort = prof.get("reasoning_effort")
             declared_ctx = prof.get("runtime_context_window") or prof.get("context_window")
+            if declared_ctx is None and prof.get("registry_model_id"):
+                registry_entry = _load_model_registry().get(prof["registry_model_id"])
+                if isinstance(registry_entry, dict):
+                    declared_ctx = registry_entry.get("context_limit")
             has_measured_ctx = isinstance(root_ctx.get("window_tokens"), (int, float))
             attributed_capture = profile_id == capture_profile
             unattributed_representative = capture_profile is None and profile_name == default_profile
@@ -1217,11 +1240,29 @@ def _build_profile_rows(orch, peer_records, observed_at):
                     **_profile_source("cached", "orchestration", observed_at),
                 }
             else:
+                # 3-way consensus (2026-07-19/20 absent-audit, A5): flat "absent"
+                # conflates "structurally not applicable right now" with "should
+                # be measurable but the pipeline is broken" -- exactly the class
+                # of bug T75 hid in for weeks. Distinguish the two common cases
+                # observable here; anything else stays the honest "source_unavailable".
+                if capture_profile and capture_profile != profile_id:
+                    # This peer HAS an active/recent session, just not for this
+                    # profile -- benign, expected, not worth investigating.
+                    ctx_reason = "no_session"
+                elif prof.get("registry_model_id") or prof.get("runtime_context_window") is not None:
+                    # A source WAS declared/linked for this profile (a registry
+                    # link, or an explicit-but-non-numeric window field) yet
+                    # produced nothing -- a real, worth-investigating gap.
+                    ctx_reason = "not_observed"
+                else:
+                    # No source of any kind is declared for this profile at all.
+                    ctx_reason = "source_unavailable"
                 context = {
                     "window_tokens": None,
                     "used_tokens": None,
                     "utilization_pct": None,
                     "basis": "unavailable",
+                    "reason": ctx_reason,
                     **_profile_source("unknown", "absent", observed_at, "unknown"),
                 }
 

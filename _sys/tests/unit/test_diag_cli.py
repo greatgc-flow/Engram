@@ -777,6 +777,87 @@ def test_profile_rows_assign_ag_manual_profiles_to_3p_quota_pool():
     assert rows["ag.opus"]["state"] == "manual_only"
 
 
+def test_profile_rows_context_falls_back_to_registry_model_id(monkeypatch):
+    """T-absent-audit A4 (2026-07-19/20): a profile whose CLI operand isn't a
+    registry key (ag.opus's runtime_model is "Claude Opus 4.6 (Thinking)",
+    not "claude-opus-4-6") links to the registry via a separate
+    registry_model_id field, so snapshot can still render a DECL context
+    limit instead of dropping straight to absent."""
+    snapshot = load_snapshot()
+    monkeypatch.setattr(
+        snapshot, "_load_model_registry",
+        lambda: {"claude-opus-4-6": {"context_limit": 1000000}},
+    )
+    observed = "2026-07-20T00:00:00+00:00"
+    ag_rec = snapshot.normalize_peer({
+        "peer": "ag", "source": "live", "gate": True, "quarantined": False,
+        "model": "Gemini", "ctx_used": 0, "ctx_window": 1048576, "ctx_pct": 0,
+        "ctx_known": True, "cost": None, "agent_state": "idle", "plan_tier": "Pro",
+        "sessions": None, "total_tokens": None, "empty": False, "errors": [],
+        "quotas": [],
+    })
+    orch = {"hub_nodes": [{
+        "node_id": "ag", "type": "peer", "enabled": True, "default_profile": "deepthink",
+        "profiles": {
+            "deepthink": {"runtime_model": "Gemini Pro", "reasoning_effort": "high",
+                          "runtime_context_window": 1048576, "routing_state": "eligible"},
+            "opus": {"runtime_model": "Claude Opus 4.6 (Thinking)",
+                     "registry_model_id": "claude-opus-4-6",
+                     "reasoning_effort": "high", "runtime_context_window": None,
+                     "routing_state": "manual_only"},
+            "gptoss": {"runtime_model": "GPT-OSS", "reasoning_effort": "medium",
+                       "runtime_context_window": None, "routing_state": "eligible"},
+        },
+    }]}
+
+    rows = {r["profile"]: r for r in snapshot._build_profile_rows(orch, [ag_rec], observed)}
+
+    assert rows["ag.opus"]["context"]["window_tokens"] == 1000000
+    assert rows["ag.opus"]["context"]["basis"] == "declared_profile_capacity"
+    # No registry_model_id on gptoss -- still correctly absent, not a guess,
+    # and tagged "source_unavailable" (no source of any kind was declared) --
+    # distinct from "no_session" (a source exists, just not active right now).
+    assert rows["ag.gptoss"]["context"]["window_tokens"] is None
+    assert rows["ag.gptoss"]["context"]["basis"] == "unavailable"
+    assert rows["ag.gptoss"]["context"]["reason"] == "source_unavailable"
+
+
+def test_profile_rows_absent_reason_no_session_vs_source_unavailable(monkeypatch):
+    """T-absent-audit A5 (2026-07-19/20, 3-way consensus): flat `absent` used
+    to conflate "this profile just has no active session right now" (benign)
+    with "nothing can ever measure this profile" (worth investigating) --
+    exactly the ambiguity that hid T75 for weeks. A peer WITH an active
+    session for one profile must tag its OTHER profiles "no_session", not
+    "source_unavailable"."""
+    snapshot = load_snapshot()
+    observed = "2026-07-20T00:00:00+00:00"
+    ag_rec = snapshot.normalize_peer({
+        "peer": "ag", "source": "live", "gate": True, "quarantined": False,
+        "model": "Gemini", "ctx_used": 100, "ctx_window": 1048576, "ctx_pct": 0.01,
+        "ctx_known": True, "cost": None, "agent_state": "idle", "plan_tier": "Pro",
+        "sessions": None, "total_tokens": None, "empty": False, "errors": [],
+        "quotas": [], "capture_session_id": "sess-1", "capture_profile": "ag.deepthink",
+    })
+    orch = {"hub_nodes": [{
+        "node_id": "ag", "type": "peer", "enabled": True, "default_profile": "deepthink",
+        "profiles": {
+            "deepthink": {"runtime_model": "Gemini Pro", "reasoning_effort": "high",
+                          "runtime_context_window": 1048576, "routing_state": "eligible"},
+            "effort": {"runtime_model": "Gemini Flash", "reasoning_effort": "high",
+                       "runtime_context_window": None, "routing_state": "eligible"},
+        },
+    }]}
+
+    rows = {r["profile"]: r for r in snapshot._build_profile_rows(orch, [ag_rec], observed)}
+
+    # deepthink is the attributed active capture -- measured, no reason needed.
+    assert rows["ag.deepthink"]["context"]["window_tokens"] == 1048576
+    # effort has no session right now, but the peer clearly has ONE active --
+    # this is the benign, common case, not a broken pipeline.
+    assert rows["ag.effort"]["context"]["window_tokens"] is None
+    assert rows["ag.effort"]["context"]["reason"] == "no_session"
+
+
 def test_dashboard_uses_one_collected_snapshot_for_profile_render(monkeypatch):
     diag = load_diag()
     raw = {

@@ -115,6 +115,16 @@
       "confidence": "documented",
       "validated_at": "2026-06-19"
     },
+    "claude-opus-4-6": {
+      "provider": "anthropic",
+      "context_limit": 1000000,
+      "output_limit": 128000,
+      "status": "GA",
+      "confidence": "documented",
+      "validated_at": "2026-07-20",
+      "source_ref": "https://www.anthropic.com/news/claude-opus-4-6 (launched 2026-02-05; 1M-token context window in beta, 128K max output)",
+      "_note": "Added for ag.opus (T-absent-audit 2026-07-19/20 consensus, A4): ag's agy CLI operand for this model is the exact runtime_model string \"Claude Opus 4.6 (Thinking)\", not this registry key -- ag.opus links to this entry via a separate registry_model_id field so the CLI operand stays untouched."
+    },
     "claude-sonnet-5": {
       "provider": "anthropic",
       "context_limit": 1000000,
