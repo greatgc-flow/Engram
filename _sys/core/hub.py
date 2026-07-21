@@ -3395,14 +3395,29 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
 
     if timed_out:
         _kill_process_tree(pid)
-        try:
-            p.terminate(force=True)
-        except Exception:
-            pass
-        try:
-            p.close(force=True)
-        except Exception:
-            pass
+        # T84 (ag.deepthink's forensic trace, 2026-07-22): p.terminate()/
+        # p.close() call winpty's C-extension winpty_free, which blocks
+        # waiting on an IPC response from winpty-agent.exe. If that agent is
+        # itself deadlocked (the actual T84 hang), winpty_free can block the
+        # MAIN THREAD indefinitely -- so the zombie watchdog fires and kills
+        # the child process tree correctly, but hub.py itself never reaches
+        # the code that reports the timeout, looking exactly like "the
+        # watchdog never fired" from the outside. Bounding this cleanup on a
+        # daemon thread means a hung winpty_free is abandoned (not awaited)
+        # instead of freezing the whole process.
+        def _cleanup_pty():
+            try:
+                p.terminate(force=True)
+            except Exception:
+                pass
+            try:
+                p.close(force=True)
+            except Exception:
+                pass
+
+        cleanup_thread = threading.Thread(target=_cleanup_pty, daemon=True)
+        cleanup_thread.start()
+        cleanup_thread.join(timeout=2.0)
     else:
         # Drain anything the reader already queued before EOF/error.
         while True:

@@ -9,6 +9,7 @@ Purely additive observability; does not change _ask_with_pty's read/dequeue
 timing or the zombie-timeout/heartbeat mechanisms.
 """
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -216,6 +217,46 @@ class TestPtyChunkTelemetryFromRealPty:
         hub._ask_with_pty(cmd, "test-node", 10, {**__import__("os").environ}, quiet=True, ai_root=tmp_path)
 
         assert not any(c[0] == "pty_chunk_arrival" for c in calls)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="pywinpty is Windows-only")
+class TestPtyTimeoutCleanupDoesNotDeadlock:
+    """T84 (2026-07-22, ag.deepthink's forensic trace): p.terminate()/p.close()
+    call winpty's C-extension winpty_free, which can block the MAIN THREAD
+    indefinitely if winpty-agent.exe is itself wedged -- masking a correctly-
+    firing zombie watchdog as "never fired" from the outside, since hub.py
+    never reaches the code that reports the timeout. Cleanup now runs on a
+    bounded daemon thread so a hung winpty_free is abandoned, not awaited."""
+
+    def test_hung_pty_cleanup_does_not_block_the_timeout_report(self, tmp_path, monkeypatch):
+        pytest.importorskip("winpty")
+        monkeypatch.setattr(hub, "_lease_open", lambda *a, **kw: None)
+        monkeypatch.setattr(hub, "_lease_renew", lambda *a, **kw: None)
+        monkeypatch.setattr(hub, "_lease_cfg", lambda node_id: (0.1, 0.5, 0.2))
+        monkeypatch.setattr(hub, "_silent_startup_warning_sec", lambda: 0)
+        monkeypatch.setattr(hub, "_kill_process_tree", lambda pid: None)
+
+        import winpty as _winpty
+
+        def _hang(*_args, **_kwargs):
+            time.sleep(10)
+
+        monkeypatch.setattr(_winpty.PtyProcess, "terminate", _hang)
+        monkeypatch.setattr(_winpty.PtyProcess, "close", _hang)
+
+        # A process that just sleeps -- never produces output, so the tiny
+        # zombie_timeout_sec (0.2s) above forces timed_out=True quickly.
+        cmd = [sys.executable, "-c", "import time; time.sleep(30)"]
+
+        started = time.monotonic()
+        result = hub._ask_with_pty(
+            cmd, "test-node", 5, {**__import__("os").environ}, quiet=True, ai_root=tmp_path,
+        )
+        elapsed = time.monotonic() - started
+
+        assert result.timed_out is True
+        # Bounded by the cleanup thread's join(timeout=2.0), not the hang's 10s.
+        assert elapsed < 5.0
 
 
 class TestNonPtyPathNeverEmitsPtyChunkArrival:

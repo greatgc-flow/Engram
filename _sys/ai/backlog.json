@@ -2227,20 +2227,22 @@
     {
       "id": "T84",
       "title": "ag baseline stall recurred as a genuine unresponsive hang (20+ min), not just a slow-but-eventually-zombied response",
-      "status": "deferred",
+      "status": "done",
       "priority": "medium",
       "category": "ops",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "<pending: fix commit, filled in next>"
+      ],
       "supersedes": [],
       "source_refs": [
         "ops/zombie-deep-dive-2026-07-18.md",
         "ops/closure-review-2026-07-17-round2.md"
       ],
-      "next_action": "T67's own next_action already flagged this root cause unresolved after 2 forensic passes; today's occurrence is a new, distinct data point worth its own item since it's qualitatively worse than the previously-characterized pattern. Dispatched a normal ag.deepthink ask (self-audit task, no PTY-heavy content); hub's own zombie-detector (which had reliably fired at 300-458s on ~4 other zombies this same session) never fired at all even after 20+ minutes with zero output change - this is not the same shape as the previously-diagnosed 'silence past the kill window' case, since that case DOES get caught and reported as [HUB:ERROR] ask timeout (kind=zombie). Here the hub-level watchdog itself appears to not be firing, which two prior forensic passes (2026-07-17/18) did not specifically test for. Had to be force-stopped externally (harness-level TaskStop, not a hub mechanism). ag's health remained GREEN after the stop (no corruption observed, peer-status clean) - ruling out a simple crash-and-hang-in-bad-state theory; whatever is hanging leaves the peer's own reported health unaffected, consistent with the hang being upstream of/outside ag's own health-reporting path. No repro script exists yet - next investigation should start by trying to reproduce the specific hub-watchdog-not-firing condition (as opposed to re-diagnosing ag's baseline stall mechanism itself, already covered by the existing docs) before spending another full forensic pass.",
+      "next_action": "RESOLVED 2026-07-22: ag.deepthink's forensic trace (own vantage point, asked directly what could make it go silent without crashing) found the real mechanism -- the zombie watchdog WAS firing correctly all along. hub.py's _ask_with_pty, in the timed_out branch, called p.terminate(force=True) + p.close(force=True) synchronously on the main thread. Both call pywinpty's C-extension winpty_free, which blocks waiting on an IPC response from winpty-agent.exe -- if THAT agent process is itself wedged (the actual root hang, still not identified, but no longer needs to be to fix the symptom), winpty_free blocks the main thread indefinitely. hub.py never reaches the code that prints '[HUB:ERROR] ask timeout (kind=zombie)', looking exactly like the watchdog silently failing from the outside, while the child process tree WAS correctly killed (_kill_process_tree runs before the hang). Matches every T84 symptom precisely (verified against the T84 write-up point by point). Fix: cleanup now runs on a bounded daemon thread (join(timeout=2.0)) instead of the main thread -- a hung winpty_free is abandoned, not awaited, so the timeout always gets reported. Regression test added: test_pty_chunk_telemetry.py::TestPtyTimeoutCleanupDoesNotDeadlock mocks PtyProcess.terminate/close to hang for 10s and asserts _ask_with_pty still returns within 5s.",
       "risk": "hub's zombie-detector not firing means a genuinely hung ask can block a session indefinitely with no automatic recovery signal - user or terminal must notice and manually intervene (as happened here)",
-      "last_verified_at": "2026-07-21T20:14:57+09:00"
+      "last_verified_at": "2026-07-22T04:30:00+09:00"
     },
     {
       "id": "T85",
