@@ -1026,6 +1026,14 @@ def gather_peer(peer, peer_dirs):
         if rl:
             info["source"] = "app-server"
             quotas.extend(_codex_quota_buckets(rl.get("rateLimits")))
+            # Same cached app-server response already carries reset-credit
+            # counts (design doc §2.1) -- surface it for diag's peer badge
+            # without a second fetch/cache. availableCount is peer-account-
+            # wide (a reset clears ALL of a peer's pools at once), so this
+            # is intentionally not attached to any individual quota bucket.
+            reset_credits = rl.get("rateLimitResetCredits")
+            if isinstance(reset_credits, dict):
+                info["reset_credits_available"] = reset_credits.get("availableCount")
         elif not quotas:
             info["cx_quota_unavailable"] = True
 

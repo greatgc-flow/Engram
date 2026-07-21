@@ -134,6 +134,36 @@ def test_summary_and_live_share_one_dependency_group_payload(capsys):
     assert "2.06x" in expected_payload
 
 
+def test_summary_shows_reset_credit_badge_separate_from_pool_exh(capsys):
+    """Reset-credit count renders once on the peer row (account-wide, not
+    per-pool), never folded into any pool's EXH/pacing number."""
+    d = _diag()
+    info = {
+        "peer": "cx", "cost": None, "source": "app_server", "ctx_window": 1,
+        "ctx_used": 0, "ctx_pct": 0.0, "ctx_known": True, "gate": True,
+        "empty": False, "quotas": [], "reset_credits_available": 3,
+    }
+
+    d.render_summary([info])
+    summary = capsys.readouterr().out
+
+    assert "\U0001f3ab3" in summary
+
+
+def test_summary_omits_credit_badge_when_not_measured(capsys):
+    d = _diag()
+    info = {
+        "peer": "cc", "cost": None, "source": "cli_live", "ctx_window": 1,
+        "ctx_used": 0, "ctx_pct": 0.0, "ctx_known": True, "gate": True,
+        "empty": False, "quotas": [],
+    }
+
+    d.render_summary([info])
+    summary = capsys.readouterr().out
+
+    assert "\U0001f3ab" not in summary
+
+
 def test_real_binary_rejects_wrapper_and_unknown():
     d = _diag()
     with pytest.raises(ValueError):

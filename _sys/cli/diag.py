@@ -633,8 +633,14 @@ def render_summary(infos):
         peer = info["peer"].upper()
         cost = f"${info['cost']:.4f}" if isinstance(info["cost"], (int, float)) else "absent"
         state_cell = _peer_state_cell(info)
+        # Reset-credit count is peer-account-wide (one credit clears ALL of a
+        # peer's pools at once, manually via `hub.py credit-consume`), so it's
+        # shown once on the peer's own row -- deliberately NOT folded into any
+        # pool's EXH number, which stays a pure consumption-velocity signal.
+        credits_available = info.get("reset_credits_available")
+        credit_badge = f" \U0001f3ab{credits_available}" if isinstance(credits_available, int) else ""
         print(f"{_pad(peer, 5)} {state_cell} "
-              f"{_pad(_ctx_cell_raw(info), 19)} {_pad(cost, 10)} {_pad(_source_code(info.get('source')), 12)}")
+              f"{_pad(_ctx_cell_raw(info), 19)} {_pad(cost, 10)} {_pad(_source_code(info.get('source')), 12)}{credit_badge}")
         visible_quotas = [
             quota for quota in (info.get("quotas") or [])
             if isinstance(quota.get("used_frac"), (int, float))
