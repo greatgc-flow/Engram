@@ -434,10 +434,16 @@ def main() -> None:
         sc.record(trigger=args.trigger)
     elif args.step and args.step != "all":
         try:
-            getattr(sc, args.step)()
+            method = getattr(sc, args.step)
+            if args.step in ("run", "record"):
+                method(trigger=args.trigger)
+            else:
+                method()
         except Exception as exc:
             sc.state["errors"].append(f"{args.step}: {exc}")
-        sc.record(trigger=args.trigger)
+            
+        if args.step not in ("run", "record"):
+            sc.record(trigger=args.trigger)
     else:
         sc.run(trigger=args.trigger)
     sys.exit(0)
