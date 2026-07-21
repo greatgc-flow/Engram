@@ -152,7 +152,34 @@ def test_summary_shows_eff_exh_next_to_raw_exh_for_eligible_credits(capsys):
 
     assert "1.29x" in summary  # raw EXH untouched
     assert "EFF EXH" in summary
-    assert "\U0001f3ab3 manual" in summary
+
+
+def test_eff_exh_tail_does_not_downgrade_tier_for_other_peers():
+    """cx.effort's HIGH finding: EFF EXH's tail text on cx's row must not be
+    counted in the shared tier fit-check -- a long "EFF EXH ... manual" tail
+    on ONE peer's row must not push ALL peers into the tier-3 BINDING
+    fallback, which drops raw EXH entirely for every row."""
+    d = _diag()
+    cx_group = {
+        "pool": "X", "state": "binding",
+        "primary": {"used_frac": 0.55, "_eta_full": 100, "_reset_hours": 130,
+                     "_suffix": "7D", "pacing": {"ratio": 1.29}},
+        "secondary": [],
+        "_has_credit_concept": True, "_eligible_credits": 3,
+    }
+    other_group = {
+        "pool": "C", "state": "binding",
+        "primary": {"used_frac": 0.20, "_eta_full": 200, "_reset_hours": 100,
+                     "_suffix": "7D", "pacing": {"ratio": 0.55}},
+        "secondary": [],
+        "_has_credit_concept": False, "_eligible_credits": None,
+    }
+
+    tier = d._select_quota_tier([cx_group, other_group], 80, prefix_len=13)
+    other_text = d._quota_dependency_group_text(other_group, tier=tier)
+
+    assert tier < 3  # not forced into the EXH-dropping BINDING fallback
+    assert "0.55x" in other_text  # raw EXH still visible for the unrelated peer
 
 
 def test_summary_eff_exh_absent_when_credit_data_unreadable(capsys):

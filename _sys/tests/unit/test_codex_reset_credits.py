@@ -211,6 +211,19 @@ def test_eligible_reset_credits_returns_none_not_zero_for_missing_data():
     assert snapshot._eligible_reset_credits(_summary(0, [])) == 0
 
 
+def test_eligible_reset_credits_returns_none_when_list_is_capped():
+    """cx.effort's finding: a `credits` array shorter than `availableCount`
+    is a partial/capped view (design doc §2.1) -- counting eligibility over
+    it could silently undercount real eligible credits sitting outside the
+    cap. Must return None (unknown), never the visible-subset count."""
+    capped = _summary(99, [_credit()])  # 1 visible row, 99 claimed available
+    assert snapshot._eligible_reset_credits(capped) is None
+
+    # Not capped: visible list length matches availableCount exactly.
+    exact = _summary(1, [_credit()])
+    assert snapshot._eligible_reset_credits(exact) == 1
+
+
 def test_codex_rate_limits_retains_complete_result_and_quota_consumer_gets_only_rate_limits(
     monkeypatch,
 ):

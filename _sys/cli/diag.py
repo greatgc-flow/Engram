@@ -489,12 +489,17 @@ def _quota_columns_for_tier(tier):
         return _pad("BINDING", 12)
 
 def _select_quota_tier(groups, budget, prefix_len=0):
+    """Tier fit-check deliberately measures WITHOUT eff_exh_text: that tail
+    is appended only for the one peer with reset credits (currently cx) and
+    is truncated independently by the caller's _elide_display, not by
+    downgrading the whole shared table's tier -- otherwise a long EFF EXH
+    suffix on ONE row would drop raw EXH for every OTHER peer's row too."""
     if budget is None:
         return 0
     for tier in range(4):
         fits = True
         for group in groups:
-            text = _quota_dependency_group_text(group, tier=tier)
+            text = _quota_dependency_group_text(group, tier=tier, include_eff_exh=False)
             if prefix_len + _dw(text) > budget:
                 fits = False
                 break
@@ -502,7 +507,7 @@ def _select_quota_tier(groups, budget, prefix_len=0):
             return tier
     return 3
 
-def _quota_dependency_group_text(group, tier=0):
+def _quota_dependency_group_text(group, tier=0, include_eff_exh=True):
     """Render one dependency group as a single line (fixed order 5H | 7D)
     with the 'EXH' composite index (reset_hours / eta_full). Buckets
     borrowed from a sibling pool (_borrow_missing_windows) render with a
@@ -563,7 +568,7 @@ def _quota_dependency_group_text(group, tier=0):
     eff_exh_text = ""
     has_credit_concept = group.get("_has_credit_concept", False)
     eligible_credits = group.get("_eligible_credits")
-    if has_credit_concept:
+    if has_credit_concept and include_eff_exh:
         if eligible_credits is None:
             eff_exh_text = "  EFF EXH absent"
         elif eligible_credits > 0:
@@ -1058,9 +1063,12 @@ def _peer_health_token(rec):
     if not isinstance(health_age, (int, float)):
         health_age = info.get("health_age_sec")
         
-    credits_available = info.get("eligible_credits")
-    credit_badge = f" 🎫{credits_available}" if isinstance(credits_available, int) and credits_available > 0 else ""
-    
+    # Same meaning as SUMMARY's peer-row badge (raw availableCount, never the
+    # EFF-EXH-only "eligible" subset) -- one emoji, one number, everywhere
+    # (cx.effort caught these silently diverging: MEDIUM finding, 2026-07-22).
+    credits_available = info.get("reset_credits_available")
+    credit_badge = f" \U0001f3ab{credits_available}" if isinstance(credits_available, int) and credits_available > 0 else ""
+
     raw = f"{peer}:{state}({_health_age_text(health_age)}){credit_badge}"
     colored = _c(raw, _HEALTH_STATE_COLOR.get(state, "dim")) if state in _HEALTH_STATE_COLOR else raw
     rank = _HEALTH_STATE_RANK.get(state, 2)

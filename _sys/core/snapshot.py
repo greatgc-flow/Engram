@@ -587,12 +587,21 @@ def _eligible_reset_credits(reset_credits):
     'available', not expired, and applicable to rate-limit resets (not some
     other future credit type this same field could carry). Feeds diag's
     EFF EXH decision-support field (design doc follow-up, 2026-07-22).
-    Returns None (not 0) when the credit list itself isn't a real list --
-    diag must render 'absent', never a guessed count, in that case."""
+    Returns None (not 0 or an undercount) when the count can't be trusted --
+    diag must render 'absent', never a guessed/partial number, in that case:
+    - the credit list itself isn't a real list, or
+    - the list is CAPPED (design doc §2.1: `credits` may hold fewer rows
+      than `availableCount` for large accounts) -- an eligibility count over
+      a truncated view can't rule out eligible credits sitting outside the
+      cap (cx.effort caught this: DO NOT infer a count from array length
+      when the schema explicitly allows the array to be a partial view)."""
     if not isinstance(reset_credits, dict):
         return None
     credit_list = reset_credits.get("credits")
     if not isinstance(credit_list, list):
+        return None
+    available_count = reset_credits.get("availableCount")
+    if isinstance(available_count, int) and len(credit_list) < available_count:
         return None
     now = time.time()
     eligible = 0
