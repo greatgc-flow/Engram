@@ -175,11 +175,11 @@
             "sha3_256": "b943f8ec7ab77433df44520a27ea65744a792e68a25c05b48823168496b3ccdb"
         },
         "agy": {
-            "version": "1.0.7",
-            "url": "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.0.7-5436940900761600/windows-x64/cli_windows_x64.exe",
+            "version": "1.1.5",
+            "url": "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.1.5-5958982624477184/windows-x64/cli_windows_x64.exe",
             "type": "exe",
             "bin": "agy.exe",
-            "sha512": "6b4f91bf174e795fac0f11387a7c6d3973eb2b76a4af00f0a17740ba73a73a37b809c35af5ca8fa277e64b28183b2da147af5d9f4b2ee7ad3f230a9806211638e78",
+            "sha512": "200a3814bbc775ea9e479dd00cc2d7315f471c0cf31a46d376c6e7248d5803ded8c9bc92dde677afe25cce23143b5b4348495e5e908ad6efb5c3516d99843510",
             "install_subdir": "tools/agy",
             "discovery_provider": "manual",
             "install_mechanism": "exe_tool",
