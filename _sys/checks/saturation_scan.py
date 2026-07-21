@@ -33,7 +33,21 @@ LINE_LIMITS: dict[str, int] = {
 EXCLUDE_DIRS: frozenset[str] = frozenset({
     "env", "tools", "data", "__pycache__", ".git", "node_modules",
     "results", "tmp", "history",
+    # Vendor/marketplace/cache content installed by peer CLIs under
+    # {peer}/config/ (antigravity skills marketplace, codex plugin cache
+    # + built-in skill system, claude plugin marketplace, peer-generated
+    # scratch/cache dirs) - not this project's own source, so its line
+    # counts shouldn't be graded against our conventions. ".tmp"/".system"
+    # deliberately duplicate "tmp" for the dotfile-named variant actually
+    # used by codex's cache dir (a plain "tmp" match doesn't catch ".tmp").
+    ".tmp", ".system", "skills", "plugins", "marketplaces", "cache", "scratch",
+    "brain",  # ag's own cross-session memory store, not this project's source
 })
+
+# Specific vendor-generated files that live directly under a peer's config/
+# dir (not caught by EXCLUDE_DIRS since it's a single file, not a subdir) -
+# e.g. Claude Code's own CLI settings/telemetry state.
+EXCLUDE_FILES: frozenset[str] = frozenset({".claude.json"})
 
 # Path literal prefixes that belong to old _sys layout (flag if still present)
 OLD_LAYOUT_PREFIXES: tuple[str, ...] = (
@@ -53,8 +67,16 @@ class Finding(NamedTuple):
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────────────
-def _is_excluded(fp: Path) -> bool:
-    return any(part in EXCLUDE_DIRS for part in fp.parts)
+def _is_excluded(fp: Path, sys_root: Path) -> bool:
+    # Check parts relative to sys_root only - an exclude name coincidentally
+    # appearing in sys_root's own ancestry (e.g. this project's sandboxed
+    # TEMP redirecting through a directory named "data") must not affect
+    # matching, only the structure actually being scanned.
+    try:
+        rel_parts = fp.relative_to(sys_root).parts
+    except ValueError:
+        rel_parts = fp.parts
+    return fp.name in EXCLUDE_FILES or any(part in EXCLUDE_DIRS for part in rel_parts)
 
 
 # ─── Check 1: File line counts ─────────────────────────────────────────────────
@@ -62,7 +84,7 @@ def scan_lines(sys_root: Path) -> list[Finding]:
     findings: list[Finding] = []
     for ext, limit in LINE_LIMITS.items():
         for fp in sys_root.rglob(f"*{ext}"):
-            if _is_excluded(fp):
+            if _is_excluded(fp, sys_root):
                 continue
             try:
                 line_count = fp.read_text("utf-8", errors="replace").count("\n")
@@ -187,7 +209,7 @@ def _stale_literals_in_file(fp: Path, sys_root: Path) -> list[Finding]:
 def scan_imports(sys_root: Path) -> list[Finding]:
     findings: list[Finding] = []
     for fp in sys_root.rglob("*.py"):
-        if _is_excluded(fp):
+        if _is_excluded(fp, sys_root):
             continue
         findings.extend(_stale_literals_in_file(fp, sys_root))
     return findings
