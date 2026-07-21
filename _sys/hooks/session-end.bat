@@ -1,5 +1,5 @@
 @echo off
+setlocal
 for %%I in ("%~dp0..\..") do set "PORTABLE_ROOT=%%~fI"
 set "PYTHONUTF8=1"
-set "PATH=%PORTABLE_ROOT%\_sys\env\venv\Scripts;%PATH%"
-python "%~dp0..\core\hub.py" end-session --agent "%~1"
+"%PORTABLE_ROOT%\_sys\env\venv\Scripts\python.exe" "%~dp0..\core\hub.py" end-session --agent "%~1"

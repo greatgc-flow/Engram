@@ -1,4 +1,5 @@
 @echo off
+setlocal
 :: msg.bat -- Single IPC channel for AI hub (sync + async)
 ::
 :: Sync (immediate response):
@@ -16,4 +17,4 @@
 for %%I in ("%~dp0..\..") do set "PORTABLE_ROOT=%%~fI"
 set "PYTHONUTF8=1"
 set "PATH=%PORTABLE_ROOT%\_sys\env\venv\Scripts;%PORTABLE_ROOT%\_sys\env\nodejs\npm-global;%PATH%"
-python "%~dp0..\core\hub.py" %*
+"%PORTABLE_ROOT%\_sys\env\venv\Scripts\python.exe" "%~dp0..\core\hub.py" %*
