@@ -481,24 +481,37 @@ def build_observed_capture(verdicts: list[dict], now: datetime | None = None) ->
     return capture
 
 
-def emit_observed_capture(orch: dict | None, ai_root: Path | None, invoker: Callable[[str, str, str, str], str] | None = None, now: datetime | None = None) -> dict:
+def emit_observed_capture(orch: dict | None, ai_root: Path | None, invoker: Callable[[str, str, str, str], str] | None = None, now: datetime | None = None, peers: list[str] | None = None, force: bool = False) -> dict:
     if now is None:
         now = datetime.now(timezone.utc)
     if ai_root is None:
         ai_root = _AI_DIR
     else:
         ai_root = Path(ai_root)
-        
+
     verdicts = run_canary(
         orch=orch,
+        peers=peers,
         all_profiles=True,
+        force=force,
         invoker=invoker,
         ai_root=ai_root,
     )
     capture = build_observed_capture(verdicts, now=now)
-    
+
     out_file = ai_root / "cli-reality-observed.json"
     ai_root.mkdir(parents=True, exist_ok=True)
+    if peers is not None:
+        # A restricted --peer scope must only update the peers actually
+        # probed, not silently drop every other peer's existing entry -
+        # this file is a shared multi-peer snapshot, not a per-call scratch
+        # file. Merge onto whatever's already on disk.
+        try:
+            existing = json.loads(out_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            existing = {}
+        existing.update(capture)
+        capture = existing
     out_file.write_text(json.dumps(capture, ensure_ascii=False, indent=2), encoding="utf-8")
     return capture
 
@@ -547,15 +560,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error loading orchestration.json: {exc}")
         return 1
         
-    if args.emit_observed:
-        emit_observed_capture(orch, _AI_DIR)
-        print(str((_AI_DIR / "cli-reality-observed.json").resolve()))
-        return 0
-        
     peers_list = None
     if args.peer:
         peers_list = [p.strip() for p in args.peer.split(",")]
-        
+
+    if args.emit_observed:
+        emit_observed_capture(orch, _AI_DIR, peers=peers_list, force=args.force)
+        print(str((_AI_DIR / "cli-reality-observed.json").resolve()))
+        return 0
+
     verdicts = run_canary(
         orch=orch,
         peers=peers_list,
