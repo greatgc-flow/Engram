@@ -22,13 +22,15 @@ def _patch_feedback_path(monkeypatch, tmp_path):
 
 def test_feedback_add_skips_corrupted_line(tmp_path, monkeypatch):
     fb_path = _patch_feedback_path(monkeypatch, tmp_path)
-    fb_path.write_text('not valid json\n{"id": "GAP-20260721-001"}\n', encoding="utf-8")
+    from datetime import datetime
+    today_str = datetime.now().strftime('%Y%m%d')
+    fb_path.write_text(f'not valid json\n{{"id": "GAP-{today_str}-001"}}\n', encoding="utf-8")
 
     hub.action_feedback_add(tmp_path, "cc", "bug", "warn", "title", "detail")
 
     # Did not crash, and the new entry's seq continued past the valid line.
     lines = fb_path.read_text(encoding="utf-8").splitlines()
-    assert any('"GAP-20260721-002"' in line for line in lines)
+    assert any(f'"GAP-{today_str}-002"' in line for line in lines)
 
 
 def test_feedback_list_skips_corrupted_line(tmp_path, monkeypatch, capsys):

@@ -582,6 +582,34 @@ def _cached_claude_usage_quotas(ttl_sec=EXPENSIVE_SOURCE_TTL_SEC, clock=time.mon
     return value
 
 
+def _eligible_reset_credits(reset_credits):
+    """Count of reset credits actually spendable right now: status
+    'available', not expired, and applicable to rate-limit resets (not some
+    other future credit type this same field could carry). Feeds diag's
+    EFF EXH decision-support field (design doc follow-up, 2026-07-22).
+    Returns None (not 0) when the credit list itself isn't a real list --
+    diag must render 'absent', never a guessed count, in that case."""
+    if not isinstance(reset_credits, dict):
+        return None
+    credit_list = reset_credits.get("credits")
+    if not isinstance(credit_list, list):
+        return None
+    now = time.time()
+    eligible = 0
+    for credit in credit_list:
+        if not isinstance(credit, dict):
+            continue
+        if credit.get("status") != "available":
+            continue
+        if credit.get("resetType") != "codexRateLimits":
+            continue
+        expires_at = credit.get("expiresAt")
+        if expires_at is not None and expires_at <= now:
+            continue
+        eligible += 1
+    return eligible
+
+
 def _codex_quota_buckets(rate_limits):
     """Normalize Codex app-server rate-limit buckets using reported windows."""
     if not isinstance(rate_limits, dict):
@@ -1034,6 +1062,9 @@ def gather_peer(peer, peer_dirs):
             reset_credits = rl.get("rateLimitResetCredits")
             if isinstance(reset_credits, dict):
                 info["reset_credits_available"] = reset_credits.get("availableCount")
+                eligible = _eligible_reset_credits(reset_credits)
+                if eligible is not None:
+                    info["eligible_credits"] = eligible
         elif not quotas:
             info["cx_quota_unavailable"] = True
 

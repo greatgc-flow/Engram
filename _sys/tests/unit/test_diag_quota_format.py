@@ -134,6 +134,61 @@ def test_summary_and_live_share_one_dependency_group_payload(capsys):
     assert "2.06x" in expected_payload
 
 
+def test_summary_shows_eff_exh_next_to_raw_exh_for_eligible_credits(capsys):
+    """EFF EXH = raw EXH / (1 + eligible_credits), shown as an addition next
+    to (never replacing) the raw EXH value; peers without the credit concept
+    never render the field at all."""
+    d = _diag()
+    quotas = [{"label": "X-7D", "used_frac": 0.55, "pacing": {"ratio": 1.29},
+               "reset": "in 3d", "reset_in_seconds": 260_000}]
+    info = {
+        "peer": "cx", "cost": None, "source": "app_server", "ctx_window": 1,
+        "ctx_used": 0, "ctx_pct": 0.0, "ctx_known": True, "gate": True,
+        "empty": False, "quotas": quotas, "eligible_credits": 3,
+    }
+
+    d.render_summary([info])
+    summary = capsys.readouterr().out
+
+    assert "1.29x" in summary  # raw EXH untouched
+    assert "EFF EXH" in summary
+    assert "\U0001f3ab3 manual" in summary
+
+
+def test_summary_eff_exh_absent_when_credit_data_unreadable(capsys):
+    """has_credit_concept true but eligible_credits unset (fetch failed /
+    ambiguous) must render the literal 'absent', never a guessed number."""
+    d = _diag()
+    quotas = [{"label": "X-7D", "used_frac": 0.55, "pacing": {"ratio": 1.29},
+               "reset": "in 3d", "reset_in_seconds": 260_000}]
+    info = {
+        "peer": "cx", "cost": None, "source": "app_server", "ctx_window": 1,
+        "ctx_used": 0, "ctx_pct": 0.0, "ctx_known": True, "gate": True,
+        "empty": False, "quotas": quotas,
+    }
+
+    d.render_summary([info])
+    summary = capsys.readouterr().out
+
+    assert "EFF EXH absent" in summary
+
+
+def test_summary_no_eff_exh_field_for_peers_without_credit_concept(capsys):
+    d = _diag()
+    quotas = [{"label": "C-7D", "used_frac": 0.20, "pacing": {"ratio": 0.55},
+               "reset": "in 1h", "reset_in_seconds": 3600}]
+    info = {
+        "peer": "cc", "cost": None, "source": "cli_live", "ctx_window": 1,
+        "ctx_used": 0, "ctx_pct": 0.0, "ctx_known": True, "gate": True,
+        "empty": False, "quotas": quotas,
+    }
+
+    d.render_summary([info])
+    summary = capsys.readouterr().out
+
+    assert "EFF EXH" not in summary
+
+
 def test_summary_shows_reset_credit_badge_separate_from_pool_exh(capsys):
     """Reset-credit count renders once on the peer row (account-wide, not
     per-pool), never folded into any pool's EXH/pacing number."""

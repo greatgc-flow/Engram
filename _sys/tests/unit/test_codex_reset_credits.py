@@ -190,6 +190,27 @@ def _consume(*, credit_id=_CREDIT_ID, confirm=True, key=_IDEMPOTENCY_KEY, origin
     )
 
 
+def test_eligible_reset_credits_counts_only_available_unexpired_applicable():
+    """Feeds diag's EFF EXH field (2026-07-22 follow-up): only status=
+    'available', not-expired, resetType='codexRateLimits' credits count."""
+    credits = [
+        _credit("c-ok-1", status="available"),
+        _credit("c-ok-2", status="available"),
+        _credit("c-redeemed", status="redeemed"),
+        _credit("c-expired", status="available", expires_at=1),  # epoch 1970: always in the past
+        {**_credit("c-wrong-type", status="available"), "resetType": "unknown"},
+    ]
+    assert snapshot._eligible_reset_credits(_summary(5, credits)) == 2
+
+
+def test_eligible_reset_credits_returns_none_not_zero_for_missing_data():
+    """None (not 0) when the list itself is absent/null -- diag must render
+    the literal 'absent', never a guessed/fabricated count."""
+    assert snapshot._eligible_reset_credits(None) is None
+    assert snapshot._eligible_reset_credits(_summary(1, None)) is None
+    assert snapshot._eligible_reset_credits(_summary(0, [])) == 0
+
+
 def test_codex_rate_limits_retains_complete_result_and_quota_consumer_gets_only_rate_limits(
     monkeypatch,
 ):

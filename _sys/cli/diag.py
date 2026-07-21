@@ -555,6 +555,23 @@ def _quota_dependency_group_text(group, tier=0):
         binding_str = f"{glyph} {marker}{suffix} {s}"
         return f"{pool_str} {binding_str}"
 
+    # Kept OUT of exh_str/exh_width deliberately: EFF EXH only applies to one
+    # peer (currently cx) at a time, and folding its text into the shared
+    # per-tier EXH column width would stretch every OTHER peer's row with
+    # blank padding just to keep one column aligned. Appended at the end of
+    # the line instead (see the final `return`), so cc/ag rows stay compact.
+    eff_exh_text = ""
+    has_credit_concept = group.get("_has_credit_concept", False)
+    eligible_credits = group.get("_eligible_credits")
+    if has_credit_concept:
+        if eligible_credits is None:
+            eff_exh_text = "  EFF EXH absent"
+        elif eligible_credits > 0:
+            if exh_text != "absent":
+                eff_exh_val = max_exh_val / (1 + eligible_credits)
+                eff_exh_text = f"  EFF EXH {eff_exh_val:.2f}x (\U0001f3ab{eligible_credits} manual)"
+            else:
+                eff_exh_text = "  EFF EXH absent"
     exh_str = _pad(exh_text, 10)
     # Every bucket cell at this tier -- "--", "absent", normal, or borrowed
     # with a "(pool)" annotation -- must share ONE width so the "|" divider
@@ -599,7 +616,7 @@ def _quota_dependency_group_text(group, tier=0):
         res = max_exh_bucket.get("_reset_hours")
         if isinstance(res, (int, float)):
             reset_str = f"  resets {_rel(res * 3600.0)}"
-    return f"{pool_str} {exh_str} {buckets_joined}{reset_str}"
+    return f"{pool_str} {exh_str} {buckets_joined}{reset_str}{eff_exh_text}"
 
 def render_summary(infos):
     """SUMMARY (nearest prompt): per-peer header + sorted quota continuation rows
@@ -622,8 +639,14 @@ def render_summary(infos):
             if isinstance(quota.get("used_frac"), (int, float))
         ]
         rows = [{"pool": q.get("label"), **q} for q in visible_quotas]
-        all_groups.extend(_borrow_missing_windows(_quota_dependency_groups(rows)))
-        
+        groups = _borrow_missing_windows(_quota_dependency_groups(rows))
+        has_credit_concept = (info.get("peer") == "cx")
+        eligible_credits = info.get("eligible_credits")
+        for g in groups:
+            g["_has_credit_concept"] = has_credit_concept
+            g["_eligible_credits"] = eligible_credits
+        all_groups.extend(groups)
+
     tier = _select_quota_tier(all_groups, columns, prefix_len=13)
 
     quota_header = "      " + _pad("POOL", 9) + " " + _quota_columns_for_tier(tier)
@@ -647,6 +670,10 @@ def render_summary(infos):
         ]
         rows = [{"pool": q.get("label"), **q} for q in visible_quotas]
         groups = _borrow_missing_windows(_quota_dependency_groups(rows))
+        for g in groups:
+            g["_has_credit_concept"] = (info.get("peer") == "cx")
+            g["_eligible_credits"] = info.get("eligible_credits")
+
 
         def group_sort_key(group):
             state_rank = {"binding": 0, "safe": 1, "absent": 2}.get(group.get("state"), 3)
@@ -1023,9 +1050,6 @@ _HEALTH_STATE_RANK = {"QUARANTINE": 0, "GATE SHUT": 1, "UNKNOWN": 2, "OPEN": 3}
 
 
 def _peer_health_token(rec):
-    """One (sort_rank, peer, colored_display_token, raw_token) tuple per peer.
-    Abnormal states sort first; state text is elided defensively (T60) even
-    though today's vocabulary is short/fixed (_peer_state_label)."""
     info = _live_raw_peer(rec)
     peer = str(info.get("peer") or (rec.get("peer") if isinstance(rec, dict) else "?") or "?").upper()
     state = _elide_display(_peer_state_label(info), 12)
@@ -1033,7 +1057,11 @@ def _peer_health_token(rec):
     health_age = (health or {}).get("age_sec")
     if not isinstance(health_age, (int, float)):
         health_age = info.get("health_age_sec")
-    raw = f"{peer}:{state}({_health_age_text(health_age)})"
+        
+    credits_available = info.get("eligible_credits")
+    credit_badge = f" 🎫{credits_available}" if isinstance(credits_available, int) and credits_available > 0 else ""
+    
+    raw = f"{peer}:{state}({_health_age_text(health_age)}){credit_badge}"
     colored = _c(raw, _HEALTH_STATE_COLOR.get(state, "dim")) if state in _HEALTH_STATE_COLOR else raw
     rank = _HEALTH_STATE_RANK.get(state, 2)
     return (rank, peer, colored, raw)
@@ -1098,6 +1126,10 @@ def _live_quota_pool_rows(snapshot):
             peer_rows.append(row)
             
         peer_groups = _borrow_missing_windows(_quota_dependency_groups(peer_rows))
+        for g in peer_groups:
+            g["_has_credit_concept"] = (owner.lower() == "cx")
+            g["_eligible_credits"] = info.get("eligible_credits")
+
         for g in peer_groups:
             g["owner"] = owner
             g["source"] = source
