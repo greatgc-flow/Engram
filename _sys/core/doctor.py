@@ -247,12 +247,14 @@ def run(ctx: dict) -> dict[str, Any]:
         print("=" * 56)
         for c in checks:
             icon = _LEVEL_ICON.get(c.get("level", "info"), "[i]")
-            print(f"  {icon} {c['name']:<14} {c['detail']}")
+            name = c.get("name", "unknown")
+            detail = c.get("detail", "no detail provided")
+            print(f"  {icon} {name:<14} {detail}")
         print("=" * 56)
         print(f"  Overall: {'HEALTHY' if overall == 'success' else 'NEEDS ATTENTION'}")
         print("=" * 56)
 
     result: dict[str, Any] = {"status": overall, "checks": checks}
     if broken:
-        result["detail"] = "; ".join(c["detail"] for c in broken)
+        result["detail"] = "; ".join(c.get("detail", "no detail provided") for c in broken)
     return result
