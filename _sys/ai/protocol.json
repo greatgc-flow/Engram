@@ -302,8 +302,11 @@
                                  "zombie_profile_map":  {
                                                             "standard":  600,
                                                             "effort":  600,
-                                                            "deepthink":  900
+                                                            "deepthink":  900,
+                                                            "opus":  900,
+                                                            "gptoss":  900
                                                         },
+                                 "_note_opus_gptoss_2026-07-21":  "opus/gptoss were missing from this map entirely, silently falling back to the generic zombie_timeout_sec=600s -- user-reported near-constant no-response on both, and both route through a 3rd-party model layer inside ag/Antigravity (opus=Claude Opus 4.6 Thinking, gptoss=GPT-OSS 120B) rather than ag's native Gemini path, plausibly adding proxy overhead on top of the model's own latency. Set to 900s matching deepthink's existing widened window as a first, evidence-consistent step -- not independently re-measured for these two profiles; revisit if the wider window alone doesn't fix the observed non-response rate.",
                                  "silent_startup_warning_sec":  180,
                                  "oversized_ask_max_tasks":  5,
                                  "oversized_ask_max_chars":  8000,
