@@ -11,8 +11,8 @@
     "Error Visibility",
     "Docs MECE"
   ],
-  "_version": "12.0",
-  "_key_count": 63,
+  "_version": "12.1",
+  "_key_count": 67,
   "_updated": "2026-06-18",
   "last_review_ts": null,
   "collaboration_depth": 10,
@@ -63,8 +63,6 @@
   "lazy_init_enabled": 1,
   "workspace_template_path": "_sys/templates/workspace-base",
   "common_space_path": "_sys/ai/common",
-  "workspace_specific_subdir": "specific",
-  "workspace_config_file": "specific/config/workspace-config.json",
 
   "_section_context_gate": "ContextGate v1.0 — token estimation thresholds",
   "context_gate_enabled": true,
