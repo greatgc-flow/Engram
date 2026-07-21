@@ -27,6 +27,7 @@ _sys/data/temp/
 _sys/data/setup-files/
 _sys/data/logs/
 _sys/data/state/
+_sys/data/reports/
 _sys/data/*.jsonl
 
 # =================================================================
