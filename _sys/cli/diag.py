@@ -457,7 +457,7 @@ def _borrow_missing_windows(groups):
     F-pool's missing 5H can show C-5H as relevant context. Duplication is
     intentional (user request, 2026-07-16): "중복되어도 좋으니 영향도 있으면
     표기해줘". Borrowed buckets are tagged so they never enter this pool's
-    OWN URG math -- they're a cross-reference, not this pool's accounting."""
+    OWN EXH math -- they're a cross-reference, not this pool's accounting."""
     all_buckets_by_suffix = {}
     for g in groups:
         for b in [g["primary"]] + g.get("secondary", []):
@@ -480,11 +480,11 @@ def _borrow_missing_windows(groups):
 
 def _quota_columns_for_tier(tier):
     if tier <= 1:
-        w = 10 + _BUCKET_ANNOT_RESERVE
-        return _pad("URG", 10) + " " + _pad("5H", w) + " " + _pad("7D", w)
+        w = 15 + _BUCKET_ANNOT_RESERVE
+        return _pad("EXH", 10) + " " + _pad("5H", w) + " " + _pad("7D", w)
     elif tier == 2:
         w = 6 + _BUCKET_ANNOT_RESERVE
-        return _pad("URG", 10) + " " + _pad("5H", w) + " " + _pad("7D", w)
+        return _pad("EXH", 10) + " " + _pad("5H", w) + " " + _pad("7D", w)
     else:
         return _pad("BINDING", 12)
 
@@ -504,15 +504,15 @@ def _select_quota_tier(groups, budget, prefix_len=0):
 
 def _quota_dependency_group_text(group, tier=0):
     """Render one dependency group as a single line (fixed order 5H | 7D)
-    with the 'URG' composite index (reset_hours / eta_full). Buckets
+    with the 'EXH' composite index (reset_hours / eta_full). Buckets
     borrowed from a sibling pool (_borrow_missing_windows) render with a
-    '~' marker and source-pool tag, and never count toward URG -- they are
+    '~' marker and source-pool tag, and never count toward EXH -- they are
     informational context, not this pool's own accounting."""
     prefix = group["pool"]
     buckets = [group["primary"]] + group.get("secondary", [])
     buckets.sort(key=lambda b: str(b.get("_suffix") or ""))
 
-    valid_urgs = []
+    valid_exhs = []
     for b in buckets:
         if b.get("_borrowed"):
             continue
@@ -520,31 +520,31 @@ def _quota_dependency_group_text(group, tier=0):
         res = b.get("_reset_hours")
         if eta is not None and res is not None:
             if eta <= 0:
-                valid_urgs.append((99.99, b))
+                valid_exhs.append((99.99, b))
             else:
-                valid_urgs.append((min(res / eta, 99.99), b))
+                valid_exhs.append((min(res / eta, 99.99), b))
 
     own_buckets = [b for b in buckets if not b.get("_borrowed")]
-    if not valid_urgs:
-        urg_text = "absent"
-        max_urg_bucket = None
+    if not valid_exhs:
+        exh_text = "absent"
+        max_exh_bucket = None
     else:
-        max_urg_val, max_urg_bucket = max(valid_urgs, key=lambda x: x[0])
-        urg_fmt = f"{max_urg_val:.2f}x"
-        if len(valid_urgs) < len(own_buckets):
-            urg_fmt = f"≥{urg_fmt}"
-        if max_urg_val >= 1.00:
+        max_exh_val, max_exh_bucket = max(valid_exhs, key=lambda x: x[0])
+        exh_fmt = f"{max_exh_val:.2f}x"
+        if len(valid_exhs) < len(own_buckets):
+            exh_fmt = f"≥{exh_fmt}"
+        if max_exh_val >= 1.00:
             glyph = "🔴"
-        elif max_urg_val >= 0.80:
+        elif max_exh_val >= 0.80:
             glyph = "🟡"
         else:
             glyph = "🟢"
-        urg_text = f"{glyph} {urg_fmt}"
+        exh_text = f"{glyph} {exh_fmt}"
 
     pool_str = _pad(f"{prefix}-pool", 9)
-    
+
     if tier >= 3:
-        b = max_urg_bucket if max_urg_bucket else buckets[0] if buckets else {}
+        b = max_exh_bucket if max_exh_bucket else buckets[0] if buckets else {}
         uf = b.get("used_frac")
         if not isinstance(uf, (int, float)):
             s = "absent"
@@ -555,11 +555,11 @@ def _quota_dependency_group_text(group, tier=0):
         binding_str = f"{glyph} {marker}{suffix} {s}"
         return f"{pool_str} {binding_str}"
 
-    urg_str = _pad(urg_text, 10)
+    exh_str = _pad(exh_text, 10)
     # Every bucket cell at this tier -- "--", "absent", normal, or borrowed
     # with a "(pool)" annotation -- must share ONE width so the "|" divider
     # and the 7D column land in the same place on every row.
-    bucket_pad = (6 if tier == 2 else 10) + _BUCKET_ANNOT_RESERVE
+    bucket_pad = (6 if tier == 2 else 15) + _BUCKET_ANNOT_RESERVE
 
     # Fixed slots by window suffix (5H, then 7D) -- a pool with only one
     # real window (e.g. cx's X-7D) must render its bucket under the 7D
@@ -574,7 +574,7 @@ def _quota_dependency_group_text(group, tier=0):
             continue
         borrowed = b.get("_borrowed")
         stale_fallback = b.get("stale_fallback")
-        marker = "†" if stale_fallback else ("~" if borrowed else ("▸" if b is max_urg_bucket else " "))
+        marker = "†" if stale_fallback else ("~" if borrowed else ("▸" if b is max_exh_bucket else " "))
         uf = b.get("used_frac")
         if not isinstance(uf, (int, float)):
             s = f"{marker}absent"
@@ -587,7 +587,7 @@ def _quota_dependency_group_text(group, tier=0):
                 if borrowed:
                     s += f"({b.get('_from_pool')})"
             else:
-                pace = f"{ratio:.2f}x" if isinstance(ratio, (int, float)) else "?"
+                pace = f"Pace {ratio:.2f}x" if isinstance(ratio, (int, float)) else "Pace ?"
                 s = f"{marker}{_pad(pct, 3, 'right')} {pace}"
                 if borrowed:
                     s += f"({b.get('_from_pool')})"
@@ -595,11 +595,11 @@ def _quota_dependency_group_text(group, tier=0):
 
     buckets_joined = " |".join(bucket_strs)
     reset_str = ""
-    if tier == 0 and max_urg_bucket is not None:
-        res = max_urg_bucket.get("_reset_hours")
+    if tier == 0 and max_exh_bucket is not None:
+        res = max_exh_bucket.get("_reset_hours")
         if isinstance(res, (int, float)):
             reset_str = f"  resets {_rel(res * 3600.0)}"
-    return f"{pool_str} {urg_str} {buckets_joined}{reset_str}"
+    return f"{pool_str} {exh_str} {buckets_joined}{reset_str}"
 
 def render_summary(infos):
     """SUMMARY (nearest prompt): per-peer header + sorted quota continuation rows

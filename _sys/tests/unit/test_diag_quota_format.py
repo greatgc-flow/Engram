@@ -129,8 +129,8 @@ def test_summary_and_live_share_one_dependency_group_payload(capsys):
     assert live_text.count("C-pool") == 1
     assert expected_payload in summary
     assert expected_payload in live_text
-    assert "20% 0.55x" in expected_payload
-    assert "35% 2.25x" in expected_payload
+    assert "20% Pace 0.55x" in expected_payload
+    assert "35% Pace 2.25x" in expected_payload
     assert "2.06x" in expected_payload
 
 

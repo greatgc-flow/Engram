@@ -105,7 +105,7 @@ def test_render_profiles_renders_declared_intelligence_or_absent():
     assert "absent" in text
 
 
-def test_render_summary_uses_peer_facts_and_urgent_quota_order():
+def test_render_summary_uses_peer_facts_and_exhaustion_quota_order():
     diag = load_diag()
     infos = [{
         "peer": "cc", "model": "Opus", "cost": 0.5, "source": "cli_live",
@@ -379,7 +379,7 @@ def test_live_peer_health_contains_only_peer_and_state():
     assert "$12.3400" not in text
 
 
-def test_live_quota_pools_is_global_urgent_order_and_reports_hidden_count():
+def test_live_quota_pools_is_global_exhaustion_order_and_reports_hidden_count():
     diag = load_diag()
     snapshot = {"peers": [
         {"peer": "cc", "raw": {"peer": "cc", "source": "cli_live", "quotas": [
