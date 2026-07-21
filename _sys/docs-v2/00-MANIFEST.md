@@ -114,9 +114,9 @@ specific/{id}.md  (delta only — lists ONLY what differs from general)
 |--------|-------------|-----------|
 | `protocol.md` | `protocol.json`, `orchestration.json` | `test_contracts.py`, keystone/consensus tests, PRO-19 guard |
 | `routing.md` | `orchestration.json`, `routing-config.json` | routing/dispatch + `resolve_peer_sys_dir` tests |
-| `lifecycle.md` | `model-registry.json`, health thresholds in `protocol.json` | `test_health*`, context-gate, AT-1/AT-3 |
+| `lifecycle.md` | `model-registry.json`, health thresholds in `protocol.json` | `test_check_health_corruption.py`, `test_no_stray_health_files.py`, context-gate, AT-1/AT-3 |
 | `learning.md` | `user-directives.md`, proposals dir | directive-injection, self-care/graduation e2e (AT-0) |
-| `permissions.md` | `orchestration.json` DIR-002 flags | `test_peer_permissions.py` |
+| `permissions.md` | `orchestration.json` DIR-002 flags | `test_permission_matrix.py` |
 | `10/20` | `protocol.json`; path dictionary (A2) | invariant tests, CHK-01..08, GAP-2 path-check (new) |
 
 ---

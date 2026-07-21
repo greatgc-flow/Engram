@@ -212,7 +212,7 @@ ctx-end      # end-of-day: archive + cleanup
 
 | Peer | CLI | State | Standard | Effort | Deepthink |
 |------|-----|-------|----------|--------|-----------|
-| `cc` | Claude Code | Active | Haiku 4.5 / low | Sonnet 4.6 / high | Opus 4.8 / high |
+| `cc` | Claude Code | Active | Haiku 4.5 / low | Sonnet 5 / high | Opus 4.8 / high |
 | `ag` | Antigravity | Active | Gemini 3.5 Flash / low | Gemini 3.5 Flash / high | Gemini 3.1 Pro / high |
 | `cx` | Codex | Active | gpt-5.6-luna / low | gpt-5.6-terra / high | gpt-5.6-sol / xhigh |
 | `ca` | Claude alternate | Disabled | — | — | — |

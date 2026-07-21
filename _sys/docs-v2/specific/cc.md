@@ -27,7 +27,7 @@ claude -p {query} --dangerously-skip-permissions
 | Profile | Model | Effort | CLI context observed |
 |---|---|---|---:|
 | `cc.standard` | `claude-haiku-4-5-20251001` | low | 200k |
-| `cc.effort` | `claude-sonnet-4-6` | high | 200k |
+| `cc.effort` | `claude-sonnet-5` | high | 1M |
 | `cc.deepthink` | `claude-opus-4-8` | high | 1M |
 
 *(Note: Claude Fable 5 is recognized via `fable`/`claude-fable-5` but not routed if unavailable to the account. Claude Code lacks a zero-token catalog command).*

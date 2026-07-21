@@ -64,7 +64,7 @@ Governance proposals live in `_sys/ai/proposals/`. This section defines their fu
 - **Creation**: Any peer may create a proposal via `hub.py proposal-add --subject "..." --from {peer}`.
 - **TTL**: 7 days for R:5 proposals; 14 days for R:8/R:10 proposals. After TTL with no votes → EXPIRED.
 - **Reaper**: `self_care.py --trigger session_end` checks proposal age and moves expired/stale items.
-- **Voting**: `hub.py proposal-vote --id {id} --voter {peer} --vote ACK|NACK|ABSTAIN`
+- **Voting**: `hub.py proposal-vote --proposal-id {id} --voter {peer} --vote agree|disagree|abstain`
 - **Acceptance threshold**:
   - R:5: majority ACK (≥2 of active voters)
   - R:8: supermajority ACK (all active peers)

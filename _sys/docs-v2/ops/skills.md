@@ -1,6 +1,6 @@
 # Ops — Skill System
 
-> Status: ACTIVE v1.0 | Created: 2026-06-18
+> Status: DESIGN (not implemented in hub.py — no "skill" action/parser/[SKILL:...] substitution exists as of 2026-07-21) | Created: 2026-06-18
 > Purpose: Documents the hub skill subsystem — skill definitions, registration, catalog, and invocation.
 > Skill files live at: `_sys/ai/common/skills/`
 

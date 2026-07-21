@@ -38,6 +38,8 @@ agy --dangerously-skip-permissions -p {query} --print-timeout 60m
 | `ag.standard` | `Gemini 3.5 Flash (Low)` |
 | `ag.effort` | `Gemini 3.5 Flash (High)` |
 | `ag.deepthink` | `Gemini 3.1 Pro (High)` |
+| `ag.opus` | `Claude Opus 4.6 (Thinking)` (manual_only) |
+| `ag.gptoss` | `GPT-OSS 120B (Medium)` |
 
 *(Note: `agy models` writes via Windows Console API. Model discovery requires a PTY).*
 
