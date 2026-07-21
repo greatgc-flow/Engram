@@ -7840,7 +7840,10 @@ def action_feedback_add(ai_root: Path, source_peer: str, category: str, severity
         for line in fb_path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
-            item = json.loads(line)
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
             fid = item.get("id", "")
             if fid.startswith(prefix):
                 try:
@@ -7873,7 +7876,10 @@ def action_feedback_list(ai_root: Path) -> None:
     for line in fb_path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
-        item = json.loads(line)
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
         print(f"{item.get('id','')}\t{item.get('status','')}\t{item.get('severity','')}\t{item.get('category','')}\t{item.get('title','')}")
 
 
@@ -7888,7 +7894,10 @@ def action_feedback_resolve(ai_root: Path, feedback_id: str, status: str = "done
         for line in fb_path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
-            item = json.loads(line)
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
             if item.get("id") == feedback_id:
                 item["status"] = status or "done"
                 item["resolved_at"] = _now()
