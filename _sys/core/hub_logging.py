@@ -161,8 +161,17 @@ class HubLogger:
         quality_score: float | None = None,
         latency_sec: float | None = None,
         success: bool = True,
+        ask_id: str | None = None,
+        session_id: str | None = None,
+        turn_id: str | None = None,
+        token_scope: str | None = None,
     ) -> None:
-        """Per-ask cost, quality, latency record."""
+        """Per-ask cost, quality, latency record.
+
+        ask_id/session_id/turn_id/token_scope back diag's recent-session
+        consumption aggregation (pretdd-prep-2026-07-21-diag-quota-metrics.md
+        §3); token_scope is "turn" (per-call, summable) or "session_cumulative"
+        (provider-reported running total, never summed)."""
         self._write("cost-log", {
             "peer_id": peer_id,
             "model_id": model_id,
@@ -175,6 +184,10 @@ class HubLogger:
             "quality_score": quality_score,
             "latency_sec": latency_sec,
             "success": success,
+            "ask_id": ask_id,
+            "session_id": session_id,
+            "turn_id": turn_id,
+            "token_scope": token_scope,
         })
 
     def log_error(

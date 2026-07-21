@@ -810,6 +810,22 @@ class CodexAdapter(BaseAdapter):
                     stream_session_id = str(obj.get("session_id"))
                 elif obj.get("sessionId"):
                     stream_session_id = str(obj.get("sessionId"))
+                if obj.get("type") == "token_count":
+                    last = (obj.get("info") or {}).get("last_token_usage")
+                    if isinstance(last, dict):
+                        # `last_token_usage` is per-turn and already exclusive of
+                        # `total_token_usage`; cached_input_tokens/reasoning_output_tokens
+                        # are subsets of input/output here (never additive, unlike the
+                        # generic _normalize_usage() cache-summing path) -- using
+                        # total_token_usage for a turn record would double-count across
+                        # the session. See design doc §3.3.
+                        latest = {
+                            "input_tokens": _token_int(last.get("input_tokens")),
+                            "output_tokens": _token_int(last.get("output_tokens")),
+                            "reasoning_tokens": _token_int(last.get("reasoning_output_tokens")),
+                            "token_scope": "turn",
+                        }
+                        continue
                 parsed = _usage_from_obj(obj)
                 if parsed:
                     latest = parsed

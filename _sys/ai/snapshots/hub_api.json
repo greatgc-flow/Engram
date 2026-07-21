@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-07-20T11:14:18",
+  "generated_at": "2026-07-21T22:10:00",
   "source": "hub.py",
-  "count": 86,
+  "count": 88,
   "signatures": {
     "_lease_cfg": {
       "params": {
@@ -615,6 +615,52 @@
         "ai_root": {
           "kind": "POSITIONAL_OR_KEYWORD",
           "annotation": "Path"
+        }
+      },
+      "return": "None"
+    },
+    "action_credit_consume": {
+      "params": {
+        "peer": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": "str"
+        },
+        "credit_id": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": "str"
+        },
+        "confirm": {
+          "kind": "KEYWORD_ONLY",
+          "annotation": "bool"
+        },
+        "idempotency_key": {
+          "kind": "KEYWORD_ONLY",
+          "default": null,
+          "annotation": "str | None"
+        },
+        "as_json": {
+          "kind": "KEYWORD_ONLY",
+          "default": false,
+          "annotation": "bool"
+        },
+        "origin": {
+          "kind": "KEYWORD_ONLY",
+          "default": "terminal",
+          "annotation": "str"
+        }
+      },
+      "return": "None"
+    },
+    "action_credit_status": {
+      "params": {
+        "peer": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": "str"
+        },
+        "as_json": {
+          "kind": "KEYWORD_ONLY",
+          "default": false,
+          "annotation": "bool"
         }
       },
       "return": "None"

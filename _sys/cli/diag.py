@@ -1987,6 +1987,121 @@ def render_tokens(stdout=None):
         out.write(f"{str(p.get('peer') or '?'):<6} {cost_s:<12} {used_s + '/' + win_s:<19} {tot_s}\n")
 
 
+_DEFAULT_COST_LOG_PATH = SYS_DIR / "data" / "logs" / "cost-log.jsonl"
+
+
+def load_recent_session_consumption(cost_log_path: Path, limit: int = 10) -> list:
+    """Aggregate cost-log.jsonl rows into per-(root_peer, session) token totals,
+    most-recent first (design doc §3.3-3.4).
+
+    Grouping: (root_peer_id, session_id), falling back to ("ask:" + ask_id) when
+    session_id is absent; rows with neither are legacy/unattributed and excluded.
+    Dedup within a group: (turn_id or ask_id or line number), latest (ts, line)
+    wins -- guards against a resent/retried row double-counting.
+    Summation: token_scope="turn" rows sum; "session_cumulative" rows never sum
+    (latest snapshot only, since the provider already reports a running total).
+    A group with both scopes present sums turns only and reports
+    token_coverage="partial" (the cumulative rows are corroboration, not data).
+    """
+    if not cost_log_path.exists():
+        return []
+
+    groups: dict[tuple, dict] = {}
+    lines = cost_log_path.read_text(encoding="utf-8").splitlines()
+    for line_no, raw_line in enumerate(lines):
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+        try:
+            row = json.loads(raw_line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(row, dict):
+            continue
+
+        peer_id = row.get("peer_id")
+        if not peer_id:
+            continue
+        root_peer = str(peer_id).split(".")[0]
+
+        session_id = row.get("session_id")
+        ask_id = row.get("ask_id")
+        if session_id:
+            session_key = str(session_id)
+        elif ask_id:
+            session_key = f"ask:{ask_id}"
+        else:
+            continue  # legacy/unattributed row: excluded, never zeroed into a group
+
+        group = groups.setdefault(
+            (root_peer, session_key),
+            {"peer": root_peer, "session_id": session_key, "turns": {}, "cumulative": {}},
+        )
+
+        turn_id = row.get("turn_id")
+        dedup_sub = turn_id or ask_id or f"__line_{line_no}"
+        ts = row.get("ts") or ""
+        entry = {"row": row, "ts": ts, "line_no": line_no}
+
+        bucket = group["cumulative"] if row.get("token_scope") == "session_cumulative" else group["turns"]
+        existing = bucket.get(dedup_sub)
+        if existing is None or (ts, line_no) >= (existing["ts"], existing["line_no"]):
+            bucket[dedup_sub] = entry
+
+    def _sum_field(rows: list, field: str):
+        vals = []
+        for row in rows:
+            v = row.get(field)
+            if v is None or isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0:
+                continue
+            vals.append(v)
+        return sum(vals) if vals else None
+
+    results = []
+    for (root_peer, session_key), group in groups.items():
+        turn_entries = list(group["turns"].values())
+        cumulative_entries = list(group["cumulative"].values())
+
+        if turn_entries:
+            rows_for_totals = [e["row"] for e in turn_entries]
+            coverage = "partial" if cumulative_entries else "full"
+        elif cumulative_entries:
+            latest = max(cumulative_entries, key=lambda e: (e["ts"], e["line_no"]))
+            rows_for_totals = [latest["row"]]
+            coverage = "cumulative_only"
+        else:
+            continue
+
+        all_entries = turn_entries + cumulative_entries
+        last_ts = max((e["ts"] for e in all_entries), default="")
+
+        input_tokens = _sum_field(rows_for_totals, "input_tokens")
+        output_tokens = _sum_field(rows_for_totals, "output_tokens")
+        reasoning_tokens = _sum_field(rows_for_totals, "reasoning_tokens")
+        cost_usd = _sum_field(rows_for_totals, "cost_usd")
+        total_tokens = (
+            input_tokens + output_tokens
+            if input_tokens is not None and output_tokens is not None
+            else None
+        )
+
+        results.append({
+            "peer": root_peer,
+            "session_id": session_key,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "reasoning_tokens": reasoning_tokens,
+            "total_tokens": total_tokens,
+            "cost_usd": cost_usd,
+            "token_coverage": coverage,
+            "last_ts": last_ts,
+        })
+
+    results.sort(key=lambda g: (g["peer"], g["session_id"]))
+    results.sort(key=lambda g: g["last_ts"], reverse=True)
+    return results[:limit]
+
+
 def render_sessions(stdout=None, snapshot=None):
     """Session state / continuity view."""
     out = stdout or sys.stdout
@@ -2009,6 +2124,37 @@ def render_sessions(stdout=None, snapshot=None):
             f"{last_used:<19} "
             f"{_ctx_session_cell(row.get('context')):<15} "
             f"{row.get('scope_key') or '-'}\n"
+        )
+
+    render_recent_consumption(out)
+
+
+def render_recent_consumption(stdout=None, cost_log_path=None, limit=10):
+    """Recent token-consuming sessions (design doc §3): peer/session, tokens,
+    cost, most-recent first. Unknown fields render 'unknown' (DIR-004: never
+    guess/fabricate a number diag can't measure)."""
+    out = stdout or sys.stdout
+    path = cost_log_path or _DEFAULT_COST_LOG_PATH
+    rows = load_recent_session_consumption(path, limit=limit)
+    out.write(f"\nRECENT TOKEN CONSUMPTION (last {limit} sessions)\n")
+    if not rows:
+        out.write("(no recent session consumption)\n")
+        return
+    out.write("PEER   SESSION                        INPUT      OUTPUT     TOTAL      COST_USD   COVERAGE       LAST_TS\n")
+    for row in rows:
+        def _n(v):
+            return f"{v:,}" if isinstance(v, (int, float)) else "unknown"
+        cost = row.get("cost_usd")
+        cost_s = f"${cost:.4f}" if isinstance(cost, (int, float)) else "unknown"
+        out.write(
+            f"{str(row.get('peer') or '?'):<6} "
+            f"{_elide_display(str(row.get('session_id') or '-'), 30):<30} "
+            f"{_n(row.get('input_tokens')):<10} "
+            f"{_n(row.get('output_tokens')):<10} "
+            f"{_n(row.get('total_tokens')):<10} "
+            f"{cost_s:<10} "
+            f"{str(row.get('token_coverage') or '-'):<14} "
+            f"{str(row.get('last_ts') or '-')}\n"
         )
 
 

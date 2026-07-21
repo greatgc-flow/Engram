@@ -208,20 +208,29 @@ def _codex_binary():
 
 
 def _codex_rate_limits(deadline_sec=None):
-    """Query the codex app-server (initialize -> account/rateLimits/read) for live
-    5h/weekly rate-limit reset times. Codex does not persist these locally.
+    """Query the codex app-server (initialize -> initialized -> account/rateLimits/read)
+    for live 5h/weekly rate-limit reset times AND any rate-limit reset credits.
+    Codex does not persist these locally.
 
     A background reader thread feeds lines to a queue so the deadline is honored
     EVEN IF proc.stdout.readline() blocks (the app-server is a daemon and, under a
     denied sandbox, can spawn-EPERM and never emit — which previously hung diag for
-    tens of minutes). Returns the rateLimits dict or None."""
+    tens of minutes). Returns the complete result dict (rateLimits +
+    rateLimitsByLimitId + rateLimitResetCredits, each independently absent/null/
+    object per design doc §2.1) or None.
+
+    No top-level "jsonrpc" envelope: this mirrors the app-server's own framing,
+    confirmed via [cli_live] protocol generation of the installed Codex CLI."""
     if deadline_sec is None:
         deadline_sec = _tcfg("probe", "deadline_sec")
     import threading, queue
-    msgs = (
-        '{"jsonrpc":"2.0","id":0,"method":"initialize","params":'
-        '{"clientInfo":{"name":"diag","version":"1.0"},"apiVersion":"v2"}}\n'
-        '{"jsonrpc":"2.0","id":1,"method":"account/rateLimits/read","params":{}}\n'
+    rpc_messages = (
+        {"id": 0, "method": "initialize", "params": {
+            "clientInfo": {"name": "hub-credit", "version": "1.0"},
+            "capabilities": {"experimentalApi": True},
+        }},
+        {"method": "initialized"},
+        {"id": 1, "method": "account/rateLimits/read", "params": None},
     )
     codex_exe = _codex_binary()
     if not codex_exe:
@@ -231,8 +240,9 @@ def _codex_rate_limits(deadline_sec=None):
         proc = subprocess.Popen([codex_exe, "app-server"], stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
         try:
-            proc.stdin.write(msgs)
-            proc.stdin.flush()
+            for rpc_msg in rpc_messages:
+                proc.stdin.write(json.dumps(rpc_msg) + "\n")
+                proc.stdin.flush()
         except Exception:
             return None
 
@@ -273,7 +283,7 @@ def _codex_rate_limits(deadline_sec=None):
             except (json.JSONDecodeError, ValueError):
                 continue
             if obj.get("id") == 1 and isinstance(obj.get("result"), dict):
-                return obj["result"].get("rateLimits")
+                return obj["result"]
     except Exception:
         pass
     finally:
@@ -1000,7 +1010,7 @@ def gather_peer(peer, peer_dirs):
         rl = _cached_codex_rate_limits()
         if rl:
             info["source"] = "app-server"
-            quotas.extend(_codex_quota_buckets(rl))
+            quotas.extend(_codex_quota_buckets(rl.get("rateLimits")))
         elif not quotas:
             info["cx_quota_unavailable"] = True
 

@@ -721,3 +721,31 @@ class TestPhase1ObserveOnly:
         captured = capsys.readouterr()
         assert "[HUB:WOULD-BLOCK]" not in captured.err, "--force-tier0 must exempt WOULD-BLOCK log"
         assert "force-tier0 bypass" in captured.err or captured.err == "", "should log bypass or nothing"
+
+
+class TestCreditActionContracts:
+    def test_credit_status_signature(self):
+        sig = inspect.signature(hub.action_credit_status)
+        p = sig.parameters
+        assert list(p) == ["peer", "as_json"]
+        assert p["peer"].default is inspect.Parameter.empty
+        assert p["as_json"].default is False
+
+    def test_credit_consume_signature(self):
+        sig = inspect.signature(hub.action_credit_consume)
+        p = sig.parameters
+        assert list(p) == [
+            "peer",
+            "credit_id",
+            "confirm",
+            "idempotency_key",
+            "as_json",
+            "origin",
+        ]
+        assert p["peer"].default is inspect.Parameter.empty
+        assert p["credit_id"].default is inspect.Parameter.empty
+        assert p["confirm"].default is inspect.Parameter.empty
+        assert p["confirm"].kind is inspect.Parameter.KEYWORD_ONLY
+        assert p["idempotency_key"].default is None
+        assert p["as_json"].default is False
+        assert p["origin"].default == "terminal"

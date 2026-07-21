@@ -5829,6 +5829,10 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     input_tokens=usage.get("input_tokens"),
                     output_tokens=usage.get("output_tokens"),
                     reasoning_tokens=usage.get("reasoning_tokens"),
+                    ask_id=ask_id,
+                    session_id=usage_session_id,
+                    turn_id=ask_id,
+                    token_scope=usage.get("token_scope"),
                 )
 
             # output-file failure precedes success in the classification order.
@@ -5996,6 +6000,10 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                 input_tokens=usage.get("input_tokens"),
                 output_tokens=usage.get("output_tokens"),
                 reasoning_tokens=usage.get("reasoning_tokens"),
+                ask_id=ask_id,
+                session_id=usage_session_id,
+                turn_id=ask_id,
+                token_scope=usage.get("token_scope"),
             )
             if usage.get("reasoning_tokens") is not None:
                 logger.log_reasoning(
@@ -6937,6 +6945,271 @@ def _refresh_peer_health_live(peer_name: str, peer_dir: Path, invoke_cmd: str, a
     if changed:
         _write_peer_health(peer_name, data, ai_root)
 
+
+
+_CANONICAL_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
+
+
+def _is_canonical_uuid(value: str | None) -> bool:
+    return isinstance(value, str) and bool(_CANONICAL_UUID_RE.match(value))
+
+
+class CodexAccountClient:
+    """One codex app-server session for reading rate limits / rate-limit reset
+    credits and (only via action_credit_consume) consuming a credit. Real
+    process + real network calls -- only ever constructed from human-confirmed,
+    terminal-origin actions. See design doc §2.5-2.6 for the RPC contract."""
+
+    def __init__(self, deadline_sec: float | None = None) -> None:
+        if not _SNAPSHOT_AVAILABLE or snapshot is None:
+            raise RuntimeError("snapshot module unavailable; cannot open a codex app-server session")
+        self._deadline_sec = deadline_sec if deadline_sec is not None else snapshot._tcfg("probe", "deadline_sec")
+        self._proc = None
+        self._queue: "queue.Queue" = queue.Queue()
+        self._next_id = 2  # 0=initialize, 1=first read; consume/extra reads start at 2
+
+    def __enter__(self) -> "CodexAccountClient":
+        codex_exe = snapshot._codex_binary()
+        if not codex_exe:
+            raise RuntimeError("codex binary not found")
+        self._proc = subprocess.Popen(
+            [codex_exe, "app-server"], stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+        )
+
+        def _reader():
+            try:
+                while True:
+                    line = self._proc.stdout.readline()
+                    if not line or self._proc.poll() is not None:
+                        break
+                    self._queue.put(line)
+            except Exception:
+                pass
+            self._queue.put(None)
+
+        threading.Thread(target=_reader, daemon=True).start()
+        self._send({"id": 0, "method": "initialize", "params": {
+            "clientInfo": {"name": "hub-credit", "version": "1.0"},
+            "capabilities": {"experimentalApi": True},
+        }})
+        self._send({"method": "initialized"})
+        return self
+
+    def __exit__(self, *_exc_info) -> bool:
+        self.close()
+        return False
+
+    def _send(self, obj: dict) -> None:
+        self._proc.stdin.write(json.dumps(obj) + "\n")
+        self._proc.stdin.flush()
+
+    def _recv(self, expected_id: int) -> dict:
+        deadline = time.monotonic() + self._deadline_sec
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"codex app-server did not respond to id={expected_id} in time")
+            try:
+                line = self._queue.get(timeout=min(0.5, remaining))
+            except queue.Empty:
+                continue
+            if line is None:
+                raise TimeoutError(f"codex app-server closed before responding to id={expected_id}")
+            try:
+                obj = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if obj.get("id") == expected_id:
+                if "result" in obj:
+                    return obj["result"]
+                raise RuntimeError(f"codex app-server error for id={expected_id}: {obj.get('error')}")
+
+    def read_rate_limits(self) -> dict:
+        rid = self._next_id
+        self._next_id += 1
+        self._send({"id": rid, "method": "account/rateLimits/read", "params": None})
+        return self._recv(rid)
+
+    def consume_reset_credit(self, *, credit_id: str, idempotency_key: str) -> dict:
+        rid = self._next_id
+        self._next_id += 1
+        self._send({
+            "id": rid, "method": "account/rateLimitResetCredit/consume",
+            "params": {"creditId": credit_id, "idempotencyKey": idempotency_key},
+        })
+        return self._recv(rid)
+
+    def close(self) -> None:
+        try:
+            if self._proc and self._proc.poll() is None:
+                snapshot._kill_process_tree_windows(self._proc.pid)
+        except Exception:
+            pass
+
+
+def _audit_credit_step(step: str, credit_id: str, idempotency_key: str | None, **kwargs) -> None:
+    """Append a credit-consume lifecycle audit line (intent/consumed/...).
+    Best-effort -- must never block or fail the actual consume flow."""
+    try:
+        logger = _get_logger()
+        if logger:
+            logger.log_console(
+                channel="credit-audit",
+                message=json.dumps({
+                    "step": step,
+                    "credit_id": credit_id,
+                    "idempotency_key": idempotency_key,
+                    **kwargs,
+                }),
+            )
+    except Exception:
+        pass
+
+
+def _validate_reset_credit(result: dict | None, credit_id: str) -> bool:
+    """True iff `credit_id` is present in rateLimitResetCredits.credits with
+    status=='available' and not expired. Handles missing/null summary, null/
+    empty detail list, wrong status, and expiry -- all reject (design §2.6)."""
+    if not isinstance(result, dict):
+        return False
+    summary = result.get("rateLimitResetCredits")
+    if not isinstance(summary, dict):
+        return False
+    credits = summary.get("credits")
+    if not isinstance(credits, list):
+        return False
+    now = time.time()
+    for entry in credits:
+        if not isinstance(entry, dict) or entry.get("id") != credit_id:
+            continue
+        if entry.get("status") != "available":
+            return False
+        expires_at = entry.get("expiresAt")
+        if expires_at is not None and expires_at <= now:
+            return False
+        return True
+    return False
+
+
+def _verify_reset_credit(pre_result: dict | None, post_result: dict | None, credit_id: str) -> bool:
+    """True iff a fresh post-consume read corroborates the credit was spent:
+    availableCount decremented by >=1 AND the credit is absent or no longer
+    'available' in the post list."""
+    pre_summary = (pre_result or {}).get("rateLimitResetCredits") or {}
+    post_summary = (post_result or {}).get("rateLimitResetCredits") or {}
+    pre_count = pre_summary.get("availableCount")
+    post_count = post_summary.get("availableCount")
+    if not isinstance(pre_count, (int, float)) or not isinstance(post_count, (int, float)):
+        return False
+    if post_count > pre_count - 1:
+        return False
+    post_credits = post_summary.get("credits")
+    if isinstance(post_credits, list):
+        for entry in post_credits:
+            if isinstance(entry, dict) and entry.get("id") == credit_id and entry.get("status") == "available":
+                return False
+    return True
+
+
+def action_credit_status(peer: str, *, as_json: bool = False) -> None:
+    """Read-only view of a peer's rate-limit reset credits. Never consumes."""
+    with CodexAccountClient() as client:
+        result = client.read_rate_limits()
+
+    if as_json:
+        print(json.dumps(result))
+        return
+    summary = result.get("rateLimitResetCredits") if isinstance(result, dict) else None
+    if not isinstance(result, dict) or "rateLimitResetCredits" not in result:
+        print("rateLimitResetCredits: absent (not reported by this app-server build)")
+    elif summary is None:
+        print("rateLimitResetCredits: null")
+    else:
+        print(f"availableCount={summary.get('availableCount')} credits={summary.get('credits')}")
+
+
+def action_credit_consume(
+    peer: str, credit_id: str, *, confirm: bool, idempotency_key: str | None = None,
+    as_json: bool = False, origin: str = "terminal",
+) -> None:
+    """Consume ONE Codex rate-limit reset credit. Irreversible; human-confirmed
+    (terminal origin + --confirm) only. See design doc §2.6 for the full
+    preflight -> consume -> verify flow and exit-code contract:
+    0=verified success, 1=transport/verification failure,
+    2=backend no-op (nothingToReset/noCredit), 3=preflight/auth rejection."""
+    if origin != "terminal":
+        print("[HUB:ERROR] credit-consume requires terminal (human) origin", file=sys.stderr)
+        sys.exit(3)
+    if not peer or peer != "cx":
+        print("[HUB:ERROR] credit-consume is only supported for peer 'cx'", file=sys.stderr)
+        sys.exit(3)
+    if not credit_id:
+        print("[HUB:ERROR] credit-consume requires --credit-id", file=sys.stderr)
+        sys.exit(3)
+    if confirm is not True:
+        print("[HUB:ERROR] credit-consume requires --confirm (irreversible action)", file=sys.stderr)
+        sys.exit(3)
+    if idempotency_key is not None and not _is_canonical_uuid(idempotency_key):
+        print("[HUB:ERROR] --idempotency-key must be a canonical UUID", file=sys.stderr)
+        sys.exit(3)
+
+    key = idempotency_key or str(uuid.uuid4())
+
+    with CodexAccountClient() as client:
+        try:
+            preflight = client.read_rate_limits()
+        except Exception as exc:
+            print(f"[HUB:ERROR] credit-consume preflight read failed: {exc}", file=sys.stderr)
+            sys.exit(3)
+
+        if not _validate_reset_credit(preflight, credit_id):
+            print(f"[HUB:ERROR] credit {credit_id} is not an available reset credit", file=sys.stderr)
+            sys.exit(3)
+
+        _audit_credit_step("intent", credit_id, key, peer=peer)
+
+        try:
+            outcome_result = client.consume_reset_credit(credit_id=credit_id, idempotency_key=key)
+        except Exception as exc:
+            print(
+                f"[HUB:ERROR] credit-consume transport failure (ambiguous outcome, "
+                f"idempotency_key={key}): {exc}", file=sys.stderr,
+            )
+            sys.exit(1)
+
+        outcome = (outcome_result or {}).get("outcome")
+
+        if outcome in ("nothingToReset", "noCredit"):
+            payload = {"outcome": outcome, "credit_id": credit_id, "idempotency_key": key}
+            print(json.dumps(payload) if as_json else f"credit-consume: {outcome} (no-op, no reset performed)")
+            sys.exit(2)
+
+        if outcome not in ("reset", "alreadyRedeemed"):
+            print(f"[HUB:ERROR] credit-consume: unrecognized backend outcome {outcome!r}", file=sys.stderr)
+            sys.exit(1)
+
+        try:
+            post = client.read_rate_limits()
+        except Exception as exc:
+            payload = {
+                "status": "consume_succeeded_verification_pending", "outcome": outcome,
+                "credit_id": credit_id, "idempotency_key": key, "error": str(exc),
+            }
+            print(json.dumps(payload) if as_json else f"consume_succeeded_verification_pending: {exc}")
+            sys.exit(1)
+
+    if not _verify_reset_credit(preflight, post, credit_id):
+        print(
+            f"[HUB:ERROR] credit-consume: post-verification did not confirm the reset "
+            f"(backend outcome={outcome})", file=sys.stderr,
+        )
+        sys.exit(1)
+
+    payload = {"outcome": outcome, "credit_id": credit_id, "idempotency_key": key, "verified": True}
+    print(json.dumps(payload) if as_json else f"credit-consume: {outcome} (verified)")
 
 
 def action_peer_status(node_id: str | None = None, include_all: bool = False) -> None:
@@ -10066,7 +10339,7 @@ def main() -> None:
         prog="hub",
         description="AI collaboration hub - Protocol v4.2",
     )
-    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-all", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "freshness-sweep", "terminal-handoff", "terminal-duty-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "thread-promote", "alert-raise", "proposal-add", "proposal-vote", "proposal-list", "broker-submit", "broker-drain", "broker-status", "update-signatures", "arbiter-review"])
+    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-all", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "freshness-sweep", "terminal-handoff", "terminal-duty-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "thread-promote", "alert-raise", "proposal-add", "proposal-vote", "proposal-list", "broker-submit", "broker-drain", "broker-status", "update-signatures", "arbiter-review", "credit-status", "credit-consume"])
     parser.add_argument("--ai-root", dest="ai_root",
                         help="Explicit .ai root; pins HUB_AI_ROOT for this process (deterministic; avoids the cwd-phantom bug)")
     parser.add_argument("--force", action="store_true",
@@ -10166,6 +10439,10 @@ def main() -> None:
     parser.add_argument("--days", type=int, default=14)
     parser.add_argument("--min-triggers", dest="min_triggers", type=int, default=3)
     parser.add_argument("--limit", type=int, default=50)
+    parser.add_argument("--credit-id", dest="credit_id")
+    parser.add_argument("--confirm", action="store_true")
+    parser.add_argument("--idempotency-key", dest="idempotency_key")
+    parser.add_argument("--json", dest="as_json", action="store_true")
 
     args = parser.parse_args()
     # --ai-root pins HUB_AI_ROOT for every downstream find_ai_root() in this process.
@@ -10458,6 +10735,17 @@ def main() -> None:
         rnd = _read_json(round_path)
         result = run_arbiter_on_round(ai_root, rnd)
         print(json.dumps(result, ensure_ascii=False, indent=2))
+    elif act == "credit-status":
+        if not args.peer:
+            print("[HUB] credit-status requires --peer", file=sys.stderr); sys.exit(3)
+        action_credit_status(args.peer, as_json=args.as_json)
+    elif act == "credit-consume":
+        if not args.peer or not args.credit_id:
+            print("[HUB] credit-consume requires --peer and --credit-id", file=sys.stderr); sys.exit(3)
+        action_credit_consume(
+            args.peer, args.credit_id, confirm=args.confirm,
+            idempotency_key=args.idempotency_key, as_json=args.as_json, origin=origin,
+        )
 
 def global_exception_trap(exc_type, exc_value, exc_traceback):
     import traceback
