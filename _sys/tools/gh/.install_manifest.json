@@ -1,0 +1,16 @@
+{
+  "tool": "gh",
+  "declared_version": "2.96.0",
+  "url": "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_windows_amd64.zip",
+  "checksum_algo": "sha256",
+  "checksum_value": "c2d6acc935cd2f00e2144d7e036d5cd82e6b6bd5594e8c75aa75ef2a4ed6aac3",
+  "checksum_source": "computed_tls_trust",
+  "checksum_verified": false,
+  "canary_command": [
+    "gh.exe",
+    "--version"
+  ],
+  "canary_output": "gh version 2.96.0 (2026-07-02)\nhttps://github.com/cli/cli/releases/tag/v2.96.0\n",
+  "installed_at": "2026-07-21T10:02:05.196037+00:00",
+  "source_config_hash": "08aef404b6c02587ef7632ee5d08fa5900f122415712619eca17797faffb322c"
+}

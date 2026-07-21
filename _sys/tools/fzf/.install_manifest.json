@@ -1,0 +1,16 @@
+{
+  "tool": "fzf",
+  "declared_version": "0.74.1",
+  "url": "https://github.com/junegunn/fzf/releases/download/v0.74.1/fzf-0.74.1-windows_amd64.zip",
+  "checksum_algo": "sha256",
+  "checksum_value": "d83a94a68a9203f6366754123c0e4d7a61e16be18a5d845f4838664b330c4f5f",
+  "checksum_source": "computed_tls_trust",
+  "checksum_verified": false,
+  "canary_command": [
+    "fzf.exe",
+    "--version"
+  ],
+  "canary_output": "0.74.1 (eae8d9d2)\n",
+  "installed_at": "2026-07-21T10:02:03.548922+00:00",
+  "source_config_hash": "9b4bd0f543eb4ea587fd645996612552e6222aeffb65cf9c962f59bc1fc9235b"
+}

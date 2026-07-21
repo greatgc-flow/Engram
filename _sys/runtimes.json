@@ -212,7 +212,8 @@
                 {
                     "url": "https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v29.33.0/themes.zip",
                     "type": "zip",
-                    "dest": "themes"
+                    "dest": "themes",
+                    "sha256": "6871d273435e067e40136839467f8c01fc9f123a59535964dbe9287f17740d91"
                 }
             ]
         },

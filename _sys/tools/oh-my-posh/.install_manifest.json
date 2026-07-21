@@ -1,0 +1,16 @@
+{
+  "tool": "oh-my-posh",
+  "declared_version": "29.33.0",
+  "url": "https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v29.33.0/posh-windows-amd64.exe",
+  "checksum_algo": "sha256",
+  "checksum_value": "51a8da831a7f08c68d289e8d45f4112328679acf1058b41e30de52223620fa6e",
+  "checksum_source": "computed_tls_trust",
+  "checksum_verified": false,
+  "canary_command": [
+    "oh-my-posh.exe",
+    "--version"
+  ],
+  "canary_output": "29.33.0\n",
+  "installed_at": "2026-07-21T10:02:08.128287+00:00",
+  "source_config_hash": "3ce8c5683b4bf4fde0ca23024f1cd014b0dfa292a8af78d6de8e1830d5a79114"
+}
