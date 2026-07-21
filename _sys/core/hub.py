@@ -4716,8 +4716,8 @@ def _arbiter_record_invocation(ai_root: Path | None, now=None) -> None:
         path = ai_root / "arbiter_budget.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(new, ensure_ascii=False), encoding="utf-8")
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[HUB] Failed to update arbiter_budget.json: {exc}", file=sys.stderr)
 
 
 def arbiter_decide(ai_root, context, config, snapshot_obj=None, now=None) -> dict:

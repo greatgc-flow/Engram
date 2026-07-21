@@ -62,8 +62,8 @@ def _health(env: dict, status: str, failures: int = 0, duration_ms: int | None =
                 data.setdefault("availability", {})["last_invocation_duration_ms"] = duration_ms
                 data["availability"]["last_invocation_exit_code"] = 0 if status == "GREEN" else 1
                 health_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"[CLI] Warning: failed to update invocation metrics in health.json: {exc}", file=sys.stderr)
 
 
 def main() -> None:

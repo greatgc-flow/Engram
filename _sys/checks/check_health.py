@@ -53,8 +53,8 @@ def _update_health_json(health_file: Path, size_mb: float, status: str) -> None:
             "checked_at": ts,
         }
         health_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[check_health] Error writing health state: {exc}", file=sys.stderr)
 
 
 def _mark_health_error(health_file: Path, dt: str) -> None:
@@ -66,8 +66,8 @@ def _mark_health_error(health_file: Path, dt: str) -> None:
     try:
         data.setdefault("session_health", {})["last_failure_reason"] = f"context_health_failed_{dt}"
         health_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[check_health] Error writing health state: {exc}", file=sys.stderr)
 
 
 def _claude_project_key(project_root: Path) -> str:

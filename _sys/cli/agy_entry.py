@@ -66,8 +66,8 @@ def _health(env: dict, status: str, pid: int | None = None) -> None:
             data = json.loads(health_path.read_text(encoding="utf-8")) if health_path.exists() else {}
             data.setdefault("availability", {})["active_pid"] = pid
             health_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[CLI] Warning: failed to update active_pid in health.json: {exc}", file=sys.stderr)
 
 
 def main() -> None:
@@ -112,8 +112,8 @@ def main() -> None:
             data = json.loads(health_path.read_text(encoding="utf-8")) if health_path.exists() else {}
             data.setdefault("availability", {}).pop("active_pid", None)
             health_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[CLI] Warning: failed to clear active_pid in health.json: {exc}", file=sys.stderr)
 
     sys.exit(exit_code)
 

@@ -146,8 +146,8 @@ def archive_gemini_session(portable_root: Path) -> None:
                 data = json.loads(smap_file.read_text(encoding="utf-8"))
                 history = list(data.get("history", []))
                 active = data.get("active")
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"[ctx-end] Warning: session-map.json unreadable, starting fresh history: {exc}", file=sys.stderr)
         if active:
             active["ended_at"] = now_ts
             history.append(active)

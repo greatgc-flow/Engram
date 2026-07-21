@@ -14,8 +14,8 @@ def main() -> None:
         if gc.get("enabled") is not False:
             print("[GATE] gemini=ON")
             sys.exit(0)
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[GATE ERROR] Failed to parse orchestration.json: {exc}", file=sys.stderr)
     print("[GATE] gemini=OFF")
     sys.exit(1)
 

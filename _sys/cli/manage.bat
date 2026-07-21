@@ -6,7 +6,7 @@ setlocal
 for %%I in ("%~dp0..\..") do set "BASE_DIR_PHYS=%%~fI"
 set "PY=%BASE_DIR_PHYS%\_sys\env\python\python.exe"
 
-if not exist "%PY%" echo [Error] Portable Python not found at: %PY% && exit /b 1
+if not exist "%PY%" echo [Error] Portable Python not found at: "%PY%" && exit /b 1
 
 "%PY%" "%~dp0manage.py" %*
 endlocal
