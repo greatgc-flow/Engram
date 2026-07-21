@@ -181,6 +181,9 @@ def cmd_suspend(peer_id: str, reason: str, dry_run: bool) -> int:
     if orch is None:
         print("[ERROR] orchestration.json not found", file=sys.stderr)
         return 1
+    if "hub_nodes" not in orch:
+        print("[ERROR] orchestration.json missing 'hub_nodes'", file=sys.stderr)
+        return 1
     nodes = orch["hub_nodes"]
     if not _orch_find(nodes, peer_id):
         print(f"[ERROR] peer {peer_id!r} not found in orchestration.json", file=sys.stderr)
@@ -230,6 +233,9 @@ def cmd_resume(peer_id: str, dry_run: bool) -> int:
     if orch is None:
         print("[ERROR] orchestration.json not found", file=sys.stderr)
         return 1
+    if "hub_nodes" not in orch:
+        print("[ERROR] orchestration.json missing 'hub_nodes'", file=sys.stderr)
+        return 1
     nodes = orch["hub_nodes"]
     node = _orch_find(nodes, peer_id)
     if not node:
@@ -276,6 +282,9 @@ def cmd_add(
     orch = _load(_ORCH)
     if orch is None:
         print("[ERROR] orchestration.json not found", file=sys.stderr)
+        return 1
+    if "hub_nodes" not in orch:
+        print("[ERROR] orchestration.json missing 'hub_nodes'", file=sys.stderr)
         return 1
     nodes = orch["hub_nodes"]
     peers_data = _load(_PEERS) or {"peers": {}}
@@ -366,6 +375,9 @@ def cmd_remove(peer_id: str, dry_run: bool) -> int:
     if orch is None:
         print("[ERROR] orchestration.json not found", file=sys.stderr)
         return 1
+    if "hub_nodes" not in orch:
+        print("[ERROR] orchestration.json missing 'hub_nodes'", file=sys.stderr)
+        return 1
     nodes = orch["hub_nodes"]
     node = _orch_find(nodes, peer_id)
     if node and node.get("enabled") is not False:
@@ -431,6 +443,9 @@ def cmd_status() -> int:
     orch = _load(_ORCH)
     if orch is None:
         print("[ERROR] orchestration.json not found", file=sys.stderr)
+        return 1
+    if "hub_nodes" not in orch:
+        print("[ERROR] orchestration.json missing 'hub_nodes'", file=sys.stderr)
         return 1
     nodes = orch["hub_nodes"]
     print(f"\n{'NODE':12} {'TYPE':10} {'ENABLED':8} {'INVOKE':12}")
