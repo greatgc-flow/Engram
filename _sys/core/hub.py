@@ -7012,11 +7012,19 @@ class CodexAccountClient:
             self._queue.put(None)
 
         threading.Thread(target=_reader, daemon=True).start()
-        self._send({"id": 0, "method": "initialize", "params": {
-            "clientInfo": {"name": "hub-credit", "version": "1.0"},
-            "capabilities": {"experimentalApi": True},
-        }})
-        self._send({"method": "initialized"})
+        try:
+            self._send({"id": 0, "method": "initialize", "params": {
+                "clientInfo": {"name": "hub-credit", "version": "1.0"},
+                "capabilities": {"experimentalApi": True},
+            }})
+            # Wait for id:0's success before sending `initialized` -- a strict
+            # app-server may reject a premature `initialized` notification
+            # (design doc §2.4).
+            self._recv(0)
+            self._send({"method": "initialized"})
+        except Exception:
+            self.close()
+            raise
         return self
 
     def __exit__(self, *_exc_info) -> bool:

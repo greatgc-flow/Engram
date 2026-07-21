@@ -224,14 +224,6 @@ def _codex_rate_limits(deadline_sec=None):
     if deadline_sec is None:
         deadline_sec = _tcfg("probe", "deadline_sec")
     import threading, queue
-    rpc_messages = (
-        {"id": 0, "method": "initialize", "params": {
-            "clientInfo": {"name": "hub-credit", "version": "1.0"},
-            "capabilities": {"experimentalApi": True},
-        }},
-        {"method": "initialized"},
-        {"id": 1, "method": "account/rateLimits/read", "params": None},
-    )
     codex_exe = _codex_binary()
     if not codex_exe:
         return None
@@ -239,12 +231,6 @@ def _codex_rate_limits(deadline_sec=None):
     try:
         proc = subprocess.Popen([codex_exe, "app-server"], stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-        try:
-            for rpc_msg in rpc_messages:
-                proc.stdin.write(json.dumps(rpc_msg) + "\n")
-                proc.stdin.flush()
-        except Exception:
-            return None
 
         q: "queue.Queue" = queue.Queue()
 
@@ -266,24 +252,53 @@ def _codex_rate_limits(deadline_sec=None):
             q.put(None)  # EOF / reader-done sentinel
 
         threading.Thread(target=_reader, daemon=True).start()
-
         deadline = time.monotonic() + deadline_sec
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break  # deadline enforced regardless of a blocked readline
-            try:
-                line = q.get(timeout=min(0.5, remaining))
-            except queue.Empty:
-                continue
-            if line is None:
-                break
-            try:
-                obj = json.loads(line)
-            except (json.JSONDecodeError, ValueError):
-                continue
-            if obj.get("id") == 1 and isinstance(obj.get("result"), dict):
-                return obj["result"]
+
+        def _wait_for_id(expected_id):
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None
+                try:
+                    line = q.get(timeout=min(0.5, remaining))
+                except queue.Empty:
+                    continue
+                if line is None:
+                    return None
+                try:
+                    obj = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                if obj.get("id") == expected_id and isinstance(obj.get("result"), dict):
+                    return obj["result"]
+
+        try:
+            proc.stdin.write(json.dumps({
+                "id": 0, "method": "initialize", "params": {
+                    "clientInfo": {"name": "hub-credit", "version": "1.0"},
+                    "capabilities": {"experimentalApi": True},
+                },
+            }) + "\n")
+            proc.stdin.flush()
+        except Exception:
+            return None
+
+        # Wait for id:0's success before sending `initialized` + the request --
+        # a strict app-server may reject a premature `initialized` notification
+        # (design doc §2.4).
+        if _wait_for_id(0) is None:
+            return None
+
+        try:
+            proc.stdin.write(json.dumps({"method": "initialized"}) + "\n")
+            proc.stdin.write(json.dumps({
+                "id": 1, "method": "account/rateLimits/read", "params": None,
+            }) + "\n")
+            proc.stdin.flush()
+        except Exception:
+            return None
+
+        return _wait_for_id(1)
     except Exception:
         pass
     finally:
