@@ -39,11 +39,11 @@
 
 | ID | Check | Pass Criteria |
 |----|-------|---------------|
-| C-01 | `protocol.json` routing fallback: `"first_healthy"` in all 7 task types — no `"cc"` monopoly | `jq '.routing_rules[].fallback'` → all `"first_healthy"` |
+| C-01 | `routing-config.json` weighted routes (R01-R12) resolve with explicit fallbacks — no `"cc"` monopoly | Inspect each `R0*`/`R1*` entry's fallback chain in `routing-config.json` |
 | C-02 | `ask-all`: parallel (threading), skips disabled nodes, broadcasts to all active peers | `hub.py ask-all --query "..."` returns per-peer results |
 | C-03 | `lessons-propose`: broadcasts `LESSON_REVIEW_REQUEST` to all current room members | Fair review — any peer can respond before activation |
 | C-04 | `lessons-activate`: calls `_try_lesson_broadcast()` soft-broadcast to room members | Activation event propagates; no error if room is empty |
-| C-05 | `ctx_save.py`: updates CLAUDE.md + GEMINI.md + AGENTS.md `## Current State` symmetrically | cx session continuity — all 3 files get same checkpoint marker |
+| C-05 | Session handoff checkpoints land in `.ai/sessions/room-{uuid}/handoff.md`, not a mutable `## Current State` heading in a root doc | cx session continuity — check the room's `handoff.md` checkpoint sink |
 | C-06 | `collab_rate` is read from `protocol.json["collab_rate"]["current"]` | Deprecated `config.json["ratio"]` must NOT be used |
 | C-07 | All CLI peers (`ag`, `cc`, `cx`) use identical `session_mode: reuse` via ID injection | No `session_mode: none` or A6/`ipc_stateless_home` hacks allowed |
 
@@ -69,7 +69,7 @@
 | E-02 | `CONVENTION.md §2-1`: references `dispatch.bat` / `dispatcher.py` (not deprecated `manage.bat` / `manage.py`) | Section 2-1 updated |
 | E-03 | `_sys/docs-v2/00-MANIFEST.md` is SSOT index; `_sys/docs/` is archive (history only) | Never edit archived files; update docs-v2 instead |
 | E-04 | Root MD file set: `README.md`, `CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, `PROTOCOL.md`, `CONVENTION.md` — all present | `Get-ChildItem "P:\" -Filter "*.md"` |
-| E-05 | `AGENTS.md` has `## Current State` section (cx session continuity) | Section exists; `ctx_save.py` updates it |
+| E-05 | Session continuity uses the room's `.ai/sessions/room-{uuid}/handoff.md`, not a root-doc `## Current State` heading | Checkpoint sink exists and is current |
 | E-06 | `GEMINI.md` and `CLAUDE.md` version/last-updated header current | Not older than 30 days from last structural change |
 | E-07 | All file paths referenced in docs-v2 actually exist on disk | `check_docs_mece.py --path-check` → 0 broken paths (planned: EDGE-04) |
 | E-08 | All internal markdown anchor links (`§N`, `#section`) resolve to real sections | `check_docs_mece.py --anchor-check` → 0 broken anchors (planned: EDGE-04) |
@@ -100,7 +100,7 @@
 | G-01 | No direct writes to `.ai/state.json` — use hub.py IPC commands | `grep -r "state.json" --include="*.py"` → writes only through hub |
 | G-02 | Health checks: zero-token (local `health.json` reads only — no model calls) | INV-08; health.json updated by `health-update` command |
 | G-03 | RED recovery uses `peer-recover`, NOT manual `health-update --status GREEN` | INV-11; manual override bypasses root-cause fix |
-| G-04 | IPC query file naming: `{peer_id}-{YYYYMMDDHHMMSS}-{RAND4}.txt` (unique per call) | `protocol.json["active_constraints"]["ipc_query_file_naming"]` |
+| G-04 | IPC query file naming: `{peer_id}-{YYYYMMDDHHMMSS}-{tag}.txt`, `tag` any descriptive suffix (unique per call) | `protocol.json["active_constraints"]["ipc_query_file_naming"]` |
 | G-05 | IPC queries written in English (not Korean) | Korean costs 2–3× tokens; peer context windows fill faster |
 
 ---

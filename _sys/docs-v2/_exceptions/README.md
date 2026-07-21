@@ -35,7 +35,7 @@ Both files created:
 - `_sys/ai/routing-config.json` v1.0 (R01-R12 role taxonomy routing weights)
 - Additional new files: `error-taxonomy.json`, `logging-config.json`
 - Schemas documented in `ops/schemas.md`; architecture decisions in
-  `ops/peer-debate-2026-06-19.md`.
+  `_sys/docs/history/ops/peer-debate-2026-06-19.md` (archived).
 
 ### EDGE-02: ~~`.ai/` vs `_sys/ai/` path inconsistency~~ (RESOLVED 2026-06-18)
 
@@ -43,15 +43,13 @@ Verified: `.ai/sessions/` exists at root (`P:\.ai\sessions\room-*`). Path in ses
 `_sys/ai/` holds config/state files (protocol.json, peers.json, etc.); `.ai/` holds runtime IPC (sessions, mailbox).
 **Resolution:** Closed — no fix needed. Paths serve different purposes and are both correct.
 
-### EDGE-03: master-plan.md implementation status unknown
+### EDGE-03: ~~master-plan.md implementation status unknown~~ (RESOLVED — archived)
 
-`general/master-plan.md` has 5 roadmap items with no completion tracking.
-**Resolution:** Audit each item against hub.py code; mark DONE/PENDING.
+`general/master-plan.md` moved to `_sys/docs/history/general/master-plan.md` (dropped via 5-Whys, per docs-v2/00-MANIFEST.md's Archived section). Provenance-only; not a live unresolved edge.
 
-### EDGE-04: check_docs_mece.py not yet implemented
+### EDGE-04: ~~check_docs_mece.py not yet implemented~~ (RESOLVED)
 
-Documented in `ops/governance.md §6` as planned. Until it exists, INV-19 and coverage map rely on peer discipline.
-**Resolution:** Implement and wire into self_care.py.
+Implemented at `_sys/checks/check_docs_mece.py` and wired into `self_care.py` (invoked there directly). INV-19 and the coverage map are now mechanically enforced, not peer-discipline-only.
 
 ### EDGE-05: No automated path from active-lessons.jsonl → docs-v2 (feedback loop open)
 

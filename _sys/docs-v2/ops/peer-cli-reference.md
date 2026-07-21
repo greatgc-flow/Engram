@@ -11,7 +11,7 @@ Cross-ref: `general/lifecycle.md` (session/heartbeat), `specific/{cc,cx,ag}.md`,
 
 ---
 
-## 1. claude.cmd — Claude Code **2.1.197** (peer `cc`)
+## 1. claude.cmd — Claude Code **2.1.215** (peer `cc`)
 
 Path: `_sys/env/nodejs/npm-global/claude.cmd`. Default = interactive; `-p/--print`
 = non-interactive one-shot.
@@ -49,7 +49,7 @@ Path: `_sys/env/nodejs/npm-global/claude.cmd`. Default = interactive; `-p/--prin
 
 ---
 
-## 2. codex.cmd — codex-cli **0.142.5** (peer `cx`)
+## 2. codex.cmd — codex-cli **0.144.6** (peer `cx`)
 
 Path: `_sys/env/nodejs/npm-global/codex.cmd`. Subcommand-based; bare = interactive.
 
@@ -92,7 +92,7 @@ per-invocation startup overhead. Benign but slows first token. **✓run**
 
 ---
 
-## 3. agy.exe — Antigravity **1.0.14** (peer `ag`)
+## 3. agy.exe — Antigravity **1.1.5** (peer `ag`)
 
 Path: `_sys/tools/agy/agy.exe`. Go binary; Windows Console API (needs a real console/PTY).
 

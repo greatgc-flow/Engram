@@ -43,7 +43,7 @@ Residuals: {Open LOWs/DEFERs moved to handoff PENDING_ISSUES}
 Findings: {Summary of discovery}
 Evidence: {Cited file, code, or log}
 Open Questions: {None | List}
-Sign-off: [ ] cc [ ] gc [ ] cx
+Sign-off: [ ] cc [ ] ag [ ] cx
 ```
 
 ---
@@ -62,7 +62,7 @@ OPEN_QUESTIONS: {Numbered list or NONE}
 ---
 
 ## 5. [LESSON_LEARNED]
-> Use: Reflection or error recovery. Auto-parsed by `hub.py lesson-add`.
+> Use: Reflection or error recovery. Auto-parsed by `hub.py lessons-propose --title --rule --category ...`.
 
 ```markdown
 [LESSON_LEARNED: {LL-ID-if-exists | "NEW"}]
@@ -86,8 +86,5 @@ Changes:
 - {File or component} -> {What changes}
 Affected Artifacts: {File paths}
 Risks: {Known risks or NONE}
-Votes:
-- cc: PENDING
-- gc: PENDING
-- cx: PENDING
+Votes: (derived from protocol.json["consensus"]["r10_voters"] at proposal-add time; do not hardcode a voter list here)
 ```

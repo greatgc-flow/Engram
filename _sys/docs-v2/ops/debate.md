@@ -1,6 +1,6 @@
 # Ops — Exhaustive Work Session
 > Source: DEBATE_PROTOCOL.md v0.10 CANONICAL · 2026-06-14
-> Changelogs and appendices → _sys/docs/protocol/DEBATE_PROTOCOL.md (original)
+> Changelogs and appendices → _sys/docs/history/DEBATE_PROTOCOL.md (original)
 
 ---
 
@@ -18,10 +18,10 @@
 ## §3 — Invocation
 
 ```
-hub.py consensus-propose --subject "..." --voters cc,gc,cx --from {peer} --mode DEBATE
+hub.py consensus-propose --subject "..." --voters cc,ag,cx --from {peer}
 ```
 
-Two debate tiers:
+FULL vs ABBREVIATED are procedural tiers of the round itself (not a CLI flag):
 - **FULL**: multi-round (T-2 format). Required for HIGH/CRITICAL findings.
 - **ABBREVIATED**: single-round fast-path for LOW-stakes T-5 debates.
 

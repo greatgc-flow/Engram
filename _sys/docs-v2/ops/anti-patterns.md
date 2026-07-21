@@ -1,5 +1,5 @@
 # Ops — Peer Anti-Patterns
-> 21 failure modes for adversarial cross-review. "What NOT to do."
+> 22 failure modes for adversarial cross-review. "What NOT to do."
 > Referenced by: ops/debate.md §14 (cross-review), ops/templates.md §4 ([DEBATE_ROUND])
 
 ---

@@ -58,7 +58,7 @@
 - Any peer can be human-interface coordinator; coordinator role transferable by consensus
 - Coordinator switch is transparent to user (auto-forwarding to new coordinator)
 - Peer-specific strengths can receive weighted vote on their domain (by consensus, not default)
-- Peer definitions (id, capabilities, model, health schema) in peers.json; new peers added via config only
+- Peer definitions (id, capabilities, model, health schema) in orchestration.json (peers.json is the installation/provider registry only); new peers added via config only
 
 ### B2. Unanimous Consensus
 - All decisions require unanimous agreement across active peers
@@ -92,7 +92,7 @@
 ### B6. Model-Level Routing
 - Each peer can use multiple underlying models (e.g., Haiku for lightweight tasks, Opus for deep analysis)
 - Model selection criteria: task complexity, token cost, context window, health state
-- Implementation: per-peer config in peers.json (hub.py stays thin — generic dispatcher only)
+- Implementation: per-peer runtime profiles in orchestration.json (hub.py stays thin — generic dispatcher only)
 - Selection matrix: Standard / Effort / DeepThink modes with documented trigger criteria per peer profile
 
 ### B7. Recursive Debate Protocol
@@ -200,7 +200,7 @@
 - AI CLI processes isolated in portable env; root .peer dirs are junctions, not permanent
 
 ### F2. Portable CLI Setup
-- All AI CLIs (claude, gemini, codex, antigravity) installed in _sys/env/ (portable)
+- All AI CLIs (claude, gemini, codex installed in _sys/env/; antigravity's native binary in _sys/tools/agy/) — portable either way
 - Cleanup removes all CLI installs and junction dirs
 - MCP and other extensions added post-install; extensible design
 
@@ -211,7 +211,7 @@
 ### G1. docs-v2 as SSOT
 - All normative content lives in docs-v2; docs/history/ is read-only archive
 - Every normative claim cites a capsule (Decision Capsule) round ID
-- sync_docs.py applies approved capsules to docs-v2 automatically
+- sync_docs.py runs in dry-run mode from self_care.py (reports drift, does not auto-apply); actual mutation requires a separate approved/manual run
 
 ### G2. Traceability
 - Every component (doc, source, config) has bidirectional links to related components
