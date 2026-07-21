@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -106,6 +107,14 @@ def save_session_log(session_dir: Path, cwd: Path, claude_md: Path) -> Path:
     return ses_file
 
 
+def _gemini_session_keep_days() -> int:
+    """GEMINI_SESSION_KEEP as an int, falling back to 7 on an unset/invalid value."""
+    try:
+        return int(os.environ.get("GEMINI_SESSION_KEEP", "7"))
+    except ValueError:
+        return 7
+
+
 def archive_gemini_session(portable_root: Path) -> None:
     """Move active session to history in session-map.json and delete session-id.txt."""
     sys_gemini = portable_root / "_sys" / "gemini"
@@ -115,20 +124,38 @@ def archive_gemini_session(portable_root: Path) -> None:
         return
     print("[ctx-end] Archiving Gemini session to session-map...")
     now_ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    history: list = []
-    active = None
-    if smap_file.exists():
+
+    # Directory-mkdir lock: two terminals closing at once must not race on a
+    # read/modify/write of the shared session-map.json (last writer would
+    # otherwise silently drop the other's archived session).
+    lock_dir = smap_file.with_name(smap_file.name + ".lock")
+    for _ in range(50):
         try:
-            data = json.loads(smap_file.read_text(encoding="utf-8"))
-            history = list(data.get("history", []))
-            active = data.get("active")
-        except Exception:
+            lock_dir.mkdir(exist_ok=False)
+            break
+        except FileExistsError:
+            time.sleep(0.1)
+
+    try:
+        history: list = []
+        active = None
+        if smap_file.exists():
+            try:
+                data = json.loads(smap_file.read_text(encoding="utf-8"))
+                history = list(data.get("history", []))
+                active = data.get("active")
+            except Exception:
+                pass
+        if active:
+            active["ended_at"] = now_ts
+            history.append(active)
+        out = {"active": None, "history": history}
+        smap_file.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    finally:
+        try:
+            lock_dir.rmdir()
+        except OSError:
             pass
-    if active:
-        active["ended_at"] = now_ts
-        history.append(active)
-    out = {"active": None, "history": history}
-    smap_file.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     sid_file.unlink(missing_ok=True)
     print("[ctx-end] Gemini session archived.")
 
@@ -232,7 +259,7 @@ def main() -> None:
     )
     if ai_result.returncode != 0:
         archive_gemini_session(_PORTABLE_ROOT)
-        cleanup_gemini_sessions(_PORTABLE_ROOT, int(os.environ.get("GEMINI_SESSION_KEEP", "7")))
+        cleanup_gemini_sessions(_PORTABLE_ROOT, _gemini_session_keep_days())
         return
 
     sum_file = Path(str(ses_file) + ".summary.md")
