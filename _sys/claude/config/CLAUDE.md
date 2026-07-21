@@ -33,7 +33,7 @@
 - Run ctx-save at natural pause points during a session
 - Run ctx-end when done for the day
 
-## Multi-Peer Collaboration Protocol (v4.2)
+## Multi-Peer Collaboration Protocol (v4.3)
 
 All peers (cc, ag, cx) are **absolutely equal**. Any peer may communicate with user directly.
 Protocol config: **`P:\_sys\ai\protocol.json`** (single source of truth — collab_rate, routing, health, consensus)
@@ -41,8 +41,6 @@ Protocol docs: `P:\_sys\docs-v2\` (SSOT v1.1 — see 00-MANIFEST.md for load ord
 Common peer rules (IPC paths, hub commands, session start): `P:\_sys\ai\common\peer-rules.md`
 MUST/MUST-NOT rules index: `P:\_sys\docs-v2\10-invariants.md` (INV-01~19, PRO-01~16)
 Legal Code archive: `P:\_sys\docs\history\` (read-only reference)
-
-> `_sys/ai/config.json "ratio"` is DEPRECATED → use `protocol.json["collab_rate"]["current"]`
 
 ### ★ Standing Default: Always-On Collaboration
 
@@ -55,26 +53,20 @@ Legal Code archive: `P:\_sys\docs\history\` (read-only reference)
 
 Claude's Role: **Joint Design → Joint Execution → Joint Review → Report**
 
-### COLLAB_RATE Levels (`P:\_sys\ai\protocol.json` → `collab_rate.current`)
+### COLLAB_RATE Levels
 
-Defines integration depth and intervention points.
+**Sole authoritative table: `P:\_sys\docs-v2\general\protocol.md §4.1`.** Do not
+duplicate the table here — this file and protocol.md drifted into two
+incompatible schemes before this fix (found+fixed 2026-07-21). Read
+`collab_rate.current` from `protocol.json` at session start and look up its
+row in protocol.md §4.1 for the mode/autonomy/rule.
 
-| collab_rate | Mode | Intervention Point | Unanimous Consent |
-|------------|------|--------------------|-------------------|
-| 0 | **Inactive** | None | — |
-| 1 | **Manual** | Explicit Axis execution only | — |
-| 2 | **Architecture** | Once before Arch/Structure decisions | — |
-| 3 | **Planning** | Once before planning multi-file tasks | — |
-| 4 | **Checkpoint** | Before start + After completion (2x) | — |
-| 5 | **Code Partner** | Before every Edit/Write + After completion | — |
-| 6 | **Error Partner** | R:5 + Immediately on error/failure | — |
-| 7 | **Direction** | R:6 + Trade-off analysis if options ≥ 2 | Major direction shifts |
-| 8 | **Milestone** | R:7 + Review after every sub-task | Step completion |
-| 9 | **Pairing** | R:8 + Verify direction after 5 explores | Direction shifts |
-| 10 | **Sync** | **Full Phase** (Plan/Exec/Review/Report) | **Mandatory Every Step** |
-
-> **R:10 Detail**: Share detailed goals → Consensus → Proceed. No solo decision-making. Cross-verify results before reporting. (Ref: `_sys/docs-v2/general/protocol.md §COLLAB_RATE`)
-> **Final Call (R:8+)**: Proposer sends plan + "Any additional feedback or missed context?" → Finalized only after "ACK/Proceed" from all peers. (Ref: `_sys/docs-v2/general/consensus.md §Final Call`)
+> **R:10**: Every gate-OPEN voter in `protocol.json["consensus"]["r10_voters"]`
+> must explicitly `agree` before FINALIZE. Full detail: `protocol.md §4.2-4.4`.
+> **Final Call (R:8+)**: Proposer sends plan + "Any additional feedback or
+> missed context?" → finalized only after ACK from all peers. (Ref: `protocol.md
+> §4` Final Call — NOT `general/consensus.md`, which no longer exists; merged
+> into protocol.md, archived under `_sys/docs/history/`.)
 
 ### R:6~10 Trigger Rules
 
