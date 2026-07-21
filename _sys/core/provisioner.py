@@ -87,7 +87,27 @@ def _install_extra(tool_name: str, extra: dict, dest_dir: Path, setup_dir: Path)
     extra_dir.mkdir(parents=True, exist_ok=True)
     if kind == "zip":
         zp = setup_dir / f"{tool_name}-extra-{subfolder}.zip"
-        _download(url, zp, f"{tool_name}/{subfolder}")
+        # Same governed path as the main tool binary: redirect allowlist
+        # (_secure_download) plus checksum verification when declared -
+        # this used to call the unguarded _download(), skipping both.
+        print(f"  [i] Downloading {tool_name}/{subfolder}...")
+        _secure_download(url, zp)
+        declared_algo = None
+        declared_hash = None
+        for algo in ("sha3_256", "sha512", "sha256"):
+            if extra.get(algo):
+                declared_algo = algo
+                declared_hash = extra[algo]
+                break
+        if declared_hash:
+            downloaded_hash = _hash_file(zp, declared_algo)
+            if downloaded_hash != declared_hash:
+                zp.unlink(missing_ok=True)
+                raise ValueError(
+                    f"{tool_name}/{subfolder}: checksum mismatch "
+                    f"(expected {declared_hash}, got {downloaded_hash})"
+                )
+        print(f"  [OK] {zp.name} ({zp.stat().st_size / 1024**2:.1f} MB)")
         _extract(zp, extra_dir)
         zp.unlink(missing_ok=True)
         print(f"  [OK] {tool_name}/{subfolder} ready")
@@ -194,14 +214,33 @@ def _canon_hash(obj: dict) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 
+
+# GitHub release assets 302 to a time-limited signed URL on GitHub's own
+# release-asset CDN - a different host, but still GitHub's, not a third
+# party. Narrow allowlist (exact source -> exact known targets only, not
+# "any redirect is fine now") so a genuinely compromised/wrong mirror is
+# still rejected. Both CDN hostnames observed in practice (varies by
+# region/rollout); confirmed 2026-07-21 via direct redirect trace on
+# github.com/BurntSushi/ripgrep, github.com/cli/cli, and
+# github.com/JanDeDobbeleer/oh-my-posh release URLs.
+_GITHUB_RELEASE_CDN_ALLOWLIST: dict[str, frozenset[str]] = {
+    "github.com": frozenset({
+        "objects.githubusercontent.com",
+        "release-assets.githubusercontent.com",
+    }),
+}
+
+
 class _SameHostRedirectHandler(urllib.request.HTTPRedirectHandler):
     """Rejects cross-host redirects so a compromised/misconfigured mirror
-    can't silently substitute a different origin mid-download."""
+    can't silently substitute a different origin mid-download - except a
+    narrow allowlist for GitHub's own release-asset CDN (see
+    _GITHUB_RELEASE_CDN_ALLOWLIST)."""
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         orig_host = urlparse(req.full_url).netloc
         new_host = urlparse(newurl).netloc
-        if orig_host != new_host:
+        if orig_host != new_host and new_host not in _GITHUB_RELEASE_CDN_ALLOWLIST.get(orig_host, frozenset()):
             raise urllib.error.URLError("Cross-host redirect rejected by governance gate.")
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
