@@ -992,7 +992,7 @@ def test_tty_dashboard_elides_wide_rows_instead_of_wrapping(monkeypatch):
     snapshot = {"schema_version": 1, "peers": [rec], "profiles": [], "sessions": []}
     monkeypatch.setattr(diag, "collect_snapshot", lambda: snapshot)
     monkeypatch.setattr(diag.subprocess, "run", lambda *args, **kwargs: None)
-    monkeypatch.setattr(diag.shutil, "get_terminal_size", lambda: type(
+    monkeypatch.setattr(diag.shutil, "get_terminal_size", lambda *a, **kw: type(
         "Size", (), {"columns": 60, "lines": 24}
     )())
 

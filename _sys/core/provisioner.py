@@ -875,12 +875,14 @@ def deploy(ctx: dict) -> dict:
     # ── Python venv (not an immutable vendor binary - stays procedural) ──
     print("\n>>> Python venv")
     venv_py = env_dir / "venv" / "Scripts" / "python.exe"
+    venv_creation_failed = False
     if force or not venv_py.exists():
         try:
             subprocess.run([sys.executable, "-m", "pip", "install", "virtualenv", "--quiet"], check=True)
             subprocess.run([sys.executable, "-m", "virtualenv", str(env_dir / "venv")], check=True)
             print("  [OK] venv created")
         except (subprocess.CalledProcessError, OSError) as exc:
+            venv_creation_failed = True
             print(f"  [Fail] venv creation failed: {exc}")
             failed.append({
                 "component": "venv",
@@ -905,7 +907,7 @@ def deploy(ctx: dict) -> dict:
                 })
     if venv_py.exists():
         installed.append("venv")
-    elif not venv_failed:
+    elif not venv_creation_failed:
         failed.append({
             "component": "venv",
             "status": "postcondition_failed",
