@@ -1280,16 +1280,22 @@ def _session_ctx_text(row):
     return f"{pct:.0f}%" if isinstance(pct, (int, float)) else "absent"
 
 
+def _session_id_text(row):
+    sid = row.get("session_id")
+    return str(sid)[:8] if sid else "-"
+
+
 def _compact_session_row(row, peer, now, columns, terminal_profile=None):
     profile = _session_profile(row, peer)
     profile_label = f"{profile} [TERM]" if profile == terminal_profile else profile
     age = _session_age_text(row.get("last_used_at"), now)
     ctx = _session_ctx_text(row)
+    sid = _session_id_text(row)
     room_state = _session_room_state(row, profile, now, None)
     if columns is None:
-        return f"{profile_label} {age} {ctx} {room_state}"
+        return f"{profile_label} {age} {ctx} {sid} {room_state}"
     profile_cell = _pad(_elide_display(profile_label, 20), 20)
-    prefix = f"{profile_cell} {_pad(age, 5, align='right')} {_pad(ctx, 7)}"
+    prefix = f"{profile_cell} {_pad(age, 5, align='right')} {_pad(ctx, 7)} {_pad(sid, 8)}"
     if columns is not None and columns >= 120:
         model = _pad(_elide_display(str(row.get("model") or "absent"), 24), 24)
         prefix = f"{prefix} {model}"
@@ -1325,8 +1331,16 @@ def _active_terminal_profile():
     return f"{peer}.{profile}"
 
 
-def render_active_sessions(out, snapshot, *, now=None, columns=80, line_budget=None):
-    """Compact recent sessions from one supplied snapshot; never recollects."""
+def render_active_sessions(out, snapshot, *, now=None, columns=80, line_budget=None, limit=10):
+    """Compact recent sessions from one supplied snapshot; never recollects.
+
+    Unconstrained (line_budget=None, the normal standalone-command case): flat
+    top-`limit` sessions by recency across ALL peers -- no per-peer cap, so a
+    peer with lots of recent activity isn't hidden behind others (includes
+    sessions used via background/non-interactive asks the same as any other,
+    since the source data doesn't distinguish invocation mode).
+    Constrained (line_budget set, the live --watch HUD): unchanged round-robin
+    fairness + digest fallback so every peer stays visible in a tight budget."""
     if line_budget is not None:
         line_budget = max(0, int(line_budget))
         if line_budget == 0:
@@ -1360,8 +1374,11 @@ def render_active_sessions(out, snapshot, *, now=None, columns=80, line_budget=N
             if rank < len(capped[peer]):
                 round_robin.append((peer, capped[peer][rank]))
 
-    title = _elide_display("ACTIVE SESSIONS (active registry; max 3/peer)", columns)
-    header_prefix = f"{_pad('PROFILE', 20)} {_pad('AGE', 5, align='right')} {_pad('CTX', 7)}"
+    if line_budget is None:
+        title = _elide_display(f"ACTIVE SESSIONS (all peers; latest {limit})", columns)
+    else:
+        title = _elide_display("ACTIVE SESSIONS (active registry; max 3/peer)", columns)
+    header_prefix = f"{_pad('PROFILE', 20)} {_pad('AGE', 5, align='right')} {_pad('CTX', 7)} {_pad('SESSION', 8)}"
     if columns is not None and columns >= 120:
         header_prefix = f"{header_prefix} {_pad('MODEL', 24)}"
     header = header_prefix if columns is not None and _dw(header_prefix) >= columns else f"{header_prefix} ROOM / STATE"
@@ -1369,8 +1386,12 @@ def render_active_sessions(out, snapshot, *, now=None, columns=80, line_budget=N
 
     candidate_count = len(round_robin)
     if line_budget is None:
-        selected = round_robin
-        hidden = 0
+        flat_all = sorted(
+            ((peer, row) for peer in peer_order for row in groups[peer]),
+            key=lambda item: _session_display_sort_key(*item),
+        )
+        selected = flat_all[:limit]
+        hidden = max(0, len(flat_all) - len(selected))
     else:
         available = max(0, line_budget - 2)
         row_slots = available

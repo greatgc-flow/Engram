@@ -1695,7 +1695,12 @@ def test_live_pool_keypress_is_disabled_for_non_tty_without_misleading_hint(monk
     assert "press 'p'" not in out.getvalue()
 
 
-def test_recent_sessions_sort_missing_last_and_cap_three(monkeypatch):
+def test_recent_sessions_unconstrained_sorts_missing_last_with_no_per_peer_cap(monkeypatch):
+    """Unconstrained mode (line_budget=None) has no per-peer cap -- a session
+    with an unparseable last_used_at still sorts last (AGE renders '?') but
+    IS included, since "show all sessions" means all of them, not just the
+    newest 3 per peer (that fairness cap only applies to the tight live HUD;
+    see test_recent_sessions_round_robin_and_exact_hidden_count)."""
     diag = load_diag()
     monkeypatch.setattr(
         diag,
@@ -1718,9 +1723,8 @@ def test_recent_sessions_sort_missing_last_and_cap_three(monkeypatch):
     )
 
     text = out.getvalue()
-    assert text.index("cc.newest") < text.index("cc.middle") < text.index("cc.oldest")
-    assert "cc.missing" not in text
-    assert text.count("cc.") == 3
+    assert text.index("cc.newest") < text.index("cc.middle") < text.index("cc.oldest") < text.index("cc.missing")
+    assert text.count("cc.") == 4
 
 
 def test_recent_sessions_round_robin_and_exact_hidden_count():
@@ -1762,6 +1766,59 @@ def test_recent_sessions_display_globally_newest_first_after_fair_selection():
 
     text = out.getvalue()
     assert text.index("ag.new") < text.index("cx.middle") < text.index("cc.old")
+
+
+def test_recent_sessions_unconstrained_caps_at_limit_and_reports_hidden():
+    """No per-peer fairness cap unconstrained, but the flat top-N (default 10)
+    across all peers combined still applies, with a '+N hidden' footer."""
+    diag = load_diag()
+    rows = [
+        _session_row("cc", f"p{i}", f"2026-07-13T09:{59 - i:02d}:00+00:00")
+        for i in range(12)
+    ]
+    out = io.StringIO()
+
+    diag.render_active_sessions(
+        out, _snapshot_with_sessions(rows),
+        now=datetime(2026, 7, 13, 10, tzinfo=timezone.utc), columns=80,
+    )
+
+    text = out.getvalue()
+    assert all(f"cc.p{i}" in text for i in range(10))
+    assert not any(f"cc.p{i}" in text for i in range(10, 12))
+    assert "  +2 hidden" in text
+    assert "latest 10" in text
+
+
+def test_recent_sessions_shows_partial_session_id_column():
+    diag = load_diag()
+    row = _session_row("cc", "deepthink", "2026-07-13T09:59:00+00:00")
+    row["session_id"] = "409c5c25-7316-4874-98a4-a3ade5fa2635"
+    out = io.StringIO()
+
+    diag.render_active_sessions(
+        out, _snapshot_with_sessions([row]),
+        now=datetime(2026, 7, 13, 10, tzinfo=timezone.utc), columns=80,
+    )
+
+    text = out.getvalue()
+    assert "SESSION" in text
+    assert "409c5c25" in text
+    assert "409c5c25-7316-4874-98a4-a3ade5fa2635" not in text  # truncated, not full UUID
+
+
+def test_recent_sessions_missing_session_id_renders_dash():
+    diag = load_diag()
+    row = _session_row("cc", "deepthink", "2026-07-13T09:59:00+00:00")
+    out = io.StringIO()
+
+    diag.render_active_sessions(
+        out, _snapshot_with_sessions([row]),
+        now=datetime(2026, 7, 13, 10, tzinfo=timezone.utc), columns=80,
+    )
+
+    lines = out.getvalue().splitlines()
+    assert lines[2].split() == ["cc.deepthink", "1m", "10%", "-", "room-proj-b", "[ABSENT]"]
 
 
 def test_recent_sessions_budget_keeps_one_newest_row_per_peer_before_display_sort():
