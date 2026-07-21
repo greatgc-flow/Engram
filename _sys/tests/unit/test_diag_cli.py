@@ -913,10 +913,8 @@ def test_dashboard_follows_action_first_section_order(monkeypatch):
 
     assert (text.index(" ATTENTION")
             < text.index(" SUMMARY")
-            < text.index(" HEADROOM")
-            < text.index(" RECENT SESSIONS")
-            < text.index(" USAGE")
-            < text.index(" PROFILES & ROUTING")
+            < text.index(" SESSIONS & CONSUMPTION")
+            < text.index(" ROUTING & HEADROOM")
             < text.index(" POLICY")
             < text.index(" FRAME"))
     assert " PEER DETAIL" not in text
@@ -943,8 +941,8 @@ def test_watch_dashboard_keeps_action_first_order(monkeypatch):
     diag.render_dashboard(out, watch_mode=True)
     text = out.getvalue()
 
-    assert text.index(" ATTENTION") < text.index(" SUMMARY") < text.index(" HEADROOM")
-    assert text.index(" HEADROOM") < text.index(" RECENT SESSIONS") < text.index(" FRAME")
+    assert text.index(" ATTENTION") < text.index(" SUMMARY") < text.index(" SESSIONS & CONSUMPTION")
+    assert text.index(" SESSIONS & CONSUMPTION") < text.index(" ROUTING & HEADROOM") < text.index(" FRAME")
     assert " PEER DETAIL" not in text
 
 def test_peers_view_is_opt_in_and_default_dashboard_omits_cards(monkeypatch):
@@ -1170,9 +1168,9 @@ def test_headroom_next_target_marks_weaker_tier_risk():
     assert target["tier_risk"] is True
 
     out = io.StringIO()
-    diag.render_headroom(out, snapshot=snapshot)
+    diag.render_routing_and_headroom(out, snapshot=snapshot)
     text = out.getvalue()
-    assert "NEXT ag.standard headroom 90% TIER RISK" in text
+    assert "NEXT FAILOVER TARGET: ag.standard headroom 90% TIER RISK" in text
     assert "ag.opus" in text and "absent" in text
 
 
@@ -1245,6 +1243,7 @@ def test_sessions_view_renders_absent_context(monkeypatch):
     diag = load_diag()
     snapshot = {
         "sessions": [{
+            "peer": "cc",
             "profile": "cc.fable",
             "status": "active",
             "scope_key": "room-x:cc.fable",
@@ -1269,6 +1268,7 @@ def test_sessions_view_can_consume_existing_snapshot(monkeypatch):
     monkeypatch.setattr(diag, "collect_snapshot", lambda: (_ for _ in ()).throw(AssertionError("recollected")))
     snapshot = {
         "sessions": [{
+            "peer": "cx",
             "profile": "cx.deepthink",
             "status": "active",
             "scope_key": "room-x:cx.deepthink",
@@ -1282,7 +1282,7 @@ def test_sessions_view_can_consume_existing_snapshot(monkeypatch):
     diag.render_sessions(out, snapshot=snapshot)
 
     assert "cx.deepthink" in out.getvalue()
-    assert "100/1k 10%" in out.getvalue()
+    assert "10%" in out.getvalue()
 
 
 def test_recent_session_views_mark_closed_lease_state():

@@ -608,7 +608,7 @@ def render_summary(infos):
     print(_c(" SUMMARY", "bold"))
     print("=" * 60)
     headers = [_pad("PEER", 5), _pad("STATE", 11),
-               _pad("CONTEXT(used/win %)", 19), _pad("COST", 9), _pad("SRC", 12)]
+               _pad("CONTEXT(used/win %)", 19), _pad("TOTAL COST", 10), _pad("SRC", 12)]
     print(_c(" ".join(headers).rstrip(), "dim"))
     if sys.stdout.isatty():
         columns = shutil.get_terminal_size().columns
@@ -631,10 +631,10 @@ def render_summary(infos):
     
     for info in infos:
         peer = info["peer"].upper()
-        cost = f"${info['cost']:.4f}" if isinstance(info["cost"], (int, float)) else "-"
+        cost = f"${info['cost']:.4f}" if isinstance(info["cost"], (int, float)) else "absent"
         state_cell = _peer_state_cell(info)
         print(f"{_pad(peer, 5)} {state_cell} "
-              f"{_pad(_ctx_cell_raw(info), 19)} {_pad(cost, 9)} {_pad(_source_code(info.get('source')), 12)}")
+              f"{_pad(_ctx_cell_raw(info), 19)} {_pad(cost, 10)} {_pad(_source_code(info.get('source')), 12)}")
         visible_quotas = [
             quota for quota in (info.get("quotas") or [])
             if isinstance(quota.get("used_frac"), (int, float))
@@ -1707,10 +1707,8 @@ def render_dashboard(stdout=None, watch_mode=False, snapshot=None):
         content_panels = [
             (" ATTENTION", lambda target: render_attention(target, snapshot=snapshot)),
             (" SUMMARY", lambda target: _render_summary_to(target, infos)),
-            (" HEADROOM", lambda target: render_headroom(target, snapshot=snapshot, include_target=False)),
-            (" RECENT SESSIONS", lambda target: render_sessions(target, snapshot=snapshot)),
-            (" USAGE", lambda target: render_usage(target)),
-            (" PROFILES & ROUTING", lambda target: render_profiles(target, snapshot=snapshot)),
+            (" SESSIONS & CONSUMPTION", lambda target: render_sessions(target, snapshot=snapshot)),
+            (" ROUTING & HEADROOM", lambda target: render_routing_and_headroom(target, snapshot=snapshot, include_target=False)),
             (" POLICY", lambda target: render_policy(target)),
         ]
 
@@ -1950,33 +1948,52 @@ def render_profiles(stdout=None, snapshot=None):
     out.write(_c(_source_legend(), "dim") + "\n")
 
 
-def render_headroom(stdout=None, snapshot=None, include_target=True):
-    """Derived failover/headroom view. Consumes collect_snapshot only."""
+def render_routing_and_headroom(stdout=None, snapshot=None, include_target=True):
+    """Derived routing topology, failover/headroom, and historical usage view."""
     out = stdout or sys.stdout
     if snapshot is None:
         snapshot = collect_snapshot()
+
+    usage_stats = _ask_history_usage_stats(hours=24)
+    usage_by_profile = {row["profile"]: row for row in usage_stats}
+
     rows = _derive_headroom_rows(snapshot)
     if include_target:
         excluded = _failover_excluded_profile_ids()
         target = _next_headroom_target([r for r in rows if r.get("profile") not in excluded])
         if target:
             risk = " TIER RISK" if target.get("tier_risk") else ""
-            out.write(f"NEXT {target.get('profile')} headroom {_fmt_remaining(target.get('headroom'))}{risk}\n")
+            out.write(f"NEXT FAILOVER TARGET: {target.get('profile')} headroom {_fmt_remaining(target.get('headroom'))}{risk}\n")
         else:
-            out.write("NEXT absent\n")
-    out.write("PROFILE                HEADROOM QUOTA    CTX      EFFORT   STATE       SOURCE\n")
+            out.write("NEXT FAILOVER TARGET: absent\n")
+            
+    out.write(f"{_pad('PROFILE', 22)} {_pad('STATE', 11)} {_pad('HEADROOM', 8)} {_pad('QUOTA', 8)} {_pad('CTX', 8)} {_pad('EFFORT', 8)} {_pad('24H USAGE', 17)} SOURCE\n")
     for row in rows:
+        profile = str(row.get('profile') or '?')
         sources = row.get("sources") or {}
-        source_str = (f"ctx:{_source_code(sources.get('context'))} "
-                      f"q:{_source_code(sources.get('quota'))}")
+        source_str = f"c:{_source_code(sources.get('context'))} q:{_source_code(sources.get('quota'))}"
         risk = " TIER RISK" if row.get("tier_risk") else ""
+        
+        usage = usage_by_profile.get(profile)
+        if usage:
+            usage_str = f"{usage['count']} ({usage['fail_pct']:.1f}% fail)"
+        else:
+            usage_str = "-"
+            
+        c_state = _pad(str(row.get('state') or 'unknown'), 11)
+        if row.get('state') == "eligible":
+            c_state = _c(c_state, "green")
+        elif row.get('state') == "manual_only":
+            c_state = _c(c_state, "yellow")
+
         out.write(
-            f"{str(row.get('profile') or '?'):<22} "
+            f"{_pad(profile, 22)} "
+            f"{c_state} "
             f"{_fmt_remaining(row.get('headroom')):<8} "
             f"{_fmt_remaining(row.get('quota_remaining')):<8} "
             f"{_fmt_remaining(row.get('context_remaining')):<8} "
             f"{str(row.get('effort') or '?'):<8} "
-            f"{str(row.get('state') or 'unknown'):<11} "
+            f"{_pad(usage_str, 17)} "
             f"{source_str}{risk}\n"
         )
 
@@ -2124,29 +2141,11 @@ def load_recent_session_consumption(cost_log_path: Path, limit: int = 10) -> lis
 
 
 def render_sessions(stdout=None, snapshot=None):
-    """Session state / continuity view."""
+    """SESSIONS & CONSUMPTION branded view."""
     out = stdout or sys.stdout
     if snapshot is None:
         snapshot = collect_snapshot()
-    rows = snapshot.get("sessions") or []
-    if not rows:
-        out.write("(no recent sessions)\n")
-        return
-    out.write("PROFILE                MODEL                      STATUS    LEASE_STATE LAST_USED           CTX             SCOPE\n")
-    for row in rows:
-        lease_state = _session_lease_state(row, _frame_dt())
-        last_used = str(row.get("last_used_at") or "-")[:19]
-        model = _elide_display(row.get("model") or "absent", 26)
-        out.write(
-            f"{str(row.get('profile') or '?'):<22} "
-            f"{_pad(model, 26)} "
-            f"{str(row.get('status') or 'unknown'):<9} "
-            f"{_pad(lease_state, 11)} "
-            f"{last_used:<19} "
-            f"{_ctx_session_cell(row.get('context')):<15} "
-            f"{row.get('scope_key') or '-'}\n"
-        )
-
+    render_active_sessions(out, snapshot, columns=None)
     render_recent_consumption(out)
 
 
@@ -2303,7 +2302,7 @@ def main(argv=None, stdout=None):
     if args.project:
         render_project(out); return 0
     if args.headroom:
-        render_headroom(out); return 0
+        render_routing_and_headroom(out); return 0
     render_dashboard(out)
     return 0
 
