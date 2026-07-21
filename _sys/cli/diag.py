@@ -623,19 +623,31 @@ def _quota_dependency_group_text(group, tier=0, include_eff_exh=True):
             reset_str = f"  resets {_rel(res * 3600.0)}"
     return f"{pool_str} {exh_str} {buckets_joined}{reset_str}{eff_exh_text}"
 
-def render_summary(infos):
+def render_summary(infos, stdout=None, columns=None):
     """SUMMARY (nearest prompt): per-peer header + sorted quota continuation rows
-    (label, glyph, pct, pace, reset), WARN>=0.90, glyph=absent(literal)/emoji."""
-    print("\n" + "=" * 60)
-    print(_c(" SUMMARY", "bold"))
-    print("=" * 60)
+    (label, glyph, pct, pace, reset), WARN>=0.90, glyph=absent(literal)/emoji.
+
+    cx.effort's finding (2026-07-22): this used to hardcode print()+
+    sys.stdout.isatty(), which -- once render_dashboard started running every
+    panel through a StringIO buffer for its own width-safe elision pass --
+    meant `sys.stdout.isatty()` checked the REDIRECTED buffer, always False,
+    so quota-tier selection here always ran unconstrained (tier 0) even at a
+    real narrow terminal. The outer layer then hard-truncated the resulting
+    long lines character-by-character instead of ever choosing a narrower
+    tier, silently cutting content (verified: EFF EXH disappeared entirely,
+    "resets in ..." got cut mid-word, at a real 80-column run through
+    render_dashboard). Now takes stdout/columns explicitly like the other
+    renderers (render_routing_and_headroom, render_active_sessions, ...) so
+    the caller's real terminal width actually reaches tier selection."""
+    out = stdout or sys.stdout
+    if columns is None and bool(getattr(out, "isatty", lambda: False)()):
+        columns = shutil.get_terminal_size().columns
+    out.write("\n" + "=" * 60 + "\n")
+    out.write(_c(" SUMMARY", "bold") + "\n")
+    out.write("=" * 60 + "\n")
     headers = [_pad("PEER", 5), _pad("STATE", 11),
                _pad("CONTEXT(used/win %)", 19), _pad("TOTAL COST", 10), _pad("SRC", 12)]
-    print(_c(" ".join(headers).rstrip(), "dim"))
-    if sys.stdout.isatty():
-        columns = shutil.get_terminal_size().columns
-    else:
-        columns = None
+    out.write(_c(" ".join(headers).rstrip(), "dim") + "\n")
 
     all_groups = []
     for info in infos:
@@ -655,8 +667,8 @@ def render_summary(infos):
     tier = _select_quota_tier(all_groups, columns, prefix_len=13)
 
     quota_header = "      " + _pad("POOL", 9) + " " + _quota_columns_for_tier(tier)
-    print(_c(quota_header, "dim"))
-    
+    out.write(_c(quota_header, "dim") + "\n")
+
     for info in infos:
         peer = info["peer"].upper()
         cost = f"${info['cost']:.4f}" if isinstance(info["cost"], (int, float)) else "absent"
@@ -667,8 +679,8 @@ def render_summary(infos):
         # pool's EXH number, which stays a pure consumption-velocity signal.
         credits_available = info.get("reset_credits_available")
         credit_badge = f" \U0001f3ab{credits_available}" if isinstance(credits_available, int) else ""
-        print(f"{_pad(peer, 5)} {state_cell} "
-              f"{_pad(_ctx_cell_raw(info), 19)} {_pad(cost, 10)} {_pad(_source_code(info.get('source')), 12)}{credit_badge}")
+        out.write(f"{_pad(peer, 5)} {state_cell} "
+              f"{_pad(_ctx_cell_raw(info), 19)} {_pad(cost, 10)} {_pad(_source_code(info.get('source')), 12)}{credit_badge}\n")
         visible_quotas = [
             quota for quota in (info.get("quotas") or [])
             if isinstance(quota.get("used_frac"), (int, float))
@@ -698,9 +710,9 @@ def render_summary(infos):
             line = f"  ↳ {_pad(glyph, 2)} {text}{warn}"
             if columns is not None:
                 line = _elide_display(line, columns)
-            print(line)
+            out.write(line + "\n")
 
-    print(_c(_source_legend(), "dim"))
+    out.write(_c(_source_legend(), "dim") + "\n")
 
 
 def _ctx_cell_raw(info):
@@ -1686,10 +1698,8 @@ def render_peers(stdout=None, snapshot=None):
             render_card(record.get("raw") or {})
 
 
-def _render_summary_to(out, infos):
-    """Adapt print-based SUMMARY to the renderer stream contract."""
-    with redirect_stdout(out):
-        render_summary(infos)
+def _render_summary_to(out, infos, columns=None):
+    render_summary(infos, stdout=out, columns=columns)
 
 
 def render_dashboard(stdout=None, watch_mode=False, snapshot=None):
@@ -1752,7 +1762,7 @@ def render_dashboard(stdout=None, watch_mode=False, snapshot=None):
 
         content_panels = [
             (" ATTENTION", lambda target: render_attention(target, snapshot=snapshot)),
-            (" SUMMARY", lambda target: _render_summary_to(target, infos)),
+            (" SUMMARY", lambda target: _render_summary_to(target, infos, columns=columns)),
             (" SESSIONS & CONSUMPTION", lambda target: render_sessions(target, snapshot=snapshot)),
             (" ROUTING & HEADROOM", lambda target: render_routing_and_headroom(
                 target, snapshot=snapshot, include_target=False, columns=columns,
