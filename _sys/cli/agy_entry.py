@@ -93,7 +93,12 @@ def main() -> None:
         banner = interactive_profile_banner("ag")
         if banner:
             print(banner)
-        proc = subprocess.Popen([str(_AGY_EXE), *cli_args], env=env)
+        # T85: without an explicit cwd, agy.exe inherits the raw shell cwd
+        # (e.g. a literal "P:\" subst drive letter) and uses THAT unresolved
+        # string as the workspace key in its own last_conversations.json
+        # cache -- diverging from hub.py's own ask path, which always passes
+        # a resolved cwd, causing a stale/wrong session to resurface.
+        proc = subprocess.Popen([str(_AGY_EXE), *cli_args], env=env, cwd=str(Path.cwd().resolve()))
         _health(env, "GREEN", pid=proc.pid)
         proc.wait()
         exit_code = proc.returncode
