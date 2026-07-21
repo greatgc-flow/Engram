@@ -1174,6 +1174,58 @@ def test_headroom_next_target_marks_weaker_tier_risk():
     assert "ag.opus" in text and "absent" in text
 
 
+def test_routing_and_headroom_uses_explicit_narrow_and_wide_layouts(monkeypatch):
+    diag = load_diag()
+    snapshot = {
+        "profiles": [{
+            "profile": "cx.deepthink",
+            "state": "eligible",
+            "effort": "xhigh",
+            "quota": {"buckets": [{"used_frac": 0.25}]},
+            "context": {"utilization_pct": 40.0},
+            "sources": {"context": "statusline", "quota": "app_server"},
+        }],
+    }
+    monkeypatch.setattr(diag, "_ask_history_usage_stats", lambda **_kwargs: [{
+        "profile": "cx.deepthink", "count": 12, "fail_pct": 0.0,
+    }])
+
+    narrow = io.StringIO()
+    diag.render_routing_and_headroom(
+        narrow, snapshot=snapshot, include_target=False, columns=80,
+    )
+    narrow_lines = narrow.getvalue().splitlines()
+    assert "HEADRM" in narrow_lines[0]
+    assert "EFFORT" not in narrow_lines[0]
+    assert "SOURCE" in narrow_lines[0]
+    assert "12/0%" in narrow_lines[1]
+    assert "c:STAT q:APP" in narrow_lines[1]
+    assert all(diag._dw(line) <= 80 for line in narrow_lines)
+
+    medium = io.StringIO()
+    diag.render_routing_and_headroom(
+        medium, snapshot=snapshot, include_target=False, columns=100,
+    )
+    medium_lines = medium.getvalue().splitlines()
+    assert "HEADRM" in medium_lines[0]
+    assert "EFFORT" in medium_lines[0]
+    assert "SOURCE" in medium_lines[0]
+    assert "12/0%" in medium_lines[1]
+    assert all(diag._dw(line) <= 100 for line in medium_lines)
+
+    wide = io.StringIO()
+    diag.render_routing_and_headroom(
+        wide, snapshot=snapshot, include_target=False, columns=120,
+    )
+    wide_lines = wide.getvalue().splitlines()
+    assert "HEADROOM" in wide_lines[0]
+    assert "EFFORT" in wide_lines[0]
+    assert "24H USAGE" in wide_lines[0]
+    assert "12 (0.0% fail)" in wide_lines[1]
+    assert "c:STAT q:APP" in wide_lines[1]
+    assert all(diag._dw(line) <= 120 for line in wide_lines)
+
+
 def test_session_rows_active_only_with_lease_and_context(tmp_path, monkeypatch):
     diag = load_diag()
     # Isolate from the real _sys tree: per-session sources resolve under SYS_DIR.

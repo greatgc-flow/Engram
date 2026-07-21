@@ -1754,7 +1754,9 @@ def render_dashboard(stdout=None, watch_mode=False, snapshot=None):
             (" ATTENTION", lambda target: render_attention(target, snapshot=snapshot)),
             (" SUMMARY", lambda target: _render_summary_to(target, infos)),
             (" SESSIONS & CONSUMPTION", lambda target: render_sessions(target, snapshot=snapshot)),
-            (" ROUTING & HEADROOM", lambda target: render_routing_and_headroom(target, snapshot=snapshot, include_target=False)),
+            (" ROUTING & HEADROOM", lambda target: render_routing_and_headroom(
+                target, snapshot=snapshot, include_target=False, columns=columns,
+            )),
             (" POLICY", lambda target: render_policy(target)),
         ]
 
@@ -1994,9 +1996,24 @@ def render_profiles(stdout=None, snapshot=None):
     out.write(_c(_source_legend(), "dim") + "\n")
 
 
-def render_routing_and_headroom(stdout=None, snapshot=None, include_target=True):
+_ROUTING_HEADROOM_WIDE_MIN_COLUMNS = 120
+_ROUTING_HEADROOM_NARROW_MAX_COLUMNS = 90
+
+
+def _routing_headroom_layout(columns):
+    """Choose an explicit, width-safe routing/headroom table layout."""
+    if columns is None or columns >= _ROUTING_HEADROOM_WIDE_MIN_COLUMNS:
+        return "wide"
+    if columns <= _ROUTING_HEADROOM_NARROW_MAX_COLUMNS:
+        return "narrow"
+    return "medium"
+
+
+def render_routing_and_headroom(stdout=None, snapshot=None, include_target=True, columns=None):
     """Derived routing topology, failover/headroom, and historical usage view."""
     out = stdout or sys.stdout
+    if columns is None and bool(getattr(out, "isatty", lambda: False)()):
+        columns = shutil.get_terminal_size().columns
     if snapshot is None:
         snapshot = collect_snapshot()
 
@@ -2012,36 +2029,72 @@ def render_routing_and_headroom(stdout=None, snapshot=None, include_target=True)
             out.write(f"NEXT FAILOVER TARGET: {target.get('profile')} headroom {_fmt_remaining(target.get('headroom'))}{risk}\n")
         else:
             out.write("NEXT FAILOVER TARGET: absent\n")
-            
-    out.write(f"{_pad('PROFILE', 22)} {_pad('STATE', 11)} {_pad('HEADROOM', 8)} {_pad('QUOTA', 8)} {_pad('CTX', 8)} {_pad('EFFORT', 8)} {_pad('24H USAGE', 17)} SOURCE\n")
+
+    layout = _routing_headroom_layout(columns)
+    if layout == "wide":
+        widths = {"profile": 22, "state": 11, "headroom": 8, "quota": 8,
+                  "context": 8, "effort": 8, "usage": 17, "source": None}
+        headers = ("PROFILE", "STATE", "HEADROOM", "QUOTA", "CTX", "EFFORT", "24H USAGE", "SOURCE")
+    elif layout == "medium":
+        widths = {"profile": 18, "state": 10, "headroom": 7, "quota": 7,
+                  "context": 7, "effort": 7, "usage": 10, "source": 15}
+        headers = ("PROFILE", "STATE", "HEADRM", "QUOTA", "CTX", "EFFORT", "24H", "SOURCE")
+    else:
+        widths = {"profile": 18, "state": 10, "headroom": 7, "quota": 7,
+                  "context": 7, "usage": 10, "source": 15}
+        headers = ("PROFILE", "STATE", "HEADRM", "QUOTA", "CTX", "24H", "SOURCE")
+
+    header_widths = [widths["profile"], widths["state"], widths["headroom"],
+                     widths["quota"], widths["context"]]
+    if layout != "narrow":
+        header_widths.append(widths["effort"])
+    header_widths.extend([widths["usage"], widths["source"]])
+    out.write(" ".join(
+        _pad(header, width) if width is not None else header
+        for header, width in zip(headers, header_widths)
+    ).rstrip() + "\n")
+
     for row in rows:
         profile = str(row.get('profile') or '?')
         sources = row.get("sources") or {}
         source_str = f"c:{_source_code(sources.get('context'))} q:{_source_code(sources.get('quota'))}"
-        risk = " TIER RISK" if row.get("tier_risk") else ""
-        
+
         usage = usage_by_profile.get(profile)
         if usage:
-            usage_str = f"{usage['count']} ({usage['fail_pct']:.1f}% fail)"
+            if layout == "wide":
+                usage_str = f"{usage['count']} ({usage['fail_pct']:.1f}% fail)"
+            else:
+                usage_str = f"{usage['count']}/{usage['fail_pct']:.0f}%"
         else:
             usage_str = "-"
-            
-        c_state = _pad(str(row.get('state') or 'unknown'), 11)
+
+        state = str(row.get('state') or 'unknown')
+        if layout != "wide":
+            state = {"manual_only": "manual"}.get(state, state)
+            if row.get("tier_risk"):
+                state += "!"
+        c_state = _pad(_elide_display(state, widths["state"]), widths["state"])
         if row.get('state') == "eligible":
             c_state = _c(c_state, "green")
         elif row.get('state') == "manual_only":
             c_state = _c(c_state, "yellow")
 
-        out.write(
-            f"{_pad(profile, 22)} "
-            f"{c_state} "
-            f"{_fmt_remaining(row.get('headroom')):<8} "
-            f"{_fmt_remaining(row.get('quota_remaining')):<8} "
-            f"{_fmt_remaining(row.get('context_remaining')):<8} "
-            f"{str(row.get('effort') or '?'):<8} "
-            f"{_pad(usage_str, 17)} "
-            f"{source_str}{risk}\n"
-        )
+        cells = [
+            _pad(_elide_display(profile, widths["profile"]), widths["profile"]),
+            c_state,
+            _pad(_fmt_remaining(row.get('headroom')), widths["headroom"]),
+            _pad(_fmt_remaining(row.get('quota_remaining')), widths["quota"]),
+            _pad(_fmt_remaining(row.get('context_remaining')), widths["context"]),
+        ]
+        if layout != "narrow":
+            cells.append(_pad(_elide_display(str(row.get('effort') or '?'), widths["effort"]), widths["effort"]))
+        cells.extend([
+            _pad(_elide_display(usage_str, widths["usage"]), widths["usage"]),
+            _pad(_elide_display(source_str, widths["source"]), widths["source"])
+            if widths["source"] is not None else source_str,
+        ])
+        risk = " TIER RISK" if layout == "wide" and row.get("tier_risk") else ""
+        out.write(" ".join(cells).rstrip() + risk + "\n")
 
 
 def render_accounts(stdout=None):
