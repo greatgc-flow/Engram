@@ -20,7 +20,10 @@ def _load_runtimes(sys_dir: Path) -> tuple[dict, dict, dict]:
     path = sys_dir / "runtimes.json"
     if not path.exists():
         raise FileNotFoundError(f"[Error] runtimes.json not found at {path}")
-    raw  = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"[Error] runtimes.json is not valid JSON: {exc}") from exc
     data = raw.get("runtimes", {})
     V = {
         "Python": data.get("python", {}).get("version", ""),
@@ -852,7 +855,10 @@ def deploy(ctx: dict) -> dict:
 
     # ── Base runtimes (python/nodejs/git/vscode/pwsh) ─────────────
     print("\n>>> Base runtimes")
-    raw = json.loads((sys_dir / "runtimes.json").read_text(encoding="utf-8"))
+    try:
+        raw = json.loads((sys_dir / "runtimes.json").read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"[Error] runtimes.json is not valid JSON: {exc}") from exc
     for rt_name in raw.get("runtimes", {}).keys():
         if skip_vsc and rt_name == "vscode":
             continue
@@ -869,18 +875,37 @@ def deploy(ctx: dict) -> dict:
     # ── Python venv (not an immutable vendor binary - stays procedural) ──
     print("\n>>> Python venv")
     venv_py = env_dir / "venv" / "Scripts" / "python.exe"
+    venv_failed = False
     if force or not venv_py.exists():
-        subprocess.run([sys.executable, "-m", "pip", "install", "virtualenv", "--quiet"], check=True)
-        subprocess.run([sys.executable, "-m", "virtualenv", str(env_dir / "venv")], check=True)
-        print("  [OK] venv created")
+        try:
+            subprocess.run([sys.executable, "-m", "pip", "install", "virtualenv", "--quiet"], check=True)
+            subprocess.run([sys.executable, "-m", "virtualenv", str(env_dir / "venv")], check=True)
+            print("  [OK] venv created")
+        except subprocess.CalledProcessError as exc:
+            venv_failed = True
+            print(f"  [Fail] venv creation failed: {exc}")
+            failed.append({
+                "component": "venv",
+                "status": "error",
+                "detail": f"venv creation failed: {exc}",
+            })
     else:
         print("  [--] venv (already exists)")
-    for pkg in ["filelock", "pywinpty"]:
-        subprocess.run([str(venv_py), "-m", "pip", "install", pkg, "--quiet"], check=True)
-        print(f"  [OK] {pkg} installed")
+    if not venv_failed:
+        for pkg in ["filelock", "pywinpty"]:
+            try:
+                subprocess.run([str(venv_py), "-m", "pip", "install", pkg, "--quiet"], check=True)
+                print(f"  [OK] {pkg} installed")
+            except subprocess.CalledProcessError as exc:
+                print(f"  [Fail] {pkg} install failed: {exc}")
+                failed.append({
+                    "component": pkg,
+                    "status": "error",
+                    "detail": f"pip install {pkg} failed: {exc}",
+                })
     if venv_py.exists():
         installed.append("venv")
-    else:
+    elif not venv_failed:
         failed.append({
             "component": "venv",
             "status": "postcondition_failed",
