@@ -941,7 +941,11 @@ def _broker_archive_request(src: Path, dest_dir: Path) -> Path:
 
 def action_broker_submit(ai_root: Path, target: str, payload_text: str, origin: str = "unknown") -> None:
     """Submit an append-only broker request under .ai/broker/pending."""
-    payload = json.loads((payload_text or "").lstrip("\ufeff"))
+    try:
+        payload = json.loads((payload_text or "").lstrip("\ufeff"))
+    except json.JSONDecodeError as exc:
+        print(f"[HUB:ERROR] broker-submit: invalid JSON payload: {exc}", file=sys.stderr)
+        sys.exit(1)
     rel, _ = _validate_broker_payload(ai_root, target, payload)
     pending_dir, _, _ = _broker_dirs(ai_root)
     pending_dir.mkdir(parents=True, exist_ok=True)
@@ -4906,6 +4910,7 @@ def _real_arbiter_invoker(ai_root):
     def _invoke(arbiter_id, prompt):
         import subprocess
         import uuid
+        qf = None
         try:
             ipc_dir = Path(__file__).resolve().parents[1] / "ai" / "ipc"
             ipc_dir.mkdir(parents=True, exist_ok=True)
@@ -4928,6 +4933,12 @@ def _real_arbiter_invoker(ai_root):
             return reply
         except Exception as exc:
             raise RuntimeError(f"arbiter invoke failed: {exc}")
+        finally:
+            if qf is not None:
+                try:
+                    qf.unlink(missing_ok=True)
+                except OSError:
+                    pass
     return _invoke
 
 

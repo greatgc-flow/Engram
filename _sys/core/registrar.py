@@ -68,9 +68,12 @@ def _resolve_icon(icon_template: str, paths: dict, relay_root: Path, key_name: s
             f"$i=[System.Drawing.Icon]::ExtractAssociatedIcon('{icon_path}'); "
             f"$s=[System.IO.File]::Create('{ico_cache}'); $i.Save($s); $s.Close()"
         )
-        res = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True)
-        if res.returncode == 0 and ico_cache.exists():
-            return str(ico_cache)
+        try:
+            res = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True)
+            if res.returncode == 0 and ico_cache.exists():
+                return str(ico_cache)
+        except OSError:
+            pass
     return str(icon_path)
 
 
@@ -161,7 +164,10 @@ def _unregister_entry(key_name: str, targets_cfg: dict, relay_root: Path) -> lis
     errors = []
     for target_cfg in targets_cfg.values():
         full_reg = f"HKCU\\{target_cfg['path']}\\{key_name}"
-        subprocess.run(["reg", "delete", full_reg, "/f"], capture_output=True)
+        try:
+            subprocess.run(["reg", "delete", full_reg, "/f"], capture_output=True)
+        except OSError:
+            pass
         state = _hkcu_key_state(full_reg)
         if state != "absent":
             errors.append(f"registry key removal {state}: {full_reg}")
