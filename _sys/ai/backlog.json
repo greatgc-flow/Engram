@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-21T11:15:33Z",
+  "updated_at": "2026-07-21T22:47:00+09:00",
   "items": [
     {
       "id": "T63",
@@ -2212,7 +2212,9 @@
       "category": "hub",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": ["190fe5f"],
+      "evidence_commit": [
+        "190fe5f"
+      ],
       "supersedes": [],
       "source_refs": [
         "_sys/core/hub.py",
@@ -2239,6 +2241,23 @@
       "next_action": "T67's own next_action already flagged this root cause unresolved after 2 forensic passes; today's occurrence is a new, distinct data point worth its own item since it's qualitatively worse than the previously-characterized pattern. Dispatched a normal ag.deepthink ask (self-audit task, no PTY-heavy content); hub's own zombie-detector (which had reliably fired at 300-458s on ~4 other zombies this same session) never fired at all even after 20+ minutes with zero output change - this is not the same shape as the previously-diagnosed 'silence past the kill window' case, since that case DOES get caught and reported as [HUB:ERROR] ask timeout (kind=zombie). Here the hub-level watchdog itself appears to not be firing, which two prior forensic passes (2026-07-17/18) did not specifically test for. Had to be force-stopped externally (harness-level TaskStop, not a hub mechanism). ag's health remained GREEN after the stop (no corruption observed, peer-status clean) - ruling out a simple crash-and-hang-in-bad-state theory; whatever is hanging leaves the peer's own reported health unaffected, consistent with the hang being upstream of/outside ag's own health-reporting path. No repro script exists yet - next investigation should start by trying to reproduce the specific hub-watchdog-not-firing condition (as opposed to re-diagnosing ag's baseline stall mechanism itself, already covered by the existing docs) before spending another full forensic pass.",
       "risk": "hub's zombie-detector not firing means a genuinely hung ask can block a session indefinitely with no automatic recovery signal - user or terminal must notice and manually intervene (as happened here)",
       "last_verified_at": "2026-07-21T20:14:57+09:00"
+    },
+    {
+      "id": "T85",
+      "title": "Phantom session touch: session_state.json + last_ask_id updated with zero trace in ask_history.jsonl, ipc-log.jsonl, cost-log.jsonl, or error-log.jsonl",
+      "status": "deferred",
+      "priority": "medium",
+      "category": "ops",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [
+        "<pending: log-hardening commit, see next_action>"
+      ],
+      "supersedes": [],
+      "source_refs": [],
+      "next_action": "Discovered via diag ACTIVE SESSIONS showing ag.effort scope=default, last_used_at=2026-07-21T22:12:15+09:00, last_ask_id=ask-6acc, with no corresponding entry anywhere: .ai/ask_history.jsonl (local-time '%Y-%m-%dT%H:%M:%S', no ask-6acc), _sys/data/logs/ipc-log.jsonl and cost-log.jsonl (UTC 'Z'-suffixed, no entry in the 13:12Z window), error-log.jsonl (clean), and ag's own local PTY conversation store (_sys/antigravity/config/brain/409c5c25-.../.system_generated/, no file activity after 2026-07-17). Resumed the exact session via `hub.py ask --to ag.effort --scope default` and asked ag directly: it reported zero memory of anything around that timestamp, and independently guessed 'a pre-dispatch, check-gate, or failed connection attempt that never reached an LLM call' - matching the local evidence exactly. hub.py's _set_active_session (session_state.json, peer-global, no ai_root dependency) and _append_ask_history (.ai/ask_history.jsonl, silently no-ops when ai_root is falsy) are called back-to-back on the PTY success path (hub.py ~5883-5888) but are NOT atomic with each other or with the ipc-log/cost-log calls a few lines above (gated on `if logger:`, itself populated by _get_logger() which used to swallow HubLogger() construction failures with a bare `except: pass`). Any of: (a) ai_root resolving falsy for that one call, (b) HubLogger() construction failing transiently, (c) the PTY output classifier mis-reading a connection/handshake artifact as a non-empty successful reply, could each independently produce exactly this signature. LOG HARDENING SHIPPED this session (see evidence_commit): _get_logger() now prints a stderr warning with the real exception on construction failure instead of swallowing it; both `if logger:` call sites (PTY branch ~5812, non-PTY branch ~5966) now emit '[HUB:WARN] ipc/cost log skipped for {peer} (ask_id=...): logger unavailable' on the else branch; _append_ask_history emits '[HUB:WARN] ask_history skipped for {peer}: ai_root is unset' instead of a silent return. Verified live: two follow-up `hub.py ask --to ag.effort --scope default` calls after the hardening landed produced NO warning and DID log correctly to ipc-log/cost-log/ask_history - so logging is not systemically broken right now; the original gap was a one-off (or rare) condition. GOTCHA for future investigators: ask_history.jsonl timestamps are local naive time (hub.py `_now()` = datetime.now().strftime(...), no tz marker) while ipc-log/cost-log/error-log timestamps are UTC with a 'Z' suffix (hub_logging.py `_now_iso()`) - cross-referencing by raw string match across these files WILL silently miss real matches unless you convert timezones first (caught this mid-investigation: an earlier UTC-vs-KST string search wrongly suggested logging was currently broken). Next step if this recurs: the new stderr warnings should immediately identify which of (a)/(b)/(c) is firing; if a recurrence produces NEITHER warning, the cause is a fourth, still-unknown path and deserves a fresh forensic pass (possibly related to [[T84]]'s ag-hang class, given both involve PTY-branch ag asks with an incomplete/uncertain hub-side outcome record).",
+      "risk": "A session can be marked used/active with a specific ask_id while zero verifiable record of what was actually asked or answered exists anywhere - makes post-hoc audits, cost accounting, and incident review silently unreliable for whatever fraction of asks hit this path. Now traceable going forward via the new stderr warnings, but root cause of the original occurrence remains unconfirmed.",
+      "last_verified_at": "2026-07-21T22:47:00+09:00"
     }
   ]
 }

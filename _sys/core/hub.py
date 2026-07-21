@@ -82,12 +82,18 @@ except ImportError:
 _logger: _HubLogger | None = None
 
 def _get_logger() -> _HubLogger | None:
+    """T85: a bare `except: pass` here used to make a HubLogger construction
+    failure silently drop ALL ipc/cost logging for the rest of the process --
+    the session/ask_history bookkeeping (which doesn't need a logger) kept
+    working, so a real ask could look "successful" in every trace except the
+    one that records what actually happened. Surfaced as a stderr warning so
+    the failure is traceable instead of invisible."""
     global _logger
     if _logger is None and _HUB_LOGGING_AVAILABLE and _HubLogger is not None:
         try:
             _logger = _HubLogger()
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[HUB:WARN] HubLogger unavailable (ipc/cost logging disabled): {type(exc).__name__}: {exc}", file=sys.stderr)
     return _logger
 
 # Windows 콘솔 UTF-8 강제
@@ -3464,6 +3470,12 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
 def _append_ask_history(ai_root: Path | None, peer_id: str, query_file_path: str | None, output_file: str | None, elapsed_sec: int | None, success: bool, failure_reason: str | None) -> None:
     """Append a provenance record to .ai/ask_history.jsonl."""
     if not ai_root:
+        # T85: this used to be a bare silent no-op. Session bookkeeping
+        # (session_state.json) doesn't require ai_root and keeps working, so
+        # an ask with no ai_root could look "successful" in the session
+        # registry with zero trace in ask_history -- unexplainable after the
+        # fact. Surfaced so the gap itself becomes traceable.
+        print(f"[HUB:WARN] ask_history skipped for {peer_id}: ai_root is unset", file=sys.stderr)
         return
     try:
         h = _read_json(ai_root / "state.json")
@@ -5834,6 +5846,11 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     turn_id=ask_id,
                     token_scope=usage.get("token_scope"),
                 )
+            else:
+                # T85: session/ask_history bookkeeping below doesn't need a
+                # logger and will proceed normally, silently producing an ask
+                # that LOOKS successful everywhere except ipc-log/cost-log.
+                print(f"[HUB:WARN] ipc/cost log skipped for {to} (ask_id={ask_id}): logger unavailable", file=sys.stderr)
 
             # output-file failure precedes success in the classification order.
             out_path = None
@@ -6022,6 +6039,10 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     actual_reasoning_tokens=usage["reasoning_tokens"],
                     ipc_protocol_version=ipc_protocol_version,
                 )
+        else:
+            # T85: same silent-skip risk as the PTY branch above -- session/
+            # ask_history bookkeeping downstream doesn't need a logger.
+            print(f"[HUB:WARN] ipc/cost log skipped for {to} (ask_id={ask_id}): logger unavailable", file=sys.stderr)
 
         # ── Output Parsing (Adapter-based) ────────────────────────
         output = adapter.parse_output(raw_text, node) if adapter else raw_text
