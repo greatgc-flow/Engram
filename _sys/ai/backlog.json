@@ -2251,7 +2251,7 @@
       "owner": "unassigned",
       "blocker": null,
       "evidence_commit": [
-        "<pending: log-hardening commit, see next_action>"
+        "e45f3bd"
       ],
       "supersedes": [],
       "source_refs": [],
