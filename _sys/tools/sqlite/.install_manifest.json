@@ -1,0 +1,16 @@
+{
+  "tool": "sqlite",
+  "declared_version": "3.53.3",
+  "url": "https://www.sqlite.org/2026/sqlite-tools-win-x64-3530300.zip",
+  "checksum_algo": "sha3_256",
+  "checksum_value": "b943f8ec7ab77433df44520a27ea65744a792e68a25c05b48823168496b3ccdb",
+  "checksum_source": "declared",
+  "checksum_verified": true,
+  "canary_command": [
+    "sqlite3.exe",
+    "--version"
+  ],
+  "canary_output": "3.53.3 2026-06-26 20:14:12 d4c0e51e4aeb96955b99185ab9cde75c339e2c29c3f3f12428d364a10d782c62 (64-bit)\n",
+  "installed_at": "2026-07-21T09:36:14.393457+00:00",
+  "source_config_hash": "66e017fabe6ed6dd6e2c5d7377912130311fe2692db3a8039b34226f55977af5"
+}
