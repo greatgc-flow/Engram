@@ -236,7 +236,7 @@ def run(ctx: dict) -> dict[str, Any]:
         check_sessions(base_dir),
         check_elevation(),
     ]
-    broken = [c for c in checks if not c["ok"]]
+    broken = [c for c in checks if not c.get("ok")]
     overall = "failed" if broken else "success"
 
     if want_json:

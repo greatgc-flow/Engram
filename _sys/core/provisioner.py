@@ -875,14 +875,12 @@ def deploy(ctx: dict) -> dict:
     # ── Python venv (not an immutable vendor binary - stays procedural) ──
     print("\n>>> Python venv")
     venv_py = env_dir / "venv" / "Scripts" / "python.exe"
-    venv_failed = False
     if force or not venv_py.exists():
         try:
             subprocess.run([sys.executable, "-m", "pip", "install", "virtualenv", "--quiet"], check=True)
             subprocess.run([sys.executable, "-m", "virtualenv", str(env_dir / "venv")], check=True)
             print("  [OK] venv created")
-        except subprocess.CalledProcessError as exc:
-            venv_failed = True
+        except (subprocess.CalledProcessError, OSError) as exc:
             print(f"  [Fail] venv creation failed: {exc}")
             failed.append({
                 "component": "venv",
@@ -891,12 +889,14 @@ def deploy(ctx: dict) -> dict:
             })
     else:
         print("  [--] venv (already exists)")
-    if not venv_failed:
+    # Re-check on disk rather than trusting the exit code above: creation can
+    # report success without actually leaving a working interpreter behind.
+    if venv_py.exists():
         for pkg in ["filelock", "pywinpty"]:
             try:
                 subprocess.run([str(venv_py), "-m", "pip", "install", pkg, "--quiet"], check=True)
                 print(f"  [OK] {pkg} installed")
-            except subprocess.CalledProcessError as exc:
+            except (subprocess.CalledProcessError, OSError) as exc:
                 print(f"  [Fail] {pkg} install failed: {exc}")
                 failed.append({
                     "component": pkg,

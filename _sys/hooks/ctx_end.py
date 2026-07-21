@@ -129,9 +129,11 @@ def archive_gemini_session(portable_root: Path) -> None:
     # read/modify/write of the shared session-map.json (last writer would
     # otherwise silently drop the other's archived session).
     lock_dir = smap_file.with_name(smap_file.name + ".lock")
+    acquired = False
     for _ in range(50):
         try:
             lock_dir.mkdir(exist_ok=False)
+            acquired = True
             break
         except FileExistsError:
             time.sleep(0.1)
@@ -152,10 +154,15 @@ def archive_gemini_session(portable_root: Path) -> None:
         out = {"active": None, "history": history}
         smap_file.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     finally:
-        try:
-            lock_dir.rmdir()
-        except OSError:
-            pass
+        # Only remove the lock dir if THIS process actually created it -
+        # otherwise a process that failed to acquire (busy-timeout) would
+        # delete the real owner's lock and reopen the exact race this guards
+        # against.
+        if acquired:
+            try:
+                lock_dir.rmdir()
+            except OSError:
+                pass
     sid_file.unlink(missing_ok=True)
     print("[ctx-end] Gemini session archived.")
 

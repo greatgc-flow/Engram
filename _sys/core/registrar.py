@@ -328,7 +328,10 @@ def remove(ctx: dict) -> dict:
                     errors.append(f"relay remains: {p}")
             # Remove registry keys
             for reg_key in record.get("reg_keys", []):
-                subprocess.run(["reg", "delete", reg_key.replace("HKCU\\", "HKCU\\"), "/f"], capture_output=True)
+                try:
+                    subprocess.run(["reg", "delete", reg_key.replace("HKCU\\", "HKCU\\"), "/f"], capture_output=True)
+                except OSError:
+                    pass
                 state = _hkcu_key_state(reg_key)
                 if state != "absent":
                     errors.append(f"registry key removal {state}: {reg_key}")
@@ -344,7 +347,10 @@ def remove(ctx: dict) -> dict:
     if cfg.get("win11_classic_menu", False):
         clsid    = cfg.get("registry", {}).get("win11_classic_menu_clsid", "{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}")
         win11_key = rf"Software\Classes\CLSID\{clsid}"
-        subprocess.run(["reg", "delete", f"HKCU\\{win11_key}", "/f"], capture_output=True)
+        try:
+            subprocess.run(["reg", "delete", f"HKCU\\{win11_key}", "/f"], capture_output=True)
+        except OSError:
+            pass
         state = _hkcu_key_state(f"HKCU\\{win11_key}")
         if state != "absent":
             errors.append(f"registry key removal {state}: HKCU\\{win11_key}")
