@@ -11,11 +11,20 @@
 > unlimited-round adversarial-debate layer (5 more rounds, ag.deepthink +
 > cx.effort) plus a final ratification pass by each peer's highest-capability
 > model (ag.opus, cx.deepthink, cc.fable) -- no architectural flaws found,
-> concrete spec gaps patched into §13.8-13.12. This does NOT change the
-> §1-12 MVP migration path; it documents the further target §1-12 must not
-> foreclose. Not yet implemented -- §1-12 is the architecture AND phasing to
-> build Phase 3 (TDD prep) against, starting with §12's phasing step 1 only;
-> §13 is the North Star those phasing steps must remain compatible with.
+> concrete spec gaps patched into §13.8-13.12. A FURTHER 14-round QA-diff
+> audit chain then followed (self-audit, ag.deepthink, cx.effort, and
+> cx.deepthink alternating; EXH-based quota routing sent later rounds to
+> whichever peer's pool was safest), each round checking the PRIOR round's
+> own fixes for new inconsistencies -- finding density genuinely dropped
+> round over round (6,5,4,5,3,3,3,2,1) and round 14 returned an explicit,
+> unforced **CONVERGED** verdict after tracing every remaining concurrency
+> interaction (upgrade-vs-emergency-quarantine race, crash recovery,
+> first-init bootstrap ordering, and more) with no further findings. This
+> does NOT change the §1-12 MVP migration path; it documents the further
+> target §1-12 must not foreclose. Not yet implemented -- §1-12 is the
+> architecture AND phasing to build Phase 3 (TDD prep) against, starting
+> with §12's phasing step 1 only; §13 is the North Star those phasing steps
+> must remain compatible with.
 > **Scope:** Phase 2 Pre-TDD Architectural Planning
 > **Objective:** Dismantle hardcoded coupling (Windows/SUBST/.bat assumptions) and establish a strict, lazy, configuration-driven MECE boundary between General (Source) and Specific (Config/Instructions).
 
