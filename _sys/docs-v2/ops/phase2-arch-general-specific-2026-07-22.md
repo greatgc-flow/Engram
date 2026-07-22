@@ -270,6 +270,17 @@ references across hub.py/snapshot.py/diag.py/hub_peer.py, hub.py alone at
    the schema has a `platform_overrides` shape, but only Windows bindings
    are actually implemented and claimed until a Linux runner exists (macOS
    follows its own separate runner).
+   *Mobile platforms (user question, 2026-07-22):* **Android** is not a
+   separate target -- a genuine Linux userland (e.g. Termux) provides real
+   subprocess/PTY/filesystem support, so it falls out of Linux support once
+   that exists, with no dedicated mobile work needed. **iOS is explicitly
+   OUT OF SCOPE, structurally, not just "not yet done"** -- its app
+   sandbox model prohibits arbitrary subprocess spawning, filesystem access
+   outside the app container, dynamic executable loading, and persistent
+   background daemons, all of which this tool fundamentally needs
+   (spawning/managing real peer CLI subprocesses and PTYs). No realistic
+   non-jailbroken path exists; this is a permanent platform incompatibility
+   to record, not a future roadmap item.
 5. **Over-configuration is a real, checkable risk.** Concrete test for
    whether a value deserves a JSON config field (cx's heuristic, adopted
    as the working rule): does it have more than one real supported
