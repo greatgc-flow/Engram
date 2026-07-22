@@ -586,7 +586,9 @@ def _eligible_reset_credits(reset_credits):
     """Count of reset credits actually spendable right now: status
     'available', not expired, and applicable to rate-limit resets (not some
     other future credit type this same field could carry). Feeds diag's
-    EFF EXH decision-support field (design doc follow-up, 2026-07-22).
+    credit-adjusted EXH field (design doc follow-up, 2026-07-22 -- initially
+    an additive "EFF EXH" annotation, later made the primary EXH value the
+    same day per user request, with the raw number moved to a RAW tail).
     Returns None (not 0 or an undercount) when the count can't be trusted --
     diag must render 'absent', never a guessed/partial number, in that case:
     - the credit list itself isn't a real list, or

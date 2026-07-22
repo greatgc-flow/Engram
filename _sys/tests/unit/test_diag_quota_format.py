@@ -134,10 +134,11 @@ def test_summary_and_live_share_one_dependency_group_payload(capsys):
     assert "2.06x" in expected_payload
 
 
-def test_summary_shows_eff_exh_next_to_raw_exh_for_eligible_credits(capsys):
-    """EFF EXH = raw EXH / (1 + eligible_credits), shown as an addition next
-    to (never replacing) the raw EXH value; peers without the credit concept
-    never render the field at all."""
+def test_summary_shows_adjusted_exh_with_raw_in_tail_for_eligible_credits(capsys):
+    """2026-07-22 (user request): EXH itself becomes raw EXH / (1 +
+    eligible_credits) so priority can be read off EXH alone; the unadjusted
+    number moves to a 'RAW ... (ticket count)' tail instead of disappearing.
+    Peers without the credit concept never render the tail at all."""
     d = _diag()
     quotas = [{"label": "X-7D", "used_frac": 0.55, "pacing": {"ratio": 1.29},
                "reset": "in 3d", "reset_in_seconds": 260_000}]
@@ -150,15 +151,16 @@ def test_summary_shows_eff_exh_next_to_raw_exh_for_eligible_credits(capsys):
     d.render_summary([info])
     summary = capsys.readouterr().out
 
-    assert "1.29x" in summary  # raw EXH untouched
-    assert "EFF EXH" in summary
+    assert "RAW 1.23x" in summary  # raw EXH preserved, now in the RAW tail
+    assert "0.31x" in summary  # adjusted EXH (1.23 / (1+3)) is now the main value
 
 
-def test_eff_exh_tail_does_not_downgrade_tier_for_other_peers():
-    """cx.effort's HIGH finding: EFF EXH's tail text on cx's row must not be
-    counted in the shared tier fit-check -- a long "EFF EXH ... manual" tail
-    on ONE peer's row must not push ALL peers into the tier-3 BINDING
-    fallback, which drops raw EXH entirely for every row."""
+def test_raw_exh_tail_does_not_downgrade_tier_for_other_peers():
+    """cx.effort's HIGH finding (still applies after the 2026-07-22 EXH/RAW
+    swap): the RAW tail text on cx's row must not be counted in the shared
+    tier fit-check -- a long "RAW ... manual" tail on ONE peer's row must not
+    push ALL peers into the tier-3 BINDING fallback, which drops EXH entirely
+    for every row."""
     d = _diag()
     cx_group = {
         "pool": "X", "state": "binding",
@@ -182,9 +184,10 @@ def test_eff_exh_tail_does_not_downgrade_tier_for_other_peers():
     assert "0.55x" in other_text  # raw EXH still visible for the unrelated peer
 
 
-def test_summary_eff_exh_absent_when_credit_data_unreadable(capsys):
+def test_summary_exh_unadjusted_when_credit_data_unreadable(capsys):
     """has_credit_concept true but eligible_credits unset (fetch failed /
-    ambiguous) must render the literal 'absent', never a guessed number."""
+    ambiguous) must leave EXH as the raw/unadjusted number (never a guessed
+    adjustment) and say so explicitly rather than silently guessing."""
     d = _diag()
     quotas = [{"label": "X-7D", "used_frac": 0.55, "pacing": {"ratio": 1.29},
                "reset": "in 3d", "reset_in_seconds": 260_000}]
@@ -197,10 +200,11 @@ def test_summary_eff_exh_absent_when_credit_data_unreadable(capsys):
     d.render_summary([info])
     summary = capsys.readouterr().out
 
-    assert "EFF EXH absent" in summary
+    assert "1.29x" in summary  # main EXH is the raw value, unadjusted
+    assert "EXH unadjusted (credits unknown)" in summary
 
 
-def test_summary_no_eff_exh_field_for_peers_without_credit_concept(capsys):
+def test_summary_no_raw_tail_for_peers_without_credit_concept(capsys):
     d = _diag()
     quotas = [{"label": "C-7D", "used_frac": 0.20, "pacing": {"ratio": 0.55},
                "reset": "in 1h", "reset_in_seconds": 3600}]
@@ -213,7 +217,8 @@ def test_summary_no_eff_exh_field_for_peers_without_credit_concept(capsys):
     d.render_summary([info])
     summary = capsys.readouterr().out
 
-    assert "EFF EXH" not in summary
+    assert "RAW" not in summary
+    assert "unadjusted" not in summary
 
 
 def test_summary_shows_reset_credit_badge_separate_from_pool_exh(capsys):
