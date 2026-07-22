@@ -39,7 +39,7 @@ All peers (cc, ag, cx) are **absolutely equal**. Any peer may communicate with u
 Protocol config: **`P:\_sys\ai\protocol.json`** (single source of truth — collab_rate, routing, health, consensus)
 Protocol docs: `P:\_sys\docs-v2\` (SSOT v1.1 — see 00-MANIFEST.md for load order)
 Common peer rules (IPC paths, hub commands, session start): `P:\_sys\docs-v2\general\protocol.md` and `P:\_sys\docs-v2\general\lifecycle.md`
-MUST/MUST-NOT rules index: `P:\_sys\docs-v2\10-invariants.md` (INV-01~19, PRO-01~16)
+MUST/MUST-NOT rules index: `P:\_sys\docs-v2\10-invariants.md` (INV-01~31, PRO-01~19)
 Legal Code archive: `P:\_sys\docs\history\` (read-only reference)
 
 ### ★ Standing Default: Always-On Collaboration
