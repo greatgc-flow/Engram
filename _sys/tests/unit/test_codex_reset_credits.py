@@ -191,8 +191,9 @@ def _consume(*, credit_id=_CREDIT_ID, confirm=True, key=_IDEMPOTENCY_KEY, origin
 
 
 def test_eligible_reset_credits_counts_only_available_unexpired_applicable():
-    """Feeds diag's EFF EXH field (2026-07-22 follow-up): only status=
-    'available', not-expired, resetType='codexRateLimits' credits count."""
+    """Feeds diag's credit-adjusted EXH field (2026-07-22 follow-up, later
+    made the primary EXH value the same day): only status='available',
+    not-expired, resetType='codexRateLimits' credits count."""
     credits = [
         _credit("c-ok-1", status="available"),
         _credit("c-ok-2", status="available"),

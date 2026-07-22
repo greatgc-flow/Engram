@@ -44,6 +44,19 @@ follow-ups, not blockers.
    record (which predates several since-shipped changes). Worth extracting
    a small living `ops/` doc from it eventually, not urgent.
 
+5. **`update-config` and `consensus_finalize` doc-drift is still live, nearly
+   a month after it was first found.** `_sys/docs-v2/ops/endgame-general-specific-plan-2026-06-28.md`
+   §6 flagged both back on 2026-06-28; re-verified 2026-07-22, both are
+   still exactly as broken: `general/protocol.md:42` documents
+   `hub.py update-config --key {key} --value {value}` as a real CLI command
+   -- it isn't (confirmed: no `update-config` in hub.py's action list at
+   all). `general/learning.md:172` describes a `consensus_finalize`
+   connector trigger, while `general/protocol.md:273` itself says "no
+   dedicated `consensus_finalize` hub action currently exists" -- two SSOT
+   docs contradicting each other, unresolved since before this session
+   started. Neither is fixed here (out of scope for this doc, which only
+   collects findings) -- next actual docs-audit pass should close these.
+
 ## MECE-excluded / edge cases / noise
 
 - Two similarly-named `AGY.md` files exist under `_sys/antigravity/`

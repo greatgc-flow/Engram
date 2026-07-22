@@ -489,17 +489,18 @@ def _quota_columns_for_tier(tier):
         return _pad("BINDING", 12)
 
 def _select_quota_tier(groups, budget, prefix_len=0):
-    """Tier fit-check deliberately measures WITHOUT eff_exh_text: that tail
+    """Tier fit-check deliberately measures WITHOUT raw_exh_text: that tail
     is appended only for the one peer with reset credits (currently cx) and
     is truncated independently by the caller's _elide_display, not by
-    downgrading the whole shared table's tier -- otherwise a long EFF EXH
-    suffix on ONE row would drop raw EXH for every OTHER peer's row too."""
+    downgrading the whole shared table's tier -- otherwise a long RAW EXH
+    suffix on ONE row would drop the (now credit-adjusted) EXH for every
+    OTHER peer's row too."""
     if budget is None:
         return 0
     for tier in range(4):
         fits = True
         for group in groups:
-            text = _quota_dependency_group_text(group, tier=tier, include_eff_exh=False)
+            text = _quota_dependency_group_text(group, tier=tier, include_raw_tail=False)
             if prefix_len + _dw(text) > budget:
                 fits = False
                 break
@@ -507,7 +508,7 @@ def _select_quota_tier(groups, budget, prefix_len=0):
             return tier
     return 3
 
-def _quota_dependency_group_text(group, tier=0, include_eff_exh=True):
+def _quota_dependency_group_text(group, tier=0, include_raw_tail=True):
     """Render one dependency group as a single line (fixed order 5H | 7D)
     with the 'EXH' composite index (reset_hours / eta_full). Buckets
     borrowed from a sibling pool (_borrow_missing_windows) render with a
@@ -560,23 +561,37 @@ def _quota_dependency_group_text(group, tier=0, include_eff_exh=True):
         binding_str = f"{glyph} {marker}{suffix} {s}"
         return f"{pool_str} {binding_str}"
 
-    # Kept OUT of exh_str/exh_width deliberately: EFF EXH only applies to one
-    # peer (currently cx) at a time, and folding its text into the shared
-    # per-tier EXH column width would stretch every OTHER peer's row with
-    # blank padding just to keep one column aligned. Appended at the end of
-    # the line instead (see the final `return`), so cc/ag rows stay compact.
-    eff_exh_text = ""
+    # 2026-07-22 (user request): EXH itself is now the credit-adjusted value
+    # (raw / (1 + eligible_credits)) wherever credits exist, so a human can
+    # rank token-usage priority by reading EXH alone -- no separate mental
+    # "but they have tickets" step. The unadjusted number moves to a RAW tail
+    # instead. Kept OUT of exh_str/exh_width deliberately: this tail only
+    # applies to one peer (currently cx) at a time, and folding its text into
+    # the shared per-tier EXH column width would stretch every OTHER peer's
+    # row with blank padding just to keep one column aligned. Appended at the
+    # end of the line instead (see the final `return`), so cc/ag rows stay
+    # compact.
+    raw_exh_text = ""
     has_credit_concept = group.get("_has_credit_concept", False)
     eligible_credits = group.get("_eligible_credits")
-    if has_credit_concept and include_eff_exh:
+    if has_credit_concept and include_raw_tail and exh_text != "absent":
         if eligible_credits is None:
-            eff_exh_text = "  EFF EXH absent"
+            # Can't compute an adjustment without a trustworthy credit count,
+            # so EXH above is already the raw/unadjusted number -- say so
+            # explicitly rather than repeating it as a confusing "RAW" dupe.
+            raw_exh_text = "  EXH unadjusted (credits unknown)"
         elif eligible_credits > 0:
-            if exh_text != "absent":
-                eff_exh_val = max_exh_val / (1 + eligible_credits)
-                eff_exh_text = f"  EFF EXH {eff_exh_val:.2f}x (\U0001f3ab{eligible_credits} manual)"
+            raw_exh_val = max_exh_val
+            adj_exh_val = raw_exh_val / (1 + eligible_credits)
+            if adj_exh_val >= 1.00:
+                adj_glyph = "\U0001f534"  # red
+            elif adj_exh_val >= 0.80:
+                adj_glyph = "\U0001f7e1"  # yellow
             else:
-                eff_exh_text = "  EFF EXH absent"
+                adj_glyph = "\U0001f7e2"  # green
+            exh_text = f"{adj_glyph} {adj_exh_val:.2f}x"
+            raw_exh_text = f"  RAW {raw_exh_val:.2f}x (\U0001f3ab{eligible_credits} manual)"
+        # eligible_credits == 0: adjusted value equals raw, nothing to show.
     exh_str = _pad(exh_text, 10)
     # Every bucket cell at this tier -- "--", "absent", normal, or borrowed
     # with a "(pool)" annotation -- must share ONE width so the "|" divider
@@ -621,7 +636,7 @@ def _quota_dependency_group_text(group, tier=0, include_eff_exh=True):
         res = max_exh_bucket.get("_reset_hours")
         if isinstance(res, (int, float)):
             reset_str = f"  resets {_rel(res * 3600.0)}"
-    return f"{pool_str} {exh_str} {buckets_joined}{reset_str}{eff_exh_text}"
+    return f"{pool_str} {exh_str} {buckets_joined}{reset_str}{raw_exh_text}"
 
 def render_summary(infos, stdout=None, columns=None):
     """SUMMARY (nearest prompt): per-peer header + sorted quota continuation rows
