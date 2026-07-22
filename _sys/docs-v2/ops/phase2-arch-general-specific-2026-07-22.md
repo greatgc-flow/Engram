@@ -19,9 +19,24 @@
 > round over round (6,5,4,5,3,3,3,2,1) and round 14 returned an explicit,
 > unforced **CONVERGED** verdict after tracing every remaining concurrency
 > interaction (upgrade-vs-emergency-quarantine race, crash recovery,
-> first-init bootstrap ordering, and more) with no further findings. This
-> does NOT change the §1-12 MVP migration path; it documents the further
-> target §1-12 must not foreclose. Not yet implemented -- §1-12 is the
+> first-init bootstrap ordering, and more) with no further findings. A
+> SEPARATE meta-level pass (5-Whys + MECE + feedback-loop lenses, per user
+> request, 3 further rounds) then asked a different question -- not "is
+> each mechanism correct" but "is §13 organized at the right level of
+> abstraction" -- and found a real cross-cutting Constraint-5 violation
+> (bundle/workspace/registry mutation had independently reinvented the same
+> CAS+receipt+audit pattern three times) plus a genuinely missing feedback
+> loop (accumulated Evidence was write-only, never improving future
+> decisions). §13.15 (Governed Mutation Protocol) and §13.16 (Evidence
+> Feedback Loop) were added to close both gaps, explicitly rejecting a
+> stronger "everything is one universal resource" generalization as
+> over-engineering, then themselves audited for 2 further rounds (5 fit
+> problems found and fixed, including a HIGH-severity emergency-quarantine/
+> generic-protocol mismatch) before round 3 returned CONVERGED with an
+> explicit, reasoned abstraction-ceiling verdict: going further than
+> §13.15/13.16 would add indirection with no new consumer. This does NOT
+> change the §1-12 MVP migration path; it documents the further target
+> §1-12 must not foreclose. Not yet implemented -- §1-12 is the
 > architecture AND phasing to build Phase 3 (TDD prep) against, starting
 > with §12's phasing step 1 only; §13 is the North Star those phasing steps
 > must remain compatible with.
