@@ -53,6 +53,7 @@
 | Diag telemetry architecture | `ops/diag-telemetry-architecture.md` | diag, telemetry, context, quota, token history, account redaction, Specific collectors, Generic schema |
 | Work templates | `ops/templates.md` | goal frame, closure manifest, round templates |
 | Whole-project MECE audit | `ops/mega-mece-audit-2026-07-16.md` | Track1 docs, Track2 routing, Track3 quota display, pacing hard gate |
+| Phase 1 docs audit open items | `ops/phase1-docs-audit-open-items-2026-07-22.md` | semantic-truth check gap, skills/templates fate, knowledge-propagation gap, manual.md historical-doc pointer |
 
 ## LAZY LOAD — design/roadmap (active specs; see MANIFEST doc-status)
 
