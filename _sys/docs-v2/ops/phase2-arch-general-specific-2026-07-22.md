@@ -1,10 +1,15 @@
 # Phase 2 Architecture: No-Code, Config-Driven General-Specific MECE Structure
-> **Status:** design (converged 2026-07-22 after 5 rounds: ag.deepthink draft
-> -> cx.effort reject-with-alternative -> ag concede+revise -> cx round-3
-> gaps -> ag apply-fixes -> cx catalog/conformance gap -> applied. User
-> independently confirmed the §7 SUBST/legacy-migration decision after the
-> 260-char justification was verified empirically. Not yet implemented --
-> this is the architecture to build Phase 3 (TDD prep) against.)
+> **Status:** design, architecture AND feasibility both converged 2026-07-22
+> (architecture: 5 rounds, ag.deepthink draft -> cx.effort reject-with-
+> alternative -> ag concede+revise -> cx round-3 gaps -> ag apply-fixes ->
+> cx catalog/conformance gap -> applied. Feasibility: independent parallel
+> reviews by ag.deepthink + cx.effort, converged on §12's risk assessment
+> and phasing despite different measurement methodologies -- real
+> agreement, not rubber-stamping). User independently confirmed the §7
+> SUBST/legacy-migration decision after the 260-char justification was
+> verified empirically. Not yet implemented -- this is the architecture AND
+> phasing to build Phase 3 (TDD prep) against, starting with §12's phasing
+> step 1 only.
 > **Scope:** Phase 2 Pre-TDD Architectural Planning
 > **Objective:** Dismantle hardcoded coupling (Windows/SUBST/.bat assumptions) and establish a strict, lazy, configuration-driven MECE boundary between General (Source) and Specific (Config/Instructions).
 
@@ -226,9 +231,78 @@ Repeat until no open gaps remain, for this document and its successors:
 6. Stop line: do not implement source until the affected slice has
    schemas, tests, and traceability.
 
+## 12. Feasibility & Risk Assessment (converged 2026-07-22, ag.deepthink +
+cx.effort independent parallel reviews)
+
+The design in §1-11 is sound but **not buildable as a single implementation
+pass** -- both reviews independently measured the real coupling and
+converged on the same conclusion by different methodologies (ag: 48
+`Path(__file__)` sites across 12 files; cx: 122 direct root/path-resolution
+references across hub.py/snapshot.py/diag.py/hub_peer.py, hub.py alone at
+10,825 lines / ~330 functions). Per-concern verdict:
+
+1. **hub.py's internal coupling (consensus/IPC/leases/routing) is real and
+   high-risk to untangle.** Do NOT attempt to split hub.py into
+   microservices as part of this work. Inject `RuntimeContext`/catalog
+   services at action boundaries; leave the internal engine cohesive.
+   Characterization tests must precede any change to lease/IPC/routing
+   code specifically.
+2. **RuntimeContext's blast radius is real but bounded if done right.**
+   Do NOT thread a new parameter through every function signature (would
+   touch hundreds of call sites). Instead: a small number of service
+   objects (e.g. `HubRuntime`, `SnapshotService`, `AdapterCatalog`) hold
+   the `RuntimeContext` and get migrated in incrementally, module by
+   module -- snapshot/diag's read-only paths first (lower risk), hub.py's
+   config/action boundaries later.
+3. **Dynamic adapter loading (a raw "package" string resolved via
+   importlib) is a genuine critical security risk, not just a style
+   concern -- confirmed independently by both reviews.** Scope reduction:
+   the engine ships a hardcoded, allowlisted built-in registry
+   (`"builtin.agy.v1"` -> the real `AgyAdapter` class); the JSON config is
+   a STRING SELECTOR into that registry, never a dynamic import path.
+   True third-party/plugin loading is explicitly deferred until there's a
+   real second implementation that needs it, plus package signing/
+   ownership/isolation design that doesn't exist yet.
+4. **Multi-platform support cannot be claimed, only designed for, until
+   real CI exists.** No Linux/macOS runner exists today; current tests
+   include Windows Sandbox/WinPTY-only paths. The honest framing (cx's
+   phrasing, adopted here) is **"portable-ready, Windows-validated"** --
+   the schema has a `platform_overrides` shape, but only Windows bindings
+   are actually implemented and claimed until a Linux runner exists (macOS
+   follows its own separate runner).
+5. **Over-configuration is a real, checkable risk.** Concrete test for
+   whether a value deserves a JSON config field (cx's heuristic, adopted
+   as the working rule): does it have more than one real supported
+   deployment, OR does it have a genuine workspace/global owner who might
+   reasonably need to change it? If neither, it's a Python constant, not a
+   config field -- adding config surface without a real consumer is schema
+   bloat, not flexibility.
+
+### Converged Phasing (supersedes any single-pass reading of §1-11)
+
+1. **Characterization tests first.** `RuntimeContext`/schema objects
+   introduced with NO behavior change -- everything passes exactly as it
+   does today. Standalone template initializer ships in dry-run mode only.
+2. **Built-in-only adapter catalog** that reproduces cc/ag/cx's current
+   command and session behavior exactly, via the hardcoded registry from
+   concern #3 above. No plugin loading.
+3. **Incremental RuntimeContext migration:** snapshot.py/diag.py's
+   read-only paths first, then hub.py's config/action boundaries. Current
+   workspace state layout (`.ai/`) is retained, not restructured, during
+   this phase.
+4. **Windows install-once / external-workspace support**, plus the
+   explicit legacy-virtualizer compatibility mode from §7's SUBST decision.
+5. **Only then**, platform-service abstraction + an actual Linux CI runner
+   -- POSIX support is implemented and claimed after this, not before.
+   macOS is its own later runner/phase.
+6. **Third-party adapters/plugins deferred indefinitely** -- revisit only
+   if a real second implementation genuinely requires the capability.
+
 ## Phase 3 Next Steps
-This design is converged; Phase 3 is exact schema/interface detail to
-pre-TDD level, not further architectural debate:
+This design is converged (architecture AND feasibility/phasing); Phase 3 is
+exact schema/interface detail to pre-TDD level for phasing step 1 above
+specifically (characterization tests + no-behavior-change RuntimeContext),
+not further architectural debate:
 *   Finalize the `PeerAdapter` interface contract version 1.0 in full (every
     method, not just the 5 named as examples in §6) against the real
     hub_peer.py implementation.
