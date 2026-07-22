@@ -91,7 +91,9 @@ hub.py directive-clear --directive-id RD-20260614-001
 
 Mistakes repeat when observations are not recorded, not propagated to other peers, or when there is no closed-loop (observe -> normalize -> approve -> inject -> verify).
 
-### Three-Layer Architecture
+> **Note:** The knowledge propagation system below (Layers 1-3) is a completed design specification but is **not yet implemented**. The files referenced (e.g., `mistake-events.jsonl`, `active-lessons.jsonl`) do not currently exist on disk. This remains a planned roadmap item (see Implementation Status).
+
+### Three-Layer Architecture (Design)
 
 ```text
 Layer 1: RAW EVENTS (audit store — never injected directly)

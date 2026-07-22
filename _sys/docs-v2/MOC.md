@@ -54,6 +54,7 @@
 | Hub mutation broker | `ops/hub-mutation-broker.md` | SANDBOX_RENAME_DENIED, `.ai` mutation authority, broker/queue, os.replace, break-glass escalation |
 | Diag telemetry architecture | `ops/diag-telemetry-architecture.md` | diag, telemetry, context, quota, token history, account redaction, Specific collectors, Generic schema |
 | Work templates | `ops/templates.md` | goal frame, closure manifest, round templates |
+| Whole-project MECE audit | `ops/mega-mece-audit-2026-07-16.md` | Track1 docs, Track2 routing, Track3 quota display, pacing hard gate |
 
 ## LAZY LOAD — design/roadmap (active specs; see MANIFEST doc-status)
 
