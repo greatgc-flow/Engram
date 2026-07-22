@@ -94,6 +94,7 @@ general (merged into pillars): `consensus`,`communication`,`tradeoffs` → proto
 specific: `statusline_diag_update` → merged into ops/logging.md §12 + user/manual.md.
 ops (dated/superseded): `peer-debate-2026-06-19`,`automatic-profile-routing-2026-06-20`,`perf-benchmark-2026-06-19(+full)`,`consistency-audit-2026-06-24`,`TDD_PLAN_HUB_V42`,`REMAINING_ACTIONS`,`remaining-items`.
 ops (AT-implemented specs, archived under AT-6): `docs-restructure-blueprint-2026-06-26`,`per-profile-health-b1-design`(→AT-3),`standard-capability-consensus-2026-06-25`(→AT-4/AT-5),`terminal-health-misread-consensus-2026-06-25`(→AT-2/AT-6),`full-audit-2026-06-26`(→AT-0/AT-2/AT-6).
+common: `peer-rules` (2026-07-22): remaining un-migrated content (IPC single-use naming clarification, Hub Ask Timeout guidance) merged into protocol.md §7.1; the rest was already covered by protocol.md/lifecycle.md. CLAUDE.md/CODEX.md/AGY.md's "Shared rules" pointers updated accordingly.
 
 ---
 

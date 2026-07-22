@@ -14,7 +14,7 @@ Do NOT position yourself as big-picture architect (cc) or large-doc analyst (gc)
 
 ## Peer Equality, IPC, Session Start, Collaboration Rules
 
-→ See `_sys/ai/common/peer-rules.md` for shared invariants (peer equality, IPC paths, hub commands, session start sequence, health self-reporting).
+→ See `_sys/docs-v2/general/protocol.md` and `_sys/docs-v2/general/lifecycle.md` for shared invariants (peer equality, IPC paths, hub commands, session start sequence, health self-reporting).
 
 **cx-specific overrides:**
 - Lead user communication for: code review, implementation plans, refactoring strategy, test strategy, patch summaries

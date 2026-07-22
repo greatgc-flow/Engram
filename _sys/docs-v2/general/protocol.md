@@ -297,7 +297,8 @@ This eliminates middle-man token cost — coordinator's token budget is NOT cons
 Write → hub.py ask (file read + auto-deleted) → peer processes → response logged
 ```
 IPC query files are consumed (deleted) on first read by hub.py. Never re-use the same file path.
-Naming: `{peer_id}-{YYYYMMDDHHMMSS}-{RAND4}.txt`
+Naming: `{peer_id}-{YYYYMMDDHHMMSS}-{tag}.txt` (tag = any short descriptive label, not required to be 4 random chars).
+*Clarification (2026-07-18):* The 14-digit timestamp is what triggers auto-deletion. A file missing the timestamp is treated as an intentionally staged/reusable file and is preserved.
 
 ---
 
@@ -335,3 +336,9 @@ To ensure terminal parity and proper read patterns, the terminal MUST interact w
 - **leases/locks/tasks/roles**: `lease-status` / `lock-status` / `task-status` / `role-status`
 
 **Terminal Guard Rule (PRO-19):** The terminal reads raw `_sys/` state ONLY for explicit audit or when the canonical command is missing/broken, and MUST explicitly state so when bypassing the command contract.
+
+### 7.1 Hub Ask Timeout
+
+- **Do NOT pass a hard `--timeout` to `hub.py ask` for normal collaboration.** Every peer is configured `timeout: 0` (orchestration.json); the hub's heartbeat + zombie guard governs liveness (`protocol.json["communication_policy"]`).
+- `--timeout N` is a **hard wall-clock cap** that kills the peer *even while it is actively producing output* — it is NOT a silence/idle timeout. Use it only for a deliberately bounded probe.
+- If you must cap, set `N >= runtime.ask_default_timeout_sec` (180) and **never below the target profile's `zombie_timeout_sec`**: `standard`/`effort` = 600s, `deepthink` = 900s (SSOT: `protocol.json` zombie_profile_map). A 120s cap prematurely kills deepthink replies (observed ~115s latency).

@@ -7,7 +7,7 @@ models, permissions, and roles are defined in `_sys/ai/orchestration.json`.
 
 ## Session Contract
 
-- Shared rules: `_sys/ai/common/peer-rules.md`
+- Shared rules: `_sys/docs-v2/general/protocol.md` and `_sys/docs-v2/general/lifecycle.md`
 - Runtime policy: `_sys/ai/protocol.json`
 - Health state: `_sys/antigravity/health.json`
 - IPC entry point: `_sys/cli/msg.bat`
