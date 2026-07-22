@@ -270,17 +270,29 @@ references across hub.py/snapshot.py/diag.py/hub_peer.py, hub.py alone at
    the schema has a `platform_overrides` shape, but only Windows bindings
    are actually implemented and claimed until a Linux runner exists (macOS
    follows its own separate runner).
-   *Mobile platforms (user question, 2026-07-22):* **Android** is not a
-   separate target -- a genuine Linux userland (e.g. Termux) provides real
-   subprocess/PTY/filesystem support, so it falls out of Linux support once
-   that exists, with no dedicated mobile work needed. **iOS is explicitly
-   OUT OF SCOPE, structurally, not just "not yet done"** -- its app
-   sandbox model prohibits arbitrary subprocess spawning, filesystem access
-   outside the app container, dynamic executable loading, and persistent
-   background daemons, all of which this tool fundamentally needs
-   (spawning/managing real peer CLI subprocesses and PTYs). No realistic
-   non-jailbroken path exists; this is a permanent platform incompatibility
-   to record, not a future roadmap item.
+   *Mobile platforms (user question, 2026-07-22, revised same day after a
+   follow-up question):* **Android** is not a separate target -- a genuine
+   Linux userland (e.g. Termux) provides real subprocess/PTY/filesystem
+   support, so it falls out of Linux support once that exists, with no
+   dedicated mobile work needed. **iOS is out of scope for the CLI-based
+   execution model in this document, but NOT permanently impossible --
+   correcting an overstated claim made earlier the same day.** The specific
+   things iOS's app sandbox prohibits (arbitrary subprocess spawning, PTYs,
+   unrestricted filesystem access) are exactly what the current
+   `pty_wrapper`/`subprocess`/`subprocess_sandbox` adapter kinds in §6
+   depend on. A hypothetical fourth adapter kind, `api_client` -- calling
+   each peer's underlying LLM directly (Anthropic Messages API / OpenAI
+   API / Gemini API) instead of spawning its CLI, with tool-use (file
+   read/write, code execution) reimplemented natively for iOS's sandbox
+   (app-container storage, user-granted folder access) instead of shelling
+   out -- would sidestep the exact restrictions that block iOS today. This
+   is explicitly NOT "porting" work: it replaces the entire peer-execution
+   layer with a different mechanism, is a much larger and separate effort
+   from everything else in this document, and needs its own feasibility
+   pass (including whether ag/Antigravity's actual capabilities have a
+   1:1 API equivalent, which is unconfirmed) -- not scoped or committed to
+   here, just recorded as "possible via a different architecture," not
+   "impossible."
 5. **Over-configuration is a real, checkable risk.** Concrete test for
    whether a value deserves a JSON config field (cx's heuristic, adopted
    as the working rule): does it have more than one real supported
