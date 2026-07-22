@@ -10,7 +10,7 @@
 
 | File | Why Eager |
 |------|-----------|
-| `10-invariants.md` | Hard rules (INV-01~30, PRO-01~19, GAP-1 clause) — cannot proceed without these |
+| `10-invariants.md` | Hard rules (INV-01~31, PRO-01~19, GAP-1 clause) — cannot proceed without these |
 | `20-architecture.md` | Directory layout + PathMap — required for file operations |
 
 ---
@@ -41,9 +41,7 @@
 | Domain | File | Keywords |
 |--------|------|----------|
 | Governance & proposals | `ops/governance.md` | Garbage/, retention, proposal lifecycle, Doc-as-Code |
-| Session failover policy | `ops/session-failover-policy.md` | Business continuity, consolidation capsule, do_not_repeat |
-| Load balancing blueprint| `ops/hub-routing-load-balancing-blueprint.md` | Quota margin, effective model spec, 5-defect resolution |
-| Test refactoring blueprint| `ops/test-refactoring-blueprint.md` | L1, L2, L3, L4, test isolation, legacy cleanup |
+| Load balancing design (historical) | `_sys/docs/history/ops/token-load-balancing-design.md` | Quota margin, headroom bias, seeded weighted-random routing (system is live; this is the original design record, not a current spec) |
 | Coding & conventions | `ops/conventions.md` | bat, py, naming, shell rules, script safety, tests |
 | Logging architecture | `ops/logging.md` | IPC history, console capture, rolling policy, 5-Whys |
 | Skill system | `ops/skills.md` | hub skills, catalog, invocation, registration |

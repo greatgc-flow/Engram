@@ -22,7 +22,7 @@ Every doc carries one status. The MANIFEST is the single exhaustive index; `MOC.
 
 ```
 EAGER (always):
-  10-invariants.md      ← FIRST: hard rules (INV-01~30, PRO-01~19, +GAP-1 clause)
+  10-invariants.md      ← FIRST: hard rules (INV-01~31, PRO-01~19, +GAP-1 clause)
   20-architecture.md    ← directory layout, PathMap, brain layers, connectivity map
 
 LAZY (load when domain needed — see MOC.md for keyword index):
@@ -44,7 +44,7 @@ For navigation by domain: `MOC.md`. For human onboarding: `user/manual.md`.
 |------|--------|---------|---------|
 | `00-MANIFEST.md` | living | THIS FILE — sole exhaustive index + doc-status taxonomy + doc→config→check map | 2026-06-26 |
 | `MOC.md` | living | Keyword load-map (lazy-load registry) | 2026-06-26 |
-| `10-invariants.md` | living | MUST/MUST-NOT hard rules (INV-01~30, PRO-01~19, GAP-1 clause) | 2026-06-26 |
+| `10-invariants.md` | living | MUST/MUST-NOT hard rules (INV-01~31, PRO-01~19, GAP-1 clause) | 2026-06-26 |
 | `20-architecture.md` | living | Physical/logical dir layout + PathMap (req A2) + Brain layers | 2026-06-16 |
 | `general/protocol.md` | living | **Pillar 1** — governance/roles (GAP-1), trade-offs/params, task-execution+feedback, collaboration+consensus (R:10, INV-28, INV-02), communication+IPC, state+handoff, terminal command contract (GAP-3). Absorbs {consensus, communication, tradeoffs}. | 2026-06-26 |
 | `general/routing.md` | living | **Pillar 2** — separation/node-arch, peer+model routing, leader election+roles, challenge window+handoff+AP-20, forwarding+failover, cost/quality/context, governance/permissions/acceptance. Absorbs {resource-governance}. | 2026-06-26 |
@@ -143,7 +143,7 @@ specific/{id}.md  (delta only — lists ONLY what differs from general)
 | `_sys/ai/orchestration.json` | logical peers + nested runtime profiles | R:8 |
 | `_sys/ai/model-registry.json` | model measured specs SSOT (model FACTS per A1) | R:8 |
 | `_sys/ai/routing-config.json` | automatic profile routing, role weights, token load balancing, final arbiter policy | R:3/R:5 |
-| `_sys/ai/user-directives.md` | human-authored standing rules (DIR-001~003); PRO-09: no auto-rules | Human only |
+| `_sys/ai/user-directives.md` | human-authored standing rules (DIR-001~006); PRO-09: no auto-rules | Human only |
 | `_sys/ai/runtime-directives.jsonl` | TTL-bound auto-promoted corrections | hub.py auto |
 | `_sys/ai/knowledge/general/active-lessons.jsonl` | shared lesson store (all peers) | hub.py auto |
 | `_sys/ai/proposals/` | governance proposals (pending peer votes); lazily created by hub.py `_proposals_dir()` on first proposal | any peer |

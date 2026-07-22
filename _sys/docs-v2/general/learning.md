@@ -91,7 +91,17 @@ hub.py directive-clear --directive-id RD-20260614-001
 
 Mistakes repeat when observations are not recorded, not propagated to other peers, or when there is no closed-loop (observe -> normalize -> approve -> inject -> verify).
 
-> **Note:** The knowledge propagation system below (Layers 1-3) is a completed design specification but is **not yet implemented**. The files referenced (e.g., `mistake-events.jsonl`, `active-lessons.jsonl`) do not currently exist on disk. This remains a planned roadmap item (see Implementation Status).
+> **Note (corrected 2026-07-22 -- the previous version of this note was itself
+> wrong):** Of the three layers below, only **Layer 2 is implemented** --
+> `_sys/ai/knowledge/general/active-lessons.jsonl` exists, is actively
+> maintained, and is read/injected by hub.py (see Implementation Status:
+> "Lesson Injection ✅ IMPLEMENTED"). Layers 1 and 3 (`mistake-events.jsonl`,
+> `user-feedback.jsonl`, `active-pack-index.json`) do NOT exist on disk and
+> remain a planned roadmap item -- there is currently no raw-event audit
+> trail feeding Layer 2, and no per-peer delivery-pack compilation; active
+> lessons are maintained directly. Also note the doc below understates the
+> real path by one directory level: the live file is under
+> `_sys/ai/knowledge/general/`, not `_sys/ai/knowledge/` directly.
 
 ### Three-Layer Architecture (Design)
 

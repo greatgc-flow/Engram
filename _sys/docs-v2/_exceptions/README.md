@@ -19,7 +19,7 @@ This folder holds items that don't cleanly fit the General/Specific/Ops/User tax
 |----|------|----------------|-------------|--------|------|
 | EX-01 | bivca-architecture-final.md | `general/` | `_sys/docs/history/` | BIVCA cancelled 2026-06-18 | 2026-06-18 |
 | EX-02 | bivca-plan-v1.1.md | `general/` | `_sys/docs/history/` | BIVCA cancelled 2026-06-18 | 2026-06-18 |
-| EX-03 | peer-rules.md | `_sys/ai/common/` | `_sys/docs/history/` | Fully absorbed by 10-invariants + session.md | 2026-06-18 |
+| EX-03 | peer-rules.md | `_sys/ai/common/` | `_sys/docs/history/` | Decided 2026-06-18; execution slipped a month -- config files (CLAUDE.md/CODEX.md/AGY.md) still pointed at the old path until actually moved 2026-07-22, with its two never-migrated additions (IPC naming clarification, Hub Ask Timeout) ported into `general/protocol.md` §7.1 (not `session.md`, which no longer exists -- already merged into `general/lifecycle.md` prior to this) | 2026-06-18 (executed 2026-07-22) |
 | EX-04 | impl-plan-general.md | `_sys/ai/proposals/` | `_archive/proposals/` | Superseded by docs-v2 SSOT adoption | 2026-06-18 |
 | EX-05 | req-analysis-*.md (2 files) | `_sys/ai/proposals/` | `_archive/proposals/` | Pre-docs-v2 analysis, superseded | 2026-06-18 |
 | EX-06 | CONTEXT.md | `_sys/claude/agent/` | `_sys/docs/history/` | Stale 3TCP/`.ai/` paths, conflicted with current docs | 2026-06-18 |
