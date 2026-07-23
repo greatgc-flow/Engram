@@ -11,7 +11,7 @@ Cross-ref: `general/lifecycle.md` (session/heartbeat), `specific/{cc,cx,ag}.md`,
 
 ---
 
-## 1. claude.cmd — Claude Code **2.1.215** (peer `cc`)
+## 1. claude.cmd — Claude Code **2.1.216** (peer `cc`)
 
 Path: `_sys/env/nodejs/npm-global/claude.cmd`. Default = interactive; `-p/--print`
 = non-interactive one-shot.
@@ -22,11 +22,26 @@ Path: `_sys/env/nodejs/npm-global/claude.cmd`. Default = interactive; `-p/--prin
 - `--dangerously-skip-permissions` — bypass permission prompts. **✓run**
 - `--model <m>`, `--effort <level>` — model/effort for the session. **✓run** (hub profile_args)
 - `--append-system-prompt <p>`, `--system-prompt-file` — inject system prompt. **✓run** (hub IPC frame)
-- `--output-format <text|json|stream-json>`, `--input-format`, `--include-partial-messages`,
-  `--json-schema <schema>` (structured output), `--max-budget-usd`. **(help)**
+- `--output-format <text|json|stream-json>`, `--input-format`, `--include-partial-messages`. **(help)**
+- `--json-schema <inline JSON string>` (structured output) — **✓run 2026-07-23**: takes the
+  raw JSON Schema string directly (NOT a file path — passing a path errors
+  `... is not valid JSON`). A live `--model haiku --output-format json --json-schema '{...}'`
+  call returned a top-level `structured_output` field containing the schema-validated parsed
+  object, alongside `result` (the same content as a JSON string). Confirmed real enforcement,
+  not a no-op. `[cli_live]`
+- `--max-budget-usd <amount>` — **✓run 2026-07-23**: a genuine hard stop. When the running
+  cost exceeded the cap mid-call, the process exited `1` with
+  `subtype: "error_max_budget_usd"`, `terminal_reason: "budget_exhausted"`,
+  `errors: ["Reached maximum budget ($X)"]`. `[cli_live]`
 - `--agents <json>`, `--mcp-config <...>`, `--add-dir`, `--settings`, `--plugin-dir`. **(help)**
-- `--bare` — minimal mode (skip hooks/LSP/plugin-sync/auto-memory; API-key auth only). **(help)**
+- `--bare` — minimal mode (skip hooks/LSP/plugin-sync/auto-memory/keychain reads). **✓run
+  2026-07-23**: confirmed it genuinely disables OAuth/subscription auth — a `--bare` call with
+  no `ANTHROPIC_API_KEY` failed immediately with `"Not logged in · Please run /login"` even
+  though the normal subscription session is authenticated. Matches the help text's claim that
+  `--bare` is strictly `ANTHROPIC_API_KEY`/`apiKeyHelper`-only. `[cli_live]`
 - `--safe-mode` — used by hub invoke_args. **(help)**
+- `--effort <low|medium|high|xhigh|max>` — **(help)** (doc's "core flags" line already lists
+  `--effort` generically; exact accepted values confirmed via `--help` 2026-07-23).
 
 ### Session / resume — **the important part**
 - `--session-id <uuid>` — **SET/create** a session with a known id. **✓run**
@@ -40,7 +55,28 @@ Path: `_sys/env/nodejs/npm-global/claude.cmd`. Default = interactive; `-p/--prin
 - **Correct reuse pattern:** turn1 `--session-id <uuid>` → turn2+ `--resume <uuid>`.
   (Reusing `--session-id` for turn2 is create-semantics and errors — this was the cc bug.)
 
-### Subcommands (help): `agents`, `mcp`, `config`, `plugin`, `update`, `doctor`, `/skill-name`.
+### Subcommands (`--help`, **✓run 2026-07-23**, free/no-API-call)
+`agents`, `auth`, `auto-mode`, `doctor`, `gateway`, `install`, `mcp`, `plugin`/`plugins`,
+`project`, `setup-token`, `ultrareview`, `update`/`upgrade`. (Doc previously listed `config`
+and `/skill-name` as top-level — `config` is not a real top-level command in 2.1.216; skills
+are invoked as `/skill-name` only inside a session, not a CLI subcommand.)
+
+- `claude auth` — `login`, `logout`, `status`. `status --json` is the zero-cost live auth
+  preflight (already used this session: `loggedIn`/`authMethod`/`apiProvider`/`email`/`orgId`/
+  `subscriptionType`).
+- `claude mcp` — `add`, `add-from-claude-desktop`, `add-json`, `get`, `list`, `login`,
+  `logout`, `remove`, `reset-project-choices`, `serve`.
+- `claude plugin`/`plugins` — `details`, `disable`, `enable`, `eval`, `init`/`new`,
+  `install`/`i`, `list`, `marketplace`, `prune`/`autoremove`, `tag`, `uninstall`/`remove`,
+  `update`, `validate`.
+- `claude project` — `purge [path]` (deletes all Claude Code state for a project: transcripts,
+  tasks, file history, config entry). Destructive — never call from hub automation.
+- `claude doctor` — health check, reads settings without a trust prompt.
+- `claude agents [--json]` — lists active/background sessions as JSON for scripting
+  (`--json` does not require a TTY).
+- `claude ultrareview [options] [target]` — cloud-hosted multi-agent review of the current
+  branch or a PR/base branch; billed, user-triggered only (matches this assistant's own
+  standing instruction to never launch it autonomously).
 
 ### Hub usage
 `claude.cmd --safe-mode --append-system-prompt "<IPC frame>" -p {stdin} --dangerously-skip-permissions`
@@ -127,6 +163,62 @@ per-invocation startup overhead. Benign but slows first token. **✓run**
 > represented). Functional impact unprobed — hub invokes `codex exec` directly, not `codex
 > delete`. This is a code follow-up, not a doc-only issue. `[empirical_probe]`
 
+### cx — Round 4: approval/mutation/schema live verification + nested command trees (2026-07-23)
+
+**Approval policy.** With no `-a/--ask-for-approval` override (matching the hub's real
+invocation), `codex doctor --json` resolves the effective policy to `OnRequest`; app-server
+`config/read` returns `approval_policy = null` with no origin, confirming this is codex's
+built-in default, not a config-file value. `[cli_live + app_server]` Values: `-a` accepts
+`untrusted` (prompts outside the trusted-command set), `on-request` (agent decides when to
+ask), `never` (fails instead of prompting). **Still open:** actually observing a live
+approve/deny/prompt event for a borderline command — every attempt in this session's sandbox
+failed before reaching tool selection, with a TLS `UnknownIssuer` error traced independently to
+this execution environment's restricted network token (reproduced via a direct Schannel curl
+failing `SEC_E_NO_CREDENTIALS`), not to Codex. Needs a network-capable host to close. `[empirical_probe; env-blocked]`
+
+**`--output-schema` — confirmed not a no-op.** A malformed schema file is rejected locally
+before any provider call (`... is not valid JSON: expected value at line 4 column 1`); a valid
+schema is accepted and starts a real turn. `[cli_live]` End-to-end response-conformance
+validation itself is blocked by the same environment TLS issue as the approval-policy test.
+`[empirical_probe; env-blocked]`
+
+**Mutation surface — fully behavior-verified on a disposable, current-round-only session**
+(never touched a real hub-managed room session): app-server `thread/fork` succeeded
+(`forkedFromId` matched exactly); CLI `archive` → `unarchive` → `delete` round-tripped
+cleanly on the forked child; app-server `turn/steer` returned a real `turnId`; `turn/interrupt`
+returned success followed by `turn/completed status:"interrupted"`; post-delete reads on both
+the fork and the disposable source correctly returned "thread not loaded". `[cli_live + app_server]`
+Top-level CLI `codex fork` (not the app-server RPC) failed in this headless harness with
+`Error: stdin is not a terminal` — a real-TTY requirement, the same class of environment
+limitation as agy's console requirement (§3). Needs a real interactive terminal to close.
+
+**`account/usage/read`** — recognized by app-server and attempts the real
+`https://chatgpt.com/backend-api/wham/profiles/me` endpoint; fails identically with/without
+the sandbox's injected proxy variables removed, and correlates with independently-reproduced
+TLS failures in this execution environment. Verdict: **environment transport artifact, not an
+absent or unsupported Codex capability.** `[app_server + empirical_probe; env-blocked]`
+
+**Corrected nested command trees** (supersedes any prior partial listing):
+- `codex mcp`: `list`, `get`, `add`, `remove`, `login`, `logout`. (`add-from-claude-desktop`,
+  `add-json`, `reset-project-choices`, `serve` do **not** exist in codex-cli 0.144.6 — do not
+  document them as real subcommands.) `[cli_live]`
+- `codex debug`: `models`, `app-server` (→ `send-message-v2`), `prompt-input`. `[cli_live]`
+- `codex app-server`: `daemon` (Unix-only, see §2 above), `proxy`, `generate-ts`,
+  `generate-json-schema`; transport flags include `--listen`, `--stdio`,
+  `--analytics-default-enabled`, `--ws-*` auth options. `[cli_live help surface]`
+- `codex plugin`: `add`, `list`, `marketplace`, `remove`.
+- `codex features`: `list`, `enable`, `disable`.
+- `codex cloud` (experimental): `exec`, `status`, `list`, `apply`, `diff`.
+- `codex doctor` also has `--summary`, `--all`, `--no-color`, `--ascii`.
+- `codex sandbox` also has `-P/--permission-profile`, `--include-managed-config`,
+  `--sandbox-state-json`, `--sandbox-state-readable-root`, `--sandbox-state-disable-network`.
+- Global/top-level flags not previously documented: `-a/--ask-for-approval`, `--search`
+  (native live web-search tool), `--dangerously-bypass-approvals-and-sandbox`,
+  `--dangerously-bypass-hook-trust` (both forbidden in hub-managed asks), `--remote <ADDR>` +
+  `--remote-auth-token-env`, `-i/--image`, `--oss`/`--local-provider`, `-C/--cd`,
+  `--no-alt-screen`. `codex exec` also has `--ignore-user-config`, `--skip-git-repo-check`,
+  `--color`, `-o/--output-last-message`.
+
 ---
 
 ## 3. agy.exe — Antigravity **1.1.5** (peer `ag`)
@@ -142,7 +234,16 @@ Path: `_sys/tools/agy/agy.exe`. Go binary; Windows Console API (needs a real con
 - `--effort <low|medium|high>` — select reasoning effort. **(help)**
 - `--mode <accept-edits|plan>` — select execution or planning mode. **(help)**
 - `--agent <NAME>` — select a named agent. **(help)**
-- `--sandbox`, `--dangerously-skip-permissions` — permission-related controls. **(help)** Their effective enforcement in the hub's non-interactive invocation remains unmeasured; see "Known gaps" in §4.
+- `--sandbox` — does NOT enforce filesystem confinement (DIR-002, 2026-06-23, **✓run**).
+- `--dangerously-skip-permissions` — **✓run 2026-07-23, CONFIRMED ABSOLUTE OVERRIDE**: a
+  controlled test created a scratch dir + explicit `deny` rules (`read_file(secret-marker.txt)`,
+  `command(echo DENIED_TEST_COMMAND)`) in a project-level `settings.json`/`rules.json` (schema:
+  `{"permissions":{"deny":["action(target)", ...]}}`, precedence `Deny > Ask > Allow`, per
+  official docs at `antigravity.google/docs/cli-permissions`). With
+  `--dangerously-skip-permissions` passed, the denied action proceeded with **zero** rule
+  evaluation (log evidence: no rules.json read, no prompt, immediate bypass) — the flag is a
+  true unconditional override; declarative deny rules provide **no** defense-in-depth against
+  it. `[cli_live]` This closes the prior "unmeasured" gap definitively.
 - `--add-dir <PATH>` — add a directory to the working set. **(help)**
 - `--project`, `--new-project` — select or create a project. **(help)**
 - `--print-timeout <DURATION>` — non-interactive timeout; default `5m0s`. **(help)**
@@ -277,22 +378,47 @@ which runs the heavy `*_entry.py` (hub init-session + context-fill). This shadow
 the real root of the `diag --json` stall. **Programmatic/host code must call the full
 binary path**, never the bare name. **✓run** (diag fixed to use the real `codex.cmd`).
 
-### Known gaps (2026-07-23)
-Not yet measured — do not infer behavior from declarations/help output alone:
-- `codex exec`'s effective approval policy under the hub's non-interactive invocation.
-  `doctor` reports config default `OnRequest`; the hub supplies no override. `[cli_live context; behavior not yet measured]`
-- Codex `fork`, `archive`, `unarchive`, `delete`, app-server `turn/steer`/`turn/interrupt`, and
-  `--output-schema` enforcement — declared/help-visible, not behavior- or mutation-tested. **(help)**
-- App-server `account/usage/read` — recognized, but live fetch failed via this session's
-  proxy; unconfirmed, not unsupported. `[app_server; TEST NEEDED]`
-- ag permission-rule enforcement under non-interactive `-p --dangerously-skip-permissions` —
-  a prior probe (DIR-002, 2026-06-23) found `--sandbox` does not enforce filesystem
-  confinement and `--dangerously-skip-permissions` is an absolute override; the combined
-  allow/deny/ask-rule behavior itself remains untested. `[empirical_probe; TEST NEEDED]`
-- The installed `claude.cmd` was not independently re-verified this round for
-  `--json-schema`, `--output-format stream-json`, `--input-format stream-json`,
-  `--max-turns`, `--no-session-persistence`, or `--mcp-config` — official-doc declarations
-  even where already listed above. `[declared, unverified]`
+### Known gaps (2026-07-23, after Round 4 — resolved items removed, only genuinely open ones remain)
+
+**Resolved this session (kept here only as a changelog, not open questions):** cc
+`--json-schema`/`--max-budget-usd`/`--bare` real enforcement (✓run); ag
+`--dangerously-skip-permissions` vs deny-rules (✓run, confirmed absolute override); codex
+approval-policy *default value* (✓ `OnRequest`, cli_live+app_server — but see below, the
+*live event behavior* is still open); codex mutation surface (fork/archive/unarchive/delete/
+steer/interrupt via app-server + CLI, all ✓run); codex `--output-schema` *local parsing*
+(✓run — rejects malformed JSON pre-provider-call); codex `account/usage/read` root-caused to
+an environment TLS artifact, not a Codex limitation.
+
+**Still genuinely open — blocked by structural/environment limits, not by more investigation
+rounds. Each needs a network-capable host or a real interactive terminal, not another peer ask:**
+- Live approve/deny/prompt event for a borderline codex command under the hub's real
+  invocation args: every attempt this session failed pre-tool-selection with a TLS
+  `UnknownIssuer` traced to this sandbox's restricted network token (independently reproduced
+  via direct Schannel curl). `[empirical_probe; needs network-capable host]`
+- End-to-end `--output-schema` response conformance (does the final answer actually match the
+  schema, beyond local pre-parse validation) — same TLS block. `[empirical_probe; needs network-capable host]`
+- Top-level CLI `codex fork` (not the app-server RPC, which IS verified) — fails headless with
+  `Error: stdin is not a terminal`; needs a real TTY, same class of limitation as ag's console
+  requirement. `[cli_live; needs real terminal]`
+- The installed `claude.cmd` was tested this session for `--json-schema`/`--max-budget-usd`/
+  `--bare` only. `--output-format stream-json`, `--input-format stream-json`, `--max-turns`,
+  `--no-session-persistence`, and `--mcp-config` remain `[declared, unverified]` — help-surface
+  confirmed, live behavior not yet exercised.
+
+### Version baseline captures (for future version-diff audits)
+Full verbatim `--help`/`--version` output for every peer CLI, captured 2026-07-23 at zero API
+cost (help text never touches the model), stored under `_sys/docs-v2/ops/cli-baselines/`:
+- `cc-2.1.216-help.txt` — top-level + `auth`/`mcp`/`doctor`/`plugin`/`project`/`agents` subtrees.
+- `ag-1.1.5-help.txt` — top-level + `agent`/`plugin`/`install`/`update`/`changelog` subtrees.
+- `codex-0.144.6-help.txt` — top-level + `exec`/`debug`/`review`/`mcp`/`app-server`/`doctor`/
+  `archive`/`delete`/`fork`/`resume`/`plugin`/`sandbox`/`features`/`apply`/`cloud` subtrees.
+
+**How to use for a future version bump:** re-run `<binary> --version` and `<binary> --help`
+(+ same subcommand list) after any peer CLI update, diff against the matching file above, and
+treat any flag/subcommand delta as a candidate `orchestration.json`/hub-adapter drift — this is
+exactly the bug class that caused the 2026-07-23 ag model-ID incident (stale strings silently
+rejected by a newer CLI). Version-string extraction for future audits: `claude --version`,
+`agy.exe --version` (also in `agy --help`'s header), `codex --version` — all free, all `[cli_live]`.
 
 ### Common non-interactive invocation forms (verified)
 - claude: `claude -p - --resume <id> --dangerously-skip-permissions`
