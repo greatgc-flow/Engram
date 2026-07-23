@@ -90,6 +90,43 @@ per-invocation startup overhead. Benign but slows first token. **✓run**
 `-c model_reasoning_effort`). Reuse: `exec resume <thread-id> - …`. Env:
 `CODEX_HOME=_sys/codex/config` (must be pinned — see specific/cx.md).
 
+### cx — additional verified surface (2026-07-23)
+- `codex exec --output-schema <FILE>` exposes JSON Schema-constrained final-response output.
+  Installed surface confirmed live; schema enforcement itself not exercised. `[cli_live]`
+- `codex debug prompt-input` renders the exact model-visible prompt context as JSON without a
+  model call — use for directive-injection / context-bloat regression tests. **✓run**
+- `codex doctor --json` returns a redacted install/config/auth/runtime/sandbox report. Took
+  `31.7s` in this audit — periodic/on-failure diagnostic, not per-ask. **✓run**
+- `--strict-config` rejects unrecognized `config.toml` fields — useful CLI-version-change
+  canary. **✓run**
+- `-p, --profile <NAME>` layers `$CODEX_HOME/<NAME>.config.toml`; explicit CLI flags still
+  take precedence. **✓run**
+- `--ephemeral` runs without persisting session files — suitable for disposable canaries. **✓run**
+- `codex review --uncommitted` / `--base <BRANCH>` / `--commit <SHA>` — dedicated review
+  routes when the target is already known. **✓run**
+- `codex login status` — confirmed positive-path auth preflight (`exit 0`, "Logged in using
+  ChatGPT"); logged-out negative path not tested. `[cli_live]`
+- `codex debug models` vs `codex debug models --bundled` — refresh-vs-bundled drift signal
+  (this audit: 7 refreshed vs 8 bundled, `gpt-5.2` bundled-only). Neither carries a freshness
+  timestamp/provenance field — catalog freshness cannot be proven from either alone. **✓run**
+- App-server `config/read` — 97 effective config keys + origin metadata, stronger
+  effective-state evidence than reading `config.toml` directly. `[app_server]`
+- App-server `thread/list` — recovers persisted exec threads from the state DB with
+  pagination, avoiding raw SQLite/rollout-JSONL scanning. `[app_server]`
+- Codex hooks can inspect/block Bash, `apply_patch`, MCP, prompt, and stop events; docs note
+  some tool paths may opt out, so hooks alone are not a complete enforcement boundary. `[declared, unverified]`
+
+> **Flagged follow-up — runtime MCP inventory drift:** `codex mcp list --json` returned `[]`,
+> while app-server `mcpServerStatus/list` reported one effective server, `codex_apps`, with
+> `192` tools and bearer-token auth. `codex mcp list` is NOT a complete runtime-capability
+> inventory in this installation — hub capability checks should use `mcpServerStatus/list`
+> instead. `[cli_live + app_server]`
+
+> **Flagged follow-up — wrapper command drift:** `_sys/cli/peer_console.py::_CODEX_COMMANDS`
+> omits the installed `delete` root subcommand (every other installed root command IS
+> represented). Functional impact unprobed — hub invokes `codex exec` directly, not `codex
+> delete`. This is a code follow-up, not a doc-only issue. `[empirical_probe]`
+
 ---
 
 ## 3. agy.exe — Antigravity **1.1.5** (peer `ag`)
@@ -97,22 +134,57 @@ per-invocation startup overhead. Benign but slows first token. **✓run**
 Path: `_sys/tools/agy/agy.exe`. Go binary; Windows Console API (needs a real console/PTY).
 
 ### Modes & flags (`--help`, **✓run**)
-- `-p, --print` / `--prompt` — single prompt non-interactively. **✓run — but see §3 warning**
-- `-i, --prompt-interactive` — run an initial prompt then continue interactively. **(help)**
-- `--conversation <id>` — resume a previous conversation **by ID**. **(help)**
+- `-p, --print` / `--prompt` — single prompt non-interactively. **✓run** (requires a real console or PTY; see the console warning below)
+- `-i, --prompt-interactive` — run an initial prompt, then continue interactively. **(help)**
+- `--conversation <ID>` — resume an existing conversation by agy's own ID. **✓run**
 - `-c, --continue` — continue the most recent conversation. **(help)**
-- `--model <m>`, `--sandbox`, `--add-dir`, `--project`/`--new-project`,
-  `--print-timeout` (default 5m), `--log-file`, `--dangerously-skip-permissions`. **(help)**
+- `--model <MODEL>` — select a canonical model operand listed by `agy models`. **✓run**
+- `--effort <low|medium|high>` — select reasoning effort. **(help)**
+- `--mode <accept-edits|plan>` — select execution or planning mode. **(help)**
+- `--agent <NAME>` — select a named agent. **(help)**
+- `--sandbox`, `--dangerously-skip-permissions` — permission-related controls. **(help)** Their effective enforcement in the hub's non-interactive invocation remains unmeasured; see "Known gaps" in §4.
+- `--add-dir <PATH>` — add a directory to the working set. **(help)**
+- `--project`, `--new-project` — select or create a project. **(help)**
+- `--print-timeout <DURATION>` — non-interactive timeout; default `5m0s`. **(help)**
+- `--log-file <PATH>` — write CLI logs to a file. **(help)**
 
 ### Subcommands (`--help`, **✓run**)
-`models`, `plugin`(list/import/install/uninstall/enable/disable/validate/link/import-from
-gemini|claude), `install`, `update`, `changelog`, `help`. (No `--models` flag — use the
-`models` subcommand.) **✓run**
+`models`, `agent`/`agents`, `plugin`, `install`, `update`, `changelog`, `help`. (No `--models`
+flag — use the `models` subcommand.) **✓run**
 
-### Models (`agy models`, **✓run**) — DUAL model families
-`Gemini 3.5 Flash (Low/Medium/High)`, `Gemini 3.1 Pro (Low/High)`,
-**`Claude Sonnet 4.6 (Thinking)`**, **`Claude Opus 4.6 (Thinking)`**, `GPT-OSS 120B (Medium)`.
-→ ag's `3p-*` quota = these non-Gemini (Claude/GPT-OSS) models. (Enables D3.)
+- `agy agent` and `agy agents` list the available named agents. **✓run**
+- `agy plugin` exposes `list`, `import`, `install`, `uninstall`, `enable`, `disable`,
+  `validate`, and `link`. **✓run** for the live command surface; individual mutations were
+  not exercised.
+- `agy plugin import gemini` / `agy plugin import claude` import existing Gemini CLI or
+  Claude Code skill packages. **(help)**
+- `agy plugin validate [PATH]` performs pre-install manifest validation. **(help)**
+
+### Models and live auth preflight (`agy models`, **✓run**) — DUAL model families
+Canonical, live-current `--model` operands (2026-07-23), lowercase/hyphenated — **replaces**
+the old display-name strings (`Gemini 3.5 Flash (Low)` etc.) that `orchestration.json`
+previously stored and that Agy 1.1.5 now rejects (fixed same date):
+`gemini-3.6-flash-{high,medium,low}`, `gemini-3.5-flash-{high,medium,low}`,
+`gemini-3.1-pro-{high,low}`, **`claude-sonnet-4-6`**, **`claude-opus-4-6-thinking`**,
+`gpt-oss-120b-medium`.
+→ ag's `3p-*` quota = the non-Gemini (Claude/GPT-OSS) models. (Enables D3.)
+
+`agy models` is also a confirmed zero-model-call **live authentication preflight**. Before a
+2026-07-23 relogin it exited `1` with `Error: Please sign in to view available models. Launch
+the CLI without arguments to sign in.`; after relogin the identical command exited `0` with the
+full catalog above — the expired-token-fails / valid-token-succeeds pair that proves this. `[cli_live, cross-session evidence]`
+
+### Changelog-revealed automation surface (2026-07-23)
+`agy changelog` (**✓run**) declares additional automation controls; their behavioral effects
+were not independently exercised in the hub yet. `[declared, unverified]`
+- `AGY_CLI_DISABLE_LATEX` — disables LaTeX formatting, intended to prevent ANSI corruption in
+  captured logs.
+- `AGY_CLI_HIDE_ACCOUNT_INFO` — suppresses email/plan info from output headers.
+- `UseG1Credits` — controls automatic fallback-credit use.
+- Centralized project cache at `~/.gemini/antigravity-cli/cache/projects.json`.
+
+Candidate hub wiring: `AGY_CLI_DISABLE_LATEX=1` + `AGY_CLI_HIDE_ACCOUNT_INFO=1` for cleaner,
+less account-revealing automated output. Validate live effects before treating as enforced.
 
 ### Session / resume — verified reality
 - agy assigns its **OWN conversation id** (the `conversations/*.db` filename) and
@@ -204,6 +276,23 @@ resume flag is peer-specific (matrix above).
 which runs the heavy `*_entry.py` (hub init-session + context-fill). This shadowing was
 the real root of the `diag --json` stall. **Programmatic/host code must call the full
 binary path**, never the bare name. **✓run** (diag fixed to use the real `codex.cmd`).
+
+### Known gaps (2026-07-23)
+Not yet measured — do not infer behavior from declarations/help output alone:
+- `codex exec`'s effective approval policy under the hub's non-interactive invocation.
+  `doctor` reports config default `OnRequest`; the hub supplies no override. `[cli_live context; behavior not yet measured]`
+- Codex `fork`, `archive`, `unarchive`, `delete`, app-server `turn/steer`/`turn/interrupt`, and
+  `--output-schema` enforcement — declared/help-visible, not behavior- or mutation-tested. **(help)**
+- App-server `account/usage/read` — recognized, but live fetch failed via this session's
+  proxy; unconfirmed, not unsupported. `[app_server; TEST NEEDED]`
+- ag permission-rule enforcement under non-interactive `-p --dangerously-skip-permissions` —
+  a prior probe (DIR-002, 2026-06-23) found `--sandbox` does not enforce filesystem
+  confinement and `--dangerously-skip-permissions` is an absolute override; the combined
+  allow/deny/ask-rule behavior itself remains untested. `[empirical_probe; TEST NEEDED]`
+- The installed `claude.cmd` was not independently re-verified this round for
+  `--json-schema`, `--output-format stream-json`, `--input-format stream-json`,
+  `--max-turns`, `--no-session-persistence`, or `--mcp-config` — official-doc declarations
+  even where already listed above. `[declared, unverified]`
 
 ### Common non-interactive invocation forms (verified)
 - claude: `claude -p - --resume <id> --dangerously-skip-permissions`
