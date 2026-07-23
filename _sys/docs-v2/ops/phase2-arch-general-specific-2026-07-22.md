@@ -693,45 +693,30 @@ The Base Template is a first-class, versioned artifact for workspace initializat
 *   **Evidence basis (declared, unverified -- vendor docs, not independently verified this session):** OpenAI documents Codex CLI installation through official scripts, npm, Homebrew, and release binaries; Anthropic documents native installers, WinGet, Homebrew, and npm for Claude Code, with installation-method-dependent update behavior; Google maintains its own separate Antigravity installation/authentication workflow -- three independent, self-owned installation/update authorities Engram deliberately does not take ownership of.
 
 ## Phase 3 Next Steps
-This design is converged (architecture AND feasibility/phasing); Phase 3 is
-exact schema/interface detail to pre-TDD level for phasing step 1 above
-specifically (characterization tests + no-behavior-change RuntimeContext),
-not further architectural debate:
-*   Finalize the `PeerAdapter` interface contract version 1.0 in full (every
-    method, not just the 5 named as examples in §6) against the real
-    hub_peer.py implementation.
-*   Write the actual JSON Schema files for `peers.json`, `init_workspace.json`,
-    and the bootstrap manifest (this doc gives shape-by-example, not a
-    formal schema yet).
-*   Design the `RuntimeContext` construction code path itself (§2.5) and
-    its unit tests -- CLI > bootstrap-manifest/env > cwd-discovery
-    precedence, with explicit failure behavior at each tier.
-*   Design the structured error/outcome model (§8) as an actual Python type,
-    not just a prose description.
-*   Scope the SUBST/junction legacy-migration backend's compatibility-mode
-    behavior precisely (§7): what triggers it, what "destructive migration/
-    unmount requires a separate confirmed action and rollback record" (per
-    cx.effort's round-3 refinement) looks like as a real CLI flow.
 
-**§14-specific obligations (cx.deepthink, added 2026-07-23, from the final
-end-to-end trace pass that converged §14):** the architecture is ready to
-move forward; the remaining work is schemas/tables/tests, not more prose:
-*   JSON Schemas for `InstallationRecord`, `HostMutationAttempt`,
-    `WorkspaceCompatibilityPlan`, the bootstrap/repair/uninstall receipts,
-    and lease/admission-fence records.
-*   State tables covering: legal pre-commit abort points; the activation
-    CAS as the one irreversible commit boundary; post-commit rollback;
-    state-dependent required/null fields (e.g. `active_release = null` iff
-    `core_absent_home_retained`); revision/epoch scopes (`installation_revision`
-    scoped to `installation_id`, `host_lifecycle_epoch` scoped to
-    `engram_home_id`); and successful lease/admission cleanup sequencing.
-*   Fault-injection tests: concurrent first installers (exactly one
-    `expected=ABSENT` CAS wins); catalog changes before vs. after lease
-    acquisition; crash before the activation CAS; crash after CAS but
-    before admission reopens; uninstall crash before vs. after the
-    retained-home commit; reattach with a new `installation_id` while
-    `host_lifecycle_epoch` stays monotonic; a stale `rollback_target_record_revision`;
-    break-glass recovery never falsely recording Policy authorization.
+> **Re-staged 2026-07-23 (fixes a real HIGH finding, independently caught by BOTH cx.deepthink's own self-critical re-read AND cc.fable's fresh review in the final top-tier triple-review round):** this section previously declared itself scoped to "phasing step 1 specifically" and then immediately listed items belonging to step 2 (the full adapter contract/`peers.json` schema) and step 4+ (SUBST migration, every §14 installer schema/state-table/fault-injection item). Left uncorrected, this would let North-Star-level work leak into the very first implementation slice -- exactly the single-pass migration risk §12 explicitly rejected. The obligations below are now split explicitly by WHEN they're actionable, not listed as one undifferentiated backlog.
+
+### Actionable now (§12 phasing step 1 -- characterization tests + no-behavior-change `RuntimeContext`, zero behavior change)
+*   Characterization tests locking in the CURRENT (pre-refactor) behavior of every `Path(__file__)`-derived constant this design will eventually replace.
+*   Design the minimal `RuntimeContext` construction code path itself (§2.5) and its unit tests -- CLI > bootstrap-manifest/env > cwd-discovery precedence, with explicit failure behavior at each tier -- introduced with NO behavior change versus today.
+*   Nothing else belongs in this slice. Everything below is deferred backlog, not step-1 work, even though it's now specified in enough detail to eventually schema/test.
+
+### Deferred backlog, staged by §12 phasing step (specified now, actioned later)
+*   **Step 2 (built-in-only adapter catalog):** finalize the `PeerAdapter` interface contract version 1.0 in full (every method, not just the 5 named as examples in §6) against the real `hub_peer.py` implementation; write the actual JSON Schema files for `peers.json`, `init_workspace.json`, and the bootstrap manifest.
+*   **Step 3 (incremental RuntimeContext migration):** design the structured error/outcome model (§8) as an actual Python type, not just a prose description.
+*   **Step 4 (Windows install-once / external-workspace support):** scope the SUBST/junction legacy-migration backend's compatibility-mode behavior precisely (§7); JSON Schemas for `InstallationRecord`, `HostMutationAttempt`, `WorkspaceCompatibilityPlan`, the bootstrap/repair/uninstall receipts, and lease/admission-fence records (§14); state tables covering legal pre-commit abort points, the activation CAS as the one irreversible commit boundary, post-commit rollback, state-dependent required/null fields, revision/epoch scopes, and successful lease/admission cleanup sequencing; fault-injection tests for concurrent first installers, catalog changes before/after lease acquisition, crash windows around the activation CAS, uninstall/retained-home crash windows, reattach epoch monotonicity, a stale `rollback_target_record_revision`, break-glass recovery never falsely recording Policy authorization, **plus the two design holes found in the final top-tier triple-review round (below)**.
+*   **Not yet staged to any phasing step -- explicitly design-final but implementation-premature (§13.16, per cx.deepthink's own re-assessment):** the Evidence Feedback Loop should wait to be implemented until Evidence schemas from the steps above are actually stable and at least two concrete consumers have accumulated enough real operational data to validate their assessment rules -- building `OperationalProfile`/`Recommendation` machinery before that data exists would itself be the premature-schema-bloat failure §12.5's own heuristic warns against.
+
+### Corrections required before the deferred backlog above is actioned (found in the final top-tier triple-review round, 2026-07-23 -- prose-level fixes, not further architectural debate)
+*   **Two genuine design holes** (found by cc.fable, a fresh independent read the 20+-round solo audit chain missed): (1) no rule for what happens to a workspace that ALREADY lazily-migrated to a new Core's schema when a subsequent governed post-commit ROLLBACK restores the previous release tuple -- its migrated generation is now ahead of the rolled-back Core; needs either an enumerate-and-revert rule during host rollback, or a named per-workspace `workspace rollback` flow. (2) §14.2 specifies vendor-drift REACTION but never DETECTION -- is drift checked per-invocation (costly if it means hashing a large binary, colliding with Constraint 14), periodically, or only at `engram doctor`? Needs an explicit trigger model (e.g. cheap version/mtime probe at invocation admission, full content-digest probe only on a cheap-probe mismatch or a policy-set interval) before this can be costed for Phase 3.
+*   **No legacy-adoption transaction exists for the actual guaranteed-to-occur first real deployment** (found by cc.fable): `BootstrapInstallTransaction` requires `expected=ABSENT`; `ReattachInstallTransaction` requires a retained ENGRAM home. Neither fits a pre-Engram PortableDev machine with live workspaces that have no `workspace_id`/catalog entry/`InstallationRecord` at all. At minimum, name this scenario and its likely shape (fresh bootstrap + a per-workspace `engram workspace adopt` flow reusing §13.9's preserve/report semantics) so it isn't silently unaddressed.
+*   §13.13's build-now/deferred lists were never reconciled with §13.15/§13.16/§14, which didn't exist when §13.13 was written -- add the Governed Mutation Protocol and §14's core host-lifecycle mechanisms to "worth building now," and `OperationalProfile`/`Recommendation` machinery to "explicitly deferred" (per the not-yet-staged note above), so §13.13 stays accurate rather than silently stale.
+*   §14's artifact classification table places `InstallationMutationLease`/`HostMutationAttempt` in Shared Data, but §13.10 explicitly limits Shared Data's contracts to append-only Evidence and the sub-kind-A derived cache -- a CAS-mutated authoritative coordination record fits neither (the document already corrected this exact species of error once, moving `WorkspaceCatalog` from Shared Data to Shared Config for being "too loose for an authoritative binding"). Resolve in Phase 3 schema design by either defining a third named Shared Data contract (bounded-lifetime host-coordination records) or reclassifying per the `WorkspaceCatalog` precedent. Also revisit the lease's "Mechanism" plane tag -- §13.1 defines Mechanism as source code, not runtime coordination state.
+*   `PeerReadinessReceipt` and `PeerReadinessBinding` are still conflated in places (§13.15's own worked-example list names the receipt as the governed subject; §14.2 says the receipt itself is "invalidated" on drift). Clean model: receipts are immutable historical Evidence and are only ever SUPERSEDED, never mutated or invalidated; vendor drift CAS-transitions the authoritative `PeerReadinessBinding` (Binding plane) to `unknown`/`stale`, and a later binding references a newly issued receipt.
+*   A normal Core update shipping a new Base Template seed version (e.g. `workspace-template@2`) has no registration path -- only first-install and `ReattachInstallTransaction` currently register a seed into Shared Config. Specify that a governed Core update idempotently registers each newly-shipped seed version during its shared-state migration step, without overwriting existing versions or silently changing any workspace's already-selected template binding.
+*   §13.7's traceability-graph restriction to "static definitions only" was applied to workspace-scope resources but not consistently to core/shared-scope registry entries, even though post-install admin workflows can create runtime shared entries too -- apply the same static-definitions-vs-runtime-instances distinction uniformly across all scopes.
+*   §1's opening framing ("if an entity exists, it is loaded dynamically from configuration") and the "No-Code" label overstate what's actually true once the hardcoded built-in adapter registry and Python adapters (both required, both explicitly justified elsewhere in this document) are accounted for. Restate more precisely: runtime instance WIRING is configuration-driven; trusted implementation code remains code-owned and allowlisted. Similarly qualify "downloaded runtimes" as Engram-owned/private runtimes specifically, excluding vendor AI CLIs (§14.2's boundary).
+*   Minor/non-blocking, noted by multiple independent reviewers converging on the same spot: §13.10's "two sub-kinds" framing should add a back-reference now that §13.16 introduced `OperationalProfile` as a third derived-artifact instance of the same pattern; §13.15's own durable-outbox/`TransitionReceipt` records still need their own Store/Plane classification (the same rule §14's table just enforced for everyone else). Phase 3 should also extract this document's normative rules into real schemas/state tables rather than continuing to read them out of prose -- the audit-attribution narration ("fixed 2026-07-22, cx.deepthink finding, HIGH...") that made this session's iterative process traceable is not something a schema writer should have to parse around; demote it to an appendix/changelog once the rules themselves are extracted, rather than extending it further.
 *   One post-commit success-tail detail flagged as needing a real state
     table rather than more prose: after the activation CAS, the
     bootstrapper must durably record the commit, finish required
