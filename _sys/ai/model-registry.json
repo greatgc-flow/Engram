@@ -54,29 +54,32 @@
     },
     "gpt-5.6-luna": {
       "provider": "openai",
-      "context_limit": 372000,
+      "context_limit": 272000,
+      "_context_limit_fix_note": "2026-07-24: corrected from 372000 to 272000 per Codex 0.144.6 release notes ('corrected context windows to 272,000 tokens') + live `codex debug models` confirmation.",
       "reasoning_effort": ["low", "medium", "high", "xhigh", "max"],
       "default_reasoning_effort": "medium",
       "status": "GA",
       "confidence": "cli_live",
       "source_tag": "cli_live",
       "validation_method": "codex_debug_models",
-      "validated_at": "2026-07-13"
+      "validated_at": "2026-07-24"
     },
     "gpt-5.6-terra": {
       "provider": "openai",
-      "context_limit": 372000,
+      "context_limit": 272000,
+      "_context_limit_fix_note": "2026-07-24: same fix as gpt-5.6-luna -- corrected from 372000 to 272000.",
       "reasoning_effort": ["low", "medium", "high", "xhigh", "max", "ultra"],
       "default_reasoning_effort": "medium",
       "status": "GA",
       "confidence": "cli_live",
       "source_tag": "cli_live",
       "validation_method": "codex_debug_models",
-      "validated_at": "2026-07-13"
+      "validated_at": "2026-07-24"
     },
     "gpt-5.6-sol": {
       "provider": "openai",
-      "context_limit": 372000,
+      "context_limit": 272000,
+      "_context_limit_fix_note": "2026-07-24: same fix as gpt-5.6-luna -- corrected from 372000 to 272000.",
       "reasoning_effort": ["low", "medium", "high", "xhigh", "max", "ultra"],
       "default_reasoning_effort": "medium",
       "status": "GA",
