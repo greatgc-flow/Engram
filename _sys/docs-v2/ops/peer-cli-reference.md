@@ -7,7 +7,8 @@
 > (which shadow bare names on PATH — see §4).
 
 Cross-ref: `general/lifecycle.md` (session/heartbeat), `specific/{cc,cx,ag}.md`,
-`ops/diag-telemetry-architecture.md`.
+`ops/diag-telemetry-architecture.md`, `ops/cli-update-checkpoints-{cc,agy,codex}.md`
+(known bugs + mechanical post-update verification checklists, 2026-07-24).
 
 ---
 
