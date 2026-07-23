@@ -304,7 +304,7 @@
           ]
         },
         "opus": {
-          "runtime_model": "Claude Opus 4.6 (Thinking)",
+          "runtime_model": "claude-opus-4-6-thinking",
           "registry_model_id": "claude-opus-4-6",
           "selection_mode": "pinned",
           "model_availability": "cli_listed",
@@ -317,13 +317,15 @@
           "source": "check_cli_reality:2026-07-03",
           "_routing_note": "PREMIUM — stays manual_only AND is profile-bulk-excluded via routing-config token_load_balancing.bulk_exclude_profiles=['ag.opus'] (DIR-005). Manual/arbiter/escalation only; never auto/bulk. Shares the 3P quota family with ag.gptoss.",
           "_registry_link_note": "registry_model_id links to model-registry.json's claude-opus-4-6 entry (1M ctx, vendor-documented) for snapshot.py's DECL context-limit fallback -- runtime_model stays the exact agy CLI --model operand, unrelated to the registry key (T-absent-audit 2026-07-19/20 A4).",
+          "_model_id_fix_note": "2026-07-23: runtime_model/profile_args corrected from the stale display-name form 'Claude Opus 4.6 (Thinking)' to the canonical lowercase-hyphenated form 'claude-opus-4-6-thinking' -- live-tested via `agy.exe models` (current registry) and a direct `agy.exe -p ... --model` invocation. The old string produced a hard CLI error ('invalid model selection ... is not recognized as a known model'), captured in _sys/data/logs/error-log.jsonl at 2026-07-23T02:32:50Z. This was a genuine config-drift bug, discovered live-testing a separate user hypothesis (3P quota exhaustion) that turned out to ALSO be independently confirmed true (diag showed 3P-pool at CRIT 99.99x same session) -- both the model-ID bug and the quota exhaustion were real, simultaneous, unrelated causes of ag.opus's dispatch failures this session.",
           "profile_args": [
             "--model",
-            "Claude Opus 4.6 (Thinking)"
+            "claude-opus-4-6-thinking"
           ]
         },
         "gptoss": {
-          "runtime_model": "GPT-OSS 120B (Medium)",
+          "runtime_model": "gpt-oss-120b-medium",
+          "_model_id_fix_note": "2026-07-23: same fix as ag.opus, same evidence basis -- corrected from the stale display-name form 'GPT-OSS 120B (Medium)' to the canonical form 'gpt-oss-120b-medium' per a live `agy.exe models` check.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "specialty",
@@ -339,7 +341,7 @@
           "_context_window_note": "runtime_context_window=8000 is a CONFIRMED LOWER BOUND, not the model's ceiling: an ag-run sentinel probe (~8k-token prompt with 3 unique markers at start/middle/end, piped via stdin to avoid the Windows CreateProcess 32K arg-length limit) succeeded cleanly and correctly recovered all 3 markers, proving real processing of the full input - NOT just declared/self-reported. An earlier attempt where ag asked the model to self-report its own context window returned an untrustworthy 2048 (cx independently flagged this as a likely hallucination: gpt-oss-120b's public model card documents 128K native context, and '(Medium)' is a reasoning-EFFORT tier, not a context-window tier - it should not shrink the window to 2048). Do not treat 8000 as the true ceiling, and do not write 131072 here unless separately re-validated against THIS hosted deployment (Antigravity), not just the base model's public spec - a higher real bound has simply not been empirically probed yet.",
           "profile_args": [
             "--model",
-            "GPT-OSS 120B (Medium)"
+            "gpt-oss-120b-medium"
           ]
         }
       },
