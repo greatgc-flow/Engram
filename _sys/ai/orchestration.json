@@ -226,7 +226,8 @@
       "capability_class": "unsandboxed_trusted_mutation",
       "profiles": {
         "standard": {
-          "runtime_model": "Gemini 3.5 Flash (Low)",
+          "runtime_model": "gemini-3.5-flash-low",
+          "_model_id_fix_note": "2026-07-23: corrected from the stale display-name form 'Gemini 3.5 Flash (Low)' to the canonical lowercase-hyphenated form -- same bug class as ag.opus/ag.gptoss, confirmed against a live `agy.exe models` catalog re-pull after the user's manual Agy re-login (cx.deepthink, room-livetest). Not independently confirmed rejected by this exact operand (ag.effort was the one caught live-rejecting), but the stale-string pattern and live catalog both confirm this was wrong too.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
@@ -239,11 +240,12 @@
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "Gemini 3.5 Flash (Low)"
+            "gemini-3.5-flash-low"
           ]
         },
         "effort": {
-          "runtime_model": "Gemini 3.5 Flash (High)",
+          "runtime_model": "gemini-3.5-flash-high",
+          "_model_id_fix_note": "2026-07-23: corrected from the stale display-name form 'Gemini 3.5 Flash (High)' to the canonical form -- LIVE-CONFIRMED REJECTED: cx.deepthink's post-relogin re-verification dispatch hit this exact string being rejected by Agy 1.1.5 mid-test (forced fallback to Agy's signed-in default model). Fixed against the same live `agy.exe models` catalog re-pull.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
@@ -264,11 +266,12 @@
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "Gemini 3.5 Flash (High)"
+            "gemini-3.5-flash-high"
           ]
         },
         "deepthink": {
-          "runtime_model": "Gemini 3.1 Pro (High)",
+          "runtime_model": "gemini-3.1-pro-high",
+          "_model_id_fix_note": "2026-07-23: corrected from the stale display-name form 'Gemini 3.1 Pro (High)' to the canonical form -- same bug class, confirmed against the same live `agy.exe models` catalog re-pull. Not independently confirmed rejected by this exact operand, but every dispatch this session used the hub_nodes default_profile=deepthink and succeeded, which is odd given the stale string -- worth noting the old display-name form may have been silently tolerant on some ag versions/profiles even though it broke opus/gptoss/effort explicitly; treat as fixed-on-evidence-of-pattern rather than fixed-on-direct-rejection-proof for this one profile specifically.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
@@ -300,7 +303,7 @@
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "Gemini 3.1 Pro (High)"
+            "gemini-3.1-pro-high"
           ]
         },
         "opus": {
