@@ -170,17 +170,37 @@ invocation), `codex doctor --json` resolves the effective policy to `OnRequest`;
 `config/read` returns `approval_policy = null` with no origin, confirming this is codex's
 built-in default, not a config-file value. `[cli_live + app_server]` Values: `-a` accepts
 `untrusted` (prompts outside the trusted-command set), `on-request` (agent decides when to
-ask), `never` (fails instead of prompting). **Still open:** actually observing a live
-approve/deny/prompt event for a borderline command — every attempt in this session's sandbox
-failed before reaching tool selection, with a TLS `UnknownIssuer` error traced independently to
-this execution environment's restricted network token (reproduced via a direct Schannel curl
-failing `SEC_E_NO_CREDENTIALS`), not to Codex. Needs a network-capable host to close. `[empirical_probe; env-blocked]`
+ask), `never` (fails instead of prompting).
+
+**RESOLVED 2026-07-23 (forensic follow-up):** the earlier "TLS/env-blocked" classification was
+incomplete. Root cause fully isolated: this is **Codex's own intentional Windows sandbox**, not
+a hub.py restriction, not host-wide, and not domain-specific. `installed config.toml` declares
+`[windows] sandbox = "unelevated"`; commands Codex itself spawns (not the outer inference
+transport) run under a genuinely restricted Windows token
+(`TokenElevationType=3/limited`, `TokenIsRestricted=1`, deny-only Administrators) plus
+advisory proxy-poisoning env vars (`HTTP_PROXY=http://127.0.0.1:9` etc.,
+`CODEX_SANDBOX_NETWORK_DISABLED=1`). Direct evidence: a zero-proxy Schannel curl from INSIDE a
+dispatched cx session failed identically (`SEC_E_NO_CREDENTIALS`) against ALL five test targets
+including a plain control domain, while Node's own TLS stack (which ignores those proxy vars)
+reached every one of them with normal HTTP responses — proving general connectivity exists and
+the restriction is specific to the sandboxed child-command TLS stack, not the network path.
+Matches OpenAI's own documented design for this sandbox mode (network protection is explicitly
+"advisory" since a program can ignore the env vars or open sockets directly) — see
+[OpenAI's Windows sandbox engineering post](https://openai.com/index/building-codex-windows-sandbox/).
+`[cli_live + empirical_probe + official design]`
+**Disposition: correctly classified as security-intentional — do NOT weaken or bypass this to
+"fix" it.** A live approve/deny/prompt event for a borderline command genuinely cannot be
+observed from inside a nested peer-dispatched session (this execution context
+also resolves to approval policy `never`, i.e. it would auto-fail rather than prompt anyway).
+Closing this requires launching Codex directly from a normal, non-nested host process — not
+another peer `ask`.
 
 **`--output-schema` — confirmed not a no-op.** A malformed schema file is rejected locally
 before any provider call (`... is not valid JSON: expected value at line 4 column 1`); a valid
 schema is accepted and starts a real turn. `[cli_live]` End-to-end response-conformance
-validation itself is blocked by the same environment TLS issue as the approval-policy test.
-`[empirical_probe; env-blocked]`
+validation is blocked by the same Codex sandbox mechanism as the approval-policy test above
+(security-intentional, not a bug) — needs a non-nested normal-host execution to close.
+`[empirical_probe; blocked by Codex's own unelevated-sandbox design, see above]`
 
 **Mutation surface — fully behavior-verified on a disposable, current-round-only session**
 (never touched a real hub-managed room session): app-server `thread/fork` succeeded
@@ -193,10 +213,15 @@ Top-level CLI `codex fork` (not the app-server RPC) failed in this headless harn
 limitation as agy's console requirement (§3). Needs a real interactive terminal to close.
 
 **`account/usage/read`** — recognized by app-server and attempts the real
-`https://chatgpt.com/backend-api/wham/profiles/me` endpoint; fails identically with/without
-the sandbox's injected proxy variables removed, and correlates with independently-reproduced
-TLS failures in this execution environment. Verdict: **environment transport artifact, not an
-absent or unsupported Codex capability.** `[app_server + empirical_probe; env-blocked]`
+`https://chatgpt.com/backend-api/wham/profiles/me` endpoint. **ROOT CAUSE CONFIRMED 2026-07-23**
+(see the approval-policy entry above for the full forensic trail): this is Codex's own
+intentional `[windows] sandbox = "unelevated"` restricted-token boundary applied to spawned
+commands, matching OpenAI's documented design — not a hub.py restriction, not host-wide, not
+domain-specific (a control domain failed identically). The endpoint itself IS reachable (a
+direct terminal curl with no proxy vars got a real `HTTP 401`); only the nested sandboxed TLS
+stack cannot complete the handshake. **Verdict: security-intentional by-design boundary, not an
+absent/unsupported Codex capability and not something to bypass.** Real payload capture
+requires running from a normal non-nested host process. `[app_server + empirical_probe + official design]`
 
 **Corrected nested command trees** (supersedes any prior partial listing):
 - `codex mcp`: `list`, `get`, `add`, `remove`, `login`, `logout`. (`add-from-claude-desktop`,
@@ -383,20 +408,23 @@ binary path**, never the bare name. **✓run** (diag fixed to use the real `code
 **Resolved this session (kept here only as a changelog, not open questions):** cc
 `--json-schema`/`--max-budget-usd`/`--bare` real enforcement (✓run); ag
 `--dangerously-skip-permissions` vs deny-rules (✓run, confirmed absolute override); codex
-approval-policy *default value* (✓ `OnRequest`, cli_live+app_server — but see below, the
-*live event behavior* is still open); codex mutation surface (fork/archive/unarchive/delete/
-steer/interrupt via app-server + CLI, all ✓run); codex `--output-schema` *local parsing*
-(✓run — rejects malformed JSON pre-provider-call); codex `account/usage/read` root-caused to
-an environment TLS artifact, not a Codex limitation.
+approval-policy *default value* (✓ `OnRequest`, cli_live+app_server); codex mutation surface
+(fork/archive/unarchive/delete/steer/interrupt via app-server + CLI, all ✓run); codex
+`--output-schema` *local parsing* (✓run — rejects malformed JSON pre-provider-call); codex
+`account/usage/read` AND the live-approval-event / end-to-end-schema-conformance TLS failures
+**root-caused with full forensic confirmation** (2026-07-23 follow-up): this is Codex's own
+intentional `[windows] sandbox = "unelevated"` restricted-token boundary on spawned commands
+(matches OpenAI's documented design), reproduced by a control-domain probe failing identically
+inside the sandbox while succeeding via Node's TLS stack and a plain terminal curl outside it.
+**Correctly classified as security-intentional — not a bug, not to be bypassed.**
 
-**Still genuinely open — blocked by structural/environment limits, not by more investigation
-rounds. Each needs a network-capable host or a real interactive terminal, not another peer ask:**
-- Live approve/deny/prompt event for a borderline codex command under the hub's real
-  invocation args: every attempt this session failed pre-tool-selection with a TLS
-  `UnknownIssuer` traced to this sandbox's restricted network token (independently reproduced
-  via direct Schannel curl). `[empirical_probe; needs network-capable host]`
-- End-to-end `--output-schema` response conformance (does the final answer actually match the
-  schema, beyond local pre-parse validation) — same TLS block. `[empirical_probe; needs network-capable host]`
+**Still genuinely open — blocked by structural/environment limits that further peer-ask rounds
+cannot close (each needs a normal non-nested host process or a real interactive terminal — the
+peer itself correctly refused to weaken its own sandbox to "test around" it):**
+- Live approve/deny/prompt event for a borderline codex command, and end-to-end
+  `--output-schema` response conformance — both require running Codex directly from a
+  non-nested host process, since the nested peer-dispatch context is intentionally
+  network-restricted by Codex's own Windows sandbox. `[empirical_probe; needs non-nested host]`
 - Top-level CLI `codex fork` (not the app-server RPC, which IS verified) — fails headless with
   `Error: stdin is not a terminal`; needs a real TTY, same class of limitation as ag's console
   requirement. `[cli_live; needs real terminal]`
