@@ -2507,8 +2507,10 @@ def _human_interface_assignment_fresh(
 
     if state.get("human_interface_peer") == peer:
         candidates.append(state.get("human_interface_peer_assigned_at"))
+        candidates.append(state.get("human_interface_assignment_time"))
     if state.get("active_console_peer") == peer:
         candidates.append(state.get("active_console_peer_assigned_at"))
+        candidates.append(state.get("human_interface_assignment_time"))
 
     assignments = state.get("role_assignments") or {}
     for role in ("human_interface_peer", "human_interface", "terminal", "console"):
@@ -10087,7 +10089,7 @@ def action_terminal_duty_sweep(ai_root: Path) -> None:
         return
         
     freshness_minutes = _human_interface_freshness_minutes()
-    now = _now()
+    now = _ensure_aware(None)
     fresh, reason = _human_interface_assignment_fresh(ai_root, current_terminal, now, freshness_minutes)
     
     if fresh:

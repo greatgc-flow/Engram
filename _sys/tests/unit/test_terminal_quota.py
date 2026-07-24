@@ -76,3 +76,24 @@ def test_terminal_duty_sweep_does_nothing_when_fresh(monkeypatch, tmp_path):
     hub.action_terminal_duty_sweep(tmp_path)
 
     assert calls == []
+
+
+def test_terminal_duty_sweep_end_to_end_detects_real_handoff_timestamp(monkeypatch, tmp_path):
+    """Regression for a real bug found 2026-07-24: action_terminal_handoff()
+    writes human_interface_assignment_time, but _human_interface_assignment_fresh()
+    only checked human_interface_peer_assigned_at (never written by any
+    production code) -- so `concrete` was always empty and the sweep was a
+    permanent no-op regardless of true staleness. This test does NOT mock
+    _human_interface_assignment_fresh, so it exercises the real reader against
+    the real writer's field name."""
+    hub._write_json(tmp_path / "state.json", {
+        "human_interface_peer": "ag",
+        "human_interface_assignment_time": "2000-01-01T00:00:00",
+    })
+    monkeypatch.setattr(hub, "_select_human_interface_peer", lambda *a, **k: {"peer": "cx", "profile": "effort"})
+    calls = []
+    monkeypatch.setattr(hub, "action_terminal_handoff", lambda ai_root, cur, nxt, reason="": calls.append((cur, nxt, reason)))
+
+    hub.action_terminal_duty_sweep(tmp_path)
+
+    assert calls == [("ag", "cx", "sweep_stale_terminal")]

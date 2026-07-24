@@ -179,6 +179,30 @@ def test_expired_terminal_freshness_rejects(monkeypatch, tmp_path):
     assert result["reason"] == "terminal_assignment_stale"
 
 
+def test_expired_real_assignment_time_field_rejects(monkeypatch, tmp_path):
+    """action_terminal_handoff() actually writes human_interface_assignment_time
+    (not human_interface_peer_assigned_at, which no production code ever writes).
+    Before this fix, _human_interface_assignment_fresh() never checked this
+    field, so `candidates` was always empty and stale assignments were always
+    reported fresh -- making action_terminal_duty_sweep() a permanent no-op
+    regardless of true age."""
+    _patch_common(
+        monkeypatch,
+        tmp_path,
+        state={
+            "human_interface_peer": "cc",
+            "human_interface_assignment_time": "2026-07-13T09:00:00",
+        },
+        orch=_orch(_peer("cc", default_profile="deepthink")),
+        health_by_peer={"cc": _health()},
+    )
+
+    result = hub._human_interface_peer_eligibility(tmp_path, "cc", "deepthink", now=NOW)
+
+    assert result["eligible"] is False
+    assert result["reason"] == "terminal_assignment_stale"
+
+
 def test_no_eligible_peer_returns_no_terminal(monkeypatch, tmp_path):
     _patch_common(
         monkeypatch,
