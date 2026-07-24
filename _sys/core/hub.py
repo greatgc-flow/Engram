@@ -4414,18 +4414,37 @@ def _verify_ask_guard_record(pre: dict[str, str], ai_root: Path | None, peer: st
        ('clean' or 'indeterminate').
     Returns the list of unattributed changed paths (empty = clean).
 
-    KNOWN INCOMPLETE (C1 pass 1 of N -- see cx's 2026-07-24 cross-verification
-    in backlog-design-consensus-2026-07-24.md, "C1 pass 2 blockers"; do not
-    treat receipt-folding as a real security boundary until these land):
-    receipt matching below is path-only and does not bind a receipt to this
-    ask's specific epoch/window or verify a digest chain -- an old or forged
-    receipt for the same path can currently suppress detection of an
-    unrelated later mutation. This is DORMANT today only because
-    `_commit_host_mutation()` (the only receipt writer) has zero production
-    callers -- do NOT wire it up without first fixing receipt window/epoch
-    binding, host-record tamper-resistance, and verify/commit locking."""
+    C1 pass 2 blocker #1 FIXED (2026-07-25, ag design + cx cross-verification):
+    a receipt only explains a change if (a) it was committed no earlier than
+    this ask's own AskGuardRecord.started_at (rejects ancient/unrelated
+    receipts) AND (b) its previous_hashes->committed_hashes digest chain
+    genuinely connects the observed pre_hash to the observed post_hash for
+    that exact path (rejects a receipt with the right path but the wrong
+    hash transition). A receipt missing `previous_hashes` entirely is NEVER
+    trusted (no legacy-compat fallback -- `_commit_host_mutation()` always
+    writes it, so a receipt without it is definitionally forged/corrupt).
+
+    STILL KNOWN INCOMPLETE (blockers #2-4, see backlog-design-consensus-
+    2026-07-24.md): host-record storage under `.ai/` is not tamper-resistant
+    against a peer with direct filesystem write access (a fully malicious
+    peer could still forge a receipt with a fabricated timestamp+chain that
+    satisfies this check) -- that class of threat needs OS-level isolation
+    (blocker #2), not just this temporal/digest binding, which specifically
+    defends against STALE/INCIDENTAL receipt reuse, not a fully adversarial
+    writer. `_commit_host_mutation()` still has zero production callers."""
     effective_ask_id = ask_id or "unknown-ask"
     effective_ai_root = ai_root or (_REPO_ROOT / ".ai")
+
+    # Window start: this ask's own recorded dispatch time. A receipt
+    # committed before this can never explain a change observed during
+    # THIS ask's window (closes cx's ancient-receipt exploit).
+    guard_path = effective_ai_root / "ask_guards" / f"{effective_ask_id}.json"
+    started_at = None
+    if guard_path.exists():
+        try:
+            started_at = _read_json(guard_path).get("started_at")
+        except Exception:
+            started_at = None
 
     post = _snapshot_governed_hashes()
     raw_changed = sorted(
@@ -4435,18 +4454,52 @@ def _verify_ask_guard_record(pre: dict[str, str], ai_root: Path | None, peer: st
     rel_raw = [str(Path(p).relative_to(_REPO_ROOT)) if str(p).startswith(str(_REPO_ROOT)) else str(p)
                for p in raw_changed]
 
-    # Fold in MutationReceipts committed during this ask's window -- a
-    # change explained by a receipt is authorized host-mediated output.
+    # Load in-window receipts (committed_at >= started_at; no upper bound --
+    # verification runs immediately after this ask completes, so a receipt
+    # existing at glob time is by construction not "from the future" unless
+    # forged, which is blocker #2's tamper-resistance territory, not this
+    # fix's scope).
     receipts_dir = effective_ai_root / "mutation_receipts"
-    authorized_paths = set()
+    window_receipts: list[dict] = []
     if receipts_dir.exists():
         for r_file in receipts_dir.glob("*.json"):
             try:
                 r_data = _read_json(r_file)
-                for path in r_data.get("paths", []):
-                    authorized_paths.add(path)
+                r_time = r_data.get("committed_at")
+                if started_at and r_time and r_time < started_at:
+                    continue  # ancient/unrelated receipt -- reject
+                window_receipts.append(r_data)
             except Exception:
                 pass
+
+    # Digest-chain validation: a change is authorized ONLY if some in-window
+    # receipt (or ordered chain of them) proves previous_hash == pre_hash
+    # and committed_hash == post_hash for that exact path.
+    authorized_paths = set()
+    for p_abs, r_rel in zip(raw_changed, rel_raw):
+        pre_h = pre.get(p_abs, "ABSENT")
+        post_h = post.get(p_abs, "ABSENT")
+        path_receipts = sorted(
+            (r for r in window_receipts if r_rel in (r.get("paths") or [])),
+            key=lambda r: r.get("committed_at", ""),
+        )
+        curr_chain_hash = pre_h
+        chain_valid = False
+        for r_item in path_receipts:
+            prev_h = (r_item.get("previous_hashes") or {}).get(r_rel)
+            comm_h = (r_item.get("committed_hashes") or {}).get(r_rel)
+            # No legacy fallback: a receipt missing previous_hashes is never
+            # trusted, even if its committed_hashes happens to match post_h
+            # -- _commit_host_mutation() always writes previous_hashes, so a
+            # receipt without it is forged/corrupt, not "old-format."
+            if prev_h is None or prev_h != curr_chain_hash:
+                continue
+            curr_chain_hash = comm_h
+            if curr_chain_hash == post_h:
+                chain_valid = True
+                break
+        if chain_valid:
+            authorized_paths.add(r_rel)
 
     unattributed_rel = [r for r in rel_raw if r not in authorized_paths]
     unattributed_abs = [p for p, r in zip(raw_changed, rel_raw) if r in unattributed_rel]
@@ -4492,7 +4545,6 @@ def _verify_ask_guard_record(pre: dict[str, str], ai_root: Path | None, peer: st
             file=sys.stderr,
         )
 
-    guard_path = effective_ai_root / "ask_guards" / f"{effective_ask_id}.json"
     with _get_lock(effective_ai_root, "ask_guards"):
         rec = _read_json(guard_path) if guard_path.exists() else {}
         if rec.get("status") == "running":
@@ -4572,6 +4624,11 @@ def _commit_host_mutation(ai_root: Path, ask_id: str, target_path: Path, new_con
             "ask_id": ask_id,
             "committed_at": _now(),
             "paths": [rel_path],
+            # C1 pass 2 blocker #1: previous_hashes lets verification prove a
+            # genuine digest-chain transition (pre_hash -> committed_hash),
+            # not just "some receipt exists for this path." Always written --
+            # a receipt without it is never trusted by _verify_ask_guard_record.
+            "previous_hashes": {rel_path: curr_hash},
             "committed_hashes": {rel_path: final_hash},
         }
         receipts_dir = effective_ai_root / "mutation_receipts"

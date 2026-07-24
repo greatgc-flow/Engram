@@ -452,3 +452,144 @@ def test_c1_host_mutation_commit_cas_mismatch_raises(monkeypatch, tmp_path):
 
     # File must be untouched on a CAS conflict.
     assert f.read_text(encoding="utf-8") == "v1"
+
+
+# --- C1 pass 2 blocker #1: receipt epoch/window/digest-chain binding ------
+# (design: ag.deepthink; exploit reproduction + fix verification: cc, based
+# on cx's original forged-receipt exploit against pass 1)
+
+def test_c1_blocker1_ancient_receipt_rejected(monkeypatch, tmp_path):
+    """cx's original exploit, now must fail: an ancient receipt for a
+    DIFFERENT ask (committed well before this ask's AskGuardRecord even
+    existed) must never suppress detection of a real unattributed change,
+    even if its `paths` list names the right file."""
+    f = _make_governed(tmp_path, monkeypatch, name="exploit_ancient.json", body="original")
+    ai_root = tmp_path / ".ai"
+    ask_id = "ask-current"
+    import hashlib
+    h_orig = hashlib.sha256(b"original").hexdigest()
+    pre = {str(f.resolve()): h_orig}
+
+    (ai_root / "ask_guards").mkdir(parents=True, exist_ok=True)
+    hub._write_json(ai_root / "ask_guards" / f"{ask_id}.json", {
+        "ask_id": ask_id, "peer": "ag", "origin": "terminal",
+        "status": "running", "started_at": "2026-07-25T00:00:00",
+    })
+
+    f.write_text("unauthorized-mutation", encoding="utf-8")
+    rel_p = str(f.relative_to(hub._REPO_ROOT)) if str(f).startswith(str(hub._REPO_ROOT)) else str(f)
+
+    receipts_dir = ai_root / "mutation_receipts"
+    receipts_dir.mkdir(parents=True, exist_ok=True)
+    hub._write_json(receipts_dir / "rcpt-ancient.json", {
+        "receipt_id": "rcpt-ancient", "ask_id": "ask-long-ago",
+        "committed_at": "2020-01-01T00:00:00",  # before started_at
+        "paths": [rel_p],
+        "previous_hashes": {rel_p: h_orig},
+        "committed_hashes": {rel_p: hashlib.sha256(b"unauthorized-mutation").hexdigest()},
+    })
+
+    unattributed = hub._verify_ask_guard_record(pre, ai_root, "ag", "terminal", ask_id=ask_id)
+    assert unattributed == [str(f.resolve())], "an ancient out-of-window receipt must not suppress detection"
+
+
+def test_c1_blocker1_wrong_digest_chain_rejected(monkeypatch, tmp_path):
+    """An in-window receipt (correct timing) for the right path, but with a
+    previous_hashes value that does NOT match the real pre-mutation hash,
+    must not suppress detection -- the digest chain must genuinely connect
+    pre_hash to post_hash, not just exist."""
+    f = _make_governed(tmp_path, monkeypatch, name="exploit_wrong_digest.json", body="original")
+    ai_root = tmp_path / ".ai"
+    ask_id = "ask-current2"
+    import hashlib
+    h_orig = hashlib.sha256(b"original").hexdigest()
+    pre = {str(f.resolve()): h_orig}
+
+    (ai_root / "ask_guards").mkdir(parents=True, exist_ok=True)
+    hub._write_json(ai_root / "ask_guards" / f"{ask_id}.json", {
+        "ask_id": ask_id, "peer": "ag", "origin": "terminal",
+        "status": "running", "started_at": "2026-01-01T00:00:00",
+    })
+
+    f.write_text("unauthorized-mutation", encoding="utf-8")
+    h_mut = hashlib.sha256(b"unauthorized-mutation").hexdigest()
+    rel_p = str(f.relative_to(hub._REPO_ROOT)) if str(f).startswith(str(hub._REPO_ROOT)) else str(f)
+
+    receipts_dir = ai_root / "mutation_receipts"
+    receipts_dir.mkdir(parents=True, exist_ok=True)
+    hub._write_json(receipts_dir / "rcpt-wrong-chain.json", {
+        "receipt_id": "rcpt-wrong-chain", "ask_id": "ask-unrelated",
+        "committed_at": "2026-07-25T00:00:01",  # in-window (after started_at)
+        "paths": [rel_p],
+        "previous_hashes": {rel_p: "0" * 64},  # does NOT match h_orig
+        "committed_hashes": {rel_p: h_mut},
+    })
+
+    unattributed = hub._verify_ask_guard_record(pre, ai_root, "ag", "terminal", ask_id=ask_id)
+    assert unattributed == [str(f.resolve())], "a receipt with a broken digest chain must not suppress detection"
+
+
+def test_c1_blocker1_receipt_missing_previous_hashes_rejected(monkeypatch, tmp_path):
+    """cc's own finding during review of ag's draft: a receipt missing
+    `previous_hashes` entirely (which _commit_host_mutation always writes,
+    so a real receipt never lacks it) must NEVER be trusted, even if its
+    `committed_hashes` happens to exactly match the observed post-mutation
+    hash -- this was the actual current post-hash, trivially knowable by
+    whoever made the mutation, so a legacy-format fallback here would have
+    reopened the exact exploit class this fix exists to close."""
+    f = _make_governed(tmp_path, monkeypatch, name="exploit_missing_prev.json", body="original")
+    ai_root = tmp_path / ".ai"
+    ask_id = "ask-current3"
+    import hashlib
+    h_orig = hashlib.sha256(b"original").hexdigest()
+    pre = {str(f.resolve()): h_orig}
+
+    (ai_root / "ask_guards").mkdir(parents=True, exist_ok=True)
+    hub._write_json(ai_root / "ask_guards" / f"{ask_id}.json", {
+        "ask_id": ask_id, "peer": "ag", "origin": "terminal",
+        "status": "running", "started_at": "2026-01-01T00:00:00",
+    })
+
+    f.write_text("unauthorized-mutation", encoding="utf-8")
+    h_mut = hashlib.sha256(b"unauthorized-mutation").hexdigest()
+    rel_p = str(f.relative_to(hub._REPO_ROOT)) if str(f).startswith(str(hub._REPO_ROOT)) else str(f)
+
+    receipts_dir = ai_root / "mutation_receipts"
+    receipts_dir.mkdir(parents=True, exist_ok=True)
+    # No "previous_hashes" key at all -- committed_hashes exactly matches
+    # the real post-mutation hash (trivially forgeable by the mutator).
+    hub._write_json(receipts_dir / "rcpt-no-prev.json", {
+        "receipt_id": "rcpt-no-prev", "ask_id": "ask-forged",
+        "committed_at": "2026-07-25T00:00:01",
+        "paths": [rel_p],
+        "committed_hashes": {rel_p: h_mut},
+    })
+
+    unattributed = hub._verify_ask_guard_record(pre, ai_root, "ag", "terminal", ask_id=ask_id)
+    assert unattributed == [str(f.resolve())], "a receipt missing previous_hashes must never be trusted"
+
+
+def test_c1_blocker1_genuine_in_window_receipt_verifies_clean(monkeypatch, tmp_path):
+    """Positive case: a real host-committed mutation, via the real
+    _commit_host_mutation() during the ask's actual window, correctly
+    verifies clean (the fix must not create false positives against
+    legitimate authorized output)."""
+    f = _make_governed(tmp_path, monkeypatch, name="genuine.json", body="v1")
+    ai_root = tmp_path / ".ai"
+    ask_id = "ask-genuine"
+    import hashlib
+    h_v1 = hashlib.sha256(b"v1").hexdigest()
+    pre = {str(f.resolve()): h_v1}
+
+    hub._create_ask_guard_record(ai_root, ask_id, "ag", "terminal")
+
+    scratch_dir = ai_root / "scratch" / ask_id
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    hub._write_json(scratch_dir / "mutation_request.json", {
+        "ask_id": ask_id, "target_file": str(f.resolve()), "status": "untrusted_proposal",
+    })
+
+    hub._commit_host_mutation(ai_root, ask_id, f.resolve(), "v2-authorized", h_v1)
+
+    unattributed = hub._verify_ask_guard_record(pre, ai_root, "ag", "terminal", ask_id=ask_id)
+    assert unattributed == [], "a genuine in-window receipt with a correct digest chain must verify clean"
