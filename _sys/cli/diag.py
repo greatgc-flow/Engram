@@ -352,18 +352,6 @@ def _failover_excluded_profile_ids() -> set:
 # Rendering
 # --------------------------------------------------------------------------
 
-def _quota_display_sort_key(row):
-    """Prefer observed pacing pressure; never invent a value for absent pacing."""
-    used = row.get("used_frac")
-    pacing = row.get("pacing")
-    ratio = pacing.get("ratio") if isinstance(pacing, dict) else None
-    label = str(row.get("label") or row.get("pool") or "")
-    owner = str(row.get("owner") or "")
-    if isinstance(ratio, (int, float)) and not isinstance(ratio, bool) and math.isfinite(ratio):
-        return (0, -ratio, -used, label, owner)
-    return (1, 0, -used, label, owner)
-
-
 _WINDOW_HOURS_BY_SUFFIX = {"5H": 5.0, "7D": 168.0}
 
 # Reserve room in every bucket cell for the longest possible borrowed-pool
@@ -508,13 +496,15 @@ def _select_quota_tier(groups, budget, prefix_len=0):
             return tier
     return 3
 
-def _quota_dependency_group_text(group, tier=0, include_raw_tail=True):
-    """Render one dependency group as a single line (fixed order 5H | 7D)
-    with the 'EXH' composite index (reset_hours / eta_full). Buckets
-    borrowed from a sibling pool (_borrow_missing_windows) render with a
-    '~' marker and source-pool tag, and never count toward EXH -- they are
-    informational context, not this pool's own accounting."""
-    prefix = group["pool"]
+def _group_raw_exh(group):
+    """Compute the raw 'EXH' composite index (reset_hours / eta_full, capped
+    at 99.99) for a dependency group -- shared by the display function
+    (_quota_dependency_group_text) and the row sort key so they can never
+    drift apart (2026-07-24 fix: the display showed reset_hours/eta_full
+    while sorting separately used pacing.ratio, a different metric, making
+    the on-screen row order inconsistent with the on-screen EXH numbers).
+    Returns (max_exh_val, max_exh_bucket, valid_exhs, own_buckets) or
+    (None, None, [], own_buckets) if EXH is absent for this group."""
     buckets = [group["primary"]] + group.get("secondary", [])
     buckets.sort(key=lambda b: str(b.get("_suffix") or ""))
 
@@ -532,10 +522,43 @@ def _quota_dependency_group_text(group, tier=0, include_raw_tail=True):
 
     own_buckets = [b for b in buckets if not b.get("_borrowed")]
     if not valid_exhs:
+        return None, None, valid_exhs, own_buckets
+    max_exh_val, max_exh_bucket = max(valid_exhs, key=lambda x: x[0])
+    return max_exh_val, max_exh_bucket, valid_exhs, own_buckets
+
+
+def _group_sort_metric(group):
+    """(tier, primary_value) for row ordering: tier 0 = real EXH known (sorts
+    by the SAME value the display shows, descending); tier 1 = EXH absent but
+    a measured pacing ratio is available (sorts by ratio descending, the prior
+    behavior for reset/eta-less pools -- a real degradation signal, not a bug,
+    per test_diag_layout.py's explicit sort contract); tier 2 = neither known
+    (never fabricated). Lower tier always sorts before a higher tier."""
+    eff_exh, _, _, _ = _group_raw_exh(group)
+    if isinstance(eff_exh, (int, float)):
+        return (0, -eff_exh)
+    primary = group.get("primary") or {}
+    ratio = (primary.get("pacing") or {}).get("ratio")
+    if isinstance(ratio, (int, float)) and not isinstance(ratio, bool) and math.isfinite(ratio):
+        return (1, -ratio)
+    return (2, 0.0)
+
+
+def _quota_dependency_group_text(group, tier=0, include_raw_tail=True):
+    """Render one dependency group as a single line (fixed order 5H | 7D)
+    with the 'EXH' composite index (reset_hours / eta_full). Buckets
+    borrowed from a sibling pool (_borrow_missing_windows) render with a
+    '~' marker and source-pool tag, and never count toward EXH -- they are
+    informational context, not this pool's own accounting."""
+    prefix = group["pool"]
+    max_exh_val, max_exh_bucket, valid_exhs, own_buckets = _group_raw_exh(group)
+    buckets = [group["primary"]] + group.get("secondary", [])
+    buckets.sort(key=lambda b: str(b.get("_suffix") or ""))
+
+    if max_exh_val is None:
         exh_text = "absent"
         max_exh_bucket = None
     else:
-        max_exh_val, max_exh_bucket = max(valid_exhs, key=lambda x: x[0])
         exh_fmt = f"{max_exh_val:.2f}x"
         if len(valid_exhs) < len(own_buckets):
             exh_fmt = f"≥{exh_fmt}"
@@ -709,12 +732,11 @@ def render_summary(infos, stdout=None, columns=None):
 
         def group_sort_key(group):
             state_rank = {"binding": 0, "safe": 1, "absent": 2}.get(group.get("state"), 3)
+            tier, metric = _group_sort_metric(group)
             primary = group.get("primary") or {}
-            ratio = (primary.get("pacing") or {}).get("ratio")
-            ratio_val = ratio if isinstance(ratio, (int, float)) else -1.0
             used = primary.get("used_frac")
             used_val = used if isinstance(used, (int, float)) else -1.0
-            return (state_rank, -ratio_val, -used_val, group.get("pool", ""))
+            return (state_rank, tier, metric, -used_val, group.get("pool", ""))
 
         for group in sorted(groups, key=group_sort_key):
             primary = group.get("primary") or {}
@@ -1172,12 +1194,11 @@ def _live_quota_pool_rows(snapshot):
 
     def group_sort_key(group):
         state_rank = {"binding": 0, "safe": 1, "absent": 2}.get(group.get("state"), 3)
+        tier, metric = _group_sort_metric(group)
         primary = group.get("primary") or {}
-        ratio = (primary.get("pacing") or {}).get("ratio")
-        ratio_val = ratio if isinstance(ratio, (int, float)) else -1.0
         used = primary.get("used_frac")
         used_val = used if isinstance(used, (int, float)) else -1.0
-        return (state_rank, -ratio_val, -used_val, group.get("pool", ""), group.get("owner", ""))
+        return (state_rank, tier, metric, -used_val, group.get("pool", ""), group.get("owner", ""))
 
     return sorted(groups, key=group_sort_key)
 
