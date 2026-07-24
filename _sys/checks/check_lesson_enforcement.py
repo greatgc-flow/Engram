@@ -160,8 +160,12 @@ def check_ll20260703_005() -> dict:
             if not changed:
                 findings.append("live self-test: detector did NOT report a governed mutation")
             log = (tdp / ".ai" / "operational_errors.jsonl")
-            if not log.exists() or "GOVERNED_MUTATION_VIOLATION" not in log.read_text(encoding="utf-8"):
-                findings.append("live self-test: violation was not logged to operational_errors.jsonl")
+            # C1 (2026-07-24): an unattributed change during an ask window is
+            # never attributed to a specific peer as a "VIOLATION" -- it logs
+            # as UNATTRIBUTED_GOVERNED_CHANGE (see backlog-design-consensus
+            # 2026-07-24 §C1). This check follows that renamed contract.
+            if not log.exists() or "UNATTRIBUTED_GOVERNED_CHANGE" not in log.read_text(encoding="utf-8"):
+                findings.append("live self-test: change was not logged to operational_errors.jsonl")
     except Exception as exc:
         findings.append(f"live self-test error: {type(exc).__name__}: {exc}")
 

@@ -4,6 +4,17 @@ Consensus 2026-07-03 (ag design, cx refined): peers must not mutate governed
 files during advisory asks. The guard sha256-hashes the governed manifest before
 a peer executes and re-hashes in a crash-safe finally covering BOTH the PTY and
 non-PTY paths; a change (when not allow_governed_mutation) logs a violation.
+
+2026-07-24 (Cluster C1, design converged via ag+cx mutual-critical unanimous
+rounds, see docs-v2/ops/backlog-design-consensus-2026-07-24.md): a before/after
+hash window proves temporal overlap, not authorship. Automatic `git checkout`/
+file-deletion revert is deleted entirely -- an unattributed change during an
+ask's window is now non-destructively quarantined (live bytes preserved) and
+NEVER blamed on the dispatching peer (no health penalty). The guard is fail-
+closed: pre-check failure prevents dispatch, post-check failure prevents
+normal success but never breaks the ask's own generated response. A change
+IS attributed (and excluded from the unattributed set) if it's explained by a
+MutationReceipt from a host-mediated commit via `_commit_host_mutation`.
 """
 import json
 import sys
@@ -51,9 +62,12 @@ def test_mutation_detected_and_logged(monkeypatch, tmp_path):
     log = ai_root / "operational_errors.jsonl"
     assert log.exists()
     rec = json.loads(log.read_text(encoding="utf-8").strip().splitlines()[-1])
-    assert rec["type"] == "GOVERNED_MUTATION_VIOLATION"
+    # C1: never a "VIOLATION" attributed to a specific peer -- unattributed.
+    assert rec["type"] == "UNATTRIBUTED_GOVERNED_CHANGE"
     assert rec["lesson"] == "LL-20260703-005"
     assert rec["peer"] == "ag"
+    # C1: live bytes are always preserved -- never reverted.
+    assert f.read_text(encoding="utf-8") == "mutated-by-peer"
 
 
 def test_size_preserving_mtime_restore_still_detected(monkeypatch, tmp_path):
@@ -125,191 +139,183 @@ def test_guard_runs_when_not_authorized(monkeypatch, tmp_path):
     assert called["post"] == 1  # finally always post-checks
 
 
-def test_guard_post_check_error_never_breaks_ask(monkeypatch, tmp_path):
-    """A crash inside the guard's post-check must not propagate (crash-safe)."""
-    monkeypatch.setattr(hub, "_snapshot_governed_hashes", lambda *a, **k: {})
+# --- C1 fail-closed tests (replace the pre-fix fail-OPEN contract) ---------
+
+def test_c1_fail_closed_pre_check_failure_blocks_execution(monkeypatch, tmp_path):
+    """C1 fail-closed 1: pre-check snapshot failure prevents child execution
+    entirely (the pre-fix behavior swallowed this and dispatched anyway)."""
     def _boom(*a, **k):
-        raise RuntimeError("guard exploded")
+        raise RuntimeError("pre snapshot failed")
+    monkeypatch.setattr(hub, "_snapshot_governed_hashes", _boom)
+    called = {"inner": False}
+    monkeypatch.setattr(hub, "_action_ask_inner", lambda *a, **k: called.__setitem__("inner", True))
+
+    import pytest
+    with pytest.raises(RuntimeError, match="pre snapshot failed"):
+        hub.action_ask("cc", "q", None, 10, tmp_path / ".ai")
+    assert not called["inner"], "child execution must be prevented on pre-check failure"
+
+
+def test_c1_fail_closed_post_check_failure_propagates(monkeypatch, tmp_path):
+    """C1 fail-closed 2: post-check verification failure must propagate
+    (the pre-fix behavior printed a warning and returned success cleanly --
+    an EXISTING test explicitly required that fail-open contract; this test
+    replaces it, not silently alters it)."""
+    monkeypatch.setattr(hub, "_snapshot_governed_hashes", lambda *a, **k: {})
+    monkeypatch.setattr(hub, "_phantom_scan", lambda *a, **k: set())
+    def _boom(*a, **k):
+        raise RuntimeError("post verify failed")
     monkeypatch.setattr(hub, "_governed_post_check", _boom)
     monkeypatch.setattr(hub, "_action_ask_inner", lambda *a, **k: None)
-    # must return cleanly despite the guard error
-    hub.action_ask("cc", "q", None, 10, tmp_path / ".ai")
+
+    import pytest
+    with pytest.raises(RuntimeError, match="post verify failed"):
+        hub.action_ask("cc", "q", None, 10, tmp_path / ".ai")
 
 
-def test_clean_at_dispatch_tracked_auto_reverted(monkeypatch, tmp_path):
-    f = _make_governed(tmp_path, monkeypatch, name="clean_tracked.json", body="original")
-    import hashlib
-    h_original = hashlib.sha256(b"original").hexdigest()
-    
-    # Pre-ask hash
-    pre = {str(f.resolve()): h_original}
-    
-    # Mutated by peer during ask
-    f.write_text("mutated", encoding="utf-8")
-    
-    # Mock Git helpers
-    monkeypatch.setattr(hub, "_get_head_committed_hash", lambda rel: h_original)
-    monkeypatch.setattr(hub, "_is_tracked_by_git", lambda rel: True)
-    
-    import subprocess
-    git_calls = []
-    def mock_run(cmd, *a, **kw):
-        git_calls.append(cmd)
-        return subprocess.CompletedProcess(cmd, 0, stdout=b"", stderr=b"")
-    monkeypatch.setattr(subprocess, "run", mock_run)
-    
+def test_c1_ordinary_ask_clean_ask_guard_record(monkeypatch, tmp_path):
+    """C1 scenario A: an ordinary ask with no concurrent activity completes
+    with a clean AskGuardRecord."""
+    _make_governed(tmp_path, monkeypatch, name="clean.json", body="original")
     ai_root = tmp_path / ".ai"
-    changed = hub._governed_post_check(pre, ai_root, "ag", "worker", ask_id="ask-123")
-    
-    # Verify it was detected as changed
-    assert changed == [str(f.resolve())]
-    
-    # Verify git checkout was called
-    assert any("checkout" in cmd for cmd in git_calls)
-    
-    # Verify quarantine file was written with the mutated content
-    r = str(Path(f).relative_to(hub._REPO_ROOT))
-    safe_rel = r.replace("/", "_").replace("\\", "_")
-    quarantine_file = ai_root / "quarantine" / "ask-123" / safe_rel
-    assert quarantine_file.exists()
-    assert quarantine_file.read_text(encoding="utf-8") == "mutated"
+    monkeypatch.setattr(hub, "_phantom_scan", lambda *a, **k: set())
+    monkeypatch.setattr(hub, "_action_ask_inner", lambda *a, **k: None)
 
-
-def test_clean_at_dispatch_untracked_deleted(monkeypatch, tmp_path):
-    f = _make_governed(tmp_path, monkeypatch, name="clean_untracked.json", body="original")
-    pre = {}
-    
-    # Mutated/created by peer during ask
-    f.write_text("created-new", encoding="utf-8")
-    
-    monkeypatch.setattr(hub, "_get_head_committed_hash", lambda rel: "ABSENT")
-    monkeypatch.setattr(hub, "_is_tracked_by_git", lambda rel: False)
-    
-    ai_root = tmp_path / ".ai"
-    changed = hub._governed_post_check(pre, ai_root, "ag", "worker", ask_id="ask-456")
-    
-    assert changed == [str(f.resolve())]
-    
-    # Verify file was deleted (reverted)
-    assert not f.exists()
-    
-    # Verify quarantine file exists with post-execution content
-    r = str(Path(f).relative_to(hub._REPO_ROOT))
-    safe_rel = r.replace("/", "_").replace("\\", "_")
-    quarantine_file = ai_root / "quarantine" / "ask-456" / safe_rel
-    assert quarantine_file.exists()
-    assert quarantine_file.read_text(encoding="utf-8") == "created-new"
-
-
-def test_dirty_at_dispatch_not_reverted(monkeypatch, tmp_path):
-    f = _make_governed(tmp_path, monkeypatch, name="dirty.json", body="pre_ask_modified")
-    import hashlib
-    h_pre = hashlib.sha256(b"pre_ask_modified").hexdigest()
-    h_head = hashlib.sha256(b"committed_in_head").hexdigest()
-    
-    pre = {str(f.resolve()): h_pre}
-    
-    # Mutated by peer during ask
-    f.write_text("mutated_again", encoding="utf-8")
-    
-    monkeypatch.setattr(hub, "_get_head_committed_hash", lambda rel: h_head)
-    monkeypatch.setattr(hub, "_is_tracked_by_git", lambda rel: True)
-    
-    import subprocess
-    git_calls = []
-    def mock_run(cmd, *a, **kw):
-        git_calls.append(cmd)
-        return subprocess.CompletedProcess(cmd, 0, stdout=b"", stderr=b"")
-    monkeypatch.setattr(subprocess, "run", mock_run)
-    
-    ai_root = tmp_path / ".ai"
-    changed = hub._governed_post_check(pre, ai_root, "ag", "worker", ask_id="ask-dirty")
-    
-    assert changed == [str(f.resolve())]
-    
-    # Verify git checkout was NOT called (skipped revert)
-    assert not any("checkout" in cmd for cmd in git_calls)
-    
-    # Verify file content on disk is still the mutated one
-    assert f.read_text(encoding="utf-8") == "mutated_again"
-    
-    # Verify quarantine file was written
-    r = str(Path(f).relative_to(hub._REPO_ROOT))
-    safe_rel = r.replace("/", "_").replace("\\", "_")
-    quarantine_file = ai_root / "quarantine" / "ask-dirty" / safe_rel
-    assert quarantine_file.exists()
-    assert quarantine_file.read_text(encoding="utf-8") == "mutated_again"
-
-
-def test_concurrent_race_aborts_revert(monkeypatch, tmp_path):
-    f = _make_governed(tmp_path, monkeypatch, name="race.json", body="original")
-    import hashlib
-    h_original = hashlib.sha256(b"original").hexdigest()
-    
-    pre = {str(f.resolve()): h_original}
-    
-    # Mutated by peer during ask
-    f.write_text("mutated", encoding="utf-8")
-    
-    monkeypatch.setattr(hub, "_is_tracked_by_git", lambda rel: True)
-    
-    import subprocess
-    git_calls = []
-    def mock_run(cmd, *a, **kw):
-        git_calls.append(cmd)
-        return subprocess.CompletedProcess(cmd, 0, stdout=b"", stderr=b"")
-    monkeypatch.setattr(subprocess, "run", mock_run)
-    
-    def mock_get_head_hash(rel):
-        f.write_text("concurrent_written", encoding="utf-8")
-        return h_original
-        
-    monkeypatch.setattr(hub, "_get_head_committed_hash", mock_get_head_hash)
-    
-    ai_root = tmp_path / ".ai"
-    changed = hub._governed_post_check(pre, ai_root, "ag", "worker", ask_id="ask-race")
-    
-    assert changed == [str(f.resolve())]
-    
-    # Verify git checkout was NOT called due to the race abort
-    assert not any("checkout" in cmd for cmd in git_calls)
-    
-    # Verify file content on disk remains the concurrent one
-    assert f.read_text(encoding="utf-8") == "concurrent_written"
-    
-    # Verify quarantine file was written with "mutated"
-    r = str(Path(f).relative_to(hub._REPO_ROOT))
-    safe_rel = r.replace("/", "_").replace("\\", "_")
-    quarantine_file = ai_root / "quarantine" / "ask-race" / safe_rel
-    assert quarantine_file.exists()
-    assert quarantine_file.read_text(encoding="utf-8") == "mutated"
-
-
-def test_action_ask_marked_as_violation_and_fails(monkeypatch, tmp_path):
-    f = _make_governed(tmp_path, monkeypatch, name="action_gov.json", body="original")
-    
-    def stub_inner(*a, **k):
-        f.write_text("mutated", encoding="utf-8")
-        
-    monkeypatch.setattr(hub, "_action_ask_inner", stub_inner)
-    monkeypatch.setattr(hub, "_get_head_committed_hash", lambda rel: "original_hash_mock")
-    monkeypatch.setattr(hub, "_is_tracked_by_git", lambda rel: True)
-    
-    import sys
-    exits = []
-    monkeypatch.setattr(sys, "exit", lambda code: exits.append(code))
-    
-    recorded_failures = []
-    recorded_history = []
-    
-    monkeypatch.setattr(hub, "_record_ask_failure", lambda *a, **k: recorded_failures.append((a, k)))
-    monkeypatch.setattr(hub, "_append_ask_history", lambda *a, **k: recorded_history.append((a, k)))
-    
-    ai_root = tmp_path / ".ai"
     hub.action_ask("cc", "q", None, 10, ai_root)
-    
-    assert exits == [1]
-    assert len(recorded_failures) == 1
-    assert recorded_failures[0][0][1] == "GOVERNED_MUTATION_VIOLATION"
+
+    guards = list((ai_root / "ask_guards").glob("*.json"))
+    assert len(guards) == 1
+    rec = json.loads(guards[0].read_text(encoding="utf-8"))
+    assert rec["status"] == "clean"
+    assert rec["unattributed_files"] == []
+
+
+def test_c1_unattributed_change_quarantined_not_reverted(monkeypatch, tmp_path):
+    """C1 scenario B: an unattributed change during the ask window is
+    quarantined (never reverted), the dispatching peer receives NO health
+    penalty (no _record_ask_failure call), and the AskGuardRecord becomes
+    'indeterminate'."""
+    f = _make_governed(tmp_path, monkeypatch, name="unattributed.json", body="original")
+    ai_root = tmp_path / ".ai"
+    monkeypatch.setattr(hub, "_phantom_scan", lambda *a, **k: set())
+
+    def _simulate_ask(*a, **k):
+        f.write_text("mutated-by-external", encoding="utf-8")
+    monkeypatch.setattr(hub, "_action_ask_inner", _simulate_ask)
+
+    recorded_failures = []
+    monkeypatch.setattr(hub, "_record_ask_failure", lambda *a, **k: recorded_failures.append((a, k)))
+    recorded_history = []
+    monkeypatch.setattr(hub, "_append_ask_history", lambda *a, **k: recorded_history.append((a, k)))
+
+    import pytest
+    with pytest.raises(SystemExit) as exc_info:
+        hub.action_ask("cc", "q", None, 10, ai_root)
+    assert exc_info.value.code == 1
+
+    # Live bytes were NEVER reverted.
+    assert f.read_text(encoding="utf-8") == "mutated-by-external"
+
+    # Quarantine evidence was written.
+    quarantine_files = list((ai_root / "quarantine").rglob("*"))
+    assert quarantine_files, "expected quarantined evidence, found none"
+
+    # C1: no peer health penalty for an unattributed change.
+    assert recorded_failures == []
+    # History is still recorded, but under the new non-blaming label.
     assert len(recorded_history) == 1
-    assert recorded_history[0][0][6] == "GOVERNED_MUTATION_VIOLATION"
+    assert recorded_history[0][0][6] == "UNATTRIBUTED_GOVERNED_CHANGE"
+
+    guards = list((ai_root / "ask_guards").glob("*.json"))
+    assert len(guards) == 1
+    rec = json.loads(guards[0].read_text(encoding="utf-8"))
+    assert rec["status"] == "indeterminate"
+    assert len(rec["unattributed_files"]) == 1
+
+
+def test_c1_concurrent_write_survives_no_git_checkout(monkeypatch, tmp_path):
+    """C1 scenario C: automatic git checkout/deletion is deleted entirely --
+    a second external write during the detection window always survives."""
+    f = _make_governed(tmp_path, monkeypatch, name="concurrent.json", body="original")
+    ai_root = tmp_path / ".ai"
+    import hashlib
+    h_orig = hashlib.sha256(b"original").hexdigest()
+    pre = {str(f.resolve()): h_orig}
+
+    # A write happens during the (simulated) ask window.
+    f.write_text("second-external-write", encoding="utf-8")
+
+    git_called = {"any": False}
+    import subprocess
+    real_run = subprocess.run
+    def _mock_run(cmd, *a, **k):
+        if isinstance(cmd, (list, tuple)) and "checkout" in cmd:
+            git_called["any"] = True
+        return real_run(cmd, *a, **k) if not (isinstance(cmd, (list, tuple)) and cmd and cmd[0] == "git") else None
+    monkeypatch.setattr(subprocess, "run", _mock_run)
+
+    unattributed = hub._verify_ask_guard_record(pre, ai_root, "ag", "terminal", ask_id="ask-concurrent")
+
+    assert not git_called["any"], "git checkout must never be called by post verification"
+    assert unattributed == [str(f.resolve())]
+    assert f.read_text(encoding="utf-8") == "second-external-write"
+
+
+def test_c1_host_mutation_commit_cas_success(monkeypatch, tmp_path):
+    """C1 host commit: a scratch-written MutationRequest is processed
+    atomically with a CAS revision check and produces an immutable
+    MutationReceipt; the receipted change is explained (not unattributed)."""
+    f = _make_governed(tmp_path, monkeypatch, name="target.json", body="v1")
+    ai_root = tmp_path / ".ai"
+    ask_id = "ask-host-commit"
+
+    import hashlib
+    h_v1 = hashlib.sha256(b"v1").hexdigest()
+
+    scratch_dir = ai_root / "scratch" / ask_id
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    hub._write_json(scratch_dir / "mutation_request.json", {
+        "ask_id": ask_id,
+        "target_file": str(f.resolve()),
+        "status": "untrusted_proposal",
+    })
+
+    receipt = hub._commit_host_mutation(ai_root, ask_id, f.resolve(), "v2-authorized", h_v1)
+
+    assert f.read_text(encoding="utf-8") == "v2-authorized"
+
+    host_req = hub._read_json(ai_root / "mutation_requests" / f"{ask_id}.json")
+    assert host_req["status"] == "authorized"
+
+    rcpt_file = ai_root / "mutation_receipts" / f"{receipt['receipt_id']}.json"
+    assert rcpt_file.exists()
+
+    try:
+        expected_rel = str(f.relative_to(hub._REPO_ROOT))
+    except ValueError:
+        expected_rel = str(f.resolve())
+    assert receipt["paths"] == [expected_rel]
+
+    # A change explained by this receipt is NOT unattributed.
+    pre = {str(f.resolve()): h_v1}
+    unattributed = hub._verify_ask_guard_record(pre, ai_root, "ag", "worker", ask_id=ask_id)
+    assert unattributed == []
+
+
+def test_c1_host_mutation_commit_cas_mismatch_raises(monkeypatch, tmp_path):
+    """C1 host commit: a stale expected_revision is rejected (CAS conflict),
+    never silently overwritten."""
+    f = _make_governed(tmp_path, monkeypatch, name="cas_target.json", body="v1")
+    ai_root = tmp_path / ".ai"
+    ask_id = "ask-cas-conflict"
+
+    scratch_dir = ai_root / "scratch" / ask_id
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    hub._write_json(scratch_dir / "mutation_request.json", {"ask_id": ask_id, "status": "untrusted_proposal"})
+
+    import pytest
+    with pytest.raises(RuntimeError, match="CAS revision mismatch"):
+        hub._commit_host_mutation(ai_root, ask_id, f.resolve(), "new-content", "stale-wrong-hash")
+
+    # File must be untouched on a CAS conflict.
+    assert f.read_text(encoding="utf-8") == "v1"

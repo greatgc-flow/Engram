@@ -4287,125 +4287,227 @@ def _is_tracked_by_git(rel_path: str) -> bool:
         return False
 
 
-def _governed_post_check(pre: dict[str, str], ai_root: Path | None, peer: str,
-                         origin: str, ask_id: str | None = None) -> list[str]:
-    """Compare a post-execution governed-hash snapshot against `pre`. Any
-    changed/added/removed governed file during a peer ask window (when the ask
-    was NOT an authorized governed execution) is an out-of-band mutation
-    (LL-20260703-005). Capture-then-quarantine-then-conditional-revert for
-    GOVERNED_MUTATION_VIOLATION.
-    Returns the list of changed paths (empty = clean)."""
-    post = _snapshot_governed_hashes()
-    changed = sorted(
-        p for p in set(pre) | set(post)
-        if pre.get(p) != post.get(p)
-    )
-    if not changed:
-        return []
-    rel = [str(Path(p).relative_to(_REPO_ROOT)) if str(p).startswith(str(_REPO_ROOT)) else p
-           for p in changed]
+def _mutation_lock_resource(path: str | Path) -> str:
+    """C1: standardized resource lock name for host-mediated mutation commits."""
+    import hashlib
+    rel = str(Path(path).relative_to(_REPO_ROOT)) if str(path).startswith(str(_REPO_ROOT)) else str(path)
+    return f"mutation_resource_{hashlib.md5(rel.encode('utf-8')).hexdigest()}"
 
-    # 1. Capture first (Quarantine)
+
+def _create_ask_guard_record(ai_root: Path, ask_id: str, peer: str, origin: str) -> dict:
+    """C1: initialize an AskGuardRecord and per-ask scratch directory before
+    dispatch. Fail-closed by design -- callers must not dispatch the peer if
+    this raises."""
+    effective_ai_root = ai_root or (_REPO_ROOT / ".ai")
+    scratch_dir = effective_ai_root / "scratch" / ask_id
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+
+    record = {
+        "ask_id": ask_id,
+        "peer": peer,
+        "origin": origin,
+        "status": "running",
+        "started_at": _now(),
+        "finished_at": None,
+        "changed_files": [],
+        "unattributed_files": [],
+        "error_detail": None,
+    }
+
+    guards_dir = effective_ai_root / "ask_guards"
+    guards_dir.mkdir(parents=True, exist_ok=True)
+    guard_path = guards_dir / f"{ask_id}.json"
+
+    with _get_lock(effective_ai_root, "ask_guards"):
+        _write_json(guard_path, record)
+
+    return record
+
+
+def _verify_ask_guard_record(pre: dict[str, str], ai_root: Path | None, peer: str,
+                              origin: str, ask_id: str | None = None) -> list[str]:
+    """C1 post-execution verification (replaces the old revert-based
+    `_governed_post_check`, kept as an alias below for existing callers):
+    1. Re-snapshots the live governed tree AFTER the child process tree is
+       confirmed closed.
+    2. Folds in any MutationReceipts committed since dispatch -- a change
+       explained by a receipt is legitimate authorized output, not a
+       violation.
+    3. Any REMAINING change is UNATTRIBUTED_GOVERNED_CHANGE -- never
+       attributed to the dispatching peer (a before/after hash window proves
+       temporal overlap, not authorship).
+    4. Non-destructive quarantine only (copies baseline+current bytes to
+       .ai/quarantine/<ask_id>/) -- automatic `git checkout`/deletion is
+       deliberately removed; live bytes are always preserved.
+    5. Atomic CAS transition of the AskGuardRecord to a terminal state
+       ('clean' or 'indeterminate').
+    Returns the list of unattributed changed paths (empty = clean).
+
+    KNOWN INCOMPLETE (C1 pass 1 of N -- see cx's 2026-07-24 cross-verification
+    in backlog-design-consensus-2026-07-24.md, "C1 pass 2 blockers"; do not
+    treat receipt-folding as a real security boundary until these land):
+    receipt matching below is path-only and does not bind a receipt to this
+    ask's specific epoch/window or verify a digest chain -- an old or forged
+    receipt for the same path can currently suppress detection of an
+    unrelated later mutation. This is DORMANT today only because
+    `_commit_host_mutation()` (the only receipt writer) has zero production
+    callers -- do NOT wire it up without first fixing receipt window/epoch
+    binding, host-record tamper-resistance, and verify/commit locking."""
     effective_ask_id = ask_id or "unknown-ask"
     effective_ai_root = ai_root or (_REPO_ROOT / ".ai")
 
-    for p, r in zip(changed, rel):
-        try:
-            safe_rel = r.replace("/", "_").replace("\\", "_")
-            quarantine_dir = effective_ai_root / "quarantine" / effective_ask_id
-            quarantine_dir.mkdir(parents=True, exist_ok=True)
-            quarantine_file = quarantine_dir / safe_rel
+    post = _snapshot_governed_hashes()
+    raw_changed = sorted(
+        p for p in set(pre) | set(post)
+        if pre.get(p) != post.get(p)
+    )
+    rel_raw = [str(Path(p).relative_to(_REPO_ROOT)) if str(p).startswith(str(_REPO_ROOT)) else str(p)
+               for p in raw_changed]
 
-            if Path(p).is_file():
-                quarantine_file.write_bytes(Path(p).read_bytes())
-            else:
-                # File deleted in the worktree
-                quarantine_file.write_bytes(b"")
-        except Exception as exc:
-            print(f"[HUB:WARN] governed quarantine failed for {r}: {exc}", file=sys.stderr)
+    # Fold in MutationReceipts committed during this ask's window -- a
+    # change explained by a receipt is authorized host-mediated output.
+    receipts_dir = effective_ai_root / "mutation_receipts"
+    authorized_paths = set()
+    if receipts_dir.exists():
+        for r_file in receipts_dir.glob("*.json"):
+            try:
+                r_data = _read_json(r_file)
+                for path in r_data.get("paths", []):
+                    authorized_paths.add(path)
+            except Exception:
+                pass
 
-    # Write to operational_errors.jsonl
-    if ai_root:
+    unattributed_rel = [r for r in rel_raw if r not in authorized_paths]
+    unattributed_abs = [p for p, r in zip(raw_changed, rel_raw) if r in unattributed_rel]
+
+    if unattributed_abs:
+        for p, r in zip(unattributed_abs, unattributed_rel):
+            try:
+                safe_rel = r.replace("/", "_").replace("\\", "_")
+                q_dir = effective_ai_root / "quarantine" / effective_ask_id
+                q_dir.mkdir(parents=True, exist_ok=True)
+                q_file = q_dir / safe_rel
+                if Path(p).is_file():
+                    q_file.write_bytes(Path(p).read_bytes())
+                else:
+                    q_file.write_bytes(b"")
+            except Exception as exc:
+                print(f"[HUB:WARN] governed quarantine failed for {r}: {exc}", file=sys.stderr)
+
         try:
             rec = {
                 "ts": _now(),
-                "type": "GOVERNED_MUTATION_VIOLATION",
+                "type": "UNATTRIBUTED_GOVERNED_CHANGE",
                 "lesson": "LL-20260703-005",
                 "peer": peer,
                 "origin": origin,
-                "ask_id": ask_id,
-                "changed_files": rel,
+                "ask_id": effective_ask_id,
+                "changed_files": unattributed_rel,
             }
-            path = ai_root / "operational_errors.jsonl"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open("a", encoding="utf-8") as f:
+            err_log = effective_ai_root / "operational_errors.jsonl"
+            err_log.parent.mkdir(parents=True, exist_ok=True)
+            with err_log.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         except Exception as exc:
             print(f"[HUB:WARN] governed violation log failed: {exc}", file=sys.stderr)
 
-    # 2 & 3. Revert only when safe, and guard the race
-    reverted_files = []
-    quarantined_files = []
-    race_aborted_files = []
+        print(
+            f"[HUB:WARN] UNATTRIBUTED_GOVERNED_CHANGE: {len(unattributed_rel)} governed "
+            f"file(s) changed during peer ask window (peer={peer}, origin={origin}, "
+            f"ask_id={effective_ask_id}): {', '.join(unattributed_rel[:8])}"
+            f"{' …' if len(unattributed_rel) > 8 else ''}. LL-20260703-005. "
+            f"No individual peer is blamed; live bytes preserved; quarantined evidence "
+            f"under .ai/quarantine/{effective_ask_id}/.",
+            file=sys.stderr,
+        )
 
+    guard_path = effective_ai_root / "ask_guards" / f"{effective_ask_id}.json"
+    with _get_lock(effective_ai_root, "ask_guards"):
+        rec = _read_json(guard_path) if guard_path.exists() else {}
+        if rec.get("status") == "running":
+            rec["status"] = "indeterminate" if unattributed_rel else "clean"
+            rec["finished_at"] = _now()
+            rec["changed_files"] = rel_raw
+            rec["unattributed_files"] = unattributed_rel
+            _write_json(guard_path, rec)
+
+    # Return absolute paths -- matches the pre-C1 `_governed_post_check`
+    # contract that existing callers/tests already depend on (relative
+    # paths are used only internally for quarantine naming/logging).
+    return unattributed_abs
+
+
+# Backward-compatible alias: existing callers of `_governed_post_check(...)`
+# now get the new receipt-aware, non-destructive-quarantine behavior.
+_governed_post_check = _verify_ask_guard_record
+
+
+def _commit_host_mutation(ai_root: Path, ask_id: str, target_path: Path, new_content: str,
+                           expected_revision: str) -> dict:
+    """C1 host-owned mutation commit: converts a peer's scratch-written
+    MutationRequest proposal into an authorized, CAS-checked, atomically
+    committed change plus an immutable MutationReceipt. A peer-written
+    `status="authorized"` in the scratch proposal is NEVER trusted --
+    authorization state only ever lives in this host-owned copy.
+
+    NOT YET PRODUCTION-SAFE (C1 pass 1 of N -- has zero production callers
+    by design, this is scaffolding). Confirmed gaps (cx's 2026-07-24
+    cross-verification): does not validate the scratch proposal's own
+    ask_id/target/expected_revision/staged digest against the arguments
+    actually used to commit (a mismatched proposal can still commit
+    successfully); persists `status="authorized"` before the CAS check
+    passes, so a failed CAS leaves an orphaned "authorized" record; no
+    locking shared with `_verify_ask_guard_record`'s read path (a verifier
+    can observe target bytes before this function's receipt exists, or vice
+    versa); host storage under `.ai/` is not tamper-resistant against a
+    peer with filesystem access; 4-hex-digit IDs risk collision. Do not add
+    a real caller until these are fixed -- see backlog-design-consensus-
+    2026-07-24.md's "C1 pass 2 blockers"."""
     import hashlib
+    effective_ai_root = ai_root or (_REPO_ROOT / ".ai")
+    try:
+        rel_path = str(target_path.relative_to(_REPO_ROOT))
+    except ValueError:
+        rel_path = str(target_path)
 
-    for p, r in zip(changed, rel):
-        pre_hash = pre.get(p, "ABSENT")
-        head_hash = _get_head_committed_hash(r)
+    scratch_req = effective_ai_root / "scratch" / ask_id / "mutation_request.json"
+    if not scratch_req.exists():
+        raise ValueError(f"No MutationRequest proposal found in scratch for ask_id {ask_id}")
 
-        if pre_hash == head_hash:
-            # Guard the race: re-read and re-hash right before revert
-            try:
-                if Path(p).is_file():
-                    current_hash = hashlib.sha256(Path(p).read_bytes()).hexdigest()
-                else:
-                    current_hash = "ABSENT"
-            except OSError:
-                current_hash = "UNREADABLE"
+    req_data = _read_json(scratch_req)
+    req_data["status"] = "authorized"
+    req_data["authorized_at"] = _now()
 
-            post_hash = post.get(p, "UNREADABLE")
-            if current_hash != post_hash:
-                print(f"[HUB:WARN] CONCURRENT_WRITE_DETECTED: {r} changed again. Aborting revert.", file=sys.stderr)
-                race_aborted_files.append(r)
-                quarantined_files.append(r)
-                continue
+    host_req_dir = effective_ai_root / "mutation_requests"
+    host_req_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(host_req_dir / f"{ask_id}.json", req_data)
 
-            # Revert!
-            if _is_tracked_by_git(r):
-                try:
-                    subprocess.run(
-                        ["git", "checkout", "--", r.replace("\\", "/")],
-                        cwd=str(_REPO_ROOT),
-                        check=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE
-                    )
-                    reverted_files.append(r)
-                except Exception as exc:
-                    print(f"[HUB:WARN] Failed to revert tracked file {r} via git: {exc}", file=sys.stderr)
-                    quarantined_files.append(r)
-            else:
-                try:
-                    Path(p).unlink(missing_ok=True)
-                    reverted_files.append(r)
-                except Exception as exc:
-                    print(f"[HUB:WARN] Failed to delete untracked file {r}: {exc}", file=sys.stderr)
-                    quarantined_files.append(r)
-        else:
-            # Dirty at dispatch: quarantine only
-            quarantined_files.append(r)
+    lock_resource = _mutation_lock_resource(target_path)
+    with _get_lock(effective_ai_root, lock_resource):
+        curr_bytes = target_path.read_bytes() if target_path.exists() else b""
+        curr_hash = hashlib.sha256(curr_bytes).hexdigest() if target_path.exists() else "ABSENT"
+        if curr_hash != expected_revision:
+            raise RuntimeError(f"CAS revision mismatch for {rel_path}: expected {expected_revision}, got {curr_hash}")
 
-    msg = (f"[HUB:WARN] GOVERNED_MUTATION_VIOLATION: {len(changed)} governed file(s) "
-           f"changed during peer ask (peer={peer}, origin={origin}): {', '.join(rel[:8])}"
-           f"{' …' if len(rel) > 8 else ''}. LL-20260703-005. "
-           f"Reverted: {', '.join(reverted_files) if reverted_files else 'none'}. "
-           f"Quarantined/Not reverted: {', '.join(quarantined_files) if quarantined_files else 'none'}.")
-    if race_aborted_files:
-        msg += f" Concurrent race aborted revert for: {', '.join(race_aborted_files)}."
-    print(msg, file=sys.stderr)
+        tmp_target = target_path.parent / f".tmp_{target_path.name}_{_short_id()}"
+        tmp_target.write_text(new_content, encoding="utf-8")
+        os.replace(tmp_target, target_path)
+        final_bytes = target_path.read_bytes()
+        final_hash = hashlib.sha256(final_bytes).hexdigest()
 
-    return changed
+        receipt_id = _short_id("rcpt-")
+        receipt_data = {
+            "receipt_id": receipt_id,
+            "ask_id": ask_id,
+            "committed_at": _now(),
+            "paths": [rel_path],
+            "committed_hashes": {rel_path: final_hash},
+        }
+        receipts_dir = effective_ai_root / "mutation_receipts"
+        receipts_dir.mkdir(parents=True, exist_ok=True)
+        _write_json(receipts_dir / f"{receipt_id}.json", receipt_data)
+
+    return receipt_data
 
 
 def _load_balancer_config() -> dict:
@@ -5191,14 +5293,16 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         _log_p2p("AUDIT", f"governed_mutation_bypass_granted: origin={origin} reason={governed_mutation_reason!r}", from_node="GUARD")
     gov_pre: dict[str, str] | None = None
     phantom_pre: set[str] | None = None
-    if not allow_governed_mutation:
-        try:
-            gov_pre = _snapshot_governed_hashes()
-            phantom_pre = _phantom_scan()
-        except Exception:
-            gov_pre = None
-            phantom_pre = None
     ask_id = _short_id("ask-")
+    effective_ai_root = ai_root or (_REPO_ROOT / ".ai")
+
+    if not allow_governed_mutation:
+        # C1: pre-dispatch snapshot + AskGuardRecord creation is fail-closed
+        # by design -- if this raises, the peer must never be dispatched.
+        gov_pre = _snapshot_governed_hashes()
+        phantom_pre = _phantom_scan()
+        _create_ask_guard_record(effective_ai_root, ask_id, to, origin)
+
     t0 = time.monotonic()
     inner_exc = None
     try:
@@ -5219,12 +5323,16 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         violation = False
         changed_paths = []
         if gov_pre is not None:
-            try:
-                changed_paths = _governed_post_check(gov_pre, ai_root, to, origin, ask_id=ask_id)
-                if changed_paths:
-                    violation = True
-            except Exception as exc:
-                print(f"[HUB:WARN] governed guard post-check error: {exc}", file=sys.stderr)
+            # C1: post-check verification is fail-closed by design -- a
+            # raised exception here must prevent normal success publication
+            # rather than being swallowed (the pre-fix behavior this
+            # replaces intentionally printed a warning and continued).
+            # Calls the `_governed_post_check` alias name (not
+            # `_verify_ask_guard_record` directly) so existing test/call
+            # sites that monkeypatch `_governed_post_check` keep working.
+            changed_paths = _governed_post_check(gov_pre, ai_root, to, origin, ask_id=ask_id)
+            if changed_paths:
+                violation = True
         if phantom_pre is not None:
             try:
                 phantom_new = _phantom_scan() - phantom_pre
@@ -5245,17 +5353,14 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             except Exception as exc:
                 print(f"[HUB:WARN] phantom guard post-check error: {exc}", file=sys.stderr)
         if violation:
-            health_peer = to
-            if _HUB_PEER_AVAILABLE:
-                try:
-                    health_peer = hub_peer.root_peer_id(to, orch=_orch_for_gate) or to
-                except Exception:
-                    pass
-            profile_key = _resolve_profile_id(to)
-            detail = (f"GOVERNED_MUTATION_VIOLATION: {len(changed_paths)} governed file(s) "
-                      f"changed during peer ask (peer={to}, origin={origin}): {', '.join(changed_paths)}")
-            _record_ask_failure(health_peer, "GOVERNED_MUTATION_VIOLATION", detail, elapsed, ai_root, profile_key=profile_key)
-            _append_ask_history(ai_root, to, query_file, output_file, elapsed, False, "GOVERNED_MUTATION_VIOLATION")
+            # C1: an unattributed governed change during this ask's window
+            # proves temporal overlap, not authorship -- the dispatching
+            # peer is deliberately NEVER penalized (no _record_ask_failure
+            # health-penalty call). Admission for this ask_id stays blocked
+            # pending explicit reconciliation; the ask's own generated
+            # response/output is left untouched (recoverable), only the
+            # exit code signals non-clean completion.
+            _append_ask_history(ai_root, to, query_file, output_file, elapsed, False, "UNATTRIBUTED_GOVERNED_CHANGE")
             if inner_exc is None:
                 sys.exit(1)
 
