@@ -593,3 +593,59 @@ def test_c1_blocker1_genuine_in_window_receipt_verifies_clean(monkeypatch, tmp_p
 
     unattributed = hub._verify_ask_guard_record(pre, ai_root, "ag", "terminal", ask_id=ask_id)
     assert unattributed == [], "a genuine in-window receipt with a correct digest chain must verify clean"
+
+
+# --- C1 pass 2 blocker #2 (partial): ID-collision must fail closed, never
+# silently overwrite -- narrowly scoped to accidental collision/reuse in
+# normal operation, NOT full tamper-resistance against a malicious peer
+# with filesystem access (that needs OS-level isolation, out of scope) ---
+
+def test_c1_blocker2_ask_guard_record_collision_fails_closed(monkeypatch, tmp_path):
+    """Reusing/colliding on an ask_id must never silently overwrite an
+    existing AskGuardRecord (cx empirically demonstrated the pre-fix
+    silent-overwrite behavior during cross-verification)."""
+    ai_root = tmp_path / ".ai"
+    hub._create_ask_guard_record(ai_root, "ask-dup", "ag", "terminal")
+
+    import pytest
+    with pytest.raises(RuntimeError, match="AskGuardRecord collision"):
+        hub._create_ask_guard_record(ai_root, "ask-dup", "cx", "terminal")
+
+    # The original record must be untouched (still shows the first peer).
+    rec = hub._read_json(ai_root / "ask_guards" / "ask-dup.json")
+    assert rec["peer"] == "ag"
+
+
+def test_c1_blocker2_mutation_receipt_collision_fails_closed(monkeypatch, tmp_path):
+    """A receipt_id collision must never silently overwrite a prior
+    immutable receipt (would corrupt the digest chain other verifications
+    rely on)."""
+    ai_root = tmp_path / ".ai"
+    receipts_dir = ai_root / "mutation_receipts"
+    receipts_dir.mkdir(parents=True, exist_ok=True)
+    hub._write_json(receipts_dir / "rcpt-dup.json", {
+        "receipt_id": "rcpt-dup", "ask_id": "ask-original",
+        "committed_at": "2026-07-25T00:00:00", "paths": ["some/file.json"],
+        "previous_hashes": {"some/file.json": "a" * 64},
+        "committed_hashes": {"some/file.json": "b" * 64},
+    })
+
+    monkeypatch.setattr(hub, "_short_id", lambda prefix="": "rcpt-dup" if prefix == "rcpt-" else "collide")
+    f = _make_governed(tmp_path, monkeypatch, name="collide_target.json", body="v1")
+    ask_id = "ask-second"
+    scratch_dir = ai_root / "scratch" / ask_id
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    hub._write_json(scratch_dir / "mutation_request.json", {
+        "ask_id": ask_id, "target_file": str(f.resolve()), "status": "untrusted_proposal",
+    })
+
+    import hashlib
+    h_v1 = hashlib.sha256(b"v1").hexdigest()
+
+    import pytest
+    with pytest.raises(RuntimeError, match="MutationReceipt collision"):
+        hub._commit_host_mutation(ai_root, ask_id, f.resolve(), "v2", h_v1)
+
+    # The original receipt must be untouched.
+    rec = hub._read_json(receipts_dir / "rcpt-dup.json")
+    assert rec["ask_id"] == "ask-original"

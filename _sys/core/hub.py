@@ -4390,6 +4390,20 @@ def _create_ask_guard_record(ai_root: Path, ask_id: str, peer: str, origin: str)
     guard_path = guards_dir / f"{ask_id}.json"
 
     with _get_lock(effective_ai_root, "ask_guards"):
+        # C1 pass 2 blocker #2 (partial, in-scope part): a real ask_id
+        # collision or accidental reuse must never silently overwrite an
+        # existing AskGuardRecord -- fail closed instead (this was
+        # empirically demonstrated by cx's cross-verification: reusing an
+        # ask_id silently clobbered the prior record). True tamper-
+        # resistance against a MALICIOUS peer with filesystem access is a
+        # separate, explicitly out-of-scope concern (needs OS-level process
+        # isolation per C1's original design rounds) -- this only guards
+        # against accidental collision/reuse in normal operation.
+        if guard_path.exists():
+            raise RuntimeError(
+                f"AskGuardRecord collision: {ask_id} already has a record "
+                f"at {guard_path} -- refusing to silently overwrite"
+            )
         _write_json(guard_path, record)
 
     return record
@@ -4633,7 +4647,17 @@ def _commit_host_mutation(ai_root: Path, ask_id: str, target_path: Path, new_con
         }
         receipts_dir = effective_ai_root / "mutation_receipts"
         receipts_dir.mkdir(parents=True, exist_ok=True)
-        _write_json(receipts_dir / f"{receipt_id}.json", receipt_data)
+        receipt_path = receipts_dir / f"{receipt_id}.json"
+        # C1 pass 2 blocker #2 (partial): a receipt_id collision must never
+        # silently overwrite a PRIOR immutable receipt (would corrupt the
+        # digest chain any other ask's verification relies on).
+        if receipt_path.exists():
+            raise RuntimeError(
+                f"MutationReceipt collision: {receipt_id} already exists at "
+                f"{receipt_path} -- refusing to silently overwrite an "
+                f"immutable receipt"
+            )
+        _write_json(receipt_path, receipt_data)
 
     return receipt_data
 
