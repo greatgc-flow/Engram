@@ -1711,9 +1711,16 @@ def _parse_reset_time(text: str) -> str | None:
             pass
     return None
 
+def _extract_policy_availability(policy: dict, reason: str) -> dict:
+    for rule in policy.get("patterns", []):
+        if rule.get("reason") == reason:
+            return dict(rule.get("availability", {}))
+    return {}
+
+
 def _classify_ask_failure(text: str) -> tuple[str, dict]:
     lower = text.lower()
-    
+
     import json
     try:
         data = json.loads(text)
@@ -1723,53 +1730,65 @@ def _classify_ask_failure(text: str) -> tuple[str, dict]:
             lower += " " + msg + " " + err_type
     except Exception:
         pass
-        
+
     policy = _load_lifecycle_policy().get("ask_failure_classification", {})
 
-    # 1. Critical reasons must never be shadowed by transient keywords
-    critical_needles_reason_map = {
-        "sandbox_spawn_eperm": "sandbox_spawn_eperm",
-        "eperm": "sandbox_spawn_eperm",
-        "spawn": "sandbox_spawn_eperm",
-        "cli_not_found": "cli_not_found",
-        "not found": "cli_not_found",
-        "auth": "auth_error",
-        "token": "auth_error",
-        "401": "auth_error",
-        "403": "auth_error",
-        "crash": "fatal_error",
-        "fatal_error": "fatal_error"
-    }
-    for needle, reason in critical_needles_reason_map.items():
-        if needle in lower:
-            extra = {}
-            for rule in policy.get("patterns", []):
-                if rule.get("reason") == reason:
-                    extra = dict(rule.get("availability", {}))
-                    break
-            return reason, extra
+    # 1. High-precision sandbox / environment privilege failures (checked first)
+    if re.search(r"\b(sandbox_spawn_eperm|spawn_eperm)\b|\bspawn\b.*\b(eperm|denied|permission)\b|\b(eperm|denied|permission)\b.*\bspawn\b", lower):
+        return "sandbox_spawn_eperm", _extract_policy_availability(policy, "sandbox_spawn_eperm")
 
-    # 2. Transient reasons
-    transient_needles = [
-        "usage limit", "rate limit", "quota", "temporarily unavailable",
-        "connection reset", "connection refused", "network error", "timed out"
+    # 2. Specific binary/CLI missing (narrowed to binary/command, not "session/model not found")
+    if re.search(r"\bcli_not_found\b|\b(command|cli|binary|executable)\s+not\s+found\b|'[^']+'\s+is\s+not\s+recognized", lower):
+        return "cli_not_found", _extract_policy_availability(policy, "cli_not_found")
+
+    # 3. Model not found -> dedicated model_error (NOT transient -- avoids unbounded retry
+    # churn against a permanently-missing model; profile-scoped handling already exists)
+    if re.search(r"\b(model\s+not\s+found|unknown\s+model|invalid\s+model)\b", lower):
+        return "model_error", _extract_policy_availability(policy, "model_error")
+
+    # 4. Session/conversation not found -> dedicated session_invalid (NOT transient --
+    # same unbounded-retry-churn reasoning as model_error; resume retirement is separate,
+    # see _classify_resume_failure)
+    if re.search(r"\b(session\s+not\s+found|conversation\s+not\s+found|invalid\s+session)\b", lower):
+        return "session_invalid", _extract_policy_availability(policy, "session_invalid")
+
+    # 5. Explicit auth errors (narrowed -- no more bare "auth"/"token", which false-matched
+    # "rate limit: token quota exceeded" and similar transient-capacity messages)
+    if re.search(r"\b(invalid_token|expired_token|auth_error|unauthorized|authentication\s+failed|auth\s+failed|access\s+denied)\b|\b(http\s*)?(status\s*)?(401|403)\b", lower):
+        return "auth_error", _extract_policy_availability(policy, "auth_error")
+
+    # 6. Transient rate/quota/capacity reasons
+    transient_patterns = [
+        r"\b(usage\s+limit|rate\s+limit|quota|token\s+quota|token\s+limit|context\s+length|max\s+tokens)\b",
+        r"\b(temporarily\s+unavailable|connection\s+reset|connection\s+refused|network\s+error|timed\s+out)\b",
+        r"(?<!\bindex\s)\b(http\s*)?(status\s*)?(429|50[23])\b",
     ]
-    if any(n in lower for n in transient_needles) or re.search(r"(?<!\bindex\s)\b(http\s*)?(status\s*)?(429|50[23])\b", lower):
+    if any(re.search(p, lower) for p in transient_patterns):
         extra = {}
         reset_at = _parse_reset_time(text)
         if reset_at:
             extra["rate_limit_state"] = {"limited": True, "reset_at": reset_at, "source_msg": text[:100]}
         return "rate_or_session_limit", extra
 
-    policy = _load_lifecycle_policy().get("ask_failure_classification", {})
+    # 7. Fatal/crash reasons
+    if re.search(r"\b(segmentation\s+fault|fatal_error|process\s+crashed)\b", lower):
+        return "fatal_error", _extract_policy_availability(policy, "fatal_error")
+
+    # 8. Fallback to lifecycle-policy pattern table (its own "not found" needle is narrowed
+    # to binary/command here too, matching fix #2 above)
     for rule in policy.get("patterns", []):
         needles = [str(x).lower() for x in rule.get("match_any", [])]
-        if any(needle in lower for needle in needles):
-            extra = dict(rule.get("availability", {}))
-            retry_marker = str(rule.get("capture_retry_hint_when_contains", "")).lower()
-            if retry_marker and retry_marker in lower:
-                extra["retry_hint"] = text.strip().splitlines()[0][:200]
-            return rule.get("reason", "nonzero_exit"), extra
+        for needle in needles:
+            if needle == "not found":
+                matched = bool(re.search(r"\b(command|cli|binary|executable)\s+not\s+found\b", lower))
+            else:
+                matched = needle in lower
+            if matched:
+                extra = dict(rule.get("availability", {}))
+                retry_marker = str(rule.get("capture_retry_hint_when_contains", "")).lower()
+                if retry_marker and retry_marker in lower:
+                    extra["retry_hint"] = text.strip().splitlines()[0][:200]
+                return rule.get("reason", "nonzero_exit"), extra
     return policy.get("default_reason", "nonzero_exit"), {}
 
 
@@ -2345,9 +2364,9 @@ def _peer_effective_health(peer_id: str, stale_minutes: int | None = None, ai_ro
     status = data.get("context_health", {}).get("status", "UNKNOWN")
     checked_at = data.get("context_health", {}).get("checked_at")
     checked_dt = _parse_compact_ts(checked_at)
-    
+
     is_stale = checked_dt and (datetime.now() - checked_dt).total_seconds() > stale_minutes * 60
-    
+
     if is_stale and status != "RED":
         # Proactive Self-Healing: Auto-recover STALE peers
         if ai_root and recover:
@@ -2357,9 +2376,36 @@ def _peer_effective_health(peer_id: str, stale_minutes: int | None = None, ai_ro
             status = "GREEN"
         else:
             status = "STALE"
-            
-    if data.get("availability", {}).get("quarantined"):
+
+    avail = data.get("availability", {})
+
+    def gate_effectively_open(health: dict) -> bool:
+        # SSOT (snapshot.profile_health_gate_open): treats an expired cooldown as
+        # open without writing, so this agrees with the routing layer and diag's
+        # display. Falls back to a raw flag read only if the optional snapshot
+        # module isn't available.
+        if _SNAPSHOT_AVAILABLE and getattr(snapshot, "profile_health_gate_open", None):
+            return snapshot.profile_health_gate_open(health)
+        return health.get("gate_open") is not False
+
+    if avail.get("quarantined"):
         status = "RED"
+    elif not gate_effectively_open(avail):
+        status = "RED"
+    else:
+        orchestration = _load_orchestration()
+        root = next((n for n in orchestration.get("hub_nodes", []) if n.get("node_id") == peer_id), None)
+        if root and root.get("profiles"):
+            health_profiles = avail.get("profiles", {})
+            any_open = False
+            for p_name, p_conf in root["profiles"].items():
+                if p_conf.get("enabled") is not False:
+                    if gate_effectively_open(health_profiles.get(p_name, {})):
+                        any_open = True
+                        break
+            if not any_open:
+                status = "RED"
+
     return status, data
 
 
@@ -2370,27 +2416,11 @@ def _healthy_peer(peer_id: str, ai_root: Path | None = None, allow_stale: bool =
     stale health is aged bookkeeping, not a failure, and excluding it silently
     empties the voter list after an idle period — a stalled round is recoverable
     (sweep / Tier-0 drain), an empty one is a confusing failure. RED and a closed
-    gate are ineligible in both modes."""
-    status, data = _peer_effective_health(peer_id, ai_root=ai_root)
-    avail = data.get("availability", {})
+    gate (root or every enabled profile) are ineligible in both modes and are
+    now folded into `_peer_effective_health()`'s own RED determination."""
+    status, _ = _peer_effective_health(peer_id, ai_root=ai_root)
     blocked_statuses = {"RED"} if allow_stale else {"RED", "STALE"}
-    if status in blocked_statuses or avail.get("gate_open") is False:
-        return False
-        
-    orchestration = _load_orchestration()
-    root = next((n for n in orchestration.get("hub_nodes", []) if n.get("node_id") == peer_id), None)
-    if root and root.get("profiles"):
-        health_profiles = avail.get("profiles", {})
-        any_open = False
-        for p_name, p_conf in root["profiles"].items():
-            if p_conf.get("enabled") is not False:
-                if health_profiles.get(p_name, {}).get("gate_open") is not False:
-                    any_open = True
-                    break
-        if not any_open:
-            return False
-            
-    return True
+    return status not in blocked_statuses
 
 
 _PROFILE_TIER_ORDER = {"standard": 0, "effort": 1, "deepthink": 2, "fable": 3}
@@ -9772,21 +9802,25 @@ def action_append_handoff(ai_root: Path, section: str, text: str) -> None:
         print("[HUB:ERROR] No active room", file=sys.stderr)
         sys.exit(1)
     handoff_path = ai_root / "sessions" / room_id / "handoff.md"
-    if not handoff_path.exists():
-        print(f"[HUB:ERROR] {handoff_path} not found", file=sys.stderr)
-        sys.exit(1)
-    lines = handoff_path.read_text(encoding="utf-8").splitlines()
-    out = []
-    inserted = False
-    for line in lines:
-        out.append(line)
-        if line.strip() == f"## [{section.upper()}]":
+    # Lock precedes the existence check so check-then-read-then-write is one
+    # critical section -- reuses the same "handoff" resource _append_handoff_item()
+    # already uses, rather than a disjoint per-caller lock.
+    with _get_lock(ai_root, "handoff"):
+        if not handoff_path.exists():
+            print(f"[HUB:ERROR] {handoff_path} not found", file=sys.stderr)
+            sys.exit(1)
+        lines = handoff_path.read_text(encoding="utf-8").splitlines()
+        out = []
+        inserted = False
+        for line in lines:
+            out.append(line)
+            if line.strip() == f"## [{section.upper()}]":
+                out.append(f"- {text}")
+                inserted = True
+        if not inserted:
+            out.append(f"## [{section.upper()}]")
             out.append(f"- {text}")
-            inserted = True
-    if not inserted:
-        out.append(f"## [{section.upper()}]")
-        out.append(f"- {text}")
-    handoff_path.write_text("\n".join(out) + "\n", encoding="utf-8")
+        handoff_path.write_text("\n".join(out) + "\n", encoding="utf-8")
     print(f"[HUB] APPEND-HANDOFF to [{section.upper()}]")
 
 
