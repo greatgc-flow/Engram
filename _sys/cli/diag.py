@@ -1171,19 +1171,25 @@ def _live_raw_peer(rec):
 
 
 def _current_terminal_peer():
-    """Which peer is currently acting as the human-interface terminal, per
-    `.ai/state.json`'s `human_interface_peer` field (verified real field name
-    2026-07-24 -- terminal role rotates between cc/ag/cx per this repo's
-    peer-equality design, so this is never hardcoded to one peer). Returns
-    None (never guessed/defaulted) if the field is absent or the file can't
-    be read -- diag must not fabricate a "who's the terminal" answer."""
-    try:
-        path = PORTABLE_ROOT / ".ai" / "state.json"
-        data = json.loads(path.read_text(encoding="utf-8"))
-        peer = data.get("human_interface_peer")
-        return str(peer) if peer else None
-    except Exception:
+    """Which peer is CURRENTLY (freshness-checked, not just recorded) eligible
+    to act as the human-interface terminal. First cut of this function (kept
+    only as a lesson, see below) read `.ai/state.json`'s `human_interface_peer`
+    field directly -- that field is a RECORDED assignment, not a live truth:
+    real state was found (2026-07-24, user caught this live) to be 8 days
+    stale (`human_interface_assignment_time` from 2026-07-16), because the
+    `terminal-duty-sweep` watchdog that's supposed to keep it current isn't
+    being run automatically -- the same "designed but never scheduled"
+    pattern found repeatedly elsewhere in this session's architecture audit.
+    Reuses the SAME real, freshness-aware evaluator `_active_terminal_profile()`
+    already uses elsewhere in this file (`hub._select_human_interface_peer()`,
+    which checks the 30-minute health-freshness window, not just the raw
+    field) instead of duplicating or re-trusting the stale field. Returns
+    None (never guessed/defaulted) if no peer is currently eligible -- an
+    honest "unknown" beats a confident but stale wrong answer."""
+    profile_key = _active_terminal_profile()
+    if not profile_key or "." not in profile_key:
         return None
+    return profile_key.split(".", 1)[0]
 
 
 def _health_age_text(value):
