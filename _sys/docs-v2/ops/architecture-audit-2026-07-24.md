@@ -1,6 +1,6 @@
 # Ops — hub.py/hub_peer.py Architecture Conformance Audit (2026-07-24)
 
-> Method: 10 rounds of mutual adversarial code audit (ag.deepthink + cx.deepthink),
+> Method: 11 rounds of mutual adversarial code audit (ag.deepthink + cx.deepthink),
 > cross-reviewed until unanimous agreement, several claims independently
 > spot-verified by the terminal (cc) directly against live source. Several
 > bugs were reproduced with real probes (not just static analysis) —
@@ -45,6 +45,7 @@
 | 3 | Final Arbiter override has zero effect on canonical consensus state (DIR-005 non-functional as implemented; `routing-config.json:221`'s "SHIPPED and ACTIVATED" claim is false) | `hub.py:6498-6536`, `4829-4863` | Fully designed, unanimous convergence (§6) |
 | 4 | Lockless read-modify-write race in `action_append_handoff` | `hub.py:9765-9790` | Fully designed, unanimous convergence (§6) |
 | 5 | `_classify_ask_failure` needle-matching order misclassifies transient failures as permanent (e.g. "rate limit: token quota exceeded" → `auth_error`) | `hub.py:1714-1774` | Fully designed, unanimous convergence (§6) |
+| — | **Strong new Top-5 contender (found Round 11, §8):** every single `ag.*` profile is checked against a fabricated 200k context window instead of its real 1M+ window, because ContextGate's model lookup falls back to the non-model root id `"ag"`. Blast radius is the entire `ag` peer, likely silently mis-pruning/failing-over ag work all session. | `hub.py:5466`, `hub_context.py:117` | Not yet designed |
 
 ---
 
@@ -107,7 +108,38 @@
 2. **`_lease_sweep` silently swallows timezone comparison exceptions** (`hub.py:9502-9523`) — a naive-vs-aware `datetime` comparison raises `TypeError`, caught by a bare `except Exception: pass`, so any lease with a naive-ISO expiry timestamp is NEVER marked expired — a zombie lease that never gets cleaned up.
 3. `artifact-claim`/`status`/`finalize`, `discover`, `update-signatures`, `transient-scan` — all LOOKS CORRECT (proper locking, read-only where appropriate, no un-isolated mutation found).
 
-**Round 10 returning mostly-clean results (4 of 6 areas correct) is itself a signal that action-handler coverage across `hub.py`'s surface is approaching complete.**
+**Round 10 returning mostly-clean results (4 of 6 areas correct) suggested action-handler coverage was approaching complete — Round 11 (§8) found this was premature: `hub_context.py`/`ContextGate` and the commit-time check scripts were untouched territory with a high defect density.**
+
+## 8. Round 11 — `hub_context.py`/ContextGate and commit-time check scripts (cx)
+
+A live governed-mutation-guard incident (Top-5 #2) recurred while this exact document was being extended for this section — the terminal's own prior commit was flagged as "changed during peer ask" and quarantined; verified via `git diff`/`git log` that no actual content was lost (the quarantine action was a no-op against already-committed, unchanged content this time). Second real-time self-demonstration of Top-5 #2 this session.
+
+### ContextGate (`hub_context.py`) — 8 more real bugs
+
+1. **CJK token-estimation formula is wrong** `[live-repro]` — contract says `len / 3.5 × 1.8` (`docs-v2/general/lifecycle.md:379`); implementation uses `len / 2 × 1.8` (`hub_context.py:59`). Probed: 241,778 Hangul characters produced an estimate of 217,600 tokens (triggering `prune`) vs the documented formula's 124,342 — a 75% overestimate.
+2. **All `ag.*` profiles are checked against a fabricated 200k context window, not their real one** `[live-repro]` — the consumer only reads `profile_data["model_id"]`, and otherwise falls back to the ROOT peer id `"ag"` (`hub.py:5466`), which isn't a real model id, so it silently receives the 200k unknown-model default (`hub_context.py:117`). Probed: `ag.standard`/`ag.effort`/`ag.deepthink`/`ag.opus`/`ag.gptoss` ALL reached ContextGate as model `"ag"` with a 200,000 limit, even though the first three declare 1,048,576 and `ag.opus` links to a 1M registry entry. This means ContextGate has likely been silently over-pruning/rejecting ag work this entire session (and before) against a limit 5x smaller than reality. `ag.gptoss`'s true ceiling remains genuinely `[TEST NEEDED]` (only an 8k proven lower bound exists).
+3. **Malformed/missing registry data silently becomes a guessed 200k capacity** `[live-repro]` — `_load_json()` swallows every error (`hub_context.py:97`), contradicting the registry's own "unknown values are omitted, never inferred" policy. The CLI default model name (`hub_context.py:209`, `claude-sonnet-4-6`) is also stale/absent from the live registry.
+4. **The static context failover chain cannot actually fit the overflow it's meant to handle** `[live-repro]` — the only live mapping routes Sonnet 5 (1M context) to Haiku (200k context); a query near the Sonnet failover threshold (~950k) is therefore rejected by Haiku too. Worse, the failover function returns a bare model SLUG where the recursive caller expects a routable node/profile (`hub.py:5484`, `5520`). Probed: a 950k-token estimate returned `failover → claude-haiku-4-5-20251001`, which is neither a node nor an alias, then `reject`.
+5. **Constructor-injected registry doesn't actually govern failover** `[live-repro]` — `ContextGate(registry_path=...)` loads the given registry for capacity lookups, but `_FAILOVER_CHAIN` is loaded from the DEFAULT file at import time, module-globally (`hub_context.py:31,45`) — the injected registry is ignored for failover decisions. Probed: an instance pointed at an empty-models registry still returned the live Sonnet→Haiku chain.
+6. **Failover telemetry always reports 0% utilization** — `ContextGate` returns a field called `utilization` (`hub_context.py:142`), but the failover logger reads a nonexistent `ratio` field instead (`hub.py:5515`) — always absent, so utilization silently logs as 0%. The one integration test that touches this MOCKS `ratio` directly, masking the mismatch (`test_hub_integration_v42.py:116`).
+7. **Configured thresholds are misreported in the actual error/output text** — `ContextGateError`'s message hardcodes "95%" (`hub_context.py:71`) regardless of the real configured `failover_pct`. Probed: with a configured 50% threshold, limit 100, estimate 60, the raised exception literally said "60 exceeds 95" — the wrong number, in an error message a human might read while debugging. CLI rejection output also omits `utilization` entirely (`hub_context.py:224`), printing e.g. `190,000 tokens (0.0%)`.
+8. **Traceability references point at files that don't exist** — `traceability_map.json:326` cites a doc path (general/resource-governance.md) and a unit-test path (_sys/tests/unit/test_hub_context.py), neither of which exist; the one real integration test that does exist mocks the gate rather than testing the calculations themselves. cx's explicit warning: **this precedent should not be reused for §14.2 packaging without repairing its field/traceability contract first.**
+
+LOOKS CORRECT: raw threshold arithmetic itself, once given a correct model capacity, is right (272,000→warn 217,600/failover 258,400/prune 204,000; 1,000,000→800,000/950,000/750,000). One cosmetic boundary issue: pruning accepts exactly 75% despite the contract saying "below" 75%.
+
+### Commit-time check scripts (`_sys/checks/`, the pre-commit hook gate) — 7 more real bugs
+
+1. **CHK-01/CHK-02, CHK-CONST, and CHK-LEDGER validate the WORKING TREE, not the staged commit** — `.git/hooks/pre-commit:3,23,36` invoke them directly; their implementations use ordinary `Path.read_text()`/`rglob()` (`check_policy_constants.py:54`, `check_policy_ledger.py:70`) rather than reading the staged git blob. This means a staged violation can be masked by restoring only the worktree copy from HEAD after staging — the checks see clean content while git commits the bad staged blob. (cx did not execute this reproduction live, to avoid disturbing the user's real index — flagged as a real, demonstrated-by-code-reading defect, not independently probed.) `CHK-ENC` correctly reads staged blobs and does NOT share this defect.
+2. **`check_docs_mece` (CHK-01) misses ordinary Markdown-link syntax**, only recognizing backtick-quoted paths (`check_docs_mece.py:34`). Probed: `[broken](_sys/ai/does-not-exist.json)` produced no match while the backtick form did. CHK-04 compounds this by resolving cross-file paths relative to the docs root instead of the current document, while assuming CHK-01 already covers missing targets.
+3. **CHK-02's INV-19 (Korean-language-in-internal-artifacts) guard only scans `*.md`**, despite listing `core`/`checks`/`ai` as in-scope directories (`check_docs_mece.py:192`). Probed: CHK-02 returned zero findings while cx found 7 real Python files containing Hangul code points in those directories, including non-console changelog/docstring content.
+4. **CHK-03 checks stale `HEAD` (not the pending commit) and fails open** — runs `git log ... -1 HEAD` (`check_docs_mece.py:215`), ignores nonzero git exit codes, and returns "clean" on any exception; its own test explicitly codifies this fail-open behavior as correct (`test_check_docs_mece.py:243`). It's also absent from the actual pre-commit hook and outside the configured `fail_on` list — the Doc-as-Code co-change rule it implements is advisory/post-hoc only, not real commit-time enforcement.
+5. **CHK-CONST is a bare substring check, not a real assignment-provenance check** — passes whenever the RHS text anywhere contains the literal string `telemetry_config()` (`check_policy_constants.py:56`). Probed: 5 constants all written as `NAME = 123  # telemetry_config()` (a comment, not a real function call) returned zero violations. Also only inspects the FIRST match, so a later hardcoded reassignment of the same name is invisible.
+6. **CHK-LEDGER permits evidence-free checks** — a `text_contains` policy-decision check with a missing `expected_substring` field defaults to `""`, and the empty string is a substring of every file, so the check always silently passes (`check_policy_ledger.py:82`). Probed directly.
+7. **A real, currently-live enforcement gap**: the Engram Refactor Blueprint's own documented requirement — that CHK-LEDGER verify both its SHELVED banner AND the "evaluate activation gate" backlog item (`engram-refactor-blueprint-2026-07-20.md:51`) — is only half-implemented: the live ledger checks the banner and merely checks that the blueprint is *mentioned* in `00-MANIFEST.md` (`policy-decisions.json:107`), not that the specific backlog item still exists. Deleting that backlog item today would leave CHK-LEDGER green.
+
+LOOKS CORRECT: malformed CHK-CONST/CHK-LEDGER JSON, or a missing referenced path, both fail closed as intended. All 3 live CLIs currently exit 0 in normal operation — the false-negative paths above require a specific evasion pattern to trigger, not everyday use.
+
+**cx's explicit verdict closing this round**: "Because this round produced consequential new findings, the exhaustive ROI gate is not met; I would not declare EXHAUSTIVE_COMPLETE." Treat prior coverage-complete signals (end of §7) as provisional, not final.
 
 ---
 
