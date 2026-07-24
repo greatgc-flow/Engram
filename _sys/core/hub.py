@@ -1963,11 +1963,11 @@ class _PendingAskSuccess:
     held, not streaming" distinction."""
     __slots__ = ("health_peer", "elapsed", "ai_root", "profile_key", "to",
                  "query_file", "output_file", "quiet", "output", "out_path",
-                 "on_publish_extra")
+                 "on_publish_extra", "on_suppress_extra")
 
     def __init__(self, *, health_peer, elapsed, ai_root, profile_key, to,
                  query_file, output_file, quiet, output, out_path,
-                 on_publish_extra=None):
+                 on_publish_extra=None, on_suppress_extra=None):
         self.health_peer = health_peer
         self.elapsed = elapsed
         self.ai_root = ai_root
@@ -1979,6 +1979,7 @@ class _PendingAskSuccess:
         self.output = output
         self.out_path = out_path
         self.on_publish_extra = on_publish_extra
+        self.on_suppress_extra = on_suppress_extra
 
     def publish(self) -> None:
         """Record the clean success and print the final REPLY. Call only
@@ -2002,6 +2003,15 @@ class _PendingAskSuccess:
                   f"| elapsed={self.elapsed}s\n{self.output.strip()}")
         if self.on_publish_extra is not None:
             self.on_publish_extra()
+
+    def suppress(self) -> None:
+        """Call instead of .publish() when the guard found a violation for
+        this ask -- never records success/prints REPLY, but still runs any
+        transport-specific finalization (e.g. the PTY progress-thread must
+        be marked done one way or the other, not left "in progress"
+        forever; cx's cross-verification found this gap)."""
+        if self.on_suppress_extra is not None:
+            self.on_suppress_extra()
 
 
 def _record_ask_success(peer_id: str, elapsed: int, ai_root: Path | None, health_dir: Path | None = None, profile_key: str | None = None) -> None:
@@ -5428,6 +5438,8 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             # response/output is left untouched (recoverable), only the
             # exit code signals non-clean completion.
             _append_ask_history(ai_root, to, query_file, output_file, elapsed, False, "UNATTRIBUTED_GOVERNED_CHANGE")
+            if pending_success is not None:
+                pending_success.suppress()
             if inner_exc is None:
                 sys.exit(1)
         elif pending_success is not None:
@@ -6243,14 +6255,17 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                                            scope_key, health_peer, ask_id, ai_root, current_fp)
             # C1 pass 2: success bookkeeping + REPLY print are deferred to the
             # caller (action_ask()'s finally, after the guard post-check) --
-            # NOT executed here. _update_pty_thread("completed") stays
-            # immediate (PTY progress-thread bookkeeping, not a "success
-            # publication" concern the guard needs to gate).
+            # NOT executed here. The PTY progress-thread's terminal status
+            # ("completed" on publish, "quarantined" on suppress) is instead
+            # threaded through as callbacks so it's finalized either way,
+            # never left dangling at "in progress" (cx's cross-verification
+            # finding).
             pending_success = _PendingAskSuccess(
                 health_peer=health_peer, elapsed=elapsed, ai_root=ai_root,
                 profile_key=profile_key, to=to, query_file=saved_query_file_path,
                 output_file=output_file, quiet=quiet, output=output, out_path=out_path,
                 on_publish_extra=lambda: _update_pty_thread("completed"),
+                on_suppress_extra=lambda: _update_pty_thread("quarantined (unattributed governed change)"),
             )
         except SystemExit:
             # Failure paths already recorded + updated the thread and set
@@ -6434,9 +6449,16 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     print(f"[HUB:ERROR] {detail}", file=sys.stderr)
                     sys.exit(1)
                 if proc.returncode == 0:
-                    _record_ask_success(health_peer, elapsed, ai_root, profile_key=profile_key)
-                    _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
-                    _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="success", latency_sec=elapsed) if ai_root else None
+                    # C1 pass 2 (cx cross-verification found this branch
+                    # bypassed the deferred-publish mechanism entirely --
+                    # the permanent-resume-fallback success path is separate
+                    # from the ordinary Pipe success branch below). Defer
+                    # here too, same as the ordinary success path.
+                    pending_success = _PendingAskSuccess(
+                        health_peer=health_peer, elapsed=elapsed, ai_root=ai_root,
+                        profile_key=profile_key, to=to, query_file=saved_query_file_path,
+                        output_file=output_file, quiet=quiet, output=output, out_path=out_path,
+                    )
                     if use_session and scope_key:
                         resolved_session_id = adapter.extract_session_id(raw_text, node, command_session_id)
                         if resolved_session_id:

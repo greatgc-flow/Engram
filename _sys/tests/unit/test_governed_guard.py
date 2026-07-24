@@ -360,6 +360,66 @@ def test_c1_pass2_success_never_published_on_violation(monkeypatch, tmp_path):
     assert publish_calls == [], "a violation must suppress the deferred success entirely"
 
 
+def test_c1_pass2_no_bypass_of_deferred_success_inside_action_ask_inner():
+    """C1 pass 2 structural regression guard: cx's cross-verification found
+    a SECOND, non-obvious success-publishing site inside _action_ask_inner()
+    (the permanent-resume-failure -> fresh-retry success branch) that
+    bypassed _PendingAskSuccess entirely -- a plain code-review missed it
+    because it's deeply nested. Rather than trust that every current and
+    future success-recording call site remembers to defer, assert
+    STRUCTURALLY (via AST) that _action_ask_inner() contains ZERO direct
+    calls to _record_ask_success -- every such call must live inside
+    _PendingAskSuccess.publish(), reached only through action_ask()'s
+    guard-gated finally block."""
+    import ast
+    hub_src = Path(hub.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(hub_src)
+    fn = next(
+        (n for n in ast.walk(tree)
+         if isinstance(n, ast.FunctionDef) and n.name == "_action_ask_inner"),
+        None,
+    )
+    assert fn is not None, "_action_ask_inner not found"
+
+    # No direct _record_ask_success calls at all -- it only belongs inside
+    # _PendingAskSuccess.publish().
+    record_success_calls = [
+        n for n in ast.walk(fn)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+        and n.func.id == "_record_ask_success"
+    ]
+    assert record_success_calls == [], (
+        f"_action_ask_inner() must never call _record_ask_success directly "
+        f"(found {len(record_success_calls)} call(s))."
+    )
+
+    # No _append_ask_history(..., True, ...) (success=True as the 6th
+    # positional arg) -- only failure-outcome calls (success=False) may
+    # stay immediate/inline.
+    for n in ast.walk(fn):
+        if (isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                and n.func.id == "_append_ask_history" and len(n.args) >= 6):
+            success_arg_dump = ast.dump(n.args[5])
+            assert "True" not in success_arg_dump, (
+                f"_action_ask_inner() line {n.lineno}: _append_ask_history "
+                f"called with success=True directly -- must go through "
+                f"_PendingAskSuccess.publish() instead."
+            )
+
+    # No _record_routing_metric(..., outcome="success", ...) directly.
+    for n in ast.walk(fn):
+        if (isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                and n.func.id == "_record_routing_metric"):
+            for kw in n.keywords:
+                if kw.arg == "outcome" and "success" in ast.dump(kw.value):
+                    raise AssertionError(
+                        f"_action_ask_inner() line {n.lineno}: "
+                        f"_record_routing_metric called with a success "
+                        f"outcome directly -- must go through "
+                        f"_PendingAskSuccess.publish() instead."
+                    )
+
+
 def test_c1_host_mutation_commit_cas_mismatch_raises(monkeypatch, tmp_path):
     """C1 host commit: a stale expected_revision is rejected (CAS conflict),
     never silently overwritten."""
