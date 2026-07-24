@@ -1946,6 +1946,64 @@ def _ask_health_precheck(peer_id: str, ai_root: Path | None) -> None:
         sys.exit(2)
 
 
+class _PendingAskSuccess:
+    """C1 pass 2: defers an ask's "clean success" bookkeeping (peer-health
+    success record, success history entry, routing metric, and the final
+    console REPLY print) until AFTER action_ask()'s governed-mutation-guard
+    post-check confirms no violation -- closing the gap cx's cross-
+    verification found where success was previously recorded/printed
+    inside _action_ask_inner() BEFORE the outer guard even ran, so an
+    unattributed change could leave contradictory success+failure records
+    for the same ask.
+
+    Does NOT affect real-time streaming or the output_file WRITE itself
+    (both already happen synchronously inside _action_ask_inner, unchanged)
+    -- only this final "publish as a clean success" step is held back, per
+    the original C1 design's "only the final completion notification is
+    held, not streaming" distinction."""
+    __slots__ = ("health_peer", "elapsed", "ai_root", "profile_key", "to",
+                 "query_file", "output_file", "quiet", "output", "out_path",
+                 "on_publish_extra")
+
+    def __init__(self, *, health_peer, elapsed, ai_root, profile_key, to,
+                 query_file, output_file, quiet, output, out_path,
+                 on_publish_extra=None):
+        self.health_peer = health_peer
+        self.elapsed = elapsed
+        self.ai_root = ai_root
+        self.profile_key = profile_key
+        self.to = to
+        self.query_file = query_file
+        self.output_file = output_file
+        self.quiet = quiet
+        self.output = output
+        self.out_path = out_path
+        self.on_publish_extra = on_publish_extra
+
+    def publish(self) -> None:
+        """Record the clean success and print the final REPLY. Call only
+        after confirming no governed-mutation violation for this ask."""
+        _record_ask_success(self.health_peer, self.elapsed, self.ai_root, profile_key=self.profile_key)
+        _append_ask_history(self.ai_root, self.to, self.query_file, self.output_file, self.elapsed, True, None)
+        if self.ai_root:
+            _record_routing_metric(
+                self.ai_root, "direct_ask", selected_peer=self.to,
+                profile_id=_resolve_profile_id(self.to), outcome="success",
+                latency_sec=self.elapsed,
+            )
+        if self.output_file:
+            if not self.quiet:
+                print(f"[HUB] REPLY {self.to} | chars={len(self.output)} "
+                      f"| elapsed={self.elapsed}s | output={self.out_path}")
+        elif self.quiet:
+            print(self.output, end="")
+        else:
+            print(f"[HUB] REPLY {self.to} | chars={len(self.output)} "
+                  f"| elapsed={self.elapsed}s\n{self.output.strip()}")
+        if self.on_publish_extra is not None:
+            self.on_publish_extra()
+
+
 def _record_ask_success(peer_id: str, elapsed: int, ai_root: Path | None, health_dir: Path | None = None, profile_key: str | None = None) -> None:
     if ai_root is None:
         return
@@ -5308,8 +5366,14 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
 
     t0 = time.monotonic()
     inner_exc = None
+    # C1 pass 2: _action_ask_inner() now RETURNS a _PendingAskSuccess instead
+    # of recording/printing success itself -- captured here so it can be
+    # published below, in `finally`, only AFTER the guard post-check
+    # confirms no violation (closing the gap where success was previously
+    # recorded/printed before the guard even ran).
+    pending_success: "_PendingAskSuccess | None" = None
     try:
-        return _action_ask_inner(
+        pending_success = _action_ask_inner(
             to, query, query_file, timeout_sec, ai_root, quiet, output_file,
             include_context, session_policy, explicit_scope, _depth,
             _escalation_depth, origin, allow_governed_mutation,
@@ -5366,6 +5430,10 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             _append_ask_history(ai_root, to, query_file, output_file, elapsed, False, "UNATTRIBUTED_GOVERNED_CHANGE")
             if inner_exc is None:
                 sys.exit(1)
+        elif pending_success is not None:
+            # C1 pass 2: no violation found -- NOW publish the deferred
+            # success (health record, history, routing metric, REPLY print).
+            pending_success.publish()
 
 
 def _sweep_stale_ask_temp_dirs(temp_root: Path, max_age_sec: int = 3600) -> None:
@@ -5957,6 +6025,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         lease_status = "open"
         staged = False
         staged_path: Path | None = None
+        pending_success: "_PendingAskSuccess | None" = None
         try:
             # ── A1: oversized-prompt staging (never truncate) ──────────
             try:
@@ -6152,13 +6221,17 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
             )
             if escalation_target:
                 print(f"[HUB:ESCALATE] {to} -> {escalation_target}", file=sys.stderr)
+                # C1 pass 2: pass the ORIGINAL ask_id through so the escalated
+                # attempt shares the same AskGuardRecord/lease lifecycle
+                # instead of silently minting a new one (cx's cross-
+                # verification finding -- was previously omitted here).
                 return _action_ask_inner(
                     escalation_target, user_query_raw, None, timeout_sec, ai_root,
                     quiet, output_file, include_context=include_context,
                     session_policy=session_policy, explicit_scope=explicit_scope,
                     _depth=_depth, _escalation_depth=_escalation_depth + 1, origin=origin,
                     allow_governed_mutation=allow_governed_mutation,
-                    force_tier0=force_tier0,
+                    force_tier0=force_tier0, ask_id=ask_id,
                 )
 
             # ── success: exit 0 + nonempty output + ok output-file ─────
@@ -6168,32 +6241,17 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
             if use_session:
                 _store_session_from_result(adapter, node, raw_pty, command_session_id,
                                            scope_key, health_peer, ask_id, ai_root, current_fp)
-            _record_ask_success(health_peer, elapsed, ai_root, profile_key=profile_key)
-            _append_ask_history(
-                ai_root, to, saved_query_file_path, output_file, elapsed, True, None
+            # C1 pass 2: success bookkeeping + REPLY print are deferred to the
+            # caller (action_ask()'s finally, after the guard post-check) --
+            # NOT executed here. _update_pty_thread("completed") stays
+            # immediate (PTY progress-thread bookkeeping, not a "success
+            # publication" concern the guard needs to gate).
+            pending_success = _PendingAskSuccess(
+                health_peer=health_peer, elapsed=elapsed, ai_root=ai_root,
+                profile_key=profile_key, to=to, query_file=saved_query_file_path,
+                output_file=output_file, quiet=quiet, output=output, out_path=out_path,
+                on_publish_extra=lambda: _update_pty_thread("completed"),
             )
-            if ai_root:
-                _record_routing_metric(
-                    ai_root, "direct_ask", selected_peer=to,
-                    profile_id=_resolve_profile_id(to), outcome="success",
-                    latency_sec=elapsed,
-                )
-
-            if output_file:
-                if not quiet:
-                    print(
-                        f"[HUB] REPLY {to} | chars={len(output)} "
-                        f"| elapsed={elapsed}s | output={out_path}"
-                    )
-            elif quiet:
-                print(output, end="")
-            else:
-                print(
-                    f"[HUB] REPLY {to} | chars={len(output)} "
-                    f"| elapsed={elapsed}s\n{output.strip()}"
-                )
-
-            _update_pty_thread("completed")
         except SystemExit:
             # Failure paths already recorded + updated the thread and set
             # lease_status; preserve it.
@@ -6224,7 +6282,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     pass
             if ask_temp_dir and ask_temp_dir.exists():
                 shutil.rmtree(ask_temp_dir, ignore_errors=True)
-        return
+        return pending_success
 
     # ── Subprocess path (with optional session-retry) ──────────
     heartbeat_sec, lease_timeout_sec, zombie_timeout_sec = _lease_cfg(to)
@@ -6232,6 +6290,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     lease_id: str | None = None
     t0 = time.monotonic()
     proc = None  # ensure defined for finally
+    pending_success: "_PendingAskSuccess | None" = None
 
     # Use git root as cwd so peer subprocesses don't scatter temp files in the caller's cwd.
     # ai_root is typically .ai/ inside the project root; go one level up.
@@ -6475,21 +6534,28 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
             )
             if escalation_target:
                 print(f"[HUB:ESCALATE] {to} -> {escalation_target}", file=sys.stderr)
+                # C1 pass 2: pass the ORIGINAL ask_id through so the escalated
+                # attempt shares the same AskGuardRecord/lease lifecycle
+                # instead of silently minting a new one (cx's cross-
+                # verification finding -- was previously omitted here).
                 return _action_ask_inner(
                     escalation_target, user_query_raw, None, timeout_sec, ai_root,
                     quiet, output_file, include_context=include_context,
                     session_policy=session_policy, explicit_scope=explicit_scope,
                     _depth=_depth, _escalation_depth=_escalation_depth + 1, origin=origin,
                     allow_governed_mutation=allow_governed_mutation,
-                    force_tier0=force_tier0,
+                    force_tier0=force_tier0, ask_id=ask_id,
                 )
 
-
-            _record_ask_success(health_peer, elapsed, ai_root, profile_key=profile_key)
-            _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
-
-            if ai_root:
-                _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="success", latency_sec=elapsed)
+            # C1 pass 2: success bookkeeping + REPLY print are deferred to the
+            # caller (action_ask()'s finally, after the guard post-check) --
+            # NOT executed here (mirrors the PTY path above). Session
+            # persistence stays immediate (unrelated to guard verification).
+            pending_success = _PendingAskSuccess(
+                health_peer=health_peer, elapsed=elapsed, ai_root=ai_root,
+                profile_key=profile_key, to=to, query_file=saved_query_file_path,
+                output_file=output_file, quiet=quiet, output=output, out_path=out_path,
+            )
 
             # ── Session state update on success (general, path-agnostic) ─
             if use_session and proc.returncode == 0:
@@ -6503,15 +6569,11 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     out_path = _portable_state_path(base, output_file)
                     out_path.parent.mkdir(parents=True, exist_ok=True)
                     out_path.write_text(output, encoding="utf-8")
+                    if pending_success is not None:
+                        pending_success.out_path = out_path
                 except Exception as e:
                     print(f"[HUB:ERROR] failed to write output file: {e}", file=sys.stderr)
                     sys.exit(1)
-            if not quiet:
-                print(f"[HUB] REPLY {to} | chars={len(output)} | elapsed={elapsed}s | output={out_path}")
-        elif quiet:
-            print(output, end="")
-        else:
-            print(f"[HUB] REPLY {to} | chars={len(output)} | elapsed={elapsed}s\n{output.strip()}")
     except subprocess.TimeoutExpired as exc:
         elapsed = int(time.monotonic() - t0)
         lease_status = "timeout"
@@ -6577,6 +6639,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                 print(f"[HUB:WARN] lease close ownership error: {_lease_exc}", file=sys.stderr)
         if ask_temp_dir and ask_temp_dir.exists():
             shutil.rmtree(ask_temp_dir, ignore_errors=True)
+    return pending_success
 
 
 def _read_query_arg(query: str, query_file: str | None, ai_root: Path | None = None, to: str = "unknown") -> str:

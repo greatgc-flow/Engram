@@ -302,6 +302,64 @@ def test_c1_host_mutation_commit_cas_success(monkeypatch, tmp_path):
     assert unattributed == []
 
 
+def test_c1_pass2_success_published_only_after_clean_verification(monkeypatch, tmp_path):
+    """C1 pass 2: _action_ask_inner() defers success bookkeeping (health
+    record, history, routing metric, REPLY print) into a returned
+    _PendingAskSuccess -- action_ask() must only .publish() it AFTER the
+    guard post-check confirms no violation, never before."""
+    _make_governed(tmp_path, monkeypatch, name="clean2.json", body="original")
+    ai_root = tmp_path / ".ai"
+    monkeypatch.setattr(hub, "_phantom_scan", lambda *a, **k: set())
+
+    publish_calls = []
+    published_pending = hub._PendingAskSuccess(
+        health_peer="cc", elapsed=1, ai_root=ai_root, profile_key="cc.effort",
+        to="cc", query_file=None, output_file=None, quiet=True, output="hello",
+        out_path=None,
+    )
+    real_record_ask_success = hub._record_ask_success
+    monkeypatch.setattr(hub, "_record_ask_success",
+                         lambda *a, **k: publish_calls.append("record_ask_success"))
+
+    monkeypatch.setattr(hub, "_action_ask_inner", lambda *a, **k: published_pending)
+
+    hub.action_ask("cc", "q", None, 10, ai_root)
+
+    assert publish_calls == ["record_ask_success"], "clean ask must publish exactly once"
+
+
+def test_c1_pass2_success_never_published_on_violation(monkeypatch, tmp_path):
+    """C1 pass 2: the counterpart to the test above -- when the post-check
+    finds a violation, the deferred success must NEVER be published (no
+    _record_ask_success call, no REPLY print), even though
+    _action_ask_inner() already returned a fully-built _PendingAskSuccess."""
+    f = _make_governed(tmp_path, monkeypatch, name="violation2.json", body="original")
+    ai_root = tmp_path / ".ai"
+    monkeypatch.setattr(hub, "_phantom_scan", lambda *a, **k: set())
+
+    published_pending = hub._PendingAskSuccess(
+        health_peer="cc", elapsed=1, ai_root=ai_root, profile_key="cc.effort",
+        to="cc", query_file=None, output_file=None, quiet=True, output="hello",
+        out_path=None,
+    )
+
+    def _simulate_ask_with_unattributed_change(*a, **k):
+        f.write_text("mutated-during-ask", encoding="utf-8")
+        return published_pending
+    monkeypatch.setattr(hub, "_action_ask_inner", _simulate_ask_with_unattributed_change)
+
+    publish_calls = []
+    monkeypatch.setattr(hub, "_record_ask_success",
+                         lambda *a, **k: publish_calls.append("record_ask_success"))
+
+    import pytest
+    with pytest.raises(SystemExit) as exc_info:
+        hub.action_ask("cc", "q", None, 10, ai_root)
+    assert exc_info.value.code == 1
+
+    assert publish_calls == [], "a violation must suppress the deferred success entirely"
+
+
 def test_c1_host_mutation_commit_cas_mismatch_raises(monkeypatch, tmp_path):
     """C1 host commit: a stale expected_revision is rejected (CAS conflict),
     never silently overwritten."""
