@@ -5407,9 +5407,20 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             # Calls the `_governed_post_check` alias name (not
             # `_verify_ask_guard_record` directly) so existing test/call
             # sites that monkeypatch `_governed_post_check` keep working.
-            changed_paths = _governed_post_check(gov_pre, ai_root, to, origin, ask_id=ask_id)
-            if changed_paths:
-                violation = True
+            try:
+                changed_paths = _governed_post_check(gov_pre, ai_root, to, origin, ask_id=ask_id)
+                if changed_paths:
+                    violation = True
+            except BaseException:
+                # cx's cross-verification: even on a guard-infrastructure
+                # failure (not a violation, the check itself raised), any
+                # transport-specific finalization (e.g. the PTY progress-
+                # thread) must not stay dangling -- suppress, then let the
+                # original exception propagate unchanged (still fail-closed:
+                # success is never published either way).
+                if pending_success is not None:
+                    pending_success.suppress()
+                raise
         if phantom_pre is not None:
             try:
                 phantom_new = _phantom_scan() - phantom_pre

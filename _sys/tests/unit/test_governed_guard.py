@@ -419,6 +419,21 @@ def test_c1_pass2_no_bypass_of_deferred_success_inside_action_ask_inner():
                         f"_PendingAskSuccess.publish() instead."
                     )
 
+    # cx's suggested strengthening: _action_ask_inner() must never call
+    # .publish() itself either -- publishing is action_ask()'s job, gated
+    # on the guard post-check. (Known limitation, noted explicitly: this
+    # only catches a literal `.publish(` attribute call; an aliased,
+    # getattr-based, or otherwise indirect invocation would not be caught.
+    # Acceptable for now since both real bugs found so far were literal.)
+    for n in ast.walk(fn):
+        if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                and n.func.attr == "publish"):
+            raise AssertionError(
+                f"_action_ask_inner() line {n.lineno}: calls .publish() "
+                f"directly -- publication must stay in action_ask()'s "
+                f"guard-gated finally block."
+            )
+
 
 def test_c1_host_mutation_commit_cas_mismatch_raises(monkeypatch, tmp_path):
     """C1 host commit: a stale expected_revision is rejected (CAS conflict),
