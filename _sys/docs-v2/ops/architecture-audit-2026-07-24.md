@@ -1,6 +1,6 @@
 # Ops — hub.py/hub_peer.py Architecture Conformance Audit (2026-07-24)
 
-> Method: 11 rounds of mutual adversarial code audit (ag.deepthink + cx.deepthink),
+> Method: 12 rounds of mutual adversarial code audit (ag.deepthink + cx.deepthink),
 > cross-reviewed until unanimous agreement, several claims independently
 > spot-verified by the terminal (cc) directly against live source. Several
 > bugs were reproduced with real probes (not just static analysis) —
@@ -45,7 +45,7 @@
 | 3 | Final Arbiter override has zero effect on canonical consensus state (DIR-005 non-functional as implemented; `routing-config.json:221`'s "SHIPPED and ACTIVATED" claim is false) | `hub.py:6498-6536`, `4829-4863` | Fully designed, unanimous convergence (§6) |
 | 4 | Lockless read-modify-write race in `action_append_handoff` | `hub.py:9765-9790` | Fully designed, unanimous convergence (§6) |
 | 5 | `_classify_ask_failure` needle-matching order misclassifies transient failures as permanent (e.g. "rate limit: token quota exceeded" → `auth_error`) | `hub.py:1714-1774` | Fully designed, unanimous convergence (§6) |
-| — | **Strong new Top-5 contender (found Round 11, §8):** every single `ag.*` profile is checked against a fabricated 200k context window instead of its real 1M+ window, because ContextGate's model lookup falls back to the non-model root id `"ag"`. Blast radius is the entire `ag` peer, likely silently mis-pruning/failing-over ag work all session. | `hub.py:5466`, `hub_context.py:117` | Not yet designed |
+| — | **Strong new Top-5 contender, CONFIRMED live in the real production dispatch path (Round 11 §8 + Round 12 §9):** every single `ag.*` profile is checked against a fabricated 200k context window instead of its real 1M+ window, because ContextGate's model lookup falls back to the non-model root id `"ag"`. A real, non-spawning probe through the actual `action_ask()` call chain with a genuine `ag.standard` dispatch confirmed `model_id_received_by_ContextGate="ag"`, `context_limit_used=200000` against a real configured `runtime_context_window` of 1,048,576. Blast radius is the entire `ag` peer, likely silently mis-pruning/failing-over ag work all session. | `hub.py:5466,5468`, `hub_context.py:117` | Not yet designed |
 
 ---
 
@@ -154,6 +154,28 @@ These 3 bugs (Top-5 #1, #3, #4, #5 — the broker, arbiter, handoff, and classif
 - **Health-gate fix**: centralize the profile-gate check inside `_peer_effective_health()` itself using the EXISTING `profile_health_gate_open()` SSOT helper from `snapshot.py:1282` (NOT a raw `gate_open is False` read — cx found that bypassing the SSOT helper reintroduces a cooldown-expiry race where the first post-reset ask is still wrongly rejected).
 
 **Not yet designed**: Top-5 #2 (governed-mutation guard concurrency) has no fix proposal yet — it is the highest-severity CONFIRMED-unfixed item as of this document, and demonstrated itself against this very file (see meta-note).
+
+---
+
+## 9. Round 12 — live confirmation + `peer_console.py`/`quota.py` (cx, fresh reset-credit-funded quota)
+
+**Live confirmation of the ag.* fabricated-context-window bug (§8):** a non-mutating in-process probe through the REAL `action_ask()` call chain — a genuine `ag.standard` dispatch with a routine 4-token prompt, stopped before spawning the actual `agy` process — observed:
+```json
+{"resolved_profile_id": "ag.standard", "model_id_received_by_ContextGate": "ag", "context_limit_used": 200000}
+```
+against a real configured `runtime_context_window` of `1,048,576` (`orchestration.json:228`). This confirms the bug is live in the actual production dispatch path, not just reachable through a hand-constructed call to `ContextGate` in isolation.
+
+**5 more real bugs, `_sys/cli/peer_console.py` and `_sys/core/quota.py`:**
+
+1. **Codex `exec`/`review`/`resume` subcommands bypass console security defaults** — `peer_console.py:187` returns before adding workspace-write/profile defaults for these subcommands (`_CODEX_COMMANDS` includes them, but they're treated like plain administrative subcommands). Probed: `["exec", "Reply with OK"]` and `["resume", "--last"]` both passed through completely unchanged. Live `codex --help` confirms both commands genuinely accept sandbox/model flags, so this isn't an unavoidable CLI limitation — the defaults are just never applied.
+2. **`apply_security_semantics()` has zero production callers** (`peer_console.py:109`) — a repository-wide search found only its own definition and its unit tests. The documented declarative `security_contract.sandbox_semantics` layer does not actually drive any runtime behavior; real console execution still uses hardcoded per-peer branches instead. Same "designed but never wired up" pattern as the arbiter override (§1.3) and `context-ack` (§7.1).
+3. **The profile banner can report a model that isn't actually being launched** (`peer_console.py:36`) — it only accepts `peer_id`, not the actual computed argv; callers like `codex_entry.py:89` never pass the real argv through. Probed: launching with `--model custom-model` still showed the banner `cx.effort / gpt-5.6-terra`. Also incorrectly appears for profile-free commands like `login`.
+4. **`_append_missing()` mishandles a flag already present positionally** (`peer_console.py:97`) — it pairs flags token-by-token; if `"workspace-write"` already appears as a positional value, it emits a bare orphaned `-s` flag with no value. Probed: produced `["workspace-write", "-s", "--model", ...]`, an invalid sandbox argument pair.
+5. **`quota.py` minor defensive gaps** — ISO-reset validation is correctly wrapped in a try/except, but the `reset_in_seconds` numeric conversion happens OUTSIDE that handler (`quota.py:5`), so a non-numeric value (`"not-a-number"`) raises `ValueError` instead of returning `None` as the function's contract implies. `calculate_pacing()` (`quota.py:30`) also classifies `used_frac=NaN` as status `"safe"` with a `NaN` ratio, rather than rejecting/flagging the invalid input.
+
+**Existing test gap identified**: the current console-wrapper parity test only calls `peer_default_args(peer_id, [])` — an empty argv — which is exactly why the subcommand-bypass (#1) and positional-flag-collision (#4) defects above have stayed green.
+
+Running total after 12 rounds: **47 real bugs found.**
 
 ---
 
