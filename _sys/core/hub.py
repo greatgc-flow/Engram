@@ -4468,35 +4468,55 @@ def _verify_ask_guard_record(pre: dict[str, str], ai_root: Path | None, peer: st
     rel_raw = [str(Path(p).relative_to(_REPO_ROOT)) if str(p).startswith(str(_REPO_ROOT)) else str(p)
                for p in raw_changed]
 
-    # Load in-window receipts (committed_at >= started_at; no upper bound --
-    # verification runs immediately after this ask completes, so a receipt
-    # existing at glob time is by construction not "from the future" unless
-    # forged, which is blocker #2's tamper-resistance territory, not this
-    # fix's scope).
     receipts_dir = effective_ai_root / "mutation_receipts"
-    window_receipts: list[dict] = []
-    if receipts_dir.exists():
-        for r_file in receipts_dir.glob("*.json"):
-            try:
-                r_data = _read_json(r_file)
-                r_time = r_data.get("committed_at")
-                if started_at and r_time and r_time < started_at:
-                    continue  # ancient/unrelated receipt -- reject
-                window_receipts.append(r_data)
-            except Exception:
-                pass
 
-    # Digest-chain validation: a change is authorized ONLY if some in-window
-    # receipt (or ordered chain of them) proves previous_hash == pre_hash
-    # and committed_hash == post_hash for that exact path.
+    def _load_window_receipts_for(r_rel: str) -> list[dict]:
+        """Fresh, per-path receipt read (called under that path's
+        mutation-resource lock -- see below). Filters to receipts naming
+        r_rel and in-window (committed_at >= started_at; no upper bound --
+        by construction, a receipt existing at glob time under this same
+        lock is not "from the future" unless forged, which is blocker #2's
+        tamper-resistance territory, not this fix's scope)."""
+        out = []
+        if receipts_dir.exists():
+            for r_file in receipts_dir.glob("*.json"):
+                try:
+                    r_data = _read_json(r_file)
+                    if r_rel not in (r_data.get("paths") or []):
+                        continue
+                    r_time = r_data.get("committed_at")
+                    if started_at and r_time and r_time < started_at:
+                        continue  # ancient/unrelated receipt -- reject
+                    out.append(r_data)
+                except Exception:
+                    pass
+        return out
+
+    # C1 pass 2 blocker #4: verification previously read the bulk post-
+    # snapshot and the receipts directory with no synchronization against
+    # _commit_host_mutation()'s writer lock -- a commit landing in that gap
+    # could be observed as bytes-changed-but-no-receipt-yet (false
+    # quarantine of authorized output) or vice versa. For each changed
+    # path, briefly acquire that SAME per-path _mutation_lock_resource()
+    # used by the committer (one path at a time, never multiple locks held
+    # simultaneously -- avoids any cross-path lock-ordering deadlock) and
+    # re-read BOTH the current on-disk hash and the receipts fresh, under
+    # the lock, instead of trusting the earlier bulk snapshot for this
+    # specific path. This closes the race to the width of a single
+    # hash-read+glob per path, down from "no synchronization at all."
     authorized_paths = set()
     for p_abs, r_rel in zip(raw_changed, rel_raw):
         pre_h = pre.get(p_abs, "ABSENT")
-        post_h = post.get(p_abs, "ABSENT")
-        path_receipts = sorted(
-            (r for r in window_receipts if r_rel in (r.get("paths") or [])),
-            key=lambda r: r.get("committed_at", ""),
-        )
+        p_path = Path(p_abs)
+        with _get_lock(effective_ai_root, _mutation_lock_resource(p_path)):
+            try:
+                post_h = hashlib.sha256(p_path.read_bytes()).hexdigest() if p_path.exists() else "ABSENT"
+            except OSError:
+                post_h = post.get(p_abs, "UNREADABLE")
+            path_receipts = sorted(
+                _load_window_receipts_for(r_rel),
+                key=lambda r: r.get("committed_at", ""),
+            )
         curr_chain_hash = pre_h
         chain_valid = False
         for r_item in path_receipts:

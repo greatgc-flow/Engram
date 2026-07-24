@@ -729,3 +729,53 @@ def test_c1_blocker3_authorization_not_persisted_on_cas_failure(monkeypatch, tmp
 
     # No host-owned "authorized" request record should exist at all.
     assert not (ai_root / "mutation_requests" / f"{ask_id}.json").exists()
+
+
+def test_c1_blocker4_verification_reflects_a_commit_landing_after_bulk_snapshot(monkeypatch, tmp_path):
+    """C1 pass 2 blocker #4: verification must not rely solely on the bulk
+    post-snapshot taken once at the start of _verify_ask_guard_record() --
+    a real commit landing in the gap between that snapshot and the
+    per-path fresh read must still be correctly recognized as authorized,
+    not falsely quarantined.
+
+    Simulates the race by making the bulk `_snapshot_governed_hashes()`
+    call (which fires once, before any per-path lock is taken) trigger a
+    real `_commit_host_mutation()` as a side effect -- exactly modeling "a
+    commit lands right after the bulk snapshot but before this path's
+    fresh, lock-protected read." If verification still used the (now
+    stale) bulk snapshot's per-path value, this change would incorrectly
+    show up as unattributed; the fix must use the fresh per-path read
+    instead and correctly find it authorized."""
+    f = _make_governed(tmp_path, monkeypatch, name="race_target.json", body="v1")
+    ai_root = tmp_path / ".ai"
+    ask_id = "ask-race"
+    import hashlib
+    h_v1 = hashlib.sha256(b"v1").hexdigest()
+    pre = {str(f.resolve()): h_v1}
+
+    hub._create_ask_guard_record(ai_root, ask_id, "ag", "terminal")
+    _write_scratch_proposal(ai_root, ask_id, f.resolve(), h_v1, "v2-landed-late")
+
+    real_snapshot = hub._snapshot_governed_hashes
+    committed = {"done": False}
+
+    def _snapshot_then_commit(*a, **k):
+        result = real_snapshot(*a, **k)
+        if not committed["done"]:
+            committed["done"] = True
+            # This runs AFTER the bulk snapshot's dict is already built, so
+            # `result` (and the `post` variable inside the function under
+            # test) reflects the file's OLD content -- simulating the race.
+            hub._commit_host_mutation(ai_root, ask_id, f.resolve(), "v2-landed-late", h_v1)
+        return result
+
+    monkeypatch.setattr(hub, "_snapshot_governed_hashes", _snapshot_then_commit)
+
+    unattributed = hub._verify_ask_guard_record(pre, ai_root, "ag", "terminal", ask_id=ask_id)
+
+    assert committed["done"], "test setup sanity check: the simulated late commit must have run"
+    assert unattributed == [], (
+        "a commit landing after the bulk snapshot but caught by the fresh "
+        "per-path lock-protected read must be recognized as authorized, "
+        "not falsely quarantined"
+    )
