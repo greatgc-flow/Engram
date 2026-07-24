@@ -36,6 +36,27 @@ def _make_governed(tmp_path, monkeypatch, name="gov.json", body="v1"):
     return f
 
 
+def _write_scratch_proposal(ai_root, ask_id, target_path, expected_revision, new_content):
+    """C1 pass 2 blocker #3: _commit_host_mutation() now validates the
+    scratch proposal's own ask_id/target/expected_revision/staged_digest
+    against the arguments actually used to commit -- this helper writes a
+    proposal that's internally consistent with a given real commit call."""
+    import hashlib
+    try:
+        target_field = str(Path(target_path).relative_to(hub._REPO_ROOT))
+    except ValueError:
+        target_field = str(target_path)
+    scratch_dir = ai_root / "scratch" / ask_id
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    hub._write_json(scratch_dir / "mutation_request.json", {
+        "ask_id": ask_id,
+        "target": target_field,
+        "expected_revision": expected_revision,
+        "staged_digest": hashlib.sha256(new_content.encode("utf-8")).hexdigest(),
+        "status": "untrusted_proposal",
+    })
+
+
 def test_manifest_resolves_and_excludes_generated(monkeypatch):
     files = hub._governed_files()
     assert files, "governed manifest resolved empty"
@@ -272,13 +293,7 @@ def test_c1_host_mutation_commit_cas_success(monkeypatch, tmp_path):
     import hashlib
     h_v1 = hashlib.sha256(b"v1").hexdigest()
 
-    scratch_dir = ai_root / "scratch" / ask_id
-    scratch_dir.mkdir(parents=True, exist_ok=True)
-    hub._write_json(scratch_dir / "mutation_request.json", {
-        "ask_id": ask_id,
-        "target_file": str(f.resolve()),
-        "status": "untrusted_proposal",
-    })
+    _write_scratch_proposal(ai_root, ask_id, f.resolve(), h_v1, "v2-authorized")
 
     receipt = hub._commit_host_mutation(ai_root, ask_id, f.resolve(), "v2-authorized", h_v1)
 
@@ -442,9 +457,7 @@ def test_c1_host_mutation_commit_cas_mismatch_raises(monkeypatch, tmp_path):
     ai_root = tmp_path / ".ai"
     ask_id = "ask-cas-conflict"
 
-    scratch_dir = ai_root / "scratch" / ask_id
-    scratch_dir.mkdir(parents=True, exist_ok=True)
-    hub._write_json(scratch_dir / "mutation_request.json", {"ask_id": ask_id, "status": "untrusted_proposal"})
+    _write_scratch_proposal(ai_root, ask_id, f.resolve(), "stale-wrong-hash", "new-content")
 
     import pytest
     with pytest.raises(RuntimeError, match="CAS revision mismatch"):
@@ -583,11 +596,7 @@ def test_c1_blocker1_genuine_in_window_receipt_verifies_clean(monkeypatch, tmp_p
 
     hub._create_ask_guard_record(ai_root, ask_id, "ag", "terminal")
 
-    scratch_dir = ai_root / "scratch" / ask_id
-    scratch_dir.mkdir(parents=True, exist_ok=True)
-    hub._write_json(scratch_dir / "mutation_request.json", {
-        "ask_id": ask_id, "target_file": str(f.resolve()), "status": "untrusted_proposal",
-    })
+    _write_scratch_proposal(ai_root, ask_id, f.resolve(), h_v1, "v2-authorized")
 
     hub._commit_host_mutation(ai_root, ask_id, f.resolve(), "v2-authorized", h_v1)
 
@@ -633,14 +642,9 @@ def test_c1_blocker2_mutation_receipt_collision_fails_closed(monkeypatch, tmp_pa
     monkeypatch.setattr(hub, "_short_id", lambda prefix="": "rcpt-dup" if prefix == "rcpt-" else "collide")
     f = _make_governed(tmp_path, monkeypatch, name="collide_target.json", body="v1")
     ask_id = "ask-second"
-    scratch_dir = ai_root / "scratch" / ask_id
-    scratch_dir.mkdir(parents=True, exist_ok=True)
-    hub._write_json(scratch_dir / "mutation_request.json", {
-        "ask_id": ask_id, "target_file": str(f.resolve()), "status": "untrusted_proposal",
-    })
-
     import hashlib
     h_v1 = hashlib.sha256(b"v1").hexdigest()
+    _write_scratch_proposal(ai_root, ask_id, f.resolve(), h_v1, "v2")
 
     import pytest
     with pytest.raises(RuntimeError, match="MutationReceipt collision"):
@@ -649,3 +653,79 @@ def test_c1_blocker2_mutation_receipt_collision_fails_closed(monkeypatch, tmp_pa
     # The original receipt must be untouched.
     rec = hub._read_json(receipts_dir / "rcpt-dup.json")
     assert rec["ask_id"] == "ask-original"
+
+
+# --- C1 pass 2 blocker #3: scratch proposal must genuinely describe the
+# commit being made, and authorization must persist only after CAS succeeds
+
+def test_c1_blocker3_mismatched_target_rejected(monkeypatch, tmp_path):
+    """A scratch proposal claiming a different target than what's actually
+    being committed must be rejected -- never trusted."""
+    f = _make_governed(tmp_path, monkeypatch, name="b3_target.json", body="v1")
+    ai_root = tmp_path / ".ai"
+    ask_id = "ask-b3-target"
+    import hashlib
+    h_v1 = hashlib.sha256(b"v1").hexdigest()
+
+    _write_scratch_proposal(ai_root, ask_id, "some/completely/different/path.json", h_v1, "v2")
+
+    import pytest
+    with pytest.raises(ValueError, match="target mismatch"):
+        hub._commit_host_mutation(ai_root, ask_id, f.resolve(), "v2", h_v1)
+    assert f.read_text(encoding="utf-8") == "v1", "file must be untouched on a rejected proposal"
+
+
+def test_c1_blocker3_mismatched_expected_revision_rejected(monkeypatch, tmp_path):
+    """A scratch proposal claiming a different expected_revision than what's
+    actually passed to the commit call must be rejected."""
+    f = _make_governed(tmp_path, monkeypatch, name="b3_revision.json", body="v1")
+    ai_root = tmp_path / ".ai"
+    ask_id = "ask-b3-revision"
+    import hashlib
+    h_v1 = hashlib.sha256(b"v1").hexdigest()
+
+    _write_scratch_proposal(ai_root, ask_id, f.resolve(), "a-completely-different-hash", "v2")
+
+    import pytest
+    with pytest.raises(ValueError, match="expected_revision mismatch"):
+        hub._commit_host_mutation(ai_root, ask_id, f.resolve(), "v2", h_v1)
+    assert f.read_text(encoding="utf-8") == "v1"
+
+
+def test_c1_blocker3_mismatched_staged_digest_rejected(monkeypatch, tmp_path):
+    """A scratch proposal whose staged_digest doesn't match the actual
+    new_content being committed must be rejected -- the proposal must
+    genuinely describe what's about to be written, not just claim a target
+    and revision while smuggling in different content."""
+    f = _make_governed(tmp_path, monkeypatch, name="b3_digest.json", body="v1")
+    ai_root = tmp_path / ".ai"
+    ask_id = "ask-b3-digest"
+    import hashlib
+    h_v1 = hashlib.sha256(b"v1").hexdigest()
+
+    # Proposal is for content "v2-proposed" but the actual commit tries to
+    # write "v2-actually-different" -- staged_digest won't match.
+    _write_scratch_proposal(ai_root, ask_id, f.resolve(), h_v1, "v2-proposed")
+
+    import pytest
+    with pytest.raises(ValueError, match="staged_digest mismatch"):
+        hub._commit_host_mutation(ai_root, ask_id, f.resolve(), "v2-actually-different", h_v1)
+    assert f.read_text(encoding="utf-8") == "v1"
+
+
+def test_c1_blocker3_authorization_not_persisted_on_cas_failure(monkeypatch, tmp_path):
+    """A failed CAS check must never leave an orphaned "authorized" host-
+    owned request record -- authorization is only persisted after both the
+    CAS check AND the atomic write succeed."""
+    f = _make_governed(tmp_path, monkeypatch, name="b3_cas.json", body="v1")
+    ai_root = tmp_path / ".ai"
+    ask_id = "ask-b3-cas"
+
+    _write_scratch_proposal(ai_root, ask_id, f.resolve(), "stale-wrong-hash", "v2")
+
+    import pytest
+    with pytest.raises(RuntimeError, match="CAS revision mismatch"):
+        hub._commit_host_mutation(ai_root, ask_id, f.resolve(), "v2", "stale-wrong-hash")
+
+    # No host-owned "authorized" request record should exist at all.
+    assert not (ai_root / "mutation_requests" / f"{ask_id}.json").exists()

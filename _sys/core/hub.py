@@ -4587,19 +4587,23 @@ def _commit_host_mutation(ai_root: Path, ask_id: str, target_path: Path, new_con
     `status="authorized"` in the scratch proposal is NEVER trusted --
     authorization state only ever lives in this host-owned copy.
 
-    NOT YET PRODUCTION-SAFE (C1 pass 1 of N -- has zero production callers
-    by design, this is scaffolding). Confirmed gaps (cx's 2026-07-24
-    cross-verification): does not validate the scratch proposal's own
-    ask_id/target/expected_revision/staged digest against the arguments
-    actually used to commit (a mismatched proposal can still commit
-    successfully); persists `status="authorized"` before the CAS check
-    passes, so a failed CAS leaves an orphaned "authorized" record; no
-    locking shared with `_verify_ask_guard_record`'s read path (a verifier
-    can observe target bytes before this function's receipt exists, or vice
-    versa); host storage under `.ai/` is not tamper-resistant against a
-    peer with filesystem access; 4-hex-digit IDs risk collision. Do not add
-    a real caller until these are fixed -- see backlog-design-consensus-
-    2026-07-24.md's "C1 pass 2 blockers"."""
+    C1 pass 2 blocker #3 FIXED (2026-07-25): the scratch proposal's own
+    ask_id/target/expected_revision/staged_digest are now validated against
+    the arguments actually used to commit -- a mismatched or incomplete
+    proposal is rejected (never trusted, since it's peer-controlled input).
+    `status="authorized"` is now persisted only AFTER the CAS check and
+    atomic write both succeed -- a failed CAS no longer leaves an orphaned
+    "authorized" host-owned request record.
+
+    STILL NOT PRODUCTION-SAFE (zero production callers by design, this is
+    scaffolding). Remaining gaps: no locking shared with
+    `_verify_ask_guard_record`'s read path (a verifier can observe target
+    bytes before this function's receipt exists, or vice versa -- blocker
+    #4); host storage under `.ai/` is not tamper-resistant against a peer
+    with filesystem access (blocker #2's remaining, explicitly-out-of-scope
+    part -- needs OS-level isolation). Do not add a real caller until these
+    are fixed -- see backlog-design-consensus-2026-07-24.md's "C1 pass 2
+    blockers"."""
     import hashlib
     effective_ai_root = ai_root or (_REPO_ROOT / ".ai")
     try:
@@ -4612,12 +4616,33 @@ def _commit_host_mutation(ai_root: Path, ask_id: str, target_path: Path, new_con
         raise ValueError(f"No MutationRequest proposal found in scratch for ask_id {ask_id}")
 
     req_data = _read_json(scratch_req)
-    req_data["status"] = "authorized"
-    req_data["authorized_at"] = _now()
 
-    host_req_dir = effective_ai_root / "mutation_requests"
-    host_req_dir.mkdir(parents=True, exist_ok=True)
-    _write_json(host_req_dir / f"{ask_id}.json", req_data)
+    # C1 pass 2 blocker #3: the scratch proposal is peer-controlled,
+    # untrusted input -- it must genuinely describe THIS exact commit
+    # before we act on it. Every field the caller independently knows must
+    # match what the peer proposed; a mismatch or missing field is treated
+    # as an untrusted/incomplete proposal and rejected outright.
+    new_content_digest = hashlib.sha256(new_content.encode("utf-8")).hexdigest()
+    if req_data.get("ask_id") != ask_id:
+        raise ValueError(
+            f"MutationRequest proposal ask_id mismatch for {ask_id}: "
+            f"proposal claims {req_data.get('ask_id')!r}"
+        )
+    if req_data.get("target") != rel_path:
+        raise ValueError(
+            f"MutationRequest proposal target mismatch for {ask_id}: "
+            f"proposal claims {req_data.get('target')!r}, actual target is {rel_path!r}"
+        )
+    if req_data.get("expected_revision") != expected_revision:
+        raise ValueError(
+            f"MutationRequest proposal expected_revision mismatch for {ask_id}: "
+            f"proposal claims {req_data.get('expected_revision')!r}, actual is {expected_revision!r}"
+        )
+    if req_data.get("staged_digest") != new_content_digest:
+        raise ValueError(
+            f"MutationRequest proposal staged_digest mismatch for {ask_id}: "
+            f"proposal claims {req_data.get('staged_digest')!r}, actual content digest is {new_content_digest!r}"
+        )
 
     lock_resource = _mutation_lock_resource(target_path)
     with _get_lock(effective_ai_root, lock_resource):
@@ -4631,6 +4656,15 @@ def _commit_host_mutation(ai_root: Path, ask_id: str, target_path: Path, new_con
         os.replace(tmp_target, target_path)
         final_bytes = target_path.read_bytes()
         final_hash = hashlib.sha256(final_bytes).hexdigest()
+
+        # C1 pass 2 blocker #3: authorization is persisted only AFTER the
+        # CAS check + atomic write both succeed -- a failed CAS above must
+        # never leave an orphaned "authorized" host-owned request record.
+        req_data["status"] = "authorized"
+        req_data["authorized_at"] = _now()
+        host_req_dir = effective_ai_root / "mutation_requests"
+        host_req_dir.mkdir(parents=True, exist_ok=True)
+        _write_json(host_req_dir / f"{ask_id}.json", req_data)
 
         receipt_id = _short_id("rcpt-")
         receipt_data = {
