@@ -798,7 +798,10 @@ def _commit_hub_mutation_request(ai_root: Path, request: HubMutationRequest, for
     global _BROKER_COMMIT_ACTIVE
     _guard_action(ai_root, request.action, force_tier0=force_tier0, origin=request.origin)
     res = None
-    with _get_lock(ai_root, f"broker_{request.target_path.name}"):
+    # C1/Top-5#1 lock-name unification: broker-drain and direct writers must
+    # use the SAME lock name for the same resource, or they don't actually
+    # serialize against each other (audit §3.7, live-repro'd this session).
+    with _get_lock(ai_root, _mutation_lock_resource(request.target_path)):
         _journal_op(ai_root, "hub_mutation_broker", "commit_intent", {
             "request_id": request.request_id,
             "action": request.action,
