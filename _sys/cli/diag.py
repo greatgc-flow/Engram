@@ -527,14 +527,63 @@ def _group_raw_exh(group):
     return max_exh_val, max_exh_bucket, valid_exhs, own_buckets
 
 
+def _credit_urgency_weight(remaining_seconds):
+    """Urgency weight w(T) for one reset credit with `remaining_seconds`
+    until expiry: T<7d -> 3.0-0.214T (urgent, w in [1.50,3.00]); 7d<=T<14d
+    -> 2.0-0.071T (approaching, w in [1.00,1.50]); T>=14d or non-expiring
+    -> 1.0 (safe horizon; reproduces the old flat divisor exactly once every
+    credit is >=14d out). Higher weight -> more aggressive EXH discount ->
+    stronger "use it before it's wasted" signal (2026-07-24 design)."""
+    if remaining_seconds == float("inf"):
+        return 1.0
+    t_days = max(0.0, remaining_seconds / 86400.0)
+    if t_days < 7.0:
+        return 3.0 - 0.214 * t_days
+    if t_days < 14.0:
+        return 2.0 - 0.071 * t_days
+    return 1.0
+
+
+def _group_effective_exh(group):
+    """The EXH value actually shown to the user: raw EXH (_group_raw_exh),
+    urgency-weight-discounted by any eligible, expiry-aware reset credits
+    for peers with a credit concept (currently cx). This is the SINGLE
+    number both the display (_quota_dependency_group_text) and the row sort
+    (_group_sort_metric) must use -- previously the display could show a
+    credit-adjusted number while sorting still used the raw one, a narrower
+    survival of the same display/sort mismatch Fix 1 closed for the common
+    case (cx.deepthink caught this in --live's cross-owner ordering).
+    Returns None if EXH itself is absent (no reset/eta data)."""
+    raw_exh_val, _, _, _ = _group_raw_exh(group)
+    if raw_exh_val is None:
+        return None
+    if not group.get("_has_credit_concept"):
+        return raw_exh_val
+    eligible_credits = group.get("_eligible_credits")
+    expiries = group.get("_eligible_credit_expiries")
+    # Require BOTH a trustworthy positive count AND a nonempty expiry list
+    # before adjusting -- checking only `expiries` left a gap (found by
+    # cx.deepthink cross-review) where inconsistent/stale metadata
+    # (eligible_credits None/0 but expiries somehow still populated) would
+    # discount the SORT value while the display's separate, stricter
+    # `eligible_credits > 0 and eligible_expiries` check kept EXH raw --
+    # recreating the exact display/sort mismatch this function exists to
+    # prevent. Mirror that same dual condition here.
+    if not (isinstance(eligible_credits, int) and eligible_credits > 0 and expiries):
+        return raw_exh_val
+    w_eff = sum(_credit_urgency_weight(t) for t in expiries)
+    return raw_exh_val / (1.0 + w_eff)
+
+
 def _group_sort_metric(group):
     """(tier, primary_value) for row ordering: tier 0 = real EXH known (sorts
-    by the SAME value the display shows, descending); tier 1 = EXH absent but
-    a measured pacing ratio is available (sorts by ratio descending, the prior
+    by the SAME effective value the display shows, descending -- including
+    any credit-urgency adjustment); tier 1 = EXH absent but a measured
+    pacing ratio is available (sorts by ratio descending, the prior
     behavior for reset/eta-less pools -- a real degradation signal, not a bug,
     per test_diag_layout.py's explicit sort contract); tier 2 = neither known
     (never fabricated). Lower tier always sorts before a higher tier."""
-    eff_exh, _, _, _ = _group_raw_exh(group)
+    eff_exh = _group_effective_exh(group)
     if isinstance(eff_exh, (int, float)):
         return (0, -eff_exh)
     primary = group.get("primary") or {}
@@ -585,27 +634,35 @@ def _quota_dependency_group_text(group, tier=0, include_raw_tail=True):
         return f"{pool_str} {binding_str}"
 
     # 2026-07-22 (user request): EXH itself is now the credit-adjusted value
-    # (raw / (1 + eligible_credits)) wherever credits exist, so a human can
-    # rank token-usage priority by reading EXH alone -- no separate mental
-    # "but they have tickets" step. The unadjusted number moves to a RAW tail
-    # instead. Kept OUT of exh_str/exh_width deliberately: this tail only
-    # applies to one peer (currently cx) at a time, and folding its text into
-    # the shared per-tier EXH column width would stretch every OTHER peer's
-    # row with blank padding just to keep one column aligned. Appended at the
-    # end of the line instead (see the final `return`), so cc/ag rows stay
-    # compact.
+    # wherever credits exist, so a human can rank token-usage priority by
+    # reading EXH alone -- no separate mental "but they have tickets" step.
+    # The unadjusted number moves to a RAW tail instead. Kept OUT of
+    # exh_str/exh_width deliberately: this tail only applies to one peer
+    # (currently cx) at a time, and folding its text into the shared
+    # per-tier EXH column width would stretch every OTHER peer's row with
+    # blank padding just to keep one column aligned. Appended at the end of
+    # the line instead (see the final `return`), so cc/ag rows stay compact.
+    #
+    # 2026-07-24: the flat `raw / (1 + count)` divisor is replaced by
+    # _group_effective_exh()'s urgency-weighted formula -- an about-to-expire
+    # credit now discounts EXH MORE aggressively than one with weeks left,
+    # actively nudging toward "use it before it's wasted" rather than a flat
+    # discount that gives no signal about which credit is actually urgent.
+    # This is also now the SAME function the row sort key uses, so the
+    # displayed number and the row order can never diverge again.
     raw_exh_text = ""
     has_credit_concept = group.get("_has_credit_concept", False)
     eligible_credits = group.get("_eligible_credits")
+    eligible_expiries = group.get("_eligible_credit_expiries")
     if has_credit_concept and include_raw_tail and exh_text != "absent":
         if eligible_credits is None:
-            # Can't compute an adjustment without a trustworthy credit count,
+            # Can't compute an adjustment without trustworthy credit details,
             # so EXH above is already the raw/unadjusted number -- say so
             # explicitly rather than repeating it as a confusing "RAW" dupe.
             raw_exh_text = "  EXH unadjusted (credits unknown)"
-        elif eligible_credits > 0:
+        elif eligible_credits > 0 and eligible_expiries:
             raw_exh_val = max_exh_val
-            adj_exh_val = raw_exh_val / (1 + eligible_credits)
+            adj_exh_val = _group_effective_exh(group)
             if adj_exh_val >= 1.00:
                 adj_glyph = "\U0001f534"  # red
             elif adj_exh_val >= 0.80:
@@ -613,8 +670,32 @@ def _quota_dependency_group_text(group, tier=0, include_raw_tail=True):
             else:
                 adj_glyph = "\U0001f7e2"  # green
             exh_text = f"{adj_glyph} {adj_exh_val:.2f}x"
-            raw_exh_text = f"  RAW {raw_exh_val:.2f}x (\U0001f3ab{eligible_credits} manual)"
-        # eligible_credits == 0: adjusted value equals raw, nothing to show.
+
+            tags = []
+            min_days = float("inf")
+            for rem_sec in eligible_expiries:
+                if rem_sec == float("inf"):
+                    tags.append("∞")
+                    continue
+                d = rem_sec / 86400.0
+                min_days = min(min_days, d)
+                if d < 1.0:
+                    tags.append(f"⚡{int(rem_sec / 3600.0)}h!")
+                elif d <= 3.0:
+                    tags.append(f"⚡{d:.1f}d!")
+                else:
+                    tags.append(f"{d:.1f}d")
+            tags_str = ", ".join(tags)
+
+            badge = ""
+            if min_days <= 1.0:
+                badge = f" \U0001f525USE NOW: exp {int(min_days * 24)}h"
+            elif min_days <= 3.0:
+                badge = f" ⚠️exp {min_days:.1f}d"
+
+            raw_exh_text = f"  RAW {raw_exh_val:.2f}x (\U0001f3ab{eligible_credits} [{tags_str}]{badge})"
+        # eligible_credits == 0 (or expiries somehow empty): adjusted value
+        # equals raw, nothing to show.
     exh_str = _pad(exh_text, 10)
     # Every bucket cell at this tier -- "--", "absent", normal, or borrowed
     # with a "(pool)" annotation -- must share ONE width so the "|" divider
@@ -697,9 +778,11 @@ def render_summary(infos, stdout=None, columns=None):
         groups = _borrow_missing_windows(_quota_dependency_groups(rows))
         has_credit_concept = (info.get("peer") == "cx")
         eligible_credits = info.get("eligible_credits")
+        eligible_credit_expiries = info.get("eligible_credit_expiries")
         for g in groups:
             g["_has_credit_concept"] = has_credit_concept
             g["_eligible_credits"] = eligible_credits
+            g["_eligible_credit_expiries"] = eligible_credit_expiries
         all_groups.extend(groups)
 
     tier = _select_quota_tier(all_groups, columns, prefix_len=13)
@@ -728,6 +811,7 @@ def render_summary(infos, stdout=None, columns=None):
         for g in groups:
             g["_has_credit_concept"] = (info.get("peer") == "cx")
             g["_eligible_credits"] = info.get("eligible_credits")
+            g["_eligible_credit_expiries"] = info.get("eligible_credit_expiries")
 
 
         def group_sort_key(group):
@@ -1186,6 +1270,7 @@ def _live_quota_pool_rows(snapshot):
         for g in peer_groups:
             g["_has_credit_concept"] = (owner.lower() == "cx")
             g["_eligible_credits"] = info.get("eligible_credits")
+            g["_eligible_credit_expiries"] = info.get("eligible_credit_expiries")
 
         for g in peer_groups:
             g["owner"] = owner

@@ -135,24 +135,33 @@ def test_summary_and_live_share_one_dependency_group_payload(capsys):
 
 
 def test_summary_shows_adjusted_exh_with_raw_in_tail_for_eligible_credits(capsys):
-    """2026-07-22 (user request): EXH itself becomes raw EXH / (1 +
-    eligible_credits) so priority can be read off EXH alone; the unadjusted
-    number moves to a 'RAW ... (ticket count)' tail instead of disappearing.
-    Peers without the credit concept never render the tail at all."""
+    """2026-07-22 (user request): EXH itself becomes credit-adjusted so
+    priority can be read off EXH alone; the unadjusted number moves to a
+    'RAW ... (ticket count)' tail instead of disappearing. Peers without the
+    credit concept never render the tail at all.
+
+    2026-07-24: the adjustment is now urgency-weighted per credit
+    (_group_effective_exh), not a flat /(1+count) divisor -- but a credit
+    with >=14 days left contributes weight 1.0 exactly like the old flat
+    divisor did, so all three credits here are set far out (20/25/30 days)
+    to reproduce the identical expected numbers under the new formula
+    (raw 1.23 / (1+1.0+1.0+1.0) = 1.23/4 = 0.3075 ~= 0.31x)."""
     d = _diag()
     quotas = [{"label": "X-7D", "used_frac": 0.55, "pacing": {"ratio": 1.29},
                "reset": "in 3d", "reset_in_seconds": 260_000}]
+    far_out_expiries = [20 * 86400, 25 * 86400, 30 * 86400]
     info = {
         "peer": "cx", "cost": None, "source": "app_server", "ctx_window": 1,
         "ctx_used": 0, "ctx_pct": 0.0, "ctx_known": True, "gate": True,
         "empty": False, "quotas": quotas, "eligible_credits": 3,
+        "eligible_credit_expiries": far_out_expiries,
     }
 
     d.render_summary([info])
     summary = capsys.readouterr().out
 
     assert "RAW 1.23x" in summary  # raw EXH preserved, now in the RAW tail
-    assert "0.31x" in summary  # adjusted EXH (1.23 / (1+3)) is now the main value
+    assert "0.31x" in summary  # adjusted EXH (1.23 / (1+3*1.0)) is now the main value
 
 
 def test_raw_exh_tail_does_not_downgrade_tier_for_other_peers():

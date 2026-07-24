@@ -582,15 +582,16 @@ def _cached_claude_usage_quotas(ttl_sec=EXPENSIVE_SOURCE_TTL_SEC, clock=time.mon
     return value
 
 
-def _eligible_reset_credits(reset_credits):
-    """Count of reset credits actually spendable right now: status
-    'available', not expired, and applicable to rate-limit resets (not some
-    other future credit type this same field could carry). Feeds diag's
-    credit-adjusted EXH field (design doc follow-up, 2026-07-22 -- initially
-    an additive "EFF EXH" annotation, later made the primary EXH value the
-    same day per user request, with the raw number moved to a RAW tail).
-    Returns None (not 0 or an undercount) when the count can't be trusted --
-    diag must render 'absent', never a guessed/partial number, in that case:
+def _eligible_credit_details(reset_credits):
+    """List of remaining seconds-until-expiry (sorted ascending) for reset
+    credits actually spendable right now: status 'available', not expired,
+    and applicable to rate-limit resets (not some other future credit type
+    this same field could carry). A non-expiring credit contributes
+    float('inf'). Feeds diag's credit-urgency-weighted EXH field (2026-07-24
+    -- expiry-aware successor to the flat count-based divisor; see
+    diag.py's _group_effective_exh).
+    Returns None (not 0 or an undercount) when the details can't be trusted --
+    diag must render 'absent'/'unknown', never a guessed/partial number:
     - the credit list itself isn't a real list, or
     - the list is CAPPED (design doc §2.1: `credits` may hold fewer rows
       than `availableCount` for large accounts) -- an eligibility count over
@@ -606,7 +607,7 @@ def _eligible_reset_credits(reset_credits):
     if isinstance(available_count, int) and len(credit_list) < available_count:
         return None
     now = time.time()
-    eligible = 0
+    expiries_sec = []
     for credit in credit_list:
         if not isinstance(credit, dict):
             continue
@@ -615,10 +616,22 @@ def _eligible_reset_credits(reset_credits):
         if credit.get("resetType") != "codexRateLimits":
             continue
         expires_at = credit.get("expiresAt")
-        if expires_at is not None and expires_at <= now:
+        if expires_at is None:
+            expiries_sec.append(float("inf"))
             continue
-        eligible += 1
-    return eligible
+        remaining = expires_at - now
+        if remaining <= 0:
+            continue
+        expiries_sec.append(remaining)
+    expiries_sec.sort()
+    return expiries_sec
+
+
+def _eligible_reset_credits(reset_credits):
+    """Back-compat count-only view of _eligible_credit_details(), for any
+    caller that only needs "how many," not per-credit expiry timing."""
+    details = _eligible_credit_details(reset_credits)
+    return len(details) if details is not None else None
 
 
 def _codex_quota_buckets(rate_limits):
@@ -1073,9 +1086,10 @@ def gather_peer(peer, peer_dirs):
             reset_credits = rl.get("rateLimitResetCredits")
             if isinstance(reset_credits, dict):
                 info["reset_credits_available"] = reset_credits.get("availableCount")
-                eligible = _eligible_reset_credits(reset_credits)
-                if eligible is not None:
-                    info["eligible_credits"] = eligible
+                expiries = _eligible_credit_details(reset_credits)
+                if expiries is not None:
+                    info["eligible_credits"] = len(expiries)
+                    info["eligible_credit_expiries"] = expiries
         elif not quotas:
             info["cx_quota_unavailable"] = True
 
