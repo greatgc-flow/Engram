@@ -1170,6 +1170,22 @@ def _live_raw_peer(rec):
     return raw if isinstance(raw, dict) else (rec if isinstance(rec, dict) else {})
 
 
+def _current_terminal_peer():
+    """Which peer is currently acting as the human-interface terminal, per
+    `.ai/state.json`'s `human_interface_peer` field (verified real field name
+    2026-07-24 -- terminal role rotates between cc/ag/cx per this repo's
+    peer-equality design, so this is never hardcoded to one peer). Returns
+    None (never guessed/defaulted) if the field is absent or the file can't
+    be read -- diag must not fabricate a "who's the terminal" answer."""
+    try:
+        path = PORTABLE_ROOT / ".ai" / "state.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        peer = data.get("human_interface_peer")
+        return str(peer) if peer else None
+    except Exception:
+        return None
+
+
 def _health_age_text(value):
     if not isinstance(value, (int, float)):
         return "absent"
@@ -1240,6 +1256,7 @@ def render_live_peer_health(out, snapshot, columns):
 def _live_quota_pool_rows(snapshot):
     """Collect measured quota-pool groups for the live account/pool section."""
     groups = []
+    terminal_peer = _current_terminal_peer()
     for rec in snapshot.get("peers") or []:
         info = _live_raw_peer(rec)
         owner = str(info.get("peer") or (rec.get("peer") if isinstance(rec, dict) else "?") or "?")
@@ -1275,6 +1292,7 @@ def _live_quota_pool_rows(snapshot):
         for g in peer_groups:
             g["owner"] = owner
             g["source"] = source
+            g["_is_terminal"] = bool(terminal_peer) and owner.lower() == terminal_peer.lower()
         groups.extend(peer_groups)
 
     def group_sort_key(group):
@@ -1290,7 +1308,14 @@ def _live_quota_pool_rows(snapshot):
 
 def _live_quota_pool_line(group, columns, tier):
     owner = group.get("owner", "")
-    owner_padded = _pad(str(owner).upper(), 6)
+    owner_text = str(owner).upper()
+    if group.get("_is_terminal"):
+        # Marks whichever peer is CURRENTLY the human-interface terminal
+        # (rotates between cc/ag/cx -- never hardcoded), so a human scanning
+        # --live can see at a glance which pool is serving them right now
+        # vs. background/delegated work (2026-07-24, user request).
+        owner_text += "\U0001f5a5"  # 🖥
+    owner_padded = _pad(owner_text, 6)
     text = _quota_dependency_group_text(group, tier=tier)
     line = f"{owner_padded} {text}"
     return _elide_display(line, columns) if columns is not None else line
