@@ -60,6 +60,10 @@ def test_log_p2p_ask_surfaces_error(monkeypatch, tmp_path):
 
 def test_real_arbiter_invoker_uses_timeout(monkeypatch):
     """Ensure _real_arbiter_invoker uses invocation_timeout_sec from config."""
+    sys_dir = Path(__file__).parent.parent.parent.resolve()
+    if str(sys_dir) not in sys.path:
+        sys.path.insert(0, str(sys_dir))
+
     from core import hub
     import subprocess
     
@@ -69,6 +73,7 @@ def test_real_arbiter_invoker_uses_timeout(monkeypatch):
     captured_timeout = []
     class MockResult:
         stdout = "test_reply\n"
+        returncode = 0
     
     def mock_run(*args, **kwargs):
         captured_timeout.append(kwargs.get("timeout"))

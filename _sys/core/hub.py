@@ -4849,11 +4849,19 @@ def condense_arbiter_input(context) -> str:
             items = [seq]
         parts.append("\n".join([header] + [f"  - {_s(i)}" for i in items]))
 
+    instruction = "Your response MUST begin with 'VERDICT: APPROVE' or 'VERDICT: REJECT' on the first line, followed by rationale."
+    separator = "\n\n"
+
     text = "\n".join(parts)
     cap, marker = 1200, "...<truncated>"
-    if len(text) > cap:
-        text = text[: cap - len(marker)] + marker
-    return text
+    # The 1200-char cap applies to the WHOLE returned string, not just the
+    # dissent-context body -- the instruction prefix must not push the total
+    # over budget (found by cross-review: an earlier version capped the body
+    # alone, then prepended the instruction, silently exceeding 1200).
+    body_cap = cap - len(instruction) - len(separator)
+    if len(text) > body_cap:
+        text = text[: max(0, body_cap - len(marker))] + marker
+    return f"{instruction}{separator}{text}"
 
 
 def invoke_arbiter(ai_root, decision, context, config, invoker, now=None):
@@ -4891,6 +4899,89 @@ def invoke_arbiter(ai_root, decision, context, config, invoker, now=None):
         pass
     _arbiter_record_invocation(ai_root, now=now)
     return record
+
+
+def _parse_arbiter_verdict(verdict_text: str | None) -> str | None:
+    """Strictly parse the first non-empty line of arbiter output. Must be
+    EXACTLY 'VERDICT: APPROVE' or 'VERDICT: REJECT' (case-insensitive) -- no
+    loose prefix-matching or scanning elsewhere in the text, which risked
+    misparsing a partial/failed-subprocess response (a design flaw found and
+    corrected across 2 rounds of review). Returns 'APPROVE', 'REJECT', or None."""
+    if not verdict_text:
+        return None
+    for line in str(verdict_text).splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        upper = stripped.upper()
+        if upper == "VERDICT: APPROVE":
+            return "APPROVE"
+        if upper == "VERDICT: REJECT":
+            return "REJECT"
+        return None
+    return None
+
+
+def _apply_arbiter_override_to_round(ai_root: Path, round_id: str, arbiter_record: dict) -> dict | None:
+    """DIR-005 live-wiring: apply an arbiter's authoritative override/rejection
+    to a consensus round under a per-round lock. Previously the arbiter ran
+    strictly AFTER _decide_consensus had already persisted the round, and its
+    verdict was written only to final_opinions.jsonl, which nothing consumed
+    -- DIR-005's override authority was non-functional (architecture-audit
+    2026-07-24, Top-5 #3). Re-reads the round fresh from disk under lock so
+    this is safe to call from either _maybe_run_arbiter_on_finalize call site
+    (broker-drain or direct consensus-vote) without caller-side synchronization.
+    Never touches a round already finalized as unanimous. Returns the updated
+    round dict, or None if nothing was applied."""
+    if not isinstance(arbiter_record, dict):
+        return None
+    if arbiter_record.get("round_id") != round_id:
+        return None
+    if arbiter_record.get("authority") != "override":
+        return None
+
+    verdict_kind = _parse_arbiter_verdict(arbiter_record.get("verdict", ""))
+    if not verdict_kind:
+        return None
+
+    rpath = ai_root / "consensus" / f"{round_id}.json"
+    with _get_lock(ai_root, f"consensus_{round_id}"):
+        if not rpath.exists():
+            return None
+        data = _read_json(rpath)
+        cur_status = data.get("status")
+        cur_outcome = data.get("outcome")
+
+        if cur_status == "finalized" and cur_outcome == "unanimous":
+            return None
+        # Idempotency/order-independence guard: only the FIRST arbiter_decision
+        # ever recorded on a round is honored. Without this, two conflicting
+        # records (e.g. a REJECT followed later by an APPROVE) could flip an
+        # already-decided round a second time -- fresh-read-under-lock alone
+        # only prevented CORRUPTING a single write, not a second, order-
+        # dependent override (architecture-audit 2026-07-24, Top-5 #3 follow-up).
+        if data.get("arbiter_decision") is not None:
+            return None
+
+        if verdict_kind == "APPROVE":
+            if cur_status not in ("escalated", "rejected"):
+                return None
+            new_status, new_outcome = "finalized", "arbiter_override"
+        elif verdict_kind == "REJECT":
+            if cur_status not in ("voting", "escalated"):
+                return None
+            new_status, new_outcome = "rejected", "arbiter_rejected"
+        else:
+            return None
+
+        data["status"] = new_status
+        data["outcome"] = new_outcome
+        data["arbiter_decision"] = arbiter_record
+
+        _write_json(rpath, data)
+        _finalize_round_side_effects(ai_root, data)
+        print(f"[HUB] ARBITER OVERRIDE APPLIED on {round_id}: {cur_status}/{cur_outcome} -> {new_status}/{new_outcome}")
+        return data
 
 
 def detect_dissent(consensus_round) -> dict:
@@ -4979,6 +5070,8 @@ def _real_arbiter_invoker(ai_root):
                  "--to", str(arbiter_id), "--query-file", str(qf)],
                 capture_output=True, text=True, timeout=timeout_sec,
             )
+            if proc.returncode != 0:
+                raise RuntimeError(f"arbiter process exited with code {proc.returncode}: {(proc.stderr or '')[:200]}")
             out = proc.stdout or ""
             lines = [ln for ln in out.splitlines()
                      if not ln.startswith("[HUB")
@@ -5026,19 +5119,40 @@ def _maybe_run_arbiter_on_finalize(ai_root, data) -> None:
 
     Gated by final_arbiter.auto_wire_on_finalize (default FALSE) IN ADDITION to
     final_arbiter.enabled, so premium cc.fable tokens are NEVER spent implicitly
-    until the wiring is deliberately activated. MUST be called OUTSIDE the
-    consensus lock: run_arbiter_on_round may spawn a ~300s arbiter subprocess, and
-    holding the per-round lock for that long would stall the consensus path.
-    Never raises — an arbiter review must not break an already-finalized decision.
+    until the wiring is deliberately activated. Atomically claims arbiter review
+    under the `consensus_{round_id}` lock BEFORE invoking (a quick check-and-set,
+    not held across the invocation itself) so at most ONE arbiter subprocess is
+    spawned per round even when the direct-vote and broker-merge finalize paths
+    race on the same round (architecture-audit 2026-07-24, Top-5 #3 follow-up --
+    without this, both paths could independently decide "fired" and double the
+    real arbiter spend). The actual `run_arbiter_on_round()` call happens OUTSIDE
+    the lock: it may spawn a ~300s arbiter subprocess, and holding the per-round
+    lock for that long would stall the consensus path. Never raises — an
+    arbiter review must not break an already-finalized decision.
     """
     try:
         cfg = _final_arbiter_config()
         if not (cfg.get("enabled") and cfg.get("auto_wire_on_finalize")):
             return
-        result = run_arbiter_on_round(ai_root, data, config=cfg)
         round_id = (data or {}).get("round_id")
+        if not round_id:
+            return
+        rpath = ai_root / "consensus" / f"{round_id}.json"
+        with _get_lock(ai_root, f"consensus_{round_id}"):
+            if not rpath.exists():
+                return
+            claim_data = _read_json(rpath)
+            if claim_data.get("arbiter_claimed") or claim_data.get("arbiter_decision"):
+                return
+            claim_data["arbiter_claimed"] = True
+            _write_json(rpath, claim_data)
+            data = claim_data
+        result = run_arbiter_on_round(ai_root, data, config=cfg)
         if result.get("fired"):
             print(f"[HUB] ARBITER auto-review fired on {round_id} (dissent/r10_final)")
+            record = result.get("final_opinion")
+            if record:
+                _apply_arbiter_override_to_round(ai_root, round_id, record)
         else:
             reason = result.get("reason")
             # Only surface a note when it was gated ON but did not fire for a
@@ -6579,24 +6693,34 @@ def _finalize_round_side_effects(ai_root: Path, data: dict) -> None:
 def _apply_vote_merge(ai_root: Path, rpath: Path, vote: dict) -> dict | None:
     """Host-side commit for a consensus_vote_merge request: read the round FRESH,
     apply this single vote, decide, persist. Concurrency-safe — a stale snapshot
-    can never clobber other voters. Idempotent on already-closed rounds."""
+    can never clobber other voters. Idempotent on already-closed rounds.
+
+    Acquires the SAME per-round lock (`consensus_{round_id}`) the direct-vote
+    path uses (action_consensus_vote) -- previously this broker-merge path used
+    no consensus lock at all (only a separate `broker_{filename}` lock around
+    the request commit itself), so a concurrent direct vote and broker merge on
+    the same round had no mutual exclusion: both could finalize and both could
+    trigger the arbiter auto-wire hook (architecture-audit 2026-07-24, Top-5 #3
+    follow-up). round_id is the file stem, matching direct-vote's lock naming."""
     if not rpath.exists():
         return None
-    data = _read_json(rpath)
-    if data.get("status") in ("finalized", "escalated", "rejected"):
+    round_id = rpath.stem
+    with _get_lock(ai_root, f"consensus_{round_id}"):
+        data = _read_json(rpath)
+        if data.get("status") in ("finalized", "escalated", "rejected"):
+            return None
+        voter = vote["voter"]
+        if voter not in data.get("voters", []):
+            return None
+        votes = data.get("votes", {})
+        votes[voter] = {"vote": vote["vote"], "reason": vote.get("reason", ""), "ts": _now()}
+        data["votes"] = votes
+        decided = _decide_consensus(ai_root, data)
+        _write_json_atomic(rpath, data)
+        if decided:
+            _finalize_round_side_effects(ai_root, data)
+            return data
         return None
-    voter = vote["voter"]
-    if voter not in data.get("voters", []):
-        return None
-    votes = data.get("votes", {})
-    votes[voter] = {"vote": vote["vote"], "reason": vote.get("reason", ""), "ts": _now()}
-    data["votes"] = votes
-    decided = _decide_consensus(ai_root, data)
-    _write_json_atomic(rpath, data)
-    if decided:
-        _finalize_round_side_effects(ai_root, data)
-        return data
-    return None
 
 
 def _queue_vote_merge(ai_root: Path, round_id: str, voter: str, vote_val: str, reason: str) -> str:
