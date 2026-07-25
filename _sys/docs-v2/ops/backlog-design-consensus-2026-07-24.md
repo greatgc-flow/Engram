@@ -1443,7 +1443,81 @@ need the same fix.
     C2/C3 ContextGate test module gets created during implementation.
 
 **Status**: single-pass design sketches complete (reduced rigor, no
-round 2/3 per Tier-2 budget). Not applied this session.
+round 2/3 per Tier-2 budget). **Items 4+5 (peer_mgr.py concurrency +
+multi-file transactions) APPLIED + TESTED (2026-07-25)**; items 1-3, 6-11
+not applied this session.
+
+**Items 4+5 implementation**: `peer_mgr.py` was fully standalone (no `import
+hub`) — C1's `_mutation_lock_resource()`/`_get_lock()` are built around a
+`.ai/` runtime-state root, a different directory tree from `peer_mgr.py`'s
+`_sys/ai/*.json` CONFIG files, so "reuse C1's primitives" as literally
+stated in the sketch had no direct drop-in path. ag chose a self-contained
+reimplementation (avoiding a hub.py dependency) rather than importing hub.py
+as a library, replicating hub.py's own hard-won patterns from earlier this
+session: unique-temp-file + fsync + bounded-retry-on-PermissionError atomic
+writes, and a bounded retry around lock-file creation. Added a single
+operation-level lock (`_sys/ai/.lock/peer_mgr.lock`, one aggregate lock for
+all peer_mgr.py operations — confirmed the right tradeoff, all commands
+mutate the same shared registry files) covering each command's entire
+load-mutate-validate-save sequence. Added `PeerMgrTransaction`: stages every
+target file's new content + records its current sha256 as a CAS baseline,
+writes a durable transaction journal to `_sys/ai/.peer_mgr_txn/` BEFORE
+writing anything, re-validates every baseline immediately before commit
+(abort with nothing written on any mismatch), commits all targets, then
+clears the journal. A journal found in `staged`/`committing` state on a
+later invocation is auto-recovered (re-completes the interrupted write) if
+every target's current digest still matches either its baseline or its
+already-staged content; otherwise recovery refuses and blocks further
+mutating commands until `peer_mgr.py recover --force`. Applied to
+`cmd_suspend`/`cmd_resume`/`cmd_add`/`cmd_remove` (all touch multiple
+registry files).
+
+**Origin of this implementation**: same pattern as every draft this round —
+ag wrote the ~850-line rewrite directly and crashed before returning a text
+explanation. cc's cold review of the full file found and fixed one real
+bug: a CAS-rejected transaction was marked `status="rolled_back"` in its
+journal but the journal file was never deleted — since the recovery check
+only handles `"staged"`/`"committing"`, a `"rolled_back"` journal is
+silently ignored forever, meaning genuine CAS-conflict events (rare, but
+real — e.g. something else touching the same file concurrently) would leave
+dead journal files accumulating in `_peer_mgr_txn/` permanently. Fixed by
+deleting the journal immediately on a clean rollback (nothing was written,
+so there's no ambiguous state for a future recovery pass to resolve).
+Verified the pre-existing `test_peer_mgr_add.py`/`test_peer_mgr_missing_hub_nodes.py`
+(which predate this change) both still pass unmodified, plus a manual CLI
+smoke test (`status`, `recover`, a `suspend --dry-run` on a nonexistent
+peer) confirmed no stray lock/journal/temp files left behind in the real
+`_sys/ai/` tree.
+
+**Cross-verification** (ag, same-peer re-dispatch, told to attack its own
+code — this time actually spawning real subprocesses and writing scratch
+exploit scripts rather than just re-reading code) found **one serious real
+bug cc's own review missed**: the `BasicFileLock` fallback (used only if
+the third-party `filelock` package is unavailable) was **permanently and
+unconditionally broken** — `_get_lock()` always pre-created the lock file
+before constructing the lock object (a step meant to smooth over a real
+Windows transient-permission race, safe for the real `filelock` library,
+which tolerates the file already existing) — but `BasicFileLock`'s own
+`os.O_EXCL`-based acquisition REQUIRES the file to NOT already exist, so
+every single acquisition attempt raised `FileExistsError`, retried until
+the 10-second timeout, then raised `TimeoutError` — 100% reproducible
+regardless of actual contention. Currently latent (the `filelock` package
+is installed in this environment, so the real `FileLock` path is what
+actually runs), but a real landmine for any environment where it's missing
+(exactly the kind of gap a portable, dependency-light tool should not have).
+Fixed by only pre-creating the lock file on the real-`filelock` path;
+`BasicFileLock` creates and unlinks its own lock file, so pre-creating it
+was never needed there and actively broke it. New regression tests force
+the fallback path via `sys.modules["filelock"] = None` and confirm it both
+acquires under zero contention (the exact previously-broken case) and still
+provides real mutual exclusion against a second acquirer. ag's
+cross-verification also ran real multi-process concurrency (not just
+code-tracing), confirmed recovery correctness under a real simulated
+partial-write crash, and assessed the aggregate-lock and dry-run-skips-CAS-
+preview tradeoffs as acceptable/intentional.
+
+9 tests in `test_peer_mgr_c10.py`. Full suite: 1491 passed, 3 pre-existing
+unrelated failures (identical to baseline), 1 skipped.
 
 ---
 
