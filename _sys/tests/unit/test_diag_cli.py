@@ -1174,6 +1174,63 @@ def test_headroom_next_target_marks_weaker_tier_risk():
     assert "ag.opus" in text and "absent" in text
 
 
+def test_ask_history_usage_stats_excludes_reclassified_from_fail_pct(tmp_path):
+    """UNATTRIBUTED_GOVERNED_CHANGE entries are marked success=false by
+    hub.py but hub.py itself never health-penalizes the peer for them (the
+    peer completed the ask by writing files directly instead of returning
+    text). fail_pct must reflect genuine failures only, not this benign
+    reclassification -- otherwise a reliable peer is misreported as flaky."""
+    diag = load_diag()
+    now = datetime.now()
+    records = [
+        {"ts": now.isoformat(), "peer_id": "ag.deepthink", "profile_id": "ag.deepthink",
+         "success": True},
+        {"ts": now.isoformat(), "peer_id": "ag.deepthink", "profile_id": "ag.deepthink",
+         "success": False, "failure_reason": "UNATTRIBUTED_GOVERNED_CHANGE"},
+        {"ts": now.isoformat(), "peer_id": "ag.deepthink", "profile_id": "ag.deepthink",
+         "success": False, "failure_reason": "UNATTRIBUTED_GOVERNED_CHANGE"},
+        {"ts": now.isoformat(), "peer_id": "ag.deepthink", "profile_id": "ag.deepthink",
+         "success": False, "failure_reason": "empty_response"},
+    ]
+    ai_root = tmp_path / ".ai"
+    ai_root.mkdir()
+    with (ai_root / "ask_history.jsonl").open("w", encoding="utf-8") as f:
+        for rec in records:
+            f.write(json.dumps(rec) + "\n")
+
+    rows = diag._ask_history_usage_stats(ai_root=ai_root)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["count"] == 4
+    assert row["success"] == 1
+    assert row["failed"] == 1
+    assert row["reclassified"] == 2
+    # denominator excludes the 2 reclassified entries: 1 failed / 2 = 50%,
+    # not 1/4=25% (which would still be wrong) or 3/4=75% (naive count of
+    # all success=false entries).
+    assert row["fail_pct"] == 50.0
+
+
+def test_render_usage_shows_reclass_column(tmp_path):
+    diag = load_diag()
+    now = datetime.now()
+    records = [
+        {"ts": now.isoformat(), "peer_id": "ag.deepthink", "profile_id": "ag.deepthink",
+         "success": False, "failure_reason": "UNATTRIBUTED_GOVERNED_CHANGE"},
+    ]
+    ai_root = tmp_path / ".ai"
+    ai_root.mkdir()
+    with (ai_root / "ask_history.jsonl").open("w", encoding="utf-8") as f:
+        for rec in records:
+            f.write(json.dumps(rec) + "\n")
+
+    out = io.StringIO()
+    diag.render_usage(out, ai_root=ai_root)
+    text = out.getvalue()
+    assert "RECLASS" in text
+    assert "0.0%" in text  # fail_pct excludes the sole reclassified entry
+
+
 def test_routing_and_headroom_uses_explicit_narrow_and_wide_layouts(monkeypatch):
     diag = load_diag()
     snapshot = {

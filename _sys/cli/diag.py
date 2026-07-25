@@ -2443,10 +2443,25 @@ def render_recent_consumption(stdout=None, cost_log_path=None, limit=10):
 _USAGE_WINDOW_HOURS = 24
 
 
+# Reasons hub.py records as `success: false` in ask_history.jsonl but
+# deliberately does NOT health-penalize the dispatching peer for (see
+# hub.py's UNATTRIBUTED_GOVERNED_CHANGE handling: "the dispatching peer is
+# deliberately NEVER penalized"). A peer that writes its result directly to
+# governed files instead of returning text still completed the ask; only
+# admission is blocked pending reconciliation. Counting these as ordinary
+# failures in fail_pct contradicts hub's own policy and makes reliable
+# peers look far less reliable than they are.
+_RECLASSIFIED_NOT_A_FAILURE = {"UNATTRIBUTED_GOVERNED_CHANGE"}
+
+
 def _ask_history_usage_stats(hours=_USAGE_WINDOW_HOURS, ai_root=None):
     """Aggregate recent per-profile ask outcomes from .ai/ask_history.jsonl
     (measured, not guessed -- DIR-004). Returns rows sorted by ask count desc:
-    {"profile", "count", "success", "failed", "fail_pct", "last_ts"}.
+    {"profile", "count", "success", "failed", "reclassified", "fail_pct",
+    "last_ts"}. `fail_pct` is computed over genuine failures only --
+    `reclassified` entries (see _RECLASSIFIED_NOT_A_FAILURE) are tracked
+    separately and excluded from both the failure count and the fail_pct
+    denominator, matching hub.py's own no-penalty policy for them.
     Malformed/unparseable lines are skipped rather than failing the view."""
     root = Path(ai_root) if ai_root is not None else (PORTABLE_ROOT / ".ai")
     path = root / "ask_history.jsonl"
@@ -2476,11 +2491,14 @@ def _ask_history_usage_stats(hours=_USAGE_WINDOW_HOURS, ai_root=None):
         if ts is None or ts < cutoff:
             continue
         profile = str(rec.get("profile_id") or rec.get("peer_id") or "?")
-        row = stats.setdefault(profile, {"profile": profile, "count": 0,
-                                          "success": 0, "failed": 0, "last_ts": None})
+        row = stats.setdefault(profile, {"profile": profile, "count": 0, "success": 0,
+                                          "failed": 0, "reclassified": 0, "last_ts": None})
         row["count"] += 1
         if rec.get("success") is False:
-            row["failed"] += 1
+            if rec.get("failure_reason") in _RECLASSIFIED_NOT_A_FAILURE:
+                row["reclassified"] += 1
+            else:
+                row["failed"] += 1
         else:
             row["success"] += 1
         if row["last_ts"] is None or (ts_raw and ts_raw > row["last_ts"]):
@@ -2488,7 +2506,8 @@ def _ask_history_usage_stats(hours=_USAGE_WINDOW_HOURS, ai_root=None):
 
     rows = list(stats.values())
     for row in rows:
-        row["fail_pct"] = (row["failed"] / row["count"] * 100.0) if row["count"] else 0.0
+        denom = row["count"] - row["reclassified"]
+        row["fail_pct"] = (row["failed"] / denom * 100.0) if denom else 0.0
     rows.sort(key=lambda r: (-r["count"], r["profile"]))
     return rows
 
@@ -2503,13 +2522,13 @@ def render_usage(stdout=None, hours=_USAGE_WINDOW_HOURS, ai_root=None):
     if not rows:
         out.write("  (no asks recorded in window)\n")
         return
-    out.write(f"{'PROFILE':<16} {'COUNT':>5} {'OK':>5} {'FAIL':>5} {'FAIL%':>7}  LAST_ASK\n")
+    out.write(f"{'PROFILE':<16} {'COUNT':>5} {'OK':>5} {'FAIL':>5} {'FAIL%':>7} {'RECLASS':>7}  LAST_ASK\n")
     for row in rows:
         fail_pct = row["fail_pct"]
         marker = "!" if fail_pct >= 20.0 else " "
         out.write(
             f"{marker}{row['profile']:<15} {row['count']:>5} {row['success']:>5} "
-            f"{row['failed']:>5} {fail_pct:>6.1f}%  {row['last_ts'] or '-'}\n"
+            f"{row['failed']:>5} {fail_pct:>6.1f}% {row['reclassified']:>7}  {row['last_ts'] or '-'}\n"
         )
 
 
