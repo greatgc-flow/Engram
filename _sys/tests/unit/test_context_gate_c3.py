@@ -280,6 +280,25 @@ class TestC3IntegrationAskDispatch:
         assert plan.admission_limit > 8000
 
     def test_explicit_profile_oversized_ask_halts_zero_spawn(self, monkeypatch, tmp_path):
+        """Regression (found via C7 cross-verification, unrelated to C7 itself):
+        this test originally targeted "ag.effort" (1,048,576-token capacity)
+        with a ~285K-token query and passed `explicit_scope="explicit"` --
+        neither actually does what the test's name/intent implies.
+        `explicit_scope` only affects session-scope-key computation
+        (_compute_scope_key), it has nothing to do with the C2/C3
+        `explicit_profile` flag (computed from `_select_ask_profile()`'s
+        real routing decision). And the query was nowhere near ag.effort's
+        real ~996K-token failover threshold, so ContextGate never actually
+        rejected it -- the test was falling through to a REAL PTY dispatch
+        attempt and coincidentally exiting 1 only because every PTY failure
+        used to hard-exit 1 before C7 differentiated soft-skip-eligible
+        transient failures (code 7) from real hard failures. Fixed: target
+        "ag.gptoss" (8,000-token capacity, already proven to trigger
+        ContextGateError elsewhere in this file) with the SAME oversized
+        query used by the other explicit-profile test in this class, and
+        drop the non-functional explicit_scope kwarg -- a fully-qualified
+        `to="ag.gptoss"` is itself what makes _select_ask_profile mark the
+        dispatch explicit."""
         ai_root = tmp_path / ".ai"
         ai_root.mkdir()
 
@@ -295,17 +314,16 @@ class TestC3IntegrationAskDispatch:
 
         monkeypatch.setattr(subprocess, "Popen", _forbidden_spawn)
 
-        oversized_query = "x " * 500000
+        oversized_query = "x " * 35000
 
         with pytest.raises(SystemExit) as exc_info:
             hub.action_ask(
-                to="ag.effort",
+                to="ag.gptoss",
                 query=oversized_query,
                 query_file=None,
                 timeout_sec=10,
                 ai_root=ai_root,
                 origin="terminal",
-                explicit_scope="explicit",
             )
 
         assert exc_info.value.code == 1

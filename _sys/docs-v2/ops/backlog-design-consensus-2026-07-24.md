@@ -1167,8 +1167,81 @@ commit `74f2c11` introduced `SOFT_SKIP_EXIT=7` for routers to distinguish
 consumption. The audit doc's "fully designed in §6" reference was
 unsupported; this round is the actual first design.
 
-**Status**: design complete, unanimous, ready for TDD/implementation. Not
-applied this session.
+**Status**: **APPLIED + TESTED (2026-07-25)**. All 4 bugs implemented: new
+`_parse_lease_timestamp()` (correctly localizes a naive legacy timestamp as
+system-local wall time before converting to UTC — cc verified empirically
+on this real machine that `naive.astimezone()` preserves the wall-clock
+reading and correctly tags it with the real local offset before the UTC
+conversion, not a repeat of the timezone-shift bug class this session
+already hit twice elsewhere in C3/C5); `[:19]` truncation removed from
+`_lease_open()`/`_lease_renew()` (cc's own analysis: this specific
+truncation was a no-op on the write side since `_now()` never carries an
+offset to strip — the real value of this fix is establishing
+`_parse_lease_timestamp()` as the one correct read-side parser everywhere,
+not a previously-observable live corruption on the write side); `_lease_sweep()`
+now quarantines unparseable/missing timestamps (`status="invalid_timestamp"`)
+instead of silently skipping them forever, and validates a lease's PID is
+still alive before killing it; `_stream_process_output()`'s reader switched
+from a blocking `read(65536)` to `read1(4096)`/`os.read()` fallback with
+real per-chunk `last_chunk_at` tracking (not aggregate buffer-length growth)
+and reader-thread exceptions now raise a real `PipeReaderError` instead of
+being silently swallowed; escalation now closes the source lease
+(`status="escalated"`) before recursing on both PTY and Pipe paths, aborting
+escalation if the close itself fails; the real Pipe-transport transient-
+failure sites now exit `SOFT_SKIP_EXIT` (7) tagged `not_started` or
+`execution_uncertain`, `action_ask_all()` aggregates per-peer exit codes
+into the 3-way outcome the design specifies, and `_real_arbiter_invoker()`
+tags a soft-skipped arbiter child distinctly (`arbiter_soft_skipped`).
+
+**Origin of this implementation**: cx drafted the full implementation (per
+the user's explicit request to use cx's available credit coupons before
+they expire) — wrote the file directly and crashed before returning a text
+explanation, same pattern as most drafts this session, though cx's context
+was also near its ceiling (94%) by completion, possibly related. This was
+the first draft this session where cc's own cold review found zero bugs:
+all 15 of cx's own tests passed unmodified, including genuinely
+non-trivial real (unmocked) subprocess tests — one actually spawns a real
+child process emitting slow, tiny flushed chunks and proves the new reader
+doesn't falsely time it out (the exact scenario `read(65536)` used to get
+wrong), another uses a real `os.pipe()` to prove the raw-fallback path.
+
+**Cross-verification** (ag, chosen over cx for this round given cx's near-
+full context, and for genuine independence — told to focus specifically on
+the timezone and pipe-concurrency logic since those are the two problem
+classes this session has already gotten wrong twice before): confirmed the
+timezone fix, pipe-reader lock safety, `PipeReaderError` process-cleanup
+path, and escalation-abort cleanup path are all correct; found one real,
+low-severity gap (a lease opened just before an annual DST fall-back
+transition and checked for expiry just after it can have its cleanup
+delayed by up to 1 hour due to the naive local-time interpretation crossing
+the transition — a real but rare, non-safety-critical robustness limitation,
+accepted as-is rather than pulling in full IANA-timezone-database DST
+handling for an edge case this narrow) — and **one real, higher-severity
+bug cc's own review missed**: the PTY transport's `result.timed_out` and
+`result.transport_error` branches never checked `_TRANSIENT_REASONS` before
+hard-exiting (1), even though the sibling `result.exit_code != 0` branch
+correctly does, and even though `"terminal_timeout"` (the exact reason the
+`timed_out` branch assigns) IS a `_TRANSIENT_REASONS` member — an
+inconsistent PTY-only gap versus the Pipe transport's equivalent paths, all
+of which cx had correctly instrumented. Fixed by adding the same
+`_TRANSIENT_REASONS` check to both PTY branches, matching the existing
+sibling pattern exactly. 2 new regression tests. Chasing this fix through
+the full suite also surfaced a genuine, unrelated pre-existing bug in a C3
+test (`test_explicit_profile_oversized_ask_halts_zero_spawn`): it targeted
+`ag.effort` (1M+-token capacity) with a query nowhere near large enough to
+trigger `ContextGateError` for that profile, and passed an
+`explicit_scope="explicit"` kwarg that (despite its name) only affects
+session-scope-key computation and has nothing to do with the C2/C3
+`explicit_profile` flag — the test was silently falling through to a REAL
+PTY dispatch attempt and coincidentally passing only because every PTY
+failure used to hard-exit 1 uniformly before this fix differentiated soft-
+skip-eligible failures; fixed by retargeting the SAME query at `ag.gptoss`
+(8,000-token capacity, already proven to trigger the intended rejection
+elsewhere in the same file) and dropping the non-functional kwarg.
+
+19 tests in `test_process_lease_supervision_c7.py`. Full suite: 1517
+passed, 3 pre-existing unrelated failures (identical to baseline), 1
+skipped.
 
 ### C8 — FINAL DESIGN (unanimous, 2 rounds: cx draft w/ live CLI verification → ag reconciliation) — security-relevant
 

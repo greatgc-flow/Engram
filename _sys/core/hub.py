@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import errno
 import hashlib
+import io
 import json
 import os
 import queue
@@ -119,6 +120,14 @@ SOFT_SKIP_EXIT = 7
 
 # Runtime [ESCALATE] recursion ceiling for successful parsed ask outputs.
 RUNTIME_ESCALATION_DEPTH_CEILING = 2
+
+
+class ArbiterSoftSkippedError(RuntimeError):
+    """The arbiter subprocess was unavailable without producing an answer."""
+
+
+class PipeReaderError(RuntimeError):
+    """A stdout/stderr reader thread failed while supervising a child process."""
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1947,7 +1956,10 @@ def _ask_health_precheck(peer_id: str, ai_root: Path | None) -> None:
         
         if availability.get("gate_open") is False and isinstance(rls, dict) and rls.get("limited"):
             reset_at = rls.get("reset_at", "unknown time")
-            print(f"[HUB:SOFT-SKIP] {peer_id} rate-limited until {reset_at}")
+            print(
+                f"[HUB:SOFT-SKIP] {peer_id} category=not_started "
+                f"rate-limited until {reset_at}"
+            )
             sys.exit(SOFT_SKIP_EXIT)
             
         print(f"[HUB:SKIP] {peer_id} health blocked | status={status} reason={reason}", file=sys.stderr)
@@ -4456,34 +4468,51 @@ def _stream_process_output(proc, cmd, input_bytes, heartbeat_sec, zombie_timeout
     out_buf = bytearray()
     err_buf = bytearray()
     lock = threading.Lock()
+    reader_errors: list[tuple[str, BaseException]] = []
+    t0 = _clock()
+    last_chunk_at = t0
 
-    def _drain(stream, buf):
+    def _read_pipe_chunk(stream):
+        # Production Popen pipes are binary BufferedReader objects. read1()
+        # returns currently available bytes promptly; read(n) may wait for n
+        # bytes or EOF and hide a small flushed chunk from silence detection.
+        if isinstance(stream, io.BufferedReader):
+            return stream.read1(4096)
+        # Explicit raw-stream fallback. Never silently fall back to read(n),
+        # which would reintroduce the blocking behavior fixed here.
+        return os.read(stream.fileno(), 4096)
+
+    def _drain(stream_name, stream, buf):
+        nonlocal last_chunk_at
         if stream is None:
             return
         try:
             while True:
-                chunk = stream.read(65536)
+                chunk = _read_pipe_chunk(stream)
                 if not chunk:
                     break
                 if isinstance(chunk, str):
                     chunk = chunk.encode("utf-8", "replace")
                 with lock:
                     buf.extend(chunk)
-        except Exception:
-            pass
+                    last_chunk_at = _clock()
+        except Exception as exc:
+            with lock:
+                reader_errors.append((stream_name, exc))
 
-    t_out = threading.Thread(target=_drain, args=(proc.stdout, out_buf), daemon=True)
-    t_err = threading.Thread(target=_drain, args=(proc.stderr, err_buf), daemon=True)
+    t_out = threading.Thread(
+        target=_drain, args=("stdout", proc.stdout, out_buf), daemon=True
+    )
+    t_err = threading.Thread(
+        target=_drain, args=("stderr", proc.stderr, err_buf), daemon=True
+    )
     t_out.start()
     t_err.start()
 
-    t0 = _clock()
     deadline = t0 + (timeout_sec if timeout_sec > 0 else float("inf"))
     silent_warning_sec = _silent_startup_warning_sec()
-    last_activity = t0
     last_renew = t0
     startup_warning_emitted = False
-    last_len = 0
     slice_sec = max(0.02, min(0.2, float(heartbeat_sec)))
 
     while True:
@@ -4493,9 +4522,13 @@ def _stream_process_output(proc, cmd, input_bytes, heartbeat_sec, zombie_timeout
             raise subprocess.TimeoutExpired(cmd, timeout_sec)
         with lock:
             cur_len = len(out_buf) + len(err_buf)
-        if cur_len > last_len:
-            last_len = cur_len
-            last_activity = now
+            observed_last_chunk_at = last_chunk_at
+            reader_error = reader_errors[0] if reader_errors else None
+        if reader_error is not None:
+            stream_name, exc = reader_error
+            raise PipeReaderError(
+                f"{stream_name} reader failed: {type(exc).__name__}: {exc}"
+            ) from exc
         if (
             silent_warning_sec > 0
             and not startup_warning_emitted
@@ -4509,7 +4542,7 @@ def _stream_process_output(proc, cmd, input_bytes, heartbeat_sec, zombie_timeout
         # process finished AND streams fully drained → done
         if proc.poll() is not None and not t_out.is_alive() and not t_err.is_alive():
             break
-        if now - last_activity >= zombie_timeout_sec:
+        if now - observed_last_chunk_at >= zombie_timeout_sec:
             _kill_process_tree(proc.pid)
             raise subprocess.TimeoutExpired(cmd, zombie_timeout_sec)
         if ai_root and lease_id and now - last_renew >= heartbeat_sec:
@@ -5490,7 +5523,12 @@ def invoke_arbiter(ai_root, decision, context, config, invoker, now=None):
     try:
         verdict_text = invoker(arbiter, condensed)
     except Exception as exc:
-        return {"error": "invoker_failed", "detail": str(exc)[:200], "arbiter": arbiter}
+        error_tag = (
+            "arbiter_soft_skipped"
+            if isinstance(exc, ArbiterSoftSkippedError)
+            else "invoker_failed"
+        )
+        return {"error": error_tag, "detail": str(exc)[:200], "arbiter": arbiter}
     record = snapshot.build_final_opinion_record(
         round_id=(context or {}).get("round_id"),
         arbiter=arbiter,
@@ -5680,6 +5718,10 @@ def _real_arbiter_invoker(ai_root):
                  "--to", str(arbiter_id), "--query-file", str(qf)],
                 capture_output=True, text=True, timeout=timeout_sec,
             )
+            if proc.returncode == SOFT_SKIP_EXIT:
+                raise ArbiterSoftSkippedError(
+                    f"arbiter process soft-skipped: {(proc.stderr or '')[:200]}"
+                )
             if proc.returncode != 0:
                 raise RuntimeError(f"arbiter process exited with code {proc.returncode}: {(proc.stderr or '')[:200]}")
             out = proc.stdout or ""
@@ -5691,6 +5733,8 @@ def _real_arbiter_invoker(ai_root):
             if not reply:
                 raise RuntimeError(f"arbiter {arbiter_id} returned no usable reply")
             return reply
+        except ArbiterSoftSkippedError:
+            raise
         except Exception as exc:
             raise RuntimeError(f"arbiter invoke failed: {exc}")
         finally:
@@ -6509,6 +6553,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
 
         result: "_PtyAskResult | None" = None
         lease_status = "open"
+        lease_closed = False
         staged = False
         staged_path: Path | None = None
         pending_success: "_PendingAskSuccess | None" = None
@@ -6588,6 +6633,18 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     ai_root, to, reason, elapsed, _resolve_profile_id(to)
                 )
                 _update_pty_thread(f"failed ({reason})")
+                # C7 (cross-verification finding): terminal_timeout IS a
+                # _TRANSIENT_REASONS member, matching the sibling
+                # result.exit_code!=0 block below -- this block previously
+                # always hard-failed instead, an inconsistent PTY-only gap
+                # in soft-skip classification.
+                if reason in _TRANSIENT_REASONS:
+                    print(
+                        f"\n[HUB:SOFT-SKIP] {to} "
+                        f"category=execution_uncertain terminal timeout after {elapsed}s; "
+                        "automatic retry suppressed"
+                    )
+                    sys.exit(SOFT_SKIP_EXIT)
                 print(f"[HUB:ERROR] {detail}", file=sys.stderr)
                 sys.exit(1)
 
@@ -6601,6 +6658,19 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     ai_root, to, reason, elapsed, _resolve_profile_id(to)
                 )
                 _update_pty_thread(f"failed ({reason})")
+                # C7 (cross-verification finding): same gap as the timed_out
+                # block above -- a transient transport_error (e.g. a rate
+                # limit hit while spawning/running the PTY child) must
+                # soft-skip like the sibling exit_code!=0 block does.
+                if reason in _TRANSIENT_REASONS:
+                    rls = extra.get("rate_limit_state", {})
+                    reset_at = rls.get("reset_at", "unknown time") if isinstance(rls, dict) else "unknown time"
+                    print(
+                        f"\n[HUB:SOFT-SKIP] {to} "
+                        f"category=execution_uncertain rate-limited until {reset_at}; "
+                        "automatic retry suppressed"
+                    )
+                    sys.exit(SOFT_SKIP_EXIT)
                 print(f"[HUB:ERROR] {result.transport_error}", file=sys.stderr)
                 sys.exit(1)
 
@@ -6620,7 +6690,11 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                 if reason in _TRANSIENT_REASONS:
                     rls = extra.get("rate_limit_state", {})
                     reset_at = rls.get("reset_at", "unknown time") if isinstance(rls, dict) else "unknown time"
-                    print(f"\n[HUB:SOFT-SKIP] {to} rate-limited until {reset_at}")
+                    print(
+                        f"\n[HUB:SOFT-SKIP] {to} "
+                        f"category=execution_uncertain rate-limited until {reset_at}; "
+                        "automatic retry suppressed"
+                    )
                     sys.exit(SOFT_SKIP_EXIT)
                 print(f"[HUB:ERROR] {requested_to} exited {ec_label}", file=sys.stderr)
                 sys.exit(1)
@@ -6707,6 +6781,17 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
             )
             if escalation_target:
                 print(f"[HUB:ESCALATE] {to} -> {escalation_target}", file=sys.stderr)
+                # Close the completed lower-tier attempt before recursion. If
+                # ownership validation or persistence fails, the exception
+                # aborts escalation rather than launching a second attempt
+                # while the source lease still appears open.
+                _lease_close(
+                    ai_root,
+                    result.lease_id,
+                    result.pid,
+                    status="escalated",
+                )
+                lease_closed = True
                 # C1 pass 2: pass the ORIGINAL ask_id through so the escalated
                 # attempt shares the same AskGuardRecord/lease lifecycle
                 # instead of silently minting a new one (cx's cross-
@@ -6758,7 +6843,12 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
             # close error must surface (not be silently swallowed) without
             # masking whatever exception is already propagating through this
             # finally block.
-            if result is not None and ai_root and result.lease_id:
+            if (
+                not lease_closed
+                and result is not None
+                and ai_root
+                and result.lease_id
+            ):
                 try:
                     _lease_close(ai_root, result.lease_id, result.pid, lease_status)
                 except LeaseOwnershipError as _lease_exc:
@@ -6777,6 +6867,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     heartbeat_sec, lease_timeout_sec, zombie_timeout_sec = _lease_cfg(to)
     lease_status = "open"
     lease_id: str | None = None
+    lease_closed = False
     t0 = time.monotonic()
     proc = None  # ensure defined for finally
     pending_success: "_PendingAskSuccess | None" = None
@@ -6950,8 +7041,12 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     if reason in _TRANSIENT_REASONS:
                         rls = extra.get("rate_limit_state", {})
                         reset_at = rls.get("reset_at", "unknown time") if isinstance(rls, dict) else "unknown time"
-                        print(f"[HUB:GATE] {to} rate-limited until {reset_at}")
-                        sys.exit(0)
+                        print(
+                            f"[HUB:SOFT-SKIP] {to} "
+                            f"category=execution_uncertain rate-limited until {reset_at}; "
+                            "automatic retry suppressed"
+                        )
+                        sys.exit(SOFT_SKIP_EXIT)
                     print(f"[HUB:ERROR] {requested_to} exited {proc.returncode}\n{clean_err}", file=sys.stderr)
                     sys.exit(proc.returncode)
             else:
@@ -6966,8 +7061,12 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                 if reason in _TRANSIENT_REASONS:
                     rls = extra.get("rate_limit_state", {})
                     reset_at = rls.get("reset_at", "unknown time") if isinstance(rls, dict) else "unknown time"
-                    print(f"[HUB:GATE] {to} rate-limited until {reset_at}")
-                    sys.exit(0)
+                    print(
+                        f"[HUB:SOFT-SKIP] {to} "
+                        f"category=execution_uncertain rate-limited until {reset_at}; "
+                        "automatic retry suppressed"
+                    )
+                    sys.exit(SOFT_SKIP_EXIT)
                 sys.exit(proc.returncode)
 
         elif proc.returncode != 0:
@@ -6982,8 +7081,12 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
             if reason in _TRANSIENT_REASONS:
                 rls = extra.get("rate_limit_state", {})
                 reset_at = rls.get("reset_at", "unknown time") if isinstance(rls, dict) else "unknown time"
-                print(f"[HUB:GATE] {to} rate-limited until {reset_at}")
-                sys.exit(0)
+                print(
+                    f"[HUB:SOFT-SKIP] {to} "
+                    f"category=execution_uncertain rate-limited until {reset_at}; "
+                    "automatic retry suppressed"
+                )
+                sys.exit(SOFT_SKIP_EXIT)
             print(f"[HUB:ERROR] {requested_to} exited {proc.returncode}\n{clean_err}", file=sys.stderr)
             sys.exit(1)
         elif not output.strip():
@@ -7030,6 +7133,17 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
             )
             if escalation_target:
                 print(f"[HUB:ESCALATE] {to} -> {escalation_target}", file=sys.stderr)
+                # The source child has completed, so close its lease before
+                # recursively dispatching the higher tier. A close failure
+                # aborts recursion; lease_closed suppresses the outer finally's
+                # normal close after a successful escalation close.
+                _lease_close(
+                    ai_root,
+                    lease_id,
+                    proc.pid,
+                    status="escalated",
+                )
+                lease_closed = True
                 # C1 pass 2: pass the ORIGINAL ask_id through so the escalated
                 # attempt shares the same AskGuardRecord/lease lifecycle
                 # instead of silently minting a new one (cx's cross-
@@ -7092,8 +7206,12 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         _surface_pre_dispatch_failure(
             ai_root, to, "sandbox_spawn_denied", recovery_peer=health_peer
         )
-        print(f"[HUB:GATE] {to} sandbox denied spawn (transient) — reroute/failover", file=sys.stderr)
-        sys.exit(0)
+        print(
+            f"[HUB:SOFT-SKIP] {to} category=not_started "
+            "sandbox denied spawn (transient); policy-approved failover eligible",
+            file=sys.stderr,
+        )
+        sys.exit(SOFT_SKIP_EXIT)
     except Exception as e:
         elapsed = int(time.monotonic() - t0)
         lease_status = "failed"
@@ -7111,8 +7229,19 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         if reason in _TRANSIENT_REASONS:
             rls = extra.get("rate_limit_state", {})
             reset_at = rls.get("reset_at", "unknown time") if isinstance(rls, dict) else "unknown time"
-            print(f"[HUB:GATE] {to} rate-limited until {reset_at}")
-            sys.exit(0)
+            soft_skip_category = (
+                "execution_uncertain" if proc is not None else "not_started"
+            )
+            retry_note = (
+                "automatic retry suppressed"
+                if proc is not None
+                else "policy-approved failover eligible"
+            )
+            print(
+                f"[HUB:SOFT-SKIP] {to} category={soft_skip_category} "
+                f"rate-limited until {reset_at}; {retry_note}"
+            )
+            sys.exit(SOFT_SKIP_EXIT)
         print(f"[HUB:ERROR] ask 실패: {e}", file=sys.stderr)
         sys.exit(1)
     except BaseException as exc:
@@ -7128,7 +7257,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         pid = proc.pid if proc is not None else -1
         if proc is not None and proc.returncode is None:
             _kill_process_tree(proc)
-        if lease_id:
+        if lease_id and not lease_closed:
             try:
                 _lease_close(ai_root, lease_id, pid, lease_status)
             except LeaseOwnershipError as _lease_exc:
@@ -7194,7 +7323,7 @@ def action_ask_all(query: str, query_file: str | None, timeout_sec: int, ai_root
 
     hub_py = Path(__file__)
     py_exe = sys.executable
-    results: dict[str, str] = {}
+    results: dict[str, tuple[int, str]] = {}
     lock = threading.Lock()
 
     def _ask_one(peer_id: str) -> None:
@@ -7207,18 +7336,21 @@ def action_ask_all(query: str, query_file: str | None, timeout_sec: int, ai_root
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
                                timeout=(timeout_sec if timeout_sec > 0 else None), env=process_env)
+            exit_code = int(r.returncode)
             out = (r.stdout or "").strip()
             err = (r.stderr or "").strip()
             combined = out + (f"\n[STDERR] {err}" if err and not quiet else "")
         except subprocess.TimeoutExpired:
+            exit_code = 1
             combined = f"[TIMEOUT after {timeout_sec}s]"
         except Exception as exc:
+            exit_code = 1
             combined = f"[ERROR] {exc}"
         finally:
             try: tmp.unlink()
             except Exception: pass
         with lock:
-            results[peer_id] = combined
+            results[peer_id] = (exit_code, combined)
 
     threads = [threading.Thread(target=_ask_one, args=(p,), daemon=True) for p in peers]
     print(f"[HUB] ask-all → {', '.join(peers)}", file=sys.stderr)
@@ -7232,7 +7364,25 @@ def action_ask_all(query: str, query_file: str | None, timeout_sec: int, ai_root
         print(f"\n{sep}")
         print(f"  PEER: {peer_id.upper()}")
         print(sep)
-        print(results.get(peer_id, "[NO RESPONSE]"))
+        exit_code, response = results.get(peer_id, (1, "[NO RESPONSE]"))
+        if exit_code == SOFT_SKIP_EXIT:
+            print(f"[SOFT-SKIP] {peer_id} returned no answer")
+        print(response)
+
+    exit_codes = [
+        results.get(peer_id, (1, "[NO RESPONSE]"))[0]
+        for peer_id in peers
+    ]
+    if any(code == 0 for code in exit_codes):
+        return
+    hard_failures = [
+        code for code in exit_codes
+        if code not in (0, SOFT_SKIP_EXIT)
+    ]
+    if hard_failures:
+        hard_code = hard_failures[0]
+        sys.exit(hard_code if hard_code > 0 else 1)
+    sys.exit(SOFT_SKIP_EXIT)
 
 
 def action_ask_coordinator(ai_root: Path, query: str, query_file: str | None, timeout_sec: int, from_peer: str, quiet: bool = False, output_file: str | None = None) -> None:
@@ -10366,6 +10516,34 @@ class LeaseOwnershipError(Exception):
     surfacing it."""
 
 
+def _parse_lease_timestamp(value, *, local_timezone=None) -> datetime:
+    """Parse a process-lease timestamp as aware UTC.
+
+    Process leases written before C7 used naive ISO strings produced from local
+    wall time. Preserve that meaning: localize naive values before conversion
+    to UTC. Offset-aware values retain their represented instant.
+    """
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("missing lease timestamp")
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"invalid lease timestamp: {value!r}") from exc
+    if parsed.tzinfo is None:
+        if local_timezone is None:
+            parsed = parsed.astimezone()
+        else:
+            parsed = parsed.replace(tzinfo=local_timezone)
+    return parsed.astimezone(timezone.utc)
+
+
+def _validated_live_lease_pid(value) -> int | None:
+    """Return a positive, currently-live PID, otherwise None."""
+    if type(value) is not int or value <= 0:
+        return None
+    return value if _pid_alive(value) else None
+
+
 def _lease_open(ai_root: Path | None, peer_id: str, pid: int, lease_timeout_sec: int, ask_id: str | None = None, ask_query_file: str | None = None) -> str | None:
     """Returns the new lease_id (used as the leases.json dict key), or None if
     ai_root is falsy. T83: keyed by a fresh uuid4, not peer_id (old bug:
@@ -10377,8 +10555,9 @@ def _lease_open(ai_root: Path | None, peer_id: str, pid: int, lease_timeout_sec:
     state = _read_json(ai_root / "state.json") if (ai_root / "state.json").exists() else {}
     room_id = state.get("room_id")
     started = _now()
-    from datetime import timedelta
-    expires = (datetime.fromisoformat(started) + timedelta(seconds=lease_timeout_sec)).isoformat()[:19]
+    expires = (
+        datetime.fromisoformat(started) + timedelta(seconds=lease_timeout_sec)
+    ).isoformat()
     lease_id = str(uuid.uuid4())
     entry = {
         "ask_id": ask_id or _short_id("ask-"),
@@ -10404,9 +10583,10 @@ def _lease_renew(ai_root: Path | None, lease_id: str | None, pid: int, lease_tim
     _lease_open had no ownership check at all)."""
     if not ai_root or not lease_id:
         return
-    from datetime import timedelta
     now = _now()
-    expires = (datetime.fromisoformat(now) + timedelta(seconds=lease_timeout_sec)).isoformat()[:19]
+    expires = (
+        datetime.fromisoformat(now) + timedelta(seconds=lease_timeout_sec)
+    ).isoformat()
     with _get_lock(ai_root, "leases"):
         data = _read_json(_leases_path(ai_root)) if _leases_path(ai_root).exists() else {}
         entry = data.get(lease_id)
@@ -10492,35 +10672,68 @@ def _lease_sweep(ai_root: Path | None) -> None:
     """Kill orphaned open leases whose expires_at has passed. Updates health to STALE."""
     if not ai_root or not _leases_path(ai_root).exists():
         return
-    now_dt = datetime.fromisoformat(_now())
+    now_dt = _parse_lease_timestamp(_now())
     expired: list[dict] = []
+    invalid_timestamps: list[dict] = []
     with _get_lock(ai_root, "leases"):
         data = _read_json(_leases_path(ai_root))
         changed = False
         for lease_id, entry in data.items():
             if entry.get("status") != "open":
                 continue
-            expires_str = entry.get("expires_at", "")
-            if not expires_str:
-                continue
+            expires_str = entry.get("expires_at")
             try:
-                if datetime.fromisoformat(expires_str) < now_dt:
-                    entry["status"] = "expired"
-                    changed = True
-                    expired.append(dict(entry, lease_id=lease_id))
-            except Exception:
-                pass
+                expires_dt = _parse_lease_timestamp(expires_str)
+            except (TypeError, ValueError) as exc:
+                entry["status"] = "invalid_timestamp"
+                entry["quarantined"] = True
+                entry["quarantine_reason"] = "invalid_timestamp"
+                entry["invalid_timestamp_field"] = "expires_at"
+                entry["quarantined_at"] = _now()
+                invalid_timestamps.append(
+                    {
+                        "lease_id": lease_id,
+                        "peer_id": entry.get("peer_id", "?"),
+                        "pid": entry.get("pid"),
+                        "detail": str(exc),
+                    }
+                )
+                changed = True
+                continue
+            if expires_dt < now_dt:
+                entry["status"] = "expired"
+                changed = True
+                expired.append(dict(entry, lease_id=lease_id))
         if changed:
             _write_json(_leases_path(ai_root), data)
     # Slow operations and operations that may acquire other locks must not run
     # while leases.lock is held.
+    for invalid in invalid_timestamps:
+        print(
+            f"[HUB:WARN] lease {invalid['lease_id']} quarantined "
+            f"(reason=invalid_timestamp, peer={invalid['peer_id']}, "
+            f"pid={invalid['pid']}): {invalid['detail']}",
+            file=sys.stderr,
+        )
+        _log_p2p(
+            "WARN",
+            f"lease {invalid['lease_id']} quarantined: invalid_timestamp",
+            from_node="HUB",
+        )
     for entry in expired:
         peer_id = entry.get("peer_id", "?")
-        pid = entry.get("pid")
-        if pid:
+        raw_pid = entry.get("pid")
+        pid = _validated_live_lease_pid(raw_pid)
+        if pid is not None:
             # Reuse the shared tree-killer: it is psutil-None safe (crashes were
             # possible here when psutil was unavailable) and reaps the whole tree.
             _kill_process_tree(pid)
+        elif type(raw_pid) is not int or raw_pid <= 0:
+            print(
+                f"[HUB:WARN] expired lease {entry.get('lease_id')} has invalid "
+                f"pid={raw_pid!r}; kill skipped",
+                file=sys.stderr,
+            )
         expires_str = entry.get("expires_at", "")
         _record_ask_failure(
             peer_id,
@@ -10529,7 +10742,12 @@ def _lease_sweep(ai_root: Path | None) -> None:
             None,
             ai_root,
         )
-        _log_p2p("SWEEP", f"lease expired for {peer_id} pid={pid}", from_node="HUB")
+        _log_p2p(
+            "SWEEP",
+            f"lease expired for {peer_id} pid={raw_pid} "
+            f"kill={'issued' if pid is not None else 'skipped'}",
+            from_node="HUB",
+        )
 
 
 def _maildir_path(ai_root: Path) -> Path:
@@ -11201,13 +11419,13 @@ def action_lease_status(ai_root: Path) -> None:
         return
     print(f"{'Peer':<8} {'Status':<10} {'PID':<8} {'Alive':<6} {'Expires':<20} {'Heartbeat':<20}")
     print("-" * 78)
-    now_dt = datetime.fromisoformat(_now())
+    now_dt = _parse_lease_timestamp(_now())
     for entry in data.values():
         peer_id = entry.get("peer_id", "?")
         pid = entry.get("pid", 0)
         status = entry.get("status", "?")
-        expires = entry.get("expires_at", "")[:19]
-        hb = (entry.get("heartbeat_at") or "")[:19]
+        expires = str(entry.get("expires_at") or "")
+        hb = str(entry.get("heartbeat_at") or "")
         alive = "?"
         if pid:
             try:
@@ -11215,12 +11433,12 @@ def action_lease_status(ai_root: Path) -> None:
             except Exception:
                 alive = "ERR"
         expired_flag = ""
-        if status == "open" and expires:
+        if status == "open":
             try:
-                if datetime.fromisoformat(expires) < now_dt:
+                if _parse_lease_timestamp(expires) < now_dt:
                     expired_flag = " !"
-            except Exception:
-                pass
+            except (TypeError, ValueError):
+                expired_flag = " !INVALID_TIMESTAMP"
         print(f"{peer_id:<8} {status + expired_flag:<10} {pid:<8} {alive:<6} {expires:<20} {hb:<20}")
 
 

@@ -202,6 +202,7 @@ def test_sweep_expires_only_expired_same_peer_lease(
     killed = []
     failures = []
     monkeypatch.setattr(hub, "_now", lambda: "2040-01-01T00:00:01")
+    monkeypatch.setattr(hub, "_pid_alive", lambda pid: pid == PID_A)
     monkeypatch.setattr(hub, "_kill_process_tree", killed.append)
     monkeypatch.setattr(
         hub,
