@@ -1052,8 +1052,54 @@ test spanning both.
 CLOSED to `human_gate` rather than reconstructing eligibility from current
 health — closed historical rounds are left untouched.
 
-**Status**: design complete, unanimous, ready for TDD/implementation. Not
-applied this session.
+**Status**: **APPLIED + TESTED (2026-07-25)**. `action_consensus_propose()`
+now performs one health-observation pass and persists a `quorum_snapshot`
+(captured_at, collab_rate, decision_rule, required_voters, excluded_voters
++reasons, per-voter observations). `_decide_consensus()` rewritten to use
+ONLY the frozen snapshot — never re-reads live health or live `collab_rate`
+for an in-progress round; a legacy round with no `quorum_snapshot` fails
+closed to `human_gate`. Vote immutability added to both `action_consensus_vote()`
+and `_apply_vote_merge()` (identical resubmit = idempotent no-op, differing
+resubmit = `VOTE_ALREADY_CAST`). `action_consensus_sweep()` now piggybacks
+alongside the existing `_lease_sweep()` calls in `action_init_session()` and
+`_action_ask_inner()`. `protocol.md:194` corrected (removed the stale "STALE"
+exclusion claim).
+
+**Bonus fix, outside the original C6 scope but verified real and correct**:
+while implementing voter eligibility, ag noticed `_healthy_peer()` was
+missing a `gate_open` check — exactly what `test_stale_voter_eligibility.py::test_closed_gate_excluded_even_when_stale_allowed`
+has been asserting (and failing) since before this session started, one of
+the "4 pre-existing unrelated failures" cited in every commit this session.
+Fixed (`if not details.get("availability", {}).get("gate_open", True): return False`
+before the existing STALE/RED check). cc independently traced all 5 real
+callers of `_healthy_peer()` and confirmed each one correctly WANTS a
+gate-closed peer excluded (coordinator health, peer routing, the new
+consensus-eligibility call, role assignment, task failover) — no caller
+relied on the old (buggy) permissive behavior. ag's cross-verification
+independently re-audited the same 5 call sites and the fail-open default
+(`.get(..., True)` when the field is absent) and confirmed SAFE. This
+closes a real, previously-flagged-as-baseline-noise bug — the pre-existing
+failure count for this session's baseline drops from 4 to 3 (the remaining
+3 are all in `test_model_profiles.py`, unrelated stale expected context-
+window numbers).
+
+**Cross-verification** (ag, same-peer re-dispatch, told to attack its own
+code): confirmed the `_healthy_peer()` fix's blast radius is safe across
+all 5 callers; confirmed quorum-snapshot construction is exception-safe
+(a health-check exception during the one-pass loop aborts under the
+`consensus_propose` lock, never leaves a partial/corrupt round file);
+confirmed vote-immutability's lock scoping has no TOCTOU gap (the same
+per-round lock covers the immutability check and the write in both the
+direct-vote and broker-merge paths) and correctly treats a pre-C6 legacy
+vote dict shape as already-cast; assessed the sweep piggyback's real
+per-ask cost as bounded/negligible; found one real, if minor, test-coverage
+gap (no test covered "a peer RED at PROPOSAL time is correctly excluded and
+survivors still finalize," distinct from the mid-round-RED-immunity case)
+and closed it directly with a new test
+(`test_propose_red_peer_excluded_and_survivors_finalize`).
+
+Full suite: 1482 passed, 3 pre-existing unrelated failures (down from 4 —
+`test_stale_voter_eligibility.py`'s failure is now fixed), 1 skipped.
 
 ### C7 — FINAL DESIGN (unanimous, 3 rounds: ag draft → cx empirical critique → ag reconciliation)
 

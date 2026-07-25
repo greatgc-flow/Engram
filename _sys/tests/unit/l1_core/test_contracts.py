@@ -328,6 +328,14 @@ def _round():
         "round_id": "r-test", "subject": "s", "proposed_by": "cc",
         "status": "voting", "voters": ["cc", "ag", "cx"],
         "votes": {"cc": None, "ag": {"vote": "agree", "reason": "x", "ts": "t"}, "cx": None},
+        "quorum_snapshot": {
+            "captured_at": "2026-07-25T10:00:00+09:00",
+            "collab_rate": 0,
+            "decision_rule": "majority",
+            "required_voters": ["cc", "ag", "cx"],
+            "excluded_voters": {},
+            "observations": {"cc": {"status": "GREEN", "eligible": True}, "ag": {"status": "GREEN", "eligible": True}, "cx": {"status": "GREEN", "eligible": True}},
+        },
     }
 
 

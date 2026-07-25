@@ -1282,6 +1282,8 @@ def _write_handoff(session_dir: Path, sections: dict) -> None:
 
 def action_init_session(ai_root: Path, agent: str, room_id: str | None = None) -> None:
     _lease_sweep(ai_root)
+    if ai_root:
+        action_consensus_sweep(ai_root)
     sid = _short_id(agent[:1])
     with _get_lock(ai_root, "state"):
         state = _read_json(ai_root / "state.json")
@@ -2495,7 +2497,9 @@ def _healthy_peer(peer_id: str, ai_root: Path | None = None, allow_stale: bool =
     (sweep / Tier-0 drain), an empty one is a confusing failure. RED and a closed
     gate (root or every enabled profile) are ineligible in both modes and are
     now folded into `_peer_effective_health()`'s own RED determination."""
-    status, _ = _peer_effective_health(peer_id, ai_root=ai_root)
+    status, details = _peer_effective_health(peer_id, ai_root=ai_root)
+    if isinstance(details, dict) and not details.get("availability", {}).get("gate_open", True):
+        return False
     blocked_statuses = {"RED"} if allow_stale else {"RED", "STALE"}
     return status not in blocked_statuses
 
@@ -6224,6 +6228,8 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         timeout_sec = 0  # unlimited; heartbeat loop monitors for dead processes
 
     _lease_sweep(ai_root)
+    if ai_root:
+        action_consensus_sweep(ai_root)
     _ask_health_precheck(health_peer, ai_root)
     if origin == "terminal":
         query = _build_terminal_relay_frame(
@@ -7293,10 +7299,39 @@ def action_consensus_propose(ai_root: Path, subject: str, voters: list[str], pro
         # forces human_gate the first time a RED voter is seen, whether RED at
         # proposal time or RED mid-round -- one code path, not two.
         snapshot_voters = list(voters)
+        required_voters = []
+        excluded_voters = {}
+        observations = {}
+        for v in snapshot_voters:
+            st, _ = _peer_effective_health(v, ai_root=ai_root)
+            eligible = _healthy_peer(v, ai_root=ai_root, allow_stale=True)
+            observations[v] = {"status": st, "eligible": eligible}
+            if eligible:
+                required_voters.append(v)
+            else:
+                excluded_voters[v] = {"status": st, "reason": f"health_{st.lower()}"}
+        current_collab_rate = int(_load_protocol_cfg().get("collab_rate", {}).get("current", 0) or 0)
+        decision_rule = "unanimous" if current_collab_rate >= 10 else "majority"
+        quorum_snapshot = {
+            "captured_at": _now(),
+            "collab_rate": current_collab_rate,
+            "decision_rule": decision_rule,
+            "required_voters": required_voters,
+            "excluded_voters": excluded_voters,
+            "observations": observations,
+        }
             
     round_id = _short_id("r-")
-    data = {"round_id": round_id, "subject": subject, "proposed_by": proposed_by, "proposed_at": _now(), 
-            "status": "voting", "voters": snapshot_voters, "votes": {v: None for v in snapshot_voters}}
+    data = {
+        "round_id": round_id,
+        "subject": subject,
+        "proposed_by": proposed_by,
+        "proposed_at": _now(),
+        "status": "voting",
+        "voters": snapshot_voters,
+        "votes": {v: None for v in snapshot_voters},
+        "quorum_snapshot": quorum_snapshot,
+    }
     _write_json(ai_root / "consensus" / f"{round_id}.json", data)
     _log_p2p("PROPOSE", f"ID={round_id} Subject='{subject}'", from_node=proposed_by)
     print(f"[HUB] PROPOSE {round_id} | subject={subject} | voters={','.join(snapshot_voters)}")
@@ -7306,37 +7341,43 @@ def _decide_consensus(ai_root: Path, data: dict) -> bool:
     """Apply the close/finalize decision to a round dict whose votes are already
     set. Mutates data['status']/['outcome'] when the round closes. Returns True
     if the round is now closed. Single source of decision logic, shared by the
-    direct vote path and the host-side vote-merge commit."""
+    direct vote path and the host-side vote-merge commit.
+
+    Cluster C6: Uses ONLY quorum_snapshot's frozen required_voters, collab_rate,
+    and decision_rule captured at round start. Live peer health is NEVER re-read.
+    Legacy rounds without quorum_snapshot fail CLOSED to human_gate."""
+    quorum_snap = data.get("quorum_snapshot")
+    if not quorum_snap:
+        # Legacy round without quorum_snapshot field fails CLOSED to human_gate
+        data["status"], data["outcome"] = "escalated", "human_gate"
+        return True
+
+    req_voters = quorum_snap.get("required_voters", [])
+    total = len(req_voters)
+    snap_collab_rate = int(quorum_snap.get("collab_rate", 0))
+
     votes = data.get("votes", {})
-    total = len(data.get("voters", []))
-    cast = sum(1 for v in votes.values() if v is not None)
-    has_disagree = any(v is not None and v["vote"] == "disagree" for v in votes.values())
-    # Only a RED voter (genuinely unavailable) forces mid-round escalation. STALE
-    # is aged bookkeeping, not a failure — STALE voters are eligible to vote
-    # (see _healthy_peer allow_stale), so their presence must NOT force human_gate;
-    # let the normal cast==total path finalize. Completes the r-34dc STALE-voter
-    # fix (voter derivation alone was insufficient — the decision logic escalated).
-    mid_round_closed = any(
-        _peer_effective_health(v, ai_root=ai_root)[0] == "RED"
-        for v in data.get("voters", [])
-    )
-    if not (has_disagree or cast == total or total < 2 or mid_round_closed):
+    cast = sum(1 for v in req_voters if votes.get(v) is not None)
+    has_disagree = any(d is not None and isinstance(d, dict) and d.get("vote") == "disagree" for d in votes.values())
+
+    if not (has_disagree or cast == total or total < 2):
         return False
-    has_agree = any(v is not None and v["vote"] == "agree" for v in votes.values())
-    all_agree = (cast == total) and all(v is not None and v["vote"] == "agree" for v in votes.values())
+
+    has_agree = any(votes.get(v) is not None and votes[v].get("vote") == "agree" for v in req_voters)
+    all_agree = (cast == total) and all(votes.get(v) is not None and votes[v].get("vote") == "agree" for v in req_voters)
     proposer = data.get("proposed_by", "")
     non_proposer_agrees = sum(
-        1 for n, d in votes.items()
-        if d is not None and d["vote"] == "agree" and n != proposer
+        1 for v in req_voters
+        if (d := votes.get(v)) is not None and d.get("vote") == "agree" and v != proposer
     )
-    current_collab_rate = int(_load_protocol_cfg().get("collab_rate", {}).get("current", 0) or 0)
+
     if has_disagree:
         data["status"], data["outcome"] = "rejected", "disagree"
-    elif total < 2 or mid_round_closed or not has_agree or non_proposer_agrees == 0:
+    elif total < 2 or not has_agree or non_proposer_agrees == 0:
         data["status"], data["outcome"] = "escalated", "human_gate"
     elif all_agree:
         data["status"], data["outcome"] = "finalized", "unanimous"
-    elif current_collab_rate >= 10:
+    elif snap_collab_rate >= 10:
         data["status"], data["outcome"] = "escalated", "human_gate_unanimity_failed"
     else:
         data["status"], data["outcome"] = "finalized", "majority"
@@ -7376,6 +7417,18 @@ def _apply_vote_merge(ai_root: Path, rpath: Path, vote: dict) -> dict | None:
         if voter not in data.get("voters", []):
             return None
         votes = data.get("votes", {})
+        existing = votes.get(voter)
+        if existing is not None:
+            # Immutability check
+            existing_vote = existing.get("vote") if isinstance(existing, dict) else None
+            existing_reason = existing.get("reason", "") if isinstance(existing, dict) else ""
+            if existing_vote == vote["vote"] and existing_reason == vote.get("reason", ""):
+                # Idempotent no-op
+                return None
+            else:
+                # Differing resubmission rejected
+                print(f"[HUB:WARN] broker merge rejected: VOTE_ALREADY_CAST for voter '{voter}' on round '{round_id}'", file=sys.stderr)
+                return None
         votes[voter] = {"vote": vote["vote"], "reason": vote.get("reason", ""), "ts": _now()}
         data["votes"] = votes
         decided = _decide_consensus(ai_root, data)
@@ -7425,6 +7478,16 @@ def action_consensus_vote(ai_root: Path, round_id: str, voter: str, vote_val: st
             print(f"[HUB:ERR] {voter} is not a registered voter for {round_id}", file=sys.stderr)
             sys.exit(1)
         votes = data.get("votes", {})
+        existing = votes.get(voter)
+        if existing is not None:
+            existing_vote = existing.get("vote") if isinstance(existing, dict) else None
+            existing_reason = existing.get("reason", "") if isinstance(existing, dict) else ""
+            if existing_vote == vote_val and existing_reason == reason:
+                print(f"[HUB] VOTE {round_id} idempotent no-op | voter={voter} already cast identical vote")
+                return
+            else:
+                print(f"[HUB:ERR] VOTE_ALREADY_CAST: voter '{voter}' has already cast vote '{existing_vote}' for round '{round_id}' (vote immutability enforced)", file=sys.stderr)
+                sys.exit(1)
         votes[voter] = {"vote": vote_val, "reason": reason, "ts": _now()}
         data["votes"] = votes
         total, cast = len(data["voters"]), sum(1 for v in votes.values() if v is not None)

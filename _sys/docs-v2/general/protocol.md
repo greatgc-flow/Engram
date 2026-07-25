@@ -191,7 +191,7 @@ PROPOSE → VOTE → FINALIZE
 | `abstain` | Offline auto-abstain after `offline_auto_abstain_minutes` |
 
 ### 4.4 R:10 Rules & Quorum Authority
-- All **gate-OPEN** registered voters (per the round-start snapshot — see Gate-Based Quorum below, D-08g/INV-28) MUST explicitly `agree` before FINALIZE. RED/STALE/quarantined peers are excluded from the snapshot denominator N — NOT counted as silent approval.
+- All **gate-OPEN** registered voters (per the round-start snapshot — see Gate-Based Quorum below, D-08g/INV-28) MUST explicitly `agree` before FINALIZE. RED/quarantined peers are excluded from the snapshot denominator N — NOT counted as silent approval.
 - Offline auto-abstain does NOT satisfy agreement; a gate-OPEN required voter that goes offline mid-round with no prior `agree` blocks finalization → escalate to Human (Tier 0).
 - Any explicit `disagree` from a gate-OPEN voter blocks; requires resolution or Human override.
 - PTY peers (ag): write vote directly to `.ai/consensus/{round_id}.json` OR relay via `hub.py send --to cc` (NEVER `hub.py ask` — PTY deadlock risk).

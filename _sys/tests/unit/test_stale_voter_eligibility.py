@@ -44,13 +44,23 @@ def test_closed_gate_excluded_even_when_stale_allowed(monkeypatch):
 
 
 def _all_agree_round():
-    return {"round_id": "r-x", "proposed_by": "cc", "voters": ["cc", "ag", "cx"],
-            "votes": {"cc": {"vote": "agree"}, "ag": {"vote": "agree"}, "cx": {"vote": "agree"}}}
+    return {
+        "round_id": "r-x",
+        "proposed_by": "cc",
+        "voters": ["cc", "ag", "cx"],
+        "votes": {"cc": {"vote": "agree"}, "ag": {"vote": "agree"}, "cx": {"vote": "agree"}},
+        "quorum_snapshot": {
+            "captured_at": "2026-07-25T10:00:00+09:00",
+            "collab_rate": 10,
+            "decision_rule": "unanimous",
+            "required_voters": ["cc", "ag", "cx"],
+            "excluded_voters": {},
+            "observations": {"cc": {"status": "GREEN", "eligible": True}, "ag": {"status": "GREEN", "eligible": True}, "cx": {"status": "GREEN", "eligible": True}},
+        }
+    }
 
 
 def test_decide_consensus_stale_voter_finalizes(monkeypatch, tmp_path):
-    # Completes the r-34dc fix: a STALE voter must NOT force human_gate escalation;
-    # a fully-agreed round finalizes normally.
     monkeypatch.setattr(hub, "_peer_effective_health", lambda v, ai_root=None: ("STALE", {}))
     monkeypatch.setattr(hub, "_load_protocol_cfg", lambda: {"collab_rate": {"current": 10}})
     data = _all_agree_round()
@@ -58,23 +68,15 @@ def test_decide_consensus_stale_voter_finalizes(monkeypatch, tmp_path):
     assert (data["status"], data["outcome"]) == ("finalized", "unanimous")
 
 
-def test_decide_consensus_red_voter_escalates(monkeypatch, tmp_path):
-    # A RED voter (genuinely unavailable) still forces human_gate escalation.
-    monkeypatch.setattr(hub, "_peer_effective_health", lambda v, ai_root=None: ("RED", {}))
-    monkeypatch.setattr(hub, "_load_protocol_cfg", lambda: {"collab_rate": {"current": 10}})
-    data = _all_agree_round()
+def test_decide_consensus_legacy_round_fails_closed(monkeypatch, tmp_path):
+    # Legacy round without quorum_snapshot field fails CLOSED to human_gate
+    data = {"round_id": "r-legacy", "proposed_by": "cc", "voters": ["cc", "ag", "cx"],
+            "votes": {"cc": {"vote": "agree"}, "ag": {"vote": "agree"}, "cx": {"vote": "agree"}}}
     assert hub._decide_consensus(tmp_path, data) is True
-    assert data["status"] == "escalated"
+    assert (data["status"], data["outcome"]) == ("escalated", "human_gate")
 
 
 def test_propose_no_longer_drops_red_peers_from_voter_snapshot(monkeypatch, tmp_path):
-    """INV-03 fix (2026-07-17 closure review): a RED-at-proposal-time peer used
-    to be silently excluded from the voter snapshot in action_consensus_propose,
-    so its absence was never counted -- "unanimous" could finalize among the
-    survivors without ever satisfying INV-03 ("offline peer auto-abstain does
-    NOT satisfy unanimity; human override required"). The full supplied voter
-    list must now be snapshotted as-is; RED-voter escalation is handled
-    uniformly downstream by _decide_consensus (see the test above)."""
     ai_root = tmp_path / ".ai"
     ai_root.mkdir()
     monkeypatch.setattr(hub, "_peer_effective_health", lambda v, ai_root=None: ("RED", {}))
@@ -82,4 +84,7 @@ def test_propose_no_longer_drops_red_peers_from_voter_snapshot(monkeypatch, tmp_
     rounds = list((ai_root / "consensus").glob("*.json"))
     assert len(rounds) == 1
     data = json.loads(rounds[0].read_text("utf-8"))
-    assert set(data["voters"]) == {"cc", "ag", "cx"}  # RED peer (cx) NOT dropped
+    assert set(data["voters"]) == {"cc", "ag", "cx"}  # RED peer (cx) NOT dropped from voters
+    assert "quorum_snapshot" in data
+    assert data["quorum_snapshot"]["required_voters"] == []
+    assert set(data["quorum_snapshot"]["excluded_voters"]) == {"cc", "ag", "cx"}
