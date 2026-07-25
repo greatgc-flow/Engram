@@ -52,38 +52,48 @@ def interactive_profile_banner(peer_id: str) -> str | None:
         return None
 
 
-def _append_profile_defaults(args: list[str], peer_id: str) -> list[str]:
+def _missing_profile_tokens(args: list[str], peer_id: str) -> list[str]:
+    """Return the profile-default tokens not already present in args, as a
+    flat list preserving (flag, value) pair grouping. Shared by
+    _append_profile_defaults (append-at-end callers) and the cx root-scope
+    insertion path (which needs the missing tokens without appending)."""
     defaults = _default_profile_args(peer_id)
     if not defaults:
-        return args
-    out = list(args)
-    has_model = _has_flag(out, {"--model", "-m"})
-    has_effort = _has_flag(out, {"--effort"}) or any(
-        str(arg).startswith("model_reasoning_effort=") for arg in out
+        return []
+    has_model = _has_flag(args, {"--model", "-m"})
+    has_effort = _has_flag(args, {"--effort"}) or any(
+        str(arg).startswith("model_reasoning_effort=") for arg in args
     )
+    missing: list[str] = []
     index = 0
     while index < len(defaults):
         item = defaults[index]
         value = defaults[index + 1] if index + 1 < len(defaults) else None
         if item in {"--model", "-m"} and value is not None:
             if not has_model:
-                out.extend([item, value])
+                missing.extend([item, value])
             index += 2
             continue
         if item == "--effort" and value is not None:
             if not has_effort:
-                out.extend([item, value])
+                missing.extend([item, value])
             index += 2
             continue
         if item == "-c" and value is not None:
             if not has_effort:
-                out.extend([item, value])
+                missing.extend([item, value])
             index += 2
             continue
-        if item not in out:
-            out.append(item)
+        if item not in args and item not in missing:
+            missing.append(item)
         index += 1
-    return out
+    return missing
+
+
+def _append_profile_defaults(args: list[str], peer_id: str) -> list[str]:
+    missing = _missing_profile_tokens(args, peer_id)
+    return list(args) + missing if missing else args
+
 
 def _has_flag(args: list[str], names: set[str]) -> bool:
     for arg in args:
@@ -91,15 +101,91 @@ def _has_flag(args: list[str], names: set[str]) -> bool:
             return True
         if any(arg.startswith(name + "=") for name in names):
             return True
+        # Concatenated short-flag form (e.g. "-sread-only" for "-s", "-anever"
+        # for "-a") — live-verified accepted by the real codex CLI. Only
+        # applies to genuine 2-char short flags to avoid false-matching an
+        # unrelated long option that happens to share a prefix.
+        if any(
+            len(name) == 2 and name.startswith("-") and not name.startswith("--")
+            and arg.startswith(name) and arg != name
+            for name in names
+        ):
+            return True
     return False
 
 
 def _append_missing(args: list[str], defaults: list[str]) -> list[str]:
+    """Append default flags to args if the flag token itself is missing.
+
+    Evaluates flag-value pairs (e.g. ['-s', 'workspace-write']) atomically based
+    on the presence of the flag token, preventing a bare positional string value
+    from falsely suppressing default flag insertion.
+    """
     out = list(args)
-    for item in defaults:
-        if item not in out:
-            out.append(item)
+    i = 0
+    while i < len(defaults):
+        item = defaults[i]
+        if item.startswith("-") and i + 1 < len(defaults) and not defaults[i + 1].startswith("-"):
+            val = defaults[i + 1]
+            if not _has_flag(out, {item}):
+                out.extend([item, val])
+            i += 2
+        else:
+            if not _has_flag(out, {item}):
+                out.append(item)
+            i += 1
     return out
+
+
+def _consumes_next_value(token: str) -> bool:
+    """Heuristic for "this flag-like token takes a following value" — same
+    convention already used by _append_missing's pairing logic: a flag
+    token followed by a non-flag-looking token is treated as a pair."""
+    return token.startswith("-") and "=" not in token
+
+
+def _insert_root_flags(args: list[str], flags: list[str], agent_commands: set[str] | None = None) -> list[str]:
+    """Insert default flags at root scope (before the subcommand or first
+    positional prompt), value-aware so an existing (flag, value) pair like
+    ['--model', 'gpt-5'] is never split apart and a value that happens to
+    equal an agent-command name (e.g. '--model exec') is never
+    misidentified as the subcommand itself.
+
+    Codex CLI requires root options like '-s workspace-write' to precede the
+    subcommand token; callers are responsible for excluding anything at/after
+    a literal '--' terminator (see _split_terminator) before calling this.
+    """
+    out = list(args)
+    insert_idx = len(out)
+    i = 0
+    while i < len(out):
+        arg = out[i]
+        if agent_commands and arg in agent_commands:
+            insert_idx = i
+            break
+        if arg.startswith("-"):
+            if _consumes_next_value(arg) and i + 1 < len(out) and not out[i + 1].startswith("-"):
+                i += 2
+            else:
+                i += 1
+            continue
+        insert_idx = i
+        break
+
+    out[insert_idx:insert_idx] = flags
+    return out
+
+
+def _split_terminator(args: list[str]) -> tuple[list[str], list[str]]:
+    """Split argv at the first literal '--' option terminator. Everything
+    from '--' onward (inclusive) is positional per POSIX/clap convention and
+    must never be scanned for flags or have defaults inserted into it —
+    live-verified against codex.cmd (a trailing --help after '--' is passed
+    through literally, not interpreted)."""
+    if "--" in args:
+        idx = args.index("--")
+        return args[:idx], args[idx:]
+    return list(args), []
 
 
 def _is_help_or_version(args: list[str]) -> bool:
@@ -128,6 +214,12 @@ def apply_security_semantics(cmd: list[str], security_contract: dict) -> list[st
             "--ask-for-approval",
             "-a",
         }):
+            # Append, not root-scope insert: this function has no production
+            # caller today and is peer-agnostic, whereas the root-scope
+            # requirement was empirically verified only for codex's CLI
+            # grammar (see peer_default_args' cx branch). Generalizing an
+            # unverified assumption here risks producing invalid syntax for
+            # whichever peer eventually wires this in.
             out = _append_missing(out, ["-s", "workspace-write"])
     return out
 
@@ -139,11 +231,16 @@ _CLAUDE_COMMANDS = {
 
 _GEMINI_COMMANDS = {"mcp", "extensions", "extension", "skills", "skill", "hooks", "hook", "gemma"}
 
-_CODEX_COMMANDS = {
-    "exec", "e", "review", "login", "logout", "mcp", "plugin", "mcp-server",
-    "app-server", "remote-control", "app", "completion", "update", "doctor",
-    "sandbox", "debug", "apply", "a", "resume", "archive", "unarchive",
-    "fork", "cloud", "exec-server", "features", "help",
+# C8-A Split: Agent-launching commands that need security & profile defaults vs. pure administrative/service commands.
+_CODEX_AGENT_COMMANDS = {
+    "exec", "e", "review", "resume", "fork",
+}
+
+_CODEX_ADMIN_COMMANDS = {
+    "login", "logout", "mcp", "plugin", "mcp-server", "app-server",
+    "remote-control", "app", "completion", "update", "doctor", "sandbox",
+    "debug", "apply", "a", "archive", "unarchive", "cloud", "exec-server",
+    "features", "help", "delete",
 }
 
 _AGY_COMMANDS = {"changelog", "help", "install", "models", "plugin", "plugins", "update"}
@@ -156,17 +253,18 @@ def _starts_with_command(args: list[str], commands: set[str]) -> bool:
 def peer_default_args(peer_id: str, args: list[str]) -> list[str]:
     """Return argv with peer-specific full-autonomy defaults appended.
 
-    Explicit user safety/approval flags win. Defaults are appended so positional
-    prompts and subcommands keep their original order.
+    Explicit user safety/approval flags win. Defaults are placed appropriately
+    for CLI grammar. Anything at/after a literal '--' terminator is left
+    completely untouched (never scanned, never a defaults-insertion target).
     """
-    current = list(args)
-    if _is_help_or_version(current):
-        return current
+    head, tail = _split_terminator(list(args))
+    if _is_help_or_version(head):
+        return head + tail
 
     if peer_id == "cc":
-        if _starts_with_command(current, _CLAUDE_COMMANDS):
-            return current
-        if not _has_flag(current, {
+        if _starts_with_command(head, _CLAUDE_COMMANDS):
+            return head + tail
+        if not _has_flag(head, {
             "--dangerously-skip-permissions",
             "--allow-dangerously-skip-permissions",
             "--permission-mode",
@@ -174,36 +272,50 @@ def peer_default_args(peer_id: str, args: list[str]) -> list[str]:
             "--allowedTools",
             "--allowed-tools",
         }):
-            current = _append_missing(current, ["--dangerously-skip-permissions"])
-        return _append_profile_defaults(current, "cc")
+            head = _append_missing(head, ["--dangerously-skip-permissions"])
+        return _append_profile_defaults(head, "cc") + tail
 
     if peer_id == "gc":
-        if _starts_with_command(current, _GEMINI_COMMANDS):
-            return current
-        if _has_flag(current, {"--approval-mode", "-y", "--yolo", "--sandbox", "-s"}):
-            return current if "--skip-trust" in current else current + ["--skip-trust"]
-        return _append_missing(current, ["--approval-mode", "auto_edit", "--skip-trust"])
+        if _starts_with_command(head, _GEMINI_COMMANDS):
+            return head + tail
+        if _has_flag(head, {"--approval-mode", "-y", "--yolo", "--sandbox", "-s"}):
+            result = head if "--skip-trust" in head else head + ["--skip-trust"]
+            return result + tail
+        return _append_missing(head, ["--approval-mode", "auto_edit", "--skip-trust"]) + tail
 
     if peer_id == "cx":
-        if _starts_with_command(current, _CODEX_COMMANDS):
-            return current
-        if not _has_flag(current, {
+        # Pure administrative commands bypass defaults entirely
+        if _starts_with_command(head, _CODEX_ADMIN_COMMANDS):
+            return head + tail
+
+        # Agent-launching commands (exec, review, resume, fork) AND a plain
+        # root prompt both need every default inserted at the SAME root-scope
+        # point, in one pass — codex rejects '--model'/'-c ...' appended
+        # after the subcommand exactly like it rejects '-s workspace-write'
+        # there (live-verified: 'codex review --uncommitted --model X' exits
+        # 2 with "unexpected argument '--model'"). Appending profile defaults
+        # separately at the end (the old behavior) reintroduces that bug.
+        missing: list[str] = []
+        if not _has_flag(head, {
             "--dangerously-bypass-approvals-and-sandbox",
             "--sandbox",
             "-s",
             "--ask-for-approval",
             "-a",
         }):
-            current = _append_missing(current, ["-s", "workspace-write"])
-        return _append_profile_defaults(current, "cx")
+            missing.extend(["-s", "workspace-write"])
+        missing.extend(_missing_profile_tokens(head, "cx"))
+        if missing:
+            head = _insert_root_flags(head, missing, agent_commands=_CODEX_AGENT_COMMANDS)
+        return head + tail
 
     if peer_id == "ag":
         # ag is active and requires PTY routing on Windows. DIR-002 currently
         # keeps skip-permissions for non-interactive trusted IPC.
-        if _starts_with_command(current, _AGY_COMMANDS):
-            return current
-        if not _has_flag(current, {"--dangerously-skip-permissions", "--sandbox"}):
-            current = _append_missing(current, ["--dangerously-skip-permissions"])
-        return _append_profile_defaults(current, "ag")
+        if _starts_with_command(head, _AGY_COMMANDS):
+            return head + tail
+        if not _has_flag(head, {"--dangerously-skip-permissions", "--sandbox"}):
+            head = _append_missing(head, ["--dangerously-skip-permissions"])
+        return _append_profile_defaults(head, "ag") + tail
 
-    return current
+    return head + tail
