@@ -2554,6 +2554,147 @@ def _human_interface_ts_fresh(value: str | None, now: datetime, freshness_minute
     return (n - ts).total_seconds() <= freshness_minutes * 60
 
 
+def resolve_terminal_identity(state: dict, now: datetime | None = None) -> dict:
+    """C5: Resolve the active human-interface terminal identity and lease status.
+
+    Pure function, O(1), state-only, no I/O, no health checks, no disk reads.
+    Returns dict:
+        {
+            "peer": str | None,
+            "profile": str | None,
+            "lease_id": str | None,
+            "status": "FRESH" | "EXPIRED" | "VACANT" | "MISMATCH",
+            "is_active_terminal": bool,
+            "reason": str,
+        }
+    Missing or malformed evidence is NEVER implicitly treated as fresh (fail-closed).
+    """
+    state = state if isinstance(state, dict) else {}
+    legacy_peer = state.get("human_interface_peer")
+    assignment = state.get("human_interface_assignment")
+
+    if not assignment and not legacy_peer:
+        return {
+            "peer": None,
+            "profile": None,
+            "lease_id": None,
+            "status": "VACANT",
+            "is_active_terminal": False,
+            "reason": "no_terminal_assigned",
+        }
+
+    if not isinstance(assignment, dict):
+        return {
+            "peer": legacy_peer,
+            "profile": None,
+            "lease_id": None,
+            "status": "VACANT",
+            "is_active_terminal": False,
+            "reason": "missing_assignment_lease",
+        }
+
+    lease_peer = assignment.get("peer")
+    lease_profile = assignment.get("profile")
+    lease_id = assignment.get("lease_id")
+    expires_at_str = assignment.get("expires_at")
+
+    # Key presence, not truthiness: a caller passing close_reason="" (or any
+    # other falsy-but-present value) must still be treated as closed. A real
+    # close also overwrites expires_at to "now", so this mostly guards against
+    # a lease closed by direct/external state mutation that didn't also touch
+    # expires_at, not action_terminal_close() itself.
+    if "close_reason" in assignment and assignment.get("close_reason") is not None:
+        return {
+            "peer": lease_peer,
+            "profile": lease_profile,
+            "lease_id": lease_id,
+            "status": "EXPIRED",
+            "is_active_terminal": False,
+            "reason": f"lease_closed_{assignment.get('close_reason')}",
+        }
+
+    if not lease_peer:
+        return {
+            "peer": legacy_peer,
+            "profile": lease_profile,
+            "lease_id": lease_id,
+            "status": "VACANT",
+            "is_active_terminal": False,
+            "reason": "assignment_peer_missing",
+        }
+
+    # human_interface_peer is canonical (design: "full stop"). A lease can
+    # outlive its own freshness window after the canonical pointer is cleared
+    # (e.g. _normalize_runtime_files nulling human_interface_peer for a
+    # disabled/retired peer without also clearing human_interface_assignment)
+    # -- treat a cleared/missing legacy pointer as disagreeing with a present
+    # lease_peer too, not just an explicit different value.
+    if str(legacy_peer or "").lower() != str(lease_peer).lower():
+        return {
+            "peer": lease_peer,
+            "profile": lease_profile,
+            "lease_id": lease_id,
+            "status": "MISMATCH",
+            "is_active_terminal": False,
+            "reason": f"lease_peer_{lease_peer}_mismatch_with_legacy_{legacy_peer!r}",
+        }
+
+    n = now if isinstance(now, datetime) else _ensure_aware(None)
+    # NOT _parse_human_interface_ts(): that helper's _parse_compact_ts() fast
+    # path matches the first 19 chars of a value against a naive
+    # "%Y-%m-%dT%H:%M:%S" format BEFORE datetime.fromisoformat() ever runs,
+    # silently discarding a real UTC offset (e.g. "...13:10:48+09:00" parses
+    # as naive 13:10:48, later stamped UTC -- a 9-hour error on every single
+    # lease on a non-UTC machine, confirmed live). expires_at is always
+    # written by this module's own code via datetime.isoformat() on an
+    # _ensure_aware() datetime, so it is always a well-formed ISO 8601 string
+    # -- parse it directly and correctly instead of through the lossy helper.
+    try:
+        expires_dt = datetime.fromisoformat(str(expires_at_str)) if expires_at_str else None
+    except (TypeError, ValueError):
+        expires_dt = None
+
+    if expires_dt is None:
+        return {
+            "peer": lease_peer,
+            "profile": lease_profile,
+            "lease_id": lease_id,
+            "status": "EXPIRED",
+            "is_active_terminal": False,
+            "reason": "missing_or_invalid_expiry_timestamp",
+        }
+
+    from datetime import timezone as _timezone
+    if expires_dt.tzinfo is None:
+        expires_dt = expires_dt.replace(tzinfo=_timezone.utc)
+    else:
+        expires_dt = expires_dt.astimezone(_timezone.utc)
+
+    if n.tzinfo is None:
+        n = n.replace(tzinfo=_timezone.utc)
+    else:
+        n = n.astimezone(_timezone.utc)
+
+    if n >= expires_dt:
+        return {
+            "peer": lease_peer,
+            "profile": lease_profile,
+            "lease_id": lease_id,
+            "status": "EXPIRED",
+            "is_active_terminal": False,
+            "reason": f"lease_expired_at_{expires_at_str}",
+        }
+
+    return {
+        "peer": lease_peer,
+        "profile": lease_profile,
+        "lease_id": lease_id,
+        "status": "FRESH",
+        "is_active_terminal": True,
+        "reason": "lease_active_and_fresh",
+    }
+
+
 def _human_interface_assignment_fresh(
     ai_root: Path,
     peer: str,
@@ -2886,9 +3027,9 @@ def _snapshot_failover_choice(ai_root: Path | None, exclude: list[str]) -> tuple
         full_exclude.update(balancer_cfg.get("bulk_exclude_profiles", []) or [])
         if ai_root:
             state = _read_json(ai_root / "state.json")
-            terminal_peer = state.get("human_interface_peer")
-            if terminal_peer:
-                full_exclude.add(terminal_peer)
+            term_info = resolve_terminal_identity(state)
+            if term_info["is_active_terminal"] and term_info["peer"]:
+                full_exclude.add(term_info["peer"])
                 
         row = snapshot.snapshot_failover_target(exclude=list(full_exclude), snapshot=snap)
         if ai_root:
@@ -5780,7 +5921,8 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     try:
                         state_path = ai_root / "state.json" if ai_root else Path(".ai/state.json")
                         state = _read_json(state_path)
-                        dispatcher_peer = state.get("human_interface_peer")
+                        term_info = resolve_terminal_identity(state)
+                        dispatcher_peer = term_info["peer"] if term_info["is_active_terminal"] else None
                         if dispatcher_peer:
                             dispatcher_prof = _human_interface_profile_for_peer(_orch_for_gate, dispatcher_peer)
                             d_raw_profile = next(
@@ -7954,15 +8096,52 @@ def action_leader_claim(ai_root: Path, agent: str, reason: str = "", domain: str
     print(f"[HUB] LEADER-CLAIM {agent} | status=PENDING | challenge_until={challenge_until}")
 
 
-def action_terminal_handoff(ai_root: Path, current_peer: str, next_peer: str, reason: str = "") -> None:
+def _default_profile_for_peer(peer_id: str) -> str | None:
+    """Return the primary default profile for a peer ID if configured."""
+    try:
+        peers = _load_peers()
+        cfg = peers.get(peer_id, {})
+        profiles = cfg.get("profiles", [])
+        if isinstance(profiles, list) and profiles:
+            return profiles[0]
+    except Exception:
+        pass
+    return None
+
+
+def action_terminal_handoff(
+    ai_root: Path,
+    current_peer: str,
+    next_peer: str,
+    reason: str = "",
+    profile: str | None = None,
+    owner_pid: int | None = None,
+) -> dict:
     """Atomically transfers human-interface and active-coordinator leadership to a new peer."""
     state_path = ai_root / "state.json"
-    
+    now_dt = _ensure_aware(None)
+    freshness_minutes = _human_interface_freshness_minutes()
+    expires_dt = now_dt + timedelta(minutes=freshness_minutes)
+
+    lease_id = f"term-lease-{uuid.uuid4().hex[:12]}"
+    prof = profile or _default_profile_for_peer(next_peer)
+
+    assignment = {
+        "peer": next_peer,
+        "profile": prof,
+        "lease_id": lease_id,
+        "assigned_at": _now(),
+        "last_heartbeat_at": _now(),
+        "expires_at": expires_dt.isoformat(),
+        "owner_pid": owner_pid or os.getpid(),
+    }
+
     with _get_lock(ai_root, "state"):
         state = _read_json(state_path)
-        
+
         state["human_interface_peer"] = next_peer
         state["active_console_peer"] = next_peer
+        state["human_interface_assignment"] = assignment
         state["leader"] = next_peer
         state["active_coordinator"] = next_peer
         
@@ -7985,8 +8164,79 @@ def action_terminal_handoff(ai_root: Path, current_peer: str, next_peer: str, re
     entry = f"[{_now()}] [TERMINAL-HANDOFF] {current_peer} handed off terminal duty to {next_peer}. Reason: {reason or 'none'}"
     _append_handoff_item(ai_root, "ACTIVE_THREADS", entry)
     
-    _log_p2p("TERMINAL-HANDOFF", f"from={current_peer} to={next_peer} reason={reason or 'none'}", from_node=current_peer)
-    print(f"[HUB] TERMINAL-HANDOFF complete | to={next_peer} | reason={reason or 'none'}")
+    _log_p2p("TERMINAL-HANDOFF", f"from={current_peer} to={next_peer} reason={reason or 'none'} lease={lease_id}", from_node=current_peer)
+    print(f"[HUB] TERMINAL-HANDOFF complete | to={next_peer} | lease={lease_id} | reason={reason or 'none'}")
+    return assignment
+
+
+
+
+def action_terminal_heartbeat(
+    ai_root: Path,
+    peer: str,
+    lease_id: str,
+    owner_pid: int | None = None,
+) -> bool:
+    """C5: CAS-protected terminal lease heartbeat renewal."""
+    state_path = ai_root / "state.json"
+    with _get_lock(ai_root, "state"):
+        state = _read_json(state_path)
+        assignment = state.get("human_interface_assignment")
+        if not isinstance(assignment, dict):
+            print(f"[HUB:WARN] terminal-heartbeat failed: no assignment lease found", file=sys.stderr)
+            return False
+
+        curr_lease_id = assignment.get("lease_id")
+        if curr_lease_id != lease_id:
+            print(
+                f"[HUB:WARN] terminal-heartbeat CAS rejection for peer={peer}: "
+                f"stale lease_id={lease_id} != active lease_id={curr_lease_id}",
+                file=sys.stderr,
+            )
+            return False
+
+        now_dt = _ensure_aware(None)
+        freshness_minutes = _human_interface_freshness_minutes()
+        expires_dt = now_dt + timedelta(minutes=freshness_minutes)
+
+        assignment["last_heartbeat_at"] = _now()
+        assignment["expires_at"] = expires_dt.isoformat()
+        if owner_pid:
+            assignment["owner_pid"] = owner_pid
+
+        state["human_interface_assignment"] = assignment
+        state["updated_at"] = _now()
+        _write_state(ai_root, state)
+
+    print(f"[HUB] TERMINAL-HEARTBEAT renewed | lease={lease_id} | expires={assignment['expires_at']}")
+    return True
+
+
+def action_terminal_close(
+    ai_root: Path,
+    lease_id: str,
+    reason: str = "closed",
+) -> bool:
+    """C5: Atomically close/expire an active terminal session lease via CAS."""
+    state_path = ai_root / "state.json"
+    with _get_lock(ai_root, "state"):
+        state = _read_json(state_path)
+        assignment = state.get("human_interface_assignment")
+        if not isinstance(assignment, dict):
+            return False
+
+        if assignment.get("lease_id") != lease_id:
+            print(f"[HUB:WARN] terminal-close CAS rejection: stale lease_id={lease_id}", file=sys.stderr)
+            return False
+
+        assignment["expires_at"] = _now()
+        assignment["close_reason"] = reason
+        state["human_interface_assignment"] = assignment
+        state["updated_at"] = _now()
+        _write_state(ai_root, state)
+
+    print(f"[HUB] TERMINAL-CLOSE complete | lease={lease_id} | reason={reason}")
+    return True
 
 
 def action_discover(ai_root: Path, needs: str, effort: str = "mid") -> None:
@@ -10418,18 +10668,23 @@ def action_terminal_duty_sweep(ai_root: Path) -> None:
     """Watchdog: sweeps for a confirmed stale/silent terminal and selects a safe replacement via terminal-handoff."""
     state_path = ai_root / "state.json"
     state = _read_json(state_path)
-    current_terminal = state.get("human_interface_peer")
-    if not current_terminal:
-        return
-        
-    freshness_minutes = _human_interface_freshness_minutes()
     now = _ensure_aware(None)
-    fresh, reason = _human_interface_assignment_fresh(ai_root, current_terminal, now, freshness_minutes)
-    
-    if fresh:
+
+    term_info = resolve_terminal_identity(state, now=now)
+    if term_info["is_active_terminal"]:
         return
-        
-    print(f"[HUB:SWEEP] Terminal {current_terminal} is stale ({reason}). Selecting replacement.")
+
+    # Compare against the RECORDED (legacy human_interface_peer) pointer, not
+    # term_info["peer"] -- in a MISMATCH, term_info["peer"] is the lease's
+    # peer, which can equal the correct replacement pick even though the
+    # recorded pointer (what action_terminal_handoff actually needs to fix)
+    # still disagrees. Comparing against the lease's peer here would make
+    # `next_peer != current_terminal` false and permanently skip the handoff
+    # that's supposed to resolve the mismatch (confirmed live: a
+    # legacy="ag"/lease_peer="cc" mismatch where "cc" is the eligible
+    # replacement never got corrected).
+    current_terminal = state.get("human_interface_peer") or term_info.get("peer") or "unknown"
+    print(f"[HUB:SWEEP] Terminal identity is not active ({term_info.get('status')}: {term_info.get('reason')}). Selecting replacement.")
     result = _select_human_interface_peer(ai_root, now)
     next_peer = result.get("peer")
     if next_peer and next_peer != current_terminal:
@@ -10877,7 +11132,7 @@ def main() -> None:
         prog="hub",
         description="AI collaboration hub - Protocol v4.2",
     )
-    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-all", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "freshness-sweep", "terminal-handoff", "terminal-duty-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "thread-promote", "alert-raise", "proposal-add", "proposal-vote", "proposal-list", "broker-submit", "broker-drain", "broker-status", "update-signatures", "arbiter-review", "credit-status", "credit-consume"])
+    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-all", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "freshness-sweep", "terminal-handoff", "terminal-duty-sweep", "terminal-heartbeat", "terminal-close", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "thread-promote", "alert-raise", "proposal-add", "proposal-vote", "proposal-list", "broker-submit", "broker-drain", "broker-status", "update-signatures", "arbiter-review", "credit-status", "credit-consume"])
     parser.add_argument("--ai-root", dest="ai_root",
                         help="Explicit .ai root; pins HUB_AI_ROOT for this process (deterministic; avoids the cwd-phantom bug)")
     parser.add_argument("--force", action="store_true",
@@ -10924,6 +11179,8 @@ def main() -> None:
     parser.add_argument("--invoke-args", dest="invoke_args_str", default="-p,{query}")
     parser.add_argument("--memory", default="short-term")
     parser.add_argument("--peer")
+    parser.add_argument("--lease-id", dest="lease_id", default="")
+    parser.add_argument("--pid", type=int, default=None)
     parser.add_argument("--cmd")
     parser.add_argument("--shell")
     parser.add_argument("--context-hash")
@@ -11171,6 +11428,23 @@ def main() -> None:
         action_terminal_duty_sweep(ai_root)
     elif act == "terminal-handoff":
         action_terminal_handoff(ai_root, args.agent or "unknown", args.peer or "unknown", args.reason or "")
+    elif act == "terminal-heartbeat":
+        ok = action_terminal_heartbeat(
+            ai_root,
+            args.peer or args.agent or "unknown",
+            args.lease_id or "",
+            owner_pid=args.pid,
+        )
+        if not ok:
+            sys.exit(1)
+    elif act == "terminal-close":
+        ok = action_terminal_close(
+            ai_root,
+            args.lease_id or "",
+            reason=args.reason or "closed",
+        )
+        if not ok:
+            sys.exit(1)
     elif act == "append-handoff":
         action_append_handoff(ai_root, args.section, args.text)
     elif act == "task-checkpoint":

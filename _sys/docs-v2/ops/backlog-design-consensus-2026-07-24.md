@@ -525,9 +525,119 @@ verify the applied/real thing" pattern this whole session keeps hitting**:
   raw-vs-effective transparency principle already used for the coupon-EXH
   discount work earlier this session).
 
-**Status**: design complete, unanimous, ready for TDD/implementation. Not
-applied this session. Directly resolves the open design concern flagged
-earlier today in `project_architecture_audit_fix_implementation_2026_07_24.md`.
+**Status**: **APPLIED + TESTED (2026-07-25)**. `resolve_terminal_identity(state, now)`
+implemented as designed (pure, O(1), fail-closed). `human_interface_assignment`
+lease object added; `action_terminal_handoff()` mints a fresh `lease_id` on
+every handoff; new `action_terminal_heartbeat()`/`action_terminal_close()`
+(+ new CLI actions `terminal-heartbeat`/`terminal-close`) provide CAS-protected
+renewal/release keyed on `lease_id`. The two raw-field consumer sites
+(`_snapshot_failover_choice`'s LB-exclude, the pacing-gate's dispatcher
+terminal self-check) now call the new resolver instead of reading
+`human_interface_peer` directly. `action_terminal_duty_sweep()` now checks
+lease expiry via the resolver instead of the old `_human_interface_assignment_fresh()`.
+diag.py's `_current_terminal_peer()` tries the new resolver first, falling
+back to the pre-existing `_active_terminal_profile()` logic.
+
+**Origin of this implementation**: ag's dispatch used file-write tools
+directly on `hub.py`/`diag.py`/`test_contracts.py` (triggering C1's governed-
+mutation guard, which correctly quarantined evidence non-destructively and
+did not revert anything or blame ag) and then crashed before returning any
+explanatory text — so nobody, including ag, had reviewed the result. cc
+audited the leftover code cold and found 2 real bugs before it was even
+testable end-to-end (dead CLI wiring: `--lease-id`/`--pid` argparse args
+were never added despite the dispatch code reading them; diag.py's
+`_current_terminal_peer()` used `from core import hub` — a guaranteed
+`ModuleNotFoundError` — and a cwd-relative `Path(".ai")` instead of
+`PORTABLE_ROOT / ".ai"`, both errors silently swallowed by a bare
+`except Exception: pass`, making the new fast-path 100% dead code). Both
+fixed. The core resolver/lease logic itself (`resolve_terminal_identity`,
+`action_terminal_handoff`, `action_terminal_heartbeat`, `action_terminal_close`)
+was correct on first read — ag's own 15 unit tests for it all passed
+unmodified against the real source.
+
+**Cross-verification** (ag, same-peer re-dispatch — cx's EXH was red (X-pool
+1.78x) at the time, ag's was green (G-pool 0.76x, 3P-pool 0.62x), so ag was
+used again per the user's EXH-based routing instruction, explicitly told to
+attack its own leftover code rather than re-approve it): found **4 more real
+bugs**, all independently verified by cc via direct reproduction before
+fixing, none fabricated:
+1. **Timezone offset silently dropped** (the highest-severity finding):
+   `_parse_human_interface_ts()`'s `_parse_compact_ts()` fast path matches
+   the first 19 characters of a timestamp against a naive
+   `"%Y-%m-%dT%H:%M:%S"` format BEFORE a real ISO-8601 parse ever runs,
+   discarding any `+HH:MM` offset — confirmed live: `"...13:10:48+09:00"`
+   parses as naive `13:10:48`, later stamped UTC by `resolve_terminal_identity`.
+   Since `expires_at` is always written via `.isoformat()` on an
+   `_ensure_aware()` datetime (i.e. carrying the real local offset, `+09:00`
+   on this machine), this was not a rare edge case — it silently mis-evaluated
+   the expiry of every single lease ever written on a non-UTC machine by
+   exactly the local UTC offset. Fixed by parsing `expires_at` directly via
+   `datetime.fromisoformat()` inside `resolve_terminal_identity()` instead of
+   routing through the lossy shared helper (which is left untouched — fixing
+   it would have wider, unreviewed blast radius across its other call sites,
+   out of scope here).
+2. **Falsy `close_reason` bypass**: `if assignment.get("close_reason"):`
+   skips on `close_reason=""`. `action_terminal_close()` itself also
+   overwrites `expires_at` to "now" in the same write, so this was mostly
+   inert for that specific call path — but a lease closed via any other
+   direct/external state mutation that set an empty `close_reason` without
+   also updating `expires_at` would resolve as still-FRESH. Fixed: check key
+   presence (`"close_reason" in assignment and ... is not None`), not
+   truthiness.
+3. **Disabled-peer orphaned-lease bypass**: `_normalize_runtime_files()`
+   clears `state["human_interface_peer"]` to `None` for a disabled/retired
+   peer but does not touch `human_interface_assignment` — the old mismatch
+   check (`if legacy_peer and legacy_peer.lower() != ...`) short-circuited on
+   a falsy `legacy_peer`, letting the orphaned lease resolve FRESH for a
+   peer the canonical pointer no longer names. Fixed: a `None`/empty legacy
+   pointer now disagrees with a present `lease_peer` too (matches the
+   design's "`human_interface_peer` is canonical, full stop").
+4. **Permanent mismatch loop in `action_terminal_duty_sweep()`**: compared
+   the replacement pick against `term_info["peer"]` (the LEASE's peer) rather
+   than the actual stale recorded pointer (`state["human_interface_peer"]`)
+   — in a MISMATCH where the lease's peer happens to already be the eligible
+   replacement, `next_peer != current_terminal` was trivially false, so the
+   handoff that would have fixed the mismatch was skipped forever. Fixed to
+   compare against the recorded pointer.
+
+All 4 have real regression tests (`test_timezone_offset_not_silently_dropped`,
+`test_falsy_close_reason_still_treated_as_closed`,
+`test_cleared_legacy_pointer_with_orphaned_lease_is_not_fresh`,
+`test_sweep_resolves_a_mismatch_even_when_lease_peer_is_the_eligible_pick`),
+19 tests total in `test_terminal_identity_c5.py`. Full suite: 1438 passed,
+4 pre-existing unrelated failures (identical to baseline), 1 skipped.
+
+**Also flagged by ag's cross-verification, NOT fixed (pre-existing, broader
+than C5, documented not silently ignored)**: `action_terminal_handoff`/
+`_heartbeat`/`_close` lock `state.json` under the plain resource name
+`"state"` (matching ~16 existing direct writers, per Top-5 #1's established
+convention) — but `_commit_hub_mutation_request()` (the broker-commit path,
+which also treats `state.json` as a whitelisted target) locks it under
+`_mutation_lock_resource(target_path)`, a DIFFERENT name. This is a
+pre-existing split between the two lock-naming conventions for `state.json`
+specifically that predates both C5 and Top-5 #1 (every one of the ~16
+existing direct "state" writers already had this exact gap against the
+broker path, not something newly introduced here) — unifying them would be
+a separate, wider-blast-radius refactor. Not exploitable today in practice
+(no current caller submits `state.json` broker requests in production), but
+worth tracking; not undertaken in this pass.
+
+**Also NOT wired (explicitly deferred, not silently claimed done)**: nothing
+currently calls `terminal-heartbeat` periodically. ag's cross-verification
+investigated and confirmed this IS feasible — `claude_entry.py`/`agy_entry.py`/
+`codex_entry.py` under `_sys/cli/` are the real interactive-session launchers
+and stay alive (blocking on the child process) for the session's duration, so
+a daemon thread periodically calling `action_terminal_heartbeat`/
+`hub.py terminal-heartbeat` while the child is alive is architecturally
+sound. Not implemented this pass: `claude_entry.py` is the live launcher for
+the session doing this work right now, and modifying it carries real risk of
+breaking the ability to launch Claude Code at all — left as a well-specified,
+ready-to-implement follow-up rather than risked without separate explicit
+sign-off. Until wired, a terminal assignment simply expires
+`human_interface_peer_freshness_minutes` (default 30) after the last handoff
+or manual heartbeat, same practical limitation as the pre-C5 code just via
+the new fail-closed resolver instead of the old implicitly-fresh-on-missing-
+timestamp path.
 
 ### C3 — FINAL DESIGN (unanimous, 2 rounds: cx draft → ag verification+reconciliation) — composes with C2, C5, absorbs §3.1 and §3.2
 

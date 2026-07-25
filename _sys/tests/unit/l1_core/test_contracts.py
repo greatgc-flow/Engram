@@ -756,3 +756,36 @@ class TestCreditActionContracts:
         assert p["idempotency_key"].default is None
         assert p["as_json"].default is False
         assert p["origin"].default == "terminal"
+
+
+class TestTerminalIdentityC5Contracts:
+    def test_resolve_terminal_identity_signature(self):
+        sig = inspect.signature(hub.resolve_terminal_identity)
+        params = list(sig.parameters.keys())
+        assert params == ["state", "now"]
+        assert sig.parameters["now"].default is None
+
+    def test_action_terminal_handoff_signature(self):
+        sig = inspect.signature(hub.action_terminal_handoff)
+        params = list(sig.parameters.keys())
+        assert "ai_root" in params
+        assert "current_peer" in params
+        assert "next_peer" in params
+        assert "reason" in params
+        assert "profile" in params
+        assert "owner_pid" in params
+        assert sig.parameters["reason"].default == ""
+        assert sig.parameters["profile"].default is None
+        assert sig.parameters["owner_pid"].default is None
+
+    def test_action_terminal_heartbeat_signature(self):
+        sig = inspect.signature(hub.action_terminal_heartbeat)
+        params = list(sig.parameters.keys())
+        assert params == ["ai_root", "peer", "lease_id", "owner_pid"]
+        assert sig.parameters["owner_pid"].default is None
+
+    def test_action_terminal_close_signature(self):
+        sig = inspect.signature(hub.action_terminal_close)
+        params = list(sig.parameters.keys())
+        assert params == ["ai_root", "lease_id", "reason"]
+        assert sig.parameters["reason"].default == "closed"

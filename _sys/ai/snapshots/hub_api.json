@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-07-21T22:10:00",
+  "generated_at": "2026-07-25T13:07:09",
   "source": "hub.py",
-  "count": 88,
+  "count": 90,
   "signatures": {
     "_lease_cfg": {
       "params": {
@@ -1577,6 +1577,24 @@
       },
       "return": "None"
     },
+    "action_terminal_close": {
+      "params": {
+        "ai_root": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": "Path"
+        },
+        "lease_id": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": "str"
+        },
+        "reason": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "default": "closed",
+          "annotation": "str"
+        }
+      },
+      "return": "bool"
+    },
     "action_terminal_duty_sweep": {
       "params": {
         "ai_root": {
@@ -1604,9 +1622,41 @@
           "kind": "POSITIONAL_OR_KEYWORD",
           "default": "",
           "annotation": "str"
+        },
+        "profile": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "default": null,
+          "annotation": "str | None"
+        },
+        "owner_pid": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "default": null,
+          "annotation": "int | None"
         }
       },
-      "return": "None"
+      "return": "dict"
+    },
+    "action_terminal_heartbeat": {
+      "params": {
+        "ai_root": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": "Path"
+        },
+        "peer": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": "str"
+        },
+        "lease_id": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": "str"
+        },
+        "owner_pid": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "default": null,
+          "annotation": "int | None"
+        }
+      },
+      "return": "bool"
     },
     "action_thread_append": {
       "params": {

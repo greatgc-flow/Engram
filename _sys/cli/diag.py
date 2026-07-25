@@ -1171,21 +1171,22 @@ def _live_raw_peer(rec):
 
 
 def _current_terminal_peer():
-    """Which peer is CURRENTLY (freshness-checked, not just recorded) eligible
-    to act as the human-interface terminal. First cut of this function (kept
-    only as a lesson, see below) read `.ai/state.json`'s `human_interface_peer`
-    field directly -- that field is a RECORDED assignment, not a live truth:
-    real state was found (2026-07-24, user caught this live) to be 8 days
-    stale (`human_interface_assignment_time` from 2026-07-16), because the
-    `terminal-duty-sweep` watchdog that's supposed to keep it current isn't
-    being run automatically -- the same "designed but never scheduled"
-    pattern found repeatedly elsewhere in this session's architecture audit.
-    Reuses the SAME real, freshness-aware evaluator `_active_terminal_profile()`
-    already uses elsewhere in this file (`hub._select_human_interface_peer()`,
-    which checks the 30-minute health-freshness window, not just the raw
-    field) instead of duplicating or re-trusting the stale field. Returns
-    None (never guessed/defaulted) if no peer is currently eligible -- an
-    honest "unknown" beats a confident but stale wrong answer."""
+    """C5: Returns the active, fresh human-interface terminal peer ID via
+    hub.resolve_terminal_identity(state). Returns None if VACANT, EXPIRED, or MISMATCH."""
+    try:
+        import importlib
+        core_dir = str(SYS_DIR / "core")
+        if core_dir not in sys.path:
+            sys.path.insert(0, core_dir)
+        hub = importlib.import_module("hub")
+        state_path = PORTABLE_ROOT / ".ai" / "state.json"
+        if state_path.exists():
+            state = hub._read_json(state_path)
+            term_info = hub.resolve_terminal_identity(state)
+            if term_info["is_active_terminal"]:
+                return term_info["peer"]
+    except Exception:
+        pass
     profile_key = _active_terminal_profile()
     if not profile_key or "." not in profile_key:
         return None
