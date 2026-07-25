@@ -1354,9 +1354,77 @@ several genuinely NEW bugs beyond the original 2-item scope:
   error, never silently corrupts), `errors="replace"` acceptable only for
   non-authoritative diagnostic stderr.
 
-**Status**: design complete, unanimous, ready for TDD/implementation. Not
-applied this session. **This closes out all 9 Tier-1 clusters (C1-C9) for
-this session.**
+**Status**: **APPLIED + TESTED (2026-07-25)**. `ctx_end.py` rewritten into
+the phase-based flow: no `input()` on any path (optional `--pause-on-error`,
+opt-in only, evaluated after cleanup, gated on `sys.stdin.isatty()`,
+confirmed not injected by any wrapper `.bat`), no early-return that skips
+later independent cleanup phases (an `ai_check.py` failure or a Phase 1
+prerequisite failure both still reach memory compaction/watchdog/self-care),
+explicit timeouts on every subprocess call (60s LLM/summary, 15s
+diagnostic), explicit `encoding="utf-8", errors="strict"` on authoritative
+captured LLM stdout with a clean fallback on `UnicodeDecodeError`, and
+same-directory atomic (temp+fsync+`os.replace()`) writes for summary files
+gated on `returncode==0` AND nonempty stdout — closing the same defect
+`ctx_save.py` already had ("Bug 2": an unconditional `write_text(proc.stdout)`
+with no returncode check at all, now fixed there too, plus the same
+atomic-write treatment and a real `subprocess.TimeoutExpired` handler on its
+Hub summary call, and now surfaces `_update_current_state_marker()` failures
+as stderr warnings instead of silently ignoring the return value).
+
+**Origin of this implementation**: ag drafted both rewrites and — unlike
+every other draft this session — returned a real, complete text summary
+without crashing. cc's review of the full diff found a serious regression:
+`shell=True` was removed from both `claude -p` subprocess.run calls in
+`ctx_end.py`. Confirmed empirically on this real machine (not by reasoning
+about it): `subprocess.run(["claude", "-p", ...])` without `shell=True`
+raises `FileNotFoundError` every time (`claude` resolves via PATH to a
+`.cmd` npm shim; Windows `CreateProcess` cannot launch a bare-name-PATH-
+resolved `.cmd`/`.bat` without going through the command interpreter),
+while the original `shell=True` behavior invokes correctly. This would have
+made `ctx_end.py`'s entire primary summary-generation path — its core
+purpose — fail 100% of the time on every real user run, and every one of
+ag's own unit tests still passed, because all of them mock `subprocess.run`
+entirely and none could ever exercise the real invocation mechanics.
+Restored `shell=True` at both call sites with an explanatory comment, and
+added 2 new real (unmocked) regression tests: one reproduces the exact
+bare-name-PATH-resolved-`.bat` failure mode with a synthetic script (not
+dependent on the real `claude` CLI being installed, so it stays portable),
+one statically greps the real source to guarantee `shell=True` is present
+at both `claude -p` call sites so a future edit can't silently drop it
+again undetected. Also found and fixed a second, unrelated pre-existing
+test collision: `test_migration_phase1.py::TestCtxSave::test_exits_1_when_no_claude_md`
+asserted its error message on stdout, but the rewrite correctly moved all
+error/diagnostic prints to stderr for consistency (matching the design's
+own encoding-fix scoping note about authoritative vs. non-authoritative
+output) — updated the test to match, not reverted the improvement.
+
+**Cross-verification** (ag, told to specifically hunt for MORE spots where
+real subprocess behavior might differ from what the all-mocked test suite
+suggests, given that exact blind spot is what let the shell=True bug
+through): audited all 10 real subprocess call sites across both files
+individually and confirmed each is either safe (invokes `sys.executable`/
+`cmd /c` directly, no shell needed) or correctly uses `shell=True` (the 2
+`claude -p` sites) — no further gaps found. Empirically demonstrated the
+encoding fix's real necessity with a live UTF-8-Korean-vs-cp949/cp1252
+decode test (cp949 raises cleanly under `errors="strict"`, cp1252 silently
+produces garbled `ì•ˆë…•`-style corruption — confirming why the explicit
+UTF-8 + strict-decode combination matters, not just that the kwarg is
+present). Directly verified the Phase-1-prerequisite-failure path (a
+distinct scenario from the already-tested `ai_check.py`-failure path) still
+reaches all cleanup phases and exits 1. Confirmed `--pause-on-error`'s
+residual hang risk (an attended-but-idle real terminal, gating on
+`isatty()` alone doesn't fully solve that per the design's own TTY-detection
+critique) is real but scoped only to a user explicitly passing the flag in
+an interactive session — confirmed live that `ctx-end.bat` passes args
+through via `%*` without injecting the flag by default, so standard
+workflow runs carry zero risk from it.
+
+21 tests across `test_ctx_c9.py` + the 2 pre-existing ctx test files (all
+still pass). Full suite: 1500 passed, 3 pre-existing unrelated failures
+(identical to baseline), 1 skipped. **This closes out all 9 Tier-1
+clusters' design work (C1-C9); 7 of the 9 are now also applied+tested this
+session (C1, Top-5#1/broker, C5, C2, C3, C6, C9) — C4, C7, C8 remain
+designed-but-not-applied.**
 
 ### C10 - SINGLE-PASS RESULT (cx, reduced rigor per Tier-2 budget, no round 2/3)
 

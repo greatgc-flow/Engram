@@ -176,7 +176,10 @@ class TestCtxSave:
         monkeypatch.chdir(tmp_path)
         result = run_py(SYS_DIR / "hooks" / "ctx_save.py")
         assert result.returncode == 1
-        assert "No CLAUDE.md" in result.stdout
+        # C9: error/diagnostic output now consistently goes to stderr, not
+        # stdout (matches every other error print in the C9 phase-based
+        # rewrite) -- was asserted on stdout before that consistency pass.
+        assert "No CLAUDE.md" in result.stderr
 
 
 class TestCtxEnd:
