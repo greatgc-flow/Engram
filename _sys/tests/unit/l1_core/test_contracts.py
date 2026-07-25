@@ -789,3 +789,31 @@ class TestTerminalIdentityC5Contracts:
         params = list(sig.parameters.keys())
         assert params == ["ai_root", "lease_id", "reason"]
         assert sig.parameters["reason"].default == "closed"
+
+
+class TestContextGateC2Contracts:
+    def test_resolved_context_target_dataclass_fields(self):
+        import inspect
+        import hub_context
+        fields = list(hub_context.ResolvedContextTarget.__dataclass_fields__.keys())
+        assert fields == [
+            "profile_id",
+            "admission_limit",
+            "limit_basis",
+            "registry_model_id",
+            "context_window_kind",
+        ]
+
+    def test_resolve_context_target_signature(self):
+        import inspect
+        import hub_context
+        sig = inspect.signature(hub_context.resolve_context_target)
+        params = list(sig.parameters.keys())
+        assert "target" in params
+        assert "registry_path" in params
+        assert "orchestration_path" in params
+
+    def test_context_gate_error_subclasses(self):
+        import hub_context
+        assert issubclass(hub_context.UnknownModelCapacityError, hub_context.ContextGateError)
+        assert issubclass(hub_context.ContextGateConfigError, hub_context.ContextGateError)

@@ -419,8 +419,73 @@ temporary allowlist-during-migration was explicitly rejected by cx (would
 preserve the exact prohibited guessing behavior and add cleanup debt) — no
 objection from ag in round 3.
 
-**Status**: design complete, unanimous, ready for TDD/implementation. Not
-applied this session.
+**Status**: **APPLIED + TESTED (2026-07-25)**. `ResolvedContextTarget`
+(frozen dataclass) + `resolve_context_target()` implemented in
+`hub_context.py` with the exact strict Priority 1-4 order from the design.
+`_FAILOVER_CHAIN`/`_load_failover_chain()` deleted. CJK formula fixed
+(`len/3.5*1.8`). `ContextGateConfigError` (strict registry schema
+validation) and `UnknownModelCapacityError` (Priority 4, no 200k default
+anywhere) added. `hub.py`'s dispatch-path exception handler around the
+ContextGate block now narrowly catches `ContextGateError` (and its
+subclasses) to surface a clean pre-dispatch failure and `sys.exit(1)`
+*before* any subprocess spawn, instead of the old bare `except Exception: pass`
+that silently swallowed rejections (§3.1, confirmed live: `ContextGateError`
+is a `RuntimeError` subclass raised *inside* `ContextGate.check()` itself,
+not returned as a dict value, so the old bare except caught it every time)
+— genuinely unrelated exceptions still fail open with a warning, narrower
+than before but not zero-tolerance, per the design's own distinction.
+`check_and_prune()` routes through the same resolver, no separate silent
+default. `ag.gptoss` gets `context_window_kind="proven_lower_bound"` via a
+general schema check (`validation_method`/`context_window_kind` markers),
+not solely a hardcoded profile-id special case (confirmed by cross-
+verification). 15 tests in new `test_context_gate_c2.py`, including 2 real
+integration tests that monkeypatch `subprocess.Popen` to prove zero-spawn on
+rejection.
+
+**Origin of this implementation**: same pattern as C5 — ag's dispatch wrote
+files directly and crashed before returning explanatory text. Unlike C5's
+first draft, this one was substantially solid on cold review: all of ag's
+own 14 tests passed unmodified against the real source. cc still found and
+fixed 2 real issues before trusting it:
+1. **Dead code from the `_FAILOVER_CHAIN` deletion**: `_action_ask_inner`
+   still had a ~38-line `elif action == "failover":` block (including a
+   recursive dispatch call) and an 8-line `elif action == "reject":` block —
+   both permanently unreachable, since `check()` never returns those action
+   values (raises `ContextGateError` directly instead). Deleted; the real
+   rejection handling is entirely in the new `except` clause.
+2. **A pre-existing test broke for a legitimate reason, not a C2 bug**:
+   `test_at1_transaction.py::test_at1_terminal_timeout_not_permanent_red`
+   mocks a minimal, profile-less `orchestration.json` and dispatches to bare
+   `"cc"` — before C2 this silently passed via the old 200k default; under
+   C2's strict resolver it correctly raises `UnknownModelCapacityError`
+   (real peers always have real profile nodes — `_resolve_profile_id("cc")`
+   against the REAL orchestration.json correctly resolves to `"cc.deepthink"`,
+   confirmed live). Fixed by disabling `_CONTEXT_GATE_AVAILABLE` for that one
+   test, since it's validating unrelated terminal-timeout/health-RED logic,
+   not ContextGate.
+
+**Cross-verification** (ag, same-peer re-dispatch, explicitly told to attack
+its own leftover code): confirmed both of cc's fixes, swept for and found no
+other test with the same profile-less-orchestration collision, probed
+`resolve_context_target()`'s fail-closed guarantee with type-confusion/
+case-sensitivity/contradictory-priority inputs (all correctly fail-closed or
+resolve per the documented priority order), confirmed the CJK formula has no
+disagreeing second implementation elsewhere in the codebase, ran the real
+test suite directly (matched cc's own count) — and found **one more real
+gap**: `_load_strict_json()`'s registry validation accepted a fractional
+`context_limit` (e.g. `0.5`) since it only checked `> 0`, but the resolver
+then computes `admission_limit=int(clim)`, silently truncating to `0` —
+every query to that model would then fail closed for a confusing reason
+(0-token failover threshold) instead of a clear config error at load time.
+Fixed by requiring a genuine positive `int` (not just any positive number)
+everywhere `context_limit`/`runtime_context_window` is consumed (registry
+validation, all 3 registry-lookup branches, and the profile-declared-limit
+Priority 1 check itself, which had the identical float-truncation exposure
+for `runtime_context_window`). New regression test
+`test_fractional_context_limit_raises_context_gate_config_error`.
+
+Full suite: 1456 passed, 4 pre-existing unrelated failures (identical to
+baseline), 1 skipped.
 
 ### C5 — FINAL DESIGN (unanimous, 3 rounds: cc draft → cx real-empirical refutation → ag independent verification+reconciliation)
 

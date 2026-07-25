@@ -50,10 +50,20 @@ except ImportError:
     _HUB_LOGGING_AVAILABLE = False
 
 try:
-    from hub_context import ContextGate as _ContextGate
+    from hub_context import (
+        ContextGate as _ContextGate,
+        ContextGateError as _ContextGateError,
+        UnknownModelCapacityError as _UnknownModelCapacityError,
+        ContextGateConfigError as _ContextGateConfigError,
+        ResolvedContextTarget as _ResolvedContextTarget,
+    )
     _CONTEXT_GATE_AVAILABLE = True
 except ImportError:
     _ContextGate = None  # type: ignore[assignment]
+    _ContextGateError = None  # type: ignore[assignment]
+    _UnknownModelCapacityError = None  # type: ignore[assignment]
+    _ContextGateConfigError = None  # type: ignore[assignment]
+    _ResolvedContextTarget = None  # type: ignore[assignment]
     _CONTEXT_GATE_AVAILABLE = False
 
 try:
@@ -6079,74 +6089,41 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     # ── ContextGate check ──────────────────────────────────────
     if _CONTEXT_GATE_AVAILABLE and _ContextGate is not None:
         try:
-            profile_id = _resolve_profile_id(to)
-            profile_data = _load_model_profiles().get("profiles", {}).get(profile_id, {})
-            model_id = profile_data.get("model_id") or health_peer
-
-            gate_result = _ContextGate().check(query, model_id)
+            profile_id = _resolve_profile_id(to) or to
+            gate = _ContextGate()
+            gate_result = gate.check(query, profile_id)
             action = gate_result.get("action", "pass")
             if action == "prune":
                 # Context > 80% — prune query as a single low-priority block
                 # (Full priority-tagged block pruning requires caller to supply context_blocks)
                 gate = _ContextGate()
                 pruned = gate.check_and_prune(
-                    [{"text": query, "priority": 1}], model_id
+                    [{"text": query, "priority": 1}], profile_id
                 )
                 if pruned:
                     query = pruned[0]["text"]
                 util = gate_result.get("utilization", 0)
                 print(f"[ContextGate] context {util:.0%} full → prune applied", file=sys.stderr)
-            elif action == "failover":
-                failover_model = gate_result.get("failover_model") or _default_routable_peer_id(
-                    exclude=[to, original_to, health_peer])
-                if not failover_model:
-                    _surface_pre_dispatch_failure(
-                        ai_root, to, "context_failover_no_target",
-                        recovery_peer=health_peer,
-                    )
-                    print("[HUB:ERROR] ContextGate requested failover but no routable fallback peer is available", file=sys.stderr)
-                    sys.exit(1)
-                if explicit_profile:
-                    _surface_pre_dispatch_failure(
-                        ai_root, to, "context_failover_explicit_profile",
-                        recovery_peer=health_peer,
-                    )
-                    print(
-                        f"[HUB:ERROR] explicit profile immutable; ContextGate requested failover from {to} to {failover_model}",
-                        file=sys.stderr,
-                    )
-                    sys.exit(1)
-                # Prevent immediate loop if failover_model is same as current (via ID or alias)
-                if failover_model == to or failover_model == original_to:
-                    # If we already tried to failover and it's the same, don't try again
-                    pass
-                else:
-                    # r-f291 W4: snapshot-headroom ranking picks the failover
-                    # target when available; falls back to the gate's static
-                    # suggestion (health-based) on any snapshot failure.
-                    ranked_target, _snap_hash = _snapshot_failover_choice(
-                        ai_root, exclude=[to, original_to, health_peer])
-                    if ranked_target:
-                        failover_model = ranked_target
-                    print(f"[ContextGate] context {gate_result.get('ratio', 0):.0%} full → failover to {failover_model}", file=sys.stderr)
-                    # Recursive failover call with increased depth and disabled context inclusion
-                    # Recurse into the inner impl (not the wrapper): the outer
-                    # action_ask guard's single window already covers this whole
-                    # failover chain, so we avoid a nested re-guard / double-log.
-                    return _action_ask_inner(failover_model, query, None, timeout_sec, ai_root, quiet, output_file, include_context=False, session_policy=session_policy, explicit_scope=explicit_scope, _depth=_depth + 1, _escalation_depth=_escalation_depth, origin=origin, allow_governed_mutation=allow_governed_mutation, force_tier0=force_tier0, ask_id=ask_id)
-
-            elif action == "reject":
-                msg = gate_result.get("message", "context limit exceeded")
-                _surface_pre_dispatch_failure(
-                    ai_root, to, "context_gate_reject", recovery_peer=health_peer
-                )
-                if _HUB_ERROR_AVAILABLE and _HubError is not None:
-                    _HubError.report("CONTEXT_GATE_REJECT", peer=health_peer, message=msg)
-                else:
-                    print(f"[ERROR] ContextGate reject: {msg}", file=sys.stderr)
-                sys.exit(1)
-        except Exception:
-            pass  # ContextGate failure is non-fatal; proceed with query
+            # C2: "failover" and "reject" are no longer possible return values
+            # of gate.check() -- the deleted _FAILOVER_CHAIN was the only thing
+            # that ever produced action="failover", and check() now always
+            # raises ContextGateError directly at the failover_pct threshold
+            # instead of returning action="reject" (it already did before C2
+            # too -- that branch was dead code even under the old design).
+            # Real rejection handling is the except clause below.
+        except (_ContextGateError,) as exc:
+            msg = str(exc)
+            _surface_pre_dispatch_failure(
+                ai_root, to, "context_gate_reject", recovery_peer=health_peer
+            )
+            if _HUB_ERROR_AVAILABLE and _HubError is not None:
+                _HubError.report("CONTEXT_GATE_REJECT", peer=health_peer, message=msg)
+            else:
+                print(f"[ERROR] ContextGate reject: {msg}", file=sys.stderr)
+            sys.exit(1)
+        except Exception as exc:
+            # ContextGate infrastructure/evaluator fault: log warning and fail open per policy
+            print(f"[ContextGate:WARN] Evaluator bypassed due to unexpected error: {exc}", file=sys.stderr)
     # ── Session reuse (config-driven capability) ───────────────
     try:
         use_session = _session_reuse_enabled(node, session_policy)

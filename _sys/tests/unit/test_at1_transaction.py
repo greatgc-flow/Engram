@@ -220,6 +220,7 @@ def test_at1_terminal_timeout_not_permanent_red(tmp_path):
          patch("_sys.core.hub._load_orchestration", return_value={"hub_nodes": [{"type": "peer", "node_id": "cc", "enabled": True}]}), \
          patch("_sys.core.hub._peer_sys_dir", return_value=cc_dir), \
          patch("_sys.core.hub._terminal_spend_guard"), \
+         patch("_sys.core.hub._CONTEXT_GATE_AVAILABLE", False), \
          patch("_sys.core.hub._SNAPSHOT_AVAILABLE", False):
 
         mock_proc = MagicMock()
