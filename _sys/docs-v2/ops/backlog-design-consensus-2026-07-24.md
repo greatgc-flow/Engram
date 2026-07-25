@@ -812,8 +812,114 @@ assertion + repair stale traceability paths. Shipping only a subset first
 was explicitly rejected by both peers as creating another inconsistent
 intermediate state.
 
-**Status**: design complete, unanimous, ready for TDD/implementation. Not
-applied this session.
+**Status**: **APPLIED + TESTED (2026-07-25)** — closes the C5→C2→C3 chain.
+New `ContextFailoverPlan` (frozen dataclass) + `_plan_context_aware_failover()`
+in hub.py: builds the candidate exclusion set by reusing `_snapshot_failover_choice`'s
+own logic (arbiter_models, bulk_exclude_profiles, C5's `resolve_terminal_identity()`
+for the active terminal), plus current/visited exclusion; iterates the FULL
+headroom-ranked candidate list (`snapshot._derive_headroom_rows()`, not just
+the single top pick) in one pass; applies a real cross-peer capability-
+equivalence gate using the genuine `requires_pty` (per-profile node data)
+and `capability_class` (`unsandboxed_trusted_mutation`/`sandboxed_mutation`/
+`tool_scoped_mutation`/`read_only` — a real, already-existing profile field,
+confirmed live, not invented) fields — a mutation-capable source never fails
+over to a read-only candidate, a PTY-requiring source never fails over to a
+non-PTY candidate; resolves each surviving candidate through C2's
+`resolve_context_target()`, prefers `action="pass"`, falls back to real
+pruning + re-validation via the same `check_and_prune()` fix below; explicit
+profile picks are immune (plan returns `None`, clean diagnostic, never
+silently rerouted); `session_policy="reuse"` fails closed
+(`context_failover_requires_fresh_session`) unless the caller passes the new
+`allow_fresh_failover_on_session_reuse=True` opt-in (threaded through
+`action_ask`/`_action_ask_inner`'s signatures); a found plan dispatches
+exactly once via a recursive `_action_ask_inner` call with
+`session_policy="fresh"`, matching the existing depth/escalation-tracking
+convention.
+
+**§3.2 (prune-path-always-a-no-op) fixed**: `check_and_prune()` now takes
+blocks with a `mandatory` flag — `_action_ask_inner` builds the raw user
+query as one `mandatory=True` block and any injected room/session context
+(from `_build_ask_query_with_context`) as a separate `mandatory=False`
+block; mandatory content is never dropped; droppable blocks are dropped in
+ascending priority order with the total re-estimated after each drop;
+requires the result strictly `<` the warn-threshold token count (not `<=`);
+raises `ContextGateError` (fails closed) if the mandatory content alone
+already exceeds the target instead of silently returning it unchanged while
+still claiming "prune applied."
+
+**Origin of this implementation**: same pattern as C5/C2 — ag wrote files
+directly and crashed before returning explanatory text (3rd time this round;
+C1's governed-mutation guard again correctly quarantined evidence non-
+destructively). This draft was the most complete cold: real per-profile
+`requires_pty`/`capability_class` grounding (verified live against real
+profile data, not guessed), correct wiring of the mandatory/droppable split
+all the way from `_action_ask_inner`'s block-building through
+`check_and_prune()`, and 8 of its own tests passing unmodified. cc's review
+found and fixed one real issue: `test_active_terminal_peer_excluded_from_failover`
+asserted its exclusion property inside `if plan is not None:` — meaning on a
+real (unmocked) `snapshot.collect_snapshot()` call, if live quota/health
+state on the test machine happened to yield zero eligible candidates for any
+unrelated reason, the test's actual assertion would be silently skipped
+entirely and still report PASS, without ever having checked that terminal
+exclusion works. Rewritten to deterministically mock the headroom ranking
+(a controlled scenario where the active-terminal candidate would otherwise
+be the clear top pick) so the test always exercises and asserts the real
+exclusion behavior. (Also noted, not fixed: `_plan_context_aware_failover`
+computes an unused `source_target` local in its exception-fallback branch —
+`ContextGateError` has no `resolved_target` attribute so it's always `None`
+and never read again; harmless dead store, not worth its own re-test cycle.)
+
+Full suite: 1467 passed, 4 pre-existing unrelated failures (identical to
+baseline), 1 skipped.
+
+**Cross-verification**: dispatched to ag again first (still G-pool-elevated
+at the time), then user redirected to cx once G-pool spiked to 3.63x mid-
+dispatch (EXH-based routing). cx failed twice consecutively on its own tool-
+execution environment (a `PermissionError` inside its own pytest temp-dir
+handling, unrelated to the target code — recovered both times via
+`peer-recover`) but its second attempt leaked partial stdout from a real
+simulation script it had run before crashing, which **empirically confirmed
+a real finding cc had specifically asked it to check**: `check_and_prune()`'s
+new `target_tokens = int(limit * warn_pct)` (no margin, vs. the pre-C3
+`warn_pct - 0.05`) left a same-size follow-up query flipping from `pass`
+back to `prune` immediately after a prune had just run. Fixed by restoring
+the 5% margin, with a new regression test
+(`test_prune_leaves_headroom_not_thrashing_on_next_similar_ask`) proving a
+real margin below the warn threshold survives a same-size follow-up.
+
+cc also directly traced (not waiting on cx) a second real gap raised in the
+same cross-verification prompt: `_plan_context_aware_failover`'s
+`visited_peers` parameter was fully implemented and correctly excludes
+already-tried candidates internally, but `_action_ask_inner`'s recursive
+call site always passed `visited_peers=None` — meaning a source A that
+fails over to B, whose own ContextGate check then ALSO fails, could get
+planned right back to A (never recorded as already-tried), causing an
+A<->B oscillation bounded only by the raw `_depth`/
+`RUNTIME_ESCALATION_DEPTH_CEILING` check — burning real dispatch attempts.
+Fixed by threading a new `_context_failover_visited: frozenset[str] | None`
+parameter through `_action_ask_inner`'s recursive failover call, accumulating
+each hop's `to` into the visited set. Two new regression tests: one directly
+proving the planner skips an already-visited top-ranked candidate, one
+proving the real recursive call site actually threads the accumulated set
+forward (not hardcoding `None`) via a spy on `_plan_context_aware_failover`.
+
+The remaining cross-verification question (snapshot staleness / TOCTOU
+between ranking a candidate via a cached snapshot and actually dispatching
+to it) was reasoned through directly rather than left open: the chosen
+target is dispatched via a full recursive `_action_ask_inner` call, which
+re-runs the SAME real pre-dispatch pipeline (health precheck, etc.) that
+any fresh top-level ask would — a candidate that went bad between ranking
+and dispatch is caught there, not silently spawned against.
+
+Full suite (final, after both fixes): 1470 passed, 4 pre-existing unrelated
+failures (identical to baseline), 1 skipped.
+
+**Not done this pass** (matches the design's own explicit landing-order tail,
+not silently dropped): CLI/telemetry rendering polish beyond what
+`ContextFailoverPlan`'s routing-metric logging already covers, and
+replacing the mock-only `test_hub_integration_v42.py` assertion / repairing
+stale traceability paths — both lower-priority cleanup items from the
+original 8-step landing order, left for a future pass.
 
 ### C4 — FINAL DESIGN (unanimous, 3 rounds: ag draft → cx empirical critique → ag reconciliation)
 

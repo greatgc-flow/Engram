@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-25T13:07:09",
+  "generated_at": "2026-07-25T14:24:51",
   "source": "hub.py",
   "count": 90,
   "signatures": {
@@ -267,6 +267,11 @@
           "annotation": "bool"
         },
         "_load_balanced": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "default": false,
+          "annotation": "bool"
+        },
+        "allow_fresh_failover_on_session_reuse": {
           "kind": "POSITIONAL_OR_KEYWORD",
           "default": false,
           "annotation": "bool"

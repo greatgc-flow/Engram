@@ -817,3 +817,40 @@ class TestContextGateC2Contracts:
         import hub_context
         assert issubclass(hub_context.UnknownModelCapacityError, hub_context.ContextGateError)
         assert issubclass(hub_context.ContextGateConfigError, hub_context.ContextGateError)
+
+
+class TestContextGateC3Contracts:
+    def test_context_failover_plan_dataclass_fields(self):
+        import hub_context
+        fields = list(hub_context.ContextFailoverPlan.__dataclass_fields__.keys())
+        assert fields == [
+            "source_profile",
+            "target_profile",
+            "source_utilization",
+            "target_utilization",
+            "admission_limit",
+            "limit_basis",
+            "context_window_kind",
+            "prune_applied",
+            "session_policy",
+            "reason",
+        ]
+
+    def test_plan_context_aware_failover_signature(self):
+        import inspect
+        import hub
+        sig = inspect.signature(hub._plan_context_aware_failover)
+        params = list(sig.parameters.keys())
+        assert "ai_root" in params
+        assert "source_to" in params
+        assert "user_query_raw" in params
+        assert "context_blocks" in params
+        assert "allow_fresh_failover_on_session_reuse" in params
+
+    def test_action_ask_signature_c3(self):
+        import inspect
+        import hub
+        sig = inspect.signature(hub.action_ask)
+        params = sig.parameters
+        assert "allow_fresh_failover_on_session_reuse" in params
+        assert params["allow_fresh_failover_on_session_reuse"].default is False

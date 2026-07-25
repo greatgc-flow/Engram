@@ -56,6 +56,7 @@ try:
         UnknownModelCapacityError as _UnknownModelCapacityError,
         ContextGateConfigError as _ContextGateConfigError,
         ResolvedContextTarget as _ResolvedContextTarget,
+        ContextFailoverPlan as _ContextFailoverPlan,
     )
     _CONTEXT_GATE_AVAILABLE = True
 except ImportError:
@@ -64,6 +65,7 @@ except ImportError:
     _UnknownModelCapacityError = None  # type: ignore[assignment]
     _ContextGateConfigError = None  # type: ignore[assignment]
     _ResolvedContextTarget = None  # type: ignore[assignment]
+    _ContextFailoverPlan = None  # type: ignore[assignment]
     _CONTEXT_GATE_AVAILABLE = False
 
 try:
@@ -3070,6 +3072,155 @@ def _snapshot_failover_choice(ai_root: Path | None, exclude: list[str]) -> tuple
         )
         return None, None
 
+def _plan_context_aware_failover(
+    ai_root: Path | None,
+    source_to: str,
+    user_query_raw: str,
+    context_blocks: list[dict] | None = None,
+    *,
+    explicit_profile: bool = False,
+    session_policy: str = "fresh",
+    allow_fresh_failover_on_session_reuse: bool = False,
+    visited_peers: set[str] | None = None,
+    ask_id: str = "",
+) -> _ContextFailoverPlan | None:
+    """C3: Capacity-aware hub planner for ContextGate rejections.
+
+    Evaluates candidate profiles ranked by context headroom in one pass:
+    - Explicit user profile picks are immune (never silently rerouted).
+    - Requires session_policy="fresh" unless allow_fresh_failover_on_session_reuse=True.
+    - Excludes disabled/non-routable, current+visited, arbiter models, bulk-excluded,
+      and C5 active terminal identity.
+    - Applies capability equivalence (PTY, capability_class, tier floor).
+    - Prefers candidates with action=="pass"; accepts action=="prune" only if real
+      pruning re-validates strictly < warn_pct threshold.
+    - Produces an immutable ContextFailoverPlan or returns None if no target qualifies.
+    """
+    if _ContextFailoverPlan is None or not _CONTEXT_GATE_AVAILABLE or _ContextGate is None:
+        return None
+
+    if explicit_profile:
+        return None
+
+    if session_policy == "reuse" and not allow_fresh_failover_on_session_reuse:
+        return None
+
+    source_profile = _resolve_profile_id(source_to) or source_to
+    profiles_catalog = _load_model_profiles().get("profiles", {})
+    source_pdata = profiles_catalog.get(source_profile, {})
+
+    # Exclude set construction
+    exclude_set = {source_to, source_profile}
+    if visited_peers:
+        exclude_set.update(visited_peers)
+
+    balancer_cfg = _load_balancer_config()
+    exclude_set.update(balancer_cfg.get("arbiter_models", []) or [])
+    exclude_set.update(balancer_cfg.get("bulk_exclude_profiles", []) or [])
+
+    if ai_root:
+        try:
+            state = _read_json(ai_root / "state.json")
+            term_info = resolve_terminal_identity(state)
+            if term_info["is_active_terminal"] and term_info.get("peer"):
+                exclude_set.add(term_info["peer"])
+                if term_info.get("profile"):
+                    exclude_set.add(term_info["profile"])
+        except Exception:
+            pass
+
+    # Source metrics for telemetry
+    gate = _ContextGate()
+    try:
+        source_target = gate.resolve_target(source_profile)
+        source_util = gate.check(user_query_raw, source_profile).get("utilization", 0.0)
+    except _ContextGateError as exc:
+        source_target = getattr(exc, "resolved_target", None)
+        source_util = getattr(exc, "utilization", 1.0)
+        if not isinstance(source_util, (int, float)):
+            source_util = 1.0
+    except Exception:
+        source_util = 1.0
+
+    if not _SNAPSHOT_AVAILABLE or snapshot is None:
+        return None
+
+    try:
+        snap = snapshot.collect_snapshot(use_cache=True)
+        headroom_rows = snapshot._derive_headroom_rows(snap)
+    except Exception:
+        return None
+
+    source_node = _load_nodes(ai_root).get(source_to, {}) if ai_root else {}
+    source_requires_pty = source_node.get("requires_pty", False)
+    source_cap_class = source_pdata.get("capability_class", "unsandboxed_trusted_mutation")
+
+    for row in headroom_rows:
+        cand_profile = row.get("profile")
+        cand_peer = row.get("peer")
+        if not cand_profile or cand_profile in exclude_set or cand_peer in exclude_set:
+            continue
+
+        if row.get("state") != "eligible":
+            continue
+
+        cand_pdata = profiles_catalog.get(cand_profile, {})
+        cand_node = _load_nodes(ai_root).get(cand_profile, {}) if ai_root else {}
+
+        # Capability equivalence check
+        if source_requires_pty and not cand_node.get("requires_pty", False):
+            continue
+
+        cand_cap_class = cand_pdata.get("capability_class", "")
+        if source_cap_class in {"unsandboxed_trusted_mutation", "sandboxed_mutation", "tool_scoped_mutation"}:
+            if cand_cap_class == "read_only":
+                continue
+
+        # Evaluate candidate against ContextGate
+        try:
+            cand_target = gate.resolve_target(cand_profile)
+            check_res = gate.check(user_query_raw, cand_profile)
+            if check_res.get("action") == "pass":
+                return _ContextFailoverPlan(
+                    source_profile=source_profile,
+                    target_profile=cand_profile,
+                    source_utilization=float(source_util),
+                    target_utilization=float(check_res.get("utilization", 0.0)),
+                    admission_limit=cand_target.admission_limit,
+                    limit_basis=cand_target.limit_basis,
+                    context_window_kind=cand_target.context_window_kind,
+                    prune_applied=False,
+                    session_policy="fresh",
+                    reason="candidate_pass",
+                )
+        except _ContextGateError:
+            # If check failed, test if pruning can reduce it below warn threshold (< warn_pct)
+            if context_blocks:
+                try:
+                    pruned_blocks = gate.check_and_prune(context_blocks, cand_profile)
+                    pruned_query = "".join(b.get("text", "") for b in pruned_blocks)
+                    pruned_check = gate.check(pruned_query, cand_profile)
+                    if pruned_check.get("action") == "pass":
+                        return _ContextFailoverPlan(
+                            source_profile=source_profile,
+                            target_profile=cand_profile,
+                            source_utilization=float(source_util),
+                            target_utilization=float(pruned_check.get("utilization", 0.0)),
+                            admission_limit=cand_target.admission_limit,
+                            limit_basis=cand_target.limit_basis,
+                            context_window_kind=cand_target.context_window_kind,
+                            prune_applied=True,
+                            session_policy="fresh",
+                            reason="candidate_prune_pass",
+                        )
+                except _ContextGateError:
+                    continue
+        except Exception:
+            continue
+
+    return None
+
+
 
 def _matching_peers(needs: str, effort: str = "mid") -> list[dict]:
     proto_cfg = _load_protocol_cfg()
@@ -5619,7 +5770,7 @@ def _maybe_run_arbiter_on_finalize(ai_root, data) -> None:
         print(f"[HUB:WARN] arbiter auto-wire error on finalize: {exc}", file=sys.stderr)
 
 
-def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False, governed_mutation_reason: str | None = None, force_tier0: bool = False, allow_terminal_spend: bool = False, _load_balanced: bool = False) -> None:
+def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False, governed_mutation_reason: str | None = None, force_tier0: bool = False, allow_terminal_spend: bool = False, _load_balanced: bool = False, allow_fresh_failover_on_session_reuse: bool = False) -> None:
     """Public entry: wraps _action_ask_inner with the LL-20260703-005 governed-
     mutation guard. Governed files are hashed before the peer executes and re-
     hashed in a crash-safe finally that covers BOTH the PTY (_ask_with_pty, ag)
@@ -5768,7 +5919,7 @@ def _sweep_stale_ask_temp_dirs(temp_root: Path, max_age_sec: int = 3600) -> None
         pass
 
 
-def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False, force_tier0: bool = False, allow_terminal_spend: bool = False, _load_balanced: bool = False, ask_id: str | None = None) -> None:
+def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False, force_tier0: bool = False, allow_terminal_spend: bool = False, _load_balanced: bool = False, ask_id: str | None = None, allow_fresh_failover_on_session_reuse: bool = False, _context_failover_visited: frozenset[str] | None = None) -> None:
     if _depth > RUNTIME_ESCALATION_DEPTH_CEILING:
 
         print(f"[ERROR] action_ask: maximum failover depth reached for {to}", file=sys.stderr)
@@ -6086,41 +6237,99 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         query = _build_ask_query_with_context(ai_root, query, to_peer=to)
 
 
-    # ── ContextGate check ──────────────────────────────────────
+    # ── ContextGate check & C3 Capacity Planner ────────────────
     if _CONTEXT_GATE_AVAILABLE and _ContextGate is not None:
+        context_blocks = [
+            {"text": user_query_raw, "priority": 100, "mandatory": True}
+        ]
+        injected_context = ""
+        if include_context and ai_root:
+            injected_context = _build_ask_query_with_context(ai_root, "", to_peer=to)
+            if injected_context:
+                context_blocks.append({"text": injected_context, "priority": 10, "mandatory": False})
+
         try:
             profile_id = _resolve_profile_id(to) or to
             gate = _ContextGate()
             gate_result = gate.check(query, profile_id)
             action = gate_result.get("action", "pass")
             if action == "prune":
-                # Context > 80% — prune query as a single low-priority block
-                # (Full priority-tagged block pruning requires caller to supply context_blocks)
-                gate = _ContextGate()
-                pruned = gate.check_and_prune(
-                    [{"text": query, "priority": 1}], profile_id
-                )
-                if pruned:
-                    query = pruned[0]["text"]
+                pruned_blocks = gate.check_and_prune(context_blocks, profile_id)
+                query = "".join(b.get("text", "") for b in pruned_blocks)
                 util = gate_result.get("utilization", 0)
                 print(f"[ContextGate] context {util:.0%} full → prune applied", file=sys.stderr)
-            # C2: "failover" and "reject" are no longer possible return values
-            # of gate.check() -- the deleted _FAILOVER_CHAIN was the only thing
-            # that ever produced action="failover", and check() now always
-            # raises ContextGateError directly at the failover_pct threshold
-            # instead of returning action="reject" (it already did before C2
-            # too -- that branch was dead code even under the old design).
-            # Real rejection handling is the except clause below.
         except (_ContextGateError,) as exc:
-            msg = str(exc)
-            _surface_pre_dispatch_failure(
-                ai_root, to, "context_gate_reject", recovery_peer=health_peer
+            visited = set(_context_failover_visited or ())
+            visited.add(to)
+            plan = _plan_context_aware_failover(
+                ai_root,
+                to,
+                user_query_raw,
+                context_blocks=context_blocks,
+                explicit_profile=explicit_profile,
+                session_policy=session_policy,
+                allow_fresh_failover_on_session_reuse=allow_fresh_failover_on_session_reuse,
+                visited_peers=visited,
+                ask_id=ask_id or "",
             )
-            if _HUB_ERROR_AVAILABLE and _HubError is not None:
-                _HubError.report("CONTEXT_GATE_REJECT", peer=health_peer, message=msg)
+            if plan is not None:
+                print(
+                    f"[ContextGate:FAILOVER] {plan.source_profile} (util={plan.source_utilization:.0%}) "
+                    f"→ failover to {plan.target_profile} (limit={plan.admission_limit:,}, util={plan.target_utilization:.0%}, basis={plan.limit_basis})",
+                    file=sys.stderr,
+                )
+                if ai_root:
+                    _record_routing_metric(
+                        ai_root,
+                        "context_failover_plan",
+                        source_profile=plan.source_profile,
+                        target_profile=plan.target_profile,
+                        source_utilization=plan.source_utilization,
+                        target_utilization=plan.target_utilization,
+                        admission_limit=plan.admission_limit,
+                        limit_basis=plan.limit_basis,
+                        context_window_kind=plan.context_window_kind,
+                        prune_applied=plan.prune_applied,
+                        session_policy=plan.session_policy,
+                        ask_id=ask_id or "",
+                    )
+                return _action_ask_inner(
+                    plan.target_profile,
+                    user_query_raw,
+                    None,
+                    timeout_sec,
+                    ai_root,
+                    quiet,
+                    output_file,
+                    include_context=include_context,
+                    session_policy="fresh",
+                    explicit_scope=explicit_scope,
+                    _depth=_depth + 1,
+                    _escalation_depth=_escalation_depth,
+                    origin=origin,
+                    allow_governed_mutation=allow_governed_mutation,
+                    force_tier0=force_tier0,
+                    ask_id=ask_id,
+                    allow_fresh_failover_on_session_reuse=allow_fresh_failover_on_session_reuse,
+                    _context_failover_visited=frozenset(visited),
+                )
             else:
-                print(f"[ERROR] ContextGate reject: {msg}", file=sys.stderr)
-            sys.exit(1)
+                if explicit_profile:
+                    reason_code = "context_failover_explicit_profile"
+                    msg = f"explicit profile immutable; ContextGate rejected ask for {to}"
+                elif session_policy == "reuse" and not allow_fresh_failover_on_session_reuse:
+                    reason_code = "context_failover_requires_fresh_session"
+                    msg = f"failover requires session_policy='fresh' (got 'reuse'); ContextGate rejected ask for {to}"
+                else:
+                    reason_code = "context_failover_no_target"
+                    msg = f"ContextGate rejected ask for {to} and no valid capacity failover target is available"
+
+                _surface_pre_dispatch_failure(ai_root, to, reason_code, recovery_peer=health_peer)
+                if _HUB_ERROR_AVAILABLE and _HubError is not None:
+                    _HubError.report(reason_code.upper(), peer=health_peer, message=msg)
+                else:
+                    print(f"[ERROR] ContextGate reject: {msg}", file=sys.stderr)
+                sys.exit(1)
         except Exception as exc:
             # ContextGate infrastructure/evaluator fault: log warning and fail open per policy
             print(f"[ContextGate:WARN] Evaluator bypassed due to unexpected error: {exc}", file=sys.stderr)

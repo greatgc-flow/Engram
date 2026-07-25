@@ -1,19 +1,5 @@
-"""hub_context.py — ContextGate v2.0: token estimation and context capacity resolution.
-
-Algorithm:
-  1. Estimate input tokens (CJK-aware: chars/3.5 * 1.8 for CJK ratio >= 20%)
-  2. Resolve target capacity via strict Priority 1..4 ResolvedContextTarget resolution
-  3. If >= warn_pct (80%): prune low-priority blocks
-  4. If >= failover_pct (95%): reject and raise ContextGateError
-
-Config: _sys/ai/governance_params.json (context_gate_* keys)
-Model limits: _sys/ai/model-registry.json (context_limit per model)
-Traceability: _sys/ai/traceability_map.json entry "context-gate"
-
-Usage:
-    from hub_context import ContextGate, ResolvedContextTarget
-    gate = ContextGate()
-    result = gate.check(text, target="ag.deepthink")
+"""
+hub_context.py — ContextGate v2.0 & C3 Prune-Path Fix: token estimation and context capacity resolution.
 """
 from __future__ import annotations
 
@@ -32,12 +18,27 @@ _MODEL_REGISTRY_PATH = _AI_DIR / "model-registry.json"
 
 @dataclass(frozen=True)
 class ResolvedContextTarget:
-    """C2: Resolved context capacity target contract."""
+    """C2/C3: Resolved context capacity target contract."""
     profile_id: str
     admission_limit: int
     limit_basis: str  # "profile_declared_limit" | "registry_model_id" | "exact_registry_model_id"
     registry_model_id: str | None
     context_window_kind: str  # "ceiling" | "proven_lower_bound"
+
+
+@dataclass(frozen=True)
+class ContextFailoverPlan:
+    """C3: Immutable context failover plan contract produced by Hub capacity planner."""
+    source_profile: str
+    target_profile: str
+    source_utilization: float
+    target_utilization: float
+    admission_limit: int
+    limit_basis: str
+    context_window_kind: str
+    prune_applied: bool
+    session_policy: str  # Always "fresh" for auto failover
+    reason: str
 
 
 def _cjk_ratio(text: str) -> float:
@@ -63,15 +64,17 @@ def estimate_tokens(text: str) -> int:
 
 class ContextGateError(RuntimeError):
     """Raised when context cannot be reduced or context limit is exceeded."""
-    def __init__(self, estimated_tokens: int, context_limit: int, model_id: str) -> None:
+    def __init__(self, estimated_tokens: int, context_limit: int, model_id: str, utilization: float | None = None) -> None:
+        util_val = utilization if isinstance(utilization, (int, float)) else (estimated_tokens / context_limit if context_limit else 0.0)
         super().__init__(
-            f"CONTEXT_GATE_REJECT: {estimated_tokens} estimated tokens exceeds "
+            f"CONTEXT_GATE_REJECT: {estimated_tokens} estimated tokens ({util_val:.1%}) exceeds "
             f"{int(context_limit * 0.95):.0f} failover threshold "
             f"for model {model_id} (limit={context_limit})"
         )
         self.estimated_tokens = estimated_tokens
         self.context_limit = context_limit
         self.model_id = model_id
+        self.utilization = util_val
         self.error_type = "CONTEXT_GATE_REJECT"
         self.tier = "T2"
 
@@ -82,7 +85,7 @@ class UnknownModelCapacityError(ContextGateError):
         msg = f"UNKNOWN_MODEL_CAPACITY: Cannot resolve context limit for target '{target_id}'"
         if details:
             msg += f" ({details})"
-        super().__init__(0, 0, target_id)
+        super().__init__(0, 0, target_id, utilization=None)
         self.args = (msg,)
         self.target_id = target_id
         self.details = details
@@ -96,7 +99,7 @@ class ContextGateConfigError(ContextGateError):
     """C2: Raised when model-registry.json or governance config has invalid schema/data."""
     def __init__(self, config_path: Path, details: str) -> None:
         msg = f"CONTEXT_GATE_CONFIG_ERROR: Invalid config at {config_path}: {details}"
-        super().__init__(0, 0, "config")
+        super().__init__(0, 0, "config", utilization=None)
         self.args = (msg,)
         self.config_path = config_path
         self.details = details
@@ -129,12 +132,7 @@ def _load_strict_json(path: Path, *, validate_registry: bool = False) -> dict:
                 raise ContextGateConfigError(path, f"Model entry '{mid}' must be an object (dict)")
             if "context_limit" in mcfg:
                 clim = mcfg["context_limit"]
-                # A fractional value (e.g. 0.5) would pass a bare "> 0" check
-                # but silently truncate to int(0.5) == 0 downstream -- every
-                # query would then exceed a 0-token failover threshold, a
-                # confusing degenerate rejection instead of a clear config
-                # error at load time. Require a genuine positive integer.
-                if not isinstance(clim, int) or isinstance(clim, bool) or clim < 1:
+                if not isinstance(clim, int) or isinstance(clim, bool) or clim <= 0:
                     raise ContextGateConfigError(path, f"Model '{mid}' has non-positive or non-integer context_limit={clim!r}")
 
     return data
@@ -148,13 +146,7 @@ def resolve_context_target(
     registry_data: dict[str, Any] | None = None,
     profiles_data: dict[str, Any] | None = None,
 ) -> ResolvedContextTarget:
-    """C2: Strict priority resolution of a profile or model target to a ResolvedContextTarget.
-
-    Priority 1: profile node declares runtime_context_window directly (positive int) -> limit_basis="profile_declared_limit"
-    Priority 2: profile node declares explicit registry_model_id -> limit_basis="registry_model_id"
-    Priority 3: profile_data["model_id"] present AND exact registry key match -> limit_basis="exact_registry_model_id"
-    Priority 4: none of the above -> UnknownModelCapacityError (fail closed, no default/guess)
-    """
+    """C2: Strict priority resolution of a profile or model target to a ResolvedContextTarget."""
     if isinstance(target, ResolvedContextTarget):
         return target
 
@@ -167,7 +159,6 @@ def resolve_context_target(
 
     target_id = target.strip()
 
-    # Load profiles catalog if not provided
     if profiles_data is None:
         try:
             from hub import _load_model_profiles
@@ -179,14 +170,9 @@ def resolve_context_target(
 
     pdata = profiles_catalog.get(target_id, {}) if isinstance(profiles_catalog, dict) else {}
 
-    # Check Priority 1: runtime_context_window
-    # int type only (not float): a fractional value like 0.5 would otherwise
-    # pass "> 0" and then silently truncate to int(0.5) == 0, producing a
-    # degenerate 0-token admission limit instead of correctly falling through
-    # to Priority 2/3 (or Priority 4's clean fail-closed error).
+    # Priority 1: runtime_context_window
     rcw = pdata.get("runtime_context_window")
     if isinstance(rcw, int) and not isinstance(rcw, bool) and rcw > 0:
-        rcw_int = int(rcw)
         kind = "proven_lower_bound" if (
             target_id == "ag.gptoss"
             or pdata.get("context_window_kind") == "proven_lower_bound"
@@ -195,13 +181,13 @@ def resolve_context_target(
         reg_model_id = pdata.get("registry_model_id") or pdata.get("model_id")
         return ResolvedContextTarget(
             profile_id=target_id,
-            admission_limit=rcw_int,
+            admission_limit=rcw,
             limit_basis="profile_declared_limit",
             registry_model_id=str(reg_model_id) if reg_model_id else None,
             context_window_kind=kind,
         )
 
-    # Check Priority 2: registry_model_id in pdata
+    # Priority 2: registry_model_id in pdata
     reg_model_id = pdata.get("registry_model_id")
     if isinstance(reg_model_id, str) and reg_model_id:
         if reg_model_id in models_dict:
@@ -215,13 +201,13 @@ def resolve_context_target(
                     ) else "ceiling"
                     return ResolvedContextTarget(
                         profile_id=target_id,
-                        admission_limit=int(clim),
+                        admission_limit=clim,
                         limit_basis="registry_model_id",
                         registry_model_id=reg_model_id,
                         context_window_kind=kind,
                     )
 
-    # Check Priority 3: model_id in pdata & exact registry key match
+    # Priority 3: model_id in pdata & exact registry key match
     mid = pdata.get("model_id")
     if isinstance(mid, str) and mid:
         if mid in models_dict:
@@ -235,7 +221,7 @@ def resolve_context_target(
                     ) else "ceiling"
                     return ResolvedContextTarget(
                         profile_id=target_id,
-                        admission_limit=int(clim),
+                        admission_limit=clim,
                         limit_basis="exact_registry_model_id",
                         registry_model_id=mid,
                         context_window_kind=kind,
@@ -249,7 +235,7 @@ def resolve_context_target(
             if isinstance(clim, int) and not isinstance(clim, bool) and clim > 0:
                 return ResolvedContextTarget(
                     profile_id=target_id,
-                    admission_limit=int(clim),
+                    admission_limit=clim,
                     limit_basis="exact_registry_model_id",
                     registry_model_id=target_id,
                     context_window_kind="ceiling",
@@ -300,8 +286,6 @@ class ContextGate:
         resolved = self.resolve_target(target)
         return resolved.admission_limit
 
-    # ── Core check ────────────────────────────────────────────────────────────
-
     def check(self, text: str, target: str | dict[str, Any] | ResolvedContextTarget) -> dict[str, Any]:
         """Evaluate text length against resolved model context limit."""
         resolved = self.resolve_target(target)
@@ -331,7 +315,7 @@ class ContextGate:
 
         if estimated >= failover_t:
             result["action"] = "reject"
-            raise ContextGateError(estimated, limit, resolved.profile_id)
+            raise ContextGateError(estimated, limit, resolved.profile_id, utilization=utilization)
         elif estimated >= warn_t:
             result["action"] = "prune"
 
@@ -342,31 +326,53 @@ class ContextGate:
         blocks: list[dict[str, Any]],
         target: str | dict[str, Any] | ResolvedContextTarget,
         *,
+        mandatory_key: str = "mandatory",
         priority_key: str = "priority",
         text_key: str = "text",
     ) -> list[dict[str, Any]]:
-        """Prune lowest-priority blocks until total estimate is below warn_pct."""
-        limit = self.context_limit(target)
+        """C3 §3.2 Fix: Prune droppable blocks until total tokens < warn_pct threshold.
+
+        - Mandatory blocks are NEVER dropped.
+        - Droppable blocks are dropped in ascending priority order (lowest priority dropped first).
+        - Re-estimates exact pruned tokens after dropping each block.
+        - Require resulting tokens strictly LESS THAN (<) target_tokens.
+        - Fail closed (raise ContextGateError) if pruning cannot achieve < target_tokens.
+        """
+        resolved = self.resolve_target(target)
+        limit = resolved.admission_limit
+        # A 5% safety margin below warn_pct (restored from the pre-C3 code,
+        # which this rewrite had dropped to warn_pct exactly): pruning to
+        # land RIGHT AT the warn threshold means the very next similar-sized
+        # ask immediately re-triggers pruning again -- empirically confirmed
+        # during C3 cross-verification (a same-size follow-up query stayed
+        # "pass" with the margin but flipped back to "prune" without it).
         target_tokens = int(limit * (self.warn_pct - 0.05))
 
-        sorted_blocks = sorted(blocks, key=lambda b: b.get(priority_key, 0))
-        kept: list[dict[str, Any]] = list(blocks)
+        mandatory_blocks = [b for b in blocks if b.get(mandatory_key, False)]
+        droppable_blocks = sorted([b for b in blocks if not b.get(mandatory_key, False)], key=lambda b: b.get(priority_key, 0))
 
-        full_text = "".join(b.get(text_key, "") for b in kept)
-        if estimate_tokens(full_text) <= target_tokens:
-            return kept
+        kept_mandatory = list(mandatory_blocks)
+        kept_droppable = list(droppable_blocks)
 
-        for block in sorted_blocks:
-            if block in kept:
-                kept.remove(block)
-            remaining = "".join(b.get(text_key, "") for b in kept)
-            if estimate_tokens(remaining) <= target_tokens:
+        def _calc_total(mb: list[dict], db: list[dict]) -> int:
+            txt = "".join(b.get(text_key, "") for b in mb + db)
+            return estimate_tokens(txt)
+
+        current_tokens = _calc_total(kept_mandatory, kept_droppable)
+        if current_tokens < target_tokens:
+            return kept_mandatory + kept_droppable
+
+        for block in droppable_blocks:
+            kept_droppable.remove(block)
+            current_tokens = _calc_total(kept_mandatory, kept_droppable)
+            if current_tokens < target_tokens:
                 break
 
-        return kept
+        if current_tokens >= target_tokens:
+            raise ContextGateError(current_tokens, limit, resolved.profile_id, utilization=current_tokens / limit if limit else 0.0)
 
+        return kept_mandatory + kept_droppable
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
 
 def _main() -> None:
     import argparse
@@ -394,11 +400,13 @@ def _main() -> None:
             "error": str(exc),
             "estimated_tokens": getattr(exc, "estimated_tokens", 0),
             "context_limit": getattr(exc, "context_limit", 0),
+            "utilization": getattr(exc, "utilization", None),
         }
 
-    pct = result.get("utilization", 0) * 100
+    util = result.get("utilization")
+    pct_str = f"{util * 100:.1f}%" if isinstance(util, (int, float)) else "absent"
     print(f"Target    : {args.model}")
-    print(f"Estimated : {result.get('estimated_tokens', 0):,} tokens ({pct:.1f}%)")
+    print(f"Estimated : {result.get('estimated_tokens', 0):,} tokens ({pct_str})")
     print(f"Limit     : {result.get('context_limit', '?'):,}")
     print(f"Action    : {result.get('action', 'reject').upper()}")
 
