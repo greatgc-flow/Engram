@@ -447,84 +447,87 @@ def _normalize_runtime_files(ai_root: Path) -> None:
     configured, active_roots, retired = _runtime_node_policy()
 
     nodes_path = ai_root / "nodes.json"
-    nodes_data = _read_json(nodes_path) if nodes_path.exists() else {}
-    custom_nodes = nodes_data.get("nodes", {})
-    filtered_nodes = {
-        node_id: value
-        for node_id, value in custom_nodes.items()
-        if node_id not in configured and node_id not in retired
-    }
-    normalized_nodes = {"version": "2", "nodes": filtered_nodes}
-    if nodes_data != normalized_nodes:
-        _write_json(nodes_path, normalized_nodes)
+    with _get_lock(ai_root, "nodes"):
+        nodes_data = _read_json(nodes_path) if nodes_path.exists() else {}
+        custom_nodes = nodes_data.get("nodes", {})
+        filtered_nodes = {
+            node_id: value
+            for node_id, value in custom_nodes.items()
+            if node_id not in configured and node_id not in retired
+        }
+        normalized_nodes = {"version": "2", "nodes": filtered_nodes}
+        if nodes_data != normalized_nodes:
+            _write_json(nodes_path, normalized_nodes)
 
     state_path = ai_root / "state.json"
-    state = _read_json(state_path)
-    changed = False
-    members = state.get("members", {})
-    filtered_members = {
-        peer_id: sid
-        for peer_id, sid in members.items()
-        if peer_id in active_roots
-    }
-    if members != filtered_members:
-        state["members"] = filtered_members
-        changed = True
-
-    for field in ("active_coordinator", "human_interface_peer", "leader"):
-        if state.get(field) and state[field] not in active_roots:
-            state[field] = None
-            changed = True
-
-    leadership = state.get("leadership")
-    if (
-        isinstance(leadership, dict)
-        and leadership.get("peer")
-        and leadership.get("peer") not in active_roots
-    ):
-        state["leadership"] = {
-            "peer": None,
-            "status": "VACANT",
-            "reason": "peer_disabled_or_retired",
-            "normalized_at": _now(),
+    with _get_lock(ai_root, "state"):
+        state = _read_json(state_path)
+        changed = False
+        members = state.get("members", {})
+        filtered_members = {
+            peer_id: sid
+            for peer_id, sid in members.items()
+            if peer_id in active_roots
         }
-        changed = True
-
-    roles = state.get("role_assignments", {})
-    if isinstance(roles, dict):
-        filtered_roles = {}
-        for role, assignment in roles.items():
-            peer = assignment.get("peer") if isinstance(assignment, dict) else assignment
-            if peer in active_roots:
-                filtered_roles[role] = (
-                    assignment if isinstance(assignment, dict) else {"peer": peer}
-                )
-        if roles != filtered_roles:
-            state["role_assignments"] = filtered_roles
+        if members != filtered_members:
+            state["members"] = filtered_members
             changed = True
 
-    if changed:
-        state["updated_at"] = _now()
-        _write_state(ai_root, state)
+        for field in ("active_coordinator", "human_interface_peer", "leader"):
+            if state.get(field) and state[field] not in active_roots:
+                state[field] = None
+                changed = True
+
+        leadership = state.get("leadership")
+        if (
+            isinstance(leadership, dict)
+            and leadership.get("peer")
+            and leadership.get("peer") not in active_roots
+        ):
+            state["leadership"] = {
+                "peer": None,
+                "status": "VACANT",
+                "reason": "peer_disabled_or_retired",
+                "normalized_at": _now(),
+            }
+            changed = True
+
+        roles = state.get("role_assignments", {})
+        if isinstance(roles, dict):
+            filtered_roles = {}
+            for role, assignment in roles.items():
+                peer = assignment.get("peer") if isinstance(assignment, dict) else assignment
+                if peer in active_roots:
+                    filtered_roles[role] = (
+                        assignment if isinstance(assignment, dict) else {"peer": peer}
+                    )
+            if roles != filtered_roles:
+                state["role_assignments"] = filtered_roles
+                changed = True
+
+        if changed:
+            state["updated_at"] = _now()
+            _write_state(ai_root, state)
 
     leases_path = ai_root / "leases.json"
-    leases = _read_json(leases_path) if leases_path.exists() else {}
-    # Generic reclaim: keep a lease only if it is a declared node whose ROOT peer is
-    # routable (active). Profile nodes (e.g. cc.fable) are judged by their root (cc).
-    # Retired/legacy/non-routable IDs (e.g. gc, ca) are dropped without hardcoding
-    # names — derived from orchestration routing policy, not a static list.
-    # T83: leases.json is keyed by lease_id (uuid), not peer_id — match on
-    # entry["peer_id"], never the dict key.
-    filtered_leases = {
-        lease_id: value
-        for lease_id, value in leases.items()
-        if isinstance(value, dict)
-        and value.get("peer_id") in configured
-        and str(value.get("peer_id", "")).split(".")[0] in active_roots
-        and value.get("peer_id") not in retired
-    }
-    if leases != filtered_leases:
-        _write_json(leases_path, filtered_leases)
+    with _get_lock(ai_root, "leases"):
+        leases = _read_json(leases_path) if leases_path.exists() else {}
+        # Generic reclaim: keep a lease only if it is a declared node whose ROOT peer is
+        # routable (active). Profile nodes (e.g. cc.fable) are judged by their root (cc).
+        # Retired/legacy/non-routable IDs (e.g. gc, ca) are dropped without hardcoding
+        # names — derived from orchestration routing policy, not a static list.
+        # T83: leases.json is keyed by lease_id (uuid), not peer_id — match on
+        # entry["peer_id"], never the dict key.
+        filtered_leases = {
+            lease_id: value
+            for lease_id, value in leases.items()
+            if isinstance(value, dict)
+            and value.get("peer_id") in configured
+            and str(value.get("peer_id", "")).split(".")[0] in active_roots
+            and value.get("peer_id") not in retired
+        }
+        if leases != filtered_leases:
+            _write_json(leases_path, filtered_leases)
 
 
 def ensure_ai_dir(ai_root: Path) -> Path:
@@ -573,10 +576,21 @@ def ensure_ai_dir(ai_root: Path) -> Path:
 # ─────────────────────────────────────────────────────────────
 
 def _read_json(path: Path) -> dict:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+    # A concurrent os.replace() on this same path from another process can
+    # transiently deny an in-flight read on Windows (WinError 32-class sharing
+    # violation) even though the replace itself is atomic -- retry briefly
+    # before giving up, matching the same pattern used for lock-file creation
+    # and atomic writes elsewhere in this module.
+    max_retries = 5
+    for i in range(max_retries):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
+        except PermissionError:
+            if i == max_retries - 1:
+                raise
+            time.sleep((0.02 * (2**i)) + (random.random() * 0.01))
 
 
 def _validate_state(state: dict) -> None:
@@ -689,58 +703,6 @@ def _spawn_process(cmd, **popen_kwargs):
 _BROKER_COMMIT_ACTIVE = False
 
 
-def _try_broker_fallback(path: Path, data: dict) -> bool:
-    """On a sandbox-denied atomic replace, transparently queue the write to the
-    host-side mutation broker.
-
-    A sandboxed peer cannot os.replace an existing tracked file, but it CAN create
-    a new file under .ai/broker/pending (create-new is permitted). So we drop a
-    broker request there; a later host-side `broker-drain` performs the real commit.
-
-    Returns True if the write was queued (caller treats the write as done), or
-    False if it cannot be brokered (caller should raise the original denial).
-    """
-    if _BROKER_COMMIT_ACTIVE:
-        return False  # recursion guard: never re-broker a host-side commit
-    ai_root = next((p for p in [path, *path.parents] if p.name == ".ai"), None)
-    if ai_root is None:
-        return False
-    try:
-        rel, _ = _validate_broker_payload(ai_root, str(path.relative_to(ai_root)), data)
-    except Exception:
-        return False  # target is not broker-whitelisted -> cannot fall back
-    if rel.startswith("consensus/"):
-        # Consensus rounds use the concurrency-safe vote-merge path (Option 2),
-        # not a full-file replace; let the caller route via _queue_vote_merge.
-        return False
-    pending_dir, _, _ = _broker_dirs(ai_root)
-    # Option-3 serialization: at most one in-flight request per target. A second
-    # read-modify-write built from a now-stale read must not clobber the first.
-    try:
-        for req in pending_dir.glob("*.json"):
-            if _read_json(req).get("target") == rel:
-                return False  # a write for this target is already queued
-    except OSError:
-        pass
-    pending_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
-    request_id = f"br-{stamp}-{uuid.uuid4().hex[:8]}"
-    request = {
-        "schema_version": 1,
-        "request_id": request_id,
-        "created_at": _now(),
-        "origin": os.environ.get("HUB_ORIGIN", "worker"),
-        "operation": "json_replace",
-        "target": rel,
-        "payload": data,
-    }
-    req_path = pending_dir / f"{stamp}-{request_id}.json"
-    with req_path.open("x", encoding="utf-8") as f:
-        json.dump(request, f, ensure_ascii=False, indent=2)
-    print(f"[HUB] BROKER-QUEUED {request_id} | target={rel} | awaiting host drain", file=sys.stderr)
-    return True
-
-
 def _write_json_atomic(path: Path, data: dict) -> None:
     """Atomic write using a temporary file and os.replace."""
     # Use a unique temporary file to avoid collisions between parallel processes on Windows
@@ -757,13 +719,9 @@ def _write_json_atomic(path: Path, data: dict) -> None:
             except PermissionError as exc:
                 if i == max_retries - 1:
                     if _is_sandbox_rename_denied(exc):
-                        # Transparent broker fallback for sandboxed peers.
-                        if _try_broker_fallback(path, data):
-                            try:
-                                temp_path.unlink()
-                            except (FileNotFoundError, OSError):
-                                pass
-                            return
+                        # Top-5 #1: no silent fallback. A synchronous write must
+                        # commit or raise -- never silently queue-and-pretend-success.
+                        # Sandboxed callers must route through action_broker_submit().
                         raise SandboxRenameDeniedError(path, temp_path, exc) from exc
                     raise
                 # Exponential backoff: 20ms, 40ms, 80ms, 160ms, 320ms + jitter
@@ -788,13 +746,12 @@ class HubMutationRequest:
     payload: dict
     request_id: str
     operation: str = "json_replace"
-
-
+    expected_revision: str | None = None
 
 
 
 def _commit_hub_mutation_request(ai_root: Path, request: HubMutationRequest, force_tier0: bool = False) -> dict | None:
-    """Host-side commit primitive: guard, lock, journal, atomic replace."""
+    """Host-side commit primitive: guard, lock, CAS check, journal, atomic replace."""
     global _BROKER_COMMIT_ACTIVE
     _guard_action(ai_root, request.action, force_tier0=force_tier0, origin=request.origin)
     res = None
@@ -806,12 +763,25 @@ def _commit_hub_mutation_request(ai_root: Path, request: HubMutationRequest, for
             "request_id": request.request_id,
             "action": request.action,
             "target_path": str(request.target_path),
+            "expected_revision": request.expected_revision,
         })
         _BROKER_COMMIT_ACTIVE = True
         try:
             if request.operation == "consensus_vote_merge":
                 res = _apply_vote_merge(ai_root, request.target_path, request.payload)
             else:
+                # Top-5 #1 CAS: reject a request built from a stale read instead of
+                # silently overwriting newer state that landed after it was queued.
+                if request.expected_revision is not None:
+                    if request.target_path.exists():
+                        curr_hash = hashlib.sha256(request.target_path.read_bytes()).hexdigest()
+                    else:
+                        curr_hash = "ABSENT"
+                    if curr_hash != request.expected_revision:
+                        raise RuntimeError(
+                            f"Broker CAS mismatch for {request.target_path}: "
+                            f"expected {request.expected_revision}, got {curr_hash}"
+                        )
                 _write_json_atomic(request.target_path, request.payload)
         finally:
             _BROKER_COMMIT_ACTIVE = False
@@ -912,6 +882,7 @@ def _broker_request_from_dict(ai_root: Path, data: dict, commit_origin: str = "b
     if not re.fullmatch(r"br-[0-9]{20}-[0-9a-f]{8}", request_id):
         raise ValueError("invalid broker request_id")
     op = data.get("operation")
+    expected_revision = data.get("expected_revision")
     if op == "consensus_vote_merge":
         # Option-2: carry only the single vote intent; the host applies it against
         # a fresh read at commit time (concurrency-safe, no full-file clobber).
@@ -926,7 +897,7 @@ def _broker_request_from_dict(ai_root: Path, data: dict, commit_origin: str = "b
         return HubMutationRequest(
             action="broker-drain", origin=commit_origin or "broker",
             target_path=target_path, payload=vote, request_id=request_id,
-            operation="consensus_vote_merge",
+            operation="consensus_vote_merge", expected_revision=expected_revision,
         )
     if op == "json_replace":
         target = str(data.get("target") or "").strip()
@@ -935,6 +906,7 @@ def _broker_request_from_dict(ai_root: Path, data: dict, commit_origin: str = "b
         return HubMutationRequest(
             action="broker-drain", origin=commit_origin or "broker",
             target_path=target_path, payload=payload, request_id=request_id,
+            expected_revision=expected_revision,
         )
     raise ValueError("unsupported broker operation")
 
@@ -955,11 +927,19 @@ def action_broker_submit(ai_root: Path, target: str, payload_text: str, origin: 
     except json.JSONDecodeError as exc:
         print(f"[HUB:ERROR] broker-submit: invalid JSON payload: {exc}", file=sys.stderr)
         sys.exit(1)
-    rel, _ = _validate_broker_payload(ai_root, target, payload)
+    rel, target_path = _validate_broker_payload(ai_root, target, payload)
     pending_dir, _, _ = _broker_dirs(ai_root)
     pending_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
     request_id = f"br-{stamp}-{uuid.uuid4().hex[:8]}"
+
+    # Top-5 #1 CAS: capture the target's current revision at queue time so
+    # a stale request can be rejected (not silently overwritten) at drain.
+    if target_path.exists():
+        expected_revision = hashlib.sha256(target_path.read_bytes()).hexdigest()
+    else:
+        expected_revision = "ABSENT"
+
     request = {
         "schema_version": 1,
         "request_id": request_id,
@@ -968,10 +948,14 @@ def action_broker_submit(ai_root: Path, target: str, payload_text: str, origin: 
         "operation": "json_replace",
         "target": rel,
         "payload": payload,
+        "expected_revision": expected_revision,
     }
     path = pending_dir / f"{stamp}-{request_id}.json"
-    with path.open("x", encoding="utf-8") as f:
-        json.dump(request, f, ensure_ascii=False, indent=2)
+    # Top-5 #1 crash-safe write: temp file + atomic rename, so a crash mid-write
+    # never leaves a partially-written file for broker-drain to discover later.
+    tmp_path = pending_dir / f".tmp_{path.name}.{uuid.uuid4().hex[:8]}"
+    tmp_path.write_text(json.dumps(request, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(str(tmp_path), str(path))
     print(f"[HUB] BROKER-SUBMIT {request_id} | target={rel} | pending={path.name}")
 
 
@@ -1114,15 +1098,25 @@ def _strip_ansi(text: str) -> str:
 def _get_lock(ai_root: Path, resource: str):
     from filelock import FileLock
     lock_path = ai_root / ".lock" / f"{resource}.lock"
-    try:
-        os.makedirs(ai_root / ".lock", exist_ok=True)
-        fd = os.open(lock_path, os.O_RDWR | os.O_CREAT)
-        os.close(fd)
-    except PermissionError as exc:
-        raise PermissionError(
-            f"Cannot create or open lock file '{lock_path}'. "
-            "The workspace is read-only; rerun with workspace-write permission."
-        ) from exc
+    os.makedirs(ai_root / ".lock", exist_ok=True)
+    # Several unrelated processes/threads can race to create the SAME lock
+    # file (e.g. multiple parallel hub.py invocations each touching "leases"
+    # at startup). On Windows this can surface as a transient PermissionError
+    # from os.open() even though nothing is actually access-restricted --
+    # retry briefly before treating it as a real permission failure.
+    max_retries = 5
+    for i in range(max_retries):
+        try:
+            fd = os.open(lock_path, os.O_RDWR | os.O_CREAT)
+            os.close(fd)
+            break
+        except PermissionError as exc:
+            if i == max_retries - 1:
+                raise PermissionError(
+                    f"Cannot create or open lock file '{lock_path}'. "
+                    "The workspace is read-only; rerun with workspace-write permission."
+                ) from exc
+            time.sleep((0.02 * (2**i)) + (random.random() * 0.01))
     return FileLock(str(lock_path), timeout=10)
 
 
@@ -8066,41 +8060,42 @@ def action_alert_raise(ai_root: Path, agent: str, severity: str, msg: str) -> No
 
 def action_thread_promote(ai_root: Path, msg_id: str, to_thread_id: str, agent: str) -> None:
     """Mailbox 메시지를 Durable Room Thread로 승격(복사)."""
-    # 1. 메시지 찾기
     mailbox_path = ai_root / "mailbox.json"
-    mbox = _read_json(mailbox_path)
-    found_msg = None
-    for m in mbox.get("messages", []):
-        if m.get("id") == msg_id:
-            found_msg = m
-            break
-            
-    if not found_msg:
-        print(f"[HUB:ERROR] message {msg_id} not found in mailbox", file=sys.stderr)
-        sys.exit(1)
-        
-    # 2. 스레드에 추가
-    topic_slug = re.sub(r"[^\w-]", "-", to_thread_id.lower())[:40]
-    path = _threads_dir(ai_root) / f"{topic_slug}.jsonl"
-    
-    entry = {
-        "id": _short_msg_id(),
-        "ts": found_msg.get("ts", _now()),
-        "from": found_msg.get("from", "unknown"),
-        "type": "MSG_PROMOTED",
-        "content": f"[PROMOTED from {msg_id}] {found_msg.get('msg')}",
-        "promoted_by": agent,
-        "promoted_at": _now(),
-        "reactions": {}
-    }
-    _append_jsonl(path, entry)
-    
-    # 3. 마킹
-    found_msg["promoted_to"] = topic_slug
-    _write_json_atomic(mailbox_path, mbox)
-    
-    _log_p2p("THREAD-PROMOTE", f"Msg={msg_id} → Thread={topic_slug}", from_node=agent)
-    print(f"[HUB] Message {msg_id} promoted to thread {topic_slug}")
+    with _get_lock(ai_root, "mailbox"):
+        # 1. 메시지 찾기
+        mbox = _read_json(mailbox_path)
+        found_msg = None
+        for m in mbox.get("messages", []):
+            if m.get("id") == msg_id:
+                found_msg = m
+                break
+
+        if not found_msg:
+            print(f"[HUB:ERROR] message {msg_id} not found in mailbox", file=sys.stderr)
+            sys.exit(1)
+
+        # 2. 스레드에 추가
+        topic_slug = re.sub(r"[^\w-]", "-", to_thread_id.lower())[:40]
+        path = _threads_dir(ai_root) / f"{topic_slug}.jsonl"
+
+        entry = {
+            "id": _short_msg_id(),
+            "ts": found_msg.get("ts", _now()),
+            "from": found_msg.get("from", "unknown"),
+            "type": "MSG_PROMOTED",
+            "content": f"[PROMOTED from {msg_id}] {found_msg.get('msg')}",
+            "promoted_by": agent,
+            "promoted_at": _now(),
+            "reactions": {}
+        }
+        _append_jsonl(path, entry)
+
+        # 3. 마킹
+        found_msg["promoted_to"] = topic_slug
+        _write_json_atomic(mailbox_path, mbox)
+
+        _log_p2p("THREAD-PROMOTE", f"Msg={msg_id} → Thread={topic_slug}", from_node=agent)
+        print(f"[HUB] Message {msg_id} promoted to thread {topic_slug}")
 
 
 def action_context_fill(ai_root: Path, sections: list[str] | None = None, frame: bool = False) -> None:

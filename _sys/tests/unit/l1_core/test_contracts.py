@@ -332,35 +332,42 @@ def _round():
 
 
 class TestSandboxBrokerFallback:
-    """A sandbox-denied atomic replace (WinError 5) on a broker-whitelisted, NON
-    consensus .ai target must transparently queue a full-file replace to the
-    broker (Option 1) instead of crashing. Consensus rounds defer to vote-merge."""
+    """Top-5 #1 (2026-07-25): a sandbox-denied atomic replace (WinError 5) on
+    ANY .ai target -- including broker-whitelisted, non-consensus targets --
+    now raises SandboxRenameDeniedError directly. `_try_broker_fallback()`
+    (the old silent-queue-and-pretend-success path) is deleted: a synchronous
+    write must commit or raise, never silently queue while the caller believes
+    it succeeded (the deleted behavior could leave a caller like _lease_close()
+    acting on state that was never actually written). Sandboxed callers must
+    route through `action_broker_submit()` explicitly, which now captures a
+    real `expected_revision` (CAS) and writes the request crash-safely.
+    Consensus rounds still defer to vote-merge (unaffected by this change)."""
 
     def _mailbox(self):
         return {"messages": [], "unread_count": 0}
 
-    def test_denied_write_queues_to_broker(self, tmp_path, monkeypatch):
+    def test_denied_write_raises_instead_of_silently_queuing(self, tmp_path, monkeypatch):
         import os
         ai = tmp_path / ".ai"; ai.mkdir(parents=True)
         p = ai / "mailbox.json"; p.write_text(json.dumps(self._mailbox()), encoding="utf-8")
         monkeypatch.setattr(os, "replace", _deny_replace())
-        hub._write_json(p, {"messages": [], "unread_count": 3})  # must NOT raise
-        pending = list((ai / "broker" / "pending").glob("*.json"))
-        assert len(pending) == 1
-        queued = json.loads(pending[0].read_text(encoding="utf-8"))
-        assert queued["target"] == "mailbox.json"
-        assert queued["operation"] == "json_replace"
-        assert not list(ai.glob("*.tmp"))  # temp cleaned
-
-    def test_serialize_one_inflight_per_target(self, tmp_path, monkeypatch):
-        import os
-        ai = tmp_path / ".ai"; ai.mkdir(parents=True)
-        p = ai / "mailbox.json"; p.write_text(json.dumps(self._mailbox()), encoding="utf-8")
-        monkeypatch.setattr(os, "replace", _deny_replace())
-        hub._write_json(p, {"messages": [], "unread_count": 1})
         with pytest.raises(hub.SandboxRenameDeniedError):
-            hub._write_json(p, {"messages": [], "unread_count": 2})  # stale, must not double-queue
-        assert len(list((ai / "broker" / "pending").glob("*.json"))) == 1
+            hub._write_json(p, {"messages": [], "unread_count": 3})
+        assert not (ai / "broker" / "pending").exists() or not list((ai / "broker" / "pending").glob("*.json"))
+        assert not list(ai.glob("*.tmp"))  # temp cleaned
+        # The target itself must be untouched -- no silent partial success.
+        assert json.loads(p.read_text(encoding="utf-8")) == self._mailbox()
+
+    def test_repeated_denied_writes_each_raise_no_hidden_state(self, tmp_path, monkeypatch):
+        import os
+        ai = tmp_path / ".ai"; ai.mkdir(parents=True)
+        p = ai / "mailbox.json"; p.write_text(json.dumps(self._mailbox()), encoding="utf-8")
+        monkeypatch.setattr(os, "replace", _deny_replace())
+        with pytest.raises(hub.SandboxRenameDeniedError):
+            hub._write_json(p, {"messages": [], "unread_count": 1})
+        with pytest.raises(hub.SandboxRenameDeniedError):
+            hub._write_json(p, {"messages": [], "unread_count": 2})
+        assert not (ai / "broker" / "pending").exists() or not list((ai / "broker" / "pending").glob("*.json"))
 
     def test_recursion_guard_during_commit(self, tmp_path, monkeypatch):
         import os
