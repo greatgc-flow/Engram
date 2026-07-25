@@ -55,6 +55,16 @@ def _mock_invoker(peer, profile, model, prompt):
 def _patch_probe_plumbing(monkeypatch, tmp_path):
     monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy", "exists": True})
     monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+    # _canary_quota() reads real, live machine quota state via
+    # collect_snapshot(use_cache=True) - a process-wide cache keyed only by a
+    # TTL, not by ai_root/tmp_path. Left unpatched, this test's reservation
+    # grant silently depends on the real host's current quota remaining vs.
+    # MOCK_ORCH's reserve_floor, making it flaky under a long-running full
+    # suite where real quota drifts. Pin it to a deterministic PASS-eligible
+    # value instead.
+    monkeypatch.setattr(
+        ccc, "_canary_quota", lambda peer, profile_name: {"source_tag": "cli_live", "remaining": 1.0}
+    )
 
 
 def test_restricted_peer_scope_merges_not_overwrites(monkeypatch, tmp_path):
