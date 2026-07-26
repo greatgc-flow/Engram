@@ -149,7 +149,9 @@ def test_d6_ag_deepthink_intent_is_declared_and_normalized():
     ag_root = next(node for node in normalized["hub_nodes"] if node.get("node_id") == "ag" and node.get("type") == "peer")
     assert deepthink["profile_intent"] == intent
     assert ag_root["profile_intent"] == intent
-    assert deepthink["runtime_model"] == "Gemini 3.1 Pro (High)"
+    # Canonical runtime_model form (not the display-name form) since
+    # 2026-07-23 (see orchestration.json's _model_id_fix_note on this node).
+    assert deepthink["runtime_model"] == "gemini-3.1-pro-high"
     assert deepthink["routing_state"] == "eligible"
 
 
@@ -207,10 +209,12 @@ def test_disabled_roots_have_blocked_profiles():
 
 def test_ag_runtime_models_are_locally_verified_and_routable():
     ag = next(n for n in _raw()["hub_nodes"] if n["node_id"] == "ag")
+    # Canonical runtime_model form (not the display-name form) since
+    # 2026-07-23 (see orchestration.json's _model_id_fix_note on these nodes).
     expected = {
-        "standard": "Gemini 3.5 Flash (Low)",
-        "effort": "Gemini 3.5 Flash (High)",
-        "deepthink": "Gemini 3.1 Pro (High)",
+        "standard": "gemini-3.5-flash-low",
+        "effort": "gemini-3.5-flash-high",
+        "deepthink": "gemini-3.1-pro-high",
     }
     for profile_name, runtime_model in expected.items():
         profile = ag["profiles"][profile_name]
@@ -228,10 +232,13 @@ def test_cc_and_cx_profiles_are_locally_verified():
             "effort": {"model_id": "claude-sonnet-5", "context": 1000000, "validated_at": "2026-07-19"},
             "deepthink": {"model_id": "claude-opus-4-8", "context": 1000000, "validated_at": "2026-06-20"},
         },
+        # context re-verified 372000 -> 272000 on 2026-07-24 (real measurement,
+        # see orchestration.json's cx profile entries); validated_at bumped
+        # to match.
         "cx": {
-            "standard": {"model_id": "gpt-5.6-luna", "context": 372000, "validated_at": "2026-07-13"},
-            "effort": {"model_id": "gpt-5.6-terra", "context": 372000, "validated_at": "2026-07-13"},
-            "deepthink": {"model_id": "gpt-5.6-sol", "context": 372000, "validated_at": "2026-07-13"},
+            "standard": {"model_id": "gpt-5.6-luna", "context": 272000, "validated_at": "2026-07-24"},
+            "effort": {"model_id": "gpt-5.6-terra", "context": 272000, "validated_at": "2026-07-24"},
+            "deepthink": {"model_id": "gpt-5.6-sol", "context": 272000, "validated_at": "2026-07-24"},
         },
     }
     for peer_id, profiles in expected.items():
