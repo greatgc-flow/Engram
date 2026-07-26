@@ -1,0 +1,156 @@
+{
+  "version": 1,
+  "identity": "path_and_top_level_function_name",
+  "entries": [
+    {
+      "path": "_sys/checks/check_capability_core.py",
+      "name": "aggregate_core_runs",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/checks/check_capability_core.py",
+      "name": "estimate_tokens",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/checks/check_cli_reality.py",
+      "name": "fingerprint_changed",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/checks/check_cli_reality.py",
+      "name": "load_observed_models",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/checks/check_sandbox_behavior.py",
+      "name": "load_and_summarize",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/cli/cleanup.py",
+      "name": "run_cleanup",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/cli/diag.py",
+      "name": "_ctx_session_cell",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/cli/diag.py",
+      "name": "_pacing_cell",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/cli/diag.py",
+      "name": "_sev_color",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/cli/manage.py",
+      "name": "get_subst_mappings",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/cli/peer_console.py",
+      "name": "apply_security_semantics",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/cli/peer_console.py",
+      "name": "interactive_profile_banner",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/cli/peer_console.py",
+      "name": "peer_default_args",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/cli/peer_mgr.py",
+      "name": "_find_voter_lists",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/core/hub.py",
+      "name": "_apply_hard_cap",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/core/hub.py",
+      "name": "_check_exception_ttl",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/core/hub.py",
+      "name": "_commit_host_mutation",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/core/hub.py",
+      "name": "_derive_gate_state",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/core/hub.py",
+      "name": "_extract_shorthand_lessons",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/core/hub.py",
+      "name": "_fresh_active_coordinator",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/core/hub.py",
+      "name": "_get_head_committed_hash",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/core/hub.py",
+      "name": "_infer_focus_tags",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/core/hub.py",
+      "name": "_is_tracked_by_git",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/core/hub.py",
+      "name": "_save_session_state",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/core/hub.py",
+      "name": "_snapshot_failover_choice",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/core/hub_error.py",
+      "name": "report_error",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/core/pathlayout.py",
+      "name": "resolve_path_layout",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/core/provisioner.py",
+      "name": "_download",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/core/scrubber.py",
+      "name": "_host_registration_active",
+      "reason": "legacy_zero_production_callers"
+    },
+    {
+      "path": "_sys/core/snapshot.py",
+      "name": "_eligible_reset_credits",
+      "reason": "legacy_zero_production_callers"
+    }
+  ]
+}
