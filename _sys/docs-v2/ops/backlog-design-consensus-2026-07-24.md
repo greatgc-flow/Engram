@@ -2315,3 +2315,132 @@ rounds found a genuine bug during cross-verification that pure design
 review had missed, validating the one-fix-at-a-time-with-real-cross-
 verification discipline as load-bearing, not ceremonial, for the entire
 C1 effort.
+
+## Implementation phase cross-check (2026-07-26)
+
+After the 9-cluster implementation run (Top-5#1, C5, C2, C3, C6, C10
+items 4+5, C9, C7 -- commits `4a340c5` through `d4ad15b`), ran a full
+cross-check per user instruction: `git log` verified all 9 commits
+present, `git status` verified a clean tree (modulo known testing-
+artifact files), then two full `pytest _sys/tests/unit/` runs.
+
+Both full runs surfaced a 4th failure beyond the 3 known pre-existing
+`test_model_profiles.py` failures:
+`test_cli_canary_emit_observed.py::test_restricted_peer_scope_merges_not_overwrites`.
+It passed cleanly in isolation and in a 507-test partial run, but failed
+2/2 in the full ~1521-test suite -- a real, reproducible, order/time-
+dependent issue, not simple flakiness.
+
+Root-caused to a pre-existing test-isolation gap, unrelated to any of
+the 9 shipped clusters: the test never mocks `_canary_quota()`, which
+reads real, live machine quota through `snapshot.py`'s
+`collect_snapshot(use_cache=True)` -- a process-wide TTL cache keyed only
+by a monotonic clock, not scoped to the test's own `tmp_path`. The test's
+`MOCK_ORCH` sets `reserve_floor: 0.0`; whenever the real host's actual
+current quota for the matched peer/profile drifts down near that floor
+(plausible mid-session, given how quota-heavy this entire implementation
+round was), the reservation is silently denied and the peer is dropped
+from the capture, failing the merge assertion. `canary_probe()` already
+exposes a `quota` injection seam for exactly this reason, but it isn't
+threaded through the higher-level `run_canary()`/`emit_observed_capture()`
+entry points the test actually calls, so the test had no way to reach it.
+
+Fixed (`c2bb260`) by monkeypatching `ccc._canary_quota` directly in the
+test's existing `_patch_probe_plumbing()` helper to a deterministic
+PASS-eligible value -- same pattern already used there for
+`fingerprint`/`real_binary`, zero production-code change, zero blast
+radius on the 9 shipped clusters. Re-ran the full suite twice more after
+the fix: consistently back to exactly 3 failed / 1517 passed / 1 skipped
+(the known, unrelated `test_model_profiles.py` context-window-drift
+failures only).
+
+**Cross-check verdict**: all 9 clusters' commits are present, the tree is
+clean, and the full suite is green modulo the 3 pre-existing unrelated
+failures. No regression from any of the 9 clusters was found during this
+cross-check.
+
+## C8-A implementation (2026-07-26)
+
+Shipped (`dc7d771`): the security hotfix half of C8 only (classifier
+split, root-scope insertion, `_append_missing` atomicity, `--` terminator
+handling). ag drafted the initial split (direct file write, quarantined
+per policy, live bytes recovered normally); cc's cold review reverted an
+out-of-scope root-scope change to `apply_security_semantics()` (zero
+production callers, unverified generalization, broke a pre-existing
+test); cx's independent cross-verification then found two real,
+live-parser-verified release-blocking bugs the first pass missed
+(profile defaults still appended after the subcommand -- same class of
+bug as the original `-s workspace-write` issue; a `--` terminator bypass
+letting inserted flags become inert positional noise) plus two smaller
+correctness gaps (option/value-pair splitting, concatenated short-flag
+aliases) -- all fixed by cc directly, with a live-parser regression test
+added against the real installed `codex.cmd`. Final: 1531 passed / 3
+pre-existing unrelated failures / 1 skipped.
+
+**Remaining**: C8-B (the `ConsoleLaunch`/`InvocationKind` consolidation,
+truthful banners, hardcoded-branch removal, and `forbidden_effective_args`
+runtime enforcement + `ALLOW_BREAK_GLASS_DANGER_ACCESS` gate) is
+unshipped -- deliberately out of scope for this hotfix per the design
+doc's own staged landing strategy. Also deferred, pre-existing, lower
+severity: command classification only inspects `args[0]`, so a leading
+global option before the subcommand isn't recognized as admin.
+
+## C4 implementation (2026-07-26)
+
+Shipped (`8d562c6`): all 7 items. ag drafted (direct file write,
+quarantined per policy); cc's review against REAL repo data (not just
+mocks) found and fixed two severe live-breaking regressions the mocked
+tests missed: CHK-02's new .py/.json/.sh scope false-positived on real,
+intentional Korean console output in `scrubber.py` (fixed: scope now
+config-gated via `docs_mece_inv19_scan_extensions`, defaults .md-only
+until a real `# INV19-ALLOW` sweep exists); the pre-commit hook was
+never wired to `--source=index` at all, and doing so would ALSO have
+broken every commit referencing gitignored runtime paths like
+`session_state.json`/`health.json` (fixed: hook stays on worktree
+source, `--source=index` shipped as tested-but-not-enabled; hook's
+fail-open-on-missing-script pattern also fixed to fail closed for all
+4 checks). Second short targeted cross-verification (ag) found no
+further live-breaking issues, only 2 zero-current-impact latent gaps
+(AST AnnAssign handling, non-ASCII filename quoting) noted for a future
+sweep. 1539 passed / 3 pre-existing unrelated failed / 1 skipped.
+
+**Remaining backlog**: C8-B, C11, C10 items 1-3/6-11, S2/S3.
+
+## C8-B and C11 implementation (2026-07-26)
+
+Shipped C11 (`c4552ca`) and C8-B (`f2270e7`), dispatched concurrently
+(cx on C11, ag on C8-B/cross-verify). A brief wall-clock overlap between
+the two peers' writes triggered the governed-mutation guard on 5 shared
+files; forensic diffing of the quarantine snapshots confirmed this was
+pure temporal misattribution with zero actual cross-contamination
+between the two changes (each file's snapshot was byte-identical to the
+other peer's own final version). No data loss; check_cli_reality.py
+briefly appearing "deleted" was an artifact of catching cx's own
+rewrite-in-place mid-transition.
+
+**C11**: two-dimensional evidence classification, unified observation
+store, cache-only hot-path reader (empirically measured ~0.165ms median,
+budget <1ms), C2/C3 dispatch-target composition. Cross-verified by ag
+(fresh session, real exploit scripts against real installed peer
+binaries) with zero issues found -- the first fully clean
+cross-verification round all session.
+
+**C8-B**: unified `prepare_console_launch()`/`InvocationKind`/
+`ConsoleLaunch` API, runtime `forbidden_effective_args` enforcement,
+truthful banners. cc's own review found the `_check_forbidden_args`
+bare-positional false positive (`codex exec "yolo"` wrongly blocked).
+First cross-verification attempt got caught in the collision above and
+produced nothing; a second, isolated, fresh-session retry found two
+more real bugs via live binary probing: `-a`/`--ask-for-approval`
+missing from the dangerous-value-flag set (real security bypass), and
+REMOTE_AGENT inserting `--model` into `codex cloud exec` argv the real
+CLI rejects outright (100%-reproducible crash) -- both fixed, both
+re-verified against the real installed codex.cmd binary.
+
+**Process lesson**: never dispatch two peers concurrently against files
+that might overlap (even across different clusters) -- the guard
+correctly avoided any actual damage, but the false "deleted file" alarm
+cost real investigation time. Use non-overlapping dispatch windows or
+distinct file scopes going forward.
+
+**Remaining backlog**: C10 items 1-3/6-11, S2, S3.
