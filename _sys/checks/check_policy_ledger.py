@@ -9,15 +9,14 @@ it if cx hadn't happened to notice live during an unrelated consensus round.
 
 _sys/ai/policy-decisions.json is a lightweight, git-tracked ledger of policy
 decisions. Each decision marked status="applied" carries a `checks` list --
-either a JSON pointer into a config file with an expected value, or a
-required substring in a doc file. This script re-verifies every one of those
-checks against the CURRENT file contents on every commit: if an "applied"
-decision's evidence no longer matches reality (reverted config, edited-away
-doc banner), that is real drift and fails the commit instead of sitting
-stale and undiscovered.
+either a JSON pointer into a config file with an expected value, a required
+substring in a doc file, or a required JSON array member. This script
+re-verifies every one of those checks against the CURRENT file contents on every commit.
 
-The ledger is optional infrastructure, not a required file: a repo with no
-policy-decisions.json is not an error (nothing to verify yet).
+Cluster C4 Hardening:
+  - Item 6: expected_substring is required non-empty for text_contains checks.
+    Schema errors return structured violation strings, never uncaught tracebacks.
+  - Item 7: json_array_member check kind added for backlog.json array member verification.
 
 Usage:  python check_policy_ledger.py [--ai-dir DIR] [--json]
 Exit:   0 clean (or no ledger present) - 1 at least one violation.
@@ -36,13 +35,12 @@ _PORTABLE_ROOT = _SYS_DIR.parent
 _AI_DIR = _SYS_DIR / "ai"
 
 VALID_STATUSES = {"proposed", "approved", "applied", "superseded"}
-VALID_CHECK_KINDS = {"json_value", "text_contains"}
+VALID_CHECK_KINDS = {"json_value", "text_contains", "json_array_member"}
 
 
 def _resolve_json_pointer(data: Any, pointer: str) -> Any:
     """Minimal slash-separated pointer resolver (e.g. "/a/b/0"); raises
-    KeyError/IndexError/TypeError on a bad path, which callers report as
-    a check failure rather than crashing the whole run."""
+    KeyError/IndexError/TypeError on a bad path."""
     cur = data
     for part in [p for p in pointer.split("/") if p]:
         if isinstance(cur, list):
@@ -79,14 +77,54 @@ def _run_check(decision_id: str, check: dict) -> list[str]:
             ]
         return []
 
-    # text_contains
-    expected_substring = check.get("expected_substring", "")
-    text = full_path.read_text(encoding="utf-8")
-    if expected_substring not in text:
-        return [
-            f"{decision_id}: DRIFT -- {rel_path} no longer contains the text "
-            f"this 'applied' decision's evidence depends on: {expected_substring!r}"
-        ]
+    if kind == "text_contains":
+        expected_substring = check.get("expected_substring")
+        if not isinstance(expected_substring, str) or not expected_substring:
+            return [
+                f"{decision_id}: text_contains check in {rel_path} requires a "
+                "non-empty 'expected_substring' string"
+            ]
+        try:
+            text = full_path.read_text(encoding="utf-8")
+        except Exception as exc:
+            return [f"{decision_id}: could not read text file {rel_path}: {exc}"]
+
+        if expected_substring not in text:
+            return [
+                f"{decision_id}: DRIFT -- {rel_path} no longer contains the text "
+                f"this 'applied' decision's evidence depends on: {expected_substring!r}"
+            ]
+        return []
+
+    if kind == "json_array_member":
+        pointer = check.get("pointer", "")
+        match_key = check.get("match_key")
+        match_value = check.get("match_value")
+        expected_item = check.get("expected")
+
+        try:
+            live = json.loads(full_path.read_text(encoding="utf-8"))
+            arr = _resolve_json_pointer(live, pointer)
+        except Exception as exc:
+            return [f"{decision_id}: could not resolve pointer '{pointer}' in {rel_path}: {exc}"]
+
+        if not isinstance(arr, list):
+            return [f"{decision_id}: pointer '{pointer}' in {rel_path} did not resolve to a list"]
+
+        if match_key is not None:
+            found = any(isinstance(x, dict) and x.get(match_key) == match_value for x in arr)
+            if not found:
+                return [
+                    f"{decision_id}: DRIFT -- {rel_path}{pointer} array missing item where "
+                    f"{match_key}=={match_value!r}"
+                ]
+        else:
+            if expected_item not in arr:
+                return [
+                    f"{decision_id}: DRIFT -- {rel_path}{pointer} array missing expected item {expected_item!r}"
+                ]
+        return []
+
     return []
 
 

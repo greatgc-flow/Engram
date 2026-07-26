@@ -240,10 +240,12 @@ class TestChk03CoverageMap:
             findings = chk_03_coverage_map([])
         assert findings == []
 
-    def test_git_error_returns_no_findings(self):
+    def test_git_error_fails_closed(self):
         with patch("subprocess.run", side_effect=Exception("git not found")):
             findings = chk_03_coverage_map([])
-        assert findings == []
+        assert len(findings) == 1
+        assert findings[0].tier == "T3"
+        assert "Git infrastructure error" in findings[0].message
 
 
 # ── CHK-04: Anchor integrity ──────────────────────────────────────────────────

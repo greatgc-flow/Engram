@@ -5,7 +5,7 @@ live in JSON config (telemetry-config.json / routing-config.json), not as raw
 magic numbers scattered in code. Three checks, low false-positive:
 
   CHK-CONST-1: the telemetry constants in snapshot.py are assigned FROM
-               telemetry_config() (not re-hardcoded as a numeric literal).
+               telemetry_config() subscript chains (not hardcoded or reassigned).
   CHK-CONST-2: telemetry-config.json is schema-complete vs _TELEMETRY_DEFAULTS
                (every section/key present with the right type).
   CHK-CONST-3: routing-config.token_load_balancing carries the documented
@@ -19,7 +19,6 @@ from __future__ import annotations
 import argparse
 import ast
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -29,11 +28,10 @@ _SNAPSHOT = _SYS_DIR / "core" / "snapshot.py"
 _TELEMETRY_JSON = _SYS_DIR / "ai" / "telemetry-config.json"
 _ROUTING_JSON = _SYS_DIR / "ai" / "routing-config.json"
 
-# Module-level constants that MUST be sourced from telemetry_config(), not a literal.
-_CONFIG_SOURCED = [
+_CONFIG_SOURCED = {
     "SNAPSHOT_TTL_SEC", "EXPENSIVE_SOURCE_TTL_SEC", "_LOCAL_TTL_SEC",
     "QUOTA_WARN_FRAC", "QUOTA_CRIT_FRAC",
-]
+}
 
 _TELEMETRY_SCHEMA = {
     "ttl": {"snapshot_sec": int, "expensive_source_sec": int, "local_sec": int},
@@ -48,19 +46,80 @@ _ROUTING_REQUIRED_KNOBS = [
 ]
 
 
+def _is_valid_telemetry_subscript(node: ast.AST) -> bool:
+    """Returns True if node is a Subscript chain whose innermost value is telemetry_config()."""
+    if not isinstance(node, ast.Subscript):
+        return False
+    curr = node
+    while isinstance(curr, ast.Subscript):
+        curr = curr.value
+    return (
+        isinstance(curr, ast.Call)
+        and isinstance(curr.func, ast.Name)
+        and curr.func.id == "telemetry_config"
+        and not curr.args
+        and not curr.keywords
+    )
+
+
 def _check_config_sourced() -> list[str]:
-    """CHK-CONST-1: each named constant assigned from telemetry_config()."""
+    """CHK-CONST-1: each named constant assigned from telemetry_config() subscript chain."""
     out: list[str] = []
-    src = _SNAPSHOT.read_text(encoding="utf-8")
-    for name in _CONFIG_SOURCED:
-        m = re.search(rf"^{re.escape(name)}\s*=\s*(.+)$", src, re.MULTILINE)
-        if not m:
-            out.append(f"CHK-CONST-1: {name} not found in snapshot.py")
+    if not _SNAPSHOT.exists():
+        return [f"CHK-CONST-1: snapshot.py not found at {_SNAPSHOT}"]
+
+    try:
+        src = _SNAPSHOT.read_text(encoding="utf-8")
+        tree = ast.parse(src, filename=str(_SNAPSHOT))
+    except Exception as exc:
+        return [f"CHK-CONST-1: failed to parse snapshot.py: {exc}"]
+
+    assigned_names: dict[str, int] = {name: 0 for name in _CONFIG_SOURCED}
+
+    # Only inspect top-level statements in snapshot.py (do not walk into functions/classes)
+    for stmt in tree.body:
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
-        rhs = m.group(1)
-        if "telemetry_config()" not in rhs:
-            out.append(f"CHK-CONST-1: {name} is hardcoded ('{rhs.strip()}') — "
-                       f"must load from telemetry_config()")
+
+        if isinstance(stmt, ast.Assign):
+            for target in stmt.targets:
+                target_name = None
+                if isinstance(target, ast.Name):
+                    target_name = target.id
+                elif isinstance(target, ast.Subscript):
+                    # Catch globals()["NAME"] = ...
+                    val = target.value
+                    if (
+                        isinstance(val, ast.Call)
+                        and isinstance(val.func, ast.Name)
+                        and val.func.id == "globals"
+                        and isinstance(target.slice, ast.Constant)
+                        and isinstance(target.slice.value, str)
+                    ):
+                        target_name = target.slice.value
+
+                if target_name and target_name in _CONFIG_SOURCED:
+                    assigned_names[target_name] += 1
+                    if assigned_names[target_name] > 1:
+                        out.append(
+                            f"CHK-CONST-1: {target_name} is reassigned multiple times at module level"
+                        )
+                    if not _is_valid_telemetry_subscript(stmt.value):
+                        out.append(
+                            f"CHK-CONST-1: {target_name} is hardcoded or not loaded from a valid "
+                            "telemetry_config() subscript chain"
+                        )
+
+        elif isinstance(stmt, ast.AugAssign):
+            target = stmt.target
+            target_name = target.id if isinstance(target, ast.Name) else None
+            if target_name and target_name in _CONFIG_SOURCED:
+                out.append(f"CHK-CONST-1: {target_name} uses illegal AugAssign (reassignment)")
+
+    for name, count in assigned_names.items():
+        if count == 0:
+            out.append(f"CHK-CONST-1: {name} not found in snapshot.py module-level statements")
+
     return out
 
 

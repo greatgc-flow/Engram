@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 _CHECKS_DIR = Path(__file__).parent
 _SYS_DIR = _CHECKS_DIR.parent
@@ -98,43 +99,48 @@ def gemini_call(
             encoding="utf-8",
             suffix=f"-{uuid.uuid4().hex[:8]}.txt",
             delete=False,
-        ) as query_file:
-            query_file.write(content)
-            query_path = Path(query_file.name)
+        ) as f:
+            f.write(content)
+            query_path = f.name
         venv_py = _SYS_DIR / "env" / "venv" / "Scripts" / "python.exe"
         python = str(venv_py) if venv_py.exists() else sys.executable
-        command = [
+        hub_py = _SYS_DIR / "core" / "hub.py"
+        cmd = [
             python,
-            str(_SYS_DIR / "core" / "hub.py"),
+            str(hub_py),
             "ask",
             "--to",
             peer,
             "--query-file",
-            str(query_path),
+            query_path,
             "--quiet",
             "--session-policy",
-            "fresh",
-            "--timeout",
-            str(timeout),
+            "stateless",
         ]
-        try:
-            return subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=timeout + 30,
-                env=build_env(),
-            )
-        except subprocess.TimeoutExpired as exc:
-            return subprocess.CompletedProcess(
-                args=command,
-                returncode=124,
-                stdout=exc.stdout or "",
-                stderr=exc.stderr or f"active peer timed out after {timeout + 30}s",
-            )
+        return subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=build_env(),
+        )
+    except subprocess.TimeoutExpired as exc:
+        return subprocess.CompletedProcess(
+            args=cmd if "cmd" in locals() else ["hub.py", "ask"],
+            returncode=124,
+            stdout="",
+            stderr=str(exc),
+        )
+    except Exception as exc:
+        return subprocess.CompletedProcess(
+            args=["hub.py", "ask"], returncode=1, stdout="", stderr=str(exc)
+        )
     finally:
-        if query_path is not None:
-            query_path.unlink(missing_ok=True)
+        if query_path:
+            try:
+                os.unlink(query_path)
+            except Exception:
+                pass
 
 
 def is_refusal(text: str) -> bool:
@@ -257,3 +263,145 @@ def validate_ai_json(raw_output: str, required_keys) -> dict:
         )
 
     return data
+
+
+# ── Cluster C4: Staged vs Worktree Abstractions & Link Extractor ─────────────
+
+class UnmergedIndexError(RuntimeError):
+    """Raised when an unmerged git index entry is encountered."""
+    pass
+
+
+class IndexView:
+    """View over the staged git index (git ls-files --stage -z)."""
+
+    def __init__(self, root: Path):
+        self.root = root.resolve()
+        self._staged_map: dict[str, str] = {}  # rel_path -> oid
+        self._load_stage()
+
+    def _load_stage(self) -> None:
+        try:
+            res = subprocess.run(
+                ["git", "ls-files", "--stage", "-z"],
+                capture_output=True,
+                cwd=str(self.root),
+                check=True,
+            )
+        except (subprocess.SubprocessError, OSError) as exc:
+            raise RuntimeError(f"Git index read failed: {exc}") from exc
+
+        raw = res.stdout.decode("utf-8", errors="replace")
+        entries = [e for e in raw.split("\0") if e]
+        for entry in entries:
+            try:
+                meta, path_str = entry.split("\t", 1)
+                mode, oid, stage_str = meta.split(" ", 2)
+                stage = int(stage_str)
+            except ValueError:
+                continue
+            if stage != 0:
+                raise UnmergedIndexError(f"Unmerged index entry for '{path_str}' at stage {stage}")
+            rel_path = path_str.replace("\\", "/").lstrip("/")
+            self._staged_map[rel_path] = oid
+
+    def list_files(self, prefix: str = "", suffix: str = "") -> list[str]:
+        prefix_clean = prefix.replace("\\", "/").lstrip("/")
+        suffix_clean = suffix.lower()
+        res = []
+        for path in self._staged_map.keys():
+            if prefix_clean and not path.startswith(prefix_clean):
+                continue
+            if suffix_clean and not path.lower().endswith(suffix_clean):
+                continue
+            res.append(path)
+        return sorted(res)
+
+    def exists(self, rel_path: str) -> bool:
+        clean = rel_path.replace("\\", "/").lstrip("/")
+        return clean in self._staged_map
+
+    def read_text(self, rel_path: str) -> str:
+        clean = rel_path.replace("\\", "/").lstrip("/")
+        oid = self._staged_map.get(clean)
+        if not oid:
+            raise FileNotFoundError(f"File '{rel_path}' not found in staged index")
+        try:
+            res = subprocess.run(
+                ["git", "cat-file", "-p", oid],
+                capture_output=True,
+                cwd=str(self.root),
+                check=True,
+            )
+            return res.stdout.decode("utf-8", errors="replace")
+        except (subprocess.SubprocessError, OSError) as exc:
+            raise RuntimeError(f"Failed to cat object {oid} for '{rel_path}': {exc}") from exc
+
+
+class WorktreeView:
+    """View over the filesystem worktree."""
+
+    def __init__(self, root: Path):
+        self.root = root.resolve()
+
+    def list_files(self, prefix: str = "", suffix: str = "") -> list[str]:
+        base_dir = (self.root / prefix) if prefix else self.root
+        if not base_dir.exists():
+            return []
+        suffix_clean = suffix.lower()
+        res = []
+        for p in base_dir.rglob("*"):
+            if p.is_file():
+                rel = str(p.relative_to(self.root)).replace("\\", "/")
+                if suffix_clean and not rel.lower().endswith(suffix_clean):
+                    continue
+                res.append(rel)
+        return sorted(res)
+
+    def exists(self, rel_path: str) -> bool:
+        clean = rel_path.replace("\\", "/").lstrip("/")
+        return (self.root / clean).exists()
+
+    def read_text(self, rel_path: str) -> str:
+        clean = rel_path.replace("\\", "/").lstrip("/")
+        p = self.root / clean
+        if not p.exists():
+            raise FileNotFoundError(f"File '{rel_path}' not found in worktree")
+        return p.read_text(encoding="utf-8", errors="replace")
+
+
+_LINK_RE = re.compile(
+    r"\[([^\]]*)\]\(([^)]+)\)|"
+    r"<([^>\s]+\.(?:md|json|py|sh|bat|txt))(?:#[^>]*)?>|"
+    r"\[([^\]]+)\]:\s*(\S+)"
+)
+
+def extract_local_markdown_links(text: str) -> list[tuple[int, str, str]]:
+    """Extract local markdown link references from text.
+    
+    Returns list of (line_number, raw_link, resolved_url_without_query_anchor).
+    Excludes absolute web URLs (http://, https://, mailto:, etc.).
+    """
+    links = []
+    lines = text.splitlines()
+    in_fence = False
+    for lineno, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+
+        for m in _LINK_RE.finditer(line):
+            url = m.group(2) or m.group(3) or m.group(5)
+            if not url:
+                continue
+            url = url.strip()
+            if url.startswith(("http://", "https://", "mailto:", "ftp://")):
+                continue
+
+            clean_url = url.split("?", 1)[0].split("#", 1)[0].strip()
+            if url:
+                links.append((lineno, url, clean_url))
+    return links

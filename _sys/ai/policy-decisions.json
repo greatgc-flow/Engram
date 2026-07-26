@@ -114,6 +114,13 @@
           "kind": "text_contains",
           "path": "_sys/docs-v2/00-MANIFEST.md",
           "expected_substring": "ops/engram-refactor-blueprint-2026-07-20.md"
+        },
+        {
+          "kind": "json_array_member",
+          "path": "_sys/ai/backlog.json",
+          "pointer": "/items",
+          "match_key": "id",
+          "match_value": "T82"
         }
       ]
     }
