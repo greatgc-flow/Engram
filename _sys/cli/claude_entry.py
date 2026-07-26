@@ -1,24 +1,18 @@
 """claude_entry.py — Claude session entry point (shadow-fix wrapper).
 
-Calls hub.py init-session, shows status, then launches claude.cmd via full path
-to prevent recursion when claude.bat is on PATH.
+Calls hub.py init-session, shows status, then launches claude.cmd via console_runner.
 """
 import os
-import subprocess
 import sys
 from pathlib import Path
 
-from peer_console import prepare_console_launch
+from console_runner import ConsoleSessionSpec, run_console_session
 
 _CLI_DIR = Path(__file__).parent
 _SYS_DIR = _CLI_DIR.parent
 _PORTABLE_ROOT = _SYS_DIR.parent
 
-_VENV_PY = _SYS_DIR / "env" / "venv" / "Scripts" / "python.exe"
-_HUB = _SYS_DIR / "core" / "hub.py"
 _CLAUDE_CMD = _SYS_DIR / "env" / "nodejs" / "npm-global" / "claude.cmd"
-
-_PYTHON = str(_VENV_PY) if _VENV_PY.exists() else sys.executable
 
 
 def _env() -> dict:
@@ -45,28 +39,13 @@ def _set_title(peer: str) -> None:
 
 def main() -> None:
     _set_title("Claude (cc)")
-    env = _env()
-    subprocess.run([_PYTHON, str(_HUB), "init-session", "--agent", "cc"],
-                   capture_output=True, env=env)
-    subprocess.run([_PYTHON, str(_HUB), "health-update", "--peer", "cc",
-                    "--status", "GREEN"], capture_output=True, env=env)
-    fill = subprocess.run([_PYTHON, str(_HUB), "context-fill"],
-                          capture_output=True, text=True, env=env)
-    if fill.stdout.strip():
-        print(fill.stdout)
-    subprocess.run([_PYTHON, str(_HUB), "status"], env=env)
-    try:
-        launch = prepare_console_launch("cc", sys.argv[1:])
-    except Exception as e:
-        print(f"[claude_entry] error: {e}", file=sys.stderr)
-        sys.exit(1)
-    if launch.banner_message:
-        print(launch.banner_message)
-    result = subprocess.run(
-        ["cmd", "/c", str(_CLAUDE_CMD), *launch.final_argv],
-        env=env,
+    spec = ConsoleSessionSpec(
+        peer_id="cc",
+        cmd_prefix=["cmd", "/c", str(_CLAUDE_CMD)],
+        env=_env(),
     )
-    sys.exit(result.returncode)
+    result = run_console_session(spec, sys.argv[1:])
+    sys.exit(result.exit_code)
 
 
 if __name__ == "__main__":
