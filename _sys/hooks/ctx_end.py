@@ -99,22 +99,32 @@ def _check_prerequisites(claude_config_dir: Path) -> bool:
     return True
 
 
-def save_session_log(session_dir: Path, cwd: Path, claude_md: Path) -> Path:
-    """Append CLAUDE.md snapshot to dated session log and return the file path."""
+def save_session_log(session_dir: Path, cwd: Path, claude_md: Path, summary_text: str | None = None) -> Path:
+    """Append the session handoff summary to the dated session log and return the file path.
+
+    Writes `summary_text` (the LLM-generated Current State/Decisions/Next
+    Steps handoff from Phase 2) when available. Never falls back to dumping
+    CLAUDE.md's raw content -- CLAUDE.md is explicitly documented as
+    pointer-only ("a handoff blob left in it goes stale the moment the next
+    session starts"; a stale 2026-07-21 handoff was found and removed for
+    exactly this reason), so archiving a snapshot of it here would silently
+    reintroduce the same failure mode this policy exists to prevent.
+    """
     now = datetime.now()
     ses_date = now.strftime("%Y-%m-%d")
     ses_time = now.strftime("%H:%M")
-    ses_file = session_dir / f"{ses_date}_{cwd.name}.md"
+    project_name = cwd.name or cwd.drive.rstrip(":") or "root"
+    ses_file = session_dir / f"{ses_date}_{project_name}.md"
     session_dir.mkdir(parents=True, exist_ok=True)
     is_new = not ses_file.exists() or ses_file.stat().st_size == 0
     with ses_file.open("a", encoding="utf-8") as f:
         if is_new:
             f.write(f"# Sessions {ses_date}\n")
         f.write(f"\n## [ctx-end] {ses_date} {ses_time} - {cwd}\n\n")
-        if claude_md.exists():
-            f.write(claude_md.read_text(encoding="utf-8"))
+        if summary_text and summary_text.strip():
+            f.write(summary_text.strip())
         else:
-            f.write("(CLAUDE.md missing at snapshot time)")
+            f.write("(session summary generation failed or produced no output this run)")
         f.write("\n\n---\n")
     return ses_file
 
@@ -243,6 +253,7 @@ def main() -> None:
         required_failed = True
 
     # ── Phase 2: Primary & Global LLM Summaries ───────────────────────────────
+    session_summary_text: str | None = None
     if not required_failed:
         print(f"[ctx-end] Writing session summary for: {cwd}")
         try:
@@ -252,19 +263,51 @@ def main() -> None:
             # subprocess.run(["claude", ...]) with shell=False raises
             # FileNotFoundError even though `claude` works fine from a normal
             # shell prompt.
+            #
+            # This spawns a FRESH, stateless claude -p process -- it has no
+            # memory of the actual work session being wrapped up, so it must
+            # investigate the repo itself (git log, backlog/memory files)
+            # rather than being asked to recount "what I did" as if it had
+            # been present. It must also never be told to edit CLAUDE.md:
+            # CLAUDE.md is explicitly pointer-only per its own documented
+            # policy ("a handoff blob left in it goes stale the moment the
+            # next session starts, actively misleading whoever reads it
+            # next" -- a stale 2026-07-21 handoff was found and removed for
+            # exactly this reason). An earlier version of this prompt did
+            # tell it to edit CLAUDE.md, which self-contradicted that policy
+            # and produced a confused non-summary response instead of a
+            # real handoff.
+            # 120s (not the original 60s): a genuine investigation (running
+            # `git log`, reading a few files) measurably needs more room
+            # than the fast-but-wrong confused-refusal response the old,
+            # self-contradicting prompt used to produce. The prompt itself
+            # bounds scope explicitly (last ~10 commits, not the whole
+            # history) to keep this from growing unboundedly on a very deep
+            # repo.
             proc = subprocess.run(
                 [
                     "claude", "-p",
-                    "Session end: Update CLAUDE.md fully. 1) Current State: final state. "
-                    "2) Decisions Made: append any new decisions with rationale. "
-                    "3) Next Steps: clear prioritized list for next session. "
-                    "4) Update Last updated date. Be thorough - this is the handoff for the next session.",
+                    "You are a fresh, stateless process with no memory of today's actual "
+                    "work session. Investigate the current repository state directly -- "
+                    "run `git log --oneline -10` and `git status --short`, and skim any "
+                    "project memory/backlog files you already know the location of -- to "
+                    "construct an accurate handoff summary for whoever picks up the next "
+                    "session. Keep your investigation to those bounded checks, do not do a "
+                    "deep/open-ended repo exploration. Write your findings as plain "
+                    "response text only -- do NOT edit any files, and especially do not "
+                    "edit CLAUDE.md (it is pointer-only per its own documented policy; "
+                    "session handoffs belong in the dated session log this response will "
+                    "be appended to, never in CLAUDE.md). Structure your response: "
+                    "1) Current State: what the repo/project looks like right now. "
+                    "2) Recent Decisions: notable decisions visible in recent commits, "
+                    "with rationale if evident. 3) Next Steps: a clear, prioritized list "
+                    "of what remains, based on any backlog/TODO you can find. Be concise.",
                 ],
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
                 errors="strict",
-                timeout=60,
+                timeout=120,
                 env=env,
                 shell=True,
             )
@@ -275,9 +318,10 @@ def main() -> None:
                 required_failed = True
             else:
                 if proc.stdout:
-                    print(proc.stdout.strip())
+                    session_summary_text = proc.stdout.strip()
+                    print(session_summary_text)
         except subprocess.TimeoutExpired:
-            print("[ctx-end] ERROR: Primary claude summary timed out (60s).", file=sys.stderr)
+            print("[ctx-end] ERROR: Primary claude summary timed out (120s).", file=sys.stderr)
             required_failed = True
         except UnicodeDecodeError as exc:
             print(f"[ctx-end] ERROR: Primary claude stdout output decode failed: {exc}", file=sys.stderr)
@@ -317,7 +361,7 @@ def main() -> None:
     # ── Phase 3: Raw Session Log Preservation ─────────────────────────────────
     ses_dir_env = os.environ.get("SESSION_DIR")
     session_dir = Path(ses_dir_env) if ses_dir_env else _PORTABLE_ROOT / "_archive" / "sessions"
-    ses_file = save_session_log(session_dir, cwd, claude_md)
+    ses_file = save_session_log(session_dir, cwd, claude_md, session_summary_text)
     print(f"[ctx-end] Session log saved: {ses_file}")
 
     # ── Phase 4: Optional Gemini Summary (Atomic Replacement) ─────────────────

@@ -191,12 +191,17 @@ class TestCtxEnd:
         from ctx_end import save_session_log  # type: ignore
 
         claude_md = tmp_path / "CLAUDE.md"
-        claude_md.write_text("## Current State\nActive\n", encoding="utf-8")
-        ses_file = save_session_log(tmp_path / "sessions", tmp_path, claude_md)
+        claude_md.write_text("POINTER ONLY -- do not write handoffs here\n", encoding="utf-8")
+        # save_session_log writes the LLM-generated summary_text, never a
+        # CLAUDE.md content dump (CLAUDE.md is pointer-only -- a real bug
+        # found in live use 2026-07-26 had this archiving CLAUDE.md's own
+        # static content as if it were the session summary).
+        ses_file = save_session_log(tmp_path / "sessions", tmp_path, claude_md, "## Current State\nActive\n")
         assert ses_file.exists()
         content = ses_file.read_text(encoding="utf-8")
         assert "ctx-end" in content
         assert "Active" in content
+        assert "POINTER ONLY" not in content
 
     def test_save_session_log_appends_on_second_call(self, tmp_path):
         import sys as _sys
@@ -205,16 +210,16 @@ class TestCtxEnd:
         from datetime import datetime
 
         claude_md = tmp_path / "CLAUDE.md"
-        claude_md.write_text("State A\n", encoding="utf-8")
+        claude_md.write_text("POINTER ONLY -- do not write handoffs here\n", encoding="utf-8")
         ses_dir = tmp_path / "sessions"
-        save_session_log(ses_dir, tmp_path, claude_md)
-        claude_md.write_text("State B\n", encoding="utf-8")
-        save_session_log(ses_dir, tmp_path, claude_md)
+        save_session_log(ses_dir, tmp_path, claude_md, "State A\n")
+        save_session_log(ses_dir, tmp_path, claude_md, "State B\n")
         files = list(ses_dir.glob("*.md"))
         assert len(files) == 1
         content = files[0].read_text(encoding="utf-8")
         assert "State A" in content
         assert "State B" in content
+        assert "POINTER ONLY" not in content
 
     def test_archive_gemini_session_moves_active_to_history(self, tmp_path):
         import sys as _sys

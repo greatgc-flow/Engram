@@ -281,3 +281,59 @@ class TestC9CtxSaveFlow:
         ctx_save.main()
 
         assert sum_file.read_text(encoding="utf-8") == "### Fresh Zero-Token Blackboard Summary"
+
+
+class TestC9SessionLogNeverDumpsClaudeMd:
+    """Real bug found in live use (2026-07-26): the Phase 2 prompt told
+    claude to edit CLAUDE.md with a handoff blob, directly contradicting
+    CLAUDE.md's own documented pointer-only policy -- the spawned process
+    correctly refused/got confused, producing garbage that Phase 3 then
+    archived as if it were a real summary (save_session_log used to dump a
+    raw CLAUDE.md snapshot unconditionally). Fixed: save_session_log now
+    writes the LLM-generated summary text, never a CLAUDE.md dump."""
+
+    def test_save_session_log_writes_summary_text_not_claude_md_dump(self, tmp_path):
+        session_dir = tmp_path / "sessions"
+        cwd = tmp_path / "myproject"
+        cwd.mkdir()
+        claude_md = cwd / "CLAUDE.md"
+        claude_md.write_text("POINTER ONLY -- do not write handoffs here", encoding="utf-8")
+
+        ses_file = ctx_end.save_session_log(
+            session_dir, cwd, claude_md, summary_text="Current State: X\nNext Steps: Y",
+        )
+
+        content = ses_file.read_text(encoding="utf-8")
+        assert "Current State: X" in content
+        assert "Next Steps: Y" in content
+        assert "POINTER ONLY" not in content
+
+    def test_save_session_log_missing_summary_does_not_fall_back_to_claude_md(self, tmp_path):
+        session_dir = tmp_path / "sessions"
+        cwd = tmp_path / "myproject"
+        cwd.mkdir()
+        claude_md = cwd / "CLAUDE.md"
+        claude_md.write_text("POINTER ONLY -- do not write handoffs here", encoding="utf-8")
+
+        ses_file = ctx_end.save_session_log(session_dir, cwd, claude_md, summary_text=None)
+
+        content = ses_file.read_text(encoding="utf-8")
+        assert "POINTER ONLY" not in content
+        assert "summary generation failed" in content
+
+    def test_save_session_log_handles_drive_root_cwd_with_empty_name(self, tmp_path):
+        session_dir = tmp_path / "sessions"
+        # A bare drive root (e.g. Path("P:\\")) has an empty .name -- must
+        # not produce a filename like "2026-07-26_.md".
+        fake_root = Path("Z:\\")
+        ses_file = ctx_end.save_session_log(session_dir, fake_root, fake_root / "CLAUDE.md", "summary")
+        assert ses_file.name != f"{ses_file.name.split('_')[0]}_.md"
+        assert "_.md" not in ses_file.name
+
+    def test_phase2_prompt_never_instructs_editing_claude_md(self):
+        """Static guard against the exact regression: the prompt text sent
+        to the spawned claude -p process must never tell it to edit/update
+        CLAUDE.md."""
+        source = (HOOKS_DIR / "ctx_end.py").read_text(encoding="utf-8")
+        assert "Update CLAUDE.md fully" not in source
+        assert "do NOT edit any" in source or "do not edit CLAUDE.md" in source.lower()
