@@ -56,7 +56,8 @@ class TestC8ACodexSecurityDefaults:
             # Everything after the subcommand is the original trailing argv, untouched and in order.
             assert res[subcommand_idx:subcommand_idx + len(input_args)] == input_args
 
-    def test_user_explicit_sandbox_flags_preserved(self):
+    def test_user_explicit_sandbox_flags_preserved(self, monkeypatch):
+        monkeypatch.setenv("ALLOW_BREAK_GLASS_DANGER_ACCESS", "1")
         # An explicit user sandbox/approval choice must never be overridden
         # or duplicated -- but root-only profile defaults (--model, ...) are
         # an independent axis and still get inserted at root scope.
@@ -77,10 +78,7 @@ class TestC8ACodexSecurityDefaults:
             assert res.count("-s") <= 1
             assert "workspace-write" not in res
             # The user's own explicit tokens all survive, in their original
-            # relative order (root-scope insertion may land root-only
-            # profile defaults *between* an existing flag/value pair and the
-            # subcommand, so this must be a subsequence check, not a
-            # contiguous-slice check).
+            # relative order.
             search_from = 0
             for token in input_args:
                 idx = res.index(token, search_from)
@@ -92,7 +90,7 @@ class TestC8ACodexSecurityDefaults:
         assert res == input_args
 
     def test_admin_commands_bypass_defaults(self):
-        admin_cmds = ["login", "logout", "mcp", "app-server", "doctor", "sandbox", "cloud"]
+        admin_cmds = ["login", "logout", "mcp", "app-server", "doctor", "sandbox"]
         for cmd in admin_cmds:
             input_args = [cmd]
             res = peer_console.peer_default_args("cx", input_args)

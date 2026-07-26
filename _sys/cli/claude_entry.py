@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from peer_console import interactive_profile_banner, peer_default_args
+from peer_console import prepare_console_launch
 
 _CLI_DIR = Path(__file__).parent
 _SYS_DIR = _CLI_DIR.parent
@@ -55,12 +55,15 @@ def main() -> None:
     if fill.stdout.strip():
         print(fill.stdout)
     subprocess.run([_PYTHON, str(_HUB), "status"], env=env)
-    cli_args = peer_default_args("cc", sys.argv[1:])
-    banner = interactive_profile_banner("cc")
-    if banner:
-        print(banner)
+    try:
+        launch = prepare_console_launch("cc", sys.argv[1:])
+    except Exception as e:
+        print(f"[claude_entry] error: {e}", file=sys.stderr)
+        sys.exit(1)
+    if launch.banner_message:
+        print(launch.banner_message)
     result = subprocess.run(
-        ["cmd", "/c", str(_CLAUDE_CMD), *cli_args],
+        ["cmd", "/c", str(_CLAUDE_CMD), *launch.final_argv],
         env=env,
     )
     sys.exit(result.returncode)

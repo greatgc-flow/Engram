@@ -10,7 +10,7 @@ import sys
 import time
 from pathlib import Path
 
-from peer_console import interactive_profile_banner, peer_default_args
+from peer_console import prepare_console_launch
 
 _CLI_DIR = Path(__file__).parent
 _SYS_DIR = _CLI_DIR.parent
@@ -86,11 +86,10 @@ def main() -> None:
     t_start = time.time()
     try:
         _health(env, "GREEN")
-        cli_args = peer_default_args("cx", sys.argv[1:])
-        banner = interactive_profile_banner("cx")
-        if banner:
-            print(banner)
-        result = subprocess.run(["cmd", "/c", str(_CODEX_CMD), *cli_args], env=env)
+        launch = prepare_console_launch("cx", sys.argv[1:])
+        if launch.banner_message:
+            print(launch.banner_message)
+        result = subprocess.run(["cmd", "/c", str(_CODEX_CMD), *launch.final_argv], env=env)
         exit_code = result.returncode
         duration_ms = int((time.time() - t_start) * 1000)
         final_status = "GREEN" if exit_code == 0 else "RED"
