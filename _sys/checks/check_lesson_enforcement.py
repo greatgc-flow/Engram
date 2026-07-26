@@ -90,7 +90,7 @@ def check_ll011() -> dict:
 def check_ll012(live: bool = True) -> dict:
     """LL-012: declared-vs-actual reconciliation via check_cli_reality (real run)."""
     import check_cli_reality
-    report = check_cli_reality.run(live=live)
+    report = check_cli_reality.run(live=live, ai_root=_PORTABLE_ROOT / ".ai")
     summary = report.get("drift_summary") or {}
     p0 = summary.get("p0", 0)
     return {

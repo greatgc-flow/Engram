@@ -10,6 +10,9 @@
   "probe": {
     "deadline_sec": 12
   },
+  "cli_reality": {
+    "refresh_slo_hours": 24.0
+  },
   "display": {
     "warn_frac": 0.75,
     "crit_frac": 0.90

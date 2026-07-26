@@ -25,6 +25,7 @@ def test_defaults_present_and_typed():
     assert cfg["ttl"]["snapshot_sec"] == 60
     assert cfg["display"]["crit_frac"] == 0.90
     assert cfg["watch"]["min_interval_sec"] == 2
+    assert cfg["cli_reality"]["refresh_slo_hours"] == 24.0
     assert isinstance(cfg["watch"]["sync_output"], str)
 
 

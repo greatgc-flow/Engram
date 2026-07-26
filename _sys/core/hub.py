@@ -57,6 +57,7 @@ try:
         UnknownModelCapacityError as _UnknownModelCapacityError,
         ContextGateConfigError as _ContextGateConfigError,
         ResolvedContextTarget as _ResolvedContextTarget,
+        ResolvedDispatchTarget as _ResolvedDispatchTarget,
         ContextFailoverPlan as _ContextFailoverPlan,
     )
     _CONTEXT_GATE_AVAILABLE = True
@@ -66,6 +67,7 @@ except ImportError:
     _UnknownModelCapacityError = None  # type: ignore[assignment]
     _ContextGateConfigError = None  # type: ignore[assignment]
     _ResolvedContextTarget = None  # type: ignore[assignment]
+    _ResolvedDispatchTarget = None  # type: ignore[assignment]
     _ContextFailoverPlan = None  # type: ignore[assignment]
     _CONTEXT_GATE_AVAILABLE = False
 
@@ -240,6 +242,42 @@ def _resolve_profile_id(node_id: str) -> str | None:
         if profile.get("peer") == peer and profile.get("mode") == (mode or "default"):
             return profile_id
     return None
+
+
+def _compose_dispatch_target(profile_id: str, gate=None):
+    """C2+C11 composition: capacity target and CLI reality key stay distinct."""
+    if not _CONTEXT_GATE_AVAILABLE or _ContextGate is None:
+        return None
+    active_gate = gate or _ContextGate()
+    return active_gate.resolve_dispatch_target(profile_id)
+
+
+def _cached_reality_status_for_dispatch(
+    dispatch_target,
+    ai_root: Path | None,
+    *,
+    now: datetime | None = None,
+):
+    """Load C11's cache-only verdict. Infrastructure failures fail open."""
+    if ai_root is None or dispatch_target is None:
+        return None
+    checks_dir = Path(__file__).resolve().parents[1] / "checks"
+    if str(checks_dir) not in sys.path:
+        sys.path.insert(0, str(checks_dir))
+    try:
+        import check_cli_reality
+        return check_cli_reality.get_cached_reality_status(
+            dispatch_target,
+            ai_root=ai_root,
+            now=_ensure_aware(now),
+        )
+    except Exception as exc:
+        print(
+            f"[HUB:WARN] CLI reality cache unavailable; allowing dispatch: "
+            f"{type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        return None
 
 
 def _parsed_final_requests_escalation(parsed_output: str) -> bool:
@@ -3148,8 +3186,13 @@ def _plan_context_aware_failover(
     # Source metrics for telemetry
     gate = _ContextGate()
     try:
-        source_target = gate.resolve_target(source_profile)
-        source_util = gate.check(user_query_raw, source_profile).get("utilization", 0.0)
+        source_dispatch_target = _compose_dispatch_target(source_profile, gate=gate)
+        source_target = (
+            source_dispatch_target.context_target
+            if source_dispatch_target is not None
+            else gate.resolve_target(source_profile)
+        )
+        source_util = gate.check(user_query_raw, source_target).get("utilization", 0.0)
     except _ContextGateError as exc:
         source_target = getattr(exc, "resolved_target", None)
         source_util = getattr(exc, "utilization", 1.0)
@@ -3183,6 +3226,29 @@ def _plan_context_aware_failover(
         cand_pdata = profiles_catalog.get(cand_profile, {})
         cand_node = _load_nodes(ai_root).get(cand_profile, {}) if ai_root else {}
 
+        try:
+            cand_dispatch_target = _compose_dispatch_target(cand_profile, gate=gate)
+        except Exception:
+            cand_dispatch_target = None
+        cand_reality = _cached_reality_status_for_dispatch(
+            cand_dispatch_target,
+            ai_root,
+        )
+        if cand_reality is not None and cand_reality.hard_block:
+            if ai_root:
+                try:
+                    _record_routing_metric(
+                        ai_root,
+                        "context_failover_candidate_excluded",
+                        candidate_profile=cand_profile,
+                        reason="cli_reality_contradicted",
+                        reality_model_key=cand_reality.reality_model_key,
+                        ask_id=ask_id,
+                    )
+                except Exception:
+                    pass
+            continue
+
         # Capability equivalence check
         if source_requires_pty and not cand_node.get("requires_pty", False):
             continue
@@ -3193,9 +3259,14 @@ def _plan_context_aware_failover(
                 continue
 
         # Evaluate candidate against ContextGate
+        cand_target = None
         try:
-            cand_target = gate.resolve_target(cand_profile)
-            check_res = gate.check(user_query_raw, cand_profile)
+            cand_target = (
+                cand_dispatch_target.context_target
+                if cand_dispatch_target is not None
+                else gate.resolve_target(cand_profile)
+            )
+            check_res = gate.check(user_query_raw, cand_target)
             if check_res.get("action") == "pass":
                 return _ContextFailoverPlan(
                     source_profile=source_profile,
@@ -3211,11 +3282,11 @@ def _plan_context_aware_failover(
                 )
         except _ContextGateError:
             # If check failed, test if pruning can reduce it below warn threshold (< warn_pct)
-            if context_blocks:
+            if context_blocks and cand_target is not None:
                 try:
-                    pruned_blocks = gate.check_and_prune(context_blocks, cand_profile)
+                    pruned_blocks = gate.check_and_prune(context_blocks, cand_target)
                     pruned_query = "".join(b.get("text", "") for b in pruned_blocks)
-                    pruned_check = gate.check(pruned_query, cand_profile)
+                    pruned_check = gate.check(pruned_query, cand_target)
                     if pruned_check.get("action") == "pass":
                         return _ContextFailoverPlan(
                             source_profile=source_profile,
@@ -6116,7 +6187,56 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
 
     health_peer = hub_peer.root_peer_id(to, orch=_orch_for_gate) if _HUB_PEER_AVAILABLE else None
     health_peer = health_peer or to
-    
+
+    # C11 pre-dispatch reality gate. This path is cache-only: composition
+    # resolves the already-governed profile metadata, while the status reader
+    # never hashes a binary or starts a subprocess. Only the single hard-
+    # negative state (fresh COMPLETE + COMPLETE_CATALOG + missing key in the
+    # exact root-peer namespace) blocks.
+    context_gate_for_dispatch = None
+    resolved_dispatch_target = None
+    try:
+        if _CONTEXT_GATE_AVAILABLE and _ContextGate is not None:
+            context_gate_for_dispatch = _ContextGate()
+            dispatch_profile_id = _resolve_profile_id(to) or to
+            resolved_dispatch_target = _compose_dispatch_target(
+                dispatch_profile_id,
+                gate=context_gate_for_dispatch,
+            )
+    except Exception as exc:
+        print(
+            f"[HUB:WARN] dispatch-target composition unavailable; "
+            f"CLI reality remains warning-only: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+
+    reality_status = _cached_reality_status_for_dispatch(
+        resolved_dispatch_target,
+        ai_root,
+    )
+    if reality_status is not None:
+        if reality_status.hard_block:
+            _surface_pre_dispatch_failure(
+                ai_root,
+                to,
+                "cli_reality_contradicted",
+                recovery_peer=health_peer,
+            )
+            print(
+                f"[HUB:BLOCK] CLI reality contradicted {to} "
+                f"(key={reality_status.reality_model_key}, "
+                f"attempt={reality_status.probe_attempt_status}, "
+                f"evidence={reality_status.evidence_completeness})",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if reality_status.warning:
+            print(
+                f"[HUB:WARN] CLI reality {reality_status.status} for {to} "
+                f"(allowing dispatch; reason={reality_status.reason})",
+                file=sys.stderr,
+            )
+
     if _SNAPSHOT_AVAILABLE and getattr(snapshot, "pacing_admission_for_profile", None) is not None:
         try:
             cfg = _load_balancer_config()
@@ -6300,11 +6420,22 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
 
         try:
             profile_id = _resolve_profile_id(to) or to
-            gate = _ContextGate()
-            gate_result = gate.check(query, profile_id)
+            gate = context_gate_for_dispatch or _ContextGate()
+            dispatch_target = resolved_dispatch_target
+            if (
+                dispatch_target is None
+                or getattr(dispatch_target, "profile_id", None) != profile_id
+            ):
+                dispatch_target = _compose_dispatch_target(profile_id, gate=gate)
+            context_target = (
+                dispatch_target.context_target
+                if dispatch_target is not None
+                else profile_id
+            )
+            gate_result = gate.check(query, context_target)
             action = gate_result.get("action", "pass")
             if action == "prune":
-                pruned_blocks = gate.check_and_prune(context_blocks, profile_id)
+                pruned_blocks = gate.check_and_prune(context_blocks, context_target)
                 query = "".join(b.get("text", "") for b in pruned_blocks)
                 util = gate_result.get("utilization", 0)
                 print(f"[ContextGate] context {util:.0%} full → prune applied", file=sys.stderr)
@@ -11249,7 +11380,7 @@ def action_freshness_sweep(ai_root: Path, force: bool = False, now_ts: float | N
         denied = {p: r for p, r in refresh_results.items() if r not in ("interval_not_expired", "refreshed")}
         if denied:
             findings.append(f"cli-reality: refresh denied for {denied}")
-        report = check_cli_reality.run(live=False)
+        report = check_cli_reality.run(live=False, ai_root=ai_root)
         drift = report.get("drift_summary", {})
         if drift.get("total"):
             findings.append(

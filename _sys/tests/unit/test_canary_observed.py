@@ -75,7 +75,12 @@ def test_build_observed_capture(tmp_path):
         assert "provenance" in capture[peer]
         assert capture[peer]["captured_at"] == now.isoformat()
         
-    assert len(capture["cc"]["provenance"]) == 1
+    assert capture["cc"]["probe_attempt_status"] == ccr.PROBE_PARTIAL
+    assert (
+        capture["cc"]["evidence_completeness"]
+        == ccr.EVIDENCE_POSITIVE_CONFIRMATIONS_ONLY
+    )
+    assert len(capture["cc"]["provenance"]) == 2
     assert capture["cc"]["provenance"][0]["model"] == "claude-haiku"
     assert capture["cc"]["provenance"][0]["profile"] == "standard"
     assert capture["cc"]["provenance"][0]["verdict"] == "PASS"
@@ -90,16 +95,31 @@ def test_build_observed_capture_empty_on_all_fail(tmp_path):
     
     capture = ccc.build_observed_capture(verdicts, now=now)
 
-    # A peer with no PASS is OMITTED (not emitted as models:[]), so
-    # check_cli_reality.load_observed_models returns None => ABSENT, not a
-    # measured empty list that would false-flag every declared model CONTRADICTED.
-    assert "cc" not in capture
-    assert capture == {}
+    # Failed/skipped attempts are represented explicitly, but remain
+    # positive-confirmations-only and therefore can never hard-block.
+    assert capture["cc"]["models"] == []
+    assert capture["cc"]["probe_attempt_status"] == ccr.PROBE_FAILED
+    assert (
+        capture["cc"]["evidence_completeness"]
+        == ccr.EVIDENCE_POSITIVE_CONFIRMATIONS_ONLY
+    )
 
 
 def test_emit_observed_capture(monkeypatch, tmp_path):
     monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-    monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+    binaries = {}
+    for peer in ("cc", "ag"):
+        path = tmp_path / f"{peer}_bin"
+        path.write_bytes(b"stub")
+        binaries[peer] = ccr.BinaryObservationBoundary(
+            peer=peer,
+            status=ccr.BOUNDARY_BINARY_PRESENT,
+            configured_invoke=str(path),
+            launcher_path=path,
+            fingerprint_path=path,
+            fingerprint_kind="direct_binary",
+        )
+    monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: binaries[peer])
     # T44a: canary invocation now requires a granted budget reservation. Grant it by
     # supplying a reserve floor and a machine-observed quota above the floor (the
     # production _canary_quota reads a live snapshot that is absent under test).
@@ -123,11 +143,12 @@ def test_emit_observed_capture(monkeypatch, tmp_path):
     )
     
     # Check return value
-    assert "cc" in capture
-    assert "ag" in capture
-    assert "claude-haiku" in capture["cc"]["models"]
-    assert "claude-opus" not in capture["cc"]["models"]
-    assert "gemini-flash" in capture["ag"]["models"]
+    assert capture["kind"] == ccr.OBSERVATION_STORE_KIND
+    assert "cc" in capture["peers"]
+    assert "ag" in capture["peers"]
+    assert "claude-haiku" in capture["peers"]["cc"]["models"]
+    assert "claude-opus" not in capture["peers"]["cc"]["models"]
+    assert "gemini-flash" in capture["peers"]["ag"]["models"]
     
     # Check file exists and has same content
     out_file = tmp_path / "cli-reality-observed.json"

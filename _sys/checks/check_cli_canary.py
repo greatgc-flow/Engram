@@ -27,7 +27,17 @@ if str(_CHECKS_DIR) not in sys.path:
 
 from hub_peer import normalize_orchestration, validate_model_operand, get_adapter
 from _common import build_env
-from check_cli_reality import fingerprint, real_binary
+from check_cli_reality import (
+    EVIDENCE_POSITIVE_CONFIRMATIONS_ONLY,
+    PROBE_COMPLETE,
+    PROBE_FAILED,
+    PROBE_PARTIAL,
+    PROBE_SKIPPED,
+    binary_observation_block,
+    fingerprint,
+    merge_observation_updates,
+    real_binary,
+)
 from canary_budget import (
     consume_canary_reservation,
     release_canary_reservation,
@@ -245,7 +255,18 @@ def canary_probe(
     model_id = profile_node.get("model_id") or profile_node.get("runtime_model") or ""
 
     # 3. Retrieve fingerprint and build cache key
-    fp_info = fingerprint(real_binary(peer, orch))
+    binary_boundary = real_binary(peer, orch)
+    if not binary_boundary.binary_present:
+        return {
+            "peer": peer,
+            "profile": profile_name,
+            "model": model_id,
+            "status": "FAIL",
+            "stage": "binary_boundary",
+            "detail": binary_boundary.detail or binary_boundary.status,
+            "ts": ts_iso,
+        }
+    fp_info = fingerprint(binary_boundary)
     binary_fp = fp_info.get("sha256") or ""
     invoke_args = profile_node.get("invoke_args") or []
     # Identity-qualify the cache key so distinct (peer, profile) never collide even
@@ -438,7 +459,11 @@ def run_canary(
     return verdicts
 
 
-def build_observed_capture(verdicts: list[dict], now: datetime | None = None) -> dict:
+def build_observed_capture(
+    verdicts: list[dict],
+    now: datetime | None = None,
+    expected_peers: list[str] | None = None,
+) -> dict:
     """CAVEAT: a PASS proves the server ACCEPTED the model string and replied OK, 
     NOT that the backend executed exactly that model. This is empirical confirmation, not enumeration.
     """
@@ -446,48 +471,70 @@ def build_observed_capture(verdicts: list[dict], now: datetime | None = None) ->
         now = datetime.now(timezone.utc)
     iso_ts = now.isoformat()
     
-    # Only PASS verdicts create/extend a peer entry. A peer with no PASS is
-    # OMITTED entirely so check_cli_reality.load_observed_models() returns None
-    # (=> ABSENT), NOT a measured empty list (which classify_model would read as
-    # "declared model not in actual set" => false CONTRADICTED on transient
-    # canary failure). Absence of measurement must stay absent (DIR-004).
+    # Every attempted peer gets an entry with two independent dimensions.
+    # Missing PASS results never become an empty COMPLETE_CATALOG; canaries
+    # only produce positive confirmations.
     capture: dict[str, dict] = {}
+    peer_verdicts: dict[str, list[dict]] = {}
     for v in verdicts:
         peer = v.get("peer")
-        if not peer or v.get("status") != "PASS":
+        if not peer:
             continue
-        model = v.get("model") or ""
-        if not model:
-            continue
-        if peer not in capture:
-            capture[peer] = {
-                "models": [],
-                "captured_at": iso_ts,
-                "provenance": []
-            }
-        if model not in capture[peer]["models"]:
-            capture[peer]["models"].append(model)
-        capture[peer]["provenance"].append({
-            "model": model,
-            "profile": v.get("profile") or "",
-            "verdict": "PASS",
-            "ts": v.get("ts") or iso_ts
-        })
+        peer_verdicts.setdefault(str(peer), []).append(v)
+    for peer in expected_peers or []:
+        peer_verdicts.setdefault(str(peer).split(".", 1)[0], [])
+
+    for peer, rows in peer_verdicts.items():
+        statuses = [str(row.get("status") or "") for row in rows]
+        pass_rows = [row for row in rows if row.get("status") == "PASS"]
+        if rows and len(pass_rows) == len(rows):
+            attempt_status = PROBE_COMPLETE
+        elif pass_rows:
+            attempt_status = PROBE_PARTIAL
+        elif rows and all(row.get("status") == "SKIP" for row in rows):
+            attempt_status = PROBE_SKIPPED
+        else:
+            attempt_status = PROBE_FAILED
+
+        capture[peer] = {
+            "identity_namespace": f"peer:{peer}",
+            "models": [],
+            "confirmed_models": [],
+            "captured_at": iso_ts,
+            "last_attempt_at": iso_ts,
+            "probe_attempt_status": attempt_status,
+            "evidence_completeness": EVIDENCE_POSITIVE_CONFIRMATIONS_ONLY,
+            "provenance": [],
+        }
+
+        for row in rows:
+            capture[peer]["provenance"].append({
+                "kind": "canary",
+                "model": row.get("model") or "",
+                "profile": row.get("profile") or "",
+                "verdict": row.get("status") or "UNKNOWN",
+                "stage": row.get("stage") or row.get("reason") or "",
+                "ts": row.get("ts") or iso_ts,
+            })
+
+        for v in pass_rows:
+            model = v.get("model") or ""
+            if model and model not in capture[peer]["models"]:
+                capture[peer]["models"].append(model)
+                capture[peer]["confirmed_models"].append(model)
 
     # Stable ordering for models list
     for peer in capture:
         capture[peer]["models"].sort()
+        capture[peer]["confirmed_models"].sort()
 
     return capture
 
 
-def emit_observed_capture(orch: dict | None, ai_root: Path | None, invoker: Callable[[str, str, str, str], str] | None = None, now: datetime | None = None, peers: list[str] | None = None, force: bool = False) -> dict:
+def emit_observed_capture(orch: dict | None, ai_root: Path, invoker: Callable[[str, str, str, str], str] | None = None, now: datetime | None = None, peers: list[str] | None = None, force: bool = False) -> dict:
     if now is None:
         now = datetime.now(timezone.utc)
-    if ai_root is None:
-        ai_root = _AI_DIR
-    else:
-        ai_root = Path(ai_root)
+    ai_root = Path(ai_root)
 
     verdicts = run_canary(
         orch=orch,
@@ -497,23 +544,30 @@ def emit_observed_capture(orch: dict | None, ai_root: Path | None, invoker: Call
         invoker=invoker,
         ai_root=ai_root,
     )
-    capture = build_observed_capture(verdicts, now=now)
+    if peers is None:
+        expected_peers = [
+            str(node.get("node_id"))
+            for node in (orch or {}).get("hub_nodes", [])
+            if node.get("type") == "peer"
+            and node.get("enabled") is not False
+            and node.get("node_id")
+        ]
+    else:
+        expected_peers = [str(peer).split(".", 1)[0] for peer in peers]
+    capture = build_observed_capture(
+        verdicts,
+        now=now,
+        expected_peers=expected_peers,
+    )
 
-    out_file = ai_root / "cli-reality-observed.json"
-    ai_root.mkdir(parents=True, exist_ok=True)
-    if peers is not None:
-        # A restricted --peer scope must only update the peers actually
-        # probed, not silently drop every other peer's existing entry -
-        # this file is a shared multi-peer snapshot, not a per-call scratch
-        # file. Merge onto whatever's already on disk.
-        try:
-            existing = json.loads(out_file.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            existing = {}
-        existing.update(capture)
-        capture = existing
-    out_file.write_text(json.dumps(capture, ensure_ascii=False, indent=2), encoding="utf-8")
-    return capture
+    # An explicit canary sweep is a background producer, so it may compute
+    # full payload fingerprints. Both producers write the same schema through
+    # the same atomic merge primitive.
+    for peer, entry in capture.items():
+        boundary = real_binary(peer, orch)
+        fp_info = fingerprint(boundary) if boundary.binary_present else {}
+        entry["binary"] = binary_observation_block(boundary, fp_info)
+    return merge_observation_updates(capture, ai_root=ai_root, now=now)
 
 
 def print_verdicts_table(verdicts: list[dict]):

@@ -80,6 +80,18 @@ MOCK_ORCHESTRATION = {
 }
 
 
+def _present_boundary(peer: str, tmp_path: Path) -> ccr.BinaryObservationBoundary:
+    binary = tmp_path / f"{peer}_bin"
+    return ccr.BinaryObservationBoundary(
+        peer=peer,
+        status=ccr.BOUNDARY_BINARY_PRESENT,
+        configured_invoke=str(binary),
+        launcher_path=binary,
+        fingerprint_path=binary,
+        fingerprint_kind="direct_binary",
+    )
+
+
 @pytest.fixture(autouse=True)
 def _machine_quota(monkeypatch):
     """Canary unit tests inject observed quota; production reads snapshot."""
@@ -107,7 +119,7 @@ class TestCheapestProfile:
 class TestCanaryProbe:
     def test_canary_probe_success(self, monkeypatch, tmp_path):
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: _present_boundary(peer, tmp_path))
         
         invoker_called = []
         def mock_invoker(peer, profile, model, prompt):
@@ -132,7 +144,7 @@ class TestCanaryProbe:
 
     def test_canary_probe_reply_fail(self, monkeypatch, tmp_path):
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: _present_boundary(peer, tmp_path))
         
         def mock_invoker(peer, profile, model, prompt):
             return "NOPE"
@@ -154,7 +166,7 @@ class TestCanaryProbe:
         # Regression: a substring "OK" test false-PASSes replies like "NOT OK".
         # The assertion must be an exact normalized match (prompt demands "OK").
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: _present_boundary(peer, tmp_path))
         import copy
         orch = copy.deepcopy(MOCK_ORCHESTRATION)
         orch["canary_config"]["budget_cap"] = 4
@@ -177,7 +189,7 @@ class TestCanaryProbe:
     def test_canary_probe_reply_normalized_ok(self, monkeypatch, tmp_path):
         # Whitespace/newline-wrapped and lower-case exact "OK" still PASS.
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: _present_boundary(peer, tmp_path))
         import copy
         orch = copy.deepcopy(MOCK_ORCHESTRATION)
         orch["canary_config"]["budget_cap"] = 5
@@ -198,7 +210,7 @@ class TestCanaryProbe:
 
     def test_canary_probe_launch_fail(self, monkeypatch, tmp_path):
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: _present_boundary(peer, tmp_path))
         
         def mock_invoker(peer, profile, model, prompt):
             raise RuntimeError("failed to launch binary")
@@ -218,7 +230,7 @@ class TestCanaryProbe:
 
     def test_canary_probe_operand_drift(self, monkeypatch, tmp_path):
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: _present_boundary(peer, tmp_path))
         
         monkeypatch.setattr(ccc, "validate_model_operand", lambda node: "mocked operand drift error")
         
@@ -246,7 +258,7 @@ class TestCanaryProbe:
 class TestBudgetAndCache:
     def test_canary_probe_budget(self, monkeypatch, tmp_path):
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: _present_boundary(peer, tmp_path))
         
         def mock_invoker(peer, profile, model, prompt):
             return "OK"
@@ -275,7 +287,7 @@ class TestBudgetAndCache:
 
     def test_canary_probe_cache(self, monkeypatch, tmp_path):
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: _present_boundary(peer, tmp_path))
         
         invoker_count = 0
         def mock_invoker(peer, profile, model, prompt):
@@ -323,7 +335,7 @@ class TestBudgetAndCache:
 class TestRunCanary:
     def test_run_canary_default_behavior(self, monkeypatch, tmp_path):
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: _present_boundary(peer, tmp_path))
         
         invoked = []
         def mock_invoker(peer, profile, model, prompt):
@@ -342,7 +354,7 @@ class TestRunCanary:
 
     def test_run_canary_all_profiles(self, monkeypatch, tmp_path):
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: _present_boundary(peer, tmp_path))
 
         # T16 (2026-07-10): all_profiles fan-out is budget-capped now (no
         # longer an implicit bypass) - this test verifies the target-
@@ -375,7 +387,7 @@ class TestRunCanary:
         budget bypass - MOCK_ORCHESTRATION's budget_cap=2 must cap the
         5-target fan-out at 2 real invocations, the rest SKIP on budget."""
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: _present_boundary(peer, tmp_path))
 
         invoked = []
         def mock_invoker(peer, profile, model, prompt):
@@ -403,7 +415,7 @@ class TestRunCanary:
         orch["canary_config"]["budget_cap"] = 0
 
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: _present_boundary(peer, tmp_path))
 
         invoked = []
         verdicts = ccc.run_canary(
@@ -425,7 +437,7 @@ class TestRunCanary:
         orch["canary_config"]["budget_cap"] = 0
 
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: _present_boundary(peer, tmp_path))
 
         verdicts = ccc.run_canary(
             orch=orch,
@@ -440,7 +452,7 @@ class TestRunCanary:
 
     def test_run_canary_crash_safe(self, monkeypatch, tmp_path):
         monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+        monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: _present_boundary(peer, tmp_path))
         
         def mock_invoker(peer, profile, model, prompt):
             if peer == "cc":
@@ -465,7 +477,7 @@ class TestRunCanary:
 def test_cli_probe_reserves_before_invoking(monkeypatch, tmp_path):
     """The invoker can observe its reservation; it is consumed afterwards."""
     monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy_sha", "exists": True})
-    monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+    monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: _present_boundary(peer, tmp_path))
 
     def invoker(*_args):
         ledger = json.loads((tmp_path / "canary_budget.json").read_text(encoding="utf-8"))

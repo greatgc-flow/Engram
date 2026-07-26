@@ -23,18 +23,24 @@ AGY_REAL_MODELS = [
 class TestRealBinaryResolution:
     def test_real_binary_is_not_wrapper(self):
         for peer in ("cc", "cx", "ag"):
-            b = ccr.real_binary(peer)
-            assert not ccr.is_wrapper(b), f"{peer} resolved to a _sys/cli wrapper"
-            assert "cli" not in b.parts or b.parent.name != "cli"
+            boundary = ccr.real_binary(peer)
+            assert boundary.status == ccr.BOUNDARY_BINARY_PRESENT
+            assert boundary.launcher_path is not None
+            assert boundary.fingerprint_path is not None
+            assert not ccr.is_wrapper(boundary), f"{peer} resolved to a _sys/cli wrapper"
+            assert (
+                "cli" not in boundary.launcher_path.parts
+                or boundary.launcher_path.parent.name != "cli"
+            )
 
     def test_wrapper_detection(self):
         assert ccr.is_wrapper(SYS_DIR / "cli" / "claude.bat")
         assert not ccr.is_wrapper(SYS_DIR / "env" / "nodejs" / "npm-global" / "claude.cmd")
 
-    def test_unknown_peer_raises(self):
-        import pytest
-        with pytest.raises(KeyError):
-            ccr.real_binary("nope")
+    def test_unknown_peer_is_structured(self):
+        boundary = ccr.real_binary("nope")
+        assert boundary.status == ccr.BOUNDARY_UNKNOWN_OR_DISABLED
+        assert not boundary.binary_present
 
 
 class TestRealBinaryResolver:
@@ -52,55 +58,51 @@ class TestRealBinaryResolver:
         ]
     }
 
-    def test_enabled_peer_resolves_sys_relative_path(self):
-        path = ccr.real_binary("test_peer", self._ORCH)
-        assert path.is_absolute()
-        assert "_sys" in [p.lower() for p in path.parts]
+    def test_missing_configured_sys_relative_path_is_structured(self):
+        boundary = ccr.real_binary("test_peer", self._ORCH)
+        assert boundary.status == ccr.BOUNDARY_MISSING_CONFIGURED_PATH
+        assert boundary.launcher_path is not None
+        assert boundary.launcher_path.is_absolute()
+        assert "_sys" in [p.lower() for p in boundary.launcher_path.parts]
 
-    def test_disabled_peer_raises_key_error(self):
-        import pytest
-        with pytest.raises(KeyError, match="unknown or disabled peer"):
-            ccr.real_binary("disabled_peer", self._ORCH)
+    def test_disabled_peer_is_structured(self):
+        boundary = ccr.real_binary("disabled_peer", self._ORCH)
+        assert boundary.status == ccr.BOUNDARY_UNKNOWN_OR_DISABLED
 
-    def test_unknown_peer_id_raises_key_error(self):
-        import pytest
-        with pytest.raises(KeyError, match="unknown or disabled peer"):
-            ccr.real_binary("totally_not_a_peer", self._ORCH)
+    def test_unknown_peer_id_is_structured(self):
+        boundary = ccr.real_binary("totally_not_a_peer", self._ORCH)
+        assert boundary.status == ccr.BOUNDARY_UNKNOWN_OR_DISABLED
 
     def test_non_peer_type_node_is_not_matched(self):
-        import pytest
-        # "test_peer.deepthink" is type=='profile', not 'peer' - must not resolve.
-        with pytest.raises(KeyError):
-            ccr.real_binary("test_peer.deepthink", self._ORCH)
+        boundary = ccr.real_binary("test_peer.deepthink", self._ORCH)
+        assert boundary.status == ccr.BOUNDARY_UNKNOWN_OR_DISABLED
 
     def test_bare_command_degrades_via_path_lookup(self):
-        path = ccr.real_binary("bare_peer", self._ORCH)
-        assert path.name.lower() in ("python", "python.exe")
+        boundary = ccr.real_binary("bare_peer", self._ORCH)
+        assert boundary.status == ccr.BOUNDARY_BINARY_PRESENT
+        assert boundary.launcher_path.name.lower() in ("python", "python.exe")
 
-    def test_bare_command_not_on_path_raises_file_not_found(self):
-        import pytest
+    def test_bare_command_not_on_path_is_structured(self):
         orch = {"hub_nodes": [
             {"type": "peer", "node_id": "p", "invoke": "definitely-not-a-real-command-xyz", "enabled": True},
         ]}
-        with pytest.raises(FileNotFoundError):
-            ccr.real_binary("p", orch)
+        boundary = ccr.real_binary("p", orch)
+        assert boundary.status == ccr.BOUNDARY_BARE_COMMAND_ABSENT
 
-    def test_wrapper_script_target_is_rejected(self):
-        import pytest
-        with pytest.raises(ValueError, match="wrapper script"):
-            ccr.real_binary("wrap", self._ORCH)
+    def test_wrapper_script_target_is_structured(self):
+        boundary = ccr.real_binary("wrap", self._ORCH)
+        assert boundary.status == ccr.BOUNDARY_WRAPPER_REJECTED
 
-    def test_missing_invoke_field_raises_value_error(self):
-        import pytest
-        with pytest.raises(ValueError, match="no invoke field"):
-            ccr.real_binary("no_invoke", self._ORCH)
+    def test_missing_invoke_field_is_structured(self):
+        boundary = ccr.real_binary("no_invoke", self._ORCH)
+        assert boundary.status == ccr.BOUNDARY_MISSING_CONFIGURED_PATH
 
     def test_defaults_to_loading_real_orchestration_when_orch_omitted(self):
         # No orch passed -> loads the real orchestration.json; cc/ag/cx must
         # all resolve without raising (already covered by
         # test_real_binary_is_not_wrapper, this just documents the contract).
         for peer in ("cc", "ag", "cx"):
-            assert ccr.real_binary(peer).exists() or True  # existence not guaranteed in CI, resolution must not raise
+            assert ccr.real_binary(peer).status == ccr.BOUNDARY_BINARY_PRESENT
 
 
 class TestApplySecuritySemantics:
@@ -109,9 +111,11 @@ class TestApplySecuritySemantics:
     @staticmethod
     def _load_peer_console():
         import importlib.util
+        import sys
         path = SYS_DIR / "cli" / "peer_console.py"
         spec = importlib.util.spec_from_file_location("peer_console_under_test", path)
         module = importlib.util.module_from_spec(spec)
+        sys.modules["peer_console_under_test"] = module
         assert spec.loader is not None
         spec.loader.exec_module(module)
         return module
@@ -162,7 +166,7 @@ class TestClassify:
         assert ccr.classify_model("GPT-4o (3P)", AGY_REAL_MODELS) == "CONTRADICTED"
 
     def test_model_absent_when_list_unknown(self):
-        assert ccr.classify_model("anything", None) == "ABSENT"
+        assert ccr.classify_model("anything", None) == "UNMEASURED"
 
     def test_scalar(self):
         assert ccr.classify_scalar("1.0.15", "1.0.15") == "MATCH"
@@ -203,14 +207,14 @@ class TestReconcile:
         assert verdicts["GPT-4o (3P)"] == "CONTRADICTED"
         assert any(d["verdict"] == "CONTRADICTED" and d["severity"] == "P0" for d in rep["drift"])
 
-    def test_absent_when_no_observed_models(self):
+    def test_unmeasured_when_no_observed_models(self):
         rep = ccr.reconcile_peer(
             "ag", declared_models=["X"],
             observed={"actual_models": None, "version": None,
                       "declared_version": None, "fingerprint": {}},
         )
         model_probe = next(p for p in rep["probes"] if p["kind"] == "model")
-        assert model_probe["verdict"] == "ABSENT"
+        assert model_probe["verdict"] == "UNMEASURED"
         assert model_probe["observed"] is None  # never fabricated
 
     def test_build_report_counts_p0(self):
@@ -220,17 +224,16 @@ class TestReconcile:
                       "declared_version": "1.0.15", "fingerprint": {}},
         )
         report = ccr.build_report([rep], observed_at="2026-07-03T00:00:00")
-        assert report["schema_version"] == 1
+        assert report["schema_version"] == 2
         assert report["drift_summary"]["p0"] == 1
         assert report["drift_summary"]["total"] == 1
         assert "never mutates orchestration" in report["note"].lower()
 
 
 class TestRunNoLive:
-    def test_run_no_live_honest_absent(self, monkeypatch):
+    def test_run_no_live_honest_unmeasured(self, tmp_path):
         # Isolate from any real .ai/cli-reality-observed.json capture: with no
         # observed models, every model probe must be ABSENT, never a fabricated MATCH.
-        monkeypatch.setattr(ccr, "load_observed_models", lambda peer: None)
         orch = {"hub_nodes": [
             {"node_id": "cc", "type": "peer", "enabled": True, "invoke": "/fake/cc-bin",
              "profiles": {"deepthink": {"model_id": "claude-opus-4-8"}}},
@@ -238,15 +241,15 @@ class TestRunNoLive:
             {"node_id": "ag", "type": "peer", "enabled": True, "invoke": "/fake/ag-bin",
              "profiles": {"deepthink": {"runtime_model": "Gemini 3.1 Pro (High)"}}},
         ]}
-        report = ccr.run(orch=orch, live=False)
+        report = ccr.run(orch=orch, live=False, ai_root=tmp_path)
         assert report["kind"] == "cli_reality_drift_report"
         peers = {p["peer"] for p in report["peers"]}
         assert peers == {"cc", "cx", "ag"}
-        # With no observed-models capture, every model probe is ABSENT (not MATCH/CONTRADICTED).
+        # With no observation entry, every model probe is UNMEASURED.
         for pr in report["peers"]:
             for probe in pr["probes"]:
                 if probe["kind"] == "model":
-                    assert probe["verdict"] == "ABSENT"
+                    assert probe["verdict"] == "UNMEASURED"
 
 
 class TestAutoRefresh:
@@ -267,13 +270,12 @@ class TestAutoRefresh:
         }
         ai_root = tmp_path / ".ai"
         ai_root.mkdir()
+        (tmp_path / "ag.exe").write_bytes(b"stub")
         observed_file = ai_root / "cli-reality-observed.json"
 
         # Mock fingerprint
         def mock_fingerprint(path):
-            if str(path).endswith("ag.exe"):
-                return {"sha256": "hash_v1"}
-            return {"sha256": "unknown"}
+            return {"sha256": "hash_v1"}
         monkeypatch.setattr(ccr, "fingerprint", mock_fingerprint)
         monkeypatch.setattr(ccr, "probe_enumerated_models", lambda peer, orch, timeout=20: None)
 
@@ -293,7 +295,7 @@ class TestAutoRefresh:
 
         # Scenario 1: changed hash (no existing data) -> proceeds to probe
         now = datetime.now(timezone.utc).timestamp()
-        res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now)
+        res = ccr.auto_refresh_observed(orch, ai_root=ai_root, now_ts=now)
         assert res["ag"] == "refreshed"
         assert ["ag"] in probes_called
         probes_called.clear()
@@ -301,13 +303,18 @@ class TestAutoRefresh:
         # verify file saved
         import json
         saved = json.loads(observed_file.read_text(encoding="utf-8"))
-        assert saved["ag"]["fingerprint"] == "hash_v1"
-        assert "Model-A" in saved["ag"]["models"]
-        assert saved["ag"]["models_source"] == "confirmed"
+        assert saved["schema_version"] == 2
+        assert saved["kind"] == ccr.OBSERVATION_STORE_KIND
+        assert saved["peers"]["ag"]["binary"]["fingerprint"]["sha256"] == "hash_v1"
+        assert "Model-A" in saved["peers"]["ag"]["models"]
+        assert (
+            saved["peers"]["ag"]["evidence_completeness"]
+            == ccr.EVIDENCE_POSITIVE_CONFIRMATIONS_ONLY
+        )
 
         # Scenario 2: under 24h old AND hash unchanged -> no refresh
         now_1h = now + 3600
-        res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now_1h)
+        res = ccr.auto_refresh_observed(orch, ai_root=ai_root, now_ts=now_1h)
         assert res["ag"] == "interval_not_expired"
         assert len(probes_called) == 0
 
@@ -316,7 +323,7 @@ class TestAutoRefresh:
         # drift didn't happen, so this now performs a REAL budgeted re-probe
         # instead of just bumping captured_at and skipping.
         now_25h = now + 25 * 3600
-        res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now_25h)
+        res = ccr.auto_refresh_observed(orch, ai_root=ai_root, now_ts=now_25h)
         assert res["ag"] == "refreshed"
         assert ["ag"] in probes_called
         probes_called.clear()
@@ -327,7 +334,7 @@ class TestAutoRefresh:
         # must report the real denial reason, not silently succeed.
         now_50h = now + 50 * 3600
         budget_ok = False
-        res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now_50h)
+        res = ccr.auto_refresh_observed(orch, ai_root=ai_root, now_ts=now_50h)
         assert res["ag"] == "skipped_budget"
         assert ["ag"] in probes_called
         probes_called.clear()
@@ -336,14 +343,14 @@ class TestAutoRefresh:
         def mock_fingerprint_v2(path):
             return {"sha256": "hash_v2"}
         monkeypatch.setattr(ccr, "fingerprint", mock_fingerprint_v2)
-        res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now_25h)
+        res = ccr.auto_refresh_observed(orch, ai_root=ai_root, now_ts=now_25h)
         assert res["ag"] == "skipped_budget"
         assert ["ag"] in probes_called
         probes_called.clear()
 
         # Scenario 6: changed hash, budget ok -> refreshed
         budget_ok = True
-        res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now_25h)
+        res = ccr.auto_refresh_observed(orch, ai_root=ai_root, now_ts=now_25h)
         assert res["ag"] == "refreshed"
         assert ["ag"] in probes_called
 
@@ -361,6 +368,7 @@ class TestAutoRefresh:
         }
         ai_root = tmp_path / ".ai"
         ai_root.mkdir()
+        (tmp_path / "ag.exe").write_bytes(b"stub")
         monkeypatch.setattr(ccr, "fingerprint", lambda path: {"sha256": "hash_v1"})
         monkeypatch.setattr(ccr, "probe_enumerated_models", lambda peer, orch, timeout=20: None)
 
@@ -374,7 +382,7 @@ class TestAutoRefresh:
             lambda *a, **k: [{"peer": "ag", "status": "PASS", "model": "Model-A", "profile": "p1"}])
 
         now = datetime.now(timezone.utc).timestamp()
-        res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now)
+        res = ccr.auto_refresh_observed(orch, ai_root=ai_root, now_ts=now)
         assert res["ag"] == "refreshed"
 
     def test_auto_refresh_skip_reason_reflects_real_denial_kind(self, monkeypatch, tmp_path):
@@ -385,6 +393,7 @@ class TestAutoRefresh:
         ]}
         ai_root = tmp_path / ".ai"
         ai_root.mkdir()
+        (tmp_path / "ag.exe").write_bytes(b"stub")
         monkeypatch.setattr(ccr, "fingerprint", lambda path: {"sha256": "hash_v1"})
         monkeypatch.setattr(ccr, "probe_enumerated_models", lambda peer, orch, timeout=20: None)
 
@@ -394,7 +403,7 @@ class TestAutoRefresh:
             lambda *a, **k: [{"peer": "ag", "profile": "p1", "status": "SKIP", "reason": "quota_absent"}])
 
         now = datetime.now(timezone.utc).timestamp()
-        res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now)
+        res = ccr.auto_refresh_observed(orch, ai_root=ai_root, now_ts=now)
         assert res["ag"] == "skipped_quota_absent"
 
     def test_auto_refresh_uses_enumerated_catalog_when_available(self, monkeypatch, tmp_path):
@@ -406,6 +415,7 @@ class TestAutoRefresh:
         ]}
         ai_root = tmp_path / ".ai"
         ai_root.mkdir()
+        (tmp_path / "ag.exe").write_bytes(b"stub")
         observed_file = ai_root / "cli-reality-observed.json"
         monkeypatch.setattr(ccr, "fingerprint", lambda path: {"sha256": "hash_v1"})
 
@@ -418,13 +428,16 @@ class TestAutoRefresh:
             lambda peer, orch, timeout=20: ["Real-Model-A", "Real-Model-B"])
 
         now = datetime.now(timezone.utc).timestamp()
-        res = ccr.auto_refresh_observed(orch, ai_root, now_ts=now)
+        res = ccr.auto_refresh_observed(orch, ai_root=ai_root, now_ts=now)
         assert res["ag"] == "refreshed"
 
         import json
         saved = json.loads(observed_file.read_text(encoding="utf-8"))
-        assert saved["ag"]["models"] == ["Real-Model-A", "Real-Model-B"]
-        assert saved["ag"]["models_source"] == "enumerated"
+        assert saved["peers"]["ag"]["catalog_models"] == ["Real-Model-A", "Real-Model-B"]
+        assert (
+            saved["peers"]["ag"]["evidence_completeness"]
+            == ccr.EVIDENCE_COMPLETE_CATALOG
+        )
 
 
 class _FakeCompletedProcess:
@@ -467,7 +480,7 @@ class TestProbeEnumeratedModels:
         monkeypatch.setattr(ccr.subprocess, "run", fake_run)
 
         result = ccr.probe_enumerated_models("ag", orch)
-        assert result == AGY_REAL_MODELS
+        assert set(result) == set(AGY_REAL_MODELS)
         assert captured_argv == [str(bin_path), "models"]
 
     def test_nonzero_exit_returns_none(self, monkeypatch, tmp_path):

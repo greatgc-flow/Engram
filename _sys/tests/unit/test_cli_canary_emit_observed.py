@@ -14,6 +14,7 @@ from pathlib import Path
 SYS_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(SYS_DIR / "checks"))
 import check_cli_canary as ccc  # noqa: E402
+import check_cli_reality as ccr  # noqa: E402
 
 MOCK_ORCH = {
     "canary_config": {"budget_cap": 10, "budget_window_hours": 5.0, "reserve_floor": 0.0},
@@ -54,7 +55,19 @@ def _mock_invoker(peer, profile, model, prompt):
 
 def _patch_probe_plumbing(monkeypatch, tmp_path):
     monkeypatch.setattr(ccc, "fingerprint", lambda path: {"sha256": "dummy", "exists": True})
-    monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: tmp_path / f"{peer}_bin")
+    binaries = {}
+    for peer in ("cc", "ag"):
+        path = tmp_path / f"{peer}_bin"
+        path.write_bytes(b"stub")
+        binaries[peer] = ccr.BinaryObservationBoundary(
+            peer=peer,
+            status=ccr.BOUNDARY_BINARY_PRESENT,
+            configured_invoke=str(path),
+            launcher_path=path,
+            fingerprint_path=path,
+            fingerprint_kind="direct_binary",
+        )
+    monkeypatch.setattr(ccc, "real_binary", lambda peer, orch=None: binaries[peer])
     # _canary_quota() reads real, live machine quota state via
     # collect_snapshot(use_cache=True) - a process-wide cache keyed only by a
     # TTL, not by ai_root/tmp_path. Left unpatched, this test's reservation
@@ -74,13 +87,13 @@ def test_restricted_peer_scope_merges_not_overwrites(monkeypatch, tmp_path):
     ccc.emit_observed_capture(MOCK_ORCH, tmp_path, invoker=_mock_invoker, force=True)
     out_file = tmp_path / "cli-reality-observed.json"
     before = json.loads(out_file.read_text(encoding="utf-8"))
-    assert "cc" in before and "ag" in before
+    assert "cc" in before["peers"] and "ag" in before["peers"]
 
     # Then: a restricted re-probe of only cc must not drop ag's entry.
     ccc.emit_observed_capture(MOCK_ORCH, tmp_path, invoker=_mock_invoker, force=True, peers=["cc"])
     after = json.loads(out_file.read_text(encoding="utf-8"))
-    assert "ag" in after, "restricted --peer scope silently dropped another peer's entry"
-    assert "cc" in after
+    assert "ag" in after["peers"], "restricted --peer scope silently dropped another peer's entry"
+    assert "cc" in after["peers"]
 
 
 def test_main_wires_peer_and_force_through_emit_observed(monkeypatch, tmp_path):

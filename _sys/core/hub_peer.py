@@ -28,6 +28,7 @@ import re
 import shlex
 import subprocess
 import sys
+import unicodedata
 import uuid
 from collections.abc import Generator
 from dataclasses import dataclass
@@ -300,6 +301,21 @@ def profile_catalog(orch: dict | None = None) -> dict[str, dict[str, Any]]:
         for node in normalized.get("hub_nodes", [])
         if node.get("type") == "profile" and node.get("profile_id")
     }
+
+
+def canonical_reality_model_key(value: Any) -> str:
+    """Return the peer-CLI model identity key used by the C11 reality store.
+
+    Peer CLIs do not all render their model catalog in the same surface form:
+    an invocation operand such as ``gemini-3.5-flash-high`` may be enumerated
+    as ``Gemini 3.5 Flash (High)``.  C11 compares only keys produced by this
+    shared canonicalizer, inside the same root-peer namespace; it never
+    compares a context-registry identifier directly to a CLI catalog label.
+    """
+    if value is None:
+        return ""
+    normalized = unicodedata.normalize("NFKC", str(value)).casefold().strip()
+    return re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
 
 
 def extract_model_operand(args: list) -> str | None:

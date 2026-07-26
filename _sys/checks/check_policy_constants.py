@@ -30,12 +30,13 @@ _ROUTING_JSON = _SYS_DIR / "ai" / "routing-config.json"
 
 _CONFIG_SOURCED = {
     "SNAPSHOT_TTL_SEC", "EXPENSIVE_SOURCE_TTL_SEC", "_LOCAL_TTL_SEC",
-    "QUOTA_WARN_FRAC", "QUOTA_CRIT_FRAC",
+    "QUOTA_WARN_FRAC", "QUOTA_CRIT_FRAC", "CLI_REALITY_REFRESH_SLO_HOURS",
 }
 
 _TELEMETRY_SCHEMA = {
     "ttl": {"snapshot_sec": int, "expensive_source_sec": int, "local_sec": int},
     "probe": {"deadline_sec": int},
+    "cli_reality": {"refresh_slo_hours": float},
     "display": {"warn_frac": float, "crit_frac": float},
     "watch": {"default_interval_sec": int, "min_interval_sec": int, "sync_output": str},
 }

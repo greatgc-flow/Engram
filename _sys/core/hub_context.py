@@ -9,6 +9,11 @@ import unicodedata
 from pathlib import Path
 from typing import Any
 
+try:
+    from .hub_peer import canonical_reality_model_key
+except ImportError:
+    from hub_peer import canonical_reality_model_key
+
 _CORE_DIR = Path(__file__).parent
 _SYS_DIR = _CORE_DIR.parent
 _AI_DIR = _SYS_DIR / "ai"
@@ -24,6 +29,14 @@ class ResolvedContextTarget:
     limit_basis: str  # "profile_declared_limit" | "registry_model_id" | "exact_registry_model_id"
     registry_model_id: str | None
     context_window_kind: str  # "ceiling" | "proven_lower_bound"
+
+
+@dataclass(frozen=True)
+class ResolvedDispatchTarget:
+    """C2+C11 composition without conflating capacity and CLI identities."""
+    profile_id: str
+    context_target: ResolvedContextTarget
+    reality_model_key: str
 
 
 @dataclass(frozen=True)
@@ -248,6 +261,71 @@ def resolve_context_target(
     )
 
 
+def resolve_dispatch_target(
+    target: str | ResolvedDispatchTarget,
+    registry_path: Path | None = None,
+    *,
+    registry_data: dict[str, Any] | None = None,
+    profiles_data: dict[str, Any] | None = None,
+) -> ResolvedDispatchTarget:
+    """Compose C2 context capacity with C11's peer-CLI model identity.
+
+    ``context_target`` answers how much context the selected profile can
+    admit. ``reality_model_key`` is independently derived from the actual
+    model operand sent to that peer CLI.  Keeping them side by side prevents
+    registry aliases/capacity IDs from being mistaken for operational model
+    evidence.
+    """
+    if isinstance(target, ResolvedDispatchTarget):
+        return target
+    if not isinstance(target, str) or not target.strip():
+        raise UnknownModelCapacityError(str(target), "Empty or invalid dispatch target")
+
+    profile_id = target.strip()
+    context_target = resolve_context_target(
+        profile_id,
+        registry_path=registry_path,
+        registry_data=registry_data,
+        profiles_data=profiles_data,
+    )
+
+    if profiles_data is None:
+        try:
+            from hub import _load_model_profiles
+            profiles_catalog = _load_model_profiles().get("profiles", {})
+        except Exception:
+            profiles_catalog = {}
+    else:
+        profiles_catalog = (
+            profiles_data.get("profiles", profiles_data)
+            if isinstance(profiles_data, dict)
+            else {}
+        )
+
+    pdata = profiles_catalog.get(profile_id, {}) if isinstance(profiles_catalog, dict) else {}
+    raw_model_key = pdata.get("model_id") or pdata.get("runtime_model")
+    if not raw_model_key:
+        args = list(pdata.get("profile_args") or [])
+        for index, arg in enumerate(args):
+            text = str(arg)
+            if text in {"--model", "-m"} and index + 1 < len(args):
+                raw_model_key = args[index + 1]
+                break
+            if text.startswith("--model="):
+                raw_model_key = text.split("=", 1)[1]
+                break
+
+    # A direct registry/model target has no profile metadata. It is still a
+    # valid reality operand in its own peer namespace when the caller supplies
+    # such a target explicitly.
+    raw_model_key = raw_model_key or context_target.registry_model_id or profile_id
+    return ResolvedDispatchTarget(
+        profile_id=profile_id,
+        context_target=context_target,
+        reality_model_key=canonical_reality_model_key(raw_model_key),
+    )
+
+
 class ContextGate:
     """Config-driven context gate. Estimates token usage and decides action."""
 
@@ -264,6 +342,16 @@ class ContextGate:
     def resolve_target(self, target: str | dict[str, Any] | ResolvedContextTarget) -> ResolvedContextTarget:
         """Resolve a target specifier to a ResolvedContextTarget contract."""
         return resolve_context_target(
+            target,
+            registry_path=self._reg_path,
+            registry_data=self._registry,
+        )
+
+    def resolve_dispatch_target(
+        self,
+        target: str | ResolvedDispatchTarget,
+    ) -> ResolvedDispatchTarget:
+        return resolve_dispatch_target(
             target,
             registry_path=self._reg_path,
             registry_data=self._registry,

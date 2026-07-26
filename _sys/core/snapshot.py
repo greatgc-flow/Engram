@@ -34,6 +34,7 @@ from hub_peer import resolve_peer_sys_dir
 _TELEMETRY_DEFAULTS = {
     "ttl": {"snapshot_sec": 60, "expensive_source_sec": 60, "local_sec": 5},
     "probe": {"deadline_sec": 12},
+    "cli_reality": {"refresh_slo_hours": 24.0},
     "display": {"warn_frac": 0.75, "crit_frac": 0.90},
     "watch": {"default_interval_sec": 5, "min_interval_sec": 2, "sync_output": "auto"},
 }
@@ -70,6 +71,7 @@ def _tcfg(section, key):
 # In-process snapshot cache for router consumers (hub). CLI renderers collect
 # fresh by default so --watch never freezes on a stale frame.
 SNAPSHOT_TTL_SEC = telemetry_config()["ttl"]["snapshot_sec"]
+CLI_REALITY_REFRESH_SLO_HOURS = telemetry_config()["cli_reality"]["refresh_slo_hours"]
 _SNAPSHOT_CACHE = {"expires_at": 0.0, "snapshot": None}
 
 def _bar(frac, width=10):
