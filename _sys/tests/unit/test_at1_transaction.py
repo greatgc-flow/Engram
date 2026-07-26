@@ -308,3 +308,73 @@ def test_w1_missing_query_file_fails_loudly(tmp_path, capsys):
     args = mock_history.call_args[0]
     assert args[5] is False  # success flag
     assert args[6] == "query_file_missing"
+
+
+class TestT86TerminalHandoffDetectionSurvivesQueryFileUnlink:
+    """T86 (backlog.json, deferred since 2026-07-22, fixed here): the
+    terminal-handoff marker used to be re-read from query_file AFTER the
+    ephemeral file was already unlink()'d a few lines earlier in the same
+    ask flow -- the re-read always raised FileNotFoundError, silently
+    swallowed by a bare `except Exception: pass`, so a real terminal-handoff
+    ask could never be recognized as one and could get wrongly blocked by
+    the pacing_hard_gate's over_cap guard. Fixed by capturing the marker
+    once from raw_content, before the unlink."""
+
+    def _run_with_pacing_over_cap(self, tmp_path, query_text):
+        ai_root = tmp_path / ".ai"
+        ai_root.mkdir()
+        hub.ensure_ai_dir(ai_root)
+        qf = tmp_path / "q.txt"
+        qf.write_text(query_text, encoding="utf-8")
+
+        surfaced_reasons = []
+
+        def fake_surface(ai_root, to, reason, recovery_peer=None):
+            surfaced_reasons.append(reason)
+
+        mock_snapshot_row = {"profile": "cc.deepthink", "peer": "cc"}
+        fake_snap = {"profiles": [mock_snapshot_row]}
+
+        with patch("_sys.core.hub._load_balancer_config",
+                   return_value={"pacing_hard_gate": {"enabled": True}}), \
+             patch("_sys.core.hub._SNAPSHOT_AVAILABLE", True), \
+             patch("_sys.core.hub.snapshot") as mock_snapshot_mod, \
+             patch("_sys.core.hub.resolve_terminal_identity",
+                   return_value={"peer": "cc", "is_active_terminal": True}), \
+             patch("_sys.core.hub._human_interface_profile_for_peer",
+                   return_value="cc.deepthink"), \
+             patch("_sys.core.hub._surface_pre_dispatch_failure", side_effect=fake_surface), \
+             patch("_sys.core.hub._terminal_spend_guard"), \
+             patch("_sys.core.hub.subprocess.Popen") as mock_popen:
+
+            mock_snapshot_mod._SNAPSHOT_CACHE = {}
+            mock_snapshot_mod.collect_snapshot.return_value = fake_snap
+            mock_snapshot_mod.pacing_admission_for_profile.return_value = "over_cap"
+
+            mock_proc = MagicMock()
+            mock_proc.pid = 4242
+            mock_proc.returncode = 0
+            mock_proc.stdout.read.side_effect = [b""] * 50
+            mock_proc.stderr.read.side_effect = [b""] * 50
+            mock_proc.poll.return_value = 0
+            mock_popen.return_value = mock_proc
+
+            try:
+                hub.action_ask(
+                    to="cc", query="unused", query_file=str(qf), timeout_sec=5,
+                    ai_root=ai_root, quiet=True, output_file=None,
+                    include_context=False, session_policy="auto",
+                    explicit_scope=None, _depth=0, origin="test",
+                )
+            except SystemExit:
+                pass
+
+        return surfaced_reasons
+
+    def test_handoff_marked_ask_is_not_blocked_by_pacing_over_cap(self, tmp_path):
+        reasons = self._run_with_pacing_over_cap(tmp_path, "please run terminal-handoff now")
+        assert "terminal_pacing_exhausted" not in reasons
+
+    def test_non_handoff_ask_is_blocked_by_pacing_over_cap(self, tmp_path):
+        reasons = self._run_with_pacing_over_cap(tmp_path, "just a normal question")
+        assert "terminal_pacing_exhausted" in reasons

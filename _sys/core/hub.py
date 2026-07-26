@@ -6095,6 +6095,13 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     
     saved_query_file_path = query_file
     ipc_protocol_version: int | None = None
+    # T86: computed once from raw_content while the query file still exists
+    # (below), never re-read later -- ephemeral query files are unlink()'d
+    # a few lines down, so a later re-read (the old approach) silently fails
+    # every time via a bare `except Exception: pass`, permanently leaving
+    # this False and letting pacing/reserve guards wrongly treat a real
+    # terminal-handoff ask as an ordinary dispatch.
+    is_handoff_query = False
     if query_file:
         qf = Path(query_file)
         if not qf.exists():
@@ -6110,6 +6117,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
             _append_ask_history(ai_root, to, query_file, output_file, None, False, "query_file_missing")
             sys.exit(1)
         raw_content = qf.read_text(encoding="utf-8")
+        is_handoff_query = "terminal-handoff" in raw_content
         # Parse IPC envelope headers (lines starting with "PROTOCOL_")
         lines = raw_content.splitlines()
         body_start = 0
@@ -6312,17 +6320,11 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                                     None
                                 )
                             if d_raw_profile:
-                                # Are we asking for terminal handoff? (which usually bypasses
-                                # _action_ask_inner via its own CLI branch, but check just in
-                                # case). Computed once, ahead of both checks below.
-                                is_handoff = False
-                                if query_file:
-                                    try:
-                                        raw_q = Path(query_file).read_text("utf-8")
-                                        if "terminal-handoff" in raw_q:
-                                            is_handoff = True
-                                    except Exception:
-                                        pass
+                                # T86: reuse the value captured from raw_content
+                                # before the ephemeral query file was unlinked --
+                                # re-reading query_file here (the old approach)
+                                # always failed silently for ephemeral files.
+                                is_handoff = is_handoff_query
 
                                 d_adm = snapshot.pacing_admission_for_profile(d_raw_profile, cfg)
                                 if d_adm != "allow":
