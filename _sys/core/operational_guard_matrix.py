@@ -28,7 +28,7 @@ SYSTEM_EXEMPT_ACTIONS = {
     "consensus-sweep", "health-sweep", "freshness-sweep", "health-update", "health-check",
     "health-precheck", "transient-scan", "lease-sweep", "lesson-sweep",
     "update-signatures", "init-session", "end-session", "context-fill",
-    "context-hash", "context-ack", "peer-recover", "peer-quarantine",
+    "context-hash", "peer-recover", "peer-quarantine",
 }
 
 ACTION_GROUP_KEYS = (

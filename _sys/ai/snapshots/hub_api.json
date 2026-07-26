@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-07-25T14:24:51",
+  "generated_at": "2026-07-26T14:39:04",
   "source": "hub.py",
-  "count": 90,
+  "count": 89,
   "signatures": {
     "_lease_cfg": {
       "params": {
@@ -574,24 +574,6 @@
         "reason": {
           "kind": "POSITIONAL_OR_KEYWORD",
           "annotation": "str"
-        }
-      },
-      "return": "None"
-    },
-    "action_context_ack": {
-      "params": {
-        "ai_root": {
-          "kind": "POSITIONAL_OR_KEYWORD",
-          "annotation": "Path"
-        },
-        "peer": {
-          "kind": "POSITIONAL_OR_KEYWORD",
-          "annotation": "str"
-        },
-        "context_hash": {
-          "kind": "POSITIONAL_OR_KEYWORD",
-          "default": null,
-          "annotation": "str | None"
         }
       },
       "return": "None"

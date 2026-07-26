@@ -9,6 +9,7 @@ import os
 import copy
 import hashlib
 import json
+import math
 import re
 import subprocess
 import sys
@@ -26,6 +27,8 @@ if str(CORE_DIR) not in sys.path:
     sys.path.insert(0, str(CORE_DIR))
 
 from hub_peer import resolve_peer_sys_dir
+from quota_capabilities import supports_reset_credits
+from timestamps import parse_iso_timestamp
 
 # ── Telemetry config (MECE constants; token-session-policy-design-2026-07-08) ──
 # Operational constants live in _sys/ai/telemetry-config.json; a missing/invalid
@@ -96,33 +99,73 @@ def _short(n):
     return str(n)
 
 
-def _parse_reset(value):
-    """Parse an epoch (int/float/digit-string; /1000 if milliseconds) or an
-    ISO8601 string into a timezone-aware datetime in LOCAL time.
-    Returns None on failure (never raises)."""
+def _parse_quota_reset(value, *, provider=None, timezone_contract=None):
+    """Parse a vendor quota reset without inventing a timezone.
+
+    Returns ``(datetime | None, provenance)``.  A provider can supply an
+    explicit IANA timezone contract; otherwise naive ISO values are rejected.
+    """
+    provenance = {
+        "provider": provider or "unknown",
+        "timezone_policy": "reject_naive",
+    }
     if value is None or value == "":
-        return None
-    # Numeric epoch (int/float or pure digit / float string)
+        return None, {**provenance, "status": "absent", "reason": "missing"}
+    if isinstance(value, bool):
+        return None, {**provenance, "status": "rejected", "reason": "boolean_timestamp"}
     is_numeric = isinstance(value, (int, float))
     if not is_numeric and isinstance(value, str):
-        is_numeric = value.strip().replace(".", "", 1).isdigit()
+        try:
+            float(value.strip())
+            is_numeric = True
+        except (TypeError, ValueError):
+            pass
     if is_numeric:
         try:
             num = float(value)
-            if abs(num) > 1e12:  # looks like milliseconds
+            if not math.isfinite(num):
+                raise ValueError("non-finite epoch")
+            if abs(num) > 1e12:
                 num /= 1000.0
-            return datetime.fromtimestamp(num, tz=timezone.utc).astimezone()
+            parsed = datetime.fromtimestamp(num, tz=timezone.utc).astimezone()
+            return parsed, {
+                **provenance, "status": "parsed", "source": "epoch",
+                "timezone_policy": "unix_epoch",
+            }
         except (ValueError, OSError, OverflowError):
-            return None
-    # ISO8601 string
+            return None, {**provenance, "status": "rejected", "reason": "invalid_epoch"}
     try:
-        s = str(value).strip().replace("Z", "+00:00")
-        dt = datetime.fromisoformat(s)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone()
-    except (ValueError, TypeError):
-        return None
+        assumed_timezone = ZoneInfo(timezone_contract) if timezone_contract else None
+        parsed = parse_iso_timestamp(
+            value,
+            naive_policy="assume_timezone" if assumed_timezone else "reject",
+            assumed_timezone=assumed_timezone,
+        ).astimezone()
+        return parsed, {
+            **provenance,
+            "status": "parsed",
+            "source": "iso8601",
+            "timezone_policy": (
+                f"provider_contract:{timezone_contract}"
+                if timezone_contract else "explicit_offset"
+            ),
+        }
+    except (TypeError, ValueError, KeyError):
+        reason = "invalid_iso8601"
+        if isinstance(value, str) and value.strip():
+            try:
+                if datetime.fromisoformat(
+                    value.strip().replace("Z", "+00:00")
+                ).tzinfo is None:
+                    reason = "naive_timestamp"
+            except ValueError:
+                pass
+        return None, {**provenance, "status": "rejected", "reason": reason}
+
+
+def _parse_reset(value):
+    """Parse a vendor reset into local aware time; reject timezone-less ISO."""
+    return _parse_quota_reset(value)[0]
 
 
 def _rel(seconds):
@@ -673,7 +716,7 @@ def _codex_quota_buckets(rate_limits):
 
         import quota as qmgr
         resets_at = q.get("resetsAt")
-        reset_at = _parse_reset(resets_at)
+        reset_at, reset_provenance = _parse_quota_reset(resets_at, provider="cx")
         rem_sec = qmgr.get_remaining_seconds(resets_at_iso=resets_at)
         pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours)
 
@@ -681,6 +724,7 @@ def _codex_quota_buckets(rate_limits):
             "label": label, "used_frac": used_frac,
             "reset": _fmt_reset(resets_at),
             "reset_at": reset_at.isoformat() if reset_at else None,
+            "reset_provenance": reset_provenance,
             "pacing": pacing,
             "metric": f"{float(used):.1f}% used{_fmt_pacing(pacing)}",
             "pacing_ratio": pacing.get("ratio"), "pacing_status": pacing.get("status"),
@@ -967,13 +1011,16 @@ def gather_peer(peer, peer_dirs):
             import quota as qmgr
             window_hours = 5.0 if "5H" in label else 168.0
             reset_sec = q.get("reset_in_seconds")
-            reset_at = _parse_reset(q.get("reset_time"))
+            reset_at, reset_provenance = _parse_quota_reset(
+                q.get("reset_time"), provider="ag"
+            )
             rem_sec = qmgr.get_remaining_seconds(reset_in_seconds=reset_sec)
             pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours) if used_frac is not None else None
             quotas.append({
                 "label": label, "used_frac": used_frac, "pacing": pacing,
                 "reset": _fmt_reset(q.get("reset_time"), reset_sec),
                 "reset_at": reset_at.isoformat() if reset_at else None,
+                "reset_provenance": reset_provenance,
                 "reset_in_seconds": reset_sec,
                 "source": "ag",
             })
@@ -1012,7 +1059,9 @@ def gather_peer(peer, peer_dirs):
             
             import quota as qmgr
             resets_at = q.get("resets_at") or q.get("reset_at")
-            reset_at = _parse_reset(resets_at)
+            reset_at, reset_provenance = _parse_quota_reset(
+                resets_at, provider="cc"
+            )
             reset_sec = q.get("reset_in_seconds")
             
             if reset_sec is not None:
@@ -1025,6 +1074,7 @@ def gather_peer(peer, peer_dirs):
                 "label": label, "used_frac": used_frac, "pacing": pacing,
                 "reset": _fmt_reset(resets_at, reset_sec),
                 "reset_at": reset_at.isoformat() if reset_at else None,
+                "reset_provenance": reset_provenance,
                 "reset_in_seconds": reset_sec,
                 "source": "cc",
             })
@@ -1086,7 +1136,7 @@ def gather_peer(peer, peer_dirs):
             # wide (a reset clears ALL of a peer's pools at once), so this
             # is intentionally not attached to any individual quota bucket.
             reset_credits = rl.get("rateLimitResetCredits")
-            if isinstance(reset_credits, dict):
+            if supports_reset_credits(peer) and isinstance(reset_credits, dict):
                 info["reset_credits_available"] = reset_credits.get("availableCount")
                 expiries = _eligible_credit_details(reset_credits)
                 if expiries is not None:
@@ -1156,6 +1206,9 @@ def format_quota_bucket(bucket):
     emoji = "🔴" if frac >= QUOTA_CRIT_FRAC else "🟡" if frac >= QUOTA_WARN_FRAC else "🟢"
     pacing = _fmt_pacing(bucket.get("pacing"))
     if not pacing:
+        pacing_data = bucket.get("pacing")
+        if isinstance(pacing_data, dict) and pacing_data.get("status") == "unknown":
+            return f"{_bar(frac)} {frac * 100:.0f}% {emoji} ?"
         ratio = bucket.get("pacing_ratio")
         pacing = f" {emoji} {ratio:.2f}x" if isinstance(ratio, (int, float)) else f" {emoji} 0.00x"
     return f"{_bar(frac)} {frac * 100:.0f}%{pacing}"

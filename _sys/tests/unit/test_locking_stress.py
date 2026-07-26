@@ -146,7 +146,7 @@ class TestLockingStress:
         Still a genuine concurrent-write stress test with 3 truly parallel
         subprocesses racing on the same round file's lock.
         """
-        self.run_hub_cmd(test_env, ["init-session", "--agent", "admin"])
+        self.run_hub_cmd(test_env, ["init-session", "--agent", "cc"])
         voters = ["cc", "ag", "cx"]
         self.run_hub_cmd(test_env, [
             "consensus-propose", "--subject", "parallel-vote",

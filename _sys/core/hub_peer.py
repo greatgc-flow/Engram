@@ -74,6 +74,16 @@ class SessionInvocation:
     use_stdin: bool
     session_id: str | None = None
 
+
+@dataclass(frozen=True)
+class PreparedInvocation:
+    """Fully prepared transport input and its core-owned cleanup contract."""
+
+    argv: tuple[str, ...]
+    stdin_payload: bytes | None
+    staged_artifacts: tuple[Path, ...] = ()
+    cleanup_metadata: tuple[tuple[str, str], ...] = ()
+
 _CORE_DIR = Path(__file__).parent
 _SYS_DIR = _CORE_DIR.parent
 _AI_DIR = _SYS_DIR / "ai"
@@ -486,6 +496,20 @@ class PeerAdapter(Protocol):
         """Build a session-reuse (resume/new-session) invocation."""
         ...
 
+    def prepare_input(
+        self,
+        node: dict[str, Any],
+        query: str,
+        invocation: SessionInvocation,
+        *,
+        ask_id: str,
+        ai_root: Path | None,
+        cwd: str | Path | None,
+        transport_limits: dict[str, int],
+    ) -> PreparedInvocation:
+        """Prepare argv/stdin and any staged artifacts for one invocation."""
+        ...
+
     def session_fingerprint(self, node: dict[str, Any]) -> str:
         """Return a stable fingerprint of the static session invocation flags."""
         ...
@@ -572,6 +596,20 @@ class BaseAdapter:
                 cmd_args.append(a)
         cmd_args.extend(node.get("profile_args", []))
         return [invoke] + cmd_args, use_stdin
+
+    def prepare_input(
+        self,
+        node: dict[str, Any],
+        query: str,
+        invocation: SessionInvocation,
+        *,
+        ask_id: str,
+        ai_root: Path | None,
+        cwd: str | Path | None,
+        transport_limits: dict[str, int],
+    ) -> PreparedInvocation:
+        payload = query.encode("utf-8") if invocation.use_stdin else None
+        return PreparedInvocation(tuple(invocation.cmd), payload)
 
     # ── Session reuse contract ────────────────────────────────────────────────
     # Adapters that support hub-managed session reuse override these three
@@ -930,6 +968,81 @@ class AgyAdapter(BaseAdapter):
             cmd.extend(["--conversation", effective_id])
 
         return SessionInvocation(cmd, use_stdin, effective_id)
+
+    def prepare_input(
+        self,
+        node: dict[str, Any],
+        query: str,
+        invocation: SessionInvocation,
+        *,
+        ask_id: str,
+        ai_root: Path | None,
+        cwd: str | Path | None,
+        transport_limits: dict[str, int],
+    ) -> PreparedInvocation:
+        """Stage oversized inline prompts; this policy is adapter-owned."""
+        try:
+            cmdline_chars = len(subprocess.list2cmdline(invocation.cmd))
+        except Exception:
+            cmdline_chars = 0
+        inline_limit = int(transport_limits.get("inline_command_chars", 24_000))
+        if cmdline_chars <= inline_limit:
+            return super().prepare_input(
+                node, query, invocation, ask_id=ask_id, ai_root=ai_root,
+                cwd=cwd, transport_limits=transport_limits,
+            )
+
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", str(ask_id or "")):
+            raise ValueError("ask_id contains unsafe staging-path characters")
+        stage_base = (
+            Path(ai_root) / "ipc"
+            if ai_root is not None
+            else Path(cwd or Path.cwd()) / "ipc"
+        ).resolve()
+        stage_base.mkdir(parents=True, exist_ok=True)
+        staged_path = (stage_base / f"{ask_id}-{uuid.uuid4().hex}.ag-prompt.txt").resolve()
+        if staged_path.parent != stage_base:
+            raise ValueError("staged prompt path escapes the staging directory")
+
+        payload = query.encode("utf-8")
+        digest = hashlib.sha256(payload).hexdigest()
+        try:
+            with staged_path.open("xb") as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            round_trip = staged_path.read_bytes()
+            if len(round_trip) != len(payload) or hashlib.sha256(round_trip).hexdigest() != digest:
+                raise OSError("staged prompt failed UTF-8 digest round-trip")
+        except BaseException:
+            staged_path.unlink(missing_ok=True)
+            raise
+
+        pointer_prompt = (
+            "[IPC PAYLOAD FILE]\n"
+            "The complete user request is stored in the UTF-8 file:\n"
+            f"{staged_path}\n"
+            "Read the entire file before answering. Treat all of its contents as the\n"
+            "complete request. Do not truncate it or substitute prior conversation context.\n"
+            f"UTF-8 bytes: {len(payload)}; characters: {len(query)}; SHA-256: {digest}"
+        )
+        if invocation.session_id is not None:
+            pointer_invocation = self.build_session_cmd(
+                node, pointer_prompt, invocation.session_id
+            )
+        else:
+            pointer_cmd, pointer_stdin = self.build_cmd(node, pointer_prompt)
+            pointer_invocation = SessionInvocation(pointer_cmd, pointer_stdin, None)
+        return PreparedInvocation(
+            tuple(pointer_invocation.cmd),
+            pointer_prompt.encode("utf-8") if pointer_invocation.use_stdin else None,
+            (staged_path,),
+            (
+                ("sha256", digest),
+                ("utf8_bytes", str(len(payload))),
+                ("characters", str(len(query))),
+            ),
+        )
 
     def extract_session_id(
         self, stdout: str, node: dict[str, Any], command_session_id: str | None

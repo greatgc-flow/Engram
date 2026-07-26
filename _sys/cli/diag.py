@@ -25,6 +25,7 @@ PORTABLE_ROOT = SYS_DIR.parent
 sys.path.insert(0, str(SYS_DIR / "core"))
 import snapshot as _snapshot
 from quota import time_to_exhaustion
+from quota_capabilities import supports_reset_credits
 from snapshot import (
     telemetry_config, clear_expensive_cache, expensive_source_age_sec,
     SNAPSHOT_TTL_SEC, _SNAPSHOT_CACHE,
@@ -776,7 +777,7 @@ def render_summary(infos, stdout=None, columns=None):
         ]
         rows = [{"pool": q.get("label"), **q} for q in visible_quotas]
         groups = _borrow_missing_windows(_quota_dependency_groups(rows))
-        has_credit_concept = (info.get("peer") == "cx")
+        has_credit_concept = supports_reset_credits(info.get("peer"))
         eligible_credits = info.get("eligible_credits")
         eligible_credit_expiries = info.get("eligible_credit_expiries")
         for g in groups:
@@ -809,7 +810,7 @@ def render_summary(infos, stdout=None, columns=None):
         rows = [{"pool": q.get("label"), **q} for q in visible_quotas]
         groups = _borrow_missing_windows(_quota_dependency_groups(rows))
         for g in groups:
-            g["_has_credit_concept"] = (info.get("peer") == "cx")
+            g["_has_credit_concept"] = supports_reset_credits(info.get("peer"))
             g["_eligible_credits"] = info.get("eligible_credits")
             g["_eligible_credit_expiries"] = info.get("eligible_credit_expiries")
 
@@ -1292,7 +1293,7 @@ def _live_quota_pool_rows(snapshot):
             
         peer_groups = _borrow_missing_windows(_quota_dependency_groups(peer_rows))
         for g in peer_groups:
-            g["_has_credit_concept"] = (owner.lower() == "cx")
+            g["_has_credit_concept"] = supports_reset_credits(owner)
             g["_eligible_credits"] = info.get("eligible_credits")
             g["_eligible_credit_expiries"] = info.get("eligible_credit_expiries")
 

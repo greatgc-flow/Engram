@@ -78,6 +78,13 @@ except ImportError:
     _HUB_PEER_AVAILABLE = False
 
 try:
+    from quota_capabilities import supports_reset_credits
+    from timestamps import parse_iso_timestamp
+except ImportError:
+    from .quota_capabilities import supports_reset_credits
+    from .timestamps import parse_iso_timestamp
+
+try:
     import hub_profile_router
     _PROFILE_ROUTER_AVAILABLE = True
 except ImportError:
@@ -1327,7 +1334,38 @@ def _write_handoff(session_dir: Path, sections: dict) -> None:
 # Write 액션 (filelock)
 # ─────────────────────────────────────────────────────────────
 
+def _canonical_admission_identity(identity: str, *, role: str) -> str:
+    """Validate and root-normalize a peer or explicitly registered service."""
+    orch = _load_orchestration()
+    value = str(identity or "").strip()
+    canonical = hub_peer.resolve_node_id(value, orch=orch) if _HUB_PEER_AVAILABLE else None
+    if canonical is not None and is_routable(canonical, orch=orch):
+        root_id = hub_peer.root_peer_id(canonical, orch=orch)
+        root_node = next(
+            (
+                node for node in orch.get("hub_nodes", [])
+                if isinstance(node, dict) and node.get("node_id") == root_id
+            ),
+            None,
+        )
+        if isinstance(root_node, dict) and root_node.get("type") == "peer":
+            return str(root_id)
+    for principal in orch.get("service_principals", []):
+        if (
+            isinstance(principal, dict)
+            and principal.get("principal_id") == value
+            and principal.get("enabled") is True
+        ):
+            return value
+    raise ValueError(f"{role} identity is not a routable peer or registered service: {value!r}")
+
+
 def action_init_session(ai_root: Path, agent: str, room_id: str | None = None) -> None:
+    try:
+        agent = _canonical_admission_identity(agent, role="agent")
+    except ValueError as exc:
+        print(f"[HUB:ERR] {exc}", file=sys.stderr)
+        sys.exit(1)
     _lease_sweep(ai_root)
     if ai_root:
         action_consensus_sweep(ai_root)
@@ -1428,6 +1466,16 @@ def action_send(
     priority: str | None = None,
 ) -> None:
     if cc_list is None: cc_list = []
+    try:
+        from_ = _canonical_admission_identity(from_, role="sender")
+        to = _canonical_admission_identity(to, role="recipient")
+        cc_list = list(dict.fromkeys(
+            _canonical_admission_identity(identity, role="cc")
+            for identity in cc_list
+        ))
+    except ValueError as exc:
+        print(f"[HUB:ERR] {exc}", file=sys.stderr)
+        sys.exit(1)
     send_policy = _load_lifecycle_policy().get("messaging", {}).get("send", {})
     if send_policy.get("mode") in ("disabled", "remove"):
         print("[HUB:ERR] send is disabled by lifecycle_policy.json", file=sys.stderr)
@@ -6565,19 +6613,51 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     command_session_id: str | None = None
     if use_session:
         invocation = adapter.build_session_cmd(node, query, session_id)
-        cmd = invocation.cmd
-        use_stdin = invocation.use_stdin
         command_session_id = invocation.session_id
     elif adapter:
-        cmd, use_stdin = adapter.build_cmd(node, query)
+        built_cmd, built_use_stdin = adapter.build_cmd(node, query)
+        invocation = hub_peer.SessionInvocation(built_cmd, built_use_stdin, None)
     else:
         # Legacy fallback
         from hub_peer import BaseAdapter as _BaseAdapter
-        cmd, use_stdin = _BaseAdapter().build_cmd(node, query)
+        adapter = _BaseAdapter()
+        built_cmd, built_use_stdin = adapter.build_cmd(node, query)
+        invocation = hub_peer.SessionInvocation(built_cmd, built_use_stdin, None)
 
     is_resume_attempt = session_id is not None
+    ask_id = ask_id or _short_id("ask-")
+    invocation_cwd = str(ai_root.parent) if ai_root else None
+    prepare_input = getattr(adapter, "prepare_input", None)
+    if prepare_input is None:
+        prepare_input = hub_peer.BaseAdapter().prepare_input
+    try:
+        prepared = prepare_input(
+            node,
+            query,
+            invocation,
+            ask_id=ask_id,
+            ai_root=ai_root,
+            cwd=invocation_cwd,
+            transport_limits={"inline_command_chars": _PTY_INLINE_COMMAND_LIMIT},
+        )
+    except Exception as exc:
+        reason = "prompt_staging_failed"
+        detail = f"failed to prepare adapter input: {exc}"
+        _record_ask_failure(
+            health_peer, reason, detail, None, ai_root, profile_key=profile_key
+        )
+        _append_ask_history(
+            ai_root, to, saved_query_file_path, output_file, None, False, reason
+        )
+        _surface_pre_dispatch_failure(ai_root, to, reason, recovery_peer=health_peer)
+        print(f"[HUB:ERROR] {detail}", file=sys.stderr)
+        sys.exit(1)
+    cmd = list(prepared.argv)
+    use_stdin = prepared.stdin_payload is not None
     exe = _resolve_invoke_cli(cmd[0]) or shutil.which(cmd[0])
     if not exe:
+        for staged_path in prepared.staged_artifacts:
+            staged_path.unlink(missing_ok=True)
         print(f"[ERROR] {cmd[0]} CLI not found in PATH", file=sys.stderr)
         _record_ask_failure(health_peer, "cli_not_found", f"{cmd[0]} CLI not found in PATH", None, ai_root, profile_key=profile_key)
         sys.exit(1)
@@ -6595,7 +6675,6 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     # those files are created by whatever process's own ambient TEMP
     # resolves to (e.g. INSTALL.bat's or this terminal's own PowerShell
     # calls), independent of any peer subprocess's env vars.
-    ask_id = ask_id or _short_id("ask-")
     _ask_temp_root = Path(__file__).resolve().parent.parent / "data" / "temp"
     _sweep_stale_ask_temp_dirs(_ask_temp_root)
     ask_temp_dir = _ask_temp_root / f"ask_{ask_id}"
@@ -6685,57 +6764,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         result: "_PtyAskResult | None" = None
         lease_status = "open"
         lease_closed = False
-        staged = False
-        staged_path: Path | None = None
         pending_success: "_PendingAskSuccess | None" = None
         try:
             # ── A1: oversized-prompt staging (never truncate) ──────────
-            try:
-                _cmdline_len = len(subprocess.list2cmdline(cmd))
-            except Exception:
-                _cmdline_len = 0
-            if _cmdline_len > _PTY_INLINE_COMMAND_LIMIT:
-                try:
-                    digest = hashlib.sha256(query.encode("utf-8")).hexdigest()
-                    char_count = len(query)
-                    ipc_base = (ai_root if ai_root else Path.cwd()) / "ipc"
-                    ipc_base.mkdir(parents=True, exist_ok=True)
-                    staged_path = ipc_base / f"{ask_id}-ag-prompt.txt"
-                    staged_path.write_text(query, encoding="utf-8")
-                    rel_ref = (
-                        f"{ai_root.name}/ipc/{staged_path.name}"
-                        if ai_root else str(staged_path)
-                    )
-                    pointer_prompt = (
-                        "[IPC PAYLOAD FILE]\n"
-                        "The complete user request is stored in the UTF-8 file:\n"
-                        f"{rel_ref}\n"
-                        "Read the entire file before answering. Treat all of its contents as the\n"
-                        "complete request. Do not truncate it or substitute prior conversation context.\n"
-                        f"Length: {char_count}; SHA-256: {digest}"
-                    )
-                    if adapter:
-                        staged_cmd, _ = adapter.build_cmd(node, pointer_prompt)
-                    else:
-                        from hub_peer import BaseAdapter as _BaseAdapter
-                        staged_cmd, _ = _BaseAdapter().build_cmd(node, pointer_prompt)
-                    staged_cmd[0] = exe
-                    cmd = staged_cmd
-                    staged = True
-                except Exception as exc:
-                    reason = "prompt_staging_failed"
-                    detail = f"failed to stage oversized PTY prompt: {exc}"
-                    _record_ask_failure(health_peer, reason, detail, None, ai_root, profile_key=profile_key)
-                    _append_ask_history(
-                        ai_root, to, saved_query_file_path, output_file, None, False, reason
-                    )
-                    _surface_pre_dispatch_failure(
-                        ai_root, to, reason, recovery_peer=health_peer
-                    )
-                    _update_pty_thread(f"failed ({reason})")
-                    print(f"[HUB:ERROR] {detail}", file=sys.stderr)
-                    sys.exit(1)
-
             result = _ask_with_pty(
                 cmd,
                 to,
@@ -6984,8 +7015,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     _lease_close(ai_root, result.lease_id, result.pid, lease_status)
                 except LeaseOwnershipError as _lease_exc:
                     print(f"[HUB:WARN] lease close ownership error: {_lease_exc}", file=sys.stderr)
-            # Delete the staged prompt file (guarded), regardless of outcome.
-            if staged and staged_path is not None:
+            # Artifacts outlive the fully supervised child tree: _ask_with_pty
+            # returns only after normal EOF or process-tree termination.
+            for staged_path in prepared.staged_artifacts:
                 try:
                     staged_path.unlink(missing_ok=True)
                 except Exception:
@@ -7022,7 +7054,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         )
         lease_id = _lease_open(ai_root, to, proc.pid, lease_timeout_sec, ask_id=ask_id, ask_query_file=saved_query_file_path)
 
-        input_bytes = query.encode("utf-8") if use_stdin else None
+        input_bytes = prepared.stdin_payload
         # Incremental streaming read: sees partial output and applies one unified
         # silence window from t0 and after every output chunk.
         try:
@@ -7395,6 +7427,11 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                 print(f"[HUB:WARN] lease close ownership error: {_lease_exc}", file=sys.stderr)
         if ask_temp_dir and ask_temp_dir.exists():
             shutil.rmtree(ask_temp_dir, ignore_errors=True)
+        for staged_path in prepared.staged_artifacts:
+            try:
+                staged_path.unlink(missing_ok=True)
+            except Exception:
+                pass
     return pending_success
 
 
@@ -8321,6 +8358,12 @@ def _verify_reset_credit(pre_result: dict | None, post_result: dict | None, cred
 
 def action_credit_status(peer: str, *, as_json: bool = False) -> None:
     """Read-only view of a peer's rate-limit reset credits. Never consumes."""
+    if not supports_reset_credits(peer):
+        print(
+            f"[HUB:ERROR] reset credits are not declared for peer {peer!r}",
+            file=sys.stderr,
+        )
+        sys.exit(3)
     with CodexAccountClient() as client:
         result = client.read_rate_limits()
 
@@ -8348,8 +8391,11 @@ def action_credit_consume(
     if origin != "terminal":
         print("[HUB:ERROR] credit-consume requires terminal (human) origin", file=sys.stderr)
         sys.exit(3)
-    if not peer or peer != "cx":
-        print("[HUB:ERROR] credit-consume is only supported for peer 'cx'", file=sys.stderr)
+    if not supports_reset_credits(peer):
+        print(
+            f"[HUB:ERROR] reset credits are not declared for peer {peer!r}",
+            file=sys.stderr,
+        )
         sys.exit(3)
     if not credit_id:
         print("[HUB:ERROR] credit-consume requires --credit-id", file=sys.stderr)
@@ -9001,7 +9047,7 @@ def _has_finalized_consensus(ai_root: Path) -> bool:
 _SYSTEM_EXEMPT_ACTIONS = {"consensus-sweep", "health-sweep", "freshness-sweep", "health-update", "health-check",
                           "health-precheck", "transient-scan", "lease-sweep", "lesson-sweep",
                           "update-signatures", "init-session", "end-session", "context-fill",
-                          "context-hash", "context-ack", "peer-recover", "peer-quarantine"}
+                          "context-hash", "peer-recover", "peer-quarantine"}
 
 
 def _guard_decision(
@@ -9390,7 +9436,7 @@ def _hash_read(path: Path, normalize_newlines: bool) -> bytes:
 
 
 def _compute_context_hash(ai_root: Path) -> str:
-    cfg = _operational_guard_cfg().get("context_ack", {})
+    cfg = _operational_guard_cfg().get("context_hash", {})
     algo = cfg.get("hash_algorithm", "sha256")
     normalize = bool(cfg.get("normalize_newlines", True))
     state = _read_json(ai_root / "state.json")
@@ -9408,20 +9454,6 @@ def _compute_context_hash(ai_root: Path) -> str:
 
 def action_context_hash(ai_root: Path) -> None:
     print(_compute_context_hash(ai_root))
-
-
-def action_context_ack(ai_root: Path, peer: str, context_hash: str | None = None) -> None:
-    key = peer or "unknown"
-    path = ai_root / "context_ack.json"
-    data = _read_json(path)
-    state = _read_json(ai_root / "state.json")
-    data[key] = {
-        "hash": context_hash or _compute_context_hash(ai_root),
-        "room_id": state.get("room_id"),
-        "acked_at": _now(),
-    }
-    _write_json(path, data)
-    print(f"[HUB] context-ack peer={key} hash={data[key]['hash']}")
 
 
 def _feedback_path(ai_root: Path) -> Path:
@@ -10657,15 +10689,13 @@ def _parse_lease_timestamp(value, *, local_timezone=None) -> datetime:
     if not isinstance(value, str) or not value.strip():
         raise ValueError("missing lease timestamp")
     try:
-        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        return parse_iso_timestamp(
+            value,
+            naive_policy="assume_local",
+            assumed_timezone=local_timezone,
+        )
     except (TypeError, ValueError) as exc:
         raise ValueError(f"invalid lease timestamp: {value!r}") from exc
-    if parsed.tzinfo is None:
-        if local_timezone is None:
-            parsed = parsed.astimezone()
-        else:
-            parsed = parsed.replace(tzinfo=local_timezone)
-    return parsed.astimezone(timezone.utc)
 
 
 def _validated_live_lease_pid(value) -> int | None:
@@ -11659,7 +11689,7 @@ def action_approval_request(ai_root: Path, from_peer: str, action: str, auth_nee
         f"RISK: {risk or 'unspecified'}",
         f"FALLBACK: {fallback or 'none'}",
     ])
-    action_send(ai_root, from_peer or "unknown", target, content, None, "APPROVAL_REQUEST", [], None, "CRITICAL")
+    action_send(ai_root, from_peer or "system", target, content, None, "APPROVAL_REQUEST", [], None, "CRITICAL")
     _append_handoff_item(ai_root, "PENDING_ISSUES", f"{_now()} approval requested by {from_peer or 'unknown'} for {action or 'unspecified'}")
     print(f"[HUB] APPROVAL-REQUEST {from_peer or 'unknown'} -> {target}")
 
@@ -11730,7 +11760,7 @@ def main() -> None:
         prog="hub",
         description="AI collaboration hub - Protocol v4.2",
     )
-    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-all", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "freshness-sweep", "terminal-handoff", "terminal-duty-sweep", "terminal-heartbeat", "terminal-close", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "thread-promote", "alert-raise", "proposal-add", "proposal-vote", "proposal-list", "broker-submit", "broker-drain", "broker-status", "update-signatures", "arbiter-review", "credit-status", "credit-consume"])
+    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-all", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "freshness-sweep", "terminal-handoff", "terminal-duty-sweep", "terminal-heartbeat", "terminal-close", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "thread-promote", "alert-raise", "proposal-add", "proposal-vote", "proposal-list", "broker-submit", "broker-drain", "broker-status", "update-signatures", "arbiter-review", "credit-status", "credit-consume"])
     parser.add_argument("--ai-root", dest="ai_root",
                         help="Explicit .ai root; pins HUB_AI_ROOT for this process (deterministic; avoids the cwd-phantom bug)")
     parser.add_argument("--force", action="store_true",
@@ -11781,7 +11811,6 @@ def main() -> None:
     parser.add_argument("--pid", type=int, default=None)
     parser.add_argument("--cmd")
     parser.add_argument("--shell")
-    parser.add_argument("--context-hash")
     parser.add_argument("--pattern")
     parser.add_argument("--severity", default="warn")
     parser.add_argument("--force-tier0", action="store_true")
@@ -11983,8 +12012,6 @@ def main() -> None:
         action_preflight(ai_root, args.cmd, args.shell, args.peer or args.agent)
     elif act == "context-hash":
         action_context_hash(ai_root)
-    elif act == "context-ack":
-        action_context_ack(ai_root, args.peer or args.agent or "unknown", args.context_hash)
     elif act == "report-error":
         action_report_error(ai_root, args.peer or args.agent or "unknown", args.pattern or args.reason or "unknown", args.detail, args.severity)
     elif act == "feedback-add":

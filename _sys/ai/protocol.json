@@ -406,7 +406,6 @@
                                                                                "context-fill",
                                                                                "preflight",
                                                                                "context-hash",
-                                                                               "context-ack",
                                                                                "task-status",
                                                                                "lock-status",
                                                                                "profile-validate",
@@ -518,7 +517,6 @@
                               "recovery_hub_actions":  [
                                                            "peer-recover",
                                                            "report-error",
-                                                           "context-ack",
                                                            "lease-sweep",
                                                            "alert-raise",
                                                            "broker-submit"
@@ -636,7 +634,7 @@
                                                                            }
                                                                        ]
                                             },
-                              "context_ack":  {
+                              "context_hash":  {
                                                   "enabled":  true,
                                                   "hash_algorithm":  "sha256",
                                                   "normalize_newlines":  true,

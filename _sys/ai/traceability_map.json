@@ -325,7 +325,7 @@
     {
       "id": "context-gate",
       "docs": [
-        "_sys/docs-v2/general/resource-governance.md#contextgate-v10"
+        "_sys/docs-v2/general/lifecycle.md#20-contextgate-v10-design"
       ],
       "config": [
         "_sys/ai/governance_params.json#context_gate_warn_pct",
@@ -336,7 +336,8 @@
         "_sys/core/hub.py#action_ask"
       ],
       "tests": [
-        "_sys/tests/unit/test_hub_context.py"
+        "_sys/tests/unit/test_context_gate_c2.py",
+        "_sys/tests/unit/test_context_gate_c3.py"
       ],
       "invariants": [
         "INV-06"

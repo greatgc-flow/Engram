@@ -10,8 +10,11 @@ import sys
 import json
 import shutil
 import subprocess
+import tarfile
 import urllib.error
 import urllib.request
+import uuid
+import zipfile
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -49,12 +52,48 @@ def _download(url: str, dest: Path, label: str) -> None:
     print(f"  [OK] {dest.name} ({dest.stat().st_size / 1024**2:.1f} MB)")
 
 
+def _archive_member_target(dest: Path, member_name: str) -> Path:
+    normalized = member_name.replace("\\", "/")
+    if (
+        not normalized
+        or normalized.startswith("/")
+        or re.match(r"^[A-Za-z]:", normalized)
+    ):
+        raise ValueError(f"unsafe archive member path: {member_name!r}")
+    target = (dest / normalized).resolve()
+    root = dest.resolve()
+    if target != root and root not in target.parents:
+        raise ValueError(f"archive member escapes extraction root: {member_name!r}")
+    return target
+
+
+def _validate_archive_members(archive_path: Path, dest: Path) -> None:
+    if zipfile.is_zipfile(archive_path):
+        with zipfile.ZipFile(archive_path) as archive:
+            for member in archive.infolist():
+                _archive_member_target(dest, member.filename)
+                unix_mode = (member.external_attr >> 16) & 0o170000
+                if unix_mode == 0o120000:
+                    raise ValueError(
+                        f"archive symlink is not allowed: {member.filename!r}"
+                    )
+        return
+    if tarfile.is_tarfile(archive_path):
+        with tarfile.open(archive_path) as archive:
+            for member in archive.getmembers():
+                _archive_member_target(dest, member.name)
+                if member.issym() or member.islnk():
+                    raise ValueError(
+                        f"archive link is not allowed: {member.name!r}"
+                    )
+        return
+    raise ValueError(f"unsupported or invalid archive: {archive_path.name}")
+
+
 def _extract(zip_path: Path, dest: Path) -> None:
     print(f"  [i] Extracting {zip_path.name}...")
-    try:
-        shutil.unpack_archive(str(zip_path), str(dest))
-    except Exception:
-        subprocess.run(["tar", "-xf", str(zip_path), "-C", str(dest)], check=True)
+    _validate_archive_members(zip_path, dest)
+    shutil.unpack_archive(str(zip_path), str(dest))
     print(f"  [OK] Extracted to {dest.name}")
 
 
@@ -84,14 +123,8 @@ def _install_extra(tool_name: str, extra: dict, dest_dir: Path, setup_dir: Path)
     extra_dir = dest_dir / subfolder
     if not url:
         return
-    extra_dir.mkdir(parents=True, exist_ok=True)
     if kind == "zip":
         zp = setup_dir / f"{tool_name}-extra-{subfolder}.zip"
-        # Same governed path as the main tool binary: redirect allowlist
-        # (_secure_download) plus checksum verification when declared -
-        # this used to call the unguarded _download(), skipping both.
-        print(f"  [i] Downloading {tool_name}/{subfolder}...")
-        _secure_download(url, zp)
         declared_algo = None
         declared_hash = None
         for algo in ("sha3_256", "sha512", "sha256"):
@@ -99,17 +132,44 @@ def _install_extra(tool_name: str, extra: dict, dest_dir: Path, setup_dir: Path)
                 declared_algo = algo
                 declared_hash = extra[algo]
                 break
-        if declared_hash:
-            downloaded_hash = _hash_file(zp, declared_algo)
+        if not declared_hash:
+            raise ValueError(
+                f"{tool_name}/{subfolder}: a declared digest is required"
+            )
+
+        setup_dir.mkdir(parents=True, exist_ok=True)
+        part_path = setup_dir / f"{zp.name}.{uuid.uuid4().hex}.part"
+        extract_stage = setup_dir / f"{zp.stem}.{uuid.uuid4().hex}.extracting"
+        print(f"  [i] Downloading {tool_name}/{subfolder}...")
+        try:
+            metadata = _secure_download(url, part_path) or {}
+            actual_length = part_path.stat().st_size
+            expected_length = (
+                extra.get("expected_length")
+                if extra.get("expected_length") is not None
+                else metadata.get("expected_length")
+            )
+            if expected_length is not None and actual_length != int(expected_length):
+                raise ValueError(
+                    f"{tool_name}/{subfolder}: length mismatch "
+                    f"(expected {expected_length}, got {actual_length})"
+                )
+            downloaded_hash = _hash_file(part_path, declared_algo)
             if downloaded_hash != declared_hash:
-                zp.unlink(missing_ok=True)
                 raise ValueError(
                     f"{tool_name}/{subfolder}: checksum mismatch "
                     f"(expected {declared_hash}, got {downloaded_hash})"
                 )
-        print(f"  [OK] {zp.name} ({zp.stat().st_size / 1024**2:.1f} MB)")
-        _extract(zp, extra_dir)
-        zp.unlink(missing_ok=True)
+            os.replace(part_path, zp)
+            print(f"  [OK] {zp.name} ({zp.stat().st_size / 1024**2:.1f} MB)")
+            extract_stage.mkdir(parents=True, exist_ok=False)
+            _extract(zp, extract_stage)
+            extra_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(extract_stage, extra_dir, dirs_exist_ok=True)
+        finally:
+            part_path.unlink(missing_ok=True)
+            zp.unlink(missing_ok=True)
+            shutil.rmtree(extract_stage, ignore_errors=True)
         print(f"  [OK] {tool_name}/{subfolder} ready")
 
 
@@ -245,11 +305,22 @@ class _SameHostRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def _secure_download(url: str, dest_path: Path) -> None:
+def _secure_download(url: str, dest_path: Path) -> dict:
     opener = urllib.request.build_opener(_SameHostRedirectHandler())
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with opener.open(req) as response, open(dest_path, "wb") as f:
         shutil.copyfileobj(response, f)
+        f.flush()
+        os.fsync(f.fileno())
+        length_header = response.headers.get("Content-Length")
+    try:
+        expected_length = int(length_header) if length_header is not None else None
+    except (TypeError, ValueError):
+        expected_length = None
+    return {
+        "bytes_written": dest_path.stat().st_size,
+        "expected_length": expected_length,
+    }
 
 
 def _flatten_zip_extract(extract_root: Path, active_root: Path) -> None:

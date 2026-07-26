@@ -862,3 +862,9 @@ class TestContextGateC3Contracts:
         params = sig.parameters
         assert "allow_fresh_failover_on_session_reuse" in params
         assert params["allow_fresh_failover_on_session_reuse"].default is False
+
+
+class TestRemovedContextAckContract:
+    def test_context_ack_public_action_is_removed(self):
+        import hub
+        assert not hasattr(hub, "action_context_ack")

@@ -33,6 +33,12 @@
     "invalid_tree_policy": "fail_closed",
     "runtime_generation": "in_memory_only"
   },
+  "service_principals": [
+    {
+      "principal_id": "system",
+      "enabled": true
+    }
+  ],
   "permission_classes": {
     "unsandboxed_trusted_mutation": {
       "governance_weight": 1,
@@ -63,6 +69,9 @@
       ],
       "type": "peer",
       "enabled": true,
+      "quota_capabilities": {
+        "reset_credits": false
+      },
       "security_contract": {
         "required_effective_args": ["--dangerously-skip-permissions"],
         "forbidden_effective_args": ["dangerously-bypass-approvals-and-sandbox", "yolo", "full-auto"],
@@ -200,6 +209,9 @@
       ],
       "type": "peer",
       "enabled": true,
+      "quota_capabilities": {
+        "reset_credits": false
+      },
       "security_contract": {
         "required_effective_args": ["--dangerously-skip-permissions"],
         "forbidden_effective_args": ["dangerously-bypass-approvals-and-sandbox", "yolo", "full-auto"],
@@ -357,6 +369,9 @@
       ],
       "type": "peer",
       "enabled": true,
+      "quota_capabilities": {
+        "reset_credits": true
+      },
       "security_contract": {
         "required_effective_args": [],
         "forbidden_effective_args": ["dangerously-bypass-approvals-and-sandbox", "yolo", "full-auto"],
