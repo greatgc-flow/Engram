@@ -2444,3 +2444,51 @@ cost real investigation time. Use non-overlapping dispatch windows or
 distinct file scopes going forward.
 
 **Remaining backlog**: C10 items 1-3/6-11, S2, S3.
+
+## S3 implementation + BACKLOG CLOSURE (2026-07-26)
+
+Shipped (`ee158d5`), the final remaining item. New `console_runner.py`
+unifies all 3 console entry points behind one `run_console_session()`
+call, composing C8's `prepare_console_launch()` (security prep) with
+C5's lease lifecycle (claim/heartbeat/release), strict one-way
+dependency verified.
+
+ag drafted; cc's own review confirmed a real end-to-end smoke test
+(`codex_entry.py --help`, real spawn, exit 0). Independent
+cross-verification (cx) went furthest of any round this session --
+performed REAL lease claim/heartbeat/close cycles against the live
+hub.py CLI and found one HIGH + two MEDIUM real defects, all fixed:
+(1) HIGH: a late, uninterruptible-sleep-delayed heartbeat could land
+after `terminal-close` and revive a just-closed lease (hub.py's CAS
+check only compares lease_id, not close_reason/expiry) -- fixed with a
+shared lock (bounded 5s acquire) serializing every heartbeat attempt
+against the close call, plus interruptible retry waits. (2) MEDIUM:
+lease claiming preferred a state.json read (no correlation guarantee)
+over the just-executed handoff's own printed lease_id -- inverted the
+priority. (3) MEDIUM: health-tracking migration wasn't exact --  cx
+wrote synthetic start-of-session invocation metrics (not just
+finish), and ag's original always-RED-on-Ctrl+C convention was
+silently flipped to GREEN by a uniform (0,130)-is-success rule -- both
+fixed, new `ConsoleSessionSpec.keyboard_interrupt_is_success` field
+lets ag opt out. All 3 findings covered by new regression tests. 1647
+passed / 3 pre-existing unrelated failed / 1 skipped.
+
+---
+
+## BACKLOG CLOSED (2026-07-26)
+
+Every item from the 2026-07-24 architecture-audit design-consensus
+pass is now implemented, tested, and independently cross-verified:
+C1 (pre-session), Top-5#1, C2-C9 (all 9 Tier-1 clusters), C10 items
+4-9/11 (item 10 had no standalone design, correctly skipped), C11, S2,
+S3. Zero open items remain in this backlog.
+
+Across the whole implementation phase (2026-07-25/26), essentially
+every peer draft needed at least one real, cross-verification-caught
+fix before being trustworthy -- the discipline of real tests + real
+cross-verification (not just design review) proved load-bearing every
+single round, most consequentially: C9's `shell=True` removal (100%
+real-invocation breakage, zero mocked-test signal), C11's zero-bug
+first cross-verification (the exception, not the rule), and S3's own
+cross-verification finding a genuine lease-integrity race under real
+concurrent execution that no unit test had caught.
