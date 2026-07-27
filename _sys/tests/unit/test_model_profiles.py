@@ -149,9 +149,8 @@ def test_d6_ag_deepthink_intent_is_declared_and_normalized():
     ag_root = next(node for node in normalized["hub_nodes"] if node.get("node_id") == "ag" and node.get("type") == "peer")
     assert deepthink["profile_intent"] == intent
     assert ag_root["profile_intent"] == intent
-    # Canonical runtime_model form (not the display-name form) since
-    # 2026-07-23 (see orchestration.json's _model_id_fix_note on this node).
-    assert deepthink["runtime_model"] == "gemini-3.1-pro-high"
+    # agy 1.1.5+ selects the base model and effort independently.
+    assert deepthink["runtime_model"] == "gemini-3.1-pro"
     assert deepthink["routing_state"] == "eligible"
 
 
@@ -207,38 +206,28 @@ def test_disabled_roots_have_blocked_profiles():
             assert all(p["routing_state"] == "blocked" for p in node["profiles"].values())
 
 
-def test_ag_runtime_models_are_locally_verified_and_routable():
+def test_ag_runtime_models_use_base_slugs_and_explicit_effort():
     ag = next(n for n in _raw()["hub_nodes"] if n["node_id"] == "ag")
-    # Canonical runtime_model form (not the display-name form) since
-    # 2026-07-23 (see orchestration.json's _model_id_fix_note on these nodes).
-    # standard/effort bumped 3.5-flash -> 3.6-flash on 2026-07-27 (profile-currency
-    # sweep, live-tested against a real agy.exe invocation, not just catalog-listed).
+    # agy 1.1.5+ selects stable base slugs and effort independently.
     expected = {
-        "standard": "gemini-3.6-flash-low",
-        "effort": "gemini-3.6-flash-high",
-        "deepthink": "gemini-3.1-pro-high",
+        "standard": ("gemini-3.6-flash", "low"),
+        "effort": ("gemini-3.6-flash", "high"),
+        "deepthink": ("gemini-3.1-pro", "high"),
     }
-    # deepthink is a deliberate exception: 2026-07-27 live-confirmed that agy 1.1.7's
-    # --model flag resolver REJECTS this runtime_model string (and every other tested
-    # form) and silently falls back to Flash. profile_args=[] omits --model entirely so
-    # the CLI falls through to the interactive picker's persisted settings.json choice,
-    # which IS honored correctly (see orchestration.json's _runtime_resolver_bug_note).
-    args_exceptions = {"deepthink": []}
-    for profile_name, runtime_model in expected.items():
+    for profile_name, (runtime_model, effort) in expected.items():
         profile = ag["profiles"][profile_name]
         assert profile["runtime_model"] == runtime_model
         assert profile["model_availability"] == "verified_local"
         assert profile["routing_state"] == "eligible"
-        expected_args = args_exceptions.get(profile_name, ["--model", runtime_model])
-        assert profile["profile_args"] == expected_args
+        assert profile["profile_args"] == ["--model", runtime_model, "--effort", effort]
 
 
 def test_cc_and_cx_profiles_are_locally_verified():
     roots = {n["node_id"]: n for n in _raw()["hub_nodes"]}
     expected = {
         "cc": {
-            "standard": {"model_id": "claude-haiku-4-5-20251001", "context": 200000, "validated_at": "2026-06-20"},
-            "effort": {"model_id": "claude-sonnet-5", "context": 1000000, "validated_at": "2026-07-19"},
+            "standard": {"model_id": "claude-haiku-4-5-20251001", "context": 200000, "validated_at": "2026-07-27"},
+            "effort": {"model_id": "claude-sonnet-5", "context": 1000000, "validated_at": "2026-07-27"},
             # deepthink bumped claude-opus-4-8 -> claude-opus-5 on 2026-07-27
             # (profile-currency sweep, live-tested via a real claude.cmd invocation).
             "deepthink": {"model_id": "claude-opus-5", "context": 1000000, "validated_at": "2026-07-27"},
@@ -247,9 +236,9 @@ def test_cc_and_cx_profiles_are_locally_verified():
         # see orchestration.json's cx profile entries); validated_at bumped
         # to match.
         "cx": {
-            "standard": {"model_id": "gpt-5.6-luna", "context": 272000, "validated_at": "2026-07-24"},
-            "effort": {"model_id": "gpt-5.6-terra", "context": 272000, "validated_at": "2026-07-24"},
-            "deepthink": {"model_id": "gpt-5.6-sol", "context": 272000, "validated_at": "2026-07-24"},
+            "standard": {"model_id": "gpt-5.6-luna", "context": 272000, "validated_at": "2026-07-27"},
+            "effort": {"model_id": "gpt-5.6-terra", "context": 272000, "validated_at": "2026-07-27"},
+            "deepthink": {"model_id": "gpt-5.6-sol", "context": 272000, "validated_at": "2026-07-27"},
         },
     }
     for peer_id, profiles in expected.items():

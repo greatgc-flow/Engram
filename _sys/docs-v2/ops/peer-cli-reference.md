@@ -288,12 +288,18 @@ flag — use the `models` subcommand.) **✓run**
 - `agy plugin validate [PATH]` performs pre-install manifest validation. **(help)**
 
 ### Models and live auth preflight (`agy models`, **✓run**) — DUAL model families
-Canonical, live-current `--model` operands (2026-07-23), lowercase/hyphenated — **replaces**
-the old display-name strings (`Gemini 3.5 Flash (Low)` etc.) that `orchestration.json`
-previously stored and that Agy 1.1.5 now rejects (fixed same date):
+The 2026-07-27 catalog still prints fully materialized lowercase/hyphenated model variants:
 `gemini-3.6-flash-{high,medium,low}`, `gemini-3.5-flash-{high,medium,low}`,
 `gemini-3.1-pro-{high,low}`, **`claude-sonnet-4-6`**, **`claude-opus-4-6-thinking`**,
-`gpt-oss-120b-medium`.
+`gpt-oss-120b-medium`. These replace the old display-name strings (`Gemini 3.5 Flash
+(Low)` etc.), which Agy 1.1.5 rejects.
+
+For the configured `ag.*` profiles, live invocation establishes the current argument
+contract: use the base model plus `--effort` where supported
+(`gemini-3.6-flash --effort low|high`, `gemini-3.1-pro --effort high`, and
+`gpt-oss-120b --effort medium`). The exception is
+**`claude-opus-4-6-thinking`**: invoke that Thinking variant without `--effort`; the CLI
+rejects an effort flag for it. See `specific/ag.md` for the authoritative profile matrix.
 → ag's `3p-*` quota = the non-Gemini (Claude/GPT-OSS) models. (Enables D3.)
 
 `agy models` is also a confirmed zero-model-call **live authentication preflight**. Before a

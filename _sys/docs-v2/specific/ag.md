@@ -33,15 +33,15 @@ agy --dangerously-skip-permissions -p {query} --print-timeout 60m
     retracted). `--dangerously-skip-permissions`/stdout-redirect are NOT factors.
 
 ## Runtime Profiles
-| Profile | Runtime model |
-|---|---|
-| `ag.standard` | `Gemini 3.5 Flash (Low)` |
-| `ag.effort` | `Gemini 3.5 Flash (High)` |
-| `ag.deepthink` | `Gemini 3.1 Pro (High)` |
-| `ag.opus` | `Claude Opus 4.6 (Thinking)` (manual_only) |
-| `ag.gptoss` | `GPT-OSS 120B (Medium)` |
+| Profile | Runtime model | Effort |
+|---|---|---|
+| `ag.standard` | `gemini-3.6-flash` | `low` |
+| `ag.effort` | `gemini-3.6-flash` | `high` |
+| `ag.deepthink` | `gemini-3.1-pro` | `high` |
+| `ag.opus` | `claude-opus-4-6-thinking` (manual_only) | embedded (no `--effort`) |
+| `ag.gptoss` | `gpt-oss-120b` | `medium` |
 
-*(Note: `agy models` writes via Windows Console API. Model discovery requires a PTY).*
+`agy` 1.1.5+ selects the base model and reasoning effort independently. Hub profiles pass both `--model` and `--effort` where the model supports effort selection. `claude-opus-4-6-thinking` is a verified exception: it encodes Thinking in its model slug and rejects `--effort`. *(Note: `agy models` writes via Windows Console API. Model discovery requires a PTY).*
 
 ## Directory Layout & Entry
 ```

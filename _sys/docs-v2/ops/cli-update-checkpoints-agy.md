@@ -30,6 +30,19 @@ Cross-ref: `ops/peer-cli-reference.md` (capability audit), `ops/cli-baselines/`
 - **Evidence**: `orchestration.json`'s `ag.*` profiles all failed until
   converted to canonical form; live-confirmed against `agy.exe models`.
 
+#### 1a. Model / effort resolution revalidation (2026-07-27)
+- **Status**: `[verified]`, live minimal invocations for every configured
+  `ag.*` profile.
+- **Finding**: `agy models` continues to display materialized variants such as
+  `gemini-3.6-flash-high`, but the current reliable profile form is the base
+  slug plus explicit `--effort`: `gemini-3.6-flash --effort low|high`,
+  `gemini-3.1-pro --effort high`, and `gpt-oss-120b --effort medium`.
+- **Exception**: `claude-opus-4-6-thinking` is already an effort-specific
+  Thinking variant. It must be passed without `--effort`; adding that flag is
+  rejected as unsupported.
+- **Operational rule**: retain lowercase/hyphenated identifiers, but do not
+  infer from the catalog's suffixed display that all profiles should embed the
+  effort in `--model`. Use the profile matrix in `specific/ag.md`.
 ### 2. Auth storage location & preflight mechanism
 - **Status**: `[verified]`, inspected & tested 2026-07-23.
 - **Finding**: credentials live exclusively in the OS keyring (Windows

@@ -28,9 +28,11 @@ models, permissions, and roles are defined in `_sys/ai/orchestration.json`.
 
 | Profile | Runtime model | Effort |
 |---------|---------------|--------|
-| `standard` | Gemini 3.5 Flash | Low |
-| `effort` | Gemini 3.5 Flash | High |
-| `deepthink` | Gemini 3.1 Pro | High |
+| `standard` | `gemini-3.6-flash` | `low` |
+| `effort` | `gemini-3.6-flash` | `high` |
+| `deepthink` | `gemini-3.1-pro` | `high` |
+| `opus` | `claude-opus-4-6-thinking` | embedded (no `--effort`) |
+| `gptoss` | `gpt-oss-120b` | `medium` |
 
 The standard profile is the terminal default. Hub requests may be promoted or
 demoted automatically.

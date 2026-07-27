@@ -104,7 +104,7 @@
           "profile_class": "tier",
           "quota_families": ["C"],
           "runtime_context_window": 200000,
-          "validated_at": "2026-06-20",
+          "validated_at": "2026-07-27",
           "validation_method": "successful_invocation",
           "reasoning_effort": "low",
           "cost_tier": "low",
@@ -131,7 +131,7 @@
             "as_of": "2026-07-13"
           },
           "runtime_context_window": 1000000,
-          "validated_at": "2026-07-19",
+          "validated_at": "2026-07-27",
           "validation_method": "successful_invocation",
           "_validation_note": "model_id updated 2026-07-19 from stale claude-sonnet-4-6 to claude-sonnet-5; confirmed via direct canary invocation (claude.cmd --model claude-sonnet-5 --effort high -p ... -> exit 0, correct reply).",
           "reasoning_effort": "high",
@@ -187,7 +187,7 @@
             "as_of": "2026-07-13"
           },
           "runtime_context_window": 1000000,
-          "validated_at": "2026-07-02",
+          "validated_at": "2026-07-27",
           "validation_method": "successful_invocation",
           "reasoning_effort": "high",
           "cost_tier": "high",
@@ -239,26 +239,28 @@
       "capability_class": "unsandboxed_trusted_mutation",
       "profiles": {
         "standard": {
-          "runtime_model": "gemini-3.6-flash-low",
-          "_model_id_fix_note": "2026-07-27: bumped from gemini-3.5-flash-low to gemini-3.6-flash-low -- user-prompted profile-currency review found the 3.5 family had gone stale against the live `agy.exe models` catalog, which now lists a full 3.6-flash-high/medium/low family (3.5-flash and 3.1-pro unchanged, no 3.6-pro exists yet). Directly live-tested (not just catalog-listed): `agy.exe -p \"reply with exactly: ok\" --model gemini-3.6-flash-low` returned 'ok' cleanly. Pro (ag.deepthink) was independently confirmed to still be correctly wired as the top tier -- this was purely a flash-family staleness fix, not a tier-ordering bug.",
+          "runtime_model": "gemini-3.6-flash",
+          "_model_effort_schema_note": "2026-07-27: live-validated. agy 1.1.5+ uses a base model plus --effort where that model supports effort selection. Claude Opus is the exception: its catalog-listed Thinking variant encodes the effort and rejects --effort.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["G"],
           "runtime_context_window": 1048576,
           "validated_at": "2026-07-27",
-          "validation_method": "successful_invocation",
+          "validation_method": "successful_invocation_with_effort",
           "reasoning_effort": "low",
           "cost_tier": "low",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "gemini-3.6-flash-low"
+            "gemini-3.6-flash",
+            "--effort",
+            "low"
           ]
         },
         "effort": {
-          "runtime_model": "gemini-3.6-flash-high",
-          "_model_id_fix_note": "2026-07-27: bumped from gemini-3.5-flash-high to gemini-3.6-flash-high -- same profile-currency review as ag.standard. Directly live-tested: `agy.exe -p \"reply with exactly: ok\" --model gemini-3.6-flash-high` returned 'ok' cleanly.",
+          "runtime_model": "gemini-3.6-flash",
+          "_model_effort_schema_note": "2026-07-27: live-validated. agy 1.1.5+ uses a base model plus --effort where that model supports effort selection. Claude Opus is the exception: its catalog-listed Thinking variant encodes the effort and rejects --effort.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
@@ -273,19 +275,20 @@
           },
           "runtime_context_window": 1048576,
           "validated_at": "2026-07-27",
-          "validation_method": "successful_invocation",
+          "validation_method": "successful_invocation_with_effort",
           "reasoning_effort": "high",
           "cost_tier": "mid",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "gemini-3.6-flash-high"
+            "gemini-3.6-flash",
+            "--effort",
+            "high"
           ]
         },
         "deepthink": {
-          "runtime_model": "gemini-3.1-pro-high",
-          "_model_id_fix_note": "2026-07-23/27: SUPERSEDED by _runtime_resolver_bug_note below. gemini-3.1-pro-high is still correctly the top ag tier (no gemini-3.6-pro exists) but the string is a CATALOG label only -- it is NOT a valid --model CLI operand on the installed agy 1.1.7 runtime.",
-          "_runtime_resolver_bug_note": "2026-07-27: LIVE BUG FOUND. `--model gemini-3.1-pro-high` (and every other tested variant: 'gemini-3.1-pro', 'Gemini 3.1 Pro', 'Gemini 3.1 Pro (High)') is rejected by agy 1.1.7's --model flag resolver ('not in local config' / 'not recognized as a known model') and silently falls back to whatever backend is default -- confirmed via cli-*.log across every archived peerhub round this session: all 767 session generation records show Gemini 3.6 Flash (High), zero show Pro, despite --model gemini-3.1-pro-high being passed every time. WORKAROUND (confirmed live, cli-20260727_160058.log line 69/79/82/119, label='Gemini 3.1 Pro (High)'): omit --model entirely and rely on the interactive picker's persisted choice in _sys/antigravity/config/settings.json ({\"model\": \"Gemini 3.1 Pro (High)\"}), which the CLI's no-flag default path DOES honor correctly. profile_args below changed from ['--model','gemini-3.1-pro-high'] to [] on this basis. CAVEAT/KNOWN FRAGILITY: settings.json is a single GLOBAL file, not scoped per-profile -- any interactive /model session (including a human at the console) silently changes what ag.deepthink resolves to next, with no error and no SSOT enforcement. This is the same SSOT-weakness class the user flagged and peerhub's own Round 8-9 design review addressed structurally; the underlying agy runtime has no such protection. Root cause of the flag-vs-settings.json resolver divergence is still unknown (cx: 'official docs and 1.1.5 changelog both say --model should accept these names; installed 1.1.7 binary contradicts its own docs'). Re-verify this workaround before relying on it long-term, and treat any diag row showing ag.deepthink != Gemini 3.1 Pro as a live regression, not noise.",
+          "runtime_model": "gemini-3.1-pro",
+          "_model_effort_schema_note": "2026-07-27: live-validated. agy 1.1.5+ uses a base model plus --effort where that model supports effort selection. Claude Opus is the exception: its catalog-listed Thinking variant encodes the effort and rejects --effort.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
@@ -311,17 +314,22 @@
           },
           "runtime_context_window": 1048576,
           "validated_at": "2026-07-27",
-          "validation_method": "successful_invocation",
+          "validation_method": "successful_invocation_with_effort",
           "reasoning_effort": "high",
           "cost_tier": "high",
           "routing_state": "eligible",
-          "profile_args": []
+          "profile_args": [
+            "--model",
+            "gemini-3.1-pro",
+            "--effort",
+            "high"
+          ]
         },
         "opus": {
           "runtime_model": "claude-opus-4-6-thinking",
           "registry_model_id": "claude-opus-4-6",
           "selection_mode": "pinned",
-          "model_availability": "cli_listed",
+          "model_availability": "verified_local",
           "profile_class": "specialty",
           "quota_families": ["3P"],
           "runtime_context_window": null,
@@ -331,15 +339,15 @@
           "source": "check_cli_reality:2026-07-03",
           "_routing_note": "PREMIUM — stays manual_only AND is profile-bulk-excluded via routing-config token_load_balancing.bulk_exclude_profiles=['ag.opus'] (DIR-005). Manual/arbiter/escalation only; never auto/bulk. Shares the 3P quota family with ag.gptoss.",
           "_registry_link_note": "registry_model_id links to model-registry.json's claude-opus-4-6 entry (1M ctx, vendor-documented) for snapshot.py's DECL context-limit fallback -- runtime_model stays the exact agy CLI --model operand, unrelated to the registry key (T-absent-audit 2026-07-19/20 A4).",
-          "_model_id_fix_note": "2026-07-23: runtime_model/profile_args corrected from the stale display-name form 'Claude Opus 4.6 (Thinking)' to the canonical lowercase-hyphenated form 'claude-opus-4-6-thinking' -- live-tested via `agy.exe models` (current registry) and a direct `agy.exe -p ... --model` invocation. The old string produced a hard CLI error ('invalid model selection ... is not recognized as a known model'), captured in _sys/data/logs/error-log.jsonl at 2026-07-23T02:32:50Z. This was a genuine config-drift bug, discovered live-testing a separate user hypothesis (3P quota exhaustion) that turned out to ALSO be independently confirmed true (diag showed 3P-pool at CRIT 99.99x same session) -- both the model-ID bug and the quota exhaustion were real, simultaneous, unrelated causes of ag.opus's dispatch failures this session.",
+          "_model_effort_schema_note": "2026-07-27: live-validated. agy 1.1.5+ uses a base model plus --effort where that model supports effort selection. Claude Opus is the exception: its catalog-listed Thinking variant encodes the effort and rejects --effort.",
           "profile_args": [
             "--model",
             "claude-opus-4-6-thinking"
           ]
         },
         "gptoss": {
-          "runtime_model": "gpt-oss-120b-medium",
-          "_model_id_fix_note": "2026-07-23: same fix as ag.opus, same evidence basis -- corrected from the stale display-name form 'GPT-OSS 120B (Medium)' to the canonical form 'gpt-oss-120b-medium' per a live `agy.exe models` check.",
+          "runtime_model": "gpt-oss-120b",
+          "_model_effort_schema_note": "2026-07-27: live-validated. agy 1.1.5+ uses a base model plus --effort where that model supports effort selection. Claude Opus is the exception: its catalog-listed Thinking variant encodes the effort and rejects --effort.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "specialty",
@@ -355,7 +363,9 @@
           "_context_window_note": "runtime_context_window=8000 is a CONFIRMED LOWER BOUND, not the model's ceiling: an ag-run sentinel probe (~8k-token prompt with 3 unique markers at start/middle/end, piped via stdin to avoid the Windows CreateProcess 32K arg-length limit) succeeded cleanly and correctly recovered all 3 markers, proving real processing of the full input - NOT just declared/self-reported. An earlier attempt where ag asked the model to self-report its own context window returned an untrustworthy 2048 (cx independently flagged this as a likely hallucination: gpt-oss-120b's public model card documents 128K native context, and '(Medium)' is a reasoning-EFFORT tier, not a context-window tier - it should not shrink the window to 2048). Do not treat 8000 as the true ceiling, and do not write 131072 here unless separately re-validated against THIS hosted deployment (Antigravity), not just the base model's public spec - a higher real bound has simply not been empirically probed yet.",
           "profile_args": [
             "--model",
-            "gpt-oss-120b-medium"
+            "gpt-oss-120b",
+            "--effort",
+            "medium"
           ]
         }
       },
@@ -409,7 +419,7 @@
           },
           "runtime_context_window": 272000,
           "_context_window_fix_note": "2026-07-24: corrected from 372000 to 272000 -- Codex 0.144.6 release notes state GPT-5.6 Sol/Terra/Luna context windows were corrected to 272,000; live-confirmed via `codex debug models` returning 272000 for all three slugs. Same stale-metadata bug class as the 2026-07-23 ag model-ID incident.",
-          "validated_at": "2026-07-24",
+          "validated_at": "2026-07-27",
           "validation_method": "codex_debug_models_and_successful_invocation",
           "reasoning_effort": "low",
           "cost_tier": "low",
@@ -437,7 +447,7 @@
           },
           "runtime_context_window": 272000,
           "_context_window_fix_note": "2026-07-24: same fix as cx.standard -- corrected from stale 372000 to live-confirmed 272000 (Codex 0.144.6 release notes + `codex debug models`).",
-          "validated_at": "2026-07-24",
+          "validated_at": "2026-07-27",
           "validation_method": "codex_debug_models_and_successful_invocation",
           "reasoning_effort": "high",
           "cost_tier": "mid",
@@ -465,7 +475,7 @@
           },
           "runtime_context_window": 272000,
           "_context_window_fix_note": "2026-07-24: same fix as cx.standard/cx.effort -- corrected from stale 372000 to live-confirmed 272000 (Codex 0.144.6 release notes + `codex debug models`).",
-          "validated_at": "2026-07-24",
+          "validated_at": "2026-07-27",
           "validation_method": "codex_debug_models_and_successful_invocation",
           "reasoning_effort": "xhigh",
           "cost_tier": "high",

@@ -40,9 +40,9 @@ FORBIDDEN: `--dangerously-bypass-approvals-and-sandbox`, `-s full-auto`.
 automatically select a profile based on task shape.
 
 `codex debug models` and minimal profile invocations verified the current
-account/runtime catalog on 2026-07-24 (corrected from a stale 2026-07-13
-reading — Codex 0.144.6's release notes state GPT-5.6 Sol/Terra/Luna context
-windows were corrected to 272,000 tokens, confirmed live):
+account/runtime catalog on 2026-07-27 (corrected from a stale 2026-07-13
+reading — Codex 0.145.0's release notes state GPT-5.6 Sol/Terra/Luna context
+windows were corrected to 272,000 tokens, confirmed live; the configured Luna/low, Terra/high, and Sol/xhigh pairs were all invoked successfully on 2026-07-27):
 
 | Profile | Model | Reasoning | CLI context |
 |---|---|---|---:|
@@ -53,7 +53,7 @@ windows were corrected to 272,000 tokens, confirmed live):
 The local catalog records measured support for `low`, `medium`, `high`, `xhigh`,
 and `max` on all three `gpt-5.6` profiles. `gpt-5.6-terra` and `gpt-5.6-sol`
 also support `ultra`; `gpt-5.6-luna` does not. `model-registry.json` tracks
-the same value (`context_limit`), also corrected to 272k on 2026-07-24.
+the same value (`context_limit`), also corrected to 272k on 2026-07-27.
 
 ## Context and Collaboration
 
