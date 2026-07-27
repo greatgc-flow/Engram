@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-22T11:35:00+09:00",
+  "updated_at": "2026-07-27T07:30:00+09:00",
   "items": [
     {
       "id": "T63",
@@ -2189,8 +2189,8 @@
     },
     {
       "id": "T82",
-      "title": "evaluate Engram blueprint activation gate (peer-collaboration-first refactor)",
-      "status": "deferred",
+      "title": "Engram scope narrowed 2026-07-27: internal multi-peer collaboration engine only; standalone packaging permanently out of scope",
+      "status": "superseded",
       "priority": "low",
       "category": "architecture",
       "owner": "unassigned",
@@ -2198,11 +2198,13 @@
       "evidence_commit": [],
       "supersedes": [],
       "source_refs": [
-        "_sys/docs-v2/ops/engram-refactor-blueprint-2026-07-20.md"
+        "_sys/docs-v2/ops/engram-refactor-blueprint-2026-07-20.md",
+        "_sys/docs-v2/ops/residual-backlog-and-packaging-precheck-2026-07-26.md",
+        "_sys/docs-v2/ops/t82-engram-rescope-2026-07-27.md"
       ],
-      "next_action": "DO NOT IMPLEMENT without re-checking the activation gate in the blueprint doc §0 first. 10-round mandatory-minimum debate (user-requested reframing of Engram: portable-dev-env as secondary, peer-collaboration hub as primary, easy-install/embeddable-by-other-apps as the goal) unanimously converged rounds 1-6 on a full distributed architecture (JSONL/MCP wire protocol, PeerAdapter/UsageProvider split, effect-based governance tiers, client attribution), then unanimously REVERSED rounds 6-7 after a mandated red-team pass found zero validated second consumer while real operational failures sat unaddressed. Full shelved design preserved in the blueprint doc for if/when the gate fires. This backlog item is 'evaluate the gate', not 'implement Engram' -- do not reopen implementation on this item alone; a genuine trigger firing requires a fresh R:10 round citing which trigger and against which named consumer or measured failure. RE-EVALUATED 2026-07-26 (user-requested packaging feasibility pre-check, cc solo -- not a fresh R:10 round, just checking whether one is warranted): gate still NOT fired. All 5 conditions checked against current state: (1) named accountable owner -- none named; (2) committed delivery intent -- none recorded; (3) concrete unsatisfiable use case -- none articulated; the entire 2026-07-24/26 architecture-audit implementation phase (47 items, C1-C11/S2/S3) was internal reliability/correctness hardening of the EXISTING portable-dev-env architecture, not driven by or serving an external packaging consumer; (4) executable conformance fixtures -- the PeerAdapter contract/adapter-conformance/v1 work this would need is still explicitly 'Phase 3, not yet actioned' per the blueprint doc's own §14 backlog; (5) maintenance/funding commitment -- none recorded. Separately, T83 (the real lease-clobber bug the original debate found as a side effect) is confirmed fixed and shipped (hub.py's _lease_open/_lease_renew/_lease_close now uuid4-keyed, pid-checked -- verified directly in the current code, docstrings still cite T83). If the user wants to proceed with packaging, the concrete next step is supplying (1)-(2) explicitly and articulating (3) -- a real external consumer/use case -- which would then warrant a fresh R:10 round, not unilateral implementation.",
-      "risk": "building any of the shelved architecture without the gate firing is the exact speculative-infrastructure failure mode this debate spent rounds 6-10 correcting",
-      "last_verified_at": "2026-07-26T00:00:00+09:00"
+      "next_action": "SUPERSEDED 2026-07-27 by user direction (full R:10 round, ag+cx independent answers + cc synthesis + Final Call ACK, cx's contradiction correction applied, unanimous close -- see t82-engram-rescope-2026-07-27.md for the complete record). Engram's purpose is now permanently scoped to the internal multi-peer (cc/ag/cx) collaboration engine living inside the portable dev environment (dispatch, routing, consensus, health/quarantine, leases, IPC). Standalone packaging, portable-vs-local install, and distribution channels are out of Engram's own scope entirely -- the user's own separate concern, or a fully separate future project if ever spun off. The original 5-condition activation gate is preserved as a historical record / readiness bar for that hypothetical separate project ONLY -- satisfying it can never again reactivate Engram itself; that needs a brand-new explicit user decision plus a fresh R:10 scope round. This is why the item is closed as superseded rather than left deferred (deferred would wrongly imply a pending Engram goal). Documentation corrected accordingly: engram-refactor-blueprint-2026-07-20.md banner, phase2-arch-general-specific-2026-07-22.md (scope note + Sec.14 non-normative annotation), MOC.md pointer. A real, unrelated reliability defect surfaced during this re-scope (automatic proposal-flood -- see T89) was filed separately, not folded into this item.",
+      "risk": null,
+      "last_verified_at": "2026-07-27T07:30:00+09:00"
     },
     {
       "id": "T83",
@@ -2270,7 +2272,9 @@
       "category": "correctness",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": ["863ad71"],
+      "evidence_commit": [
+        "863ad71"
+      ],
       "supersedes": [],
       "source_refs": [],
       "next_action": "cx.effort's codebase-health sweep (2026-07-22), P1 finding, verified by direct code read. hub.py ~5172-5173: ephemeral query files are unlink()'d immediately after parsing. hub.py ~5310-5312: later in the same ask flow, terminal-handoff detection does `Path(query_file).read_text('utf-8')` on that SAME path to check for the literal string 'terminal-handoff', wrapped in a bare `except Exception: pass` that leaves `is_handoff = False` on failure. For an ephemeral query file this read will raise FileNotFoundError every time (silently swallowed), so is_handoff can never become True via this path for ephemeral files specifically -- a legitimate terminal handoff ask could then be wrongly blocked by the `d_adm == 'over_cap' and not is_handoff` and `reserve_cfg.get('enabled') and not is_handoff` guards a few lines later, since both treat 'not detected as handoff' as 'block/reserve applies'. Fix direction: parse the handoff marker from raw_content ONCE, before the unlink() happens, and carry the boolean through the ask flow instead of re-reading a path that may already be gone. CLOSED 2026-07-26 (863ad71, backlog sweep): implemented exactly per the diagnosed fix direction -- is_handoff_query captured once from raw_content before the unlink, reused at the later site instead of re-reading. New differential regression test proves a handoff-marked ask is NOT blocked under a real over_cap pacing condition while an otherwise-identical non-handoff ask IS blocked. Full suite green (1656/1656). Not independently peer-cross-verified (narrow, already-diagnosed fix; direct differential test judged sufficient given time budget).",
@@ -2306,6 +2310,23 @@
       "next_action": "User-reported near-constant no-response on ag.opus/ag.gptoss specifically (both route through a 3rd-party model layer inside Antigravity -- opus=Claude Opus 4.6 Thinking, gptoss=GPT-OSS 120B -- rather than ag's native Gemini path). zombie_profile_map fix (a3741e6, widened both to 900s) and T84's PTY-cleanup-deadlock fix (208c26a, bounds hub.py's own hang risk) landed first; this item tracks empirical follow-up testing done 2026-07-22 to find the underlying cause on ag's/Antigravity's own side, which those two fixes don't address (they only stop hub.py itself from freezing or timing out too early -- they don't fix why the peer misbehaves).\n\n4 real tests run against live ag.opus/ag.gptoss:\n1. Trivial ask (\"reply ok\") to ag.opus: 13s, clean success.\n2. Moderate ask (read 3 files, ~800 lines each, summarize) to ag.opus: 34s, clean success -- correctly self-limited to partial reads of large files rather than choking on them.\n3. Heavy ask (read hub.py/snapshot.py/diag.py/hub_peer.py IN FULL [hub.py is ~10,800 lines] + write a thorough report file) to ag.opus: reported success (exit 0) after 279s, BUT the actual reply was only 171 chars -- \"This is a substantial audit task. I'll parallelize by dispatching subagents to read each file in full...\" -- and the instructed report file (_sys/ai/ipc/_opus_stress_test_report.md) was NEVER created. The model announced an intent to delegate to its own internal subagents and then never delivered any further output, yet hub.py recorded this as a successful ask (nonzero-length reply, exit 0, no timeout). This is a THIRD, previously uncharacterized failure mode -- distinct from both the hang (T84) and a crash: silent under-delivery that still looks like success from hub's outside view (no error, no timeout, nonzero output length).\n4. The identically-shaped heavy ask dispatched to ag.gptoss in parallel with test 3: crashed with a genuine nonzero exit code immediately (not a hang) -- this was the 12th cumulative nonzero_exit operational-error against the `ag` peer this tracking window, crossing the auto-quarantine threshold (hub recorded PEER-QUARANTINE ag, GATE=closed, HEALTH=RED). Recovered manually via `hub.py peer-recover --peer ag` -- took effect immediately, no other side effects observed.\n\nWorking hypothesis (not yet confirmed): the failure mode correlates with real task duration/tool-call volume rather than being deterministic per-call -- both trivial and moderate loads were 100% reliable (2/2), while heavy loads with large-file-reads + file-writes were 0/2 reliable (one incomplete-success, one crash). Suspect ag.opus's own internal subagent-dispatch mechanism (explicitly announced in test 3's partial reply) is the actual fragile component under load, not the 3rd-party model routing itself or hub.py's transport layer -- but this is unconfirmed since agy.exe is closed-source and hub.py cannot observe what happens inside Antigravity's own process once a request is dispatched to it.\n\nNot yet fixed, and likely NOT fixable from hub.py's side beyond what's already shipped (T84's bounded cleanup + the widened zombie timeouts) -- the remaining failure modes (crash, silent truncation) originate inside Antigravity/agy.exe itself. Possible hub-side mitigation worth considering later: detect a suspiciously-short reply (e.g. <300 chars) on a task that clearly requested substantial output, and either retry once or flag it distinctly from a normal short-but-complete answer, so silent under-delivery doesn't masquerade as a real successful response the way it did in test 3.",
       "risk": "A dispatched task to ag.opus/ag.gptoss can report success while having done a small fraction (or none) of the requested work, with no error signal distinguishing it from a legitimately short/quick correct answer -- anyone trusting the reply at face value (as this session generally does after a lighter spot-check) could act on an incomplete result believing it's complete, for heavy/complex tasks specifically.",
       "last_verified_at": "2026-07-22T11:35:00+09:00"
+    },
+    {
+      "id": "T89",
+      "title": "self_care/saturation_scan proposal pipeline has zero deduplication and an always-true trigger, causing unbounded proposal-file flooding",
+      "status": "deferred",
+      "priority": "medium",
+      "category": "reliability",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [
+        "_sys/docs-v2/ops/t82-engram-rescope-2026-07-27.md"
+      ],
+      "next_action": "Surfaced by cx.deepthink during the T82 re-scope round (2026-07-27), independently verified by cc via direct code read (not taken on cx's word alone, per DIR-004). Root cause chain, all confirmed live: (1) ctx_end.py:472-479 launches 'self_care.py --trigger session_end' as a fire-and-forget background subprocess on EVERY session end. (2) self_care.py's propose() (line 244) calls 'hub.py proposal-add' whenever the scan step produced any stdout at all -- no dedup against existing open proposals. (3) saturation_scan.py:281's 'commit_count % 10 != 0' skip check is meant to limit scans to roughly every 10th commit, but .ai/state.json has NO 'commit_count' key at all, so _read_commit_count()'s '.get(\"commit_count\", 0)' always returns 0, and '0 % 10 == 0' -- the skip never fires. The scan runs unconditionally, every session, permanently, not as a one-off. (4) hub.py:10438-10450's action_proposal_add() only computes the next sequence number by globbing same-date-same-subject files -- zero content/fingerprint dedup. Result observed live: 60 untracked 'auto--saturation-detected-*' proposal files in _sys/ai/proposals/ as of 2026-07-27, unbounded and growing. Acceptance criteria (per cx's proposal): (a) same normalized finding-fingerprint -> at most one open proposal; (b) concurrent session-end runs -> still one; (c) commit_count=0/missing must not behave like 'every 10th commit'; (d) a genuinely new finding set may still create a new proposal; (e) at most one pending-handoff entry recorded. Not yet fixed -- filed as its own item because it's unrelated to T82/packaging, just surfaced during that scoping pass.",
+      "risk": "Proposal backlog grows without bound every session (already 60 files from one day), burying any genuinely actionable proposal in near-duplicate noise and leaving untracked files accumulating in the working tree indefinitely.",
+      "last_verified_at": "2026-07-27T07:30:00+09:00"
     }
   ]
 }
