@@ -284,7 +284,8 @@
         },
         "deepthink": {
           "runtime_model": "gemini-3.1-pro-high",
-          "_model_id_fix_note": "2026-07-23: corrected from the stale display-name form 'Gemini 3.1 Pro (High)' to the canonical form -- same bug class, confirmed against the same live `agy.exe models` catalog re-pull. Not independently confirmed rejected by this exact operand, but every dispatch this session used the hub_nodes default_profile=deepthink and succeeded, which is odd given the stale string -- worth noting the old display-name form may have been silently tolerant on some ag versions/profiles even though it broke opus/gptoss/effort explicitly; treat as fixed-on-evidence-of-pattern rather than fixed-on-direct-rejection-proof for this one profile specifically. RE-VERIFIED 2026-07-27 (user asked to check whether Pro was still really the top ag tier after noticing the flash family had moved to 3.6): live `agy.exe models` catalog confirms gemini-3.1-pro-high/low remain the only Pro-tier entries -- no gemini-3.6-pro exists yet -- so deepthink=gemini-3.1-pro-high is still correctly the top tier. Only the flash family (ag.standard/ag.effort) was stale; deepthink was not.",
+          "_model_id_fix_note": "2026-07-23/27: SUPERSEDED by _runtime_resolver_bug_note below. gemini-3.1-pro-high is still correctly the top ag tier (no gemini-3.6-pro exists) but the string is a CATALOG label only -- it is NOT a valid --model CLI operand on the installed agy 1.1.7 runtime.",
+          "_runtime_resolver_bug_note": "2026-07-27: LIVE BUG FOUND. `--model gemini-3.1-pro-high` (and every other tested variant: 'gemini-3.1-pro', 'Gemini 3.1 Pro', 'Gemini 3.1 Pro (High)') is rejected by agy 1.1.7's --model flag resolver ('not in local config' / 'not recognized as a known model') and silently falls back to whatever backend is default -- confirmed via cli-*.log across every archived peerhub round this session: all 767 session generation records show Gemini 3.6 Flash (High), zero show Pro, despite --model gemini-3.1-pro-high being passed every time. WORKAROUND (confirmed live, cli-20260727_160058.log line 69/79/82/119, label='Gemini 3.1 Pro (High)'): omit --model entirely and rely on the interactive picker's persisted choice in _sys/antigravity/config/settings.json ({\"model\": \"Gemini 3.1 Pro (High)\"}), which the CLI's no-flag default path DOES honor correctly. profile_args below changed from ['--model','gemini-3.1-pro-high'] to [] on this basis. CAVEAT/KNOWN FRAGILITY: settings.json is a single GLOBAL file, not scoped per-profile -- any interactive /model session (including a human at the console) silently changes what ag.deepthink resolves to next, with no error and no SSOT enforcement. This is the same SSOT-weakness class the user flagged and peerhub's own Round 8-9 design review addressed structurally; the underlying agy runtime has no such protection. Root cause of the flag-vs-settings.json resolver divergence is still unknown (cx: 'official docs and 1.1.5 changelog both say --model should accept these names; installed 1.1.7 binary contradicts its own docs'). Re-verify this workaround before relying on it long-term, and treat any diag row showing ag.deepthink != Gemini 3.1 Pro as a live regression, not noise.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
@@ -309,15 +310,12 @@
             "source_ref": "_sys/docs-v2/ops/profile-policy.md#2-capability-tiering"
           },
           "runtime_context_window": 1048576,
-          "validated_at": "2026-07-19",
+          "validated_at": "2026-07-27",
           "validation_method": "successful_invocation",
           "reasoning_effort": "high",
           "cost_tier": "high",
           "routing_state": "eligible",
-          "profile_args": [
-            "--model",
-            "gemini-3.1-pro-high"
-          ]
+          "profile_args": []
         },
         "opus": {
           "runtime_model": "claude-opus-4-6-thinking",

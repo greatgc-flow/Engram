@@ -218,12 +218,19 @@ def test_ag_runtime_models_are_locally_verified_and_routable():
         "effort": "gemini-3.6-flash-high",
         "deepthink": "gemini-3.1-pro-high",
     }
+    # deepthink is a deliberate exception: 2026-07-27 live-confirmed that agy 1.1.7's
+    # --model flag resolver REJECTS this runtime_model string (and every other tested
+    # form) and silently falls back to Flash. profile_args=[] omits --model entirely so
+    # the CLI falls through to the interactive picker's persisted settings.json choice,
+    # which IS honored correctly (see orchestration.json's _runtime_resolver_bug_note).
+    args_exceptions = {"deepthink": []}
     for profile_name, runtime_model in expected.items():
         profile = ag["profiles"][profile_name]
         assert profile["runtime_model"] == runtime_model
         assert profile["model_availability"] == "verified_local"
         assert profile["routing_state"] == "eligible"
-        assert profile["profile_args"] == ["--model", runtime_model]
+        expected_args = args_exceptions.get(profile_name, ["--model", runtime_model])
+        assert profile["profile_args"] == expected_args
 
 
 def test_cc_and_cx_profiles_are_locally_verified():
