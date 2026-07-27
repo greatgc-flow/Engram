@@ -23,7 +23,7 @@
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "python \"D:\\PortableDev (v2.0)\\_sys\\checks\\check_contracts.py\" --hook"
+                        "command": "python \"${CLAUDE_PROJECT_DIR}/_sys/checks/check_contracts.py\" --hook"
                     }
                 ]
             }
