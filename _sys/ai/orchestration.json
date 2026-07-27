@@ -145,7 +145,8 @@
           ]
         },
         "deepthink": {
-          "model_id": "claude-opus-4-8",
+          "model_id": "claude-opus-5",
+          "_model_id_fix_note": "2026-07-27: bumped from claude-opus-4-8 to claude-opus-5 -- user-requested full peer-profile currency sweep. cc.effort and cc.fable were already on the '5' family (claude-sonnet-5, claude-fable-5); deepthink was the one stale holdout still on a 4.x id. Directly live-tested (not assumed from training knowledge alone): `claude.cmd --model claude-opus-5 --effort high -p \"reply with exactly: ok\" --dangerously-skip-permissions` returned 'ok' cleanly. Checked directly by cc itself -- ag/cx have no access to Anthropic's own model catalog to cross-verify this one.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
@@ -159,14 +160,14 @@
             "as_of": "2026-07-13"
           },
           "runtime_context_window": 1000000,
-          "validated_at": "2026-06-20",
+          "validated_at": "2026-07-27",
           "validation_method": "successful_invocation",
           "reasoning_effort": "high",
           "cost_tier": "high",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "claude-opus-4-8",
+            "claude-opus-5",
             "--effort",
             "high"
           ]
@@ -268,8 +269,7 @@
             "source_kind": "declared",
             "verification": "unverified",
             "source_ref": "_sys/docs-v2/ops/intelligence-scores.md#1-source-data-dir-004-declared-unverified",
-            "as_of": "2026-07-13",
-            "_staleness_note": "this estimate was scored against gemini-3.5-flash-high; not re-scored for the 3.6 bump -- treat as approximate carryover, not a fresh measurement."
+            "as_of": "2026-07-13"
           },
           "runtime_context_window": 1048576,
           "validated_at": "2026-07-27",

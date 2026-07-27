@@ -96,19 +96,19 @@
     "R04": {
       "_label": "Large Corpus Analyst",
       "primary": "ag::effort::none::none",
-      "fallback": "cc::claude-opus-4-8::high::none",
+      "fallback": "cc::claude-opus-5::high::none",
       "weight": 1.0
     },
     "R05": {
       "_label": "Deep Reasoner",
-      "primary": "cc::claude-opus-4-8::max::none",
+      "primary": "cc::claude-opus-5::max::none",
       "fallback": "cx::deepthink::none::none",
       "weight": 1.0
     },
     "R06": {
       "_label": "Large Corpus Research",
       "primary": "ag::effort::none::none",
-      "fallback": "cc::claude-opus-4-8::high::none",
+      "fallback": "cc::claude-opus-5::high::none",
       "weight": 1.0
     },
     "R07": {

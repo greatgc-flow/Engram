@@ -5,7 +5,7 @@
       "subject": {
         "peer": "cc",
         "profile": "deepthink",
-        "deployed_model_id": "claude-opus-4-8",
+        "deployed_model_id": "claude-opus-5",
         "reasoning_effort": "high",
         "adapter": "ClaudeAdapter"
       },

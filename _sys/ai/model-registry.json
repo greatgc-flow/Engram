@@ -108,6 +108,17 @@
       "confidence": "documented",
       "validated_at": "2026-06-19"
     },
+    "claude-opus-5": {
+      "provider": "anthropic",
+      "context_limit": 1000000,
+      "output_limit": 128000,
+      "reasoning_effort": ["low", "medium", "high", "xhigh", "max"],
+      "pricing_usd_per_1m": {"input": 5.0, "output": 25.0},
+      "status": "GA",
+      "confidence": "documented",
+      "validated_at": "2026-07-27",
+      "_note": "cc.deepthink's current model (2026-07-27 profile-currency sweep, replacing claude-opus-4-8). Same pricing as 4-8; adds xhigh effort. Data per the claude-api skill's cached model table (cached 2026-06-24) -- context/output/pricing not independently re-verified against a live Models API call this session."
+    },
     "claude-opus-4-8": {
       "provider": "anthropic",
       "context_limit": 1000000,
@@ -116,7 +127,8 @@
       "pricing_usd_per_1m": {"input": 5.0, "output": 25.0},
       "status": "GA",
       "confidence": "documented",
-      "validated_at": "2026-06-19"
+      "validated_at": "2026-06-19",
+      "_note": "Superseded by claude-opus-5 for cc.deepthink (2026-07-27); kept as a historical registry entry, not actively referenced by any profile as of this sweep."
     },
     "claude-opus-4-6": {
       "provider": "anthropic",

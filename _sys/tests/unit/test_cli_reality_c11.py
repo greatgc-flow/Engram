@@ -465,7 +465,7 @@ def test_composed_dispatch_target_keeps_capacity_and_reality_side_by_side():
     assert target.profile_id == "ag.effort"
     assert target.context_target.profile_id == "ag.effort"
     assert target.context_target.admission_limit > 0
-    assert target.reality_model_key == "gemini-3-5-flash-high"
+    assert target.reality_model_key == "gemini-3-6-flash-high"
 
 
 def test_action_pre_dispatch_gate_stops_fresh_verified_contradiction(

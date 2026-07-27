@@ -211,9 +211,11 @@ def test_ag_runtime_models_are_locally_verified_and_routable():
     ag = next(n for n in _raw()["hub_nodes"] if n["node_id"] == "ag")
     # Canonical runtime_model form (not the display-name form) since
     # 2026-07-23 (see orchestration.json's _model_id_fix_note on these nodes).
+    # standard/effort bumped 3.5-flash -> 3.6-flash on 2026-07-27 (profile-currency
+    # sweep, live-tested against a real agy.exe invocation, not just catalog-listed).
     expected = {
-        "standard": "gemini-3.5-flash-low",
-        "effort": "gemini-3.5-flash-high",
+        "standard": "gemini-3.6-flash-low",
+        "effort": "gemini-3.6-flash-high",
         "deepthink": "gemini-3.1-pro-high",
     }
     for profile_name, runtime_model in expected.items():
@@ -230,7 +232,9 @@ def test_cc_and_cx_profiles_are_locally_verified():
         "cc": {
             "standard": {"model_id": "claude-haiku-4-5-20251001", "context": 200000, "validated_at": "2026-06-20"},
             "effort": {"model_id": "claude-sonnet-5", "context": 1000000, "validated_at": "2026-07-19"},
-            "deepthink": {"model_id": "claude-opus-4-8", "context": 1000000, "validated_at": "2026-06-20"},
+            # deepthink bumped claude-opus-4-8 -> claude-opus-5 on 2026-07-27
+            # (profile-currency sweep, live-tested via a real claude.cmd invocation).
+            "deepthink": {"model_id": "claude-opus-5", "context": 1000000, "validated_at": "2026-07-27"},
         },
         # context re-verified 372000 -> 272000 on 2026-07-24 (real measurement,
         # see orchestration.json's cx profile entries); validated_at bumped
