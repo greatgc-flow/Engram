@@ -238,26 +238,26 @@
       "capability_class": "unsandboxed_trusted_mutation",
       "profiles": {
         "standard": {
-          "runtime_model": "gemini-3.5-flash-low",
-          "_model_id_fix_note": "2026-07-23: corrected from the stale display-name form 'Gemini 3.5 Flash (Low)' to the canonical lowercase-hyphenated form -- same bug class as ag.opus/ag.gptoss, confirmed against a live `agy.exe models` catalog re-pull after the user's manual Agy re-login (cx.deepthink, room-livetest). Not independently confirmed rejected by this exact operand (ag.effort was the one caught live-rejecting), but the stale-string pattern and live catalog both confirm this was wrong too.",
+          "runtime_model": "gemini-3.6-flash-low",
+          "_model_id_fix_note": "2026-07-27: bumped from gemini-3.5-flash-low to gemini-3.6-flash-low -- user-prompted profile-currency review found the 3.5 family had gone stale against the live `agy.exe models` catalog, which now lists a full 3.6-flash-high/medium/low family (3.5-flash and 3.1-pro unchanged, no 3.6-pro exists yet). Directly live-tested (not just catalog-listed): `agy.exe -p \"reply with exactly: ok\" --model gemini-3.6-flash-low` returned 'ok' cleanly. Pro (ag.deepthink) was independently confirmed to still be correctly wired as the top tier -- this was purely a flash-family staleness fix, not a tier-ordering bug.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["G"],
           "runtime_context_window": 1048576,
-          "validated_at": "2026-07-19",
+          "validated_at": "2026-07-27",
           "validation_method": "successful_invocation",
           "reasoning_effort": "low",
           "cost_tier": "low",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "gemini-3.5-flash-low"
+            "gemini-3.6-flash-low"
           ]
         },
         "effort": {
-          "runtime_model": "gemini-3.5-flash-high",
-          "_model_id_fix_note": "2026-07-23: corrected from the stale display-name form 'Gemini 3.5 Flash (High)' to the canonical form -- LIVE-CONFIRMED REJECTED: cx.deepthink's post-relogin re-verification dispatch hit this exact string being rejected by Agy 1.1.5 mid-test (forced fallback to Agy's signed-in default model). Fixed against the same live `agy.exe models` catalog re-pull.",
+          "runtime_model": "gemini-3.6-flash-high",
+          "_model_id_fix_note": "2026-07-27: bumped from gemini-3.5-flash-high to gemini-3.6-flash-high -- same profile-currency review as ag.standard. Directly live-tested: `agy.exe -p \"reply with exactly: ok\" --model gemini-3.6-flash-high` returned 'ok' cleanly.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
@@ -268,22 +268,23 @@
             "source_kind": "declared",
             "verification": "unverified",
             "source_ref": "_sys/docs-v2/ops/intelligence-scores.md#1-source-data-dir-004-declared-unverified",
-            "as_of": "2026-07-13"
+            "as_of": "2026-07-13",
+            "_staleness_note": "this estimate was scored against gemini-3.5-flash-high; not re-scored for the 3.6 bump -- treat as approximate carryover, not a fresh measurement."
           },
           "runtime_context_window": 1048576,
-          "validated_at": "2026-07-19",
+          "validated_at": "2026-07-27",
           "validation_method": "successful_invocation",
           "reasoning_effort": "high",
           "cost_tier": "mid",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "gemini-3.5-flash-high"
+            "gemini-3.6-flash-high"
           ]
         },
         "deepthink": {
           "runtime_model": "gemini-3.1-pro-high",
-          "_model_id_fix_note": "2026-07-23: corrected from the stale display-name form 'Gemini 3.1 Pro (High)' to the canonical form -- same bug class, confirmed against the same live `agy.exe models` catalog re-pull. Not independently confirmed rejected by this exact operand, but every dispatch this session used the hub_nodes default_profile=deepthink and succeeded, which is odd given the stale string -- worth noting the old display-name form may have been silently tolerant on some ag versions/profiles even though it broke opus/gptoss/effort explicitly; treat as fixed-on-evidence-of-pattern rather than fixed-on-direct-rejection-proof for this one profile specifically.",
+          "_model_id_fix_note": "2026-07-23: corrected from the stale display-name form 'Gemini 3.1 Pro (High)' to the canonical form -- same bug class, confirmed against the same live `agy.exe models` catalog re-pull. Not independently confirmed rejected by this exact operand, but every dispatch this session used the hub_nodes default_profile=deepthink and succeeded, which is odd given the stale string -- worth noting the old display-name form may have been silently tolerant on some ag versions/profiles even though it broke opus/gptoss/effort explicitly; treat as fixed-on-evidence-of-pattern rather than fixed-on-direct-rejection-proof for this one profile specifically. RE-VERIFIED 2026-07-27 (user asked to check whether Pro was still really the top ag tier after noticing the flash family had moved to 3.6): live `agy.exe models` catalog confirms gemini-3.1-pro-high/low remain the only Pro-tier entries -- no gemini-3.6-pro exists yet -- so deepthink=gemini-3.1-pro-high is still correctly the top tier. Only the flash family (ag.standard/ag.effort) was stale; deepthink was not.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
