@@ -287,8 +287,9 @@
           ]
         },
         "deepthink": {
-          "runtime_model": "gemini-3.1-pro",
+          "runtime_model": "Gemini 3.1 Pro (High)",
           "_model_effort_schema_note": "2026-07-27: live-validated. agy 1.1.5+ uses a base model plus --effort where that model supports effort selection. Claude Opus is the exception: its catalog-listed Thinking variant encodes the effort and rejects --effort.",
+          "_model_operand_incident_note": "2026-07-31 INCIDENT: this profile silently ran gemini-3.6-flash-high (agy's CCPA fallback) instead of Pro for an unknown prior duration. The 2026-07-27 'live-validated' claim below only confirmed the CLI invocation exited cleanly, not which model actually served the request -- agy's own log (~/.gemini/antigravity-cli or _sys/antigravity/config/log/cli-*.log, lines from model_resolver.go/model_config_manager.go) never surfaces the substitution to stdout. Root cause: agy's --model flag requires the exact human-readable display label agy's own `models` subcommand does NOT print (e.g. \"Gemini 3.1 Pro (High)\"), not the lowercase-hyphenated catalog slug (\"gemini-3.1-pro-high\") that `models` enumerates -- the two forms are not interchangeable for this entry. Confirmed by matching the interactive /model picker's own working session against its cli.log line (`Resolving model Gemini 3.1 Pro (High)` -> `Propagating selected model override to backend: label=\"Gemini 3.1 Pro (High)\"`, no CCPA fallback). ag.standard/ag.effort/ag.gptoss/ag.opus were audited the same way same day and are NOT affected -- their bare-slug-plus---effort or single-literal operands resolve correctly; this bug is specific to this one catalog entry's local-config registration in the installed agy build. Re-verify after any agy.exe update by grepping the freshest cli-*.log for 'not in local config' / 'Propagating selected model override' immediately after a live ag.deepthink dispatch -- do not trust a clean exit code alone.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
@@ -313,16 +314,14 @@
             "source_ref": "_sys/docs-v2/ops/profile-policy.md#2-capability-tiering"
           },
           "runtime_context_window": 1048576,
-          "validated_at": "2026-07-27",
-          "validation_method": "successful_invocation_with_effort",
+          "validated_at": "2026-07-31",
+          "validation_method": "cli_reality_probe:model_resolver_log_match_no_ccpa_fallback",
           "reasoning_effort": "high",
           "cost_tier": "high",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "gemini-3.1-pro",
-            "--effort",
-            "high"
+            "Gemini 3.1 Pro (High)"
           ]
         },
         "opus": {
