@@ -9,7 +9,11 @@ Step failures are non-blocking: errors logged, remaining steps continue.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import hashlib
 import json
+import os
+import re
 import subprocess
 import sys
 import time
@@ -20,6 +24,92 @@ from pathlib import Path
 _CHECKS_DIR = Path(__file__).parent
 _SYS_DIR = _CHECKS_DIR.parent
 _OUTPUT_TAIL_LIMIT = 1000
+_SATURATION_SEEN_FILENAME = "saturation-proposals-seen.json"
+_SATURATION_DEDUP_WINDOW_DAYS = 7
+
+
+def _findings_fingerprint(scan_findings: str) -> str:
+    """Stable fingerprint of a scan-findings block, insensitive to volatile fields.
+
+    The saturation-scan stdout leads with a "[START] ... commit_count=N" (or
+    "[SKIP] ...") line that changes every run even when the underlying
+    findings are identical; strip it before hashing so re-detecting the same
+    drift doesn't look like a new fingerprint each time.
+    """
+    normalized_lines = [
+        line for line in scan_findings.splitlines()
+        if not line.startswith("[START]") and not line.startswith("[SKIP]")
+    ]
+    normalized = "\n".join(normalized_lines).strip()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+
+
+_LOCK_ACQUIRE_TIMEOUT_SECONDS = 5.0
+_PROPOSAL_ADD_SUBPROCESS_TIMEOUT_SECONDS = 20.0
+# Must stay comfortably above the critical section's bounded worst-case hold
+# time (~_PROPOSAL_ADD_SUBPROCESS_TIMEOUT_SECONDS) or a live-but-slow holder's
+# lock can be mistaken for one left behind by a dead process and stolen out
+# from under it (cross-review finding, cx, 2026-08-02).
+_LOCK_STALE_AFTER_SECONDS = 60.0
+
+
+@contextlib.contextmanager
+def _file_lock(lock_path: Path, timeout: float = _LOCK_ACQUIRE_TIMEOUT_SECONDS):
+    """Best-effort exclusive lock via atomic file creation.
+
+    Yields whether the lock was actually acquired. Callers MUST fail closed
+    (skip the mutating action) when this is False rather than proceeding
+    unprotected -- silently proceeding under contention was an earlier
+    version's bug: it defeated the point of locking and let a slow first
+    call and a timed-out second call both mutate state (cross-review
+    finding, cx, 2026-08-02).
+
+    Uses `time.monotonic()` for the acquisition deadline so a backward
+    wall-clock adjustment (NTP sync, DST, manual clock change) can't extend
+    the wait indefinitely (cross-review finding, cx, 2026-08-02).
+
+    A lock file left behind by a process that died mid-hold (SIGKILL, power
+    loss -- the `finally` below never runs) is stolen once its mtime is older
+    than `_LOCK_STALE_AFTER_SECONDS`, so a single crash doesn't permanently
+    disable mutual exclusion for every run afterward (cross-review finding,
+    ag, 2026-08-02). This is still a best-effort, not a hard guarantee (no
+    ownership token/lease -- a live holder stuck past the stale threshold can
+    still have its lock stolen); acceptable here because the failure mode of
+    this specific lock is at most one extra duplicate proposal, never data
+    loss or corruption.
+    """
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    start = time.monotonic()
+    fd = None
+    while True:
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except FileExistsError:
+            try:
+                age = time.time() - lock_path.stat().st_mtime
+            except OSError:
+                age = 0.0
+            if age > _LOCK_STALE_AFTER_SECONDS:
+                # Best-effort steal; if unlink keeps failing (e.g. a real
+                # live holder, not a dead one, or a permissions issue) this
+                # must still fall through to the timeout bound below rather
+                # than spin here forever.
+                with contextlib.suppress(OSError):
+                    lock_path.unlink()
+            if time.monotonic() - start > timeout:
+                fd = None
+                break
+            time.sleep(0.05)
+    try:
+        yield fd is not None
+    finally:
+        if fd is not None:
+            os.close(fd)
+            try:
+                lock_path.unlink()
+            except OSError:
+                pass
 
 
 def _parse_ts(ts: str) -> datetime:
@@ -241,27 +331,123 @@ class SelfCare:
 
     # Step 5: Propose
 
+    def _load_saturation_seen(self) -> dict:
+        seen_path = self.archive_dir / _SATURATION_SEEN_FILENAME
+        if not seen_path.exists():
+            return {}
+        try:
+            return json.loads(seen_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    def _save_saturation_seen(self, seen: dict) -> None:
+        """Write the seen-store atomically (temp file + os.replace).
+
+        `Path.write_text` truncates-then-writes in place; a second writer
+        landing mid-write (e.g. after the lock above was stolen from a dead
+        holder) could observe or produce a corrupt/partial JSON file.
+        `os.replace` is an atomic rename on both POSIX and Windows.
+        """
+        self.archive_dir.mkdir(parents=True, exist_ok=True)
+        seen_path = self.archive_dir / _SATURATION_SEEN_FILENAME
+        tmp_path = seen_path.with_suffix(f"{seen_path.suffix}.tmp{os.getpid()}")
+        tmp_path.write_text(json.dumps(seen, indent=2, sort_keys=True), encoding="utf-8")
+        os.replace(tmp_path, seen_path)
+
+    def _proposal_is_open(self, proposal_id: str) -> bool:
+        """A tracked proposal is still open if its file exists and has at
+        least one voter left in PENDING; once every voter has resolved (or
+        the file is gone -- archived/otherwise resolved elsewhere) it no
+        longer blocks a fresh proposal for a recurring fingerprint."""
+        proposals_dir = self.sys_dir / "ai" / "proposals"
+        matches = list(proposals_dir.glob(f"{proposal_id}*.md"))
+        if not matches:
+            return False
+        try:
+            content = matches[0].read_text(encoding="utf-8")
+        except OSError:
+            return False
+        return bool(re.search(r"^- \S+: PENDING$", content, re.MULTILINE))
+
     def propose(self) -> None:
-        if not self.state.get("scan_findings"):
+        scan_findings = self.state.get("scan_findings")
+        is_skip_line = bool(scan_findings) and scan_findings.startswith("[SKIP]")
+        is_clean_scan = bool(re.search(r"=== saturation-scan: 0 finding", scan_findings or ""))
+        if not scan_findings or is_skip_line or is_clean_scan:
+            # A [SKIP] line (commit_count untracked or not a multiple of 10)
+            # and a clean "0 finding(s)" report are both saturation_scan.py's
+            # own non-empty stdout, not an actual finding to propose about.
             self.state["steps_completed"].append("propose")
             return
 
-        hub = self.sys_dir / "core" / "hub.py"
-        result = _run_checked_step(
-            self.state,
-            "propose",
-            [
-                sys.executable,
-                str(hub),
-                "proposal-add",
-                "--subject",
-                "Auto: Saturation detected",
-                "--rationale",
-                self.state["scan_findings"][:200],
-            ],
-        )
-        if result.returncode == 0:
-            self.state["steps_completed"].append("propose")
+        fingerprint = _findings_fingerprint(scan_findings)
+        now = datetime.now(timezone.utc)
+        lock_path = self.archive_dir / f"{_SATURATION_SEEN_FILENAME}.lock"
+
+        with _file_lock(lock_path, timeout=_LOCK_ACQUIRE_TIMEOUT_SECONDS) as acquired:
+            if not acquired:
+                # Fail closed: do not propose unprotected under lock
+                # contention (would risk a duplicate open proposal / a
+                # duplicate handoff entry). Leave "propose" incomplete so a
+                # later session retries rather than treating this as done.
+                self.state["errors"].append(
+                    "propose: could not acquire saturation-proposals-seen lock "
+                    "within timeout; deferring to a later session"
+                )
+                return
+
+            seen = self._load_saturation_seen()
+            entry = seen.get(fingerprint)
+            is_duplicate = False
+            if entry:
+                proposal_id = entry.get("proposal_id")
+                if proposal_id:
+                    is_duplicate = self._proposal_is_open(proposal_id)
+                else:
+                    # Degraded entry from before proposal_id capture (or a
+                    # run whose hub.py stdout didn't match the expected
+                    # format) -- fall back to a time-window heuristic rather
+                    # than treat it as permanently open or never-open.
+                    try:
+                        last_seen = datetime.fromisoformat(entry["last_seen"].replace("Z", "+00:00"))
+                    except (KeyError, ValueError):
+                        last_seen = None
+                    if last_seen and now - last_seen < timedelta(days=_SATURATION_DEDUP_WINDOW_DAYS):
+                        is_duplicate = True
+
+            if is_duplicate:
+                entry["last_seen"] = now.isoformat().replace("+00:00", "Z")
+                entry["repeat_count"] = int(entry.get("repeat_count", 1)) + 1
+                self._save_saturation_seen(seen)
+                self.state["steps_completed"].append("propose")
+                return
+
+            hub = self.sys_dir / "core" / "hub.py"
+            result = _run_checked_step(
+                self.state,
+                "propose",
+                [
+                    sys.executable,
+                    str(hub),
+                    "proposal-add",
+                    "--subject",
+                    "Auto: Saturation detected",
+                    "--rationale",
+                    scan_findings[:200],
+                ],
+                timeout=_PROPOSAL_ADD_SUBPROCESS_TIMEOUT_SECONDS,
+            )
+            if result.returncode == 0:
+                stdout_text = result.stdout if isinstance(result.stdout, str) else ""
+                id_match = re.search(r"PROPOSAL-ADD (\S+)", stdout_text)
+                seen[fingerprint] = {
+                    "first_seen": entry["first_seen"] if entry else now.isoformat().replace("+00:00", "Z"),
+                    "last_seen": now.isoformat().replace("+00:00", "Z"),
+                    "repeat_count": int(entry.get("repeat_count", 0)) + 1 if entry else 1,
+                    "proposal_id": id_match.group(1) if id_match else None,
+                }
+                self._save_saturation_seen(seen)
+                self.state["steps_completed"].append("propose")
 
     # Step 6: Lesson Graduation (Phase 6 / EDGE-05)
 

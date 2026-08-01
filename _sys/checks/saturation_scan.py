@@ -216,17 +216,26 @@ def scan_imports(sys_root: Path) -> list[Finding]:
 
 
 # ─── State: commit_count trigger ──────────────────────────────────────────────
-def _read_commit_count(sys_root: Path) -> int:
+def _read_commit_count(sys_root: Path) -> int | None:
+    """Return the tracked commit_count, or None if no state file declares one.
+
+    A missing key must not be conflated with a legitimate commit_count=0: no
+    writer currently populates this key (grep confirms no producer exists),
+    so ``.get("commit_count", 0)`` previously made every run look like an
+    exact multiple of 10 and fired unconditionally (T89).
+    """
     for candidate in [
         sys_root / "data" / "state" / "state.json",
         sys_root.parent / ".ai" / "state.json",
     ]:
         if candidate.exists():
             try:
-                return json.loads(candidate.read_text("utf-8")).get("commit_count", 0)
+                data = json.loads(candidate.read_text("utf-8"))
             except (json.JSONDecodeError, OSError):
-                pass
-    return 0
+                continue
+            if "commit_count" in data:
+                return data["commit_count"]
+    return None
 
 
 # ─── Report ───────────────────────────────────────────────────────────────────
@@ -278,11 +287,19 @@ def main() -> None:
     sys_root = Path(args.sys_root)
     commit_count = _read_commit_count(sys_root)
 
-    if not args.force and commit_count % 10 != 0:
-        print(f"[SKIP] commit_count={commit_count} — not a multiple of 10. Use --force to run now.")
-        sys.exit(0)
+    if not args.force:
+        if commit_count is None:
+            print("[SKIP] commit_count not tracked in state.json — use --force to run now.")
+            sys.exit(0)
+        # commit_count=0 is grouped with "missing" (T89 criterion c): nothing
+        # writes this key yet, so an explicit 0 is as untrustworthy a trigger
+        # as a missing key, and 0 % 10 == 0 would otherwise fire every time.
+        if commit_count == 0 or commit_count % 10 != 0:
+            print(f"[SKIP] commit_count={commit_count} — not a multiple of 10. Use --force to run now.")
+            sys.exit(0)
 
-    print(f"[START] saturation-scan  sys_root={sys_root}  commit_count={commit_count}")
+    count_display = commit_count if commit_count is not None else "untracked"
+    print(f"[START] saturation-scan  sys_root={sys_root}  commit_count={count_display}")
     findings: list[Finding] = []
 
     check_map = {
