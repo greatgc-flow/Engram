@@ -37,11 +37,11 @@ agy --dangerously-skip-permissions -p {query} --print-timeout 60m
 |---|---|---|
 | `ag.standard` | `gemini-3.6-flash` | `low` |
 | `ag.effort` | `gemini-3.6-flash` | `high` |
-| `ag.deepthink` | `gemini-3.1-pro` | `high` |
+| `ag.deepthink` | `Gemini 3.1 Pro (High)` | embedded (no `--effort`) |
 | `ag.opus` | `claude-opus-4-6-thinking` (manual_only) | embedded (no `--effort`) |
 | `ag.gptoss` | `gpt-oss-120b` | `medium` |
 
-`agy` 1.1.5+ selects the base model and reasoning effort independently. Hub profiles pass both `--model` and `--effort` where the model supports effort selection. `claude-opus-4-6-thinking` is a verified exception: it encodes Thinking in its model slug and rejects `--effort`. *(Note: `agy models` writes via Windows Console API. Model discovery requires a PTY).*
+`agy` 1.1.5+ selects the base model and reasoning effort independently. Hub profiles pass both `--model` and `--effort` where the model supports effort selection, using the lowercase-hyphenated slug `agy models` enumerates (e.g. `gemini-3.6-flash`). Two verified exceptions pass a single `--model` argument with no separate `--effort`: `claude-opus-4-6-thinking` (encodes Thinking in its model slug, rejects `--effort`) and `ag.deepthink` (LL-20260731-001, incident 2026-07-31: `agy`'s `--model` flag requires the exact human-readable display label for this specific catalog entry — `Gemini 3.1 Pro (High)` — not the slug form `agy models` prints; the slug form silently fell back to agy's no-entitlement CCPA default with a clean exit code and no warning. Re-verify after any `agy.exe` update by grepping the freshest `cli-*.log` for `Propagating selected model override to backend` immediately after a live dispatch — a `defaulting to CCPA` line at process-startup, before auth completes, is normal transient noise seen on every profile's fresh server spawn and is not itself proof of a fallback; only a `Propagating...` line with the wrong label is). *(Note: `agy models` writes via Windows Console API. Model discovery requires a PTY).*
 
 ## Directory Layout & Entry
 ```
