@@ -2284,15 +2284,17 @@
     {
       "id": "T87",
       "title": "gather_peer() early-returns before reaching cx's independent live collectors when status/health files are both absent",
-      "status": "deferred",
+      "status": "done",
       "priority": "medium",
       "category": "correctness",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "af75d31"
+      ],
       "supersedes": [],
       "source_refs": [],
-      "next_action": "cx.effort's codebase-health sweep (2026-07-22), P1 finding, verified by direct code read. snapshot.py ~864-865: `if not data and not health_data: return info` exits gather_peer() before reaching cx's independent SQLite/rollout/app-server collector block (~1025+, where _cached_codex_rate_limits() -- now also feeding EFF EXH and the reset-credit badge -- gets called). That live app-server fetch doesn't depend on `data`/`health_data` at all, so a peer with a missing/stale status file gets marked entirely 'empty' even though its live quota/credit source could still answer. Not yet confirmed how often this condition is actually hit in practice (may be rare if status files are normally present) -- that's the first thing to check before deciding on a fix. Fix direction (per cx.effort): split 'status metadata unavailable' from 'skip all peer-specific collection' so the two aren't conflated by one early return. Deferred: this is gather_peer()'s core control flow, shared across all peers, not scoped to cx -- needs its own careful review of what ELSE might currently depend on the early-return's exact semantics before changing it.",
+      "next_action": "cx.effort's codebase-health sweep (2026-07-22), P1 finding, verified by direct code read. snapshot.py ~864-865: `if not data and not health_data: return info` exits gather_peer() before reaching cx's independent SQLite/rollout/app-server collector block (~1025+, where _cached_codex_rate_limits() -- now also feeding EFF EXH and the reset-credit badge -- gets called). That live app-server fetch doesn't depend on `data`/`health_data` at all, so a peer with a missing/stale status file gets marked entirely 'empty' even though its live quota/credit source could still answer. Not yet confirmed how often this condition is actually hit in practice (may be rare if status files are normally present) -- that's the first thing to check before deciding on a fix. Fix direction (per cx.effort): split 'status metadata unavailable' from 'skip all peer-specific collection' so the two aren't conflated by one early return. Deferred: this is gather_peer()'s core control flow, shared across all peers, not scoped to cx -- needs its own careful review of what ELSE might currently depend on the early-return's exact semantics before changing it. FIXED 2026-08-02 by cx.deepthink (solo dispatch, ag.deepthink failed twice writing directly to snapshot.py despite explicit read-only instructions -- switched peer). Real-world frequency check: rare, not routine -- cx has no status file by design; the condition needs health.json specifically missing/empty/malformed, which was not observed in current or recent state. Fix: the early-return no longer skips the live-collector block below it, only skips setting empty=False/source when both status sources are absent; the app-server rate-limit success branch now explicitly sets empty=False itself. New test: test_gather_peer_cx_runs_live_collector_without_status_or_health.",
       "risk": "cx's live quota AND the EFF EXH/reset-credit fields shipped tonight could silently go dark (peer shown as fully empty/unmeasured) under a status-file-staleness condition that doesn't actually prevent the live source from working -- degrades exactly the kind of 'never fabricate, but also never hide real data unnecessarily' guarantee this session has been building toward.",
       "last_verified_at": "2026-07-22T04:00:00+09:00"
     },
