@@ -2069,11 +2069,13 @@ class _PendingAskSuccess:
     held, not streaming" distinction."""
     __slots__ = ("health_peer", "elapsed", "ai_root", "profile_key", "to",
                  "query_file", "output_file", "quiet", "output", "out_path",
-                 "on_publish_extra", "on_suppress_extra")
+                 "short_reply_warning_context", "on_publish_extra",
+                 "on_suppress_extra")
 
     def __init__(self, *, health_peer, elapsed, ai_root, profile_key, to,
                  query_file, output_file, quiet, output, out_path,
-                 on_publish_extra=None, on_suppress_extra=None):
+                 short_reply_warning_context=None, on_publish_extra=None,
+                 on_suppress_extra=None):
         self.health_peer = health_peer
         self.elapsed = elapsed
         self.ai_root = ai_root
@@ -2084,12 +2086,19 @@ class _PendingAskSuccess:
         self.quiet = quiet
         self.output = output
         self.out_path = out_path
+        self.short_reply_warning_context = short_reply_warning_context
         self.on_publish_extra = on_publish_extra
         self.on_suppress_extra = on_suppress_extra
 
     def publish(self) -> None:
         """Record the clean success and print the final REPLY. Call only
         after confirming no governed-mutation violation for this ask."""
+        _warn_suspicious_short_reply(
+            to=self.to,
+            reply=self.output,
+            ai_root=self.ai_root,
+            context=self.short_reply_warning_context,
+        )
         _record_ask_success(self.health_peer, self.elapsed, self.ai_root, profile_key=self.profile_key)
         _append_ask_history(self.ai_root, self.to, self.query_file, self.output_file, self.elapsed, True, None)
         if self.ai_root:
@@ -4403,6 +4412,55 @@ def _oversized_ask_stats(user_query_raw: str, max_tasks: int, max_chars: int) ->
     return reasons, task_count, char_count
 
 
+def _warn_suspicious_short_reply(
+    *,
+    to: str,
+    reply: str,
+    ai_root: Path | None,
+    context: dict | None,
+) -> bool:
+    """Flag likely T88 under-delivery without changing success or retry policy."""
+    if not context:
+        return False
+    try:
+        warning_chars = max(0, int(context.get("warning_chars", 0) or 0))
+    except (TypeError, ValueError):
+        return False
+    reply_chars = len((reply or "").strip())
+    substantial_reasons = list(context.get("substantial_reasons") or [])
+    if warning_chars <= 0 or reply_chars >= warning_chars or not substantial_reasons:
+        return False
+
+    reason_str = "; ".join(str(reason) for reason in substantial_reasons)
+    print(
+        f"[HUB:WARN] {to}: suspiciously short reply for a substantial ask "
+        f"(reply_chars={reply_chars} < warning_chars={warning_chars}; {reason_str}) - "
+        "automatic retry suppressed; verify completeness "
+        "(event=suspicious_short_reply_detected).",
+        file=sys.stderr,
+    )
+    if ai_root:
+        try:
+            _record_routing_metric(
+                ai_root,
+                "suspicious_short_reply_detected",
+                level="warning",
+                peer_id=to,
+                node_id=to,
+                reply_chars=reply_chars,
+                warning_chars=warning_chars,
+                task_count=context.get("task_count"),
+                query_chars=context.get("query_chars"),
+                max_tasks=context.get("max_tasks"),
+                max_chars=context.get("max_chars"),
+                substantial_reasons=substantial_reasons,
+                automatic_retry=False,
+            )
+        except Exception:
+            pass
+    return True
+
+
 _OVERSIZED_PROGRESS_MARKER = "[HUB OVERSIZED-ASK STREAMING MITIGATION]"
 
 
@@ -6413,9 +6471,28 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     requires_pty = node.get("requires_pty", False)
     exe_name = node.get("invoke", to)
 
+    short_reply_warning_context: dict | None = None
+    try:
+        short_reply_warning_chars = max(
+            0, int(node.get("suspicious_short_reply_warning_chars", 0) or 0)
+        )
+    except (TypeError, ValueError):
+        short_reply_warning_chars = 0
+
     if _depth == 0 and _escalation_depth == 0 and (max_ask_tasks > 0 or max_ask_chars > 0):
-        oversized_reasons, _, _ = _oversized_ask_stats(user_query_raw, max_ask_tasks, max_ask_chars)
+        oversized_reasons, oversized_task_count, oversized_char_count = _oversized_ask_stats(
+            user_query_raw, max_ask_tasks, max_ask_chars
+        )
         oversized_detected = bool(oversized_reasons)
+        if oversized_detected and short_reply_warning_chars > 0:
+            short_reply_warning_context = {
+                "warning_chars": short_reply_warning_chars,
+                "substantial_reasons": list(oversized_reasons),
+                "task_count": oversized_task_count,
+                "query_chars": oversized_char_count,
+                "max_tasks": max_ask_tasks,
+                "max_chars": max_ask_chars,
+            }
         progress_mitigation = bool(
             oversized_detected and requires_pty and not force_tier0
         )
@@ -6987,6 +7064,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                 health_peer=health_peer, elapsed=elapsed, ai_root=ai_root,
                 profile_key=profile_key, to=to, query_file=saved_query_file_path,
                 output_file=output_file, quiet=quiet, output=output, out_path=out_path,
+                short_reply_warning_context=short_reply_warning_context,
                 on_publish_extra=lambda: _update_pty_thread("completed"),
                 on_suppress_extra=lambda: _update_pty_thread("quarantined (unattributed governed change)"),
             )
@@ -7188,6 +7266,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                         health_peer=health_peer, elapsed=elapsed, ai_root=ai_root,
                         profile_key=profile_key, to=to, query_file=saved_query_file_path,
                         output_file=output_file, quiet=quiet, output=output, out_path=out_path,
+                        short_reply_warning_context=short_reply_warning_context,
                     )
                     if use_session and scope_key:
                         resolved_session_id = adapter.extract_session_id(raw_text, node, command_session_id)
@@ -7330,6 +7409,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                 health_peer=health_peer, elapsed=elapsed, ai_root=ai_root,
                 profile_key=profile_key, to=to, query_file=saved_query_file_path,
                 output_file=output_file, quiet=quiet, output=output, out_path=out_path,
+                short_reply_warning_context=short_reply_warning_context,
             )
 
             # ── Session state update on success (general, path-agnostic) ─
