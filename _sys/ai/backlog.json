@@ -2359,6 +2359,21 @@
       "next_action": "Surfaced during agent/refresh-cli-profiles' merge-readiness review (2026-08-02, cx.effort traced a different test failure to a real regression -- see the ag.standard/ag.effort/ag.gptoss orchestration.json _model_id_regression_note entries, fixed same session). While investigating the 3 tests cx flagged, cc found test_action_ask_integrates_error_visibility fails deterministically (3/3 runs) on this branch and passes deterministically (6/6 runs across two check sessions) on origin/main (2ba8386) under the identical isolated single-test invocation -- but exhaustively confirmed zero difference in every file this test's code path reads: `git diff origin/main..HEAD --stat -- _sys/core/*.py` is empty (hub.py, hub_context.py, hub_peer.py, hub_error.py all byte-identical), and _sys/ai/lifecycle_policy.json is also byte-identical. Manually invoking hub._classify_ask_failure('API Error: Authentication failed') directly returns the correct 'auth_error' classification, which per hub.py:2259/2266 should set ctx['status']='RED' and therefore severity='error', triggering the HubError.report_from_legacy call the test asserts on -- yet the live test run's captured stdout shows 'pattern=nonzero_exit', a different classification than the code's own logic should produce for this exact input, and _classify_ask_failure's only 'nonzero_exit' fallback path requires ALL five preceding regex rules (including the auth_error one) to not match. This inconsistency between direct-call classification and observed test behavior was not resolved before time constraints ended the investigation -- worth a fresh trace with pdb/tracing on the actual mocked subprocess.Popen path (the mock's .communicate() setup may not be what the real code reads; hub.py may stream-read stdout/stderr rather than call .communicate(), meaning the mocked return value is never actually consumed and 'output' passed to _classify_ask_failure could be an auto-generated MagicMock string repr rather than the intended text -- unconfirmed, next investigator should check this first).",
       "risk": "Low -- this is a mocked unit/integration test about internal error-visibility wiring, not a live production behavior; merging agent/refresh-cli-profiles does not change any source file this test's code path reads relative to origin/main, so this cannot be a regression this branch introduces. Worth resolving eventually since an environment-sensitive test that silently flips pass/fail undermines trust in the test suite's signal.",
       "last_verified_at": "2026-08-02T00:39:06+09:00"
+    },
+    {
+      "id": "T92",
+      "title": "Engram working tree has long-standing untracked clutter (*_old tool dirs, sandbox files, stale session archive)",
+      "status": "deferred",
+      "priority": "low",
+      "category": "housekeeping",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [],
+      "next_action": "Flagged by cx.deepthink during the 2026-08-02 cross-repo sanity pass: Engram's working tree is not clean -- untracked _sys/tools/*_old dirs, _sys/codex/config/.sandbox* entries, _sys/data/sessions/2026-07-31_peerhub.md, _sys/claude/project/scheduled_tasks.lock, _sys/data/check_contracts_state.json, _sys/antigravity/config/_sys/, plus the intentional nested peerhub/ repo. Predates this session's work; not touched. Needs per-item triage (delete vs gitignore vs keep) rather than a blanket cleanup.",
+      "risk": "Low -- cosmetic/hygiene only, no functional impact observed.",
+      "last_verified_at": "2026-08-02T00:39:06+09:00"
     }
   ]
 }
