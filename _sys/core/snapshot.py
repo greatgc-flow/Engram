@@ -922,10 +922,11 @@ def gather_peer(peer, peer_dirs):
         info["capture_profile"] = _capture_profile_from_active_session(
             peer, peer_dirs[peer], info["capture_session_id"])
 
-    if not data and not health_data:
-        return info
-    info["empty"] = False
-    info["source"] = "live" if data else "health"
+    # Missing status metadata must not suppress independent peer-specific
+    # collectors below (notably cx's sqlite, rollout, and app-server sources).
+    if data or health_data:
+        info["empty"] = False
+        info["source"] = "live" if data else "health"
 
     # Source freshness (D1): observed_at = capture time of the source file, plus age.
     src_file = live_file if (live_file and live_file.exists()) else (
@@ -1128,6 +1129,7 @@ def gather_peer(peer, peer_dirs):
             info["empty"] = False
         rl = _cached_codex_rate_limits()
         if rl:
+            info["empty"] = False
             info["source"] = "app-server"
             quotas.extend(_codex_quota_buckets(rl.get("rateLimits")))
             # Same cached app-server response already carries reset-credit

@@ -460,6 +460,38 @@ def test_gather_peer_missing_dir_does_not_raise(tmp_path):
     assert info["ctx_known"] is False
 
 
+def test_gather_peer_cx_runs_live_collector_without_status_or_health(
+        tmp_path, monkeypatch):
+    snapshot = load_snapshot()
+    fake_sys = tmp_path / "_sys"
+    peer_dir = fake_sys / "codex"
+    peer_dir.mkdir(parents=True)
+    calls = []
+
+    def live_rate_limits():
+        calls.append("called")
+        return {
+            "rateLimits": {"primary": {"usedPercent": 25}},
+            "rateLimitResetCredits": {"availableCount": 2},
+        }
+
+    monkeypatch.setattr(snapshot, "SYS_DIR", fake_sys)
+    monkeypatch.setattr(snapshot, "_codex_context", lambda: (None, None))
+    monkeypatch.setattr(snapshot, "_cached_codex_rate_limits", live_rate_limits)
+    monkeypatch.setattr(
+        snapshot, "_codex_quota_buckets", lambda _limits: [{"label": "X-5H"}])
+    monkeypatch.setattr(snapshot, "supports_reset_credits", lambda _peer: True)
+
+    info = snapshot.gather_peer("cx", {"cx": peer_dir})
+
+    assert calls == ["called"]
+    assert info["empty"] is False
+    assert info["source"] == "app-server"
+    assert info["quotas"] == [{"label": "X-5H"}]
+    assert info["reset_credits_available"] == 2
+    assert info["gate"] is None
+
+
 def test_collect_snapshot_survives_collector_exception(monkeypatch):
     diag = load_diag()
 
