@@ -149,9 +149,16 @@ def test_d6_ag_deepthink_intent_is_declared_and_normalized():
     ag_root = next(node for node in normalized["hub_nodes"] if node.get("node_id") == "ag" and node.get("type") == "peer")
     assert deepthink["profile_intent"] == intent
     assert ag_root["profile_intent"] == intent
-    # Canonical runtime_model form (not the display-name form) since
-    # 2026-07-23 (see orchestration.json's _model_id_fix_note on this node).
-    assert deepthink["runtime_model"] == "gemini-3.1-pro-high"
+    # ag.deepthink is a documented exception to the base-slug+--effort
+    # pattern (orchestration.json's own incident note, 2026-07-31/08-01,
+    # commits a1e2ad9/3ea2286/ebe31a6): agy's --model requires the exact
+    # human-readable display label for this one catalog entry, not a
+    # lowercase-hyphenated slug -- live-verified via 3 independent fresh
+    # dispatches showing the correct "Propagating selected model
+    # override to backend" resolution with no CCPA fallback. This
+    # assertion was stale (still asserting the pre-fix slug) until fixed
+    # here, 2026-08-02, per cx.effort's merge-readiness finding.
+    assert deepthink["runtime_model"] == "Gemini 3.1 Pro (High)"
     assert deepthink["routing_state"] == "eligible"
 
 
@@ -207,16 +214,31 @@ def test_disabled_roots_have_blocked_profiles():
             assert all(p["routing_state"] == "blocked" for p in node["profiles"].values())
 
 
-def test_ag_runtime_models_are_locally_verified_and_routable():
+def test_ag_runtime_models_use_tier_suffixed_catalog_slugs():
+    """Every ag Gemini/gpt-oss profile's --model operand must be an exact
+    entry from agy.exe's real `models` catalog output, which only lists
+    tier-suffixed forms (gemini-3.6-flash-low/-medium/-high, no bare
+    'gemini-3.6-flash'; gpt-oss-120b-medium, no bare 'gpt-oss-120b') --
+    a separate --effort flag on top of one of these is not accepted.
+
+    2026-08-02: standard/effort/gptoss were fixed here after commit 84fcb53
+    (2026-07-27) regressed them to a bare-slug-plus---effort form that was
+    never live-tested for these three specifically and doesn't match the
+    real catalog -- caught by cx.effort's merge-readiness review tracing a
+    test_cli_reality_c11.py failure back to that exact commit; cc confirmed
+    origin/main already had the correct values and restored them (see each
+    profile's _model_id_regression_note in orchestration.json). deepthink
+    was fixed earlier the same week (a1e2ad9/3ea2286/ebe31a6) for the
+    display-label variant of the same underlying bug class. ag.opus
+    (claude-opus-4-6-thinking, a non-Gemini/non-gpt-oss catalog entry) is
+    intentionally not covered here -- it was never affected.
+    """
     ag = next(n for n in _raw()["hub_nodes"] if n["node_id"] == "ag")
-    # Canonical runtime_model form (not the display-name form) since
-    # 2026-07-23 (see orchestration.json's _model_id_fix_note on these nodes).
-    # standard/effort bumped 3.5-flash -> 3.6-flash on 2026-07-27 (profile-currency
-    # sweep, live-tested against a real agy.exe invocation, not just catalog-listed).
     expected = {
         "standard": "gemini-3.6-flash-low",
         "effort": "gemini-3.6-flash-high",
-        "deepthink": "gemini-3.1-pro-high",
+        "deepthink": "Gemini 3.1 Pro (High)",
+        "gptoss": "gpt-oss-120b-medium",
     }
     for profile_name, runtime_model in expected.items():
         profile = ag["profiles"][profile_name]
@@ -230,8 +252,8 @@ def test_cc_and_cx_profiles_are_locally_verified():
     roots = {n["node_id"]: n for n in _raw()["hub_nodes"]}
     expected = {
         "cc": {
-            "standard": {"model_id": "claude-haiku-4-5-20251001", "context": 200000, "validated_at": "2026-06-20"},
-            "effort": {"model_id": "claude-sonnet-5", "context": 1000000, "validated_at": "2026-07-19"},
+            "standard": {"model_id": "claude-haiku-4-5-20251001", "context": 200000, "validated_at": "2026-07-27"},
+            "effort": {"model_id": "claude-sonnet-5", "context": 1000000, "validated_at": "2026-07-27"},
             # deepthink bumped claude-opus-4-8 -> claude-opus-5 on 2026-07-27
             # (profile-currency sweep, live-tested via a real claude.cmd invocation).
             "deepthink": {"model_id": "claude-opus-5", "context": 1000000, "validated_at": "2026-07-27"},
@@ -240,9 +262,9 @@ def test_cc_and_cx_profiles_are_locally_verified():
         # see orchestration.json's cx profile entries); validated_at bumped
         # to match.
         "cx": {
-            "standard": {"model_id": "gpt-5.6-luna", "context": 272000, "validated_at": "2026-07-24"},
-            "effort": {"model_id": "gpt-5.6-terra", "context": 272000, "validated_at": "2026-07-24"},
-            "deepthink": {"model_id": "gpt-5.6-sol", "context": 272000, "validated_at": "2026-07-24"},
+            "standard": {"model_id": "gpt-5.6-luna", "context": 272000, "validated_at": "2026-07-27"},
+            "effort": {"model_id": "gpt-5.6-terra", "context": 272000, "validated_at": "2026-07-27"},
+            "deepthink": {"model_id": "gpt-5.6-sol", "context": 272000, "validated_at": "2026-07-27"},
         },
     }
     for peer_id, profiles in expected.items():

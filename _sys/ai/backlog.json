@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-07-27T07:30:00+09:00",
+  "updated_at": "2026-08-02T00:39:06+09:00",
   "items": [
     {
       "id": "T63",
@@ -2314,19 +2314,51 @@
     {
       "id": "T89",
       "title": "self_care/saturation_scan proposal pipeline has zero deduplication and an always-true trigger, causing unbounded proposal-file flooding",
-      "status": "deferred",
+      "status": "done",
       "priority": "medium",
       "category": "reliability",
       "owner": "unassigned",
       "blocker": null,
-      "evidence_commit": [],
+      "evidence_commit": [
+        "d15bfcd"
+      ],
       "supersedes": [],
       "source_refs": [
         "_sys/docs-v2/ops/t82-engram-rescope-2026-07-27.md"
       ],
       "next_action": "Surfaced by cx.deepthink during the T82 re-scope round (2026-07-27), independently verified by cc via direct code read (not taken on cx's word alone, per DIR-004). Root cause chain, all confirmed live: (1) ctx_end.py:472-479 launches 'self_care.py --trigger session_end' as a fire-and-forget background subprocess on EVERY session end. (2) self_care.py's propose() (line 244) calls 'hub.py proposal-add' whenever the scan step produced any stdout at all -- no dedup against existing open proposals. (3) saturation_scan.py:281's 'commit_count % 10 != 0' skip check is meant to limit scans to roughly every 10th commit, but .ai/state.json has NO 'commit_count' key at all, so _read_commit_count()'s '.get(\"commit_count\", 0)' always returns 0, and '0 % 10 == 0' -- the skip never fires. The scan runs unconditionally, every session, permanently, not as a one-off. (4) hub.py:10438-10450's action_proposal_add() only computes the next sequence number by globbing same-date-same-subject files -- zero content/fingerprint dedup. Result observed live: 60 untracked 'auto--saturation-detected-*' proposal files in _sys/ai/proposals/ as of 2026-07-27, unbounded and growing. Acceptance criteria (per cx's proposal): (a) same normalized finding-fingerprint -> at most one open proposal; (b) concurrent session-end runs -> still one; (c) commit_count=0/missing must not behave like 'every 10th commit'; (d) a genuinely new finding set may still create a new proposal; (e) at most one pending-handoff entry recorded. Not yet fixed -- filed as its own item because it's unrelated to T82/packaging, just surfaced during that scoping pass.",
       "risk": "Proposal backlog grows without bound every session (already 60 files from one day), burying any genuinely actionable proposal in near-duplicate noise and leaving untracked files accumulating in the working tree indefinitely.",
-      "last_verified_at": "2026-07-27T07:30:00+09:00"
+      "last_verified_at": "2026-08-02T00:39:06+09:00"
+    },
+    {
+      "id": "T90",
+      "title": "self_care.py proposal-add calls (saturation-scan + lesson_graduation) have no shared dedup/idempotency primitive; only saturation's path was fixed by T89",
+      "status": "deferred",
+      "priority": "low",
+      "category": "reliability",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [],
+      "next_action": "Surfaced during T89's fix-and-cross-review (2026-08-02, cc implementing, ag.effort + cx.effort independently reviewing). T89 fixed self_care.py's propose() step (saturation-scan findings) with a fingerprint + open-proposal-status dedup layer scoped to that one call site. lesson_graduation() (self_care.py, Step 6) has a structurally identical unthrottled proposal-add loop per graduation candidate with no equivalent protection -- once a lesson crosses its graduation threshold, every subsequent session_end re-evaluates and re-proposes it every time, with only the lesson's own threshold check gating it (no fingerprint/open-status dedup at all). Both ag and cx independently agreed lesson_graduation should stay OUT of T89's diff (different dedup identity/lifecycle -- a lesson id vs a findings-content fingerprint -- folding it in would have expanded scope), but both flagged a generalized proposal-idempotency utility as the right eventual fix. cx's specific recommendation: enforce idempotency at the hub.py action_proposal_add() boundary itself (caller-supplied dedup key + open-status awareness), which would cover saturation-scan, lesson_graduation, and any future automated proposal source in one place instead of reimplementing per-caller dedup each time -- but note this would change action_proposal_add's signature and, per DIR-004/DIR-003, requires updating _sys/tests/unit/l1_core/test_contracts.py's contract coverage for that function.",
+      "risk": "lesson_graduation() can flood _sys/ai/proposals/ with near-duplicate 'Lesson graduation: L-xxx -> ...' proposals the same way saturation-scan did before T89, once a lesson's source_refs/unique-debate count crosses the configured threshold and stays there across multiple session ends -- same failure class as T89, just not yet observed to have actually flooded in production.",
+      "last_verified_at": "2026-08-02T00:39:06+09:00"
+    },
+    {
+      "id": "T91",
+      "title": "test_action_ask_integrates_error_visibility fails deterministically with zero source-file attribution -- environment-sensitive, cause unresolved",
+      "status": "deferred",
+      "priority": "low",
+      "category": "reliability",
+      "owner": "unassigned",
+      "blocker": null,
+      "evidence_commit": [],
+      "supersedes": [],
+      "source_refs": [],
+      "next_action": "Surfaced during agent/refresh-cli-profiles' merge-readiness review (2026-08-02, cx.effort traced a different test failure to a real regression -- see the ag.standard/ag.effort/ag.gptoss orchestration.json _model_id_regression_note entries, fixed same session). While investigating the 3 tests cx flagged, cc found test_action_ask_integrates_error_visibility fails deterministically (3/3 runs) on this branch and passes deterministically (6/6 runs across two check sessions) on origin/main (2ba8386) under the identical isolated single-test invocation -- but exhaustively confirmed zero difference in every file this test's code path reads: `git diff origin/main..HEAD --stat -- _sys/core/*.py` is empty (hub.py, hub_context.py, hub_peer.py, hub_error.py all byte-identical), and _sys/ai/lifecycle_policy.json is also byte-identical. Manually invoking hub._classify_ask_failure('API Error: Authentication failed') directly returns the correct 'auth_error' classification, which per hub.py:2259/2266 should set ctx['status']='RED' and therefore severity='error', triggering the HubError.report_from_legacy call the test asserts on -- yet the live test run's captured stdout shows 'pattern=nonzero_exit', a different classification than the code's own logic should produce for this exact input, and _classify_ask_failure's only 'nonzero_exit' fallback path requires ALL five preceding regex rules (including the auth_error one) to not match. This inconsistency between direct-call classification and observed test behavior was not resolved before time constraints ended the investigation -- worth a fresh trace with pdb/tracing on the actual mocked subprocess.Popen path (the mock's .communicate() setup may not be what the real code reads; hub.py may stream-read stdout/stderr rather than call .communicate(), meaning the mocked return value is never actually consumed and 'output' passed to _classify_ask_failure could be an auto-generated MagicMock string repr rather than the intended text -- unconfirmed, next investigator should check this first).",
+      "risk": "Low -- this is a mocked unit/integration test about internal error-visibility wiring, not a live production behavior; merging agent/refresh-cli-profiles does not change any source file this test's code path reads relative to origin/main, so this cannot be a regression this branch introduces. Worth resolving eventually since an environment-sensitive test that silently flips pass/fail undermines trust in the test suite's signal.",
+      "last_verified_at": "2026-08-02T00:39:06+09:00"
     }
   ]
 }

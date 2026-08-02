@@ -28,9 +28,10 @@ claude -p {query} --dangerously-skip-permissions
 |---|---|---|---:|
 | `cc.standard` | `claude-haiku-4-5-20251001` | low | 200k |
 | `cc.effort` | `claude-sonnet-5` | high | 1M |
-| `cc.deepthink` | `claude-opus-4-8` | high | 1M |
+| `cc.deepthink` | `claude-opus-5` | high | 1M |
+| `cc.fable` | `claude-fable-5` | high | 1M |
 
-*(Note: Claude Fable 5 is recognized via `fable`/`claude-fable-5` but not routed if unavailable to the account. Claude Code lacks a zero-token catalog command).*
+All four profiles were live-validated with their declared `--model` and `--effort` on 2026-07-27. Claude Code lacks a zero-token catalog command, so direct minimal invocations are the availability check.
 
 ## Session & State
 - **Session reuse:** hub IPC asks reuse per `session_mode: reuse` (orchestration.json), scoped by `room_id`. The interactive human-facing cc terminal is a separate fresh session per launch.

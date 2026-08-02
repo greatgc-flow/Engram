@@ -25,6 +25,7 @@
   "worktree": {
     "baseRef": "fresh"
   },
+  "disableAgentView": true,
   "statusLine": {
     "type": "command",
     "command": "bash 'P:/_sys/claude/config/statusline-command.sh'"
@@ -34,6 +35,5 @@
   "skipDangerousModePermissionPrompt": true,
   "theme": "auto",
   "remoteControlAtStartup": false,
-  "disableAgentView": true,
   "agentPushNotifEnabled": true
 }

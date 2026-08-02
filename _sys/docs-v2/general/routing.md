@@ -276,6 +276,31 @@ Active peers have equal vote weight, leadership eligibility, role eligibility, a
 4. Run strict config validation, profile validation, tests, and benchmarks.
 5. Record source, as-of date, confidence, and any unavailable runtime variant.
 
+**Step 2 gotcha (LL-20260731-001, incident 2026-07-31):** a CLI's catalog-enumeration
+subcommand (e.g. `agy.exe models`) is not proof that the same identifier is
+accepted by that CLI's own `--model` flag. `ag.deepthink` declared and passed
+the catalog-listed slug `gemini-3.1-pro-high`, which the enumeration command
+happily printed, yet agy's runtime resolver silently substituted a different,
+lower-tier model (`Gemini 3.6 Flash (High)`, its no-entitlement default)
+whenever that slug was used as a `--model` operand — with zero non-zero exit
+code, zero stderr warning, and a clean "successful invocation" reading no
+different from a correct one. The only ground truth that caught it was the
+peer's own live per-invocation log (`cli-*.log`: `model_resolver.go` /
+`model_config_manager.go` lines showing `Resolving model X` ->
+`Propagating selected model override to backend: label="Y"`); if `X != Y`
+(after accounting for case/format), the declared operand is not actually
+being honored, regardless of exit code or declared `model_availability`.
+For agy specifically, the working operand form for at least one model
+(`gemini-3.1-pro`) turned out to be the human-readable display label the
+interactive `/model` picker uses (`"Gemini 3.1 Pro (High)"`), not the
+lowercase-hyphenated slug the `models` subcommand enumerates — the two
+surfaces are not interchangeable for every catalog entry on this CLI.
+**Do not mark a profile `validated_at`/`model_availability: verified_local`
+from a clean exit code alone.** After any profile add/change, dispatch one
+real invocation and grep the freshest per-invocation log for
+`Propagating selected model override to backend` to confirm the resolved
+label actually matches intent, per peer/CLI.
+
 For logical peers that reuse an existing installation provider:
 
 ```text
