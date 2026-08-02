@@ -694,3 +694,166 @@ class TestProposeDedup:
             cmd = " ".join(args[0])
             assert "hub.py" in cmd
             assert "proposal-add" in cmd
+
+
+class TestLessonGraduationDedup:
+    """T90: lesson graduation proposals are idempotent by stable lesson id."""
+
+    @staticmethod
+    def _write_lessons(mock_env, *lesson_ids):
+        gov_path = mock_env["sys"] / "ai" / "governance_params.json"
+        gov_path.parent.mkdir(parents=True, exist_ok=True)
+        gov_path.write_text(
+            json.dumps({"lesson_graduation_auto_propose": True}),
+            encoding="utf-8",
+        )
+
+        lessons_path = (
+            mock_env["sys"]
+            / "ai"
+            / "knowledge"
+            / "general"
+            / "active-lessons.jsonl"
+        )
+        lessons_path.parent.mkdir(parents=True, exist_ok=True)
+        lessons = [
+            {
+                "id": lesson_id,
+                "status": "active",
+                "title": f"Lesson {lesson_id}",
+                "compact_rule": f"Rule for {lesson_id}",
+                "source_refs": [
+                    {"id": "1", "type": "debate", "ts": "2026-06-25T12:00:00Z"},
+                    {"id": "2", "type": "debate", "ts": "2026-06-25T12:00:00Z"},
+                    {"id": "3", "type": "debate", "ts": "2026-06-25T12:00:00Z"},
+                ],
+            }
+            for lesson_id in lesson_ids
+        ]
+        lessons_path.write_text(
+            "\n".join(json.dumps(lesson) for lesson in lessons) + "\n",
+            encoding="utf-8",
+        )
+
+    def test_repeated_eligible_lesson_only_proposes_once(self, mock_env):
+        from self_care import SelfCare, _LESSON_GRADUATION_SEEN_FILENAME
+
+        self._write_lessons(mock_env, "L-123")
+        completed = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("subprocess.run", return_value=completed) as mock_run:
+            sc1 = SelfCare(sys_dir=mock_env["sys"], archive_dir=mock_env["archive"])
+            sc1.lesson_graduation()
+            sc2 = SelfCare(sys_dir=mock_env["sys"], archive_dir=mock_env["archive"])
+            sc2.lesson_graduation()
+
+        assert mock_run.call_count == 1
+        assert "lesson_graduation" in sc1.state["steps_completed"]
+        assert "lesson_graduation" in sc2.state["steps_completed"]
+        seen_path = mock_env["archive"] / _LESSON_GRADUATION_SEEN_FILENAME
+        seen = json.loads(seen_path.read_text(encoding="utf-8"))
+        assert set(seen) == {"L-123"}
+        assert seen["L-123"]["repeat_count"] == 2
+
+    def test_different_lesson_ids_each_propose(self, mock_env):
+        from self_care import SelfCare
+
+        self._write_lessons(mock_env, "L-ONE", "L-TWO")
+        completed = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("subprocess.run", return_value=completed) as mock_run:
+            sc = SelfCare(sys_dir=mock_env["sys"], archive_dir=mock_env["archive"])
+            sc.lesson_graduation()
+
+        assert mock_run.call_count == 2
+        assert "lesson_graduation" in sc.state["steps_completed"]
+
+    def test_open_graduation_proposal_suppresses_repeat(self, mock_env):
+        from self_care import SelfCare, _LESSON_GRADUATION_SEEN_FILENAME
+
+        lesson_id = "L-PENDING"
+        proposal_id = "20260802-lesson-graduation-l-pending-001"
+        self._write_lessons(mock_env, lesson_id)
+        proposals_dir = mock_env["sys"] / "ai" / "proposals"
+        proposals_dir.mkdir(parents=True, exist_ok=True)
+        (proposals_dir / f"{proposal_id}.md").write_text(
+            f"[PROPOSAL: {proposal_id}]\nVotes:\n"
+            "- cc: AGREE\n- ag: PENDING\n- cx: AGREE\n",
+            encoding="utf-8",
+        )
+
+        sc = SelfCare(sys_dir=mock_env["sys"], archive_dir=mock_env["archive"])
+        sc._save_proposal_seen(
+            _LESSON_GRADUATION_SEEN_FILENAME,
+            {
+                lesson_id: {
+                    "first_seen": "2026-08-01T00:00:00Z",
+                    "last_seen": "2026-08-01T00:00:00Z",
+                    "repeat_count": 1,
+                    "proposal_id": proposal_id,
+                }
+            },
+        )
+        with patch("subprocess.run") as mock_run:
+            sc.lesson_graduation()
+
+        mock_run.assert_not_called()
+        assert "lesson_graduation" in sc.state["steps_completed"]
+
+    def test_resolved_graduation_proposal_allows_fresh_proposal(self, mock_env):
+        from self_care import SelfCare, _LESSON_GRADUATION_SEEN_FILENAME
+
+        lesson_id = "L-RESOLVED"
+        old_proposal_id = "20260802-lesson-graduation-l-resolved-001"
+        new_proposal_id = "20260802-lesson-graduation-l-resolved-002"
+        self._write_lessons(mock_env, lesson_id)
+        proposals_dir = mock_env["sys"] / "ai" / "proposals"
+        proposals_dir.mkdir(parents=True, exist_ok=True)
+        (proposals_dir / f"{old_proposal_id}.md").write_text(
+            f"[PROPOSAL: {old_proposal_id}]\nVotes:\n"
+            "- cc: AGREE\n- ag: DISAGREE\n- cx: AGREE\n",
+            encoding="utf-8",
+        )
+
+        sc = SelfCare(sys_dir=mock_env["sys"], archive_dir=mock_env["archive"])
+        sc._save_proposal_seen(
+            _LESSON_GRADUATION_SEEN_FILENAME,
+            {
+                lesson_id: {
+                    "first_seen": "2026-08-01T00:00:00Z",
+                    "last_seen": "2026-08-01T00:00:00Z",
+                    "repeat_count": 1,
+                    "proposal_id": old_proposal_id,
+                }
+            },
+        )
+        stdout = f"[HUB] PROPOSAL-ADD {new_proposal_id} | from=cc | impact=MED\n"
+        completed = MagicMock(returncode=0, stdout=stdout, stderr="")
+        with patch("subprocess.run", return_value=completed) as mock_run:
+            sc.lesson_graduation()
+
+        mock_run.assert_called_once()
+        seen = sc._load_proposal_seen(_LESSON_GRADUATION_SEEN_FILENAME)
+        assert seen[lesson_id]["proposal_id"] == new_proposal_id
+
+    def test_lock_contention_defers_without_proposing(self, mock_env, monkeypatch):
+        import os
+        import self_care as self_care_module
+        from self_care import SelfCare, _LESSON_GRADUATION_SEEN_FILENAME
+
+        self._write_lessons(mock_env, "L-LOCKED")
+        monkeypatch.setattr(self_care_module, "_LOCK_ACQUIRE_TIMEOUT_SECONDS", 0.3)
+        lock_path = mock_env["archive"] / f"{_LESSON_GRADUATION_SEEN_FILENAME}.lock"
+        held_fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        try:
+            with patch("subprocess.run") as mock_run:
+                sc = SelfCare(
+                    sys_dir=mock_env["sys"],
+                    archive_dir=mock_env["archive"],
+                )
+                sc.lesson_graduation()
+
+            mock_run.assert_not_called()
+            assert "lesson_graduation" not in sc.state["steps_completed"]
+            assert any("could not acquire" in error for error in sc.state["errors"])
+        finally:
+            os.close(held_fd)
+            lock_path.unlink()

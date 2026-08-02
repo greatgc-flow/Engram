@@ -25,7 +25,8 @@ _CHECKS_DIR = Path(__file__).parent
 _SYS_DIR = _CHECKS_DIR.parent
 _OUTPUT_TAIL_LIMIT = 1000
 _SATURATION_SEEN_FILENAME = "saturation-proposals-seen.json"
-_SATURATION_DEDUP_WINDOW_DAYS = 7
+_LESSON_GRADUATION_SEEN_FILENAME = "lesson-graduation-proposals-seen.json"
+_PROPOSAL_DEDUP_WINDOW_DAYS = 7
 
 
 def _findings_fingerprint(scan_findings: str) -> str:
@@ -331,8 +332,8 @@ class SelfCare:
 
     # Step 5: Propose
 
-    def _load_saturation_seen(self) -> dict:
-        seen_path = self.archive_dir / _SATURATION_SEEN_FILENAME
+    def _load_proposal_seen(self, filename: str) -> dict:
+        seen_path = self.archive_dir / filename
         if not seen_path.exists():
             return {}
         try:
@@ -340,8 +341,8 @@ class SelfCare:
         except (json.JSONDecodeError, OSError):
             return {}
 
-    def _save_saturation_seen(self, seen: dict) -> None:
-        """Write the seen-store atomically (temp file + os.replace).
+    def _save_proposal_seen(self, filename: str, seen: dict) -> None:
+        """Write a proposal seen-store atomically (temp file + os.replace).
 
         `Path.write_text` truncates-then-writes in place; a second writer
         landing mid-write (e.g. after the lock above was stolen from a dead
@@ -349,16 +350,24 @@ class SelfCare:
         `os.replace` is an atomic rename on both POSIX and Windows.
         """
         self.archive_dir.mkdir(parents=True, exist_ok=True)
-        seen_path = self.archive_dir / _SATURATION_SEEN_FILENAME
+        seen_path = self.archive_dir / filename
         tmp_path = seen_path.with_suffix(f"{seen_path.suffix}.tmp{os.getpid()}")
         tmp_path.write_text(json.dumps(seen, indent=2, sort_keys=True), encoding="utf-8")
         os.replace(tmp_path, seen_path)
+
+    # Backward-compatible aliases retained for callers that inspect the
+    # saturation seen-store directly.
+    def _load_saturation_seen(self) -> dict:
+        return self._load_proposal_seen(_SATURATION_SEEN_FILENAME)
+
+    def _save_saturation_seen(self, seen: dict) -> None:
+        self._save_proposal_seen(_SATURATION_SEEN_FILENAME, seen)
 
     def _proposal_is_open(self, proposal_id: str) -> bool:
         """A tracked proposal is still open if its file exists and has at
         least one voter left in PENDING; once every voter has resolved (or
         the file is gone -- archived/otherwise resolved elsewhere) it no
-        longer blocks a fresh proposal for a recurring fingerprint."""
+        longer blocks a fresh proposal for a recurring dedup key."""
         proposals_dir = self.sys_dir / "ai" / "proposals"
         matches = list(proposals_dir.glob(f"{proposal_id}*.md"))
         if not matches:
@@ -368,6 +377,87 @@ class SelfCare:
         except OSError:
             return False
         return bool(re.search(r"^- \S+: PENDING$", content, re.MULTILINE))
+
+    def _run_idempotent_proposal(
+        self,
+        *,
+        step: str,
+        dedup_key: str,
+        seen_filename: str,
+        cmd: list[object],
+    ) -> bool:
+        """Run proposal-add unless this key already has an open proposal.
+
+        Shared by propose() (saturation-scan findings, keyed by content
+        fingerprint) and lesson_graduation() (keyed by the lesson's own
+        stable id) -- T90: generalized from propose()'s original T89 dedup
+        machinery rather than duplicating it per caller.
+        """
+        now = datetime.now(timezone.utc)
+        lock_path = self.archive_dir / f"{seen_filename}.lock"
+
+        with _file_lock(lock_path, timeout=_LOCK_ACQUIRE_TIMEOUT_SECONDS) as acquired:
+            if not acquired:
+                # Fail closed: do not race another check-then-write sequence.
+                # False leaves the caller's step incomplete so a later session
+                # retries instead of treating the deferred work as finished.
+                self.state["errors"].append(
+                    f"{step}: could not acquire {seen_filename} lock within "
+                    "timeout; deferring to a later session"
+                )
+                return False
+
+            seen = self._load_proposal_seen(seen_filename)
+            entry = seen.get(dedup_key)
+            is_duplicate = False
+            if entry:
+                proposal_id = entry.get("proposal_id")
+                if proposal_id:
+                    is_duplicate = self._proposal_is_open(proposal_id)
+                else:
+                    # Degraded entry from before proposal_id capture (or a
+                    # run whose hub.py stdout didn't match the expected
+                    # format) -- fall back to a time-window heuristic rather
+                    # than treat it as permanently open or never-open.
+                    try:
+                        last_seen = datetime.fromisoformat(
+                            entry["last_seen"].replace("Z", "+00:00")
+                        )
+                    except (KeyError, ValueError):
+                        last_seen = None
+                    if last_seen and now - last_seen < timedelta(
+                        days=_PROPOSAL_DEDUP_WINDOW_DAYS
+                    ):
+                        is_duplicate = True
+
+            if is_duplicate:
+                entry["last_seen"] = now.isoformat().replace("+00:00", "Z")
+                entry["repeat_count"] = int(entry.get("repeat_count", 1)) + 1
+                self._save_proposal_seen(seen_filename, seen)
+                return True
+
+            result = _run_checked_step(
+                self.state,
+                step,
+                cmd,
+                timeout=_PROPOSAL_ADD_SUBPROCESS_TIMEOUT_SECONDS,
+            )
+            if result.returncode != 0:
+                return False
+
+            stdout_text = result.stdout if isinstance(result.stdout, str) else ""
+            id_match = re.search(r"PROPOSAL-ADD (\S+)", stdout_text)
+            seen[dedup_key] = {
+                "first_seen": (
+                    entry["first_seen"] if entry
+                    else now.isoformat().replace("+00:00", "Z")
+                ),
+                "last_seen": now.isoformat().replace("+00:00", "Z"),
+                "repeat_count": int(entry.get("repeat_count", 0)) + 1 if entry else 1,
+                "proposal_id": id_match.group(1) if id_match else None,
+            }
+            self._save_proposal_seen(seen_filename, seen)
+            return True
 
     def propose(self) -> None:
         scan_findings = self.state.get("scan_findings")
@@ -380,74 +470,23 @@ class SelfCare:
             self.state["steps_completed"].append("propose")
             return
 
-        fingerprint = _findings_fingerprint(scan_findings)
-        now = datetime.now(timezone.utc)
-        lock_path = self.archive_dir / f"{_SATURATION_SEEN_FILENAME}.lock"
-
-        with _file_lock(lock_path, timeout=_LOCK_ACQUIRE_TIMEOUT_SECONDS) as acquired:
-            if not acquired:
-                # Fail closed: do not propose unprotected under lock
-                # contention (would risk a duplicate open proposal / a
-                # duplicate handoff entry). Leave "propose" incomplete so a
-                # later session retries rather than treating this as done.
-                self.state["errors"].append(
-                    "propose: could not acquire saturation-proposals-seen lock "
-                    "within timeout; deferring to a later session"
-                )
-                return
-
-            seen = self._load_saturation_seen()
-            entry = seen.get(fingerprint)
-            is_duplicate = False
-            if entry:
-                proposal_id = entry.get("proposal_id")
-                if proposal_id:
-                    is_duplicate = self._proposal_is_open(proposal_id)
-                else:
-                    # Degraded entry from before proposal_id capture (or a
-                    # run whose hub.py stdout didn't match the expected
-                    # format) -- fall back to a time-window heuristic rather
-                    # than treat it as permanently open or never-open.
-                    try:
-                        last_seen = datetime.fromisoformat(entry["last_seen"].replace("Z", "+00:00"))
-                    except (KeyError, ValueError):
-                        last_seen = None
-                    if last_seen and now - last_seen < timedelta(days=_SATURATION_DEDUP_WINDOW_DAYS):
-                        is_duplicate = True
-
-            if is_duplicate:
-                entry["last_seen"] = now.isoformat().replace("+00:00", "Z")
-                entry["repeat_count"] = int(entry.get("repeat_count", 1)) + 1
-                self._save_saturation_seen(seen)
-                self.state["steps_completed"].append("propose")
-                return
-
-            hub = self.sys_dir / "core" / "hub.py"
-            result = _run_checked_step(
-                self.state,
-                "propose",
-                [
-                    sys.executable,
-                    str(hub),
-                    "proposal-add",
-                    "--subject",
-                    "Auto: Saturation detected",
-                    "--rationale",
-                    scan_findings[:200],
-                ],
-                timeout=_PROPOSAL_ADD_SUBPROCESS_TIMEOUT_SECONDS,
-            )
-            if result.returncode == 0:
-                stdout_text = result.stdout if isinstance(result.stdout, str) else ""
-                id_match = re.search(r"PROPOSAL-ADD (\S+)", stdout_text)
-                seen[fingerprint] = {
-                    "first_seen": entry["first_seen"] if entry else now.isoformat().replace("+00:00", "Z"),
-                    "last_seen": now.isoformat().replace("+00:00", "Z"),
-                    "repeat_count": int(entry.get("repeat_count", 0)) + 1 if entry else 1,
-                    "proposal_id": id_match.group(1) if id_match else None,
-                }
-                self._save_saturation_seen(seen)
-                self.state["steps_completed"].append("propose")
+        hub = self.sys_dir / "core" / "hub.py"
+        succeeded = self._run_idempotent_proposal(
+            step="propose",
+            dedup_key=_findings_fingerprint(scan_findings),
+            seen_filename=_SATURATION_SEEN_FILENAME,
+            cmd=[
+                sys.executable,
+                str(hub),
+                "proposal-add",
+                "--subject",
+                "Auto: Saturation detected",
+                "--rationale",
+                scan_findings[:200],
+            ],
+        )
+        if succeeded:
+            self.state["steps_completed"].append("propose")
 
     # Step 6: Lesson Graduation (Phase 6 / EDGE-05)
 
@@ -458,7 +497,7 @@ class SelfCare:
           1. Load governance_params.json for threshold + window
           2. Scan active-lessons.jsonl for lessons with source_refs count >= threshold
              OR lessons cited across >= threshold unique debate sessions within window_days
-          3. For each candidate: hub.py proposal-add with content block
+          3. For each candidate without an open proposal: hub.py proposal-add
           4. Log result to state
         """
         gov_path = self.sys_dir / "ai" / "governance_params.json"
@@ -524,10 +563,11 @@ class SelfCare:
                 f"Candidate for graduation to {target_doc}.\n"
                 f"Rule: {rule[:300]}"
             )
-            result = _run_checked_step(
-                self.state,
-                "lesson_graduation",
-                [
+            succeeded = self._run_idempotent_proposal(
+                step="lesson_graduation",
+                dedup_key=str(lid),
+                seen_filename=_LESSON_GRADUATION_SEEN_FILENAME,
+                cmd=[
                     sys.executable,
                     str(hub),
                     "proposal-add",
@@ -537,7 +577,7 @@ class SelfCare:
                     rationale[:500],
                 ],
             )
-            if result.returncode != 0:
+            if not succeeded:
                 all_succeeded = False
 
         if all_succeeded:
