@@ -239,28 +239,26 @@
       "capability_class": "unsandboxed_trusted_mutation",
       "profiles": {
         "standard": {
-          "runtime_model": "gemini-3.6-flash",
-          "_model_effort_schema_note": "2026-07-27: live-validated. agy 1.1.5+ uses a base model plus --effort where that model supports effort selection. Claude Opus is the exception: its catalog-listed Thinking variant encodes the effort and rejects --effort.",
+          "runtime_model": "gemini-3.6-flash-low",
+          "_model_id_regression_note": "2026-08-02: RESTORED after a real regression. 84fcb53 (2026-07-27, 'docs: refresh peer profiles') replaced this live-tested suffixed slug with a bare 'gemini-3.6-flash' + separate --effort, on an unverified generic claim never live-tested for the flash family specifically -- 'gemini-3.6-flash' with no tier suffix is not in agy.exe's actual model catalog (confirmed via `agy.exe models` this session: only -high/-medium/-low suffixed forms exist for gemini-3.6-flash/3.5-flash/3.1-pro). The 2026-07-31 ag.deepthink incident note's claim that 'ag.standard/ag.effort... resolve correctly' was written without re-verifying this specific field via log inspection (the exact gap that note itself warns about for deepthink) -- treat that clearance as unconfirmed for this field, not as prior evidence it was fine. Caught by cx.effort's merge-readiness review tracing test_composed_dispatch_target_keeps_capacity_and_reality_side_by_side's failure to 84fcb53; cc independently confirmed via git archaeology plus a fresh live `agy.exe -p \"reply with exactly: ok\" --model gemini-3.6-flash-low` invocation (returned 'ok' cleanly) before restoring.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["G"],
           "runtime_context_window": 1048576,
-          "validated_at": "2026-07-27",
-          "validation_method": "successful_invocation_with_effort",
+          "validated_at": "2026-08-02",
+          "validation_method": "successful_invocation",
           "reasoning_effort": "low",
           "cost_tier": "low",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "gemini-3.6-flash",
-            "--effort",
-            "low"
+            "gemini-3.6-flash-low"
           ]
         },
         "effort": {
-          "runtime_model": "gemini-3.6-flash",
-          "_model_effort_schema_note": "2026-07-27: live-validated. agy 1.1.5+ uses a base model plus --effort where that model supports effort selection. Claude Opus is the exception: its catalog-listed Thinking variant encodes the effort and rejects --effort.",
+          "runtime_model": "gemini-3.6-flash-high",
+          "_model_id_regression_note": "2026-08-02: RESTORED -- see ag.standard's _model_id_regression_note, same root cause and same fix, applied to the -high tier.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
@@ -274,22 +272,20 @@
             "as_of": "2026-07-13"
           },
           "runtime_context_window": 1048576,
-          "validated_at": "2026-07-27",
-          "validation_method": "successful_invocation_with_effort",
+          "validated_at": "2026-08-02",
+          "validation_method": "successful_invocation",
           "reasoning_effort": "high",
           "cost_tier": "mid",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "gemini-3.6-flash",
-            "--effort",
-            "high"
+            "gemini-3.6-flash-high"
           ]
         },
         "deepthink": {
           "runtime_model": "Gemini 3.1 Pro (High)",
           "_model_effort_schema_note": "2026-07-27: live-validated. agy 1.1.5+ uses a base model plus --effort where that model supports effort selection. Claude Opus is the exception: its catalog-listed Thinking variant encodes the effort and rejects --effort.",
-          "_model_operand_incident_note": "2026-07-31 INCIDENT: this profile silently ran gemini-3.6-flash-high (agy's CCPA fallback) instead of Pro for an unknown prior duration. The 2026-07-27 'live-validated' claim below only confirmed the CLI invocation exited cleanly, not which model actually served the request -- agy's own log (~/.gemini/antigravity-cli or _sys/antigravity/config/log/cli-*.log, lines from model_resolver.go/model_config_manager.go) never surfaces the substitution to stdout. Root cause: agy's --model flag requires the exact human-readable display label agy's own `models` subcommand does NOT print (e.g. \"Gemini 3.1 Pro (High)\"), not the lowercase-hyphenated catalog slug (\"gemini-3.1-pro-high\") that `models` enumerates -- the two forms are not interchangeable for this entry. Confirmed by matching the interactive /model picker's own working session against its cli.log line (`Resolving model Gemini 3.1 Pro (High)` -> `Propagating selected model override to backend: label=\"Gemini 3.1 Pro (High)\"`, no CCPA fallback). ag.standard/ag.effort/ag.gptoss/ag.opus were audited the same way same day and are NOT affected -- their bare-slug-plus---effort or single-literal operands resolve correctly; this bug is specific to this one catalog entry's local-config registration in the installed agy build. Re-verify after any agy.exe update by grepping the freshest cli-*.log for 'not in local config' / 'Propagating selected model override' immediately after a live ag.deepthink dispatch -- do not trust a clean exit code alone. 2026-08-01 RE-VERIFICATION (multi-angle currency review): (a) catalog check -- `agy.exe models` still lists no Gemini Pro variant beyond gemini-3.1-pro-high/-low (only 3.6/3.5-flash tiers exist above it), so this remains the best available Gemini Pro option, no remapping needed; (b) live resolution re-checked across 3 independent fresh dispatches today, all showing the correct `Propagating selected model override to backend: label=\"Gemini 3.1 Pro (High)\"` signature -- refined finding: a `Model ID ... not in local config, defaulting to CCPA` line at bare process startup (pid 1, before auth/entitlement completes) is normal transient noise seen on EVERY profile's fresh server spawn (confirmed identically on ag.effort's gemini-3.6-flash log the same day) and is not itself proof of a fallback -- only a `Propagating...` line carrying the wrong label would be; (c) found and fixed a real doc-drift bug: `_sys/docs-v2/specific/ag.md`'s profile table still showed the pre-fix slug+separate-effort format, never updated in the 2026-07-31 fix commit -- corrected.",
+          "_model_operand_incident_note": "2026-07-31 INCIDENT: this profile silently ran gemini-3.6-flash-high (agy's CCPA fallback) instead of Pro for an unknown prior duration. The 2026-07-27 'live-validated' claim below only confirmed the CLI invocation exited cleanly, not which model actually served the request -- agy's own log (~/.gemini/antigravity-cli or _sys/antigravity/config/log/cli-*.log, lines from model_resolver.go/model_config_manager.go) never surfaces the substitution to stdout. Root cause: agy's --model flag requires the exact human-readable display label agy's own `models` subcommand does NOT print (e.g. \"Gemini 3.1 Pro (High)\"), not the lowercase-hyphenated catalog slug (\"gemini-3.1-pro-high\") that `models` enumerates -- the two forms are not interchangeable for this entry. Confirmed by matching the interactive /model picker's own working session against its cli.log line (`Resolving model Gemini 3.1 Pro (High)` -> `Propagating selected model override to backend: label=\"Gemini 3.1 Pro (High)\"`, no CCPA fallback). ag.standard/ag.effort/ag.gptoss/ag.opus were audited the same way same day and are NOT affected -- their bare-slug-plus---effort or single-literal operands resolve correctly; this bug is specific to this one catalog entry's local-config registration in the installed agy build. Re-verify after any agy.exe update by grepping the freshest cli-*.log for 'not in local config' / 'Propagating selected model override' immediately after a live ag.deepthink dispatch -- do not trust a clean exit code alone. 2026-08-01 RE-VERIFICATION (multi-angle currency review): (a) catalog check -- `agy.exe models` still lists no Gemini Pro variant beyond gemini-3.1-pro-high/-low (only 3.6/3.5-flash tiers exist above it), so this remains the best available Gemini Pro option, no remapping needed; (b) live resolution re-checked across 3 independent fresh dispatches today, all showing the correct `Propagating selected model override to backend: label=\"Gemini 3.1 Pro (High)\"` signature -- refined finding: a `Model ID ... not in local config, defaulting to CCPA` line at bare process startup (pid 1, before auth/entitlement completes) is normal transient noise seen on EVERY profile's fresh server spawn (confirmed identically on ag.effort's gemini-3.6-flash log the same day) and is not itself proof of a fallback -- only a `Propagating...` line carrying the wrong label would be; (c) found and fixed a real doc-drift bug: `_sys/docs-v2/specific/ag.md`'s profile table still showed the pre-fix slug+separate-effort format, never updated in the 2026-07-31 fix commit -- corrected. 2026-08-02 CORRECTION: the 'ag.standard/ag.effort/ag.gptoss/ag.opus... are NOT affected' claim above was wrong for standard/effort/gptoss -- it was written from a clean-exit-code assumption, not the log-inspection standard this same note insists on for deepthink, and 84fcb53 (2026-07-27, same day range) had already regressed all three to a bare, non-catalog slug by the time this note was written. Caught by cx.effort's merge-readiness review; all three restored to their correct tier-suffixed catalog slugs (see each profile's own _model_id_regression_note). ag.opus (claude-opus-4-6-thinking) was independently re-confirmed still correct.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
@@ -345,8 +341,8 @@
           ]
         },
         "gptoss": {
-          "runtime_model": "gpt-oss-120b",
-          "_model_effort_schema_note": "2026-07-27: live-validated. agy 1.1.5+ uses a base model plus --effort where that model supports effort selection. Claude Opus is the exception: its catalog-listed Thinking variant encodes the effort and rejects --effort.",
+          "runtime_model": "gpt-oss-120b-medium",
+          "_model_id_regression_note": "2026-08-02: RESTORED -- see ag.standard's _model_id_regression_note (84fcb53 regression, same root cause: 'gpt-oss-120b' with no tier suffix is not in agy.exe's actual model catalog, confirmed via `agy.exe models` -- only 'gpt-oss-120b-medium' exists). Confirmed origin/main (2ba8386) already had the correct suffixed value; this branch's local orchestration.json had regressed to the bare form.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "specialty",
@@ -362,9 +358,7 @@
           "_context_window_note": "runtime_context_window=8000 is a CONFIRMED LOWER BOUND, not the model's ceiling: an ag-run sentinel probe (~8k-token prompt with 3 unique markers at start/middle/end, piped via stdin to avoid the Windows CreateProcess 32K arg-length limit) succeeded cleanly and correctly recovered all 3 markers, proving real processing of the full input - NOT just declared/self-reported. An earlier attempt where ag asked the model to self-report its own context window returned an untrustworthy 2048 (cx independently flagged this as a likely hallucination: gpt-oss-120b's public model card documents 128K native context, and '(Medium)' is a reasoning-EFFORT tier, not a context-window tier - it should not shrink the window to 2048). Do not treat 8000 as the true ceiling, and do not write 131072 here unless separately re-validated against THIS hosted deployment (Antigravity), not just the base model's public spec - a higher real bound has simply not been empirically probed yet.",
           "profile_args": [
             "--model",
-            "gpt-oss-120b",
-            "--effort",
-            "medium"
+            "gpt-oss-120b-medium"
           ]
         }
       },

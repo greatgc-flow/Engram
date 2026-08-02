@@ -149,8 +149,16 @@ def test_d6_ag_deepthink_intent_is_declared_and_normalized():
     ag_root = next(node for node in normalized["hub_nodes"] if node.get("node_id") == "ag" and node.get("type") == "peer")
     assert deepthink["profile_intent"] == intent
     assert ag_root["profile_intent"] == intent
-    # agy 1.1.5+ selects the base model and effort independently.
-    assert deepthink["runtime_model"] == "gemini-3.1-pro"
+    # ag.deepthink is a documented exception to the base-slug+--effort
+    # pattern (orchestration.json's own incident note, 2026-07-31/08-01,
+    # commits a1e2ad9/3ea2286/ebe31a6): agy's --model requires the exact
+    # human-readable display label for this one catalog entry, not a
+    # lowercase-hyphenated slug -- live-verified via 3 independent fresh
+    # dispatches showing the correct "Propagating selected model
+    # override to backend" resolution with no CCPA fallback. This
+    # assertion was stale (still asserting the pre-fix slug) until fixed
+    # here, 2026-08-02, per cx.effort's merge-readiness finding.
+    assert deepthink["runtime_model"] == "Gemini 3.1 Pro (High)"
     assert deepthink["routing_state"] == "eligible"
 
 
@@ -206,20 +214,38 @@ def test_disabled_roots_have_blocked_profiles():
             assert all(p["routing_state"] == "blocked" for p in node["profiles"].values())
 
 
-def test_ag_runtime_models_use_base_slugs_and_explicit_effort():
+def test_ag_runtime_models_use_tier_suffixed_catalog_slugs():
+    """Every ag Gemini/gpt-oss profile's --model operand must be an exact
+    entry from agy.exe's real `models` catalog output, which only lists
+    tier-suffixed forms (gemini-3.6-flash-low/-medium/-high, no bare
+    'gemini-3.6-flash'; gpt-oss-120b-medium, no bare 'gpt-oss-120b') --
+    a separate --effort flag on top of one of these is not accepted.
+
+    2026-08-02: standard/effort/gptoss were fixed here after commit 84fcb53
+    (2026-07-27) regressed them to a bare-slug-plus---effort form that was
+    never live-tested for these three specifically and doesn't match the
+    real catalog -- caught by cx.effort's merge-readiness review tracing a
+    test_cli_reality_c11.py failure back to that exact commit; cc confirmed
+    origin/main already had the correct values and restored them (see each
+    profile's _model_id_regression_note in orchestration.json). deepthink
+    was fixed earlier the same week (a1e2ad9/3ea2286/ebe31a6) for the
+    display-label variant of the same underlying bug class. ag.opus
+    (claude-opus-4-6-thinking, a non-Gemini/non-gpt-oss catalog entry) is
+    intentionally not covered here -- it was never affected.
+    """
     ag = next(n for n in _raw()["hub_nodes"] if n["node_id"] == "ag")
-    # agy 1.1.5+ selects stable base slugs and effort independently.
     expected = {
-        "standard": ("gemini-3.6-flash", "low"),
-        "effort": ("gemini-3.6-flash", "high"),
-        "deepthink": ("gemini-3.1-pro", "high"),
+        "standard": "gemini-3.6-flash-low",
+        "effort": "gemini-3.6-flash-high",
+        "deepthink": "Gemini 3.1 Pro (High)",
+        "gptoss": "gpt-oss-120b-medium",
     }
-    for profile_name, (runtime_model, effort) in expected.items():
+    for profile_name, runtime_model in expected.items():
         profile = ag["profiles"][profile_name]
         assert profile["runtime_model"] == runtime_model
         assert profile["model_availability"] == "verified_local"
         assert profile["routing_state"] == "eligible"
-        assert profile["profile_args"] == ["--model", runtime_model, "--effort", effort]
+        assert profile["profile_args"] == ["--model", runtime_model]
 
 
 def test_cc_and_cx_profiles_are_locally_verified():
