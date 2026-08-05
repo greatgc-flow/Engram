@@ -237,3 +237,8 @@ _sys/antigravity/config/*.db-wal
 _sys/ai/knowledge/peer-capability-scores.jsonl
 _sys/data/capability-core/
 _sys/data/capability-canaries/
+
+# T92: runtime-only state files that don't match the plain *.tmp glob
+# (this one has a session-hash suffix after ".tmp") or aren't logs.
+_sys/claude/config/.claude.json.tmp.*
+_sys/data/check_contracts_state.json
