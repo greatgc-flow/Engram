@@ -72,18 +72,32 @@ class TestSelfCare:
         assert len(sc.state["directives"]) == 2
 
     def test_validate_calls_virtualizer_status(self, mock_env):
-        """Step 2: Validate calls virtualizer.py --status."""
+        """Step 2: Validate calls virtualizer.py's status subcommand."""
         from self_care import SelfCare
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="Status: OK")
             sc = SelfCare(sys_dir=mock_env["sys"])
             sc.validate()
 
-            # Verify virtualizer.py --status call
+            # Verify virtualizer.py status subcommand call.
             args, kwargs = mock_run.call_args
             cmd = " ".join(args[0])
             assert "virtualizer.py" in cmd
-            assert "--status" in cmd
+            assert args[0][-1] == "status"
+            assert "--status" not in args[0]
+
+    def test_virtualizer_status_subcommand_is_parser_supported(self):
+        """The real CLI parser accepts `status` without mutating junctions."""
+        virtualizer = SYS_DIR / "core" / "virtualizer.py"
+        result = subprocess.run(
+            [sys.executable, str(virtualizer), "status", "--help"],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0
+        assert "usage: virtualizer.py status" in result.stdout
+        assert "--sys-dir" in result.stdout
 
     def test_cleanup_sweeps_expired_directives(self, mock_env):
         """Step 3: Cleanup removes expired entries (TTL) from directives file."""

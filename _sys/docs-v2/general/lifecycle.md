@@ -73,7 +73,7 @@ Session reuse is governed solely by the config-driven `session_mode` field in `o
 
 - `cc`, `ag`, `cx`: Have reuse configured per `orchestration.json`.
 - `gc`: SUSPENDED TOMBSTONE. (tier_suspended).
-- `ag`: Reuses via **ambient durable state** (`session_mode: reuse`): `agy -p` natively auto-continues its `conversations/*.db` store WITHOUT continuation/conversation flags (PTY/inline mode, `requires_pty=true`). IPC asks run in a stateless `ipc-config/` home (see `specific/ag.md`) so ambient reuse is scoped, not cross-contaminating.
+- Peer-specific session storage and transport behavior are authoritative in `specific/{peer}.md`.
 
 State file: `_sys/{peer_dir}/session_state.json` (gitignored).
 On resume failure: retire old session → retry fresh once.
@@ -416,4 +416,3 @@ Traceability: `traceability_map.json` entry `context-gate`
 | P1 | Add CJK-aware token estimator | hub_context.py | **DONE** |
 | P2 | Calibrate cx reasoning tokens against usage.output_tokens_details | hub_peer.py + hub.py | **DONE** (2026-06-18) |
 | P3 | Auto-prune context blocks by priority score | hub_context.py | **DONE** (check_and_prune(), tested) |
-

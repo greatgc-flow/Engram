@@ -266,7 +266,7 @@ class SelfCare:
         result = _run_checked_step(
             self.state,
             "validate",
-            [sys.executable, str(virtualizer), "--status"],
+            [sys.executable, str(virtualizer), "status"],
         )
         if result.returncode == 0:
             self.state["steps_completed"].append("validate")
