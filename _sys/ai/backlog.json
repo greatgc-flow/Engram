@@ -2382,6 +2382,23 @@
       "next_action": "Flagged by cx.deepthink during the 2026-08-02 cross-repo sanity pass: Engram's working tree is not clean -- untracked _sys/tools/*_old dirs, _sys/codex/config/.sandbox* entries, _sys/data/sessions/2026-07-31_peerhub.md, _sys/claude/project/scheduled_tasks.lock, _sys/data/check_contracts_state.json, _sys/antigravity/config/_sys/, plus the intentional nested peerhub/ repo. Predates this session's work; not touched. Needs per-item triage (delete vs gitignore vs keep) rather than a blanket cleanup.",
       "risk": "Low -- cosmetic/hygiene only, no functional impact observed.",
       "last_verified_at": "2026-08-02T00:39:06+09:00"
+    },
+    {
+      "id": "T93",
+      "title": "ag provider-side 'timeout' text misclassified peer-wide (not profile-scoped), composite-peer expired leases silently dropped from health+ask_history, cli_version had no writer",
+      "status": "done",
+      "priority": "medium",
+      "category": "bugfix",
+      "owner": "cx.deepthink (diagnosis) + cc (patch)",
+      "blocker": null,
+      "evidence_commit": [
+        "b878450"
+      ],
+      "supersedes": [],
+      "source_refs": [],
+      "next_action": "Diagnosed 2026-08-05 while investigating why diag showed no real ag usage data. Root causes: (1) _TRANSIENT_REASONS lacked the plain 'timeout' string the ag CLI actually returns, so it hit non-transient/peer-wide handling instead of availability.profiles.<profile>, feeding the no-time-window quarantine counter (one historical match was itself a false positive: an unrelated --print-timeout flag-error substring match); (2) _lease_sweep passed a composite peer_id (e.g. 'ag.deepthink') to _record_ask_failure, which only recognizes root peers and silently no-oped, losing 2 real ag dispatches from both profile health and ask_history; (3) availability.cli_version had no writer at all (stuck at 'agy 1.0.9' vs actual 1.1.10). Fixed all 3 + narrowed lifecycle_policy.json's match_any to avoid the false-positive class + threaded ask_query_file through _ask_with_pty's lease-open call. R:10 reviewed (cx proposed, ag AGREE, cc applied). 6 new regression tests, verified 5/6 fail pre-fix. Full unit suite 1694 passed.",
+      "risk": "Low -- diagnosis was read-only/reproduced without touching live files or dispatching ag; fix is narrowly scoped to 2 files with full test coverage.",
+      "last_verified_at": "2026-08-05T02:35:00+09:00"
     }
   ]
 }
