@@ -1789,7 +1789,7 @@ def _decode_output(data: bytes) -> str:
     return data.decode("utf-8", errors="replace").replace("\r\n", "\n")
 
 
-_TRANSIENT_REASONS = {"rate_or_session_limit", "transient_network", "terminal_timeout", "sandbox_spawn_denied"}
+_TRANSIENT_REASONS = {"rate_or_session_limit", "transient_network", "terminal_timeout", "timeout", "lease_expired", "sandbox_spawn_denied"}
 
 def _parse_reset_time(text: str) -> str | None:
     import re
@@ -3745,7 +3745,7 @@ def _effective_zombie_timeout_sec(zombie_timeout_sec: int, progress_bytes_seen: 
     return zombie_timeout_sec
 
 
-def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: dict, quiet: bool = False, ai_root: Path | None = None, ask_id: str | None = None, cwd: str | None = None) -> "_PtyAskResult":
+def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: dict, quiet: bool = False, ai_root: Path | None = None, ask_id: str | None = None, cwd: str | None = None, ask_query_file: str | None = None) -> "_PtyAskResult":
     """pywinpty로 pseudo-TTY 실행 — WriteConsole() API 우회 (agy 등 TUI CLI 전용).
 
     A single daemon reader thread is the ONLY caller of blocking ``p.read``; it
@@ -3796,7 +3796,7 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
     pid = p.pid
     lease_id: str | None = None
     if ai_root:
-        lease_id = _lease_open(ai_root, node_id, pid, lease, ask_id=ask_id)
+        lease_id = _lease_open(ai_root, node_id, pid, lease, ask_id=ask_id, ask_query_file=ask_query_file)
 
     out_q: "queue.Queue" = queue.Queue()
     pty_telemetry_enabled, pty_telemetry_max_chunks = _pty_chunk_telemetry_cfg()
@@ -6855,6 +6855,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                 ai_root=ai_root,
                 ask_id=ask_id,
                 cwd=proc_cwd,
+                ask_query_file=saved_query_file_path,
             )
             elapsed = result.elapsed
             # _ask_with_pty already strips ANSI; apply again as defense-in-depth.
@@ -8611,12 +8612,34 @@ def action_peer_status(node_id: str | None = None, include_all: bool = False) ->
         if not peer_checks.get("safe_checks") and peer_checks.get("inherits"):
             peer_checks = checks.get(peer_checks["inherits"], {})
         version = ""
+        version_probe_ran = False
         for check in peer_checks.get("safe_checks", []):
             if check.get("class") == "version_only":
+                version_probe_ran = True
                 ok, output = _run_status_check(check)
                 if ok and output:
                     version = output.splitlines()[0][:12]
                 break
+
+        # Persist the already-computed live version instead of discarding it
+        # into this print-only local (it used to have no writer at all, so
+        # availability.cli_version stayed stale/dead forever). Absent on a
+        # failed probe rather than silently retaining an old value.
+        if lifecycle == "enabled" and version_probe_ran:
+            try:
+                vpath, vdata = _read_peer_health(peer_id, peer_dir)
+                vavail = vdata.setdefault("availability", {})
+                if version:
+                    vavail["cli_version"] = version
+                    vavail["cli_version_source"] = "cli_live"
+                    vavail["cli_version_checked_at"] = _now()
+                else:
+                    vavail.pop("cli_version", None)
+                    vavail["cli_version_source"] = "absent"
+                    vavail["cli_version_checked_at"] = _now()
+                _write_peer_health(peer_id, vdata, ai_root, peer_dir)
+            except Exception:
+                pass
 
         print(f"{peer_id}\t{lifecycle}\t{gate}\t{health}\t{version}\t{details}")
 
@@ -10963,6 +10986,7 @@ def _lease_sweep(ai_root: Path | None) -> None:
             f"lease {invalid['lease_id']} quarantined: invalid_timestamp",
             from_node="HUB",
         )
+    expired_orch = _load_orchestration() if expired else None
     for entry in expired:
         peer_id = entry.get("peer_id", "?")
         raw_pid = entry.get("pid")
@@ -10978,12 +11002,32 @@ def _lease_sweep(ai_root: Path | None) -> None:
                 file=sys.stderr,
             )
         expires_str = entry.get("expires_at", "")
+        # `peer_id` on a lease is the fully-resolved dispatch target (e.g.
+        # "ag.deepthink"), not a root peer id. _record_ask_failure only
+        # recognizes enabled ROOT peers and early-returns for anything else,
+        # so composite ids used to silently no-op here -- the failure never
+        # reached availability.profiles.* or ask_history at all.
+        root_peer_id = (
+            hub_peer.root_peer_id(peer_id, orch=expired_orch)
+            if _HUB_PEER_AVAILABLE else None
+        ) or peer_id.split(".", 1)[0]
+        profile_key = peer_id.split(".", 1)[1] if "." in peer_id else None
         _record_ask_failure(
-            peer_id,
+            root_peer_id,
             "lease_expired",
             f"lease expired at {expires_str}",
             None,
             ai_root,
+            profile_key=profile_key,
+        )
+        _append_ask_history(
+            ai_root,
+            peer_id,
+            entry.get("ask_query_file"),
+            None,
+            None,
+            False,
+            "lease_expired",
         )
         _log_p2p(
             "SWEEP",

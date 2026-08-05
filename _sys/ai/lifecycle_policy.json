@@ -37,7 +37,7 @@
       {
         "reason": "timeout",
         "category": "TRANSIENT",
-        "match_any": ["timed out", "timeout"],
+        "match_any": ["timed out", "timeout waiting for response"],
         "health_action": "COUNT_FAILURE"
       },
       {
