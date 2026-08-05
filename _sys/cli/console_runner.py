@@ -292,11 +292,25 @@ def run_console_session(
     exit_code = 1
     t_start = time.time()
 
+    # New process group on Windows: without this, the real CLI child shares
+    # this wrapper's console/process group with every ancestor (the launching
+    # cmd.exe, this python wrapper). A single Ctrl+C reaching the console then
+    # hits all of them simultaneously -- the outer cmd.exe pops "Terminate
+    # batch job (Y/N)?" and kills this whole session, regardless of where the
+    # interrupt actually came from. Isolating the child's process group stops
+    # one interrupt from cascading through every layer at once. Trade-off:
+    # the child no longer receives this console's Ctrl+C automatically --
+    # acceptable here since Claude Code's own interrupt is ESC-based, not
+    # Ctrl+C (user-confirmed 2026-08-05, not otherwise relied on).
+    popen_kwargs: dict = {}
+    if sys.platform == "win32":
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+
     try:
         if _popen_runner:
-            proc = _popen_runner(full_cmd, env=spec.env, cwd=cwd_str)
+            proc = _popen_runner(full_cmd, env=spec.env, cwd=cwd_str, **popen_kwargs)
         else:
-            proc = subprocess.Popen(full_cmd, env=spec.env, cwd=cwd_str)
+            proc = subprocess.Popen(full_cmd, env=spec.env, cwd=cwd_str, **popen_kwargs)
 
         _update_peer_health_json(spec, 0, 0, getattr(proc, "pid", None), stage="start")
 

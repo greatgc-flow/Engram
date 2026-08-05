@@ -108,7 +108,7 @@ class TestS3LeaseFailureSemantics:
 
         process_spawned = False
 
-        def mock_popen(cmd, env=None, cwd=None):
+        def mock_popen(cmd, env=None, cwd=None, **kwargs):
             nonlocal process_spawned
             process_spawned = True
             proc = MagicMock()
@@ -145,7 +145,7 @@ class TestS3LeaseFailureSemantics:
 
         process_spawned = False
 
-        def mock_popen(cmd, env=None, cwd=None):
+        def mock_popen(cmd, env=None, cwd=None, **kwargs):
             nonlocal process_spawned
             process_spawned = True
             proc = MagicMock()
@@ -217,7 +217,7 @@ class TestS3HeartbeatCASRejection:
             heartbeat_interval_sec=0.05,
         )
 
-        res = run_console_session(spec, ["exec"], _popen_runner=lambda cmd, env=None, cwd=None: proc)
+        res = run_console_session(spec, ["exec"], _popen_runner=lambda cmd, env=None, cwd=None, **kwargs: proc)
 
         assert res.exit_code == 0
         assert res.lease_claimed is True
@@ -279,7 +279,7 @@ class TestS3HeartbeatCloseRace:
         spec = ConsoleSessionSpec(
             peer_id="cx", cmd_prefix=["codex"], env={}, heartbeat_interval_sec=0.02,
         )
-        res = run_console_session(spec, ["exec"], _popen_runner=lambda cmd, env=None, cwd=None: proc)
+        res = run_console_session(spec, ["exec"], _popen_runner=lambda cmd, env=None, cwd=None, **kwargs: proc)
 
         assert res.exit_code == 0
         assert "close" in call_log
@@ -364,7 +364,7 @@ class TestS3HealthTrackingMigrationFidelity:
 
         monkeypatch.setattr("console_runner._run_hub_action", mock_hub_action)
 
-        def interrupting_popen(cmd, env=None, cwd=None):
+        def interrupting_popen(cmd, env=None, cwd=None, **kwargs):
             proc = MagicMock()
             proc.pid = 1
             proc.wait.side_effect = KeyboardInterrupt()
@@ -404,7 +404,7 @@ class TestS3OneWayDependency:
 
         spawned_cmd = None
 
-        def mock_popen(cmd, env=None, cwd=None):
+        def mock_popen(cmd, env=None, cwd=None, **kwargs):
             nonlocal spawned_cmd
             spawned_cmd = cmd
             proc = MagicMock()
@@ -420,3 +420,51 @@ class TestS3OneWayDependency:
         assert spawned_cmd == ["claude"] + res.launch.final_argv
         assert "--dangerously-skip-permissions" in res.launch.final_argv
         assert res.launch.invocation_kind == InvocationKind.LOCAL_AGENT
+
+
+class TestS3ChildConsoleIsolation:
+    """2026-08-05: the real CLI child used to inherit the launching wrapper's
+    console/process group, so a single Ctrl+C reaching that console killed
+    every nested layer (cmd.exe's batch job, this python wrapper, and the
+    real CLI) at once, regardless of where the interrupt came from."""
+
+    def test_windows_spawn_uses_new_process_group(self, monkeypatch):
+        monkeypatch.setenv("ALLOW_UNLEASED_CONSOLE", "1")
+        monkeypatch.setattr("console_runner._run_hub_action", lambda *a, **k: MagicMock(returncode=1, stdout="", stderr="no lease service in test"))
+        monkeypatch.setattr(sys, "platform", "win32")
+
+        captured_kwargs = {}
+
+        def mock_popen(cmd, env=None, cwd=None, **kwargs):
+            captured_kwargs.update(kwargs)
+            proc = MagicMock()
+            proc.pid = 1
+            proc.wait.return_value = 0
+            proc.returncode = 0
+            return proc
+
+        spec = ConsoleSessionSpec(peer_id="cc", cmd_prefix=["claude"], env={})
+        run_console_session(spec, [], _popen_runner=mock_popen)
+
+        import subprocess
+        assert captured_kwargs.get("creationflags") == subprocess.CREATE_NEW_PROCESS_GROUP
+
+    def test_non_windows_spawn_omits_creationflags(self, monkeypatch):
+        monkeypatch.setenv("ALLOW_UNLEASED_CONSOLE", "1")
+        monkeypatch.setattr("console_runner._run_hub_action", lambda *a, **k: MagicMock(returncode=1, stdout="", stderr="no lease service in test"))
+        monkeypatch.setattr(sys, "platform", "linux")
+
+        captured_kwargs = {}
+
+        def mock_popen(cmd, env=None, cwd=None, **kwargs):
+            captured_kwargs.update(kwargs)
+            proc = MagicMock()
+            proc.pid = 1
+            proc.wait.return_value = 0
+            proc.returncode = 0
+            return proc
+
+        spec = ConsoleSessionSpec(peer_id="cc", cmd_prefix=["claude"], env={})
+        run_console_session(spec, [], _popen_runner=mock_popen)
+
+        assert "creationflags" not in captured_kwargs
