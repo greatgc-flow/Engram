@@ -29,7 +29,6 @@ _sys/data/logs/
 _sys/data/state/
 _sys/data/reports/
 _sys/data/*.jsonl
-_sys/data/check_contracts_state.json
 
 # =================================================================
 # 4. Local Configurations & Device-Specific State
