@@ -59,9 +59,14 @@ git clone https://github.com/greatgc-flow/Engram.git
 
 :: 3. Mount the secure workspace to P:\
 .\register.bat
+
+:: 4. (Optional) Clean up temporary workspace files
+.\TIDY.bat
 ```
 
 > **Trigger your first debate:** navigate to the mounted `P:\` drive and ask any peer to make a change. Watch the peers proactively intercept, cross-review, and drive it to consensus before anything lands.
+
+> **Workspace Maintenance:** `.\TIDY.bat` provides on-demand cleanup of temporary workspace files (shows a dry-run preview and prompts for confirmation; strictly manual/on-demand by design, with no scheduled background automation).
 
 ## 🛡️ Trust Signals & Architecture
 
