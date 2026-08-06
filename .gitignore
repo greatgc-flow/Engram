@@ -29,6 +29,7 @@ _sys/data/logs/
 _sys/data/state/
 _sys/data/reports/
 _sys/data/*.jsonl
+_sys/data/check_contracts_state.json
 
 # =================================================================
 # 4. Local Configurations & Device-Specific State
@@ -115,10 +116,17 @@ _sys/antigravity/ipc-config/
 _sys/antigravity/config/scratch/
 _sys/antigravity/config/skills/
 _sys/antigravity/config/jetski_state.pbtxt
+_sys/antigravity/config/presence/
+# Phantom nested _sys/ that a mis-resolved cwd occasionally recreates here
+# (worker cwd = config/ instead of the true portable root) — never legit.
+_sys/antigravity/config/_sys/
 
 # Codex runtime data in config/ (tracked: CODEX.md)
 _sys/codex/config/.codex/
 _sys/codex/config/.sandbox-bin/
+_sys/codex/config/.sandbox/
+_sys/codex/config/.sandbox-secrets/
+_sys/codex/config/.sandbox_migration
 _sys/codex/config/history/
 _sys/codex/config/sessions/
 _sys/codex/config/tmp/
