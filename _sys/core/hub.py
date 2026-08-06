@@ -3733,7 +3733,14 @@ def _record_pty_chunk_arrival_metric(
 # silence-kill window. See the in-loop comment in _ask_with_pty for the full
 # rationale.
 _POST_PROGRESS_NOISE_FLOOR_BYTES = 100
-_POST_PROGRESS_ZOMBIE_SEC = 300
+# Widened 300 -> 1800 (2026-08-06, user-ratified): user directive is that
+# peer-to-peer/profile communication has no time budget, only a genuine-stall
+# detector. At >= every current profile's cold-start zombie_timeout_sec
+# (600/900s), this tightening is now a no-op for all current profiles --
+# effectively "unlimited as long as it's not silent for 30 real minutes" --
+# but is kept (not deleted) so it still means something for any future
+# profile with a wider zombie_timeout_sec. See _effective_zombie_timeout_sec.
+_POST_PROGRESS_ZOMBIE_SEC = 1800
 
 
 def _effective_zombie_timeout_sec(zombie_timeout_sec: int, progress_bytes_seen: int) -> int:

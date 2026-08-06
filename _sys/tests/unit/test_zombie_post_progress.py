@@ -35,13 +35,15 @@ def test_pty_init_noise_alone_does_not_arm_tightening():
     assert hub._effective_zombie_timeout_sec(600, 100) == 600  # exactly at floor: not yet armed
 
 
-def test_genuine_progress_tightens_to_300s():
-    assert hub._effective_zombie_timeout_sec(600, 101) == 300
-    assert hub._effective_zombie_timeout_sec(900, 3817) == 300  # matches the real 2026-07-17T15:56 zombie case
+def test_genuine_progress_bounded_by_1800s_cap():
+    # Standard profiles (600s, 900s) are both < 1800s (_POST_PROGRESS_ZOMBIE_SEC),
+    # so genuine progress leaves their timeout unchanged at 600s and 900s.
+    assert hub._effective_zombie_timeout_sec(600, 101) == 600
+    assert hub._effective_zombie_timeout_sec(900, 3817) == 900  # matches the real 2026-07-17T15:56 zombie case
 
 
 def test_tightened_window_never_exceeds_cold_start_window():
-    # A profile with a shorter-than-300s cold-start window (hypothetical/future
+    # A profile with a shorter-than-1800s cold-start window (hypothetical/future
     # config) must not be LENGTHENED by the post-progress rule.
     assert hub._effective_zombie_timeout_sec(200, 500) == 200
 
@@ -49,16 +51,17 @@ def test_tightened_window_never_exceeds_cold_start_window():
 def test_matches_real_2026_07_17_zombie_case_timing():
     """Direct replay of the measured fail case (routing_metrics.jsonl):
     ag.effort, 600s cold-start window, last real chunk at elapsed=383.403s
-    with bytes_total=3817 at that point, killed at 983s (599.6s of pure
-    trailing silence). With the fix, the kill would fire at 383.403 + 300 =
-    683.403s -- saving ~299.6s -- instead of 383.403 + 600 = 983.403s."""
+    with bytes_total=3817 at that point. With _POST_PROGRESS_ZOMBIE_SEC=1800,
+    this 600s profile is below the 1800s cap, so effective timeout remains 600s.
+    The kill fires at 383.403 + 600 = 983.403s (0s savings compared to cold-start).
+    """
     zombie_timeout_sec = 600
     bytes_at_last_chunk = 3817
     last_chunk_elapsed = 383.403
     effective = hub._effective_zombie_timeout_sec(zombie_timeout_sec, bytes_at_last_chunk)
-    assert effective == 300
+    assert effective == 600
     old_kill_at = last_chunk_elapsed + zombie_timeout_sec
     new_kill_at = last_chunk_elapsed + effective
     assert round(old_kill_at, 1) == 983.4
-    assert round(new_kill_at, 1) == 683.4
-    assert round(old_kill_at - new_kill_at, 1) == 300.0
+    assert round(new_kill_at, 1) == 983.4
+    assert round(old_kill_at - new_kill_at, 1) == 0.0
