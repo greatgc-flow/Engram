@@ -23,7 +23,15 @@ Path: `_sys/env/nodejs/npm-global/claude.cmd`. Default = interactive; `-p/--prin
 - `--dangerously-skip-permissions` — bypass permission prompts. **✓run**
 - `--model <m>`, `--effort <level>` — model/effort for the session. **✓run** (hub profile_args)
 - `--append-system-prompt <p>`, `--system-prompt-file` — inject system prompt. **✓run** (hub IPC frame)
-- `--output-format <text|json|stream-json>`, `--input-format`, `--include-partial-messages`. **(help)**
+- `--output-format <text|json|stream-json>` — **✓run 2026-08-08**: `claude.cmd -p "<prompt>"
+  --output-format json` returns one flat JSON object on stdout, e.g.
+  `{"is_error":false,"duration_api_ms":...,"stop_reason":"end_turn","session_id":"...",
+  "total_cost_usd":...,"usage":{...},"modelUsage":{...},"result":"<response text>",
+  "type":"result","uuid":"..."}` — the response text is in `"result"`, success is
+  `"is_error": false`. Closes the prior `[declared, unverified]` gap noted below (§4 Known
+  gaps). Used as the parse target for peerhub's `RealClaudeAdapter`
+  (`peerhub/adapters/claude_adapter.py`). `--input-format`, `--include-partial-messages`
+  remain **(help)**.
 - `--json-schema <inline JSON string>` (structured output) — **✓run 2026-07-23**: takes the
   raw JSON Schema string directly (NOT a file path — passing a path errors
   `... is not valid JSON`). A live `--model haiku --output-format json --json-schema '{...}'`
@@ -121,6 +129,15 @@ is cumulative, NOT current occupancy. **✓run**
 Each `codex exec` loads the plugin/skill marketplace (~605 SKILL.md) → logs
 `Exceeded skills context budget of 2% … 1352 skills not included` every call =
 per-invocation startup overhead. Benign but slows first token. **✓run**
+
+**Second known quirk (2026-08-08, ✓run):** `codex exec "<prompt>"` invoked from a plain
+subprocess with an inherited/attached stdin (not redirected) prints
+`Reading additional input from stdin...` and waits for stdin EOF before proceeding — appeared
+as an indefinite hang in one investigation until stdin was explicitly redirected
+(`stdin=subprocess.DEVNULL` in Python, `< /dev/null` in a shell), which resolves it
+immediately with a clean exit 0. This is intentional design (lets you pipe extra context in),
+not a bug — any real subprocess-based caller (e.g. a future peerhub `codex.cmd` adapter) must
+close/redirect stdin explicitly, the same way the existing hub path already does via `-`.
 
 ### Hub usage
 `codex exec - --json -c sandbox="workspace-write"` (+ profile `--model`,
@@ -274,6 +291,15 @@ Path: `_sys/tools/agy/agy.exe`. Go binary; Windows Console API (needs a real con
 - `--project`, `--new-project` — select or create a project. **(help)**
 - `--print-timeout <DURATION>` — non-interactive timeout; default `5m0s`. **(help)**
 - `--log-file <PATH>` — write CLI logs to a file. **(help)**
+- `--output-format <text|json|stream-json>` — **✓run 2026-08-08** (previously undocumented in
+  this reference): `agy.exe -p "<prompt>" --output-format json` runs synchronously (does NOT
+  block on stdin, unlike codex — see codex's Known quirk below), exits 0, and returns one flat
+  JSON object, e.g. `{"conversation_id":"...","status":"SUCCESS","response":"<text>",
+  "duration_seconds":...,"num_turns":1,"usage":{"input_tokens":...,"output_tokens":...,
+  "thinking_tokens":...,"cache_read_tokens":...,"total_tokens":...}}` — response text is in
+  `"response"`. No hub.py or ambient noise in the raw output when invoked directly (outside
+  hub.py). Used as the parse target for peerhub's `RealAgyAdapter`
+  (`peerhub/adapters/agy_adapter.py`).
 
 ### Subcommands (`--help`, **✓run**)
 `models`, `agent`/`agents`, `plugin`, `install`, `update`, `changelog`, `help`. (No `--models`
@@ -425,6 +451,24 @@ intentional `[windows] sandbox = "unelevated"` restricted-token boundary on spaw
 inside the sandbox while succeeding via Node's TLS stack and a plain terminal curl outside it.
 **Correctly classified as security-intentional — not a bug, not to be bypassed.**
 
+**Resolved 2026-08-08 (separate incident, kept here as changelog):** cx's Windows sandbox
+bootstrap failed on every dispatch with `windows sandbox: helper_unknown_error: apply
+deny-read ACLs`, blocking any file read/listing/executable discovery (non-filesystem
+operations like `Get-Location`/`Write-Output` still worked, which is what made this look like
+a partial/intermittent failure rather than a hard block). Root cause: the persistent sandbox
+state file `_sys/codex/config/.sandbox/deny_read_acl_state.json` was 22 bytes of raw null
+bytes (not valid JSON) — confirmed via the sandbox's own `setup_error.json` and dated log
+(`_sys/codex/config/.sandbox/sandbox.<date>.log`: `parse deny-read ACL state ... : expected
+value at line 1 column 1`), likely from an interrupted/crashed write. Fix: move the corrupted
+file aside (do not delete outright — keep as `.corrupted-backup-<date>` in case the exact
+prior state mattered) and let Codex's setup binary regenerate a fresh one on next bootstrap.
+Verified fixed same session (a follow-up dispatch read a real file with zero error). **Not**
+caused by, and does not require changing, the `[windows] sandbox = "elevated"` mode setting in
+`config.toml` — that setting was a red herring, the file was simply corrupted. Diagnostic
+recipe for a recurrence: check `.sandbox/setup_error.json` for the current error → tail
+`.sandbox/sandbox.<today>.log` for the full error chain and the exact failing file path →
+inspect that file directly (`wc -c` + hex dump) for corruption before assuming a deeper cause.
+
 **Still genuinely open — blocked by structural/environment limits that further peer-ask rounds
 cannot close (each needs a normal non-nested host process or a real interactive terminal — the
 peer itself correctly refused to weaken its own sandbox to "test around" it):**
@@ -435,10 +479,10 @@ peer itself correctly refused to weaken its own sandbox to "test around" it):**
 - Top-level CLI `codex fork` (not the app-server RPC, which IS verified) — fails headless with
   `Error: stdin is not a terminal`; needs a real TTY, same class of limitation as ag's console
   requirement. `[cli_live; needs real terminal]`
-- The installed `claude.cmd` was tested this session for `--json-schema`/`--max-budget-usd`/
-  `--bare` only. `--output-format stream-json`, `--input-format stream-json`, `--max-turns`,
-  `--no-session-persistence`, and `--mcp-config` remain `[declared, unverified]` — help-surface
-  confirmed, live behavior not yet exercised.
+- `claude.cmd --output-format json` was verified live 2026-08-08 (see §1 above, closes that
+  part of this gap). Still unexercised: `--output-format stream-json`, `--input-format
+  stream-json`, `--max-turns`, `--no-session-persistence`, and `--mcp-config` remain
+  `[declared, unverified]` — help-surface confirmed, live behavior not yet exercised.
 
 ### Version baseline captures (for future version-diff audits)
 Full verbatim `--help`/`--version` output for every peer CLI, captured 2026-07-23 at zero API

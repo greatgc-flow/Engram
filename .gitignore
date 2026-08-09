@@ -249,3 +249,9 @@ _sys/data/capability-canaries/
 # (this one has a session-hash suffix after ".tmp") or aren't logs.
 _sys/claude/config/.claude.json.tmp.*
 _sys/data/check_contracts_state.json
+
+# 2026-08-09 cleanup: peerhub is its own standalone git repository (not a
+# submodule), and scheduled_tasks.lock is a live per-session runtime lock
+# (sessionId/pid/acquiredAt) -- neither belongs in P:'s own history.
+peerhub/
+_sys/claude/project/scheduled_tasks.lock
