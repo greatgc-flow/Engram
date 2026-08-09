@@ -8218,7 +8218,7 @@ def _resolve_invoke_cli(invoke_cmd: str) -> str | None:
         return None
     candidate = Path(invoke_cmd)
     if not candidate.is_absolute() and (os.sep in invoke_cmd or "/" in invoke_cmd):
-        portable_root = Path(__file__).resolve().parent.parent.parent
+        portable_root = Path(__file__).parent.parent.parent
         candidate = portable_root / invoke_cmd
         if candidate.is_file():
             return str(candidate)
