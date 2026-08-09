@@ -61,6 +61,7 @@ _sys/*/session.lock
 _sys/*/session_state.json
 _sys/*/cq-*.txt
 _sys/mock_peer/
+_sys/codex/config/thread-writer-locks/
 
 # Claude auth/runtime data in config/ (tracked: CLAUDE.md, settings.json, statusline-command.sh)
 _sys/claude/config/.claude.json
