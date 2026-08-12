@@ -34,7 +34,7 @@ Engram treats every peer as an equal governing member — any peer can drive the
 | 🟢 **`ag`** | agy / antigravity (Gemini models) | **The Governor** — enforces architectural invariants and SSOT, oversees system state. |
 | 🟠 **`cx`** | Codex (OpenAI GPT-5.x) | **The Logician** — deep logical deduction, edge-case hunting, MECE structural validation. |
 
-## Current verified CLI profiles (2026-07-27)
+## Current verified CLI profiles (2026-08-01)
 
 The active peer profiles were verified by minimal live invocations using each CLI's configured model and reasoning effort. The configuration authority remains [`orchestration.json`](_sys/ai/orchestration.json); detailed runbooks are in [`docs-v2`](_sys/docs-v2/MOC.md).
 
