@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -28,12 +29,22 @@ def main():
 
     # Pass stdin_data to the portable statusline adapter.
     try:
+        git_bin = SYS_DIR / "env" / "git" / "bin"
+        git_usr_bin = SYS_DIR / "env" / "git" / "usr" / "bin"
+        bash_exe = git_bin / "bash.exe"
+        bash_cmd = str(bash_exe) if bash_exe.exists() else "bash"
+
+        env = dict(os.environ)
+        path_additions = [str(git_usr_bin), str(git_bin)]
+        env["PATH"] = ";".join(path_additions) + ";" + env.get("PATH", "")
+
         result = subprocess.run(
-            ["bash", STATUSLINE_SCRIPT.as_posix()],
+            [bash_cmd, STATUSLINE_SCRIPT.as_posix()],
             input=stdin_data,
             text=True,
             capture_output=True,
             encoding="utf-8",
+            env=env,
             check=False,
             timeout=STATUSLINE_TIMEOUT_SEC,
         )

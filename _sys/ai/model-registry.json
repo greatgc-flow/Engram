@@ -162,6 +162,30 @@
       "confidence": "documented",
       "validated_at": "2026-06-19"
     },
+    "gemini-3.7-flash": {
+      "provider": "google",
+      "context_limit": 1048576,
+      "output_limit": 65536,
+      "status": "GA",
+      "confidence": "documented",
+      "validated_at": "2026-08-17"
+    },
+    "gemini-3.6-flash": {
+      "provider": "google",
+      "context_limit": 1048576,
+      "output_limit": 65536,
+      "status": "GA",
+      "confidence": "documented",
+      "validated_at": "2026-08-17"
+    },
+    "gemini-3.1-pro": {
+      "provider": "google",
+      "context_limit": 1048576,
+      "output_limit": 65536,
+      "status": "GA",
+      "confidence": "documented",
+      "validated_at": "2026-08-17"
+    },
     "gemini-3.5-flash": {
       "provider": "google",
       "status": "stable",

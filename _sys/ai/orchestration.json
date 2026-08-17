@@ -92,9 +92,9 @@
       "memory": "session",
       "session_mode": "reuse",
       "timeout": 0,
-      "default_profile": "deepthink",
+      "default_profile": "effort",
       "interactive_default_profile": "effort",
-      "_interactive_default_profile_note": "Used only by cli/peer_console.py for human-driven interactive terminal launches (claude.bat etc). hub.py IPC ask still uses default_profile (deepthink) unchanged. Per-session override (e.g. /model) always wins; this only sets the launch-time seed. Added 2026-07-19.",
+      "_interactive_default_profile_note": "Used only by cli/peer_console.py for human-driven interactive terminal launches (claude.bat etc). hub.py IPC ask default_profile set to effort per 2026-08-15 3-peer Accord (was deepthink, burning Opus-5 on routine IPC). Per-session override (e.g. /model) always wins; this only sets the launch-time seed.",
       "capability_class": "tool_scoped_mutation",
       "profiles": {
         "standard": {
@@ -239,47 +239,47 @@
       "capability_class": "unsandboxed_trusted_mutation",
       "profiles": {
         "standard": {
-          "runtime_model": "gemini-3.6-flash-low",
-          "_model_id_regression_note": "2026-08-02: RESTORED after a real regression. 84fcb53 (2026-07-27, 'docs: refresh peer profiles') replaced this live-tested suffixed slug with a bare 'gemini-3.6-flash' + separate --effort, on an unverified generic claim never live-tested for the flash family specifically -- 'gemini-3.6-flash' with no tier suffix is not in agy.exe's actual model catalog (confirmed via `agy.exe models` this session: only -high/-medium/-low suffixed forms exist for gemini-3.6-flash/3.5-flash/3.1-pro). The 2026-07-31 ag.deepthink incident note's claim that 'ag.standard/ag.effort... resolve correctly' was written without re-verifying this specific field via log inspection (the exact gap that note itself warns about for deepthink) -- treat that clearance as unconfirmed for this field, not as prior evidence it was fine. Caught by cx.effort's merge-readiness review tracing test_composed_dispatch_target_keeps_capacity_and_reality_side_by_side's failure to 84fcb53; cc independently confirmed via git archaeology plus a fresh live `agy.exe -p \"reply with exactly: ok\" --model gemini-3.6-flash-low` invocation (returned 'ok' cleanly) before restoring.",
+          "runtime_model": "gemini-3.7-flash-low",
+          "_model_id_update_note": "2026-08-17: bumped to gemini-3.7-flash-low -- live-tested via agy.exe -p 'ok' (exited 0).",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["G"],
           "runtime_context_window": 1048576,
-          "validated_at": "2026-08-02",
+          "validated_at": "2026-08-17",
           "validation_method": "successful_invocation",
           "reasoning_effort": "low",
           "cost_tier": "low",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "gemini-3.6-flash-low"
+            "gemini-3.7-flash-low"
           ]
         },
         "effort": {
-          "runtime_model": "gemini-3.6-flash-high",
-          "_model_id_regression_note": "2026-08-02: RESTORED -- see ag.standard's _model_id_regression_note, same root cause and same fix, applied to the -high tier.",
+          "runtime_model": "gemini-3.7-flash-high",
+          "_model_id_update_note": "2026-08-17: bumped to gemini-3.7-flash-high -- live-tested via agy.exe -p 'ok' (exited 0).",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["G"],
           "intelligence_evidence": {
-            "estimate": {"kind": "point", "value": 50.0, "approximate": true},
+            "estimate": {"kind": "point", "value": 52.0, "approximate": true},
             "scale": "external_composite",
             "source_kind": "declared",
             "verification": "unverified",
             "source_ref": "_sys/docs-v2/ops/intelligence-scores.md#1-source-data-dir-004-declared-unverified",
-            "as_of": "2026-07-13"
+            "as_of": "2026-08-17"
           },
           "runtime_context_window": 1048576,
-          "validated_at": "2026-08-02",
+          "validated_at": "2026-08-17",
           "validation_method": "successful_invocation",
           "reasoning_effort": "high",
           "cost_tier": "mid",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "gemini-3.6-flash-high"
+            "gemini-3.7-flash-high"
           ]
         },
         "deepthink": {

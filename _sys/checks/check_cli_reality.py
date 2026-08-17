@@ -1161,6 +1161,7 @@ def probe_version(
             [str(boundary.launcher_path), "--version"],
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=timeout,
         )
     except (OSError, subprocess.SubprocessError) as exc:
@@ -1231,6 +1232,7 @@ def probe_enumerated_models(
             [str(boundary.launcher_path), *[str(item) for item in argv]],
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=timeout,
         )
     except (OSError, subprocess.SubprocessError):
