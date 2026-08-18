@@ -614,7 +614,7 @@ def ensure_tool(name: str, orch: dict | None = None, sys_dir: Path | None = None
         if not venv_py.exists():
             return {"status": "error", "detail": f"venv interpreter not found at {venv_py}"}
         try:
-            cmd = [str(venv_py), "-m", "pip", "install", url, "--no-deps", "--force-reinstall"]
+            cmd = [str(venv_py), "-m", "pip", "install", url, "--force-reinstall"]
             subprocess.run(cmd, capture_output=True, text=True, check=True)
             manifest = {
                 "tool": name,
@@ -1095,7 +1095,7 @@ def deploy(ctx: dict) -> dict:
     # Re-check on disk rather than trusting the exit code above: creation can
     # report success without actually leaving a working interpreter behind.
     if venv_py.exists():
-        for pkg in ["filelock", "pywinpty"]:
+        for pkg in ["filelock", "pywinpty", "psutil", "pydantic"]:
             try:
                 subprocess.run([str(venv_py), "-m", "pip", "install", pkg, "--quiet"], check=True)
                 print(f"  [OK] {pkg} installed")
