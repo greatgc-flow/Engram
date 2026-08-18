@@ -246,6 +246,22 @@
                 "expect_regex": "\\d+\\.\\d+\\.\\d+"
             },
             "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.144.6.tgz"
+        },
+        "peerhub": {
+            "version": "0.1.0",
+            "url": "git+https://github.com/greatgc-flow/peerhub.git@v0.1.0",
+            "type": "pip",
+            "discovery_provider": "github_releases",
+            "discovery_id": "greatgc-flow/peerhub",
+            "install_mechanism": "pip_tool",
+            "canary": {
+                "argv": [
+                    "peerhub.exe",
+                    "--version"
+                ],
+                "timeout_sec": 5,
+                "expect_regex": "\\d+\\.\\d+\\.\\d+"
+            }
         }
     }
 }
