@@ -283,10 +283,14 @@ def _canon_hash(obj: dict) -> str:
 # region/rollout); confirmed 2026-07-21 via direct redirect trace on
 # github.com/BurntSushi/ripgrep, github.com/cli/cli, and
 # github.com/JanDeDobbeleer/oh-my-posh release URLs.
-_GITHUB_RELEASE_CDN_ALLOWLIST: dict[str, frozenset[str]] = {
+_RELEASE_CDN_ALLOWLIST: dict[str, frozenset[str]] = {
     "github.com": frozenset({
         "objects.githubusercontent.com",
         "release-assets.githubusercontent.com",
+    }),
+    "update.code.visualstudio.com": frozenset({
+        "vscode.download.prss.microsoft.com",
+        "az764295.vo.msecnd.net",
     }),
 }
 
@@ -294,13 +298,12 @@ _GITHUB_RELEASE_CDN_ALLOWLIST: dict[str, frozenset[str]] = {
 class _SameHostRedirectHandler(urllib.request.HTTPRedirectHandler):
     """Rejects cross-host redirects so a compromised/misconfigured mirror
     can't silently substitute a different origin mid-download - except a
-    narrow allowlist for GitHub's own release-asset CDN (see
-    _GITHUB_RELEASE_CDN_ALLOWLIST)."""
+    narrow allowlist for verified CDNs (see _RELEASE_CDN_ALLOWLIST)."""
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         orig_host = urlparse(req.full_url).netloc
         new_host = urlparse(newurl).netloc
-        if orig_host != new_host and new_host not in _GITHUB_RELEASE_CDN_ALLOWLIST.get(orig_host, frozenset()):
+        if orig_host != new_host and new_host not in _RELEASE_CDN_ALLOWLIST.get(orig_host, frozenset()):
             raise urllib.error.URLError("Cross-host redirect rejected by governance gate.")
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
@@ -331,7 +334,7 @@ def _flatten_zip_extract(extract_root: Path, active_root: Path) -> None:
         shutil.copy2(str(exe), str(active_root / exe.name))
 
 
-def _run_canary(tmp_dir: Path, canary: dict | None) -> tuple[bool, str]:
+def _run_canary(tmp_dir: Path, canary: dict | None, env: dict | None = None) -> tuple[bool, str]:
     if not canary:
         return True, ""
     argv = canary.get("argv", [])
@@ -339,9 +342,32 @@ def _run_canary(tmp_dir: Path, canary: dict | None) -> tuple[bool, str]:
         return True, ""
     timeout = canary.get("timeout_sec", 5)
     regex = canary.get("expect_regex")
-    full_argv = [str(tmp_dir / argv[0])] + list(argv[1:])
+    target = tmp_dir / argv[0]
+
+    if target.suffix.lower() in (".cmd", ".bat"):
+        full_argv = ["cmd.exe", "/c", str(target)] + list(argv[1:])
+    else:
+        full_argv = [str(target)] + list(argv[1:])
+
+    run_env = os.environ.copy()
+    if env:
+        run_env.update(env)
+    sys_dir = tmp_dir.parent.parent
+    nodejs_dir = sys_dir / "env" / "nodejs"
+    venv_scripts = sys_dir / "env" / "venv" / "Scripts"
+    paths = [str(tmp_dir), str(nodejs_dir), str(venv_scripts), run_env.get("PATH", "")]
+    run_env["PATH"] = os.pathsep.join(p for p in paths if p)
+
     try:
-        res = subprocess.run(full_argv, capture_output=True, text=True, timeout=timeout)
+        res = subprocess.run(
+            full_argv,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            env=run_env,
+        )
         output = (res.stdout or "") + (res.stderr or "")
     except (OSError, subprocess.SubprocessError) as e:
         return False, str(e)
@@ -841,7 +867,7 @@ def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = 
         return {"status": "npm_install_retry_deferred", "detail": f"npm install failed (exit code {e.returncode}), attempt {attempts}/{MAX_NPM_INSTALL_RETRIES}"}
 
     canary = tool_cfg.get("canary")
-    ok, canary_output = _run_canary(npm_global, canary)
+    ok, canary_output = _run_canary(npm_global, canary, env=npm_env)
     if not ok:
         if is_update and old_version and old_version != declared_version:
             try:
@@ -849,7 +875,7 @@ def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = 
                     [str(npm_exe), "install", "-g", f"{pkg}@{old_version}"],
                     env=npm_env, check=True,
                 )
-                rb_ok, _rb_out = _run_canary(npm_global, canary)
+                rb_ok, _rb_out = _run_canary(npm_global, canary, env=npm_env)
                 if rb_ok:
                     return {"status": "error", "detail": f"Canary failed for {declared_version}, rolled back to {old_version}: {canary_output}"}
             except subprocess.CalledProcessError:
