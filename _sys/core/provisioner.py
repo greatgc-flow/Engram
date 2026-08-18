@@ -93,7 +93,12 @@ def _validate_archive_members(archive_path: Path, dest: Path) -> None:
 def _extract(zip_path: Path, dest: Path) -> None:
     print(f"  [i] Extracting {zip_path.name}...")
     _validate_archive_members(zip_path, dest)
-    shutil.unpack_archive(str(zip_path), str(dest))
+    if zipfile.is_zipfile(zip_path):
+        shutil.unpack_archive(str(zip_path), str(dest), format="zip")
+    elif tarfile.is_tarfile(zip_path):
+        shutil.unpack_archive(str(zip_path), str(dest), format="gztar" if str(zip_path).endswith("gz") else "tar")
+    else:
+        shutil.unpack_archive(str(zip_path), str(dest))
     print(f"  [OK] Extracted to {dest.name}")
 
 
@@ -340,14 +345,9 @@ def _run_canary(tmp_dir: Path, canary: dict | None, env: dict | None = None) -> 
     argv = canary.get("argv", [])
     if not argv:
         return True, ""
-    timeout = canary.get("timeout_sec", 5)
+    timeout = canary.get("timeout_sec", 10)
     regex = canary.get("expect_regex")
     target = tmp_dir / argv[0]
-
-    if target.suffix.lower() in (".cmd", ".bat"):
-        full_argv = ["cmd.exe", "/c", str(target)] + list(argv[1:])
-    else:
-        full_argv = [str(target)] + list(argv[1:])
 
     run_env = os.environ.copy()
     if env:
@@ -358,17 +358,23 @@ def _run_canary(tmp_dir: Path, canary: dict | None, env: dict | None = None) -> 
     paths = [str(tmp_dir), str(nodejs_dir), str(venv_scripts), run_env.get("PATH", "")]
     run_env["PATH"] = os.pathsep.join(p for p in paths if p)
 
+    if target.suffix.lower() in (".cmd", ".bat"):
+        cmd_line = f'"{target}" ' + " ".join(f'"{a}"' if (" " in a or "&" in a) else a for a in argv[1:])
+        use_shell = True
+        run_args = cmd_line
+    else:
+        use_shell = False
+        run_args = [str(target)] + list(argv[1:])
+
     try:
         res = subprocess.run(
-            full_argv,
+            run_args,
             capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
             timeout=timeout,
             env=run_env,
+            shell=use_shell,
         )
-        output = (res.stdout or "") + (res.stderr or "")
+        output = res.stdout.decode("utf-8", errors="replace") + res.stderr.decode("utf-8", errors="replace")
     except (OSError, subprocess.SubprocessError) as e:
         return False, str(e)
     if regex and not re.search(regex, output):
@@ -865,6 +871,13 @@ def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = 
         if attempts >= MAX_NPM_INSTALL_RETRIES:
             return {"status": "npm_install_failed", "detail": f"npm install failed {attempts} times for {declared_version} (exit code {e.returncode})"}
         return {"status": "npm_install_retry_deferred", "detail": f"npm install failed (exit code {e.returncode}), attempt {attempts}/{MAX_NPM_INSTALL_RETRIES}"}
+
+    if peer_key == "claude":
+        claude_pkg_dir = npm_global / "node_modules" / "@anthropic-ai" / "claude-code"
+        install_cjs = claude_pkg_dir / "install.cjs"
+        bin_exe = claude_pkg_dir / "bin" / "claude.exe"
+        if not bin_exe.exists() and install_cjs.exists():
+            subprocess.run([str(node_exe), str(install_cjs)], env=npm_env, capture_output=True)
 
     canary = tool_cfg.get("canary")
     ok, canary_output = _run_canary(npm_global, canary, env=npm_env)
