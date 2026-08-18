@@ -521,7 +521,7 @@ def _install_atomic(name: str, cfg: dict, manifest_path: Path, target_root: Path
         return {"status": "error", "detail": str(e)}
 
 
-def _already_current(dest_dir: Path, manifest_path: Path, cfg: dict, declared_version, bin_name: str | None) -> bool:
+def _already_current(dest_dir: Path, manifest_path: Path, cfg: dict, declared_version, bin_name: str | None, sys_dir: Path | None = None) -> bool:
     """Three-condition already-current check (D11-ratified): declared_version
     match, source_config_hash match (catches a URL/checksum/canary change
     with no version bump), and the installed binary still physically
@@ -536,8 +536,13 @@ def _already_current(dest_dir: Path, manifest_path: Path, cfg: dict, declared_ve
         return False
     if manifest.get("source_config_hash") != _canon_hash(cfg):
         return False
-    if bin_name and not (dest_dir / bin_name).exists():
-        return False
+    if cfg.get("install_mechanism") == "pip_tool":
+        target_sys = sys_dir or dest_dir.parent.parent
+        if bin_name and not (target_sys / "env" / "venv" / "Scripts" / bin_name).exists():
+            return False
+    else:
+        if bin_name and not (dest_dir / bin_name).exists():
+            return False
     return True
 
 
@@ -558,12 +563,33 @@ def ensure_tool(name: str, orch: dict | None = None, sys_dir: Path | None = None
 
     declared_version = cfg.get("version")
     bin_name = cfg.get("bin", f"{name}.exe")
-    if not force and _already_current(dest_dir, manifest_path, cfg, declared_version, bin_name):
+    if not force and _already_current(dest_dir, manifest_path, cfg, declared_version, bin_name, sys_dir=sys_dir):
         return {"status": "already_current", "detail": "Version matches manifest"}
 
     mechanism = cfg.get("install_mechanism", "zip_tool")
     if mechanism in ("zip_tool", "exe_tool", "sfx_exe"):
         return _install_atomic(name, cfg, manifest_path, tools_dir, sys_dir, force=force)
+    if mechanism == "pip_tool":
+        url = cfg.get("url")
+        venv_py = sys_dir / "env" / "venv" / "Scripts" / "python.exe"
+        if not venv_py.exists():
+            return {"status": "error", "detail": f"venv interpreter not found at {venv_py}"}
+        try:
+            cmd = [str(venv_py), "-m", "pip", "install", url, "--no-deps", "--force-reinstall"]
+            subprocess.run(cmd, capture_output=True, text=True, check=True)
+            manifest = {
+                "tool": name,
+                "declared_version": declared_version,
+                "url": url,
+                "installed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "source_config_hash": _canon_hash(cfg),
+            }
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+            _remove_deferred(sys_dir, name, "tool")
+            return {"status": "success", "detail": "Installed successfully via pip"}
+        except subprocess.CalledProcessError as exc:
+            return {"status": "error", "detail": f"pip install failed: {exc.stderr or exc}"}
     if mechanism == "npm_peer":
         return {"status": "error", "detail": f"{name!r} is install_mechanism=npm_peer; use ensure_peer_cli instead"}
     return {"status": "error", "detail": f"Unknown install_mechanism {mechanism!r}"}
@@ -873,6 +899,9 @@ def _runtime_postcondition(sys_dir: Path, name: str, cfg: dict) -> bool:
 
 
 def _tool_postcondition(sys_dir: Path, name: str, cfg: dict) -> bool:
+    if cfg.get("install_mechanism") == "pip_tool":
+        bin_name = cfg.get("bin", f"{name}.exe")
+        return (sys_dir / "env" / "venv" / "Scripts" / bin_name).exists()
     bin_name = cfg.get("bin", f"{name}.exe")
     return (sys_dir / "tools" / name / bin_name).exists()
 
