@@ -874,10 +874,17 @@ def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = 
 
     if peer_key == "claude":
         claude_pkg_dir = npm_global / "node_modules" / "@anthropic-ai" / "claude-code"
-        install_cjs = claude_pkg_dir / "install.cjs"
-        bin_exe = claude_pkg_dir / "bin" / "claude.exe"
-        if not bin_exe.exists() and install_cjs.exists():
-            subprocess.run([str(node_exe), str(install_cjs)], env=npm_env, capture_output=True)
+        bin_dir = claude_pkg_dir / "bin"
+        bin_exe = bin_dir / "claude.exe"
+        native_exe = claude_pkg_dir / "node_modules" / "@anthropic-ai" / "claude-code-win32-x64" / "claude.exe"
+        if not bin_exe.exists():
+            bin_dir.mkdir(parents=True, exist_ok=True)
+            if native_exe.exists():
+                shutil.copy2(str(native_exe), str(bin_exe))
+            else:
+                install_cjs = claude_pkg_dir / "install.cjs"
+                if install_cjs.exists():
+                    subprocess.run([str(node_exe), str(install_cjs)], cwd=str(claude_pkg_dir), env=npm_env, capture_output=True)
 
     canary = tool_cfg.get("canary")
     ok, canary_output = _run_canary(npm_global, canary, env=npm_env)
