@@ -255,4 +255,6 @@ _sys/data/check_contracts_state.json
 # submodule), and scheduled_tasks.lock is a live per-session runtime lock
 # (sessionId/pid/acquiredAt) -- neither belongs in P:'s own history.
 peerhub/
+.peerhub/
 _sys/claude/project/scheduled_tasks.lock
+_sys/claude/config/.claude.json.bak*
