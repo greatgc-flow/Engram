@@ -7,7 +7,7 @@
   [![Orchestration: Zero-Code](https://img.shields.io/badge/orchestration-Zero--Code-ff69b4.svg)](_sys/ai/orchestration.json)
   [![Consensus: R:10 Unanimous](https://img.shields.io/badge/consensus-R%3A10%20Unanimous-orange.svg)](_sys/ai/protocol.json)
   [![Claims: Measured-Only](https://img.shields.io/badge/claims-Measured--Only%20(DIR--004)-8a2be2.svg)](_sys/checks)
-  [![Coordination: PeerHub v0.1.1](https://img.shields.io/badge/coordination-PeerHub%20v0.1.1-blue.svg)](https://github.com/greatgc-flow/peerhub)
+  [![Coordination: PeerHub v0.1.2](https://img.shields.io/badge/coordination-PeerHub%20v0.1.2-blue.svg)](https://github.com/greatgc-flow/peerhub)
   [![Tests: 1695+ green](https://img.shields.io/badge/tests-1695%2B%20green-brightgreen.svg)](_sys/tests/unit)
 </div>
 
@@ -35,7 +35,7 @@ Engram treats every peer as an equal governing member — any peer can drive the
 | 🟢 **`ag`** | agy / antigravity (Gemini models) | **The Governor** — enforces architectural invariants and SSOT, oversees system state. |
 | 🟠 **`cx`** | Codex (OpenAI GPT-5.x) | **The Logician** — deep logical deduction, edge-case hunting, MECE structural validation. |
 
-## 🕹️ PeerHub Coordination Engine (`v0.1.1`)
+## 🕹️ PeerHub Coordination Engine (`v0.1.2`)
 
 Engram integrates the standalone [`peerhub`](https://github.com/greatgc-flow/peerhub) coordination engine, delivering transactional inter-peer communication and real-time observability:
 
