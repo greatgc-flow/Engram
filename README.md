@@ -7,7 +7,7 @@
   [![Orchestration: Zero-Code](https://img.shields.io/badge/orchestration-Zero--Code-ff69b4.svg)](_sys/ai/orchestration.json)
   [![Consensus: R:10 Unanimous](https://img.shields.io/badge/consensus-R%3A10%20Unanimous-orange.svg)](_sys/ai/protocol.json)
   [![Claims: Measured-Only](https://img.shields.io/badge/claims-Measured--Only%20(DIR--004)-8a2be2.svg)](_sys/checks)
-  [![Coordination: PeerHub v0.1.0](https://img.shields.io/badge/coordination-PeerHub%20v0.1.0-blue.svg)](https://github.com/greatgc-flow/peerhub)
+  [![Coordination: PeerHub v0.1.1](https://img.shields.io/badge/coordination-PeerHub%20v0.1.1-blue.svg)](https://github.com/greatgc-flow/peerhub)
   [![Tests: 1695+ green](https://img.shields.io/badge/tests-1695%2B%20green-brightgreen.svg)](_sys/tests/unit)
 </div>
 
@@ -35,7 +35,7 @@ Engram treats every peer as an equal governing member — any peer can drive the
 | 🟢 **`ag`** | agy / antigravity (Gemini models) | **The Governor** — enforces architectural invariants and SSOT, oversees system state. |
 | 🟠 **`cx`** | Codex (OpenAI GPT-5.x) | **The Logician** — deep logical deduction, edge-case hunting, MECE structural validation. |
 
-## 🕹️ PeerHub Coordination Engine (`v0.1.0`)
+## 🕹️ PeerHub Coordination Engine (`v0.1.1`)
 
 Engram integrates the standalone [`peerhub`](https://github.com/greatgc-flow/peerhub) coordination engine, delivering transactional inter-peer communication and real-time observability:
 
@@ -56,7 +56,7 @@ The active peer profiles were verified by minimal live invocations using each CL
 
 ## 🛠️ Prerequisites
 - Windows 10 or 11
-- Python 3.10+
+- Git for Windows
 - The peer CLIs you intend to use (Claude Code, Codex, agy) authenticated on the machine
 
 ## 🚀 Quick Start (Windows)
@@ -64,17 +64,22 @@ The active peer profiles were verified by minimal live invocations using each CL
 ```bat
 :: 1. Clone the repository
 git clone https://github.com/greatgc-flow/Engram.git
+cd Engram
 
-:: 2. Bootstrap the workspace (Python, Node, PeerHub, runtimes)
+:: 2. Bootstrap the complete portable workspace (Python, Node, PeerHub v0.1.1, runtimes)
 .\INSTALL.bat
 
 :: 3. Mount the secure workspace to P:\
 .\register.bat
 
-:: 4. Check real-time peer telemetry and quota
+:: 4. Check real-time peer telemetry and quota headroom
 .\_sys\cli\diag.bat
 
-:: 5. (Optional) Clean up temporary workspace files
+:: 5. Direct ask and multi-peer broadcast coordination
+.\_sys\cli\hub.bat ask ag "reply with exactly: pong" --capability-tier READ_ONLY
+.\_sys\cli\hub.bat broadcast "reply with exactly: pong" --peers ag,cx --capability-tier READ_ONLY
+
+:: 6. (Optional) Clean up temporary workspace files
 .\TIDY.bat
 ```
 
