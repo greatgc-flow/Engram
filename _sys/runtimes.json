@@ -248,8 +248,8 @@
             "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.144.6.tgz"
         },
         "peerhub": {
-            "version": "0.1.0",
-            "url": "git+https://github.com/greatgc-flow/peerhub.git@v0.1.0",
+            "version": "0.1.1",
+            "url": "git+https://github.com/greatgc-flow/peerhub.git@v0.1.1",
             "type": "pip",
             "discovery_provider": "github_releases",
             "discovery_id": "greatgc-flow/peerhub",
