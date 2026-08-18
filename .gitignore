@@ -19,10 +19,9 @@ _state/
 # =================================================================
 # env/ is bootstrapped via install.bat — not tracked
 _sys/env/
-# tools/apps/ is user-installed on first run — not tracked
-_sys/tools/apps/
-# tools/agy/ — native binary (150MB+), bootstrapped via setup.py
-_sys/tools/agy/
+# tools/ are bootstrapped via install.bat / provisioner — not tracked
+_sys/tools/
+!_sys/tools/.gitkeep
 _sys/data/temp/
 _sys/data/setup-files/
 _sys/data/logs/
