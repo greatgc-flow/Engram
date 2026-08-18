@@ -7,13 +7,90 @@ from pathlib import Path
 
 CLI_DIR = Path(__file__).resolve().parent
 SYS_DIR = CLI_DIR.parent
-STATUSLINE_SCRIPT = SYS_DIR / "antigravity" / "config" / "statusline-command.sh"
 STDIN_LOG = SYS_DIR / "data" / "temp" / "ag_statusline_stdin.log"
-STATUSLINE_TIMEOUT_SEC = 8
+
+
+def _format_statusline(data: dict) -> str:
+    """Format unified statusline string from Antigravity JSON input."""
+    # 1. Model & Effort
+    m = data.get("model")
+    if isinstance(m, dict):
+        model_name = m.get("display_name") or m.get("id") or "Unknown"
+        effort = m.get("effort") or ""
+    elif isinstance(m, str):
+        model_name = m
+        effort = ""
+    else:
+        model_name = data.get("model_name", "Unknown")
+        effort = ""
+
+    if not effort:
+        mre = data.get("model_reasoning_effort") or data.get("effort", "")
+        if isinstance(mre, dict):
+            effort = mre.get("level", "")
+        elif isinstance(mre, str):
+            effort = mre
+
+    if effort and effort.lower() not in model_name.lower():
+        model_name = f"{model_name} ({effort.capitalize()})"
+
+    # 2. Context Window
+    ctx = data.get("context_window", {})
+    if ctx:
+        used_tokens = ctx.get("total_input_tokens", 0) + ctx.get("total_output_tokens", 0)
+        if used_tokens == 0 and "current_usage" in ctx:
+            cur = ctx["current_usage"]
+            used_tokens = cur.get("input_tokens", 0) + cur.get("output_tokens", 0)
+        total_tokens = ctx.get("context_window_size", 1048576)
+        pct = ctx.get("used_percentage", 0.0)
+        ctx_str = f"ctx:{int(used_tokens / 1000)}k/{int(total_tokens / 1000)}k ({pct:.0f}%)"
+    elif "context_used_tokens" in data:
+        used_tokens = data["context_used_tokens"]
+        total_tokens = data.get("context_total_tokens", 1048576)
+        pct = data.get("context_used_pct", 0.0)
+        ctx_str = f"ctx:{int(used_tokens / 1000)}k/{int(total_tokens / 1000)}k ({pct:.0f}%)"
+    else:
+        ctx_str = "ctx:ok"
+
+    # 3. Location & Git Branch
+    cwd = data.get("cwd") or data.get("workspace", {}).get("current_dir", "")
+    short_cwd = Path(cwd).name if cwd else ""
+    git_branch = ""
+    if cwd and Path(cwd).is_dir():
+        try:
+            git_branch = subprocess.run(
+                ["git", "-C", cwd, "--no-optional-locks", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=1,
+            ).stdout.strip()
+        except Exception:
+            pass
+    loc_str = f"{short_cwd} ({git_branch})" if git_branch else short_cwd
+
+    # 4. Quotas (G-5H G-7D 3P-5H 3P-7D)
+    q = data.get("quota", {})
+    buckets = []
+    bucket_map = [
+        ("gemini-5h", "G-5H"),
+        ("gemini-weekly", "G-7D"),
+        ("3p-5h", "3P-5H"),
+        ("3p-weekly", "3P-7D"),
+    ]
+    for key, label in bucket_map:
+        if key in q and isinstance(q[key], dict):
+            rem = q[key].get("remaining_fraction")
+            if rem is not None:
+                used_pct = round((1.0 - float(rem)) * 100.0)
+                buckets.append(f"{label}:{used_pct}%")
+    q_str = " ".join(buckets) if buckets else "quota:N/A"
+
+    # 5. Hub / Room Status
+    room_id = "room-efde"
+    return f"ag:{model_name} | {ctx_str} | {loc_str} | {q_str} | hub:idle [{room_id}]"
 
 
 def main():
-    # Read stdin data passed by Antigravity CLI
     stdin_data = ""
     if not sys.stdin.isatty():
         try:
@@ -21,44 +98,25 @@ def main():
         except Exception:
             pass
 
+    # Save live status log for telemetry collectors
+    if stdin_data:
+        try:
+            STDIN_LOG.parent.mkdir(parents=True, exist_ok=True)
+            STDIN_LOG.write_text(stdin_data, encoding="utf-8")
+        except OSError:
+            pass
+
+    # Format statusline
     try:
-        STDIN_LOG.parent.mkdir(parents=True, exist_ok=True)
-        STDIN_LOG.write_text(stdin_data, encoding="utf-8")
-    except OSError:
-        pass
-
-    # Pass stdin_data to the portable statusline adapter.
-    try:
-        git_bin = SYS_DIR / "env" / "git" / "bin"
-        git_usr_bin = SYS_DIR / "env" / "git" / "usr" / "bin"
-        bash_exe = git_bin / "bash.exe"
-        bash_cmd = str(bash_exe) if bash_exe.exists() else "bash"
-
-        env = dict(os.environ)
-        path_additions = [str(git_usr_bin), str(git_bin)]
-        env["PATH"] = ";".join(path_additions) + ";" + env.get("PATH", "")
-
-        result = subprocess.run(
-            [bash_cmd, STATUSLINE_SCRIPT.as_posix()],
-            input=stdin_data,
-            text=True,
-            capture_output=True,
-            encoding="utf-8",
-            env=env,
-            check=False,
-            timeout=STATUSLINE_TIMEOUT_SEC,
-        )
-        if result.stdout:
-            print(result.stdout, end="")
+        if stdin_data:
+            data = json.loads(stdin_data)
+            print(_format_statusline(data), end="")
         else:
-            # Fallback if bash script fails
-            data = json.loads(stdin_data) if stdin_data else {}
-            model = data.get("model", "Unknown Model")
-            print(f"ag:{model} | (unified script err)")
-    except subprocess.TimeoutExpired:
-        print("ag:timeout | statusline unavailable", end="")
-    except Exception as e:
-        print(f"ag:error | {str(e)[:30]}", end="")
+            print("ag:Gemini | ctx:ok | hub:idle [room-efde]", end="")
+    except Exception:
+        print("ag:Gemini | ctx:ok | hub:idle [room-efde]", end="")
+
+    sys.exit(0)
 
 
 if __name__ == "__main__":
