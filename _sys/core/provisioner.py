@@ -876,11 +876,11 @@ def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = 
         claude_pkg_dir = npm_global / "node_modules" / "@anthropic-ai" / "claude-code"
         bin_dir = claude_pkg_dir / "bin"
         bin_exe = bin_dir / "claude.exe"
-        native_exe = claude_pkg_dir / "node_modules" / "@anthropic-ai" / "claude-code-win32-x64" / "claude.exe"
         if not bin_exe.exists():
             bin_dir.mkdir(parents=True, exist_ok=True)
-            if native_exe.exists():
-                shutil.copy2(str(native_exe), str(bin_exe))
+            found = list(npm_global.glob("node_modules/@anthropic-ai/*/claude.exe")) + list(claude_pkg_dir.rglob("claude.exe"))
+            if found:
+                shutil.copy2(str(found[0]), str(bin_exe))
             else:
                 install_cjs = claude_pkg_dir / "install.cjs"
                 if install_cjs.exists():
