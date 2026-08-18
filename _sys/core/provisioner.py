@@ -352,7 +352,14 @@ def _run_canary(tmp_dir: Path, canary: dict | None, env: dict | None = None) -> 
     run_env = os.environ.copy()
     if env:
         run_env.update(env)
-    sys_dir = tmp_dir.parent.parent
+    curr = tmp_dir.resolve()
+    sys_dir = curr
+    while curr.name != "_sys" and curr.parent != curr:
+        curr = curr.parent
+    if curr.name == "_sys":
+        sys_dir = curr
+    else:
+        sys_dir = tmp_dir.parent.parent
     nodejs_dir = sys_dir / "env" / "nodejs"
     venv_scripts = sys_dir / "env" / "venv" / "Scripts"
     paths = [str(tmp_dir), str(nodejs_dir), str(venv_scripts), run_env.get("PATH", "")]
