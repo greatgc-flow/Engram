@@ -61,12 +61,19 @@ The active peer profiles were verified by minimal live invocations using each CL
 
 ## 🚀 Quick Start (Windows)
 
+### Option A: Install via Winget (Recommended)
+```powershell
+winget install greatgc-flow.Engram
+```
+After installation, the `engram` command is available system-wide. Run `engram` to launch `INSTALL.bat` and bootstrap the environment.
+
+### Option B: Git Clone
 ```bat
 :: 1. Clone the repository
 git clone https://github.com/greatgc-flow/Engram.git
 cd Engram
 
-:: 2. Bootstrap the complete portable workspace (Python, Node, PeerHub v0.1.1, runtimes)
+:: 2. Bootstrap the complete portable workspace (Python, Node, PeerHub v0.1.7, runtimes)
 .\INSTALL.bat
 
 :: 3. Mount the secure workspace to P:\

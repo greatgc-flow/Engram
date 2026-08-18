@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.9.0.schema.json
+PackageIdentifier: greatgc-flow.Engram
+PackageVersion: 2.1.0
+PackageLocale: en-US
+Publisher: greatgc-flow
+PublisherUrl: https://github.com/greatgc-flow
+PackageName: Engram
+PackageUrl: https://github.com/greatgc-flow/Engram
+License: MIT
+ShortDescription: Portable multi-AI peer coordination environment for Windows
+Description: |-
+  Engram is a portable Windows development and AI-collaboration environment
+  where multiple AI models (Claude, Gemini, Codex) act as equal governing
+  peers on a peer-to-peer network. They cross-examine, dispute, and verify
+  each other's work against strict logical invariants — nothing merges
+  unless every active peer agrees.
+Tags:
+  - ai
+  - collaboration
+  - multi-agent
+  - peer-review
+  - portable
+  - development-environment
+  - claude
+  - gemini
+  - codex
+ManifestType: defaultLocale
+ManifestVersion: 1.9.0

@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.1.9.0.schema.json
+PackageIdentifier: greatgc-flow.Engram
+PackageVersion: 2.1.0
+PackageLocale: ko-KR
+Publisher: greatgc-flow
+PublisherUrl: https://github.com/greatgc-flow
+PackageName: Engram
+PackageUrl: https://github.com/greatgc-flow/Engram
+License: MIT
+ShortDescription: 윈도우용 포터블 멀티-AI 피어 협업 개발 환경
+Description: |-
+  Engram은 여러 AI 모델(Claude, Gemini, Codex)이 P2P 네트워크에서
+  동등한 거버닝 피어로 작동하는 포터블 Windows 개발/AI 협업 환경입니다.
+  각 피어는 서로의 작업물을 교차 검증하고, 엄격한 논리적 불변 조건에 대해
+  검사하며 — 모든 활성 피어가 동의하지 않으면 어떤 변경도 병합되지 않습니다.
+Tags:
+  - ai
+  - 협업
+  - 멀티-에이전트
+  - 피어-리뷰
+  - 포터블
+  - 개발-환경
+ManifestType: locale
+ManifestVersion: 1.9.0
