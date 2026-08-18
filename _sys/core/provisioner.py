@@ -359,16 +359,16 @@ def _run_canary(tmp_dir: Path, canary: dict | None, env: dict | None = None) -> 
     run_env["PATH"] = os.pathsep.join(p for p in paths if p)
 
     if target.suffix.lower() in (".cmd", ".bat"):
-        cmd_line = f'"{target}" ' + " ".join(f'"{a}"' if (" " in a or "&" in a) else a for a in argv[1:])
+        run_args = [argv[0]] + list(argv[1:])
         use_shell = True
-        run_args = cmd_line
     else:
-        use_shell = False
         run_args = [str(target)] + list(argv[1:])
+        use_shell = False
 
     try:
         res = subprocess.run(
             run_args,
+            cwd=str(tmp_dir),
             capture_output=True,
             timeout=timeout,
             env=run_env,
