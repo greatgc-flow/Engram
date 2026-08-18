@@ -242,7 +242,7 @@
                     "codex.cmd",
                     "--version"
                 ],
-                "timeout_sec": 10,
+                "timeout_sec": 25,
                 "expect_regex": "\\d+\\.\\d+\\.\\d+"
             },
             "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.144.6.tgz"
