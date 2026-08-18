@@ -885,13 +885,22 @@ def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = 
         bin_exe = bin_dir / "claude.exe"
         if not bin_exe.exists():
             bin_dir.mkdir(parents=True, exist_ok=True)
-            found = list(npm_global.glob("node_modules/@anthropic-ai/*/claude.exe")) + list(claude_pkg_dir.rglob("claude.exe"))
-            if found:
-                shutil.copy2(str(found[0]), str(bin_exe))
-            else:
-                install_cjs = claude_pkg_dir / "install.cjs"
-                if install_cjs.exists():
-                    subprocess.run([str(node_exe), str(install_cjs)], cwd=str(claude_pkg_dir), env=npm_env, capture_output=True)
+            for cand in npm_global.rglob("claude.exe"):
+                if cand != bin_exe and cand.is_file():
+                    try:
+                        shutil.copy2(str(cand), str(bin_exe))
+                        break
+                    except Exception:
+                        pass
+        claude_cmd = npm_global / "claude.cmd"
+        if claude_cmd.exists():
+            safe_claude = '@ECHO off\r\nSETLOCAL\r\nset "DIR=%~dp0"\r\n"%DIR%node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe" %*\r\n'
+            claude_cmd.write_text(safe_claude, encoding="utf-8")
+    elif peer_key == "codex":
+        codex_cmd = npm_global / "codex.cmd"
+        if codex_cmd.exists():
+            safe_codex = '@ECHO off\r\nSETLOCAL\r\nset "DIR=%~dp0"\r\n"%DIR%node_modules\\@openai\\codex\\bin\\codex.js" %*\r\n'
+            codex_cmd.write_text(safe_codex, encoding="utf-8")
 
     canary = tool_cfg.get("canary")
     ok, canary_output = _run_canary(npm_global, canary, env=npm_env)
