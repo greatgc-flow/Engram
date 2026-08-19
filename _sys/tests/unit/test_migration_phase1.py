@@ -75,25 +75,6 @@ class TestAiCheck:
 class TestCollabLog:
     """collab_log.py — collab-log append."""
 
-    def test_creates_log_file(self, tmp_path, monkeypatch):
-        """Running collab_log.py creates a dated .md file."""
-        # We need to override base_dir inside the module.
-        # The easiest parity test: run the script and check _archive/collab-log/
-        # using the real _archive dir.
-        result = run_py(
-            SYS_DIR / "hooks" / "collab_log.py",
-            "Axis-TEST", "test_migration_phase1.py", "OK", "parity test entry"
-        )
-        assert result.returncode == 0
-
-        from datetime import date
-        today = date.today().strftime("%Y-%m-%d")
-        log_file = SYS_DIR.parent / "_archive" / "collab-log" / f"{today}.md"
-        assert log_file.exists(), f"Expected collab-log file: {log_file}"
-        content = log_file.read_text(encoding="utf-8")
-        assert "Axis-TEST" in content
-        assert "parity test entry" in content
-
     def test_collab_log_does_not_create_legacy_status(self, tmp_path):
         assert not (tmp_path / "gemini" / "status.json").exists()
 

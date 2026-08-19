@@ -59,8 +59,6 @@ if not _CONTRACT_TEST.exists():
 # Governed-core contract targets. Internal check failures for these paths fail
 # closed unless explicitly downgraded by --force-tier0.
 _GOVERNED_CORE_PATHS = {
-    _SYS_DIR / "core" / "hub.py",
-    _SYS_DIR / "ai" / "protocol.json",
     _SYS_DIR / "ai" / "orchestration.json",
     _SYS_DIR / "ai" / "peers.json",
     _TESTS_DIR / "l1_core" / "test_contracts.py",

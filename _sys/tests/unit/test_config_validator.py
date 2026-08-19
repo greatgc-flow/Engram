@@ -143,22 +143,6 @@ def test_config_validator_flags_malformed_peers_node_ids(tmp_path):
     
     assert not validate_config(d)
 
-def test_config_validator_flags_voter_overlap(tmp_path):
-    d = tmp_path / "ai"
-    d.mkdir()
-    (d / "protocol.json").write_text("{}")
-    (d / "peers.json").write_text('{"peers": {"cc": {}, "ag": {}, "cx": {}}}')
-    (d / "lifecycle_policy.json").write_text("{}")
-    (d / "routing-config.json").write_text('{}')
-    
-    (d / "orchestration.json").write_text(json.dumps({
-        "consensus": {
-            "r10_voters": ["cc", "ag"],
-            "inactive_default_voters": ["ag", "cx"]
-        }
-    }))
-    assert not validate_config(d)
-
 def test_config_validator_passes_current_tree():
     sys_dir = Path(__file__).parent.parent.parent
     ai_dir = sys_dir / "ai"

@@ -288,10 +288,3 @@ class TestStatuslineHubIntegration:
         hub_py = ROOT / "_sys" / "core" / "hub.py"
         return {"root": tmp_path, "venv_py": venv_py, "hub_py": hub_py}
 
-    def test_status_still_works(self, test_env):
-        res = subprocess.run(
-            [str(test_env["venv_py"]), str(test_env["hub_py"]), "status"],
-            cwd=test_env["root"],
-            capture_output=True, text=True, encoding="utf-8", timeout=15,
-        )
-        assert res.returncode == 0

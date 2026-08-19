@@ -32,7 +32,7 @@ def run_contract_watchdog(
     """Post-flight contract check — runs check_contracts.py and alerts on failure.
 
     On success: silent.
-    On failure: creates a hub thread with [SYSTEM_ALERT] and failure log tail.
+    On failure: prints [SYSTEM_ALERT] and the failure log tail to stderr.
     Re-entrant calls are no-ops (prevents ctx-end recursion).
     """
     global _WATCHDOG_RUNNING
@@ -60,25 +60,7 @@ def run_contract_watchdog(
         failure_output = (result.stdout + result.stderr).strip()
         tail = "\n".join(failure_output.splitlines()[-20:])
 
-        hub_py = _SYS_DIR / "core" / "hub.py"
-        if not hub_py.exists() or ai_root is None:
-            print(f"[ctx-end watchdog] ALERT: contract violation:\n{tail}", file=sys.stderr)
-            return
-
-        msg = f"[SYSTEM_ALERT] Contract violation at session end.\n\n{tail}"
-        subprocess.run(
-            [py, str(hub_py), "thread-new",
-             "--ai-root", str(ai_root),
-             "--topic", "SYSTEM_ALERT: contract violation",
-             "--from-peer", "watchdog",
-             "--msg", msg],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=30,
-        )
-        print(f"[ctx-end watchdog] ALERT: contract violation — thread created", file=sys.stderr)
+        print("[ctx-end watchdog] [SYSTEM_ALERT] Contract violation at session end.", file=sys.stderr)
         print(tail, file=sys.stderr)
     except Exception as exc:
         print(f"[ctx-end watchdog] Error (non-fatal): {exc}", file=sys.stderr)
@@ -363,84 +345,6 @@ def main() -> None:
     session_dir = Path(ses_dir_env) if ses_dir_env else _PORTABLE_ROOT / "_archive" / "sessions"
     ses_file = save_session_log(session_dir, cwd, claude_md, session_summary_text)
     print(f"[ctx-end] Session log saved: {ses_file}")
-
-    # ── Phase 4: Optional Gemini Summary (Atomic Replacement) ─────────────────
-    venv_py = _SYS_DIR / "env" / "venv" / "Scripts" / "python.exe"
-    python = str(venv_py) if venv_py.exists() else sys.executable
-    ai_available = False
-    try:
-        ai_result = subprocess.run(
-            [python, str(_SCRIPT_DIR / "ai_check.py")],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=15,
-            env=env,
-        )
-        ai_available = (ai_result.returncode == 0)
-    except Exception:
-        ai_available = False
-
-    if ai_available:
-        sum_file = Path(str(ses_file) + ".summary.md")
-        qf_path = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".txt", delete=False,
-                encoding="utf-8", prefix="ctx-end-query-",
-            ) as qf:
-                qf.write(
-                    "Read the session log below and write a concise summary with exactly 5 bullet points: "
-                    "1) What was accomplished 2) Key decisions made 3) Files changed "
-                    "4) Known issues remaining 5) Next actions. Be specific, not generic.\n\n"
-                )
-                if ses_file.exists():
-                    qf.write(ses_file.read_text(encoding="utf-8"))
-                qf_path = qf.name
-
-            print("[ctx-end] Generating Gemini summary...")
-            msg_bat = _SYS_DIR / "cli" / "msg.bat"
-            proc = subprocess.run(
-                ["cmd", "/c", str(msg_bat), "ask", "--to", "gc", "--query-file", qf_path],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="strict",
-                timeout=60,
-                env=env,
-            )
-            if proc.returncode == 0 and proc.stdout.strip():
-                _write_text_atomic(sum_file, proc.stdout)
-                try:
-                    sys.path.insert(0, str(_SCRIPT_DIR))
-                    from raw_log import save_raw  # type: ignore
-                    from collab_log import log_collab  # type: ignore
-                    save_raw("Axis-C", sum_file, ses_file)
-                    log_collab("Axis-C", "ctx-end.py", "OK", f"Summary: {sum_file}")
-                except Exception:
-                    pass
-                print(f"[ctx-end] Summary: {sum_file}")
-            else:
-                print("[ctx-end] Gemini summary skipped (nonzero returncode or empty response).")
-                try:
-                    sys.path.insert(0, str(_SCRIPT_DIR))
-                    from collab_log import log_collab  # type: ignore
-                    log_collab("Axis-C", "ctx-end.py", "FAIL", "Error: api_error_or_empty")
-                except Exception:
-                    pass
-        except subprocess.TimeoutExpired:
-            print("[ctx-end] Gemini summary timed out (60s). Skipping optional summary.")
-        except UnicodeDecodeError as exc:
-            print(f"[ctx-end] Gemini summary output decode failed ({exc}). Skipping optional summary.")
-        except Exception as exc:
-            print(f"[ctx-end] Gemini summary skipped ({exc}).")
-        finally:
-            if qf_path:
-                try:
-                    os.unlink(qf_path)
-                except Exception:
-                    pass
 
     # ── Phase 5: Independent Cleanup Steps (Best-Effort) ──────────────────────
     try:

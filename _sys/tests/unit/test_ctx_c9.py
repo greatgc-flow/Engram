@@ -157,49 +157,6 @@ class TestC9CtxEndFlow:
         assert exc_info.value.code == 1
         assert not input_called
 
-    def test_ai_check_failure_still_runs_cleanup_phases(self, tmp_path, monkeypatch):
-        cwd = tmp_path / "project"
-        cwd.mkdir()
-        (cwd / "CLAUDE.md").write_text("# Project", encoding="utf-8")
-        monkeypatch.chdir(cwd)
-        monkeypatch.setattr(sys, "argv", ["ctx_end.py"])
-
-        monkeypatch.setattr(ctx_end, "_check_prerequisites", lambda config_dir: True)
-
-        cleanup_ran = {
-            "archive": False,
-            "compaction": False,
-            "watchdog": False,
-        }
-
-        def mock_run(cmd, **kwargs):
-            cmd_str = str(cmd)
-            if "claude" in cmd_str:
-                return MagicMock(returncode=0, stdout="OK")
-            if "ai_check.py" in cmd_str:
-                return MagicMock(returncode=1, stdout="", stderr="ai unavailable")
-            return MagicMock(returncode=0, stdout="")
-
-        monkeypatch.setattr(subprocess, "run", mock_run)
-
-        monkeypatch.setattr(ctx_end, "archive_gemini_session", lambda root: cleanup_ran.update({"archive": True}))
-        
-        class MockCompactorModule:
-            @staticmethod
-            def main(root):
-                cleanup_ran["compaction"] = True
-
-        monkeypatch.setitem(sys.modules, "memory_compactor", MockCompactorModule)
-        monkeypatch.setattr(ctx_end, "run_contract_watchdog", lambda **kwargs: cleanup_ran.update({"watchdog": True}))
-
-        with pytest.raises(SystemExit) as exc_info:
-            ctx_end.main()
-
-        assert exc_info.value.code == 0
-        assert cleanup_ran["archive"]
-        assert cleanup_ran["compaction"]
-        assert cleanup_ran["watchdog"]
-
     def test_primary_claude_timeout_handled_cleanly(self, tmp_path, monkeypatch):
         cwd = tmp_path / "project"
         cwd.mkdir()
@@ -254,43 +211,6 @@ class TestC9CtxSaveFlow:
 
         # Pre-existing summary file must NOT be overwritten by failed output
         assert sum_file.read_text(encoding="utf-8") == "Pre-existing Blackboard Summary"
-
-    def test_successful_gemini_call_atomically_updates_summary(self, tmp_path, monkeypatch):
-        cwd = tmp_path / "project"
-        cwd.mkdir()
-        (cwd / "CLAUDE.md").write_text("## Current State\nInitial State\n", encoding="utf-8")
-        monkeypatch.chdir(cwd)
-
-        room_dir = cwd / ".ai" / "sessions" / "room-123"
-        room_dir.mkdir(parents=True)
-        (cwd / ".ai" / "state.json").write_text(json.dumps({"room_id": "room-123"}), encoding="utf-8")
-
-        sum_file = room_dir / "summary_session.md"
-        sum_file.write_text("Old Summary", encoding="utf-8")
-
-        def mock_run(cmd, **kwargs):
-            cmd_str = str(cmd)
-            if "ai_check.py" in cmd_str:
-                return MagicMock(returncode=0, stdout="OK")
-            if "msg.bat" in cmd_str:
-                return MagicMock(returncode=0, stdout="### Fresh Zero-Token Blackboard Summary")
-            return MagicMock(returncode=0, stdout="no stalled rounds")
-
-        monkeypatch.setattr(subprocess, "run", mock_run)
-
-        ctx_save.main()
-
-        assert sum_file.read_text(encoding="utf-8") == "### Fresh Zero-Token Blackboard Summary"
-
-
-class TestC9SessionLogNeverDumpsClaudeMd:
-    """Real bug found in live use (2026-07-26): the Phase 2 prompt told
-    claude to edit CLAUDE.md with a handoff blob, directly contradicting
-    CLAUDE.md's own documented pointer-only policy -- the spawned process
-    correctly refused/got confused, producing garbage that Phase 3 then
-    archived as if it were a real summary (save_session_log used to dump a
-    raw CLAUDE.md snapshot unconditionally). Fixed: save_session_log now
-    writes the LLM-generated summary text, never a CLAUDE.md dump."""
 
     def test_save_session_log_writes_summary_text_not_claude_md_dump(self, tmp_path):
         session_dir = tmp_path / "sessions"

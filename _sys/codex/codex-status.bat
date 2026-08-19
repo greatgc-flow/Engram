@@ -1,16 +1,21 @@
 :: ================================================================
-:: codex-status.bat  -  Quick Codex peer health check
-:: Delegates detailed health to hub.py peer-status.
+:: codex-status.bat  -  Codex installation check
+::
+:: Engram scope: is the vendor CLI installed, and what version.
+:: Peer coordination status (health, quota, routing) belongs to the
+:: separately-installed peerhub package: `peerhub status --peer cx`.
 :: ================================================================
 @echo off
 
-set "_PEER=cx"
-set "_INSTALLED=false"
-where codex > nul 2>&1
-if not errorlevel 1 set "_INSTALLED=true"
+set "_CODEX_CMD=%~dp0..\env\nodejs\npm-global\codex.cmd"
 
-echo [Codex] installed=%_INSTALLED%
-python "%~dp0..\core\hub.py" peer-status --peer %_PEER% 2>&1
+if exist "%_CODEX_CMD%" (
+    echo [Codex] installed=true
+    call "%_CODEX_CMD%" --version 2>&1
+) else (
+    echo [Codex] installed=false
+    echo   Expected at: %_CODEX_CMD%
+    echo   Run INSTALL.bat to provision it.
+)
 
-set "_INSTALLED="
-set "_PEER="
+set "_CODEX_CMD="

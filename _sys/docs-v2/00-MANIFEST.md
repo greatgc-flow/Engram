@@ -46,16 +46,13 @@ For navigation by domain: `MOC.md`. For human onboarding: `user/manual.md`.
 | `MOC.md` | living | Keyword load-map (lazy-load registry) | 2026-06-26 |
 | `10-invariants.md` | living | MUST/MUST-NOT hard rules (INV-01~31, PRO-01~19, GAP-1 clause) | 2026-06-26 |
 | `20-architecture.md` | living | Physical/logical dir layout + PathMap (req A2) + Brain layers | 2026-06-16 |
-| `general/protocol.md` | living | **Pillar 1** — governance/roles (GAP-1), trade-offs/params, task-execution+feedback, collaboration+consensus (R:10, INV-28, INV-02), communication+IPC, state+handoff, terminal command contract (GAP-3). Absorbs {consensus, communication, tradeoffs}. | 2026-06-26 |
 | `general/routing.md` | living | **Pillar 2** — separation/node-arch, peer+model routing, leader election+roles, challenge window+handoff+AP-20, forwarding+failover, cost/quality/context, governance/permissions/acceptance. Absorbs {resource-governance}. | 2026-06-26 |
 | `general/lifecycle.md` | living | **Pillar 3** — session decision/startup(INV-05)/handoff/resume, health states/file-location/gate/runbooks(INV-08,PRO-07/08), heartbeat/lease, ContextGate policy. Absorbs {session, health, token-budget policy}. Model facts → JSON. | 2026-06-26 |
-| `general/learning.md` | living | **Pillar 4** — 5-Whys learning loop, directives system (PRO-09), knowledge propagation + lesson schema, self-care & autonomy bounds (SelfHealer=observe/propose only), implementation status. Absorbs {self-evolution, feedback-loop, directives, knowledge}. | 2026-06-26 |
 | `general/permissions.md` | living | **Pillar 5** — minimum permission model (all peers), DIR-002, non-interactive bounds | 2026-06-16 |
 | `specific/cc.md` | living | Claude Code delta (dirs, gate, flags) | 2026-06-26 |
 | `specific/cx.md` | living | Codex delta (dirs, entry point, flags) | 2026-06-16 |
 | `specific/ag.md` | living | AntiGravity delta (ACTIVE, PTY, stateless-home) | 2026-06-19 |
 | `specific/gc.md` | living | Gemini — SUSPENDED TOMBSTONE | 2026-06-25 |
-| `ops/governance.md` | living | Garbage/, retention, proposal lifecycle (§5), Doc-as-Code (§6) | 2026-06-18 |
 | `ops/conventions.md` | living | Coding conventions, shell rules, script safety, testing policy | 2026-06-26 |
 | `ops/logging.md` | living | IPC history · console capture · per-node detail · rolling policy · 5-Whys | 2026-06-26 |
 | `ops/skills.md` | living | Hub skill catalog, invocation, registration | 2026-06-18 |
@@ -67,7 +64,6 @@ For navigation by domain: `MOC.md`. For human onboarding: `user/manual.md`.
 | `ops/backlog-5whys-consensus-2026-06-26.md` | design | **AUTHORITATIVE ROADMAP** — Ask Transaction AT-0..AT-6; KEEP/DROP/DEFER verdicts | 2026-06-26 |
 | `ops/endgame-general-specific-plan-2026-06-28.md` | superseded-by → `ops/phase2-arch-general-specific-2026-07-22.md` | Implementation-ready no-code/composable General-Specific endgame plan; sat unimplemented for ~4 weeks, found duplicating a fresh 5-round debate on 2026-07-22 (same core problem re-litigated without awareness of this doc); its still-valuable structural pieces (cleanup policy, traceability ledger, completion loop, adapter field taxonomy) were absorbed into the superseding doc rather than lost | 2026-06-28 |
 | `ops/hub-mutation-broker.md` | design | Host-side broker/queue authority boundary for `.ai` mutations under managed sandboxes | 2026-06-29 |
-| `ops/diag-telemetry-architecture.md` | design | Pre-TDD telemetry architecture for `diag`: Specific collectors, Generic schema, freshness-aware presentation | 2026-06-30 |
 | `ops/peer-cli-reference.md` | living | Execution-verified feature reference for claude.cmd/codex.cmd/agy.exe: modes, session/resume, models, sandbox, quirks | 2026-07-02 |
 | `ops/status-consolidation-2026-07-08.md` | living | Reconciliation point for the 2026-07-07/08 work stream: shipped commits, pending/backlog, MECE, freshness | 2026-07-08 |
 | `ops/intelligence-scores.md` | living | Composite model intelligence scores (declared, unverified) + profile/arbiter policy recommendations; documented-only pending R:10 | 2026-07-13 |
@@ -77,18 +73,16 @@ For navigation by domain: `MOC.md`. For human onboarding: `user/manual.md`.
 | `ops/quota-balance-decisions.md` | living | Quota balance + statusline display decisions (cx+ag+cc.fable): the session imbalance was behavioral (0 load_balance_route / 69 direct_ask — LB never called), pacing already default-ON, ag.opus 429 = provider Opus overload not idle quota (stays manual; 3P used via ag.gptoss). Plan: all-buckets statusline + explicit pacing flag + fungible-bulk→--to auto + telemetry, then observe. Spawns T55-T57 | 2026-07-15 |
 | `ops/statusline-quota-display-handoff-2026-07-15.md` | living | Statusline all-buckets shape-driven formatter design handoff (presentation-only, %-only, never fabricate F-7D; ag.effort approved, ag.opus review died on provider 429); unapplied → T55 | 2026-07-15 |
 | `ops/hard-benchmark-decisions.md` | living | T48: hard-benchmark design (parametric generators, discrimination contract, calibration≠certification) + two ratifiable calls — DECOUPLE D1 from a measured reasoning edge (frontier peers tie at ceiling), code-exec has no admin-free jail (restricted-DSL/absent), agentic 80↔100 is a PTY line-ending artifact (prompt-via-file fix). cx+ag+cc.fable | 2026-07-14 |
-| `ops/capability-leveling-decisions.md` | living | TDD-ready per-item specs for T41-T45 (fingerprint · declarations+resolver+overlay+check · ag PTY harness spike · unified budget+canaries · shadow D5 gate); exact schemas/tests/deps + H1-H6 fail-closed human-decision blockers; cx+ag+cc.fable | 2026-07-13 |
-| `ops/mega-mece-audit-2026-07-16.md` | living | Whole-project MECE audit (Track1 docs/source/config, Track2 peer/routing/session, Track3 quota-display v2 + pacing + terminal-quota-exhaustion resilience); ALL sections implemented and merged (commit 437472c) | 2026-07-16 |
 | `ops/closure-review-2026-07-17.md` | living | Purpose-centered final closure review (8-lens, 5-way debate): confirmed INV-03 voter-filtering violation (fixed), ungated governed-mutation bypass (fixed), directive-add/clear misclassification (fixed), plus 4 deferred architectural items (dual consensus engines, governance_params pruning, pacing confirmation_count, session auto-scoping) | 2026-07-17 |
 | `ops/closure-review-2026-07-17-round2.md` | living | Round 2 closure review: ag zombie phenomenon diagnosed+partially fixed (post-progress 300s tightening, measured; auto-retry deferred with converged design), critical 41GB orphaned node/codex process leak found+fixed (diag probe tree-kill), full error/bug log, prompt-design lesson on multi-peer dispatch scoping | 2026-07-17 |
 | `ops/zombie-deep-dive-2026-07-18.md` | living | Zombie deep-dive: found+fixed a ~4-week IPC single-use regex bug (655 files, c2f88e4), found reuse-after-failure is a 20x zombie predictor (0feb3f3), CONFIRMED the 07-18 mystery dispatch origin (cx.deepthink self-orchestration, literal command logs) — causal mechanism for ag's baseline ~2.7% stall rate remains genuinely unresolved after two forensic passes | 2026-07-18 |
 | `ops/external-server-ization-proposal-review-2026-07-19.md` | living | External proposal review (3-way unanimous, ag.deepthink+cx.deepthink+cc.fable): REJECT server-izing Engram into a multi-tenant backend for a third-party integration — poor generic/specific separation (violates INV-29), scope graft not a generalization (conflicts INV-17/PRO-05/PRO-13/PRO-12), document's claimed prior consensus + "existing service" claims both unverifiable/overstated (DIR-004). Counter-proposal: extract capability-leveling/resolver as a standalone library for the requesting party's own separate service. | 2026-07-19 |
-| `ops/engram-refactor-blueprint-2026-07-20.md` | living | 10-round mandatory-minimum debate (ag.deepthink+cx.deepthink+cc.fable), user-mandated reframing of portable-dev-env as secondary vs peer-collaboration-hub as primary. **SHELVED, NOT AUTHORIZED** — full distributed architecture (JSONL/MCP wire protocol, PeerAdapter/UsageProvider split, effect-based governance tiers, client attribution) designed and unanimously converged rounds 1-6, then unanimously reversed rounds 6-7 after a mandated red-team pass found zero validated second consumer while real operational failures (a lease/session-state concurrency bug the debate itself found and reproduced) sat unaddressed. v1 ships only: the lease/session fix, a budget single-authority test, a `PathLayout` seed, and this document — filed behind an explicit 5-part activation gate (§0). Process finding: the self-correction pattern (not just the architecture) is the deliverable. | 2026-07-20 |
-| `ops/pretdd-prep-2026-07-21-diag-quota-metrics.md` | design | Exhaustive pre-TDD spec (R:10 unanimous cc+ag+cx): diag.py URG→EXH rename + explicit Pace labeling; Codex rate-limit reset credit detection/redemption (exact schema, RPC framing, CLI contract, terminal-origin-only governance); recent-session token consumption (log_cost() schema extension, Codex per-turn `last_token_usage` vs cumulative arithmetic, aggregation contract). Not yet implemented. | 2026-07-21 |
-| `ops/runtime-drift-reconciliation-pretdd.md` | design | R:10-unanimous pre-TDD Runtime Drift Reconciliation contract: extend existing reality/update/hub mechanisms with adapter-owned provenance, exact-profile selected-model proof or UNKNOWN, no effort/quota inference, hash-bound plan approval, logical-only transaction atomicity, dispatch fencing, recovery, and exhaustive acceptance evidence. Source/tests untouched. | 2026-07-27 |
 | `ops/phase1-docs-audit-open-items-2026-07-22.md` | living | Phase 1 docs MECE audit close-out: 4 concrete open items (semantic-truth checking gap in check_docs_mece.py, skills/templates restructure decision, Three-Layer knowledge propagation still unbuilt beyond Layer 2, manual.md pointing at a historical design doc for a live system) + 2 MECE-excluded edge cases (duplicate-named AGY.md files, docs/history left intentionally unaudited) | 2026-07-22 |
 | `ops/phase2-arch-general-specific-2026-07-22.md` | design | No-code, config-driven, General-Specific MECE architecture for multi-platform/installed-elsewhere Engram (R:10, ag.deepthink+cx.effort+cc, 5 rounds): 4 logical stores (immutable core / shared config / shared mutable data / workspace state) replacing PORTABLE_ROOT coupling; RuntimeContext with explicit CLI>bootstrap-manifest>discovery precedence; versioned+catalog-checked adapter contract (peer_instances reference a logical implementation ID only, never an importable string path) against the real PeerAdapter interface; 4 declared un-generalizable exceptions; SUBST/junction demoted to an explicitly user-confirmed Legacy Migration Backend (260-char MAX_PATH justification empirically verified: a real repo file measures 267 chars without the P:\ shortcut). Architecture only -- not yet implemented, Phase 3 is exact schema/interface detail. | 2026-07-22 |
-| `ops/multi-ai-collaboration-accord-2026-08-15.md` | living | 3-way unanimous ratification accord (CC + CX + AG): multi-AI collaboration & quota architecture, Free-MAD bounded review, 3-tier context, TaskDescriptor governance routing, InterfaceManifest drift defense. | 2026-08-15 |
+| `ops/cli-update-checkpoints-agy.md` | living | agy CLI update checkpoints (install/version evidence) | 2026-08-19 |
+| `ops/cli-update-checkpoints-cc.md` | living | claude CLI update checkpoints (install/version evidence) | 2026-08-19 |
+| `ops/cli-update-checkpoints-codex.md` | living | codex CLI update checkpoints (install/version evidence) | 2026-08-19 |
+| `ops/residual-backlog-and-packaging-precheck-2026-07-26.md` | design | Residual packaging/release precheck backlog | 2026-07-26 |
 | `user/manual.md` | living | Human onboarding, daily workflow, command reference | 2026-06-26 |
 | `user/requirements.md` | living | Root requirement contract (A1-A5...) — source of intent | 2026-06-26 |
 | `_exceptions/README.md` | living | Active ambiguity register (small; not a backlog) | 2026-06-26 |
@@ -154,20 +148,3 @@ specific/{id}.md  (delta only — lists ONLY what differs from general)
 
 ---
 
-## hub.py Command Reference (terminal command contract — see protocol.md §7)
-| Command | Purpose |
-|---------|---------|
-| `peer-status` | **Canonical** peer status (non-mutating, orchestration-filtered) |
-| `status` | Room/session status |
-| `health-precheck --peer {id}` | Routability check before an ask |
-| `model-status` / `profile-validate` | Model inventory / profile parity |
-| `health-check` | Audit/maintenance health view (read-only by default; `--recover` mutates) |
-| `ask --to {peer}` | Route a query to a peer |
-| `init-session --agent {id}` | Join P2P room |
-| `health-update --peer {id} --status GREEN` | Self-report health (refused for disabled peers) |
-| `proposal-add` / `proposal-vote` / `proposal-list` | Governance proposals |
-| `lessons-list` / `lessons-propose` | Active lessons |
-| `thread-new` / `thread-append` | Shared topic threads |
-| `lease-status` / `lock-status` / `task-status` / `role-status` | State views |
-
-> Terminal reads raw `_sys/` state files ONLY for explicit audit or when the canonical command is missing/broken — and must say so (GAP-3 / PRO-19).

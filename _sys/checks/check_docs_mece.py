@@ -376,28 +376,8 @@ def chk_05_value_sync(_exempt: list[str], view: FileView | None = None) -> list[
     except Exception:
         return findings
 
-    collab_current = protocol.get("collab_rate", {}).get("current")
-    if collab_current is None:
-        return findings
-
-    docs_pattern = re.compile(r"collab_rate[:\s]+(\d+)")
-    md_files = active_view.list_files("_sys/docs-v2/", suffix=".md")
-    for md_rel in md_files:
-        try:
-            lines = active_view.read_text(md_rel).splitlines()
-        except Exception:
-            continue
-
-        for lineno, line in enumerate(lines, 1):
-            for m in docs_pattern.finditer(line):
-                val = int(m.group(1))
-                if val != collab_current and val not in (0, 10):
-                    findings.append(Finding(
-                        "CHK-05", "T2",
-                        md_rel,
-                        lineno,
-                        f"collab_rate {val} in doc ≠ protocol.json current={collab_current}",
-                    ))
+    # CHK-05 retired: collab_rate was part of the peer-governance layer that
+    # moved out of Engram with the peerhub separation. Nothing to reconcile.
     return findings
 
 

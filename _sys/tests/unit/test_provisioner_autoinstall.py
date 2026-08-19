@@ -629,71 +629,72 @@ class TestPreservePathsMigration:
         assert (new_dir / "npm-global" / "claude.cmd").exists(), "npm-global (installed peer CLIs) must survive the swap"
 
 
-class TestLeaseGate:
-    def test_is_peer_leased_true_for_open_unexpired_lease(self, tmp_path):
+class TestInUseGate:
+    """The install/update interlock now observes real OS process ownership.
+
+    Session/lease bookkeeping moved to the separately-installed peerhub
+    package with the Engram/peerhub separation, so the provisioner no longer
+    reads .ai/leases.json -- it checks whether the binary it is about to
+    replace is actually running inside THIS portable install.
+    """
+
+    def _fake_proc(self, name, exe):
+        class _P:
+            info = {"name": name, "exe": exe}
+        return _P()
+
+    def test_in_use_true_when_peer_process_runs_inside_this_install(self, monkeypatch, tmp_path):
         sys_dir = tmp_path / "_sys"
         sys_dir.mkdir()
-        ai_dir = tmp_path / ".ai"
-        ai_dir.mkdir()
-        future = (pv.datetime.datetime.now() + pv.datetime.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
-        (ai_dir / "leases.json").write_text(json.dumps({
-            # T83: keyed by lease_id (uuid), matched via entry["peer_id"].
-            "11111111-1111-1111-1111-111111111111": {"peer_id": "cx", "status": "open", "expires_at": future, "pid": 123}
-        }), encoding="utf-8")
-
+        running = self._fake_proc("codex.exe", str(sys_dir / "env" / "nodejs" / "codex.exe"))
+        monkeypatch.setattr(
+            pv, "psutil",
+            type("m", (), {"process_iter": staticmethod(lambda attrs=None: [running]),
+                           "NoSuchProcess": Exception, "AccessDenied": Exception})(),
+            raising=False,
+        )
+        import sys as _sys
+        monkeypatch.setitem(_sys.modules, "psutil", pv.psutil)
         assert pv._is_peer_leased(sys_dir, "cx") is True
-        assert pv._is_peer_leased(sys_dir, "claude") is False
 
-    def test_is_peer_leased_false_for_expired_lease(self, tmp_path):
+    def test_in_use_false_for_unrelated_host_process(self, monkeypatch, tmp_path):
         sys_dir = tmp_path / "_sys"
         sys_dir.mkdir()
-        ai_dir = tmp_path / ".ai"
-        ai_dir.mkdir()
-        past = (pv.datetime.datetime.now() - pv.datetime.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
-        (ai_dir / "leases.json").write_text(json.dumps({
-            "11111111-1111-1111-1111-111111111111": {"peer_id": "cx", "status": "open", "expires_at": past}
-        }), encoding="utf-8")
-
+        # Same executable name, but living outside this portable install.
+        running = self._fake_proc("codex.exe", r"C:\Program Files\other\codex.exe")
+        fake = type("m", (), {"process_iter": staticmethod(lambda attrs=None: [running]),
+                              "NoSuchProcess": Exception, "AccessDenied": Exception})()
+        import sys as _sys
+        monkeypatch.setitem(_sys.modules, "psutil", fake)
         assert pv._is_peer_leased(sys_dir, "cx") is False
 
-    def test_is_peer_leased_false_when_closed(self, tmp_path):
+    def test_in_use_false_when_nothing_runs(self, monkeypatch, tmp_path):
+        sys_dir = tmp_path / "_sys"
+        sys_dir.mkdir()
+        fake = type("m", (), {"process_iter": staticmethod(lambda attrs=None: []),
+                              "NoSuchProcess": Exception, "AccessDenied": Exception})()
+        import sys as _sys
+        monkeypatch.setitem(_sys.modules, "psutil", fake)
+        assert pv._is_peer_leased(sys_dir, "cx") is False
+
+    def test_unknown_tool_is_never_reported_in_use(self, tmp_path):
+        sys_dir = tmp_path / "_sys"
+        sys_dir.mkdir()
+        assert pv._is_peer_leased(sys_dir, "some-unknown-tool") is False
+
+    def test_no_longer_reads_ai_leases_json(self, tmp_path):
+        """Regression guard: .ai/leases.json is peerhub's concern, not Engram's."""
         sys_dir = tmp_path / "_sys"
         sys_dir.mkdir()
         ai_dir = tmp_path / ".ai"
         ai_dir.mkdir()
         future = (pv.datetime.datetime.now() + pv.datetime.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
         (ai_dir / "leases.json").write_text(json.dumps({
-            "11111111-1111-1111-1111-111111111111": {"peer_id": "cx", "status": "closed", "expires_at": future}
+            "11111111-1111-1111-1111-111111111111":
+                {"peer_id": "cx", "status": "open", "expires_at": future}
         }), encoding="utf-8")
-
+        # An open lease file must NOT by itself gate the install anymore.
         assert pv._is_peer_leased(sys_dir, "cx") is False
-
-    def test_is_peer_leased_false_when_no_leases_file(self, tmp_path):
-        sys_dir = tmp_path / "_sys"
-        sys_dir.mkdir()
-        assert pv._is_peer_leased(sys_dir, "cx") is False
-
-    def test_nodejs_swap_deferred_when_any_peer_leased(self, monkeypatch, tmp_path):
-        sys_dir = _make_sys_dir(tmp_path, {})
-        (sys_dir / "runtimes.json").write_text(json.dumps({
-            "runtimes": {"nodejs": {"version": "22.22.3", "url": "https://example/node.zip"}},
-            "tools": {},
-        }), encoding="utf-8")
-        ai_dir = tmp_path / ".ai"
-        ai_dir.mkdir()
-        future = (pv.datetime.datetime.now() + pv.datetime.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
-        (ai_dir / "leases.json").write_text(json.dumps({
-            "cx": {"status": "open", "expires_at": future}
-        }), encoding="utf-8")
-
-        downloads = []
-        monkeypatch.setattr(pv, "_secure_download", lambda url, dest: downloads.append(url))
-
-        res = pv.ensure_runtime("nodejs", sys_dir=sys_dir)
-
-        assert res["status"] == "in_use_deferred"
-        assert downloads == []
-        assert pv._load_deferred(sys_dir) == {"runtime:nodejs": {"kind": "runtime", "name": "nodejs"}}
 
 
 class TestNpmPeerCanaryAndRetry:

@@ -1,15 +1,24 @@
 {
   "schema_version": 1,
   "_purpose": "Machine-verifiable record of policy decisions: what was decided, on what evidence, and whether the config/docs that were supposed to change as a result still actually reflect it. Motivated by a real incident (2026-07-19/20): intelligence-scores.md's status banner said arbiter_models expansion was 'OPEN and unapplied' for hours after commit ab3af8f had already applied it -- a prose banner nobody re-checked against the real config. check_policy_ledger.py verifies every 'applied' decision's `checks` against live files on every commit, so this class of silent divergence fails fast instead of sitting stale.",
-  "_valid_statuses": ["proposed", "approved", "applied", "superseded"],
+  "_valid_statuses": [
+    "proposed",
+    "approved",
+    "applied",
+    "superseded"
+  ],
   "decisions": [
     {
       "decision_id": "arbiter-models-cx-deepthink-2026-07-19",
       "title": "Expand DIR-005 arbiter_models to include cx.deepthink",
       "status": "applied",
       "decided_at": "2026-07-19",
-      "decided_by": ["user"],
-      "evidence_refs": ["_sys/docs-v2/ops/intelligence-scores.md#4-2"],
+      "decided_by": [
+        "user"
+      ],
+      "evidence_refs": [
+        "_sys/docs-v2/ops/intelligence-scores.md#4-2"
+      ],
       "applied_commit": "ab3af8f",
       "supersedes": null,
       "checks": [
@@ -17,7 +26,11 @@
           "kind": "json_value",
           "path": "_sys/ai/routing-config.json",
           "pointer": "/token_load_balancing/arbiter_models",
-          "expected": ["cc.fable", "cc.deepthink", "cx.deepthink"]
+          "expected": [
+            "cc.fable",
+            "cc.deepthink",
+            "cx.deepthink"
+          ]
         }
       ]
     },
@@ -26,8 +39,14 @@
       "title": "Resolve ag.deepthink tier-inversion (§4.1) via live empirical probe (Option B)",
       "status": "applied",
       "decided_at": "2026-07-19",
-      "decided_by": ["cc", "ag", "cx"],
-      "evidence_refs": ["_sys/docs-v2/ops/intelligence-scores.md#4-1"],
+      "decided_by": [
+        "cc",
+        "ag",
+        "cx"
+      ],
+      "evidence_refs": [
+        "_sys/docs-v2/ops/intelligence-scores.md#4-1"
+      ],
       "applied_commit": "0f753d9",
       "supersedes": null,
       "checks": [
@@ -43,8 +62,15 @@
       "title": "Codify DIR-006: unanimous consensus required at direction/plan altitude, and disable Agent View background sessions to fix the orphaned-daemon incident",
       "status": "applied",
       "decided_at": "2026-07-19",
-      "decided_by": ["user", "cc", "ag", "cx"],
-      "evidence_refs": ["_sys/ai/user-directives.md#dir-006"],
+      "decided_by": [
+        "user",
+        "cc",
+        "ag",
+        "cx"
+      ],
+      "evidence_refs": [
+        "_sys/ai/user-directives.md#dir-006"
+      ],
       "applied_commit": "78442e2",
       "supersedes": null,
       "checks": [
@@ -66,7 +92,12 @@
       "title": "Ratify H1 (canary reserve_floor) and H2 (canary budget_cap + window_hours)",
       "status": "applied",
       "decided_at": "2026-07-20",
-      "decided_by": ["user", "ag", "cx", "cc.fable"],
+      "decided_by": [
+        "user",
+        "ag",
+        "cx",
+        "cc.fable"
+      ],
       "evidence_refs": [
         "_sys/docs-v2/ops/capability-leveling-decisions.md#h1-h2-ratification-2026-07-20"
       ],
@@ -96,24 +127,24 @@
     {
       "decision_id": "engram-refactor-blueprint-shrink-2026-07-20",
       "title": "Shrink the Engram peer-collaboration-first refactor to a small v1; shelve the full architecture behind an activation gate",
-      "status": "applied",
+      "status": "superseded",
       "decided_at": "2026-07-20",
-      "decided_by": ["user", "ag", "cx", "cc.fable"],
+      "decided_by": [
+        "user",
+        "ag",
+        "cx",
+        "cc.fable"
+      ],
       "evidence_refs": [
-        "_sys/docs-v2/ops/engram-refactor-blueprint-2026-07-20.md"
+        "_sys/docs/history/engram-peer-governance/engram-refactor-blueprint-2026-07-20.md"
       ],
       "applied_commit": "e58ad54",
       "supersedes": null,
       "checks": [
         {
           "kind": "text_contains",
-          "path": "_sys/docs-v2/ops/engram-refactor-blueprint-2026-07-20.md",
+          "path": "_sys/docs/history/engram-peer-governance/engram-refactor-blueprint-2026-07-20.md",
           "expected_substring": "SHELVED — NOT AUTHORIZED FOR IMPLEMENTATION"
-        },
-        {
-          "kind": "text_contains",
-          "path": "_sys/docs-v2/00-MANIFEST.md",
-          "expected_substring": "ops/engram-refactor-blueprint-2026-07-20.md"
         },
         {
           "kind": "json_array_member",
@@ -122,7 +153,9 @@
           "match_key": "id",
           "match_value": "T82"
         }
-      ]
+      ],
+      "superseded_by": "engram-peerhub-separation-2026-08-19",
+      "superseded_note": "The full peer-collaboration architecture this decision shelved was not merely shelved but removed from Engram entirely by the 2026-08-19 Engram/peerhub separation: coordination now lives in the separate peerhub package. The blueprint is archived (non-normative) at _sys/docs/history/engram-peer-governance/engram-refactor-blueprint-2026-07-20.md."
     }
   ]
 }

@@ -41,7 +41,7 @@ for PyPI/Homebrew/WinGet, etc.) -- genuinely thorough, multi-round
 cx.deepthink-audited design work, not a sketch.
 
 But a separate, dedicated 10-round adversarial debate
-(`_sys/docs-v2/ops/engram-refactor-blueprint-2026-07-20.md`, memory:
+(`_sys/docs/history/engram-peer-governance/engram-refactor-blueprint-2026-07-20.md`, memory:
 `project_engram_refactor_blueprint_2026_07_20`) already asked exactly "should
 we build toward this" and converged, then **unanimously reversed itself**
 after a mandated round-6 red-team pass found three independently-convergent

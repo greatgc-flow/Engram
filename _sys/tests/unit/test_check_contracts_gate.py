@@ -48,7 +48,7 @@ def _read_log_entries(m) -> list[dict]:
 
 def test_governed_core_internal_error_blocks_with_claude_hook_exit_2(monkeypatch, tmp_path):
     m = _prepare(monkeypatch, tmp_path, rc=2, output="pytest internal failure")
-    changed = m._SYS_DIR / "core" / "hub.py"
+    changed = m._SYS_DIR / "ai" / "orchestration.json"
 
     code = _run_main(m, ["--changed-file", str(changed)])
 
@@ -87,7 +87,7 @@ def test_non_governed_internal_error_is_visible_but_non_blocking(monkeypatch, tm
 
 def test_force_tier0_logs_and_downgrades_governed_core_to_non_blocking(monkeypatch, tmp_path):
     m = _prepare(monkeypatch, tmp_path, rc=2, output="pytest internal failure")
-    changed = m._SYS_DIR / "core" / "hub.py"
+    changed = m._SYS_DIR / "ai" / "orchestration.json"
 
     code = _run_main(m, ["--changed-file", str(changed), "--force-tier0"])
 
@@ -139,7 +139,7 @@ def test_successful_run_resets_consecutive_counter(monkeypatch, tmp_path):
         encoding="utf-8",
     )
 
-    changed = m._SYS_DIR / "core" / "hub.py"
+    changed = m._SYS_DIR / "ai" / "orchestration.json"
     code = _run_main(m, ["--changed-file", str(changed)])
 
     assert code == 0
@@ -160,7 +160,7 @@ def test_real_contract_violation_blocks_and_never_increments_counter(monkeypatch
         encoding="utf-8",
     )
 
-    changed = m._SYS_DIR / "core" / "hub.py"
+    changed = m._SYS_DIR / "ai" / "orchestration.json"
     code = _run_main(m, ["--changed-file", str(changed)])
 
     assert code == 2

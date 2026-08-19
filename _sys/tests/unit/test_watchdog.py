@@ -63,49 +63,25 @@ class TestWatchdogContractCheck:
                     "On success, no hub thread should be created"
                 )
 
-    def test_watchdog_creates_thread_on_failure(self, tmp_path):
-        """On contract failure (rc=1), must call hub.py thread-new with failure info."""
+    def test_watchdog_reports_failure_to_stderr(self, tmp_path, capsys):
+        """On contract failure (rc=1), must surface [SYSTEM_ALERT] + the failure tail.
+
+        Peer messaging (the old hub.py thread-new path) is no longer Engram's
+        concern -- the watchdog now reports locally to stderr.
+        """
         import ctx_end
 
-        call_args_list = []
-
         def fake_run(cmd, **kwargs):
-            call_args_list.append(cmd)
-            cmd_str = str(cmd)
-            if "check_contracts" in cmd_str:
+            if "check_contracts" in str(cmd):
                 return _make_completed_process(1, "", "FAIL: 2 contract violations")
             return _make_completed_process(0)
 
         with patch("subprocess.run", side_effect=fake_run):
             ctx_end.run_contract_watchdog(ai_root=tmp_path, python_exe=sys.executable)
 
-        thread_calls = [c for c in call_args_list if "thread-new" in str(c)]
-        assert len(thread_calls) >= 1, (
-            "On contract failure, run_contract_watchdog must call hub.py thread-new"
-        )
-
-    def test_watchdog_thread_contains_failure_info(self, tmp_path):
-        """Failure thread must contain '[SYSTEM_ALERT]' and failure details."""
-        import ctx_end
-
-        thread_topics = []
-
-        def fake_run(cmd, **kwargs):
-            cmd_str = str(cmd)
-            if "thread-new" in cmd_str:
-                thread_topics.append(cmd_str)
-            if "check_contracts" in cmd_str:
-                return _make_completed_process(1, "", "FAIL: contract violation")
-            return _make_completed_process(0)
-
-        with patch("subprocess.run", side_effect=fake_run):
-            ctx_end.run_contract_watchdog(ai_root=tmp_path, python_exe=sys.executable)
-
-        assert thread_topics, "No thread-new call made"
-        combined = " ".join(thread_topics)
-        assert "SYSTEM_ALERT" in combined or "contract" in combined.lower(), (
-            "Thread must contain SYSTEM_ALERT or contract failure info"
-        )
+        err = capsys.readouterr().err
+        assert "SYSTEM_ALERT" in err
+        assert "contract violations" in err
 
     def test_watchdog_no_recursion_guard(self, tmp_path):
         """Watchdog must not trigger ctx-end again (no recursion)."""

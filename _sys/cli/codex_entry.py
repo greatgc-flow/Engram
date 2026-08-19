@@ -1,6 +1,6 @@
 """codex_entry.py — Codex (cx) session entry point.
 
-Calls hub.py init-session, health-update, context-fill, then launches codex.cmd via console_runner.
+Launches codex.cmd as an interactive console session via console_runner.
 """
 import os
 import sys
@@ -27,15 +27,8 @@ def _env() -> dict:
 
 def _set_title(peer: str) -> None:
     try:
-        import json
         import ctypes
-        state_file = _PORTABLE_ROOT / ".ai" / "state.json"
-        room_id = ""
-        if state_file.exists():
-            data = json.loads(state_file.read_text(encoding="utf-8"))
-            room_id = data.get("room_id", "")
-        title = f"[{room_id}] {peer}" if room_id else peer
-        ctypes.windll.kernel32.SetConsoleTitleW(title)
+        ctypes.windll.kernel32.SetConsoleTitleW(peer)
     except Exception:
         pass
 
@@ -51,7 +44,6 @@ def main() -> None:
         peer_id="cx",
         cmd_prefix=["cmd", "/c", str(_CODEX_CMD)],
         env=_env(),
-        health_json_path=_SYS_DIR / "codex" / "health.json",
     )
     result = run_console_session(spec, sys.argv[1:])
     sys.exit(result.exit_code)

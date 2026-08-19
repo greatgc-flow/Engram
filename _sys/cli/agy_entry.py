@@ -1,6 +1,6 @@
 """agy_entry.py — Antigravity (ag) session entry point.
 
-Calls hub.py init-session, health-update, context-fill, then launches agy.exe via console_runner.
+Launches agy.exe as an interactive console session via console_runner.
 """
 import json
 import os
@@ -35,15 +35,8 @@ def _env() -> dict:
 
 def _set_title(peer: str) -> None:
     try:
-        import json
         import ctypes
-        state_file = _PORTABLE_ROOT / ".ai" / "state.json"
-        room_id = ""
-        if state_file.exists():
-            data = json.loads(state_file.read_text(encoding="utf-8"))
-            room_id = data.get("room_id", "")
-        title = f"[{room_id}] {peer}" if room_id else peer
-        ctypes.windll.kernel32.SetConsoleTitleW(title)
+        ctypes.windll.kernel32.SetConsoleTitleW(peer)
     except Exception:
         pass
 
@@ -59,8 +52,6 @@ def main() -> None:
         cmd_prefix=[str(_AGY_EXE)],
         env=_env(),
         cwd=Path.cwd().resolve(),
-        context_fill_frame=True,
-        health_json_path=_SYS_DIR / "antigravity" / "health.json",
         # ag's original pre-migration convention always marked health RED on
         # Ctrl+C (exit 130), unlike cx/cc -- preserve that here (independent
         # cross-verification found this).
