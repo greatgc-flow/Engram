@@ -400,7 +400,7 @@ Model context limits are FACTS; they are not tabled here. Reference `model-regis
 
 ### Implementation
 
-Planned in: `_sys/core/hub_context.py` (Phase 3, impl-plan.md §4)
+Retired 2026-08-19 with the Engram/peerhub separation (was planned in the removed `hub_context.py`); peer session context is peerhub's concern.
 Traceability: `traceability_map.json` entry `context-gate`
 
 ---

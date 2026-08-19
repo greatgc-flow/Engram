@@ -1,6 +1,6 @@
 """claude_entry.py — Claude session entry point (shadow-fix wrapper).
 
-Calls hub.py init-session, shows status, then launches claude.cmd via console_runner.
+Launches claude.cmd as an interactive console session via console_runner.
 """
 import os
 import sys
@@ -24,15 +24,8 @@ def _env() -> dict:
 
 def _set_title(peer: str) -> None:
     try:
-        import json
         import ctypes
-        state_file = _PORTABLE_ROOT / ".ai" / "state.json"
-        room_id = ""
-        if state_file.exists():
-            data = json.loads(state_file.read_text(encoding="utf-8"))
-            room_id = data.get("room_id", "")
-        title = f"[{room_id}] {peer}" if room_id else peer
-        ctypes.windll.kernel32.SetConsoleTitleW(title)
+        ctypes.windll.kernel32.SetConsoleTitleW(peer)
     except Exception:
         pass
 

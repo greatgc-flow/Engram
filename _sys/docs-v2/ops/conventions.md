@@ -215,8 +215,8 @@ check-deps.bat, git-draft.bat, check-risk.bat (risk-scan uses exit /b 0 — non-
 | I | check-risk.bat | ≤10k | ~0 | Phase 1.5 |
 
 ### 3-5. Collaboration Protocol
-→ See **`_sys/docs-v2/general/protocol.md`** (P2P model, COLLAB_RATE levels, feedback loop).
-→ Consensus voting rules: **`_sys/docs-v2/general/protocol.md`** §4 Collaboration & Consensus (R:10, Final Call, tiebreak).
+→ Retired 2026-08-19; archived at **`_sys/docs/history/engram-peer-governance/protocol.md`** (non-normative).
+→ Consensus voting was retired 2026-08-19; archived at **`_sys/docs/history/engram-peer-governance/protocol.md`** (non-normative).
 → Runtime config (single source of truth): **`_sys/ai/protocol.json`** (`collab_rate.current`, health thresholds, r10_voters).
 → Full SSOT index: **`PROTOCOL.md`** → **`_sys/docs-v2/MOC.md`**.
 
@@ -227,7 +227,7 @@ When gc should be prioritized as an analysis tool (large corpus, cross-repo scan
 Collaboration health check → **Axis H** (`_sys/checks/check-health.bat`). Token budget: See §3-4-D.
 
 ## §3-9 — Session Transition Triggers
-Collaboration transition timing by COLLAB_RATE level → See **`_sys/docs-v2/general/protocol.md`** (COLLAB_RATE table) and **`_sys/docs-v2/general/lifecycle.md`** (session decision tree).
+COLLAB_RATE was retired 2026-08-19; archived at **`_sys/docs/history/engram-peer-governance/protocol.md`** (non-normative). Session lifecycle: **`_sys/docs-v2/general/lifecycle.md`**.
 
 ## 4. Folder/File Naming Rules
 
@@ -285,7 +285,7 @@ Hardcoded drive letters are prohibited. Mutual non-interference zone → See **`
 ---
 
 ## §8 — Decision Delegation Policy
-For matters requiring unanimous agreement → See **`_sys/docs-v2/general/protocol.md`** §4 Collaboration & Consensus (R:10, Final Call, voter list).
+Unanimity/R:10 gating was retired 2026-08-19; archived at **`_sys/docs/history/engram-peer-governance/protocol.md`** (non-normative).
 Call Human Gate in case of deadlock → See **`_sys/docs-v2/10-invariants.md`** (INV-07 Human escalation).
 
 ## §9 — Testing Environment Policy (2026-06-01)

@@ -45,7 +45,7 @@ the declared capability class plus DIR-002.
 
 | Path | File | Function |
 |------|------|---------|
-| Hub P2P ask | `_sys/core/hub_peer.py` | adapter `build_cmd()` / `build_session_cmd()` |
+| Peer ask | peerhub package (`peerhub ask`) | not an Engram surface since 2026-08-19 |
 | Direct console | `_sys/cli/peer_console.py` | peer-specific blocks |
 
 Verify parity: `hub.py profile-validate` / `hub.py profile-validate --peer <id>`

@@ -258,3 +258,6 @@ peerhub/
 .peerhub/
 _sys/claude/project/scheduled_tasks.lock
 _sys/claude/config/.claude.json.bak*
+
+# Isolated install/verification test clones (not product source)
+/output/

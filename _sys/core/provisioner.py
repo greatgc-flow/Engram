@@ -727,38 +727,53 @@ def ensure_runtime(name: str, orch: dict | None = None, sys_dir: Path | None = N
 
 
 def _is_peer_leased(sys_dir: Path, peer_or_tool: str) -> bool:
-    """True if .ai/leases.json (hub.py's active-session lease tracker) has a
-    currently-open, non-expired lease matching peer_or_tool. "nodejs" is
-    treated as leased if ANY peer has an open lease, since all npm-based
-    peer CLIs live inside nodejs's own npm-global directory. Lease schema
-    (hub.py's _lease_open/_lease_close): keyed by lease_id (uuid4, T83),
-    each entry's "peer_id" field is what matches peer_or_tool here; other
-    fields include status ("open" while active), expires_at (naive local-time string,
-    "%Y-%m-%dT%H:%M:%S" - hub.py's _now() uses datetime.now(), no tz)."""
-    leases_path = sys_dir.parent / ".ai" / "leases.json"
-    if not leases_path.exists():
-        return False
-    try:
-        leases = json.loads(leases_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    """True if the peer/tool's executable currently has a running process.
+
+    Replacing a binary that is still executing is unsafe (on Windows the
+    image is locked outright), so installs/updates check real process
+    ownership before touching one. "nodejs" is treated as in use if ANY
+    npm-based peer CLI is running, since they all live inside nodejs's own
+    npm-global directory.
+
+    This deliberately observes the OS rather than any coordinator's
+    bookkeeping: session/lease state belongs to the separately-installed
+    peerhub package, and Engram must not read another product's storage.
+    Fails open (returns False) when process inspection is unavailable,
+    matching the previous behaviour when no lease file existed.
+    """
+    process_names = {
+        "nodejs": ("node.exe", "claude.exe", "codex.exe"),
+        "claude": ("claude.exe",),
+        "cc": ("claude.exe",),
+        "codex": ("codex.exe", "node.exe"),
+        "cx": ("codex.exe", "node.exe"),
+        "antigravity": ("agy.exe",),
+        "ag": ("agy.exe",),
+    }.get(peer_or_tool)
+    if not process_names:
         return False
 
-    now = datetime.datetime.now()
-    for lease in leases.values():
-        if not isinstance(lease, dict) or lease.get("status") != "open":
-            continue
-        # T83: leases.json is keyed by lease_id (uuid), not peer_id -- match by
-        # entry["peer_id"], never the dict key.
-        if peer_or_tool != "nodejs" and lease.get("peer_id") != peer_or_tool:
-            continue
-        expires_at = lease.get("expires_at")
-        if not expires_at:
-            continue
-        try:
-            if datetime.datetime.fromisoformat(expires_at) > now:
-                return True
-        except ValueError:
-            continue
+    try:
+        import psutil
+    except ImportError:
+        return False
+
+    root = str(sys_dir.resolve()).lower()
+    try:
+        for proc in psutil.process_iter(["name", "exe"]):
+            try:
+                name = (proc.info.get("name") or "").lower()
+                if name not in process_names:
+                    continue
+                exe = proc.info.get("exe")
+                # Only count processes belonging to THIS portable install;
+                # a host-wide node.exe is unrelated to these files.
+                if exe and str(exe).lower().startswith(root):
+                    return True
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+    except Exception:
+        return False
     return False
 
 

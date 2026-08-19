@@ -67,7 +67,10 @@ def _check_config_sourced() -> list[str]:
     """CHK-CONST-1: each named constant assigned from telemetry_config() subscript chain."""
     out: list[str] = []
     if not _SNAPSHOT.exists():
-        return [f"CHK-CONST-1: snapshot.py not found at {_SNAPSHOT}"]
+        # snapshot.py was peer-telemetry code, removed with the Engram/peerhub
+        # separation; peerhub owns quota/telemetry constants now. Nothing to
+        # check on the Engram side.
+        return out
 
     try:
         src = _SNAPSHOT.read_text(encoding="utf-8")

@@ -1,18 +1,21 @@
 :: ================================================================
-:: agy-status.bat  -  Quick Antigravity (agy) peer health check
-:: Delegates detailed health to hub.py peer-status.
+:: agy-status.bat  -  Antigravity (agy) installation check
+::
+:: Engram scope: is the vendor CLI installed, and what version.
+:: Peer coordination status (health, quota, routing) belongs to the
+:: separately-installed peerhub package: `peerhub status --peer ag`.
 :: ================================================================
 @echo off
 
-set "_PEER=ag"
 set "_AGY_EXE=%~dp0..\tools\agy\agy.exe"
 
-set "_INSTALLED=false"
-if exist "%_AGY_EXE%" set "_INSTALLED=true"
+if exist "%_AGY_EXE%" (
+    echo [Antigravity] installed=true
+    "%_AGY_EXE%" --version 2>&1
+) else (
+    echo [Antigravity] installed=false
+    echo   Expected at: %_AGY_EXE%
+    echo   Run INSTALL.bat to provision it.
+)
 
-echo [Antigravity] installed=%_INSTALLED%
-python "%~dp0..\core\hub.py" peer-status --peer %_PEER% 2>&1
-
-set "_INSTALLED="
-set "_PEER="
 set "_AGY_EXE="
