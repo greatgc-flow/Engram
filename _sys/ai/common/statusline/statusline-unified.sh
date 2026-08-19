@@ -19,6 +19,15 @@ SYS_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 input=$(cat)
 
+# ── 0. Persist raw stdin for diag's snapshot.py gather_peer() ─────
+# gather_peer() reads a per-peer capture file to source live account/cost/
+# rate-limit data; without this write it silently serves whatever was last
+# on disk (see diag-quota-staleness incident, root-caused 2026-08-19).
+case "$PEER_ID" in
+  cc) printf '%s' "$input" > "$SYS_DIR/claude/config/status_input.log" 2>/dev/null || true ;;
+  ag) printf '%s' "$input" > "$SYS_DIR/data/temp/ag_statusline_stdin.log" 2>/dev/null || true ;;
+esac
+
 # ── 1. Model Name ─────────────────────────────────────────
 model=$(echo "$input" | jq -r 'if .model_name then .model_name elif (.model | type) == "object" then .model.display_name elif (.model | type) == "string" then .model else "Unknown" end')
 effort=$(echo "$input" | jq -r '
