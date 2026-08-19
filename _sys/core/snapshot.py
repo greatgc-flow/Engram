@@ -1943,15 +1943,22 @@ def _compute_alerts(record):
             alerts.append(_alert("warn", "CONTEXT_WARN", f"context {util:.0f}% >= {warn_pct:.0f}%"))
 
     worst = None
+    worst_label = None
     for bucket in dom.get("quota", {}).get("buckets", []):
         frac = bucket.get("used_frac")
-        if isinstance(frac, (int, float)):
-            worst = frac if worst is None else max(worst, frac)
+        if isinstance(frac, (int, float)) and (worst is None or frac > worst):
+            worst = frac
+            worst_label = bucket.get("label")
     if worst is not None:
+        # Name the specific pool driving this alert (worst-of-all-buckets) so a
+        # peer with a mix of pools (e.g. ag's exhausted 3P-7D alongside a
+        # healthy G-5H/G-7D) doesn't read as uniformly critical when only one
+        # pool actually is (diag-consistency fix, 2026-08-19).
+        suffix = f" ({worst_label})" if worst_label else ""
         if worst >= QUOTA_CRIT_FRAC:
-            alerts.append(_alert("critical", "QUOTA_CRITICAL", f"quota {worst * 100:.0f}% used"))
+            alerts.append(_alert("critical", "QUOTA_CRITICAL", f"quota {worst * 100:.0f}% used{suffix}"))
         elif worst >= QUOTA_WARN_FRAC:
-            alerts.append(_alert("warn", "QUOTA_WARN", f"quota {worst * 100:.0f}% used"))
+            alerts.append(_alert("warn", "QUOTA_WARN", f"quota {worst * 100:.0f}% used{suffix}"))
 
     acct = dom.get("account", {})
     if not acct.get("plan_tier") and not acct.get("email"):
