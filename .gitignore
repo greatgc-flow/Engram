@@ -103,6 +103,9 @@ _sys/antigravity/config/knowledge/
 _sys/antigravity/config/*.log
 _sys/antigravity/config/*.jsonl
 _sys/antigravity/config/*.json
+# Antigravity settings.json tracked deliberately (mirrors _sys/claude/config's
+# carve-out) -- it now carries the verified-working statusLine fix.
+!_sys/antigravity/config/settings.json
 _sys/antigravity/config/*.timestamp
 _sys/antigravity/config/installation_id
 _sys/antigravity/config/*.exe

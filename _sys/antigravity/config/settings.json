@@ -1,0 +1,16 @@
+{
+  "artifactReviewPolicy": "always-proceed",
+  "model": "Gemini 3.1 Pro (High)",
+  "notifications": true,
+  "statusLine": {
+    "type": "command",
+    "command": "bash 'P:/_sys/antigravity/config/statusline-command.sh'",
+    "enabled": true
+  },
+  "toolPermission": "always-proceed",
+  "trustedWorkspaces": [
+    "P:\\"
+  ],
+  "useG1Credits": true,
+  "verbosity": "low"
+}
