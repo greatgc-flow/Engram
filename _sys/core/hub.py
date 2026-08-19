@@ -6741,6 +6741,15 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     cmd = list(prepared.argv)
     use_stdin = prepared.stdin_payload is not None
     exe = _resolve_invoke_cli(cmd[0]) or shutil.which(cmd[0])
+    if exe:
+        _pr = Path(__file__).parent.parent.parent
+        _rr = _pr.resolve()
+        try:
+            _ep = Path(exe)
+            if _rr in _ep.parents and str(_pr) != str(_rr):
+                exe = str(_pr / _ep.relative_to(_rr))
+        except Exception:
+            pass
     if not exe:
         for staged_path in prepared.staged_artifacts:
             staged_path.unlink(missing_ok=True)
