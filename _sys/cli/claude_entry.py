@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from console_runner import ConsoleSessionSpec, run_console_session
+from _console_helpers import set_console_title
 
 _CLI_DIR = Path(__file__).parent
 _SYS_DIR = _CLI_DIR.parent
@@ -22,27 +23,18 @@ def _env() -> dict:
     return e
 
 
-def _set_title(peer: str) -> None:
-    try:
-        import json
-        import ctypes
-        state_file = _PORTABLE_ROOT / ".ai" / "state.json"
-        room_id = ""
-        if state_file.exists():
-            data = json.loads(state_file.read_text(encoding="utf-8"))
-            room_id = data.get("room_id", "")
-        title = f"[{room_id}] {peer}" if room_id else peer
-        ctypes.windll.kernel32.SetConsoleTitleW(title)
-    except Exception:
-        pass
-
-
 def main() -> None:
-    _set_title("Claude (cc)")
+    set_console_title(_PORTABLE_ROOT, "Claude (cc)")
+    if not _CLAUDE_CMD.exists():
+        print(f"[ERROR] claude.cmd not found at {_CLAUDE_CMD}")
+        print("  Install: npm install -g @anthropic-ai/claude-code")
+        sys.exit(1)
+
     spec = ConsoleSessionSpec(
         peer_id="cc",
         cmd_prefix=["cmd", "/c", str(_CLAUDE_CMD)],
         env=_env(),
+        health_json_path=_SYS_DIR / "claude" / "health.json",
     )
     result = run_console_session(spec, sys.argv[1:])
     sys.exit(result.exit_code)

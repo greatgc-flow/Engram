@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from console_runner import ConsoleSessionSpec, run_console_session
+from _console_helpers import set_console_title
 
 _CLI_DIR = Path(__file__).parent
 _SYS_DIR = _CLI_DIR.parent
@@ -25,23 +26,8 @@ def _env() -> dict:
     return e
 
 
-def _set_title(peer: str) -> None:
-    try:
-        import json
-        import ctypes
-        state_file = _PORTABLE_ROOT / ".ai" / "state.json"
-        room_id = ""
-        if state_file.exists():
-            data = json.loads(state_file.read_text(encoding="utf-8"))
-            room_id = data.get("room_id", "")
-        title = f"[{room_id}] {peer}" if room_id else peer
-        ctypes.windll.kernel32.SetConsoleTitleW(title)
-    except Exception:
-        pass
-
-
 def main() -> None:
-    _set_title("Codex (cx)")
+    set_console_title(_PORTABLE_ROOT, "Codex (cx)")
     if not _CODEX_CMD.exists():
         print(f"[ERROR] codex.cmd not found at {_CODEX_CMD}")
         print("  Install: npm install -g @openai/codex")

@@ -84,12 +84,17 @@ def _update_peer_health_json(spec: ConsoleSessionSpec, exit_code: int, duration_
     try:
         data = json.loads(spec.health_json_path.read_text(encoding="utf-8"))
         avail = data.setdefault("availability", {})
-        if spec.peer_id == "cx":
+        if spec.peer_id in ("cx", "cc"):
             # Independent cross-verification found this wrote a synthetic
             # duration=0/success record at "start" too (the original
             # pre-migration code only wrote invocation metrics once, after
             # actual completion) -- a hard-killed wrapper could leave a
             # false successful-invocation record. Only write at "finish".
+            # cc joined this branch 2026-08-24: claude_entry.py previously
+            # passed no health_json_path at all, so cc's health.json never
+            # got per-invocation last_invocation_* bookkeeping from this
+            # path (confirmed hub_health.py is read-only, no conflicting
+            # writer). Same schema, same safe finish-only rule applies.
             if stage == "finish":
                 success = exit_code == 0 or (exit_code == 130 and spec.keyboard_interrupt_is_success)
                 avail["last_invocation_duration_ms"] = duration_ms
