@@ -86,7 +86,7 @@ def main():
             from core.scrubber import run
             run(ctx)
 
-        elif args.action in ("workspace-init", "workspace_init"):
+        elif args.action == "workspace-init":
             if not args.target:
                 print("[Error] workspace-init requires a workspace name or path.")
                 sys.exit(1)
