@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from console_runner import ConsoleSessionSpec, run_console_session
-from _console_helpers import set_console_title
+from _console_helpers import load_peer_env_vars, set_console_title
 
 _CLI_DIR = Path(__file__).parent
 _SYS_DIR = _CLI_DIR.parent
@@ -20,9 +20,7 @@ def _env() -> dict:
     e = {**os.environ, "PYTHONUTF8": "1"}
     venv_scripts = str(_SYS_DIR / "env" / "venv" / "Scripts")
     e["PATH"] = venv_scripts + ";" + e.get("PATH", "")
-    codex_config = _SYS_DIR / "codex" / "config"
-    if codex_config.exists():
-        e["CODEX_HOME"] = str(codex_config)
+    e.update(load_peer_env_vars(_SYS_DIR, "codex"))
     return e
 
 

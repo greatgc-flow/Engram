@@ -2,13 +2,12 @@
 
 Calls hub.py init-session, health-update, context-fill, then launches agy.exe via console_runner.
 """
-import json
 import os
 import sys
 from pathlib import Path
 
 from console_runner import ConsoleSessionSpec, run_console_session
-from _console_helpers import set_console_title
+from _console_helpers import load_peer_env_vars, set_console_title
 
 _CLI_DIR = Path(__file__).parent
 _SYS_DIR = _CLI_DIR.parent
@@ -22,15 +21,7 @@ def _env() -> dict:
     e = {**os.environ, "PYTHONUTF8": "1"}
     venv_scripts = str(_SYS_DIR / "env" / "venv" / "Scripts")
     e["PATH"] = venv_scripts + ";" + e.get("PATH", "")
-    peers_path = _SYS_DIR / "ai" / "peers.json"
-    try:
-        peers = json.loads(peers_path.read_text(encoding="utf-8"))
-        agy_cfg = peers.get("peers", peers).get("antigravity", {})
-        agy_config_dir = _SYS_DIR / "antigravity" / "config"
-        for key in agy_cfg.get("env_vars", {}):
-            e[key] = str(agy_config_dir)
-    except Exception:
-        pass
+    e.update(load_peer_env_vars(_SYS_DIR, "antigravity"))
     return e
 
 

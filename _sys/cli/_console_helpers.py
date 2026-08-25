@@ -2,10 +2,35 @@
 
 Extracted from claude_entry.py/codex_entry.py/agy_entry.py, which each
 carried a byte-for-byte duplicate of _set_title(). Kept separate from
-console_runner.py deliberately: title-setting is entry-point/UI setup,
-not session lifecycle/lease/spawn/health bookkeeping.
+console_runner.py deliberately: title-setting and env-var resolution are
+entry-point/UI/config setup, not session lifecycle/lease/spawn/health
+bookkeeping.
 """
+import json
 from pathlib import Path
+
+
+def load_peer_env_vars(sys_dir: Path, peer_key: str) -> dict[str, str]:
+    """Resolve a peer's declared peers.json env_vars to real paths.
+
+    Each declared value is a subdirectory name under _sys/<peer_key>/,
+    e.g. {"CODEX_HOME": "config"} -> {"CODEX_HOME": "<sys_dir>/codex/config"}.
+    Missing/malformed peers.json or an unknown peer_key yields {} rather
+    than raising -- entry points should keep working with just PATH/UTF8
+    env if config resolution fails for any reason.
+    """
+    peers_path = sys_dir / "ai" / "peers.json"
+    try:
+        peers = json.loads(peers_path.read_text(encoding="utf-8"))
+        cfg = peers.get("peers", peers).get(peer_key, {})
+        result = {}
+        for key, subdir in cfg.get("env_vars", {}).items():
+            resolved = sys_dir / peer_key / str(subdir)
+            if resolved.exists():
+                result[key] = str(resolved)
+        return result
+    except Exception:
+        return {}
 
 
 def set_console_title(portable_root: Path, peer: str) -> None:
