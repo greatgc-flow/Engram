@@ -9,7 +9,8 @@
   },
   "toolPermission": "always-proceed",
   "trustedWorkspaces": [
-    "P:\\"
+    "P:\\",
+    "D:\\Engram\u0026Peerhub\\PortableDev (v2.1)"
   ],
   "useG1Credits": true,
   "verbosity": "low"
