@@ -431,7 +431,8 @@ resume flag is peer-specific (matrix above).
 
 ### PATH shadowing (important for programmatic calls)
 `_sys/cli` is first on PATH, so a **bare** `codex`/`agy`/`claude` (and Windows
-`shutil.which("codex")` via PATHEXT → `_sys/cli/codex.bat`) resolves to **our wrapper**,
+`shutil.which("codex")` via PATHEXT → legacy `codex.bat` wrapper, removed in separation) resolved to **our wrapper**,
+
 which runs the heavy `*_entry.py` (hub init-session + context-fill). This shadowing was
 the real root of the `diag --json` stall. **Programmatic/host code must call the full
 binary path**, never the bare name. **✓run** (diag fixed to use the real `codex.cmd`).
@@ -456,9 +457,11 @@ bootstrap failed on every dispatch with `windows sandbox: helper_unknown_error: 
 deny-read ACLs`, blocking any file read/listing/executable discovery (non-filesystem
 operations like `Get-Location`/`Write-Output` still worked, which is what made this look like
 a partial/intermittent failure rather than a hard block). Root cause: the persistent sandbox
-state file `_sys/codex/config/.sandbox/deny_read_acl_state.json` was 22 bytes of raw null
+state file (historically `.sandbox/deny_read_acl_state.json` under codex config) was 22 bytes of raw null
 bytes (not valid JSON) — confirmed via the sandbox's own `setup_error.json` and dated log
-(`_sys/codex/config/.sandbox/sandbox.<date>.log`: `parse deny-read ACL state ... : expected
+
+(`.sandbox/sandbox.<date>.log`: `parse deny-read ACL state ... : expected
+
 value at line 1 column 1`), likely from an interrupted/crashed write. Fix: move the corrupted
 file aside (do not delete outright — keep as `.corrupted-backup-<date>` in case the exact
 prior state mattered) and let Codex's setup binary regenerate a fresh one on next bootstrap.

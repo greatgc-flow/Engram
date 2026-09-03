@@ -70,7 +70,7 @@ cx session reuse is enabled (`session_mode: reuse`). While `codex exec resume` r
 
 ## Entry Point
 
-`_sys/cli/codex_entry.py`:
+`codex_entry.py` (peerhub package; removed from Engram in the Engram/peerhub separation):
 1. Calls `hub.py init-session`, `hub.py context-fill`
 2. Launches `codex.cmd`
 3. Updates `availability.last_invocation_duration_ms` after each run
@@ -87,7 +87,7 @@ _sys\cli\codex.bat --no-alt-screen
 
 | File | Role |
 |------|------|
-| `_sys/codex/health.json` | Health manifest — updated by BOTH hub.py AND codex_entry.py |
+| `health.json` (removed from Engram in the Engram/peerhub separation) | Health manifest — was updated by BOTH hub.py AND codex_entry.py |
 | `_sys/codex/config/CODEX.md` | System instructions |
 | `health.json["availability"]["authenticated"]` | OAuth auth status |
 | `health.json["availability"]["entrypoint_ok"]` | Smoke test pass status |

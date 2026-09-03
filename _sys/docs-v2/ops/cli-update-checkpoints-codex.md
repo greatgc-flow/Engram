@@ -42,7 +42,8 @@ live `codex debug models` call before fixing `orchestration.json`,
 ## Audit bootstrap
 
 Run from the repository root. Resolve the real npm-installed command rather
-than the `_sys/cli/codex.bat` wrapper.
+than the legacy `codex.bat` wrapper (removed in Engram/peerhub separation).
+
 
 ```powershell
 $Codex = (Get-Command codex.cmd -CommandType Application).Source
@@ -218,7 +219,8 @@ Baseline `[empirical_probe]`:
 - Fixed locally: the result is exactly `['delete', 'dummy-id']`.
 - Do not execute a real deletion to test this classifier.
 
-Local source: `_sys/cli/peer_console.py`; `ops/peer-cli-reference.md` §2.
+Local source: peerhub `peer_console.py` (removed from Engram in separation); `ops/peer-cli-reference.md` §2.
+
 
 ### A3. Refreshed, bundled, and app-server model catalogs differ and lack freshness provenance
 

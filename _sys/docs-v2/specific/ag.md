@@ -52,7 +52,7 @@ _sys/antigravity/
 │   └── implicit/           ← durable implicit context
 └── health.json             ← peer health (runtime-generated)
 ```
-- **Entry:** `_sys/cli/agy.bat` → `agy_entry.py`
+- **Entry:** `agy.bat` → `agy_entry.py` (peerhub package; removed from Engram in the Engram/peerhub separation)
 - **Config Env:** `AGY_CONFIG_HOME`/`GEMINI_DIR` → `_sys/antigravity/config/` (durable; IPC uses the same home — no separate `ipc-config`).
 
 ## Context and Collaboration

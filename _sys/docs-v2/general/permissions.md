@@ -46,7 +46,8 @@ the declared capability class plus DIR-002.
 | Path | File | Function |
 |------|------|---------|
 | Peer ask | peerhub package (`peerhub ask`) | not an Engram surface since 2026-08-19 |
-| Direct console | `_sys/cli/peer_console.py` | peer-specific blocks |
+| Direct console | peerhub package (`peer_console.py`) | peer-specific blocks (removed from Engram in separation) |
+
 
 Verify parity: `hub.py profile-validate` / `hub.py profile-validate --peer <id>`
 

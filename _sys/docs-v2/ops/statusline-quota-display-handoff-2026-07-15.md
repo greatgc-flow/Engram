@@ -79,7 +79,7 @@ G-5H:0% G-7D:42% 3P-5H:0% 3P-7D:2%
 
 Intended files:
 
-- production: `_sys/ai/common/statusline/statusline-unified.sh` only;
+- production: `statusline-unified.sh` (legacy statusline helper, removed in Engram/peerhub separation) only;
 - contract: `statusline-schema.json` (schema v2, repeated canonical buckets,
   fallback `quota:N/A`);
 - SSOT: update obsolete F `/usage` statement in

@@ -65,7 +65,8 @@ reserve · seeded weighted-random. It does not need a new family-spread term yet
 ## 2. Ratified plan (minimal, sequenced, safe)
 
 1. **Statusline all-buckets display** (the handoff design) — apply the
-   shape-driven formatter in `_sys/ai/common/statusline/statusline-unified.sh`:
+   shape-driven formatter in `statusline-unified.sh` (legacy statusline helper, removed in separation):
+
    one canonical bucket list, NO `PEER_ID` branch, first valid numeric per label,
    %-only, `0%` preserved, missing omitted, `quota:N/A` only if no buckets,
    **never fabricate `F-7D`**. AG's JSON uses `remaining_fraction` (float) →

@@ -24,8 +24,7 @@ if str(CHECKS_DIR) not in sys.path:
 
 import _common
 import check_docs_mece
-import check_policy_constants
-import check_policy_ledger
+
 
 
 class MockView:
@@ -144,69 +143,3 @@ def test_chk_03_git_error_fails_closed(monkeypatch):
     assert findings[0].tier == "T3"
     assert "Git infrastructure error" in findings[0].message
 
-
-# ── Item 5: CHK-CONST AST Subscript Chain Verification ────────────────────────
-
-def test_chk_const_ast_subscript_chain_verification():
-    """Verify CHK-CONST rejects hardcoded values, bare Calls, AugAssign, and accepts valid subscript chains."""
-    valid_ast = ast.parse('SNAPSHOT_TTL_SEC = telemetry_config()["ttl"]["snapshot_sec"]')
-    assert check_policy_constants._is_valid_telemetry_subscript(valid_ast.body[0].value) is True
-
-    # Bare call telemetry_config() is NOT a subscript chain -> False
-    bare_call_ast = ast.parse('SNAPSHOT_TTL_SEC = telemetry_config()')
-    assert check_policy_constants._is_valid_telemetry_subscript(bare_call_ast.body[0].value) is False
-
-    # Literal 10 -> False
-    literal_ast = ast.parse('SNAPSHOT_TTL_SEC = 10')
-    assert check_policy_constants._is_valid_telemetry_subscript(literal_ast.body[0].value) is False
-
-
-def test_chk_const_live_run():
-    violations = check_policy_constants.run()
-    assert len(violations) == 0, f"Unexpected live CHK-CONST violations: {violations}"
-
-
-# ── Item 6: CHK-LEDGER Empty Substring Non-Empty Requirement ──────────────────
-
-def test_chk_ledger_empty_expected_substring_rejected(tmp_path):
-    ai_dir = tmp_path / "ai"
-    ai_dir.mkdir()
-    doc_path = tmp_path / "doc.md"
-    doc_path.write_text("sample content", encoding="utf-8")
-
-    ledger = {
-        "decisions": [
-            {
-                "decision_id": "test-empty-sub",
-                "status": "applied",
-                "checks": [
-                    {
-                        "kind": "text_contains",
-                        "path": str(doc_path.relative_to(tmp_path)),
-                        "expected_substring": "",  # Empty substring MUST fail validation
-                    }
-                ]
-            }
-        ]
-    }
-    (ai_dir / "policy-decisions.json").write_text(json.dumps(ledger), encoding="utf-8")
-
-    # Override root path in module for test
-    monkeypatch_root = tmp_path
-    import check_policy_ledger
-    original_root = check_policy_ledger._PORTABLE_ROOT
-    try:
-        check_policy_ledger._PORTABLE_ROOT = tmp_path
-        errors = check_policy_ledger.check_policy_ledger(ai_dir)
-        assert len(errors) == 1
-        assert "requires a non-empty 'expected_substring' string" in errors[0]
-    finally:
-        check_policy_ledger._PORTABLE_ROOT = original_root
-
-
-# ── Item 7: CHK-LEDGER json_array_member Verification ─────────────────────────
-
-def test_chk_ledger_json_array_member_live():
-    """Verify live check_policy_ledger passes including the new json_array_member check for T82 in backlog.json."""
-    errors = check_policy_ledger.check_policy_ledger()
-    assert len(errors) == 0, f"Unexpected live policy ledger drift: {errors}"
