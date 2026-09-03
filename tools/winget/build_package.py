@@ -37,67 +37,66 @@ COPYRIGHT = "Copyright (c) 2026 greatgc-flow"
 DEFAULT_LOCALE = "en-US"
 SCHEMA_VERSION = "1.6.0"
 DEFAULT_VERSION = "2.1.0"
+try:
+    _repo_root = Path(__file__).resolve().parent.parent.parent
+    if str(_repo_root) not in sys.path:
+        sys.path.insert(0, str(_repo_root))
+    from _sys.core.version import VERSION as DEFAULT_VERSION, WINGET_SCHEMA_VERSION as SCHEMA_VERSION
+except ImportError:
+    pass
+
 MONIKER = "engram"
 
 TAGS_EN = [
-    "ai",
-    "agent",
-    "multi-agent",
     "portable",
-    "peerhub",
-    "telemetry",
     "developer-tools",
     "workflow",
     "automation",
     "windows",
+    "virtual-environment",
 ]
 
 TAGS_KO = [
-    "ai",
-    "에이전트",
-    "멀티에이전트",
     "포터블",
-    "peerhub",
-    "텔레메트리",
     "개발도구",
     "자동화",
     "윈도우",
+    "가상환경",
+    "워크플로우",
 ]
 
-SHORT_DESC_EN = "Portable Multi-Agent Dev Runtime & PeerHub Orchestration Engine for Windows"
+SHORT_DESC_EN = "Portable Developer Runtime & Virtual Environment Engine for Windows"
 DESC_EN = (
     "Engram is a zero-bloat, self-contained Windows portable runtime environment that "
-    "orchestrates local multi-agent AI workflows (Antigravity, Claude Code, Codex, PeerHub). "
-    "It provides virtual drive management, isolated Python environments, real-time diagnostic "
-    "telemetry, and sub-second multi-peer consensus."
+    "provides virtual drive management and isolated Python/Node/Git environments. It can "
+    "optionally install, update, and manage the status of third-party AI CLI tools, but all "
+    "AI-to-AI collaboration itself is handled by the separate peerhub package."
 )
 
-SHORT_DESC_KO = "Windows용 무설치 포터블 멀티 에이전트 런타임 및 PeerHub 오케스트레이션 엔진"
+SHORT_DESC_KO = "Windows용 무설치 포터블 개발 런타임 및 가상 환경 엔진"
 DESC_KO = (
-    "Engram은 로컬 멀티 에이전트 AI 워크플로우(Antigravity, Claude Code, Codex, PeerHub)를 "
-    "통합 조율하는 Windows 전용 독립형 무설치 포터블 개발 환경입니다. "
-    "가상 드라이브 관리(P:), 격리된 Python 런타임, 실시간 진단 텔레메트리 및 "
-    "초고속 피어 간 협업 파이프라인을 제공합니다."
+    "Engram은 가상 드라이브 관리(P:)와 격리된 Python/Node/Git 환경을 제공하는 "
+    "Windows 전용 독립형 무설치 포터블 런타임 환경입니다. 서드파티 AI CLI 도구의 "
+    "설치·업데이트·상태 확인을 선택적으로 지원하며, AI 간 협업 자체는 별도의 "
+    "peerhub 패키지가 담당합니다."
 )
 
 
 def get_release_notes_en(version: str) -> str:
     return (
         f"Engram v{version}:\n"
-        f"- Full PeerHub v0.1.0 integration with sub-second multi-peer consensus\n"
-        f"- Gemini 3.7 Flash support\n"
+        f"- Complete separation of Engram core from AI collaboration logic\n"
         f"- Native Winget portable package packaging support\n"
-        f"- Hardened diagnostic telemetry and zero-bloat portable runtime"
+        f"- Zero-bloat portable developer runtime with isolated virtual environments"
     )
 
 
 def get_release_notes_ko(version: str) -> str:
     return (
         f"Engram v{version} 릴리즈:\n"
-        f"- PeerHub v0.1.0 완전 통합 및 초고속 멀티 피어 합의 파이프라인\n"
-        f"- Gemini 3.7 Flash 프로필 지원\n"
+        f"- Engram 코어와 AI 협업 로직의 완전한 분리 완료\n"
         f"- 공식 Winget 포터블 패키징 인프라 탑재\n"
-        f"- 실시간 진단 텔레메트리 및 무설치 포터블 런타임 고도화"
+        f"- 격리된 가상 환경을 갖춘 무설치 포터블 개발 런타임"
     )
 
 
@@ -115,11 +114,7 @@ ROOT_FILES_ALLOW = {
     "Engram.exe",
     "LICENSE",
     "README.md",
-    "AGENTS.md",
-    "CLAUDE.md",
-    "GEMINI.md",
     "CONVENTION.md",
-    "PROTOCOL.md",
 }
 
 SYS_EXCLUDE_DIR_PATTERNS = {
