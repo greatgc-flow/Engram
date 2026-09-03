@@ -8,11 +8,11 @@
 :: HOW TO USE:
 ::   1. Copy this file -> rename to "local.config.bat" (same folder)
 ::   2. Uncomment and edit the settings for this PC
-::   3. NOTE (2026-09-03): no current entry point actually sources this file
-::      automatically yet -- this comment used to reference a "start.bat"
-::      that predates the portable-dev-env-only diet plan and no longer
-::      exists. Apply these settings manually (e.g. `set` them yourself
-::      before running engram.cmd) until real auto-loading is wired up.
+::   3. engram.cmd's Python launcher (_sys/core/launcher.py) reads this
+::      file's `set "KEY=VALUE"` lines automatically on every `engram
+::      launch`/`engram start` -- as plain text data, not by executing it,
+::      so only the 2 keys documented below are ever recognized. No manual
+::      sourcing needed.
 ::
 :: This file is PC-specific - do NOT copy to other machines via USB.
 :: If using git: add _sys\local.config.bat to .gitignore.

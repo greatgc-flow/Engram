@@ -65,31 +65,26 @@ pointer doc for "what's left" on both sides of the separation.
    similarly-named legitimate directory ever appears; a kept-but-unused
    one causes nothing). Revisit only if the comment's accuracy starts
    actually mattering to someone.
-4. **`local.config.bat`'s entire per-PC-override mechanism is dead, deeper
-   than just "not loaded"** (found 2026-09-03, refined same day after
-   tracing both settings all the way to their consumers). Not just a
-   missing `call` statement:
-   - No entry point (`engram.cmd`, `INSTALL.bat`, any `_sys/core/*.py`)
-     sources a copied `local.config.bat` at all (grepped the whole live
-     tree, zero hits outside test files and the template's own stale
-     internal comment referencing a pre-diet-plan `start.bat` that no
-     longer exists).
-   - Even if that were fixed, **`BASE_DIR_WORKSPACE` has zero consumers
-     anywhere in live code** (grepped, zero hits) -- setting it would do
-     nothing.
-   - **`NPM_CONFIG_PREFIX` has a real consumer** (`launcher.py`'s
-     `build_env()`), but `build_env()` starts from `os.environ.copy()`
-     then *unconditionally* overwrites every `env.json` `tool_env_vars`
-     entry including `NPM_CONFIG_PREFIX` (lines 68-69) -- a batch-level
-     `set` from `local.config.bat`, even if it ran, would be silently
-     clobbered by the always-computed value, not respected.
-   Real fix needs a design decision (does `build_env()` gain "respect a
-   pre-set override" precedence logic, or does the whole per-PC-override
-   concept move to a JSON file `launcher.py` reads directly, matching
-   this codebase's post-Increment-B Python-first architecture rather
-   than a batch-sourcing pattern?) -- not attempted here, flagging the
-   real scope rather than a shallow "just add a call statement" fix that
-   wouldn't have actually worked.
+4. ~~`local.config.bat`'s entire per-PC-override mechanism was dead~~ —
+   **fixed 2026-09-04**. Found 2026-09-03 that this went deeper than "not
+   loaded": no entry point sourced the file at all, `BASE_DIR_WORKSPACE`
+   had zero consumers anywhere, and `NPM_CONFIG_PREFIX`'s only real
+   consumer (`launcher.py`'s `build_env()`) unconditionally overwrote it
+   regardless of any pre-set value. Resolved with a real design choice
+   (documented as needing one, not attempted as a shallow fix, in the
+   version of this note that preceded this one): `launcher.py` now reads
+   `local.config.bat`'s `set "KEY=VALUE"` lines as plain-text data via a
+   new `_load_local_config_overrides()` (an explicit 2-key allowlist,
+   never executes the file, so it can't collide with an unrelated
+   ambient environment variable) instead of adding batch-sourcing or a
+   new JSON format. `NPM_CONFIG_PREFIX` now wins over the computed
+   default in `build_env()`; `BASE_DIR_WORKSPACE` is now consumed by a
+   new `_resolve_default_target()` (also newly gives `engram launch`
+   with no arguments a real `base_dir/workspace` default, ahead of
+   falling back to the portable root, matching what the template's own
+   comment always claimed but no code implemented). 10 new tests in
+   `_sys/tests/unit/test_local_config_overrides.py`. See CONVENTION.md
+   §6.2 for the current, accurate description.
 
 ## peerhub-side open items
 

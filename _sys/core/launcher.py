@@ -4,6 +4,7 @@ PATH and env vars driven by env.json. No hardcoding.
 Physical root is source of truth; SUBST drive is an optional alias.
 """
 import os
+import re
 import sys
 import json
 import subprocess
@@ -17,6 +18,57 @@ def _load_json(path: Path) -> dict:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
+
+
+# The only 2 settings _sys/local.config.bat.template documents. Kept as an
+# explicit allowlist (not "whatever keys the file happens to set") so a
+# local.config.bat can't accidentally override something it was never meant
+# to -- these are the only 2 keys build_env()/main() will ever look for.
+_LOCAL_CONFIG_OVERRIDE_KEYS = frozenset({"BASE_DIR_WORKSPACE", "NPM_CONFIG_PREFIX"})
+
+_LOCAL_CONFIG_SET_RE = re.compile(
+    r'^\s*set\s+"([A-Za-z_][A-Za-z0-9_]*)=(.*)"\s*$', re.IGNORECASE
+)
+
+
+def _load_local_config_overrides(sys_dir: Path) -> dict[str, str]:
+    """Parse `local.config.bat`'s `set "KEY=VALUE"` lines as declarative data.
+
+    Deliberately does NOT execute the file (no `cmd /c call`) -- that would
+    pollute this process's real environment with whatever a user's
+    local.config.bat happens to set, and couldn't distinguish "this key was
+    just set by local.config.bat" from "this key coincidentally already
+    existed in the parent shell's environment" (a real regression risk: a
+    user's own npm install on a different drive could silently shadow the
+    portable one). Reading `set "KEY=VALUE"` lines as plain text instead is
+    unambiguous and has no such collision risk. `::`-prefixed lines and any
+    key outside `_LOCAL_CONFIG_OVERRIDE_KEYS` are ignored. `%VAR%`-style
+    references in the value (e.g. `%APPDATA%\\npm`, per the template's own
+    example) are expanded against the real process environment.
+    """
+    config_path = sys_dir / "local.config.bat"
+    if not config_path.exists():
+        return {}
+
+    overrides: dict[str, str] = {}
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except Exception:
+        return {}
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("::") or stripped.startswith("@"):
+            continue
+        m = _LOCAL_CONFIG_SET_RE.match(stripped)
+        if not m:
+            continue
+        key, value = m.group(1).upper(), m.group(2)
+        if key not in _LOCAL_CONFIG_OVERRIDE_KEYS:
+            continue
+        overrides[key] = os.path.expandvars(value)
+
+    return overrides
 
 
 def _resolve_path_entry(base: str, sub: str, sys_dir: Path) -> Path:
@@ -64,9 +116,14 @@ def build_env(base_dir: Path, sys_dir: Path) -> dict:
     for k, v in env_cfg.get("env_vars", {}).items():
         env[k] = str(v)
 
-    # Tool env vars (path-based)
+    # Tool env vars (path-based). A local.config.bat override for a given
+    # key wins over the computed portable-path default.
+    overrides = _load_local_config_overrides(sys_dir)
     for k, spec in env_cfg.get("tool_env_vars", {}).items():
-        env[k] = str(_resolve_path_entry(spec["base"], spec["sub"], sys_dir))
+        if k in overrides:
+            env[k] = overrides[k]
+        else:
+            env[k] = str(_resolve_path_entry(spec["base"], spec["sub"], sys_dir))
 
     # PATH from env.json path_entries
     entries = [
@@ -87,6 +144,23 @@ def build_env(base_dir: Path, sys_dir: Path) -> dict:
         env.pop("PYTHONHOME", None)
 
     return env
+
+
+def _resolve_default_target(base_dir: Path, sys_dir: Path) -> Path:
+    """Pick the launch target when no explicit path argument is given.
+
+    Priority: a local.config.bat BASE_DIR_WORKSPACE override; else
+    base_dir/workspace if that folder exists; else the portable root
+    itself (original behavior, unchanged for anyone using neither
+    convention).
+    """
+    workspace_override = _load_local_config_overrides(sys_dir).get("BASE_DIR_WORKSPACE")
+    if workspace_override:
+        return Path(workspace_override)
+    default_workspace = base_dir / "workspace"
+    if default_workspace.is_dir():
+        return default_workspace
+    return base_dir
 
 
 def _relocate(base_dir: Path, sys_dir: Path) -> None:
@@ -161,8 +235,8 @@ def main(ctx: dict) -> None:
             raw_target = str(t_path)
 
     if not raw_target:
-        target_dir = base_dir
-        run_mode   = "DEV"
+        target_dir = _resolve_default_target(base_dir, sys_dir)
+        run_mode = "DEV"
     elif Path(raw_target).is_dir():
         target_dir = Path(raw_target)
         run_mode   = "DEV"
