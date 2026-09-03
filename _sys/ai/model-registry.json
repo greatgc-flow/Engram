@@ -162,6 +162,15 @@
       "confidence": "documented",
       "validated_at": "2026-06-19"
     },
+    "gemini-3.8-flash": {
+      "provider": "google",
+      "status": "GA",
+      "confidence": "cli_live",
+      "source_tag": "cli_live",
+      "validation_method": "agy_models_enumeration_plus_live_invocation_log_match",
+      "_note": "Discovered 2026-09-03 via free `agy.exe models` catalog enumeration, newer than the previously-pinned gemini-3.7-flash. Confirmed genuinely invocable (not just catalog-listed) via a real live invocation whose fresh cli-*.log showed the correct model_config_manager.go:311 'Propagating selected model override to backend' line for both -low and -high tiers, no CCPA fallback -- see orchestration.json ag.standard/ag.effort. context_limit/output_limit/pricing intentionally left absent: no vendor documentation or live-surfaced figure for this specific model has been checked yet, not assumed identical to gemini-3.7-flash.",
+      "validated_at": "2026-09-03"
+    },
     "gemini-3.7-flash": {
       "provider": "google",
       "context_limit": 1048576,

@@ -239,26 +239,26 @@
       "capability_class": "unsandboxed_trusted_mutation",
       "profiles": {
         "standard": {
-          "runtime_model": "gemini-3.7-flash-low",
-          "_model_id_update_note": "2026-08-17: bumped to gemini-3.7-flash-low -- live-tested via agy.exe -p 'ok' (exited 0).",
+          "runtime_model": "gemini-3.8-flash-low",
+          "_model_id_update_note": "2026-09-03: bumped to gemini-3.8-flash-low (new generation over 3.7-flash, discovered via free `agy.exe models` catalog enumeration) -- live-tested via agy.exe -p 'ok' AND grepped the fresh cli-*.log for the model_config_manager.go:311 'Propagating selected model override to backend' line, confirmed label=\"Gemini 3.8 Flash (Low)\" (not a CCPA fallback) -- meets the stricter log-verification bar the 2026-07-31 deepthink incident established, not just exit-code-0.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
           "quota_families": ["G"],
           "runtime_context_window": 1048576,
-          "validated_at": "2026-08-17",
-          "validation_method": "successful_invocation",
+          "validated_at": "2026-09-03",
+          "validation_method": "cli_reality_probe:model_resolver_log_match_no_ccpa_fallback",
           "reasoning_effort": "low",
           "cost_tier": "low",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "gemini-3.7-flash-low"
+            "gemini-3.8-flash-low"
           ]
         },
         "effort": {
-          "runtime_model": "gemini-3.7-flash-high",
-          "_model_id_update_note": "2026-08-17: bumped to gemini-3.7-flash-high -- live-tested via agy.exe -p 'ok' (exited 0).",
+          "runtime_model": "gemini-3.8-flash-high",
+          "_model_id_update_note": "2026-09-03: bumped to gemini-3.8-flash-high (new generation over 3.7-flash, discovered via free `agy.exe models` catalog enumeration) -- live-tested via agy.exe -p 'ok' AND grepped the fresh cli-*.log for the model_config_manager.go:311 'Propagating selected model override to backend' line, confirmed label=\"Gemini 3.8 Flash (High)\" (not a CCPA fallback) -- meets the stricter log-verification bar the 2026-07-31 deepthink incident established, not just exit-code-0.",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
@@ -269,17 +269,18 @@
             "source_kind": "declared",
             "verification": "unverified",
             "source_ref": "_sys/docs-v2/ops/intelligence-scores.md#1-source-data-dir-004-declared-unverified",
-            "as_of": "2026-08-17"
+            "as_of": "2026-08-17",
+            "_stale_model_warning": "This estimate was declared for the PRIOR model (gemini-3.7-flash-high), not re-measured for gemini-3.8-flash-high after the 2026-09-03 bump -- carried forward as the best available prior signal, not a claim that it still applies. Re-measure before relying on it for routing decisions."
           },
           "runtime_context_window": 1048576,
-          "validated_at": "2026-08-17",
-          "validation_method": "successful_invocation",
+          "validated_at": "2026-09-03",
+          "validation_method": "cli_reality_probe:model_resolver_log_match_no_ccpa_fallback",
           "reasoning_effort": "high",
           "cost_tier": "mid",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "gemini-3.7-flash-high"
+            "gemini-3.8-flash-high"
           ]
         },
         "deepthink": {
