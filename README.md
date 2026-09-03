@@ -31,11 +31,14 @@ Engram bootstraps a self-contained Windows dev environment — Python, Node.js, 
 
 ## Quick Start
 
-### Option A: Winget (recommended)
+### Option A: Download the release zip (recommended right now)
 ```powershell
-winget install greatgc-flow.Engram
+# Download & extract Engram-v3.0.0-portable-x64.zip from the release, then:
+cd Engram-v3.0.0-portable-x64
+.\INSTALL.bat
+.\register.bat
 ```
-After installation, the `engram` command is available system-wide. Run `engram install` to bootstrap the portable environment.
+[Latest release](https://github.com/greatgc-flow/Engram/releases/latest) — this is the exact archive the Winget submission below packages, so it's already validated (`winget validate` passes clean).
 
 ### Option B: Git clone
 ```bat
@@ -54,6 +57,12 @@ cd Engram
 ```
 
 > Once registered, `.\STATUS.bat` reports environment health, and `.\UPDATE.bat` checks every catalog entry for newer pinned versions.
+
+### Option C: Winget (submitted, not yet live)
+```powershell
+winget install greatgc-flow.Engram
+```
+This does **not work yet** — the manifest was submitted as [microsoft/winget-pkgs#428737](https://github.com/microsoft/winget-pkgs/pull/428737) and is pending Microsoft's review/merge (validated locally with `winget validate` first, passes clean). Once merged, this command will bootstrap the same v3.0.0 archive as Option A automatically, and the `engram` command becomes available system-wide without a manual clone.
 
 ## Command Reference
 
@@ -81,7 +90,18 @@ python _sys\core\provisioner.py ensure-peer-cli agy
 
 ## AI-to-AI collaboration → peerhub
 
-Engram's job ends at "the AI CLI binary is installed, current, and reachable." Everything past that — inter-peer messaging, consensus rounds, quota-aware routing, governance directives — lives in the separate [**peerhub**](https://github.com/greatgc-flow/peerhub) package, installed independently on top of an Engram environment. See peerhub's own README for what it adds.
+Engram's job ends at "the AI CLI binary is installed, current, and reachable." Everything past that — inter-peer messaging, consensus rounds, quota-aware routing, governance directives — lives in the separate [**peerhub**](https://github.com/greatgc-flow/peerhub) package, installed independently on top of an Engram environment:
+
+```bash
+pip install "git+https://github.com/greatgc-flow/peerhub.git@v0.1.8"
+peerhub adapter discover   # confirms which AI CLIs Engram installed are reachable
+```
+
+See [peerhub's own README](https://github.com/greatgc-flow/peerhub#readme) for the full command set.
+
+## What's next
+
+See [`_sys/data/sessions/2026-09-03_separation-completion-backlog.md`](_sys/data/sessions/2026-09-03_separation-completion-backlog.md) for the full remaining-work backlog on both sides of the separation (Engram + peerhub), and what's deliberately deferred and why.
 
 ## Trust Signals
 
