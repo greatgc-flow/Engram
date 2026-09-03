@@ -382,6 +382,6 @@ def test_context_ack_is_absent_and_apply_security_semantics_is_current_debt():
         assert "_sys/dispatch.json:dispatch_root" in edges[(target_path, method)]
 
     registry_edges = edges[
-        ("_sys/checks/check_docs_mece.py", "chk_01_path_existence")
+        ("_sys/checks/saturation_scan.py", "scan_lines")
     ]
     assert any(edge.endswith(":registry") for edge in registry_edges)

@@ -203,39 +203,3 @@ class WorktreeView:
             raise FileNotFoundError(f"File '{rel_path}' not found in worktree")
         return p.read_text(encoding="utf-8", errors="replace")
 
-
-_LINK_RE = re.compile(
-    r"\[([^\]]*)\]\(([^)]+)\)|"
-    r"<([^>\s]+\.(?:md|json|py|sh|bat|txt))(?:#[^>]*)?>|"
-    r"\[([^\]]+)\]:\s*(\S+)"
-)
-
-def extract_local_markdown_links(text: str) -> list[tuple[int, str, str]]:
-    """Extract local markdown link references from text.
-    
-    Returns list of (line_number, raw_link, resolved_url_without_query_anchor).
-    Excludes absolute web URLs (http://, https://, mailto:, etc.).
-    """
-    links = []
-    lines = text.splitlines()
-    in_fence = False
-    for lineno, line in enumerate(lines, 1):
-        stripped = line.strip()
-        if stripped.startswith("```"):
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            continue
-
-        for m in _LINK_RE.finditer(line):
-            url = m.group(2) or m.group(3) or m.group(5)
-            if not url:
-                continue
-            url = url.strip()
-            if url.startswith(("http://", "https://", "mailto:", "ftp://")):
-                continue
-
-            clean_url = url.split("?", 1)[0].split("#", 1)[0].strip()
-            if url:
-                links.append((lineno, url, clean_url))
-    return links

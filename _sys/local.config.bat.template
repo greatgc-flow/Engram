@@ -8,7 +8,11 @@
 :: HOW TO USE:
 ::   1. Copy this file -> rename to "local.config.bat" (same folder)
 ::   2. Uncomment and edit the settings for this PC
-::   3. start.bat loads it automatically on every launch
+::   3. NOTE (2026-09-03): no current entry point actually sources this file
+::      automatically yet -- this comment used to reference a "start.bat"
+::      that predates the portable-dev-env-only diet plan and no longer
+::      exists. Apply these settings manually (e.g. `set` them yourself
+::      before running engram.cmd) until real auto-loading is wired up.
 ::
 :: This file is PC-specific - do NOT copy to other machines via USB.
 :: If using git: add _sys\local.config.bat to .gitignore.

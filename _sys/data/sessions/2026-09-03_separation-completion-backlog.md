@@ -65,6 +65,18 @@ pointer doc for "what's left" on both sides of the separation.
    similarly-named legitimate directory ever appears; a kept-but-unused
    one causes nothing). Revisit only if the comment's accuracy starts
    actually mattering to someone.
+4. **`local.config.bat` has no real loading mechanism** (found 2026-09-03
+   while reviewing a delegated CONVENTION.md rewrite that confidently
+   described a `call "%SYS_DIR%\local.config.bat"` pattern that doesn't
+   exist anywhere in the live tree). The template
+   (`_sys/local.config.bat.template`) and its 2 real settings
+   (`BASE_DIR_WORKSPACE`, `NPM_CONFIG_PREFIX`) are genuine, but no entry
+   point (`engram.cmd`, `INSTALL.bat`, any `_sys/core/*.py`) actually
+   sources a copied `local.config.bat` -- the template's own internal
+   comment referenced a `start.bat` that predates the diet plan and no
+   longer exists. This is a real, unimplemented feature gap, not just a
+   docs gap -- worth wiring up for real if per-PC overrides are still
+   wanted, or removing the template + docs entirely if not.
 
 ## peerhub-side open items
 

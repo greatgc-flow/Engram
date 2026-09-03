@@ -21,15 +21,8 @@ class TestDocConsistency:
             "README.md",
             "CONVENTION.md"
         ]
-        mandatory_docs_v2 = [
-            "00-MANIFEST.md",
-            "10-invariants.md",
-        ]
         for filename in mandatory_root:
             assert (doc_root / filename).exists(), f"Mandatory root doc missing: {filename}"
-        # docs-v2 is now the SSOT; _sys/SYSTEM_ARCHITECTURE.md was archived to docs-v2/20-architecture.md
-        for filename in mandatory_docs_v2:
-            assert (doc_root / "_sys" / "docs-v2" / filename).exists(), f"Mandatory docs-v2 doc missing: {filename}"
 
     def test_claude_md_sections(self, doc_root):
         """Ensure project CLAUDE.md acts as a pointer to SSOT."""
@@ -75,9 +68,3 @@ class TestDocConsistency:
             if item.is_dir():
                 # Conventions say lowercase kebab-case for sys folders
                 assert item.name == item.name.lower(), f"System folder name must be lowercase: {item.name}"
-
-    def test_pro19_does_not_claim_unimplemented_enforcement(self, doc_root):
-        """PRO-19 invariant note must not claim enforcement that hub.py does not implement."""
-        text = (doc_root / "_sys" / "docs-v2" / "10-invariants.md").read_text(encoding="utf-8")
-        section = text.split("### Transport-Role Enforcement (PRO-19)", 1)[1]
-        assert "ENFORCED for mutating_hub_actions; read-only asks/consultation exempt regardless of tier" in section

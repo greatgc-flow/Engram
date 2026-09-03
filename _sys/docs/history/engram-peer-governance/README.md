@@ -42,3 +42,10 @@ the reconciliation note that superseded it.
 Engram's replacement guard is `_sys/tests/unit/l1_core/test_contracts.py`
 -- product-boundary contracts that fail closed if the coordination layer
 starts creeping back in.
+
+## Separation Completion & docs-v2 Archive (2026-09-03)
+
+On **2026-09-03**, the final remaining open gap from the separation — the `_sys/docs-v2/**` tree (36 historical documents) — was archived into this directory. Living CLI adapter references were extracted for migration into `peerhub`, generic batch/PowerShell coding conventions were consolidated directly into root [`CONVENTION.md`](../../../CONVENTION.md), and the `_sys/docs-v2/` directory tree was retired.
+
+For the full audit, 47-file inventory, and ratified disposition rationale, see:
+[`_sys/data/sessions/2026-09-03_docsv2-disposition-proposal.md`](../../data/sessions/2026-09-03_docsv2-disposition-proposal.md).

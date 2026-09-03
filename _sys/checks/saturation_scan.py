@@ -120,9 +120,8 @@ def _sequence_gaps(prefix: str, ids: set[str]) -> list[str]:
 
 def _find_invariants_file(sys_root: Path) -> Path | None:
     candidates = [
-        sys_root / "docs-v2" / "10-invariants.md",
-        sys_root.parent / "_sys" / "docs-v2" / "10-invariants.md",
-        sys_root / "protocol" / "general" / "PROTOCOL_INVARIANTS.md",
+        sys_root / "docs" / "history" / "engram-peer-governance" / "10-invariants.md",
+        sys_root.parent / "_sys" / "docs" / "history" / "engram-peer-governance" / "10-invariants.md",
     ]
     return next((c for c in candidates if c.exists()), None)
 
@@ -132,8 +131,8 @@ def scan_invariants(sys_root: Path) -> list[Finding]:
 
     inv_path = _find_invariants_file(sys_root)
     if inv_path is None:
-        findings.append(Finding("HIGH", "invariants", "10-invariants.md",
-                                "Invariants file not found in known locations"))
+        # Post-separation: INV/PRO multi-peer governance is retired and archived.
+        # Gracefully skip if invariants file is not present.
         return findings
 
     text = inv_path.read_text("utf-8")

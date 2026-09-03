@@ -108,4 +108,4 @@ See [`_sys/data/sessions/2026-09-03_separation-completion-backlog.md`](_sys/data
 - **Version SSOT:** [`_sys/core/version.json`](_sys/core/version.json)
 - **Tool catalogs:** [`_sys/runtimes.json`](_sys/runtimes.json) (runtimes + generic dev tools), [`_sys/tool-catalog.v1.json`](_sys/tool-catalog.v1.json) (AI CLIs)
 - **Conventions:** [`CONVENTION.md`](CONVENTION.md)
-- **Validation:** the unit-test suite under [`_sys/tests/unit`](_sys/tests/unit) — **301 passed, 2 skipped** — plus pre-commit consistency checks (`check_docs_mece`, `check_encoding`, `check_unreferenced_functions`, `check_backlog`, `check_root_hygiene`, `check_tool_updates`, `saturation_scan`) under [`_sys/checks`](_sys/checks).
+- **Validation:** the unit-test suite under [`_sys/tests/unit`](_sys/tests/unit) plus pre-commit consistency checks (`check_encoding`, `check_unreferenced_functions`, `check_backlog`, `check_root_hygiene`, `check_tool_updates`, `saturation_scan`) under [`_sys/checks`](_sys/checks).
