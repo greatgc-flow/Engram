@@ -184,8 +184,6 @@ def chk_01_path_existence(exempt_paths: list[str], view: FileView | None = None)
 # ── CHK-02: INV-19 Korean detection ───────────────────────────────────────────
 
 _INV19_KOREAN_ALLOWED_DIRS = [
-    "_sys/claude/config/CLAUDE.md",
-    "_sys/gemini/config/GEMINI.md",
     "_sys/docs-v2/user/",
     "_sys/data/",
     "_archive/",
