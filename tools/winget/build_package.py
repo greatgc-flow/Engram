@@ -286,7 +286,7 @@ PackageVersion: {version}
 InstallerType: zip
 NestedInstallerType: portable
 NestedInstallerFiles:
-  - RelativeFilePath: engram.cmd
+  - RelativeFilePath: Engram.exe
     PortableCommandAlias: engram
 Installers:
   - Architecture: x64
@@ -354,7 +354,6 @@ Copyright: {COPYRIGHT}
 CopyrightUrl: {LICENSE_URL}
 ShortDescription: {SHORT_DESC_KO}
 Description: {DESC_KO}
-Moniker: {MONIKER}
 Tags:
 {tags_formatted}
 ReleaseNotes: |-
