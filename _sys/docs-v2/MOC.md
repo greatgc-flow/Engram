@@ -4,6 +4,16 @@
 > Short keyword load-map. The exhaustive file index + doc-status taxonomy live in `00-MANIFEST.md`.
 > Loading strategy: EAGER for invariants/arch; LAZY (search this map) for everything else.
 
+> ⚠️ **Pre-separation notice (2026-09-03):** this entire `docs-v2/` tree predates the
+> Engram/peerhub separation (see `_sys/data/sessions/2026-09-02_engram-diet-plan-v8.md`)
+> and describes the old hub.py-integrated architecture — most files here reference
+> paths (`_sys/ai/`, `_sys/claude/`, `_sys/codex/`, `_sys/antigravity/`) that no longer
+> exist in this repository. `docs-v2/`'s own disposition (keep as historical reference,
+> narrow to what's still Engram-generic, or delete/migrate to peerhub) is a real, tracked,
+> deliberately-unresolved open question — not silently dropped, just not yet decided
+> through a real review round. Do not treat anything below as current operational fact
+> about Engram; treat it as historical design record until that decision lands.
+
 ---
 
 ## ★ EAGER LOAD (always, at session start)

@@ -4,6 +4,11 @@
 > Principles: MECE · General-Specific · Lazy-load (token-efficient) · Doc-as-Code (ops/governance.md §6)
 > Status: **ACTIVE SSOT** — superseded/dated docs archived to `_sys/docs/history/` (reference only).
 
+> ⚠️ **Pre-separation notice (2026-09-03):** see `MOC.md`'s matching notice — this whole
+> index (and everything it indexes) predates the Engram/peerhub separation and describes
+> the old hub.py-integrated architecture. Its own disposition is a real, tracked,
+> deliberately-unresolved open question, not silently dropped.
+
 ---
 
 ## Doc-status taxonomy (GAP-3)
