@@ -12,7 +12,7 @@
         "virtual.mount": {
             "module": "core.virtualizer",
             "method": "mount",
-            "config": "ai/peers.json",
+            "config": "managed-links.json",
             "idempotent": true,
             "failure_policy": "warn",
             "state_key": "register"

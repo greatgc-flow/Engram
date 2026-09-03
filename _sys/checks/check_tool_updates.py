@@ -84,6 +84,9 @@ def _versions_equal(a: str, b: str) -> bool:
     return norm(a) == norm(b)
 
 
+CATALOG_PATH = _SYS_DIR / "tool-catalog.v1.json"
+
+
 def _iter_discoverable_entries(runtimes: dict[str, Any]):
     for section in ("tools", "runtimes"):
         entries = runtimes.get(section, {})
@@ -101,6 +104,37 @@ def _iter_discoverable_entries(runtimes: dict[str, Any]):
                 yield section, name, cfg, None, "missing discovery_id", None
                 continue
             yield section, name, cfg, str(provider), None, None
+
+    catalog_path = RUNTIMES_PATH.parent / "tool-catalog.v1.json"
+    if catalog_path.exists():
+        try:
+            catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+
+            for tool in catalog.get("tools", []):
+                if not isinstance(tool, dict):
+                    continue
+                name = tool.get("tool_id")
+                if not name or name in runtimes.get("tools", {}):
+                    continue
+                source = tool.get("source", {})
+                provider = source.get("discovery_provider")
+                discovery_id = source.get("discovery_id")
+                cfg = {
+                    "version": tool.get("version", ""),
+                    "discovery_provider": provider,
+                    "discovery_id": discovery_id,
+                    "url": source.get("url"),
+                }
+                if not provider or provider == "manual":
+                    yield "catalog", name, cfg, None, None, "no discovery_provider" if not provider else "manual"
+                    continue
+                if not discovery_id:
+                    yield "catalog", name, cfg, None, "missing discovery_id", None
+                    continue
+                yield "catalog", name, cfg, str(provider), None, None
+        except Exception:
+            pass
+
 
 
 def _update_entry_from_discovery(entry: dict[str, Any], discovery: dict[str, Any]) -> None:
@@ -184,9 +218,11 @@ def discover_updates() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
             "checksum_value": discovery.get("checksum_value"),
         }
         payload["updates_discovered"].append(update)
-        _update_entry_from_discovery(proposed[section][name], discovery)
+        if section in proposed and name in proposed[section]:
+            _update_entry_from_discovery(proposed[section][name], discovery)
 
     return payload, runtimes, proposed
+
 
 
 def prune_tool_update_archives(archive_root: Path = ARCHIVE_ROOT, keep: int = RETENTION_KEEP) -> None:

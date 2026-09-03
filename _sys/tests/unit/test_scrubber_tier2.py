@@ -17,7 +17,7 @@ def test_tier2_purges_old_rollback_dirs_but_keeps_active(tmp_path):
     active_dir.mkdir()
     (active_dir / "rg.exe").write_bytes(b"current")
 
-    scrubber._tier2(tmp_path, sys_dir, {}, dry_run=False)
+    scrubber._tier2(tmp_path, sys_dir, dry_run=False)
 
     assert not (tools_dir / "ripgrep_old").exists()
     assert (active_dir / "rg.exe").exists()
@@ -29,6 +29,6 @@ def test_tier2_dry_run_does_not_delete(tmp_path):
     tools_dir.mkdir(parents=True)
     (tools_dir / "codex_old").mkdir()
 
-    scrubber._tier2(tmp_path, sys_dir, {}, dry_run=True)
+    scrubber._tier2(tmp_path, sys_dir, dry_run=True)
 
     assert (tools_dir / "codex_old").exists()

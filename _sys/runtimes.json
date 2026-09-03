@@ -174,24 +174,6 @@
             },
             "sha3_256": "b943f8ec7ab77433df44520a27ea65744a792e68a25c05b48823168496b3ccdb"
         },
-        "agy": {
-            "version": "1.1.5",
-            "url": "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.1.5-5958982624477184/windows-x64/cli_windows_x64.exe",
-            "type": "exe",
-            "bin": "agy.exe",
-            "sha512": "200a3814bbc775ea9e479dd00cc2d7315f471c0cf31a46d376c6e7248d5803ded8c9bc92dde677afe25cce23143b5b4348495e5e908ad6efb5c3516d99843510",
-            "install_subdir": "tools/agy",
-            "discovery_provider": "manual",
-            "install_mechanism": "exe_tool",
-            "canary": {
-                "argv": [
-                    "agy.exe",
-                    "--version"
-                ],
-                "timeout_sec": 5,
-                "expect_regex": "\\d+\\.\\d+\\.\\d+"
-            }
-        },
         "oh-my-posh": {
             "version": "29.33.0",
             "url": "https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v29.33.0/posh-windows-amd64.exe",
@@ -216,36 +198,6 @@
                     "sha256": "6871d273435e067e40136839467f8c01fc9f123a59535964dbe9287f17740d91"
                 }
             ]
-        },
-        "claude": {
-            "version": "2.1.215",
-            "discovery_provider": "npm",
-            "discovery_id": "@anthropic-ai/claude-code",
-            "install_mechanism": "npm_peer",
-            "canary": {
-                "argv": [
-                    "claude.cmd",
-                    "--version"
-                ],
-                "timeout_sec": 10,
-                "expect_regex": "\\d+\\.\\d+\\.\\d+"
-            },
-            "url": "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.215.tgz"
-        },
-        "codex": {
-            "version": "0.144.6",
-            "discovery_provider": "npm",
-            "discovery_id": "@openai/codex",
-            "install_mechanism": "npm_peer",
-            "canary": {
-                "argv": [
-                    "codex.cmd",
-                    "--version"
-                ],
-                "timeout_sec": 25,
-                "expect_regex": "\\d+\\.\\d+\\.\\d+"
-            },
-            "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.144.6.tgz"
         },
         "peerhub": {
             "version": "0.1.7",

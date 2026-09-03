@@ -14,19 +14,52 @@ sys.path.insert(0, str(SYS_DIR / "core"))
 import provisioner as pv  # noqa: E402
 
 
-def _make_sys_dir(tmp_path: Path, tools: dict, peers: dict | None = None) -> Path:
+def _make_sys_dir(tmp_path: Path, tools: dict | None = None, peers: dict | None = None, catalog_tools: list | None = None) -> Path:
     sys_dir = tmp_path / "_sys"
-    sys_dir.mkdir()
+    sys_dir.mkdir(parents=True, exist_ok=True)
     (sys_dir / "runtimes.json").write_text(
-        json.dumps({"_comment": "test", "runtimes": {}, "tools": tools}), encoding="utf-8"
+        json.dumps({"_comment": "test", "runtimes": {}, "tools": tools or {}}), encoding="utf-8"
     )
-    (sys_dir / "ai").mkdir()
-    (sys_dir / "ai" / "peers.json").write_text(
-        json.dumps({"peers": peers or {}}), encoding="utf-8"
-    )
-    (sys_dir / "tools").mkdir()
-    (sys_dir / "data" / "setup-files").mkdir(parents=True)
+    if catalog_tools is not None:
+        (sys_dir / "tool-catalog.v1.json").write_text(
+            json.dumps({"$schema": "https://json-schema.org/draft/2020-12/schema", "tools": catalog_tools}), encoding="utf-8"
+        )
+    elif peers:
+        converted = []
+        for p_id, p_cfg in peers.items():
+            t_cfg = (tools or {}).get(p_id, {})
+            mech = t_cfg.get("install_mechanism")
+            if not mech:
+                mech = "exe_tool" if "native_binary" in p_cfg else "npm_peer"
+            converted.append({
+                "tool_id": p_id,
+                "enabled": True,
+                "aliases": [p_id] + (p_cfg.get("node_ids") or []),
+                "version": t_cfg.get("version"),
+                "source": {
+
+                    "url": t_cfg.get("url", ""),
+                    "discovery_provider": "npm" if mech == "npm_peer" else "manual",
+                    "discovery_id": p_cfg.get("npm_package") or t_cfg.get("discovery_id"),
+                },
+                "install": {
+                    "mechanism": mech,
+                    "bin": f"{p_id}.cmd" if mech == "npm_peer" else f"{p_id}.exe",
+                    "install_subdir": f"tools/{p_id}",
+                },
+                "canary": t_cfg.get("canary"),
+            })
+        (sys_dir / "tool-catalog.v1.json").write_text(
+            json.dumps({"$schema": "https://json-schema.org/draft/2020-12/schema", "tools": converted}), encoding="utf-8"
+        )
+    else:
+        (sys_dir / "tool-catalog.v1.json").write_text(
+            json.dumps({"$schema": "https://json-schema.org/draft/2020-12/schema", "tools": []}), encoding="utf-8"
+        )
+    (sys_dir / "tools").mkdir(parents=True, exist_ok=True)
+    (sys_dir / "data" / "setup-files").mkdir(parents=True, exist_ok=True)
     return sys_dir
+
 
 
 def _make_fixture_zip(dest: Path, exe_name: str, nested: bool = True) -> None:
@@ -250,47 +283,45 @@ class TestEnsureToolExe:
 
 
 class TestEnsurePeerCliNativeBinary:
-    def test_antigravity_delegates_to_ensure_tool(self, monkeypatch, tmp_path):
-        sys_dir = _make_sys_dir(
-            tmp_path,
-            tools={"agy": {"version": "1.0.7", "url": "https://example/agy.exe", "install_mechanism": "exe_tool"}},
-            peers={
-                "antigravity": {
-                    "native_binary": {"bin_name": "agy", "win_exe": "agy.exe", "install_subdir": "tools/agy"},
-                    "node_ids": ["ag"],
-                }
-            },
-        )
+    def test_antigravity_installs_exe_from_catalog(self, monkeypatch, tmp_path):
+        catalog = [{
+            "tool_id": "agy",
+            "enabled": True,
+            "aliases": ["agy", "ag", "antigravity"],
+            "version": "1.0.7",
+            "source": {"url": "https://example/agy.exe"},
+            "install": {"mechanism": "exe_tool", "bin": "agy.exe"},
+        }]
+        sys_dir = _make_sys_dir(tmp_path, catalog_tools=catalog)
 
-        calls = []
-        monkeypatch.setattr(pv, "ensure_tool", lambda name, orch=None, sys_dir=None, force=False: calls.append(name) or {"status": "success"})
+        monkeypatch.setattr(pv, "_secure_download", lambda url, dest: dest.write_bytes(b"fake agy exe"))
 
         res = pv.ensure_peer_cli("antigravity", sys_dir=sys_dir)
-        assert calls == ["agy"]
         assert res["status"] == "success"
+        assert (sys_dir / "tools" / "agy" / "agy.exe").read_bytes() == b"fake agy exe"
 
     def test_resolves_via_node_id(self, monkeypatch, tmp_path):
-        sys_dir = _make_sys_dir(
-            tmp_path,
-            tools={"agy": {"version": "1.0.7", "url": "https://example/agy.exe", "install_mechanism": "exe_tool"}},
-            peers={
-                "antigravity": {
-                    "native_binary": {"bin_name": "agy", "win_exe": "agy.exe", "install_subdir": "tools/agy"},
-                    "node_ids": ["ag"],
-                }
-            },
-        )
-        calls = []
-        monkeypatch.setattr(pv, "ensure_tool", lambda name, orch=None, sys_dir=None, force=False: calls.append(name) or {"status": "success"})
+        catalog = [{
+            "tool_id": "agy",
+            "enabled": True,
+            "aliases": ["agy", "ag", "antigravity"],
+            "version": "1.0.7",
+            "source": {"url": "https://example/agy.exe"},
+            "install": {"mechanism": "exe_tool", "bin": "agy.exe"},
+        }]
+        sys_dir = _make_sys_dir(tmp_path, catalog_tools=catalog)
+
+        monkeypatch.setattr(pv, "_secure_download", lambda url, dest: dest.write_bytes(b"fake agy exe"))
 
         res = pv.ensure_peer_cli("ag", sys_dir=sys_dir)
-        assert calls == ["agy"]
         assert res["status"] == "success"
+        assert (sys_dir / "tools" / "agy" / "agy.exe").read_bytes() == b"fake agy exe"
 
     def test_unknown_peer_errors(self, tmp_path):
-        sys_dir = _make_sys_dir(tmp_path, tools={}, peers={})
+        sys_dir = _make_sys_dir(tmp_path, catalog_tools=[])
         res = pv.ensure_peer_cli("nope", sys_dir=sys_dir)
         assert res["status"] == "error"
+
 
 
 class TestEnsurePeerCliNpm:
@@ -332,21 +363,21 @@ class TestEnsurePeerCliNpm:
         assert manifest["checksum_source"] == "registry_integrity"
 
     def test_npm_peer_already_current_uses_peer_key_cmd_not_node_id(self, monkeypatch, tmp_path):
-        tool_cfg = {
+        catalog_entry = {
+            "tool_id": "claude",
+            "enabled": True,
+            "aliases": ["claude", "cc", "ca"],
             "version": "2.1.206",
-            "discovery_id": "@anthropic-ai/claude-code",
-            "install_mechanism": "npm_peer",
-        }
-        sys_dir = _make_sys_dir(
-            tmp_path,
-            tools={"claude": tool_cfg},
-            peers={
-                "claude": {
-                    "npm_package": "@anthropic-ai/claude-code",
-                    "node_ids": ["cc", "ca"],
-                }
+            "source": {
+                "discovery_id": "@anthropic-ai/claude-code",
             },
-        )
+            "install": {
+                "mechanism": "npm_peer",
+                "bin": "claude.cmd",
+                "install_subdir": "tools/claude",
+            },
+        }
+        sys_dir = _make_sys_dir(tmp_path, catalog_tools=[catalog_entry])
         self._setup_npm_env(sys_dir)
 
         npm_global = sys_dir / "env" / "nodejs" / "npm-global"
@@ -356,7 +387,7 @@ class TestEnsurePeerCliNpm:
         manifest_dir = sys_dir / "tools" / "claude"
         manifest_dir.mkdir(parents=True)
         (manifest_dir / ".install_manifest.json").write_text(
-            json.dumps({"declared_version": "2.1.206", "source_config_hash": pv._canon_hash(tool_cfg)}),
+            json.dumps({"declared_version": "2.1.206", "source_config_hash": pv._canon_hash(catalog_entry)}),
             encoding="utf-8",
         )
 
@@ -367,6 +398,7 @@ class TestEnsurePeerCliNpm:
             raise AssertionError("already-current peer CLI must not invoke npm")
 
         monkeypatch.setattr(pv.subprocess, "run", fail_if_called)
+
 
         res = pv.ensure_peer_cli("claude", sys_dir=sys_dir)
 
@@ -699,22 +731,29 @@ class TestInUseGate:
 
 class TestNpmPeerCanaryAndRetry:
     def _base_setup(self, tmp_path, declared_version="2.1.206", canary=None):
-        tool_cfg = {
+        catalog_entry = {
+            "tool_id": "claude",
+            "enabled": True,
+            "aliases": ["claude", "cc", "ca"],
             "version": declared_version,
-            "discovery_id": "@anthropic-ai/claude-code",
-            "install_mechanism": "npm_peer",
+            "source": {
+                "url": f"https://example/claude-{declared_version}.tgz",
+                "discovery_id": "@anthropic-ai/claude-code",
+                "discovery_provider": "npm",
+            },
+            "install": {
+                "mechanism": "npm_peer",
+                "bin": "claude.cmd",
+                "install_subdir": "tools/claude",
+            },
         }
         if canary:
-            tool_cfg["canary"] = canary
-        sys_dir = _make_sys_dir(
-            tmp_path,
-            tools={"claude": tool_cfg},
-            peers={"claude": {"npm_package": "@anthropic-ai/claude-code", "node_ids": ["cc", "ca"]}},
-        )
+            catalog_entry["canary"] = canary
+        sys_dir = _make_sys_dir(tmp_path, catalog_tools=[catalog_entry])
         node_exe = sys_dir / "env" / "nodejs" / "node.exe"
         node_exe.parent.mkdir(parents=True, exist_ok=True)
         node_exe.write_bytes(b"fake node")
-        return sys_dir, tool_cfg
+        return sys_dir, catalog_entry
 
     def test_canary_runs_after_install_before_manifest_write(self, monkeypatch, tmp_path):
         sys_dir, _ = self._base_setup(tmp_path, canary={"argv": ["claude.cmd", "--version"], "expect_regex": "2\\.1\\.206"})
@@ -729,7 +768,7 @@ class TestNpmPeerCanaryAndRetry:
                 (npm_global / "claude.cmd").write_text("@echo 2.1.206\n", encoding="utf-8")
                 return type("R", (), {"returncode": 0})()
             if argv[0].endswith("claude.cmd"):
-                return type("R", (), {"stdout": "2.1.206", "stderr": "", "returncode": 0})()
+                return type("R", (), {"stdout": b"2.1.206", "stderr": b"", "returncode": 0})()
             raise AssertionError(f"unexpected call: {argv}")
 
         monkeypatch.setattr(pv.subprocess, "run", fake_run)
@@ -753,7 +792,7 @@ class TestNpmPeerCanaryAndRetry:
                 (npm_global / "claude.cmd").write_text("@echo off\n", encoding="utf-8")
                 return type("R", (), {"returncode": 0})()
             if argv[0].endswith("claude.cmd"):
-                return type("R", (), {"stdout": "", "stderr": "", "returncode": 0})()
+                return type("R", (), {"stdout": b"", "stderr": b"", "returncode": 0})()
             raise AssertionError(f"unexpected call: {argv}")
 
         monkeypatch.setattr(pv.subprocess, "run", fake_run)
@@ -789,8 +828,8 @@ class TestNpmPeerCanaryAndRetry:
             if argv[0].endswith("claude.cmd"):
                 if current_version["v"] == "3.0.0":
                     # simulate a broken 3.0.0 build that fails its version check
-                    return type("R", (), {"stdout": "", "stderr": "fatal error", "returncode": 1})()
-                return type("R", (), {"stdout": current_version["v"], "stderr": "", "returncode": 0})()
+                    return type("R", (), {"stdout": b"", "stderr": b"fatal error", "returncode": 1})()
+                return type("R", (), {"stdout": current_version["v"].encode("utf-8"), "stderr": b"", "returncode": 0})()
             raise AssertionError(f"unexpected call: {argv}")
 
         monkeypatch.setattr(pv.subprocess, "run", fake_run)
@@ -807,6 +846,7 @@ class TestNpmPeerCanaryAndRetry:
         def fake_run(argv, **kwargs):
             if "view" in argv:
                 return type("R", (), {"stdout": '"sha512-fake"', "returncode": 0})()
+
             if "install" in argv:
                 raise pv.subprocess.CalledProcessError(1, argv)
             raise AssertionError(f"unexpected call: {argv}")
@@ -871,10 +911,12 @@ class TestNpmPeerCanaryAndRetry:
         deferred = pv._load_deferred(sys_dir)
         assert deferred["peer:claude"]["attempts"] == pv.MAX_NPM_INSTALL_RETRIES
 
-        # bump declared_version in runtimes.json - counter must reset
-        raw = json.loads((sys_dir / "runtimes.json").read_text(encoding="utf-8"))
-        raw["tools"]["claude"]["version"] = "2.2.0"
-        (sys_dir / "runtimes.json").write_text(json.dumps(raw), encoding="utf-8")
+        # bump declared_version in tool-catalog.v1.json - counter must reset
+        catalog_path = sys_dir / "tool-catalog.v1.json"
+        raw = json.loads(catalog_path.read_text(encoding="utf-8"))
+        raw["tools"][0]["version"] = "2.2.0"
+        catalog_path.write_text(json.dumps(raw), encoding="utf-8")
+
 
         npm_global = sys_dir / "env" / "nodejs" / "npm-global"
 

@@ -98,15 +98,11 @@ class TestVirtualizerApplyManagedLinks:
         assert "managed-links.json" in out
 
     def test_falls_back_to_peers_when_missing(self, sys_dir, capsys):
-        """_cli_apply should fall back to peers.json when managed-links.json absent."""
-        # No managed-links.json created — fallback expected
-        peers_data = {
-            "peers": {}
-        }
-        (sys_dir / "ai" / "peers.json").write_text(json.dumps(peers_data))
+        """_cli_apply should report when managed-links.json is absent."""
         virtualizer._cli_apply(sys_dir, sys_dir.parent, force=False)
         out = capsys.readouterr().out
-        assert "peers.json" in out or "No peers found" in out
+        assert "No managed-links.json found" in out
+
 
     def test_entry_count_in_output(self, sys_dir, valid_managed_links, capsys):
         """Entry count should appear in output."""

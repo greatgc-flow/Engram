@@ -102,11 +102,11 @@ def _extract(zip_path: Path, dest: Path) -> None:
     print(f"  [OK] Extracted to {dest.name}")
 
 
-def _load_peers(sys_dir: Path) -> dict:
-    p = sys_dir / "ai" / "peers.json"
+def _load_tool_catalog(sys_dir: Path) -> dict:
+    p = sys_dir / "tool-catalog.v1.json"
     if p.exists():
         try:
-            return json.loads(p.read_text(encoding="utf-8")).get("peers", {})
+            return json.loads(p.read_text(encoding="utf-8"))
         except Exception:
             pass
     return {}
@@ -777,179 +777,169 @@ def _is_peer_leased(sys_dir: Path, peer_or_tool: str) -> bool:
     return False
 
 
-def _resolve_peer_key(peers: dict, peer: str) -> str | None:
-    """peers.json's own top-level keys (claude/codex/antigravity) are the
-    SSOT for peer install config. `peer` may be given as that key OR as any
-    of its declared node_ids (cc/ca, cx, ag)."""
-    if peer in peers:
-        return peer
-    for key, cfg in peers.items():
-        if peer in (cfg.get("node_ids") or []):
-            return key
+def _resolve_tool_from_catalog(catalog: dict, tool_or_alias: str) -> dict | None:
+    """Resolve a tool entry from tool-catalog.v1.json by tool_id or aliases."""
+    for tool in catalog.get("tools", []):
+        if tool.get("tool_id") == tool_or_alias:
+            return tool
+        if tool_or_alias in (tool.get("aliases") or []):
+            return tool
     return None
 
 
 def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = None, force: bool = False) -> dict:
-    """Install a peer CLI if missing, or update it if runtimes.json's pinned
-    version changed. `peer` may be a peers.json key (claude/codex/
-    antigravity) or a node_id (cc/cx/ag/...). npm-backed peers (npm_package
-    set in peers.json) are version-pinned via runtimes.json's tools entry of
-    the same key; native-binary peers (e.g. antigravity/agy) delegate to
-    ensure_tool for the matching runtimes.json tools entry."""
+    """Install a peer CLI if missing, or update it if tool-catalog.v1.json's pinned
+    version changed. `peer` may be a tool_id (claude/codex/agy) or an alias (cc/cx/ag/...)."""
     sys_dir = sys_dir or _default_sys_dir()
 
-    peers = _load_peers(sys_dir)
-    peer_key = _resolve_peer_key(peers, peer)
-    if not peer_key:
-        return {"status": "error", "detail": f"Peer {peer!r} not found in peers.json"}
-    _drain_deferred_lazy(orch, sys_dir, skip_kind="peer", skip_name=peer_key)
-    peer_cfg = peers[peer_key]
+    catalog = _load_tool_catalog(sys_dir)
+    tool_entry = _resolve_tool_from_catalog(catalog, peer)
+    if not tool_entry:
+        return {"status": "error", "detail": f"Peer {peer!r} not found in tool-catalog.v1.json"}
 
-    native = peer_cfg.get("native_binary")
-    if native:
-        tool_key = Path(native.get("install_subdir", f"tools/{peer_key}")).name
-        _, _, TOOLS = _load_runtimes(sys_dir)
-        if tool_key not in TOOLS:
-            return {"status": "error", "detail": f"native_binary tool {tool_key!r} not found in runtimes.json tools"}
-        return ensure_tool(tool_key, orch, sys_dir, force=force)
+    tool_id = tool_entry.get("tool_id", peer)
+    _drain_deferred_lazy(orch, sys_dir, skip_kind="peer", skip_name=tool_id)
 
-    pkg = peer_cfg.get("npm_package")
-    if not pkg:
-        return {"status": "error", "detail": f"Peer {peer_key!r} has neither native_binary nor npm_package"}
-
-    _, _, TOOLS = _load_runtimes(sys_dir)
-    tool_cfg = TOOLS.get(peer_key, {})
-    declared_version = tool_cfg.get("version")
+    install = tool_entry.get("install", {})
+    mechanism = install.get("mechanism")
+    source = tool_entry.get("source", {})
+    declared_version = tool_entry.get("version")
     if not declared_version:
-        return {"status": "error", "detail": f"No version declared in runtimes.json tools[{peer_key!r}]; add it before bootstrapping"}
+        return {"status": "error", "detail": f"No version declared in tool-catalog.v1.json for {tool_id!r}"}
 
-    deferred_data = _load_deferred(sys_dir)
-    retry_entry = deferred_data.get(f"peer:{peer_key}", {})
-    if (not force and retry_entry.get("version") == declared_version
-            and retry_entry.get("attempts", 0) >= MAX_NPM_INSTALL_RETRIES):
-        return {"status": "error", "detail": f"npm_install_failed: exceeded {MAX_NPM_INSTALL_RETRIES} attempts for {declared_version}"}
-
-    env_dir = sys_dir / "env"
-    node_exe = env_dir / "nodejs" / "node.exe"
-    if not node_exe.exists():
-        return {"status": "error", "detail": "Node.js not installed; run provisioner deploy for nodejs first"}
-
-    npm_global = env_dir / "nodejs" / "npm-global"
-    peer_cmd = npm_global / f"{peer_key}.cmd"
-
-    manifest_path = sys_dir / "tools" / peer_key / ".install_manifest.json"
-    old_version = None
-    is_update = manifest_path.exists()
-    if is_update:
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            old_version = manifest.get("declared_version")
-            if (not force and old_version == declared_version
-                    and manifest.get("source_config_hash") == _canon_hash(tool_cfg)
-                    and peer_cmd.exists()):
-                return {"status": "already_current", "detail": "Version matches manifest"}
-        except (OSError, json.JSONDecodeError):
-            pass
-
-        if not force and _is_peer_leased(sys_dir, peer_key):
-            _add_deferred(sys_dir, peer_key, "peer")
-            return {"status": "in_use_deferred", "detail": f"Peer {peer_key} is currently leased."}
-
-    npm_exe = env_dir / "nodejs" / "npm.cmd"
-    try:
-        res = subprocess.run(
-            [str(npm_exe), "view", f"{pkg}@{declared_version}", "dist.integrity", "--json"],
-            capture_output=True, text=True, check=True,
-        )
-        integrity = json.loads(res.stdout.strip())
-    except Exception as e:
-        return {"status": "error", "detail": f"Failed to fetch registry integrity: {e}"}
-
-    npm_global.mkdir(parents=True, exist_ok=True)
-    npm_env = os.environ.copy()
-    npm_env["NPM_CONFIG_PREFIX"] = str(npm_global)
-    npm_env["NPM_CONFIG_CACHE"] = str(env_dir / "nodejs" / "npm-cache")
-    npm_env["PATH"] = str(env_dir / "nodejs") + os.pathsep + npm_env.get("PATH", "")
-
-    try:
-        subprocess.run(
-            [str(npm_exe), "install", "-g", f"{pkg}@{declared_version}"],
-            env=npm_env, check=True,
-        )
-    except subprocess.CalledProcessError as e:
-        attempts = retry_entry.get("attempts", 0) + 1 if retry_entry.get("version") == declared_version else 1
-        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        entry = {
-            "kind": "peer",
-            "name": peer_key,
+    if mechanism in ("exe_tool", "zip_tool", "sfx_exe"):
+        digest = tool_entry.get("digest")
+        tool_cfg = {
             "version": declared_version,
-            "attempts": attempts,
-            "first_failed_at": retry_entry.get("first_failed_at") if retry_entry.get("version") == declared_version else now_iso,
-            "last_failed_at": now_iso,
-            "last_exit_code": e.returncode,
+            "url": source.get("url"),
+            "bin": install.get("bin"),
+            "install_mechanism": mechanism,
+            "canary": tool_entry.get("canary"),
+            "extras": tool_entry.get("extras", []),
         }
-        deferred_data[f"peer:{peer_key}"] = entry
-        _save_deferred(sys_dir, deferred_data)
-        if attempts >= MAX_NPM_INSTALL_RETRIES:
-            return {"status": "npm_install_failed", "detail": f"npm install failed {attempts} times for {declared_version} (exit code {e.returncode})"}
-        return {"status": "npm_install_retry_deferred", "detail": f"npm install failed (exit code {e.returncode}), attempt {attempts}/{MAX_NPM_INSTALL_RETRIES}"}
+        if digest and digest.get("algorithm") and digest.get("value"):
+            tool_cfg[digest["algorithm"]] = digest["value"]
+        tools_dir = sys_dir / "tools"
+        dest_dir = tools_dir / tool_id
+        manifest_path = dest_dir / ".install_manifest.json"
+        bin_name = install.get("bin", f"{tool_id}.exe")
+        if not force and _already_current(dest_dir, manifest_path, tool_cfg, declared_version, bin_name, sys_dir=sys_dir):
+            return {"status": "already_current", "detail": "Version matches manifest"}
+        return _install_atomic(tool_id, tool_cfg, manifest_path, tools_dir, sys_dir, force=force)
 
-    if peer_key == "claude":
-        claude_pkg_dir = npm_global / "node_modules" / "@anthropic-ai" / "claude-code"
-        bin_dir = claude_pkg_dir / "bin"
-        bin_exe = bin_dir / "claude.exe"
-        if not bin_exe.exists():
-            bin_dir.mkdir(parents=True, exist_ok=True)
-            for cand in npm_global.rglob("claude.exe"):
-                if cand != bin_exe and cand.is_file():
-                    try:
-                        shutil.copy2(str(cand), str(bin_exe))
-                        break
-                    except Exception:
-                        pass
-        claude_cmd = npm_global / "claude.cmd"
-        if claude_cmd.exists():
-            safe_claude = '@ECHO off\r\nSETLOCAL\r\nset "DIR=%~dp0"\r\n"%DIR%node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe" %*\r\n'
-            claude_cmd.write_text(safe_claude, encoding="utf-8")
-    elif peer_key == "codex":
-        codex_cmd = npm_global / "codex.cmd"
-        if codex_cmd.exists():
-            safe_codex = '@ECHO off\r\nSETLOCAL\r\nset "DIR=%~dp0"\r\n"%DIR%node_modules\\@openai\\codex\\bin\\codex.js" %*\r\n'
-            codex_cmd.write_text(safe_codex, encoding="utf-8")
+    if mechanism == "npm_peer":
+        pkg = source.get("discovery_id")
+        if not pkg:
+            return {"status": "error", "detail": f"Tool {tool_id!r} has mechanism=npm_peer but no discovery_id in source"}
 
-    canary = tool_cfg.get("canary")
-    ok, canary_output = _run_canary(npm_global, canary, env=npm_env)
-    if not ok:
-        if is_update and old_version and old_version != declared_version:
+        deferred_data = _load_deferred(sys_dir)
+        retry_entry = deferred_data.get(f"peer:{tool_id}", {})
+        if (not force and retry_entry.get("version") == declared_version
+                and retry_entry.get("attempts", 0) >= MAX_NPM_INSTALL_RETRIES):
+            return {"status": "error", "detail": f"npm_install_failed: exceeded {MAX_NPM_INSTALL_RETRIES} attempts for {declared_version}"}
+
+        env_dir = sys_dir / "env"
+        node_exe = env_dir / "nodejs" / "node.exe"
+        if not node_exe.exists():
+            return {"status": "error", "detail": "Node.js not installed; run provisioner deploy for nodejs first"}
+
+        npm_global = env_dir / "nodejs" / "npm-global"
+        bin_name = install.get("bin", f"{tool_id}.cmd")
+        peer_cmd = npm_global / bin_name
+
+        manifest_path = sys_dir / "tools" / tool_id / ".install_manifest.json"
+        old_version = None
+        is_update = manifest_path.exists()
+        if is_update:
             try:
-                subprocess.run(
-                    [str(npm_exe), "install", "-g", f"{pkg}@{old_version}"],
-                    env=npm_env, check=True,
-                )
-                rb_ok, _rb_out = _run_canary(npm_global, canary, env=npm_env)
-                if rb_ok:
-                    return {"status": "error", "detail": f"Canary failed for {declared_version}, rolled back to {old_version}: {canary_output}"}
-            except subprocess.CalledProcessError:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                old_version = manifest.get("declared_version")
+                if (not force and old_version == declared_version
+                        and manifest.get("source_config_hash") == _canon_hash(tool_entry)
+                        and peer_cmd.exists()):
+                    return {"status": "already_current", "detail": "Version matches manifest"}
+            except (OSError, json.JSONDecodeError):
                 pass
-        return {"status": "npm_canary_failed", "detail": f"Canary failed: {canary_output}"}
 
-    manifest = {
-        "tool": peer_key,
-        "declared_version": declared_version,
-        "url": f"npm:{pkg}",
-        "checksum_algo": "npm_integrity",
-        "checksum_value": integrity,
-        "checksum_source": "registry_integrity",
-        "checksum_verified": True,
-        "canary_command": canary.get("argv", []) if canary else [],
-        "canary_output": canary_output,
-        "installed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "source_config_hash": _canon_hash(tool_cfg),
-    }
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    _remove_deferred(sys_dir, peer_key, "peer")
-    return {"status": "success", "detail": "Installed successfully"}
+            if not force and _is_peer_leased(sys_dir, tool_id):
+                _add_deferred(sys_dir, tool_id, "peer")
+                return {"status": "in_use_deferred", "detail": f"Peer {tool_id} is currently leased."}
+
+        npm_exe = env_dir / "nodejs" / "npm.cmd"
+        try:
+            res = subprocess.run(
+                [str(npm_exe), "view", f"{pkg}@{declared_version}", "dist.integrity", "--json"],
+                capture_output=True, text=True, check=True,
+            )
+            integrity = json.loads(res.stdout.strip())
+        except Exception as e:
+            return {"status": "error", "detail": f"Failed to fetch registry integrity: {e}"}
+
+        npm_global.mkdir(parents=True, exist_ok=True)
+        npm_env = os.environ.copy()
+        npm_env["NPM_CONFIG_PREFIX"] = str(npm_global)
+        npm_env["NPM_CONFIG_CACHE"] = str(env_dir / "nodejs" / "npm-cache")
+        npm_env["PATH"] = str(env_dir / "nodejs") + os.pathsep + npm_env.get("PATH", "")
+
+        try:
+            subprocess.run(
+                [str(npm_exe), "install", "-g", f"{pkg}@{declared_version}"],
+                env=npm_env, check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            attempts = retry_entry.get("attempts", 0) + 1 if retry_entry.get("version") == declared_version else 1
+            now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            entry = {
+                "kind": "peer",
+                "name": tool_id,
+                "version": declared_version,
+                "attempts": attempts,
+                "first_failed_at": retry_entry.get("first_failed_at") if retry_entry.get("version") == declared_version else now_iso,
+                "last_failed_at": now_iso,
+                "last_exit_code": e.returncode,
+            }
+            deferred_data[f"peer:{tool_id}"] = entry
+            _save_deferred(sys_dir, deferred_data)
+            if attempts >= MAX_NPM_INSTALL_RETRIES:
+                return {"status": "npm_install_failed", "detail": f"npm install failed {attempts} times for {declared_version} (exit code {e.returncode})"}
+            return {"status": "npm_install_retry_deferred", "detail": f"npm install failed (exit code {e.returncode}), attempt {attempts}/{MAX_NPM_INSTALL_RETRIES}"}
+
+        canary = tool_entry.get("canary")
+        ok, canary_output = _run_canary(npm_global, canary, env=npm_env)
+        if not ok:
+            if is_update and old_version and old_version != declared_version:
+                try:
+                    subprocess.run(
+                        [str(npm_exe), "install", "-g", f"{pkg}@{old_version}"],
+                        env=npm_env, check=True,
+                    )
+                    rb_ok, _rb_out = _run_canary(npm_global, canary, env=npm_env)
+                    if rb_ok:
+                        return {"status": "error", "detail": f"Canary failed for {declared_version}, rolled back to {old_version}: {canary_output}"}
+                except subprocess.CalledProcessError:
+                    pass
+            return {"status": "npm_canary_failed", "detail": f"Canary failed: {canary_output}"}
+
+        manifest = {
+            "tool": tool_id,
+            "declared_version": declared_version,
+            "url": f"npm:{pkg}",
+            "checksum_algo": "npm_integrity",
+            "checksum_value": integrity,
+            "checksum_source": "registry_integrity",
+            "checksum_verified": True,
+            "canary_command": canary.get("argv", []) if canary else [],
+            "canary_output": canary_output,
+            "installed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "source_config_hash": _canon_hash(tool_entry),
+        }
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        _remove_deferred(sys_dir, tool_id, "peer")
+        return {"status": "success", "detail": "Installed successfully"}
+
+    return {"status": "error", "detail": f"Unknown install mechanism {mechanism!r} for {tool_id}"}
+
 
 
 _DEPLOY_SUCCESS_STATUSES = {"success", "already_current"}
@@ -984,12 +974,14 @@ def _tool_postcondition(sys_dir: Path, name: str, cfg: dict) -> bool:
 
 
 def _peer_postcondition(sys_dir: Path, peer_id: str, cfg: dict) -> bool:
-    native = cfg.get("native_binary")
-    if native:
-        install_subdir = native.get("install_subdir", f"tools/{peer_id}")
-        bin_name = native.get("win_exe") or native.get("bin_name") or f"{peer_id}.exe"
-        return (sys_dir / install_subdir / bin_name).exists()
-    return (sys_dir / "env" / "nodejs" / "npm-global" / f"{peer_id}.cmd").exists()
+    install = cfg.get("install", {})
+    mechanism = install.get("mechanism")
+    if mechanism == "npm_peer":
+        bin_name = install.get("bin", f"{peer_id}.cmd")
+        return (sys_dir / "env" / "nodejs" / "npm-global" / bin_name).exists()
+    install_subdir = install.get("install_subdir", f"tools/{peer_id}")
+    bin_name = install.get("bin", f"{peer_id}.exe")
+    return (sys_dir / install_subdir / bin_name).exists()
 
 
 def _record_deploy_outcome(
@@ -1024,7 +1016,7 @@ def _record_deploy_outcome(
 
 def deploy(ctx: dict) -> dict:
     """Install all runtimes, tools, and AI peer CLIs via ensure_runtime/
-    ensure_tool/ensure_peer_cli - every entry in runtimes.json/peers.json is
+    ensure_tool/ensure_peer_cli - every entry in runtimes.json/tool-catalog.v1.json is
     manifest-tracked and update-aware (D11), not just install-if-missing."""
     args       = ctx["args"]
     force      = "--force" in args
@@ -1038,7 +1030,7 @@ def deploy(ctx: dict) -> dict:
 
     print(f"\n>>> Starting Provisioner (force={force})")
     V, URLS, TOOLS = _load_runtimes(sys_dir)
-    peers = _load_peers(sys_dir)
+    catalog = _load_tool_catalog(sys_dir)
     _check_python_version(V)
 
     # ── Folder structure ─────────────────────────────────────────
@@ -1050,17 +1042,12 @@ def deploy(ctx: dict) -> dict:
         sys_dir / "data" / "logs", sys_dir / "data" / "temp",
         sys_dir / "data" / "state", sys_dir / "data" / "generated",
         base_dir / "workspace",
-        sys_dir / "ai" / "common" / "agents",
-        sys_dir / "ai" / "common" / "skills",
-        sys_dir / "ai" / "common" / "mcp",
         sys_dir / "common" / "scripts",
         sys_dir / "common" / "assets",
     ]
-    for peer_id, cfg in peers.items():
-        sub = sys_dir / cfg.get("sys_subdir", peer_id)
-        dirs += [sub / "config", sub / "project"]
-        if cfg.get("sys_subdir"):
-            dirs.append(sub / "templates")
+    for tool in catalog.get("tools", []):
+        t_id = tool.get("tool_id")
+        dirs.append(sys_dir / "tools" / t_id)
     for d in dirs:
         d.mkdir(parents=True, exist_ok=True)
     print("  [OK] Folder structure ready")
@@ -1134,12 +1121,7 @@ def deploy(ctx: dict) -> dict:
     print("\n>>> CLI Tools")
     for tool_name, tool_cfg in TOOLS.items():
         if tool_cfg.get("install_mechanism") == "npm_peer":
-            continue  # installed via the AI Peer CLIs loop below instead
-        if skip_ai and tool_cfg.get("install_mechanism") == "exe_tool" and any(
-            peer_cfg.get("native_binary", {}).get("install_subdir", "").endswith(f"/{tool_name}")
-            for peer_cfg in peers.values()
-        ):
-            continue  # e.g. agy: a peer CLI's native binary, skip under --skip-ai too
+            continue
         res = ensure_tool(tool_name, sys_dir=sys_dir, force=force)
         _record_deploy_outcome(
             tool_name,
@@ -1153,18 +1135,20 @@ def deploy(ctx: dict) -> dict:
     # ── AI Peer CLIs ─────────────────────────────────────────────
     if not skip_ai:
         print("\n>>> AI Peer CLIs")
-        for peer_id, cfg in peers.items():
-            if not cfg.get("enabled"):
+        for tool in catalog.get("tools", []):
+            if not tool.get("enabled", True):
                 continue
-            res = ensure_peer_cli(peer_id, sys_dir=sys_dir, force=force)
+            tool_id = tool.get("tool_id")
+            res = ensure_peer_cli(tool_id, sys_dir=sys_dir, force=force)
             _record_deploy_outcome(
-                peer_id,
+                tool_id,
                 res,
-                _peer_postcondition(sys_dir, peer_id, cfg),
+                _peer_postcondition(sys_dir, tool_id, tool),
                 installed,
                 deferred,
                 failed,
             )
+
 
     ctx["state"]["installed"] = installed
     ctx["state"]["deferred"] = deferred
@@ -1239,7 +1223,7 @@ def _cli_ensure_peer_cli(argv: list[str]) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(prog="provisioner.py ensure-peer-cli")
-    parser.add_argument("peer", help="peers.json key or node_id of the peer CLI to ensure")
+    parser.add_argument("peer", help="tool_id or alias of the peer CLI to ensure")
     parser.add_argument("--force", action="store_true", help="Bypass the already-current fast path")
     args = parser.parse_args(argv)
 

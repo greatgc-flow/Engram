@@ -65,53 +65,29 @@ class TestSystemLifecycle:
         (sys_dir / "local.config.bat").write_text(":: user config", encoding="utf-8")
         return base_dir
 
-    def test_registration_flow_sys_r1_r2(self, mock_env, tmp_path):
-        """SYS-R1/R2: mount 이 SUBST 할당하고 unmount 가 해제한다."""
+    def test_registration_flow_mount_unmount(self, mock_env, tmp_path):
+        """mount creates junctions from managed-links.json and unmount removes them."""
         ctx = _make_ctx(mock_env, tmp_path)
-
-        with patch.object(virtualizer, "_load_peers", return_value={}), \
-             patch.object(virtualizer, "_get_subst_mappings", return_value={}), \
-             patch("os.path.exists", side_effect=_no_drive_exists), \
-             patch("subprocess.run", return_value=MagicMock(returncode=0)):
+        links = {
+            "_version": "1.0",
+            "entries": {
+                "test_link": {
+                    "relative_link_path": "../test_junction",
+                    "relative_target_path": "test_target"
+                }
+            }
+        }
+        (mock_env / "_sys" / "managed-links.json").write_text(json.dumps(links), encoding="utf-8")
+        with patch.object(virtualizer, "_ensure_junction") as mock_ensure, \
+             patch.object(virtualizer, "_remove_junction", return_value=True) as mock_remove:
             mount_result = virtualizer.mount(ctx)
+            assert mount_result["status"] == "success"
+            assert mock_ensure.called
 
-        drive = ctx["state"].get("subst_drive")
-        assert drive is not None, "mount 후 state에 subst_drive 가 있어야 함"
-        assert mount_result["status"] == "success"
+            unmount_result = virtualizer.unmount(ctx)
+            assert unmount_result["status"] == "success"
+            assert mock_remove.called
 
-        # unmount — prior_state 를 통해 drive 전달 (unmount는 _load_state → prior_state 사용)
-        ctx2 = _make_ctx(mock_env, tmp_path)
-        ctx2["prior_state"] = {"subst_drive": drive}
-        with patch.object(virtualizer, "_load_peers", return_value={}), \
-             patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_run:
-            unmount_result = virtualizer.unmount(ctx2)
-
-        release_calls = [
-            c for c in mock_run.call_args_list
-            if isinstance(c.args[0], list) and "/D" in c.args[0]
-        ]
-        assert release_calls, "unmount 후 subst /D 가 호출되어야 함"
-        assert unmount_result["status"] == "success"
-
-    def test_mount_reports_failed_when_subst_assignment_is_missing(self, mock_env, tmp_path):
-        ctx = _make_ctx(mock_env, tmp_path)
-        with patch.object(virtualizer, "_load_peers", return_value={}), \
-             patch.object(virtualizer, "_assign_subst", return_value=None):
-            result = virtualizer.mount(ctx)
-
-        assert result["status"] == "failed"
-        assert "SUBST drive was not assigned" in result["errors"]
-
-    def test_unmount_reports_failed_when_subst_mapping_remains(self, mock_env, tmp_path):
-        ctx = _make_ctx(mock_env, tmp_path)
-        ctx["prior_state"] = {"subst_drive": "P"}
-        with patch.object(virtualizer, "_load_peers", return_value={}), \
-             patch.object(virtualizer, "_get_subst_mappings", return_value={"P": mock_env}), \
-             patch("subprocess.run", return_value=MagicMock(returncode=5)):
-            result = virtualizer.unmount(ctx)
-
-        assert result["status"] == "failed"
-        assert "could not release SUBST drive P:" in result["errors"][0]
 
     def test_registrar_apply_empty_or_missing_config_is_success_not_failure(self, mock_env, tmp_path):
         """T28 regression (ag-caught): an empty/missing context_menu.json is a
@@ -154,54 +130,6 @@ class TestSystemLifecycle:
         # local.config.bat is a source config (not data) — Tier 4 does NOT delete it
         assert (mock_env / "_sys" / "local.config.bat").exists()
 
-    def test_tier1_preserves_ai_governance_state_deletes_only_ephemeral(self, mock_env):
-        """T30: a light cleanup must NOT wipe .ai governance state (consensus,
-        quarantine, state.json, leases) — only ephemeral logs/IPC are removed."""
-        ai = mock_env / ".ai"
-        (ai / "consensus").mkdir(parents=True)
-        (ai / "consensus" / "r-x.json").write_text("{}", encoding="utf-8")
-        (ai / "quarantine" / "ask-x").mkdir(parents=True)
-        (ai / "quarantine" / "ask-x" / "f.py").write_text("x", encoding="utf-8")
-        (ai / "state.json").write_text("{}", encoding="utf-8")
-        (ai / "leases.json").write_text("{}", encoding="utf-8")  # no active leases
-        # ephemeral
-        (ai / "ipc").mkdir()
-        (ai / "ipc" / "q.txt").write_text("q", encoding="utf-8")
-        (ai / "routing_metrics.jsonl").write_text("{}\n", encoding="utf-8")
-        (ai / "orphan.tmp").write_text("t", encoding="utf-8")
-
-        cleanup.run_cleanup(tier=1, all_yes=True, base_dir=mock_env)
-
-        # governance PRESERVED
-        assert (ai / "consensus" / "r-x.json").exists()
-        assert (ai / "quarantine" / "ask-x" / "f.py").exists()
-        assert (ai / "state.json").exists()
-        assert (ai / "leases.json").exists()
-        # ephemeral REMOVED
-        assert not (ai / "ipc").exists()
-        assert not (ai / "routing_metrics.jsonl").exists()
-        assert not (ai / "orphan.tmp").exists()
-
-    def test_cleanup_blocked_when_active_session_present(self, mock_env):
-        """T30: an active peer session/lease blocks a real cleanup (dry-run and
-        --force still allowed)."""
-        (mock_env / "_sys" / "data" / "temp").mkdir()
-        (mock_env / "_sys" / "data" / "temp" / "junk.tmp").write_text("junk")
-        lock_dir = mock_env / ".ai" / ".lock"
-        lock_dir.mkdir(parents=True)
-        (lock_dir / "consensus_r-x.lock").write_text("", encoding="utf-8")  # fresh lock
-
-        ctx = _make_ctx(mock_env, mock_env / "_tmp")
-        ctx["args"] = ["--tier", "1", "--all"]  # no --force
-        scrubber.run(ctx)
-
-        # blocked -> temp NOT deleted
-        assert (mock_env / "_sys" / "data" / "temp").exists()
-
-        # --force overrides
-        ctx["args"] = ["--tier", "1", "--all", "--force"]
-        scrubber.run(ctx)
-        assert not (mock_env / "_sys" / "data" / "temp").exists()
 
     def test_tier2_never_deletes_register_state_ledger(self, mock_env):
         """T30 (ag-caught orphan risk): cleanup must NEVER delete
@@ -217,84 +145,13 @@ class TestSystemLifecycle:
         assert (state_dir / "register.state.json").exists()   # preserved (teardown ledger)
         assert not (state_dir / "install.state.json").exists()  # install state cleaned
 
-    def test_tier4_zerobase_clears_ai_governance_state(self, mock_env):
-        """T30 (ag-caught regression): ZeroBase must actually remove the .ai
-        governance state that Tier 1 now preserves."""
-        ai = mock_env / ".ai"
-        (ai / "consensus").mkdir(parents=True)
-        (ai / "consensus" / "r-x.json").write_text("{}", encoding="utf-8")
-        (ai / "state.json").write_text("{}", encoding="utf-8")
-
-        cleanup.run_cleanup(tier=4, all_yes=True, base_dir=mock_env)
-
-        assert not ai.exists()
-
-    def test_registration_migration_sys_r3(self, mock_env, tmp_path):
-        """SYS-R3: 경로 이동 후 새 경로에서 재등록 성공 (기존 SUBST 무시)."""
-        ctx1 = _make_ctx(mock_env, tmp_path)
-        with patch.object(virtualizer, "_load_peers", return_value={}), \
-             patch.object(virtualizer, "_get_subst_mappings", return_value={}), \
-             patch("os.path.exists", side_effect=_no_drive_exists), \
-             patch("subprocess.run", return_value=MagicMock(returncode=0)):
-            virtualizer.mount(ctx1)
-        drive1 = ctx1["state"].get("subst_drive")
-
-        # 경로 이동 후 새 위치에서 재등록
-        new_env = tmp_path / "MovedPortableDev"
-        shutil.copytree(mock_env, new_env)
-        ctx2 = _make_ctx(new_env, tmp_path / "state2")
-
-        with patch.object(virtualizer, "_load_peers", return_value={}), \
-             patch.object(virtualizer, "_get_subst_mappings", return_value={}), \
-             patch("os.path.exists", side_effect=_no_drive_exists), \
-             patch("subprocess.run", return_value=MagicMock(returncode=0)):
-            virtualizer.mount(ctx2)
-
-        drive2 = ctx2["state"].get("subst_drive")
-        assert drive2 is not None, "새 경로에서 드라이브가 할당되어야 함"
-
-    def test_dual_instance_different_subst_drives(self, tmp_path):
-        """SYS-R4: 같은 PC에 두 인스턴스 등록 시 서로 다른 SUBST 드라이브."""
-        env1 = tmp_path / "SandboxA" / "Alpha"
-        (env1 / "_sys" / "ai").mkdir(parents=True)
-        env2 = tmp_path / "SandboxB" / "Beta"
-        (env2 / "_sys" / "ai").mkdir(parents=True)
-
-        assigned = []
-
-        def run_side_effect(cmd, *args, **kwargs):
-            if isinstance(cmd, list) and len(cmd) >= 2 \
-                    and "subst" in str(cmd[0]).lower() and "/D" not in cmd:
-                letter = cmd[1].rstrip(":")
-                assigned.append(letter)
-            return MagicMock(returncode=0)
-
-        # 첫 번째 인스턴스: D: 자유 (A,B,C 예약)
-        with patch.object(virtualizer, "_get_subst_mappings", return_value={}), \
-             patch("os.path.exists", side_effect=_no_drive_exists), \
-             patch("subprocess.run", side_effect=run_side_effect):
-            r1 = virtualizer._assign_subst(env1, env1 / "_sys")
-
-        # 두 번째 인스턴스: r1: 가 다른 실존 경로로 점유됨 → 다른 드라이브 선택
-        other = tmp_path / "other"
-        other.mkdir()
-        taken = {r1: other} if r1 else {}  # other.exists()=True → r1 skipped
-
-        with patch.object(virtualizer, "_get_subst_mappings", return_value=taken), \
-             patch("os.path.exists", side_effect=_no_drive_exists), \
-             patch("subprocess.run", side_effect=run_side_effect):
-            r2 = virtualizer._assign_subst(env2, env2 / "_sys")
-
-        assert r1 is not None and r2 is not None, "두 인스턴스 모두 드라이브가 할당되어야 함"
-        assert r1 != r2, f"두 인스턴스가 동일한 드라이브를 사용함: {r1}"
-
     def test_cleanup_tier3_resets_runtime(self, mock_env):
         """SYS-C3: Tier 3이 env/ 런타임 삭제(python 제외), tools/와 workspace는 유지."""
         env_dir = mock_env / "_sys" / "env"
         (env_dir / "python").mkdir(parents=True)
         (env_dir / "nodejs").mkdir(parents=True)
         (mock_env / "_sys" / "tools" / "rg").mkdir(parents=True)
-        (mock_env / "_sys" / "claude").mkdir(parents=True)
+
 
         cleanup.run_cleanup(tier=3, all_yes=True, base_dir=mock_env)
 

@@ -54,55 +54,6 @@ class TestPathScenarios:
         (base / "_sys" / "ai").mkdir(parents=True)
         return base
 
-    def test_korean_path_registration(self, korean_base, tmp_path):
-        """Scenario 1: 한글 물리 경로에서 SUBST 드라이브 할당."""
-        with patch.object(virtualizer, "_get_subst_mappings", return_value={}), \
-             patch("os.path.exists", side_effect=_no_drive_exists), \
-             patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_run:
-            result = virtualizer._assign_subst(korean_base, korean_base / "_sys")
-
-        assert result is not None, "드라이브 문자가 할당되어야 함"
-        subst_calls = [
-            c for c in mock_run.call_args_list
-            if isinstance(c.args[0], list)
-            and len(c.args[0]) >= 3
-            and c.args[0][0].lower() == "subst"
-            and "/D" not in c.args[0]
-        ]
-        assert subst_calls, "subst 명령이 호출되어야 함"
-        # c.args[0][2] is the base_dir path passed to subst
-        assert any(c.args[0][2] == str(korean_base) for c in subst_calls), \
-            "SUBST 호출에 한글 물리 경로가 포함되어야 함"
-
-    def test_subst_drive_conflict_and_auto_pick(self, korean_base, tmp_path):
-        """Scenario 2&3: P: 충돌 시 다음 가용 드라이브(D:) 자동 선택.
-        예약(A,B,C), P: 실존하는 다른 경로로 점유 → mapped.exists()=True → skip → D: 선택."""
-        other_dir = tmp_path / "other_sandbox"
-        other_dir.mkdir()
-        taken_map = {"P": other_dir}  # P: → 실존 경로 (exists()=True via real check)
-
-        # _no_drive_exists: 드라이브 체크만 False, 실제 경로 exists()는 real check 유지
-        with patch.object(virtualizer, "_get_subst_mappings", return_value=taken_map), \
-             patch("os.path.exists", side_effect=_no_drive_exists), \
-             patch("subprocess.run", return_value=MagicMock(returncode=0)):
-            result = virtualizer._assign_subst(korean_base, korean_base / "_sys")
-
-        # other_dir.exists()=True → P: skipped → 첫 가용 = D:
-        assert result == "D", f"P: 충돌 시 D: 가 선택되어야 하지만 {result}: 가 선택됨"
-
-    def test_unregistration_korean_path(self, korean_base, tmp_path):
-        """Scenario 4: 한글 경로 해제 시 subst /D 호출."""
-        with patch.object(virtualizer, "_get_subst_mappings",
-                          return_value={"P": korean_base}), \
-             patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_run:
-            virtualizer._release_subst(korean_base)
-
-        release_calls = [
-            c for c in mock_run.call_args_list
-            if isinstance(c.args[0], list) and "/D" in c.args[0]
-        ]
-        assert release_calls, "subst /D 가 호출되어야 함"
-        assert any("P:" in str(c) for c in release_calls), "P: 가 해제되어야 함"
 
     def test_start_bat_emulation_logic(self, tmp_path):
         """Scenario 5: start.bat 경로 파생 로직 — SUBST 치환 후 한글 문자 제거 확인."""
@@ -211,40 +162,6 @@ class TestPathScenarios:
         assert result["status"] == "failed"
         assert any("registry write failed" in error for error in result["errors"])
 
-    def test_korean_path_with_spaces(self, tmp_path):
-        """Scenario 7: 한글 + 공백 경로에서 SUBST 정상 할당."""
-        base = tmp_path / "테스트 폴더" / "My PortableDev"
-        (base / "_sys" / "ai").mkdir(parents=True)
-
-        with patch.object(virtualizer, "_get_subst_mappings", return_value={}), \
-             patch("os.path.exists", side_effect=_no_drive_exists), \
-             patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_run:
-            result = virtualizer._assign_subst(base, base / "_sys")
-
-        assert result is not None, "한글+공백 경로에서도 드라이브가 할당되어야 함"
-        subst_calls = [
-            c for c in mock_run.call_args_list
-            if isinstance(c.args[0], list)
-            and "subst" in c.args[0][0].lower()
-            and "/D" not in c.args[0]
-        ]
-        assert subst_calls, "subst 명령이 호출되어야 함"
-
-    def test_reregister_after_subst_lost(self, korean_base, tmp_path):
-        """Scenario 8: USB 재삽입 후 SUBST 재등록 — 두 번 모두 드라이브 할당."""
-        with patch.object(virtualizer, "_get_subst_mappings", return_value={}), \
-             patch("os.path.exists", side_effect=_no_drive_exists), \
-             patch("subprocess.run", return_value=MagicMock(returncode=0)):
-            r1 = virtualizer._assign_subst(korean_base, korean_base / "_sys")
-
-        # USB 재삽입 — SUBST 소멸 후 재등록
-        with patch.object(virtualizer, "_get_subst_mappings", return_value={}), \
-             patch("os.path.exists", side_effect=_no_drive_exists), \
-             patch("subprocess.run", return_value=MagicMock(returncode=0)):
-            r2 = virtualizer._assign_subst(korean_base, korean_base / "_sys")
-
-        assert r1 is not None, "1차 등록에서 드라이브 할당 실패"
-        assert r2 is not None, "재삽입 후 재등록에서 드라이브 할당 실패"
 
     def test_local_config_no_non_ascii_fix(self, korean_base, tmp_path):
         """register.state.json: 드라이브 문자 저장, 한글 값 없음."""

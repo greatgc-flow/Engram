@@ -100,13 +100,9 @@ def test_relocate_no_change(tmp_path):
     assert last_file.read_text(encoding="utf-8") == str(base_dir)
 
 def test_relocate_drive_moved(tmp_path):
-    """High-risk case: drive moved, requires patching and deletion."""
-    # sys_dir is always base_dir/_sys in real usage (see main()'s ctx wiring) -
-    # relative_to(base_dir) in the patch-success log line depends on this.
+    """Case: drive moved, updates last_base_dir.txt."""
     new_base_dir = tmp_path / "new_base"
     sys_dir = new_base_dir / "_sys"
-    ai_dir = sys_dir / "ai"
-    ai_dir.mkdir(parents=True)
 
     old_base = str(tmp_path / "old_base")
     new_base = str(new_base_dir)
@@ -115,33 +111,7 @@ def test_relocate_drive_moved(tmp_path):
     last_file.parent.mkdir(parents=True)
     last_file.write_text(old_base, encoding="utf-8")
 
-    peers_data = {
-        "peers": {
-            "testpeer": {
-                "enabled": True,
-                "sys_subdir": "testpeer",
-                "relocate": {
-                    "patch": ["config.json"],
-                    "delete": ["temp_cache"]
-                }
-            }
-        }
-    }
-    import json
-    (ai_dir / "peers.json").write_text(json.dumps(peers_data), encoding="utf-8")
-
-    peer_dir = sys_dir / "testpeer"
-    peer_dir.mkdir()
-    target_patch = peer_dir / "config.json"
-    target_patch.write_text(json.dumps({"path": old_base + "\\some\\dir"}), encoding="utf-8")
-
-    target_delete = peer_dir / "temp_cache"
-    target_delete.mkdir()
-    (target_delete / "junk.txt").write_text("junk", encoding="utf-8")
-
     _relocate(Path(new_base), sys_dir)
 
     assert last_file.read_text(encoding="utf-8") == new_base
-    patched = json.loads(target_patch.read_text(encoding="utf-8"))
-    assert patched["path"] == new_base + "\\some\\dir"
-    assert not target_delete.exists()
+

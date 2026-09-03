@@ -2,12 +2,12 @@
 scrubber.py - Tiered cleanup for Portable Dev Environment.
 Tier definitions are hardcoded below (_tier1 through _tier5) - there is no
 cleanup_tiers.json config file or JSON-driven fallback mechanism.
-AI peer items driven by peers.json. State-aware for register artifacts.
+State-aware for register artifacts. Fully generic and oblivious to AI session state.
 
 Tier 1  Light     — 캐시·임시파일·로그 (안전, 재설치 불필요)
 Tier 2  Soft      — Tier 1 + 설치 아카이브·venv·로컬 설정
-Tier 3  Reset     — Tier 2 + 런타임·도구·AI 인증·Junction
-Tier 4  ZeroBase  — Tier 3 + 워크스페이스·아카이브·AI Peer 시스템
+Tier 3  Reset     — Tier 2 + 런타임·도구·Junction
+Tier 4  ZeroBase  — Tier 3 + 워크스페이스·아카이브
 Tier 5  Purge     — Tier 4 + Python (완전 초기화)
 """
 import os
@@ -46,35 +46,6 @@ def _fmt(b: int) -> str:
     return f"{b} B"
 
 
-def _load_peers(sys_dir: Path) -> dict:
-    p = sys_dir / "ai" / "peers.json"
-    if p.exists():
-        try:
-            return json.loads(p.read_text(encoding="utf-8")).get("peers", {})
-        except Exception:
-            pass
-    return {}
-
-
-def _is_junction(path: Path) -> bool:
-    try:
-        st = path.lstat()
-        return os.path.islink(path) or getattr(st, "st_reparse_tag", 0) == 0xA0000003
-    except Exception:
-        return False
-
-
-def _remove_junction(path: Path, label: str, dry_run: bool) -> None:
-    if not _is_junction(path):
-        return
-    if dry_run:
-        print(f"  [Wait] {label} — Junction 해제 예정")
-        return
-    try:
-        subprocess.run(f'rmdir "{path}"', shell=True, check=True, capture_output=True)
-        print(f"  [OK] {label} — Junction 해제됨")
-    except Exception as e:
-        print(f"  [Fail] {label}: {e}")
 
 
 def _remove_path(path: Path, label: str, dry_run: bool) -> int:
@@ -106,73 +77,8 @@ def _confirm(msg: str, all_yes: bool, dry_run: bool) -> bool:
     return input(msg).lower().startswith("y")
 
 
-# ── T30 cleanup-safety helpers ────────────────────────────────────────────────
-
-# .ai holds governance STATE (preserve) alongside ephemeral logs (safe to clear).
-# A light cleanup must never wipe the whole .ai tree. These names under .ai are
-# treated as ephemeral; everything else (consensus/, quarantine/, state.json,
-# leases.json, sessions/, nodes.json, mailbox*, knowledge/, lessons/, broker/,
-# operational_errors.jsonl, canary_*.json, cli-reality-baseline.json, ...) is
-# governance state and is PRESERVED by Tier 1.
-_AI_EPHEMERAL_DIRS = ("ipc", "out")
-_AI_EPHEMERAL_FILES = ("routing_metrics.jsonl", "operations.jsonl", "ask_history.jsonl",
-                       "operational_errors.jsonl", "cli-reality-observed.json")
-_AI_EPHEMERAL_GLOBS = ("*.tmp", "*.stdout.txt", "*.stderr.txt")
-_SESSION_LOCK_STALE_SECONDS = 3600  # a .lock older than this is treated as stale
-
-
-def _active_sessions_present(base_dir: Path) -> bool:
-    """True if a peer session looks active: a recently-touched lock under
-    .ai/.lock/, or an unexpired lease in .ai/leases.json. Stale locks (older than
-    _SESSION_LOCK_STALE_SECONDS) and expired leases do NOT count, so ancient
-    leftovers never permanently block cleanup."""
-    import time
-    ai = base_dir / ".ai"
-    lock_dir = ai / ".lock"
-    if lock_dir.is_dir():
-        now = time.time()
-        for lk in lock_dir.glob("*.lock"):
-            try:
-                if now - lk.stat().st_mtime <= _SESSION_LOCK_STALE_SECONDS:
-                    return True
-            except OSError:
-                continue
-    leases = ai / "leases.json"
-    if leases.exists():
-        try:
-            data = json.loads(leases.read_text(encoding="utf-8"))
-        except Exception:
-            data = None
-        entries = []
-        if isinstance(data, dict):
-            entries = list(data.get("leases", data).values()) if isinstance(data.get("leases", data), dict) else []
-        elif isinstance(data, list):
-            entries = data
-        import datetime as _dt
-        now_dt = _dt.datetime.now(_dt.timezone.utc)
-        for e in entries:
-            if not isinstance(e, dict):
-                continue
-            exp = e.get("expires_at") or e.get("expires")
-            if not exp:
-                if str(e.get("status", "")).lower() in ("active", "open", "held"):
-                    return True
-                continue
-            try:
-                exp_dt = _dt.datetime.fromisoformat(str(exp).replace("Z", "+00:00"))
-                if exp_dt.tzinfo is None:
-                    exp_dt = exp_dt.replace(tzinfo=_dt.timezone.utc)
-                if exp_dt > now_dt:
-                    return True
-            except (ValueError, TypeError):
-                continue
-    return False
-
-
 def _host_registration_active(base_dir: Path) -> bool:
-    """True if host integration (a SUBST drive pointing at base_dir) is still
-    mounted, meaning register.state.json is a live teardown ledger that must not
-    be deleted before unregister.bat runs."""
+    """True if host integration is still mounted."""
     try:
         from core.virtualizer import _get_subst_mappings
     except Exception:
@@ -192,28 +98,9 @@ def _host_registration_active(base_dir: Path) -> bool:
     return False
 
 
-def _clean_ai_ephemeral(base_dir: Path, dry_run: bool) -> int:
-    """Delete only ephemeral logs/IPC under .ai, PRESERVING governance state
-    (consensus/quarantine/state.json/leases/sessions/etc). Replaces the old
-    'delete the entire .ai tree' behaviour that wiped governance state during a
-    'light' cleanup (T30)."""
-    ai = base_dir / ".ai"
-    if not ai.is_dir():
-        return 0
-    freed = 0
-    for d in _AI_EPHEMERAL_DIRS:
-        freed += _remove_path(ai / d, f".ai/{d} (ephemeral)", dry_run)
-    for f in _AI_EPHEMERAL_FILES:
-        freed += _remove_path(ai / f, f".ai/{f} (log)", dry_run)
-    for pattern in _AI_EPHEMERAL_GLOBS:
-        for p in ai.glob(pattern):
-            freed += _remove_path(p, f".ai/{p.name}", dry_run)
-    return freed
-
-
 # ── Tier implementations ──────────────────────────────────────────────────────
 
-def _tier1(base_dir: Path, sys_dir: Path, peers: dict, dry_run: bool) -> int:
+def _tier1(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> int:
     env_dir  = sys_dir / "env"
     data_dir = sys_dir / "data"
     freed    = 0
@@ -221,11 +108,8 @@ def _tier1(base_dir: Path, sys_dir: Path, peers: dict, dry_run: bool) -> int:
     freed += _remove_path(env_dir / "python" / "pip-cache",  "pip 캐시",  dry_run)
     freed += _remove_path(env_dir / "nodejs"  / "npm-cache",  "npm 캐시",  dry_run)
     freed += _remove_path(data_dir / "temp",    "임시 파일 (_sys/data/temp)", dry_run)
-    # T30: clear only ephemeral .ai logs/IPC — governance state (consensus,
-    # quarantine, state.json, leases, sessions) is PRESERVED in a light cleanup.
-    freed += _clean_ai_ephemeral(base_dir, dry_run)
     freed += _remove_path(base_dir / ".vscode", "VS Code 임시 설정",          dry_run)
-    freed += _remove_path(base_dir / "_state",  "AI 임시 상태 (_state)",      dry_run)
+    freed += _remove_path(base_dir / "_state",  "임시 상태 (_state)",         dry_run)
     freed += _remove_path(base_dir / "WORKLOG.md", "임시 작업 로그",           dry_run)
 
     # Keep last 5 launcher logs
@@ -267,24 +151,10 @@ def _tier1(base_dir: Path, sys_dir: Path, peers: dict, dry_run: bool) -> int:
         print(f"  [OK] __pycache__ — {count}개 삭제 ({_fmt(psize)})")
         freed += psize
 
-    # Per-peer light cleanup (driven by peers.json cleanup field)
-    for peer_id, cfg in peers.items():
-        peer_dir = sys_dir / cfg.get("sys_subdir", peer_id)
-        cfg_dir  = peer_dir / "config"
-        cleanup  = cfg.get("cleanup", {})
-        freed   += _remove_path(peer_dir / "status.json", f"{peer_id} 상태 파일", dry_run)
-        for rel in cleanup.get("peer_paths", []):
-            freed += _remove_path(peer_dir / rel, f"{peer_id} {rel}", dry_run)
-        for pattern in cleanup.get("peer_globs", []):
-            for f in peer_dir.glob(pattern):
-                freed += _remove_path(f, f"{peer_id} {f.name}", dry_run)
-        for rel in cleanup.get("config_paths", []):
-            freed += _remove_path(cfg_dir / rel, f"{peer_id} config/{rel}", dry_run)
-
     return freed
 
 
-def _tier2(base_dir: Path, sys_dir: Path, peers: dict, dry_run: bool) -> int:
+def _tier2(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> int:
     env_dir  = sys_dir / "env"
     data_dir = sys_dir / "data"
     tools_dir = sys_dir / "tools"
@@ -292,24 +162,12 @@ def _tier2(base_dir: Path, sys_dir: Path, peers: dict, dry_run: bool) -> int:
     freed += _remove_path(data_dir / "setup-files", "설치 아카이브 (zip/exe)", dry_run)
     freed += _remove_path(env_dir  / "venv",         "Python 가상환경 (venv)",  dry_run)
     # State files (host-specific)
-    # T30: NEVER delete register.state.json from cleanup — it is the teardown
-    # ledger for host integration (SUBST + HKCU context menu + junctions). A
-    # SUBST drive can drop (reboot / manual `subst /D`) while HKCU keys and
-    # junctions persist; deleting the ledger then would orphan them with no way
-    # for unregister.bat to find and remove them. The ledger's lifecycle is
-    # owned solely by registrar.remove() on a successful unregister. If host
-    # integration is still present, tell the user to unregister first.
     if (data_dir / "state" / "register.state.json").exists():
         print("  [Keep] 등록 상태 (register.state.json) — 정리로 삭제하지 않습니다. "
-              "호스트 등록(SUBST/HKCU/junction)을 없애려면 unregister.bat 를 실행하세요.")
+              "호스트 등록을 없애려면 unregister.bat 를 실행하세요.")
     freed += _remove_path(data_dir / "state" / "install.state.json",  "설치 상태 (install.state.json)",  dry_run)
     freed += _remove_path(sys_dir  / "config.json",                   "시스템 로컬 설정 (config.json)",  dry_run)
-    for peer_id, cfg in peers.items():
-        peer_dir = sys_dir / cfg.get("sys_subdir", peer_id)
-        freed += _remove_path(
-            peer_dir / "project" / "settings.local.json",
-            f"{peer_id} 로컬 설정 (settings.local.json)", dry_run
-        )
+
     # D10 atomic-swap rollback dirs (tool_v{X}_old left behind by ensure_tool)
     if tools_dir.exists():
         for item in tools_dir.iterdir():
@@ -318,7 +176,7 @@ def _tier2(base_dir: Path, sys_dir: Path, peers: dict, dry_run: bool) -> int:
     return freed
 
 
-def _tier3(base_dir: Path, sys_dir: Path, peers: dict, dry_run: bool) -> int:
+def _tier3(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> int:
     env_dir = sys_dir / "env"
     freed   = 0
     if env_dir.exists():
@@ -330,33 +188,13 @@ def _tier3(base_dir: Path, sys_dir: Path, peers: dict, dry_run: bool) -> int:
         for item in tools_dir.iterdir():
             if item.name != "apps":
                 freed += _remove_path(item, f"Tool ({item.name})", dry_run)
-    for peer_id, cfg in peers.items():
-        if not cfg.get("enabled"):
-            continue
-        peer_dir = sys_dir / cfg.get("sys_subdir", peer_id)
-        cfg_dir  = peer_dir / "config"
-        if cfg_dir.exists() and not cfg_dir.is_symlink():
-            freed += _remove_path(cfg_dir, f"{peer_id} 인증 데이터", dry_run)
-        if cfg.get("project_junction"):
-            root_dir = cfg.get("root_dir", f".{peer_id}")
-            _remove_junction(base_dir / root_dir, f"{peer_id} 프로젝트 Junction", dry_run)
-        if cfg.get("host_junction"):
-            hj = cfg["host_junction"]
-            host_path = Path(os.environ.get(hj.get("host_env", "USERPROFILE"), "")) / hj.get("host_dirname", f".{peer_id}")
-            _remove_junction(host_path, f"{peer_id} 호스트 Junction", dry_run)
     return freed
 
 
-def _tier4(base_dir: Path, sys_dir: Path, peers: dict, dry_run: bool) -> int:
+def _tier4(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> int:
     freed = 0
     freed += _remove_path(base_dir / "workspace", "워크스페이스 데이터", dry_run)
     freed += _remove_path(base_dir / "_archive",  "아카이브/로그 전체",  dry_run)
-    # T30: ZeroBase clears the full .ai governance state (consensus, quarantine,
-    # state.json, leases, sessions). Tier 1 only clears ephemeral .ai logs; the
-    # explicit clean-slate removal lives here, at a tier the user has confirmed.
-    # (register.state.json under _sys/data/state is still NOT touched — host
-    # integration must be removed via unregister.bat, see _tier2.)
-    freed += _remove_path(base_dir / ".ai",       "AI 거버넌스 상태 (.ai)", dry_run)
     for f in base_dir.glob("*.md"):
         sz = f.stat().st_size
         if not dry_run:
@@ -365,12 +203,6 @@ def _tier4(base_dir: Path, sys_dir: Path, peers: dict, dry_run: bool) -> int:
         else:
             print(f"  [Wait] 문서 — {f.name} 삭제 예정")
         freed += sz
-    for peer_id, cfg in peers.items():
-        if not cfg.get("enabled"):
-            continue
-        peer_dir = sys_dir / cfg.get("sys_subdir", peer_id)
-        if peer_dir.exists():
-            freed += _remove_path(peer_dir, f"{peer_id} 시스템 전체", dry_run)
     return freed
 
 
@@ -419,7 +251,7 @@ def run(ctx: dict) -> None:
     parser.add_argument("--all",  "-y", action="store_true")
     parser.add_argument("--dry-run",  action="store_true")
     parser.add_argument("--force",    action="store_true",
-                        help="proceed even if an active peer session/lease is detected")
+                        help="proceed even if an active session is detected")
     parsed, _ = parser.parse_known_args(ctx.get("args", []))
 
     tier    = parsed.tier
@@ -429,18 +261,6 @@ def run(ctx: dict) -> None:
 
     base_dir = ctx["base_dir"]
     sys_dir  = ctx["sys_dir"]
-    peers    = _load_peers(sys_dir)
-
-    # T30: refuse to scrub while a peer session/lease is active (a dry-run is
-    # always safe since it deletes nothing). --force overrides for the operator.
-    if not dry_run and not force and _active_sessions_present(base_dir):
-        print("=" * 54)
-        print("  [Blocked] 활성 피어 세션/리스가 감지되었습니다.")
-        print("  정리는 실행 중인 협업 상태(consensus/lease/.ai)를 손상시킬 수 있습니다.")
-        print("  세션을 종료한 뒤 다시 실행하거나, 확실하면 --force 를 사용하세요.")
-        print("  (미리보기는 --dry-run 으로 언제든 안전하게 가능합니다.)")
-        print("=" * 54)
-        return
 
     if tier is None:
         print("=" * 54)
@@ -448,8 +268,8 @@ def run(ctx: dict) -> None:
         print("=" * 54)
         print("  1. Light    — 캐시·임시파일·로그 (안전)")
         print("  2. Soft     — Tier 1 + 설치 아카이브·venv·로컬 설정")
-        print("  3. Reset    — Tier 2 + 런타임·도구·AI 인증·Junction")
-        print("  4. ZeroBase — Tier 3 + 워크스페이스·AI Peer 시스템")
+        print("  3. Reset    — Tier 2 + 런타임·도구·Junction")
+        print("  4. ZeroBase — Tier 3 + 워크스페이스")
         print("  5. Purge    — Tier 4 + Python (완전 초기화)")
         print("=" * 54)
         try:
@@ -466,25 +286,25 @@ def run(ctx: dict) -> None:
     print(f"{'='*54}")
 
     print("\n[Tier 1] 가벼운 정리 (안전)")
-    freed += _tier1(base_dir, sys_dir, peers, dry_run)
+    freed += _tier1(base_dir, sys_dir, dry_run)
 
     if tier >= 2:
         print("\n[Tier 2] Soft 정리 (재다운로드/재생성 필요)")
-        freed += _tier2(base_dir, sys_dir, peers, dry_run)
+        freed += _tier2(base_dir, sys_dir, dry_run)
 
     if tier >= 3:
-        if not _confirm("\n  [?] 런타임·도구·AI 인증 삭제 계속할까요? [y/N]: ", all_yes, dry_run):
+        if not _confirm("\n  [?] 런타임·도구 삭제 계속할까요? [y/N]: ", all_yes, dry_run):
             _print_summary(freed, dry_run)
             return
         print("\n[Tier 3] Runtime Reset (전체 재설치 필요)")
-        freed += _tier3(base_dir, sys_dir, peers, dry_run)
+        freed += _tier3(base_dir, sys_dir, dry_run)
 
     if tier >= 4:
-        if not _confirm("\n  [!] 경고: 워크스페이스·AI Peer 시스템 전체 삭제 계속할까요? [y/N]: ", all_yes, dry_run):
+        if not _confirm("\n  [!] 경고: 워크스페이스 전체 삭제 계속할까요? [y/N]: ", all_yes, dry_run):
             _print_summary(freed, dry_run)
             return
         print("\n[Tier 4] ZeroBase")
-        freed += _tier4(base_dir, sys_dir, peers, dry_run)
+        freed += _tier4(base_dir, sys_dir, dry_run)
 
     if tier >= 5:
         if not _confirm("\n  [!!!] 최종 경고: Python 삭제 (INSTALL.bat 재실행 필수) 계속할까요? [y/N]: ", all_yes, dry_run):

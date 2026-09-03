@@ -218,11 +218,14 @@ class TestNodeJsPathSafety:
 
     # ── [B] Claude Code CLI path ─────────────────────────────────────────────
     def test_claude_config_dir_uses_subst_derived_var(self):
-        """[B] CLAUDE_CONFIG_DIR must be in peers.json claude env_vars (SUBST-safe)."""
-        data = json.loads(PEERS_JSON.read_text(encoding="utf-8"))
-        claude_env = data["peers"]["claude"].get("env_vars", {})
-        assert "CLAUDE_CONFIG_DIR" in claude_env, \
-            "CLAUDE_CONFIG_DIR must be in peers.json claude.env_vars"
+        """[B] claude junctions must be in managed-links.json."""
+        links_path = SYS_DIR / "managed-links.json"
+        if not links_path.exists():
+            links_path = SYS_DIR / "data" / "state" / "pathmap" / "managed-links.json"
+        data = json.loads(links_path.read_text(encoding="utf-8"))
+        entries = data.get("entries", {})
+        assert "claude_host" in entries or "claude_project" in entries
+
 
     # ── [C] PATH entries ─────────────────────────────────────────────────────
     def test_nodejs_path_entry_uses_env_dir_variable(self):

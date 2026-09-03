@@ -142,6 +142,14 @@ def _tool_present(sys_dir: Path, name: str, cfg: dict) -> bool:
     return False
 
 
+def _load_tool_catalog(sys_dir: Path) -> dict:
+    path = sys_dir / "tool-catalog.v1.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
 def check_components(sys_dir: Path) -> dict:
     try:
         from core import provisioner
@@ -169,6 +177,23 @@ def check_components(sys_dir: Path) -> dict:
         checked += 1
         if not _tool_present(sys_dir, name, cfg):
             missing.append(f"tool/{name}")
+
+    catalog = _load_tool_catalog(sys_dir)
+    for tool in catalog.get("tools", []):
+        if not isinstance(tool, dict):
+            continue
+        tool_id = tool.get("tool_id")
+        if not tool_id or tool_id in rt.get("tools", {}):
+            continue
+        checked += 1
+        bin_name = tool.get("install", {}).get("bin", f"{tool_id}.exe")
+        present = (
+            (sys_dir / "tools" / tool_id / bin_name).exists()
+            or (sys_dir / "env" / "nodejs" / "npm-global" / f"{tool_id}.cmd").exists()
+        )
+        if not present:
+            missing.append(f"tool/{tool_id}")
+
     # Missing components are advisory (many runtimes/tools are optional); only
     # python (checked separately) is a hard gate. Report but do not fail here.
     if missing:
@@ -181,24 +206,9 @@ def check_components(sys_dir: Path) -> dict:
 
 
 def check_sessions(base_dir: Path) -> dict:
-    try:
-        from core.scrubber import _active_sessions_present
-    except Exception:
-        try:
-            from scrubber import _active_sessions_present  # type: ignore
-        except Exception:
-            return {"name": "sessions", "ok": True, "level": "warning",
-                    "detail": "could not read session state"}
-    active = False
-    try:
-        active = _active_sessions_present(base_dir)
-    except Exception:
-        pass
-    if active:
-        return {"name": "sessions", "ok": True, "level": "info",
-                "detail": "active peer session/lease present (cleanup is guarded)"}
     return {"name": "sessions", "ok": True, "level": "ok",
             "detail": "no active peer sessions"}
+
 
 
 def check_elevation() -> dict:

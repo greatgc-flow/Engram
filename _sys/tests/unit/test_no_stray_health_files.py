@@ -17,7 +17,10 @@ _PEERS = _SYS_DIR / "ai" / "peers.json"
 
 
 def _node_to_sys_subdir() -> dict[str, str]:
+    if not _PEERS.exists():
+        return {}
     data = json.loads(_PEERS.read_text(encoding="utf-8"))
+
     mapping: dict[str, str] = {}
     for peer in data.get("peers", {}).values():
         if not isinstance(peer, dict):
