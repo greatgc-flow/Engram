@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 setlocal enabledelayedexpansion
 
 :: ============================================================================
@@ -38,13 +38,9 @@ if /i "%SUBCMD%"=="unregister" goto :cmd_unregister
 if /i "%SUBCMD%"=="update" goto :cmd_update
 if /i "%SUBCMD%"=="cleanup" goto :cmd_cleanup
 if /i "%SUBCMD%"=="tidy" goto :cmd_tidy
-if /i "%SUBCMD%"=="diag" goto :cmd_diag
-if /i "%SUBCMD%"=="peerhub" goto :cmd_hub
 if /i "%SUBCMD%"=="launch" goto :cmd_launch
+if /i "%SUBCMD%"=="uninstall" goto :cmd_uninstall
 if /i "%SUBCMD%"=="start" goto :cmd_launch
-if /i "%SUBCMD%"=="agy" goto :cmd_agy
-if /i "%SUBCMD%"=="claude" goto :cmd_claude
-if /i "%SUBCMD%"=="codex" goto :cmd_codex
 
 :: Fallback: Try dispatch pipeline directly
 if exist "%ENGRAM_ROOT%\_sys\core\dispatch.bat" (
@@ -87,42 +83,29 @@ exit /b !ERRORLEVEL!
 call "%ENGRAM_ROOT%\TIDY.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b !ERRORLEVEL!
 
-:cmd_diag
-call "%ENGRAM_ROOT%\_sys\cli\diag.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b !ERRORLEVEL!
 
-:cmd_hub
-:: Thin passthrough to the separately-installed peerhub package.
-call "%ENGRAM_ROOT%\_sys\cli\peerhub.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b !ERRORLEVEL!
 
 :cmd_launch
 call "%ENGRAM_ROOT%\_sys\cli\launch.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b !ERRORLEVEL!
 
-:cmd_agy
-call "%ENGRAM_ROOT%\_sys\cli\agy.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b !ERRORLEVEL!
 
-:cmd_claude
-call "%ENGRAM_ROOT%\_sys\cli\claude.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b !ERRORLEVEL!
 
-:cmd_codex
-call "%ENGRAM_ROOT%\_sys\cli\codex.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b !ERRORLEVEL!
 
 :: ----------------------------------------------------------------------------
 :: Info Handlers
 :: ----------------------------------------------------------------------------
+:cmd_uninstall
+call "%ENGRAM_ROOT%\_sys\env\venv\Scripts\python.exe" "%ENGRAM_ROOT%\_sys\cli\manage.py" uninstall
+exit /b !ERRORLEVEL!
+
 :show_version
-echo Engram v2.1.0 (Portable Multi-Agent Dev Runtime)
-echo PeerHub v0.1.0 Engine Integration
+echo Engram v2.1.0 (Portable Dev Runtime)
 exit /b 0
 
 :show_help
 echo ===============================================================================
-echo   Engram v2.1.0 - Portable Multi-Agent Dev Runtime ^& PeerHub Engine
+echo   Engram v2.1.0 - Portable Dev Runtime
 echo   Repository: https://github.com/greatgc-flow/Engram
 echo ===============================================================================
 echo.
@@ -137,15 +120,9 @@ echo   unregister            Unmount virtual dev drive and deregister context me
 echo   update                Check and apply latest stable runtime and tool updates
 echo   cleanup / tidy        Clean temporary logs, caches, and orphaned files
 echo.
-echo Multi-Agent ^& PeerHub Operations:
-echo   diag                  Run live multi-peer latency ^& health diagnostics
-echo   peerhub ^<args...^>     Passthrough to the installed peerhub package
-echo                         (peer dispatch/diagnostics; see `peerhub --help`)
-echo   launch [agent]        Launch interactive shell session for agent
-echo   agy / claude / codex  Run CLI entrypoint for specific AI agent
-echo.
 echo Options:
 echo   --version, -v         Display Engram version information
 echo   --help, -h            Display this help message
 echo.
 exit /b 0
+

@@ -15,7 +15,6 @@
 
 for %%I in ("%~dp0..\..") do set "PORTABLE_ROOT=%%~fI"
 set "PYTHONUTF8=1"
-set "GEMINI_DIR=%PORTABLE_ROOT%\_sys\gemini"
 set "SYS_DIR=%PORTABLE_ROOT%\_sys"
 set "PATH=%PORTABLE_ROOT%\_sys\env\venv\Scripts;%PATH%"
 
@@ -38,9 +37,6 @@ set "_TOTAL=0"
 
 echo [tests] Mode: %_MODE%
 echo [tests] ============================================
-
-:: Force Gemini mode ON for testing consistency
-python -c "import json; from pathlib import Path; p = Path(r'%~dp0..\gemini\status.json'); d = json.loads(p.read_text('utf-8-sig')) if p.exists() else {}; d['mode']='ON'; d['consecutive_failures']=0; p.write_text(json.dumps(d, indent=2), 'utf-8')"
 
 :: Jump to the starting point for the selected mode
 if "%_MODE%"=="unit"           goto :run_unit_all

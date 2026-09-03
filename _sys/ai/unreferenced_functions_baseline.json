@@ -18,21 +18,6 @@
       "reason": "legacy_zero_production_callers"
     },
     {
-      "path": "_sys/cli/peer_console.py",
-      "name": "apply_security_semantics",
-      "reason": "legacy_zero_production_callers"
-    },
-    {
-      "path": "_sys/cli/peer_console.py",
-      "name": "interactive_profile_banner",
-      "reason": "legacy_zero_production_callers"
-    },
-    {
-      "path": "_sys/cli/peer_console.py",
-      "name": "peer_default_args",
-      "reason": "legacy_zero_production_callers"
-    },
-    {
       "path": "_sys/core/env_loader.py",
       "name": "load_json_env",
       "reason": "became unreferenced when the legacy peer-coordination layer was removed in the Engram/peerhub separation (2026-08-19); retained with test coverage"
@@ -50,11 +35,6 @@
     {
       "path": "_sys/core/timestamps.py",
       "name": "parse_iso_timestamp",
-      "reason": "became unreferenced when the legacy peer-coordination layer was removed in the Engram/peerhub separation (2026-08-19); retained with test coverage"
-    },
-    {
-      "path": "_sys/hooks/ctx_end.py",
-      "name": "_write_text_atomic",
       "reason": "became unreferenced when the legacy peer-coordination layer was removed in the Engram/peerhub separation (2026-08-19); retained with test coverage"
     }
   ]

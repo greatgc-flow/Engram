@@ -355,10 +355,17 @@ def test_context_ack_is_absent_and_apply_security_semantics_is_current_debt():
     )
     names = {(candidate.path, candidate.name) for candidate in candidates}
     assert not any(name == "context_ack" for _, name in names)
+    # _sys/cli/peer_console.py was deleted in the Engram Diet Increment A
+    # (see docs/design/2026-09-02_engram-diet-plan-v8.md); its
+    # apply_security_semantics debt entry can no longer appear in a live
+    # scan since the file itself is gone. _sys/ai/unreferenced_functions_
+    # baseline.json still records the historical entry until Increment D
+    # cleans up _sys/ai/**, which is expected and load_baseline() below
+    # does not validate path existence against the live tree.
     assert (
         "_sys/cli/peer_console.py",
         "apply_security_semantics",
-    ) in _unreferenced(findings)
+    ) not in _unreferenced(findings)
 
     baseline, baseline_errors = checker.load_baseline(view)
     assert baseline_errors == []

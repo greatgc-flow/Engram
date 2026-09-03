@@ -79,14 +79,7 @@ cd Engram
 :: 3. Mount the secure workspace to P:\
 .\register.bat
 
-:: 4. Check real-time peer telemetry and quota headroom
-.\_sys\cli\diag.bat
-
-:: 5. Direct ask and multi-peer broadcast coordination
-.\_sys\cli\hub.bat ask ag "reply with exactly: pong" --capability-tier READ_ONLY
-.\_sys\cli\hub.bat broadcast "reply with exactly: pong" --peers ag,cx --capability-tier READ_ONLY
-
-:: 6. (Optional) Clean up temporary workspace files
+:: 4. (Optional) Clean up temporary workspace files
 .\TIDY.bat
 ```
 

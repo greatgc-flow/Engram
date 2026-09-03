@@ -15,18 +15,5 @@
     "env": {
         "CLAUDE_CODE_PACKAGE_MANAGER_AUTO_UPDATE": "false",
         "PYTHONUTF8": "1"
-    },
-    "hooks": {
-        "PreToolUse": [
-            {
-                "matcher": "Write|Edit|MultiEdit",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": "python \"${CLAUDE_PROJECT_DIR}/_sys/checks/check_contracts.py\" --hook"
-                    }
-                ]
-            }
-        ]
     }
 }

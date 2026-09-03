@@ -19,9 +19,6 @@ class TestDocConsistency:
         """Ensure all constitutional and core documents exist."""
         mandatory_root = [
             "README.md",
-            "CLAUDE.md",
-            "GEMINI.md",
-            "PROTOCOL.md",
             "CONVENTION.md"
         ]
         mandatory_docs_v2 = [

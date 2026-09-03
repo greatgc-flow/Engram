@@ -94,22 +94,16 @@ def test_no_engram_source_shells_out_to_hub_py() -> None:
 
 
 def test_interactive_console_launchers_still_exist() -> None:
-    """Launching a vendor AI CLI interactively stays an Engram feature."""
+    """Vendor AI CLI entrypoints have been removed from Engram in Increment A."""
     cli = _SYS_DIR / "cli"
     for name in ("console_runner.py", "peer_console.py",
                  "claude_entry.py", "codex_entry.py", "agy_entry.py"):
-        assert (cli / name).exists(), f"missing interactive launcher component: {name}"
+        assert not (cli / name).exists(), f"interactive launcher component still exists: {name}"
 
 
 def test_console_runner_is_a_pure_process_wrapper() -> None:
-    """console_runner must not carry peer session/health/lease lifecycle."""
-    text = (_SYS_DIR / "cli" / "console_runner.py").read_text(encoding="utf-8")
-    for forbidden in ("init-session", "health-update", "terminal-handoff",
-                      "terminal-heartbeat", "terminal-close", "context-fill"):
-        assert forbidden not in text, (
-            f"console_runner.py still performs peer lifecycle action '{forbidden}'; "
-            "that belongs to peerhub."
-        )
+    """console_runner.py was deleted in Increment A."""
+    assert not (_SYS_DIR / "cli" / "console_runner.py").exists(), "console_runner.py should be deleted" 
 
 
 def test_environment_lifecycle_core_is_intact() -> None:

@@ -1,2 +1,12 @@
 #!/usr/bin/env bash
-. "$(dirname -- "${BASH_SOURCE[0]}")/_bat-shim"
+# Standalone wrapper to invoke the sibling .bat file
+BASE_DIR="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_NAME="$(basename -- "${BASH_SOURCE[0]}")"
+BAT_FILE="${BASE_DIR}/${SCRIPT_NAME}.bat"
+
+if [ -f "$BAT_FILE" ]; then
+    exec cmd.exe /c "$BAT_FILE" "$@"
+else
+    echo "Error: Cannot find $BAT_FILE" >&2
+    exit 1
+fi
