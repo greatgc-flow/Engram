@@ -65,18 +65,31 @@ pointer doc for "what's left" on both sides of the separation.
    similarly-named legitimate directory ever appears; a kept-but-unused
    one causes nothing). Revisit only if the comment's accuracy starts
    actually mattering to someone.
-4. **`local.config.bat` has no real loading mechanism** (found 2026-09-03
-   while reviewing a delegated CONVENTION.md rewrite that confidently
-   described a `call "%SYS_DIR%\local.config.bat"` pattern that doesn't
-   exist anywhere in the live tree). The template
-   (`_sys/local.config.bat.template`) and its 2 real settings
-   (`BASE_DIR_WORKSPACE`, `NPM_CONFIG_PREFIX`) are genuine, but no entry
-   point (`engram.cmd`, `INSTALL.bat`, any `_sys/core/*.py`) actually
-   sources a copied `local.config.bat` -- the template's own internal
-   comment referenced a `start.bat` that predates the diet plan and no
-   longer exists. This is a real, unimplemented feature gap, not just a
-   docs gap -- worth wiring up for real if per-PC overrides are still
-   wanted, or removing the template + docs entirely if not.
+4. **`local.config.bat`'s entire per-PC-override mechanism is dead, deeper
+   than just "not loaded"** (found 2026-09-03, refined same day after
+   tracing both settings all the way to their consumers). Not just a
+   missing `call` statement:
+   - No entry point (`engram.cmd`, `INSTALL.bat`, any `_sys/core/*.py`)
+     sources a copied `local.config.bat` at all (grepped the whole live
+     tree, zero hits outside test files and the template's own stale
+     internal comment referencing a pre-diet-plan `start.bat` that no
+     longer exists).
+   - Even if that were fixed, **`BASE_DIR_WORKSPACE` has zero consumers
+     anywhere in live code** (grepped, zero hits) -- setting it would do
+     nothing.
+   - **`NPM_CONFIG_PREFIX` has a real consumer** (`launcher.py`'s
+     `build_env()`), but `build_env()` starts from `os.environ.copy()`
+     then *unconditionally* overwrites every `env.json` `tool_env_vars`
+     entry including `NPM_CONFIG_PREFIX` (lines 68-69) -- a batch-level
+     `set` from `local.config.bat`, even if it ran, would be silently
+     clobbered by the always-computed value, not respected.
+   Real fix needs a design decision (does `build_env()` gain "respect a
+   pre-set override" precedence logic, or does the whole per-PC-override
+   concept move to a JSON file `launcher.py` reads directly, matching
+   this codebase's post-Increment-B Python-first architecture rather
+   than a batch-sourcing pattern?) -- not attempted here, flagging the
+   real scope rather than a shallow "just add a call statement" fix that
+   wouldn't have actually worked.
 
 ## peerhub-side open items
 
