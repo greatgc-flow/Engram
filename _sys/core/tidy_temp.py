@@ -16,7 +16,7 @@ launch) and independently re-measured before being added here.
 Usage:
     python _sys/core/tidy_temp.py                # dry-run, all targets
     python _sys/core/tidy_temp.py --apply         # actually delete
-    python _sys/core/tidy_temp.py --only ipc,tmp  # limit to specific targets
+    python _sys/core/tidy_temp.py --only tmp,data_temp  # limit to specific targets
 """
 import argparse
 import datetime
@@ -26,10 +26,6 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-
-# ── _sys/ai/ipc: stale single-use IPC query files ──────────────────────
-IPC_DIR = ROOT / "_sys" / "ai" / "ipc"
-IPC_MIN_AGE_DAYS = 2
 
 # ── root tmp/: leftover test-probe files ────────────────────────────────
 ROOT_TMP_DIR = ROOT / "tmp"
@@ -110,15 +106,6 @@ def _age_days(p: Path, now: float) -> float:
 
 def _matches_any(name: str, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatch(name, pat) for pat in patterns)
-
-
-def plan_ipc(now: float) -> list[Path]:
-    if not IPC_DIR.exists():
-        return []
-    return [
-        f for f in IPC_DIR.glob("*.txt")
-        if f.is_file() and _age_days(f, now) >= IPC_MIN_AGE_DAYS
-    ]
 
 
 def plan_root_tmp(now: float) -> list[Path]:
@@ -278,14 +265,14 @@ def main() -> int:
     ap.add_argument(
         "--only", default=None,
         help=(
-            "comma-separated subset: ipc,tmp,data_temp,brain,vscode,"
+            "comma-separated subset: tmp,data_temp,brain,vscode,"
             "pytest_cache,winget_cache,npm_cache,pip_cache,vscode_cache"
         ),
     )
     args = ap.parse_args()
 
     default_targets = (
-        "ipc,tmp,data_temp,brain,vscode,"
+        "tmp,data_temp,brain,vscode,"
         "pytest_cache,winget_cache,npm_cache,pip_cache,vscode_cache"
     )
     targets = set((args.only or default_targets).split(","))
@@ -308,7 +295,6 @@ def main() -> int:
             if len(items) > 10:
                 print(f"    ... and {len(items) - 10} more")
 
-    run("ipc", "ipc", plan_ipc(now))
     run("root_tmp", "tmp", plan_root_tmp(now))
     dirs, blat = plan_data_temp(now)
     run("data_temp_dirs", "data_temp", dirs)

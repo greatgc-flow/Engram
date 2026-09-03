@@ -107,6 +107,9 @@ Finding severity:
 
 ## §17 — User Directives in Debate Context
 
-User Directives (`_sys/ai/user-directives.md`) are Tier 1.5 — above operational Tier 2 rules.
-They are auto-injected into all peer asks (see `general/learning.md §2`).
+User Directives were Tier 1.5 — above operational Tier 2 rules — while they
+lived at `user-directives.md`, auto-injected into all peer asks (see
+`general/learning.md §2`). That file was removed in the Engram/peerhub
+separation; the 6 directives are migrated into `peerhub.governance-directive.v1`
+with verified receipts.
 Debate may NOT override User Directives. If conflict: escalate to Human (Tier 0).

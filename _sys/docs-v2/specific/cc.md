@@ -38,7 +38,7 @@ All four profiles were live-validated with their declared `--model` and `--effor
 - **Local Memory:** Claude-local memory is not automatically shared with other peers.
 
 ## Gate & Entry
-- **Gate script:** `_sys/claude/claude-gate.bat`
+- **Gate script:** `claude-gate.bat` (removed in Engram/peerhub separation)
 - **Status check:** `claude-status.bat`
 
 ## Update Protocol & Health

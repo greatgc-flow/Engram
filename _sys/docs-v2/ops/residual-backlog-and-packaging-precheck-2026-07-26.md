@@ -6,13 +6,13 @@ status: living
 
 User-requested comprehensive close-out after the 2026-07-24 architecture-audit
 backlog (47 items, C1-C11/S2/S3) finished shipping: (1) sweep the
-repo-tracked SSOT (`_sys/ai/backlog.json`) for anything still open and fix
+repo-tracked SSOT (`_sys/data/backlog.json` (relocated from its original _sys/ai/backlog.json path in the Engram/peerhub separation)) for anything still open and fix
 what's reasonably fixable now, (2) pre-check whether packaging Engram as a
 standalone, installable product can proceed.
 
 ## 1. Backlog sweep result
 
-`_sys/ai/backlog.json` had exactly 8 non-closed items going into this sweep.
+`_sys/data/backlog.json` (relocated from its original _sys/ai/backlog.json path in the Engram/peerhub separation) had exactly 8 non-closed items going into this sweep.
 
 | ID | Was | Now | Notes |
 |---|---|---|---|

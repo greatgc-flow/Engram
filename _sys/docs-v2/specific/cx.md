@@ -88,7 +88,7 @@ _sys\cli\codex.bat --no-alt-screen
 | File | Role |
 |------|------|
 | `health.json` (removed from Engram in the Engram/peerhub separation) | Health manifest — was updated by BOTH hub.py AND codex_entry.py |
-| `_sys/codex/config/CODEX.md` | System instructions |
+| `CODEX.md` (removed in Engram/peerhub separation) | System instructions |
 | `health.json["availability"]["authenticated"]` | OAuth auth status |
 | `health.json["availability"]["entrypoint_ok"]` | Smoke test pass status |
 

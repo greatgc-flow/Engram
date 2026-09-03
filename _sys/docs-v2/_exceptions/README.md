@@ -30,9 +30,9 @@ This folder holds items that don't cleanly fit the General/Specific/Ops/User tax
 
 ### EDGE-01: ~~model-registry.json and routing-config.json not yet created~~ (RESOLVED 2026-06-18)
 
-Both files created:
-- `_sys/ai/model-registry.json` v1.0 (10 models: cc/gc/cx) — validated_at "2026-06-18", confidence levels set
-- `_sys/ai/routing-config.json` v1.0 (R01-R12 role taxonomy routing weights)
+Both files created (both later removed in the Engram/peerhub separation):
+- `model-registry.json` v1.0 (10 models: cc/gc/cx) — validated_at "2026-06-18", confidence levels set
+- `routing-config.json` v1.0 (R01-R12 role taxonomy routing weights)
 - Additional new files: `error-taxonomy.json`, `logging-config.json`
 - Schemas documented in `ops/schemas.md`; architecture decisions in
   `_sys/docs/history/ops/peer-debate-2026-06-19.md` (archived).

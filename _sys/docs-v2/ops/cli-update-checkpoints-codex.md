@@ -588,4 +588,4 @@ inventory disagrees with the authenticated runtime.
 - A6 headless fork behavior: `CHANGED` (TTY requirement confirmed, unfixed — permanent limitation)
 - A7 repository model metadata parity: `FAIL -> FIXED` (372k -> 272k, commit `af05e3b`)
 - B1-B6: `TEST NEEDED` (not yet reproduced locally, upstream-reported only)
-- Repository changes required: `_sys/ai/orchestration.json`, `_sys/ai/model-registry.json`, `_sys/docs-v2/specific/cx.md` (all fixed this pass)
+- Repository changes required: `orchestration.json`, `model-registry.json` (both removed in Engram/peerhub separation), `_sys/docs-v2/specific/cx.md` (all fixed this pass)

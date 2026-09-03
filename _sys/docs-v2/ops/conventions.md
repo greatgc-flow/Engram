@@ -217,7 +217,7 @@ check-deps.bat, git-draft.bat, check-risk.bat (risk-scan uses exit /b 0 — non-
 ### 3-5. Collaboration Protocol
 → Retired 2026-08-19; archived at **`_sys/docs/history/engram-peer-governance/protocol.md`** (non-normative).
 → Consensus voting was retired 2026-08-19; archived at **`_sys/docs/history/engram-peer-governance/protocol.md`** (non-normative).
-→ Runtime config (single source of truth): **`_sys/ai/protocol.json`** (`collab_rate.current`, health thresholds, r10_voters).
+→ Runtime config (single source of truth): **`protocol.json`** (`collab_rate.current`, health thresholds, r10_voters) — removed in the Engram/peerhub separation.
 → Full SSOT index: **`PROTOCOL.md`** → **`_sys/docs-v2/MOC.md`**.
 
 ## §3-7 — Gemini-first Analysis Rule

@@ -1,5 +1,0 @@
-{
-  "_version": "1.0",
-  "_help": "MCP server catalog. Lists available MCP servers and which peers can use them.",
-  "servers": []
-}

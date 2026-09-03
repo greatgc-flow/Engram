@@ -208,7 +208,7 @@ ctx-end      # end-of-day: archive + cleanup
 
 ## Peer Reference & Topology
 
-`_sys/ai/orchestration.json` is the canonical topology source. A peer is a provider-level participant; its runtime nodes are generated from the profile tree (standard / effort / deepthink).
+`orchestration.json` was the canonical topology source (removed in the Engram/peerhub separation — peerhub owns peer topology now). A peer is a provider-level participant; its runtime nodes are generated from the profile tree (standard / effort / deepthink).
 
 | Peer | CLI | State | Standard | Effort | Deepthink |
 |------|-----|-------|----------|--------|-----------|

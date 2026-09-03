@@ -186,7 +186,7 @@ class TestNodeJsPathSafety:
     """SUBST must protect Node.js tools from Korean paths at every entry point.
 
     Architecture note (post-refactor): env vars/PATH are now driven by
-    _sys/env.json (tool_env_vars, path_entries) and _sys/ai/peers.json (env_vars).
+    _sys/env.json (tool_env_vars, path_entries).
     launcher.py (Python) reads these — start.bat is a thin wrapper.
 
     Risk matrix:

@@ -136,13 +136,13 @@ specific/{id}.md  (delta only — lists ONLY what differs from general)
 ## Key Runtime Config (operational — not docs)
 | File | Purpose | Change Level |
 |------|---------|-------------|
-| `_sys/ai/protocol.json` | collab_rate, r10_voters, timeouts, health thresholds | R:10 |
+| `protocol.json` (removed in Engram/peerhub separation) | collab_rate, r10_voters, timeouts, health thresholds | R:10 |
 | `_sys/tool-catalog.v1.json` | external/downloaded tool catalog (replaces peers.json removed in separation) | R:5 |
-| `_sys/ai/orchestration.json` | logical peers + nested runtime profiles | R:8 |
+| `orchestration.json` (removed in Engram/peerhub separation) | logical peers + nested runtime profiles | R:8 |
 
-| `_sys/ai/model-registry.json` | model measured specs SSOT (model FACTS per A1) | R:8 |
-| `_sys/ai/routing-config.json` | automatic profile routing, role weights, token load balancing, final arbiter policy | R:3/R:5 |
-| `_sys/ai/user-directives.md` | human-authored standing rules (DIR-001~006); PRO-09: no auto-rules | Human only |
+| `model-registry.json` (removed in Engram/peerhub separation) | model measured specs SSOT (model FACTS per A1) | R:8 |
+| `routing-config.json` (removed in Engram/peerhub separation) | automatic profile routing, role weights, token load balancing, final arbiter policy | R:3/R:5 |
+| `user-directives.md` (removed; migrated to peerhub.governance-directive.v1) | human-authored standing rules (DIR-001~006); PRO-09: no auto-rules | Human only |
 | `_sys/ai/runtime-directives.jsonl` | TTL-bound auto-promoted corrections | hub.py auto |
 | `_sys/ai/knowledge/general/active-lessons.jsonl` | shared lesson store (all peers) | hub.py auto |
 | `_sys/ai/proposals/` | governance proposals (pending peer votes); lazily created by hub.py `_proposals_dir()` on first proposal | any peer |

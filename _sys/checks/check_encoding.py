@@ -42,7 +42,6 @@ _DEFAULT_GOVERNED = [
     "_sys/docs-v2/**/*.md",
     "_sys/**/*.md",
     "*.md",
-    "_sys/ai/**/*.json",
     "_sys/**/*.txt",
 ]
 

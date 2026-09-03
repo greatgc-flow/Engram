@@ -19,8 +19,6 @@ def _make_deploy_ctx_no_venv(tmp_path: Path) -> dict:
     (sys_dir / "runtimes.json").write_text(
         json.dumps({"runtimes": {}, "tools": {}}), encoding="utf-8"
     )
-    (sys_dir / "ai").mkdir()
-    (sys_dir / "ai" / "peers.json").write_text(json.dumps({"peers": {}}), encoding="utf-8")
     (sys_dir / "tools").mkdir()
     (sys_dir / "data" / "setup-files").mkdir(parents=True)
     # Deliberately no env/venv/Scripts/python.exe - forces deploy() down the

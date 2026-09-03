@@ -27,7 +27,7 @@ from typing import Any, Protocol
 _CHECKS_DIR = Path(__file__).resolve().parent
 _SYS_DIR = _CHECKS_DIR.parent
 _ROOT = _SYS_DIR.parent
-_BASELINE_REL = "_sys/ai/unreferenced_functions_baseline.json"
+_BASELINE_REL = "_sys/checks/unreferenced_functions_baseline.json"
 _DISPATCH_REL = "_sys/dispatch.json"
 _PRODUCTION_PREFIXES = (
     "_sys/checks/",

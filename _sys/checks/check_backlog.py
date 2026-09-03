@@ -21,7 +21,7 @@ from pathlib import Path
 
 SYS_DIR = Path(__file__).resolve().parent.parent
 PORTABLE_ROOT = SYS_DIR.parent
-BACKLOG_PATH = SYS_DIR / "ai" / "backlog.json"
+BACKLOG_PATH = SYS_DIR / "data" / "backlog.json"
 
 VALID_STATUSES = {"proposed", "active", "blocked", "deferred", "done", "dropped", "superseded"}
 OPEN_STATUSES = {"proposed", "active", "blocked", "deferred"}

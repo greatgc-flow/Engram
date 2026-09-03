@@ -104,7 +104,7 @@ These reads are **always zero-token** — no COLLAB_RATE gate applies:
 | `.ai/sessions/{room}/handoff.md` | Re-orientation read at session start |
 | `.ai/mailbox.json` | Inbox check at session start |
 | `_sys/ai/runtime-directives.jsonl` | Active directive injection (observe phase) |
-| `_sys/ai/user-directives.md` | Standing rules (observe phase) |
+| `user-directives.md` (removed; migrated to peerhub.governance-directive.v1) | Standing rules (observe phase) |
 
 A read is NOT zero-token if it triggers a model call, network request, or side-effect write.
 

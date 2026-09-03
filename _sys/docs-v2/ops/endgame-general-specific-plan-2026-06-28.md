@@ -27,8 +27,8 @@ This plan stops immediately before source implementation. Its completion means t
 
 | Lane | Owns | Must not own | Primary files |
 |---|---|---|---|
-| Directives | human rules, temporary runtime rules, lessons | paths, model facts, executable branching | `_sys/ai/user-directives.md`, `_sys/ai/runtime-directives.jsonl`, `_sys/ai/knowledge/` |
-| Config | topology, paths, constants, ranges, schemas, connector maps | prose policy, hidden source defaults | `_sys/ai/*.json`, `_sys/ai/config/environment.json`, `_sys/paths.json`, `_sys/runtimes.json` |
+| Directives (historical; `_sys/ai/` removed in Engram/peerhub separation) | human rules, temporary runtime rules, lessons | paths, model facts, executable branching | `user-directives.md`, `runtime-directives.jsonl`, `knowledge/` |
+| Config (historical; `_sys/ai/` removed in Engram/peerhub separation) | topology, paths, constants, ranges, schemas, connector maps | prose policy, hidden source defaults | `_sys/ai/*.json`, `config/environment.json`, `_sys/paths.json`, `_sys/runtimes.json` |
 | Source | deterministic validation, dispatch, rendering, execution, error surfacing | peer identity policy, magic values, normative prose | `_sys/core/`, `_sys/cli/`, `_sys/checks/` |
 
 Rule: if a value can vary by workspace, peer, platform, model, risk level, timeout, or policy tier, it belongs in JSON. If a behavior has exact input/output and can be tested without model judgment, it belongs in source.

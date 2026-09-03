@@ -49,7 +49,7 @@ The hub owns transport and policy. A peer adapter owns CLI syntax and session be
 
 > Requirement: B6 from docs-v2/user/requirements.md
 
-Each peer may use multiple underlying models based on task characteristics. Model definitions live under the root peer's nested `profiles` map in `_sys/ai/orchestration.json`. Deterministic selection policy lives in `routing-config.json["auto_profile_routing"]`; hub.py applies the decision before invoking an adapter.
+Each peer may use multiple underlying models based on task characteristics. Model definitions used to live under the root peer's nested `profiles` map in `orchestration.json`; deterministic selection policy used to live in `routing-config.json["auto_profile_routing"]`, with hub.py applying the decision before invoking an adapter. Both files and hub.py were removed in the Engram/peerhub separation — this describes the pre-separation architecture.
 
 #### Selection Matrix
 

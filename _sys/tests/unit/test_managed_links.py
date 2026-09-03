@@ -21,10 +21,8 @@ def sys_dir(tmp_path):
     """Minimal _sys/ structure with managed-links.json."""
     s = tmp_path / "_sys"
     s.mkdir()
-    (s / "ai").mkdir()
     (s / "data" / "state" / "pathmap").mkdir(parents=True)
-    (s / "claude" / "config").mkdir(parents=True)
-    (s / "gemini" / "config").mkdir(parents=True)
+    (s / "dummy" / "config").mkdir(parents=True)
     return s
 
 
@@ -36,15 +34,15 @@ def managed_links_path(sys_dir):
 @pytest.fixture
 def valid_managed_links(sys_dir, managed_links_path, tmp_path):
     """Create a valid managed-links.json with one real junction entry."""
-    # Use a real target path (tmp dir simulating _sys/claude/config)
-    target = sys_dir / "claude" / "config"
+    # Use a real target path (tmp dir simulating _sys/dummy/config)
+    target = sys_dir / "dummy" / "config"
     data = {
         "_version": "1.0",
         "_help": "SSOT for all managed junctions.",
         "entries": {
-            "cc_host": {
-                "relative_link_path": "claude/config_junction_test",
-                "relative_target_path": "claude/config"
+            "dummy_host": {
+                "relative_link_path": "dummy/config_junction_test",
+                "relative_target_path": "dummy/config"
             }
         }
     }
@@ -52,7 +50,7 @@ def valid_managed_links(sys_dir, managed_links_path, tmp_path):
     return managed_links_path
 
 
-# ── Schema validation ────────────────────────────────────────────────────────
+# ── Schema validation ─────────────────────────────────────────────────────────
 
 class TestManagedLinksSchema:
     def test_file_has_version_field(self, valid_managed_links):
@@ -74,19 +72,19 @@ class TestManagedLinksSchema:
         data = {
             "_version": "1.0",
             "entries": {
-                "cc_host": {
-                    "relative_link_path": "EXTERNAL:%USERPROFILE%\\.claude",
-                    "relative_target_path": "claude/config"
+                "dummy_host": {
+                    "relative_link_path": "EXTERNAL:%USERPROFILE%\\.dummy",
+                    "relative_target_path": "dummy/config"
                 }
             }
         }
         managed_links_path.write_text(json.dumps(data), encoding="utf-8")
         loaded = json.loads(managed_links_path.read_text())
-        entry = loaded["entries"]["cc_host"]
+        entry = loaded["entries"]["dummy_host"]
         assert entry["relative_link_path"].startswith("EXTERNAL:")
 
 
-# ── virtualizer._cli_apply with managed-links ────────────────────────────────
+# ── virtualizer._cli_apply with managed-links ─────────────────────────────
 
 class TestVirtualizerApplyManagedLinks:
     def test_uses_managed_links_when_present(self, sys_dir, valid_managed_links, capsys):
@@ -115,13 +113,13 @@ class TestVirtualizerApplyManagedLinks:
     def test_external_path_expanded_via_env(self, sys_dir, managed_links_path, capsys, monkeypatch):
         """EXTERNAL: paths use os.path.expandvars."""
         monkeypatch.setenv("USERPROFILE", str(sys_dir))
-        (sys_dir / "claude" / "config").mkdir(parents=True, exist_ok=True)
+        (sys_dir / "dummy" / "config").mkdir(parents=True, exist_ok=True)
         data = {
             "_version": "1.0",
             "entries": {
-                "cc_host": {
-                    "relative_link_path": "EXTERNAL:%USERPROFILE%\\.claude_test",
-                    "relative_target_path": "claude/config"
+                "dummy_host": {
+                    "relative_link_path": "EXTERNAL:%USERPROFILE%\\.dummy_test",
+                    "relative_target_path": "dummy/config"
                 }
             }
         }
@@ -136,15 +134,14 @@ class TestVirtualizerApplyManagedLinks:
             assert "USERPROFILE" not in called_path
 
     def test_malformed_json_falls_back_gracefully(self, sys_dir, managed_links_path, capsys):
-        """Malformed managed-links.json triggers fallback, does not crash."""
+        """Malformed managed-links.json reports a parse error and returns,
+        without a peers.json fallback (removed in Increment B -- _cli_apply
+        no longer has any peers.json-reading code path at all)."""
         managed_links_path.write_text("{not valid json}")
-        peers_data = {"peers": {}}
-        (sys_dir / "ai" / "peers.json").write_text(json.dumps(peers_data))
         # Should not raise
         virtualizer._cli_apply(sys_dir, sys_dir.parent, force=False)
         out = capsys.readouterr().out
-        # Either error message or fallback message
-        assert "error" in out.lower() or "peers.json" in out or "No peers" in out
+        assert "managed-links.json error" in out
 
     def test_target_dir_created_if_missing(self, sys_dir, managed_links_path, capsys):
         """Target directory is created (mkdir) before junction is made."""

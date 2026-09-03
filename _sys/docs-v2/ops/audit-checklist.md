@@ -56,7 +56,7 @@
 | D-01 | README.md badge test count matches actual `pytest --collect-only -q` count | Badge `N pass` = real N |
 | D-02 | 0 xfailed tests; any xfail requires explicit reason comment in test file | `pytest` summary shows `0 xfailed` |
 | D-03 | `hub_api.json` snapshot updated whenever a hub.py public function is added/removed | `test_no_added_apis_without_snapshot_update` green |
-| D-04 | Snapshot update command: `python -c "import hub; hub.action_update_signatures()"` | Run from `_sys/core/`; check `_sys/ai/snapshots/hub_api.json` |
+| D-04 | (historical, hub.py removed) Snapshot update command: `python -c "import hub; hub.action_update_signatures()"` | Run from `_sys/core/`; checked `snapshots/hub_api.json` (path removed in Engram/peerhub separation) |
 | D-05 | Contract tests: `test_contracts.py` sync required after any hub.py API change (DIR-003) | LL-008 lesson |
 
 ---
@@ -75,7 +75,7 @@
 | E-08 | All internal markdown anchor links (`§N`, `#section`) resolve to real sections | `check_docs_mece.py --anchor-check` → 0 broken anchors (planned: EDGE-04) |
 | E-09 | Numeric constants in docs match runtime config values (e.g., `collab_rate:10` in protocol.json) | `check_docs_mece.py --value-sync` → 0 drift (planned: EDGE-04) |
 | E-10 | Root docs (CONVENTION.md, GEMINI.md) contain no normative content duplicated from docs-v2 | Root docs are pointers only; normative content lives in docs-v2 SSOT |
-| E-11 | No Korean text in any file under `_sys/` (except `_archive/`, `_sys/claude/config/CLAUDE.md`) | INV-19 enforcement; `grep -r "[가-힣]" _sys/ --exclude-dir=_archive` → 0 hits |
+| E-11 | No Korean text in any file under `_sys/` (except `_archive/`; the old _sys/claude/config/CLAUDE.md exemption no longer applies, that path was removed in the Engram/peerhub separation) | INV-19 enforcement; `grep -r "[가-힣]" _sys/ --exclude-dir=_archive` → 0 hits |
 | E-12 | Workspace `glue` templates conditionally SKIP reading docs during IPC/continuations | Energy conservation: `NOTE FOR IPC... SKIP THIS ENTIRE SECTION` present |
 
 ---
