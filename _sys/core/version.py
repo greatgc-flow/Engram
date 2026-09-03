@@ -7,7 +7,7 @@ def load_version_info() -> dict:
         with open(version_file, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
-        return {"version": "3.0.0", "winget_schema_version": "1.6.0"}
+        return {"version": "3.0.0", "winget_schema_version": "1.12.0"}
 
 VERSION_INFO = load_version_info()
 VERSION = VERSION_INFO.get("version", "3.0.0")

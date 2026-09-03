@@ -3,7 +3,8 @@
 build_package.py — Engram Winget Portable Packaging & Manifest Automation
 
 Builds a clean, zero-bloat portable zip distribution of Engram and generates
-official Microsoft Winget package manifests (Schema v1.6.0) under:
+official Microsoft Winget package manifests (Schema version pinned via
+_sys/core/version.json's winget_schema_version) under:
     manifests/g/greatgc-flow/Engram/<version>/
 
 Usage:
@@ -35,7 +36,7 @@ LICENSE = "MIT"
 LICENSE_URL = "https://github.com/greatgc-flow/Engram/blob/main/LICENSE"
 COPYRIGHT = "Copyright (c) 2026 greatgc-flow"
 DEFAULT_LOCALE = "en-US"
-SCHEMA_VERSION = "1.6.0"
+SCHEMA_VERSION = "1.12.0"
 DEFAULT_VERSION = "2.1.0"
 try:
     _repo_root = Path(__file__).resolve().parent.parent.parent
@@ -449,7 +450,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--schema-version",
         default=SCHEMA_VERSION,
-        help="Winget manifest schema version (e.g. 1.6.0 or 1.9.0)",
+        help="Winget manifest schema version (e.g. 1.12.0)",
     )
     parser.add_argument(
         "--dist-dir",
