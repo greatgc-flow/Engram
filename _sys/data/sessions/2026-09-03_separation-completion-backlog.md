@@ -65,6 +65,10 @@ pointer doc for "what's left" on both sides of the separation.
    similarly-named legitimate directory ever appears; a kept-but-unused
    one causes nothing). Revisit only if the comment's accuracy starts
    actually mattering to someone.
+   `_sys/core/tidy_temp.py`'s `plan_brain_logs()`/`BRAIN_DIR` still points
+   at the deleted `_sys/antigravity/config/brain` -- but is
+   `.exists()`-guarded and always returns `[]` now, so it's inert, same
+   category as the `saturation_scan.py` item above.
 4. ~~`local.config.bat`'s entire per-PC-override mechanism was dead~~ —
    **fixed 2026-09-04**. Found 2026-09-03 that this went deeper than "not
    loaded": no entry point sourced the file at all, `BASE_DIR_WORKSPACE`
@@ -85,6 +89,26 @@ pointer doc for "what's left" on both sides of the separation.
    comment always claimed but no code implemented). 10 new tests in
    `_sys/tests/unit/test_local_config_overrides.py`. See CONVENTION.md
    §6.2 for the current, accurate description.
+5. ~~**Final exhaustive sweep (2026-09-04)**~~ — **done**, commit
+   `854e89b`. Found and fixed 3 real gaps the increments above missed
+   (none broke anything, all were dead/stale references to deleted
+   infra, found via a fresh full-repo grep rather than the narrower
+   per-increment checks): `_sys/config/environment.json` had 4 path
+   entries (`claude_config`/`gemini_config`/`codex_config`/
+   `workspace_template`) pointing at deleted dirs -- confirmed a real,
+   live consumer (`dispatcher.py` loads this file on every dispatch)
+   but zero code ever read those 4 specific keys, so removed them.
+   `_sys/managed-links.json` (a real, live-consumed junction SSOT --
+   `virtualizer.py` creates directory junctions from it on
+   register/apply/mount) had all 4 entries targeting the deleted
+   `_sys/claude`/`_sys/antigravity` subdirs -- emptied to `entries: {}`,
+   kept as reusable generic infrastructure. `.gitignore` had ~150 lines
+   of dead AI-peer-specific ignore rules -- removed, kept the genuinely
+   generic `.ai/` and the real `peerhub/`/`.peerhub/` entries.
+   `_sys/data/backlog.json`'s historical AI-orchestration entries (2400
+   lines, `IMPLEMENTED`/`DONE` work-log items) were checked and judged
+   out of scope -- completed history, not live config, same treatment
+   as `_sys/docs/history/`.
 
 ## peerhub-side open items
 
