@@ -181,6 +181,11 @@ specifically (not peerhub's general roadmap):
    (2026-09-07) for genuine adversarial security review, or on your
    explicit direction to proceed without one — see the Engram worktree's
    `2026-09-03_gate2-lane2-deferred-security-note.md` for full reasoning.
+   **2026-09-04: a preliminary (not a substitute) second-opinion review is
+   now done** — `ag.opus`, 10 grounded findings, see peerhub's
+   `docs/design/PHASE1-MANIFEST-SCHEMA-V2-PRELIM-SECURITY-REVIEW-2026-09-04.md`.
+   cx's real 2026-09-07 review is still required; this just gives it a
+   concrete starting checklist.
 2. **19 permanently-waived `LEGACY_CATALOG` actions** — each individually
    cited as an intentional, settled non-goal (host-environment-only
    tooling, an architecturally-incompatible generic write queue, upstream

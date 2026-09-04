@@ -47,3 +47,22 @@ deletion/refactor work terminal-substituted critique has covered so far
 this session. Resume this either once `cx` recovers (2026-09-07) for a
 real security-focused critique round, or on explicit user direction to
 proceed without it.
+
+**2026-09-04 update — preliminary second-opinion review done (NOT a
+substitute for the required cx round above).** With otherwise-idle
+3P-pool quota, dispatched `ag.opus` for a from-scratch adversarial paper
+review of the design doc. 10 concrete findings, all grounded in specific
+design-doc sections (spot-checked, citations accurate) — see peerhub's
+`docs/design/PHASE1-MANIFEST-SCHEMA-V2-PRELIM-SECURITY-REVIEW-2026-09-04.md`
+for the full writeup. Headline: findings 1-3 (unbounded Phase-1 TOCTOU
+between admission-time hashing and spawn, junction/symlink swap after
+admission, and an unspecified path-vs-PATH-re-resolution question at
+spawn time) compose into a real local-attacker kill chain achieving code
+execution, PLUS two undocumented gaps worth cx's attention specifically:
+unrestricted `env_policy.set`/`inherit` (credential/PATH injection into
+the spawned process) and all-or-nothing snapshot rejection (one bad
+manifest DoSes all discovery). The review's own conclusion agrees with
+this note's original deferral decision: "do not ship Lane 2 third-party
+admission with Phase 1's validation model." This does not close the
+item — cx's real review on 2026-09-07 is still required — but it gives
+cx's round a concrete starting checklist instead of a blank page.
