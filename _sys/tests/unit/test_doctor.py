@@ -65,6 +65,28 @@ def test_check_components_npm_tool_present_via_npm_global(tmp_path):
     assert "tool/ripgrep" not in r.get("missing", [])
 
 
+def test_check_components_pip_tool_present_via_venv_scripts(tmp_path):
+    """Regression guard: peerhub (install_mechanism=pip_tool) installs its
+    console-script exe to _sys/env/venv/Scripts/, not tools/ or npm-global --
+    a real install (INSTALL.bat, 2026-09-04) showed this location was never
+    checked, so a correctly-installed peerhub was always reported missing."""
+    sys_dir = tmp_path / "_sys"
+    sys_dir.mkdir(parents=True)
+    (sys_dir / "runtimes.json").write_text(json.dumps({
+        "runtimes": {"python": {"version": "3.14.5"}},
+        "tools": {
+            "peerhub": {"install_mechanism": "pip_tool"},
+        },
+    }), encoding="utf-8")
+    (sys_dir / "env" / "venv" / "Scripts").mkdir(parents=True)
+    (sys_dir / "env" / "venv" / "Scripts" / "peerhub.exe").write_text("x", encoding="utf-8")
+    (sys_dir / "env" / "python").mkdir(parents=True)
+    (sys_dir / "env" / "python" / "python.exe").write_text("x", encoding="utf-8")
+
+    r = doctor.check_components(sys_dir)
+    assert "tool/peerhub" not in r.get("missing", [])
+
+
 def test_check_components_missing_is_warning_not_failure(tmp_path):
     sys_dir = tmp_path / "_sys"
     _write_runtimes(sys_dir)  # nothing actually installed on disk

@@ -131,14 +131,19 @@ def check_registration(base_dir: Path, sys_dir: Path) -> dict:
 
 
 def _tool_present(sys_dir: Path, name: str, cfg: dict) -> bool:
-    """A tool counts as present if it exists as a native binary under tools/ OR
+    """A tool counts as present if it exists as a native binary under tools/,
     as an npm-global .cmd (claude/codex and other npm-backed tools install to
-    _sys/env/nodejs/npm-global, not tools/)."""
+    _sys/env/nodejs/npm-global, not tools/), or -- for install_mechanism
+    pip_tool (e.g. peerhub) -- as a console-script exe under the portable
+    venv's Scripts/ dir, matching provisioner._already_current()'s own check."""
     bin_name = cfg.get("bin", f"{name}.exe")
     if (sys_dir / "tools" / name / bin_name).exists():
         return True
     if (sys_dir / "env" / "nodejs" / "npm-global" / f"{name}.cmd").exists():
         return True
+    if cfg.get("install_mechanism") == "pip_tool":
+        if (sys_dir / "env" / "venv" / "Scripts" / bin_name).exists():
+            return True
     return False
 
 
