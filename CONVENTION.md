@@ -63,6 +63,25 @@ if not defined BASE_DIR for %%I in ("%~dp0..\..") do set "BASE_DIR=%%~fI"
 set "_BASE=%BASE_DIR%"
 ```
 
+### 2.6 Ampersand (`&`) in the Portable Root Path -- Known, Not Fully Fixable
+Unlike parens/spaces/Korean text, `&` is on cmd.exe's own documented `/C`
+special-character list, so it is **excluded** from the quote-preservation
+rule that protects those other cases (incl. the §3.1 double-quote trick) --
+no amount of extra quoting saves a command string that re-embeds an
+absolute path containing `&`. Confirmed 2026-09-04 via a real install test:
+- Fixed in our own code: never re-embed a `%~dp0`-derived absolute path
+  inside a `for /f ('command')`/backtick command-substitution or a `PATH`
+  env var used for cmd.exe-mediated resolution -- `cd /d "%~dp0"` once,
+  then use relative paths (INSTALL.bat); or call the real binary directly
+  instead of an intermediate `.cmd`/`.bat` wrapper (`provisioner.py`'s
+  npm installs now call `node.exe npm-cli.js` instead of `npm.cmd`).
+- **Not fixable by us**: the post-install canary health-check for
+  npm-published peer CLIs (`claude.cmd`/`codex.cmd`, not ours to edit)
+  still breaks once any `&`-laden directory is added to their subprocess
+  `PATH`, needed for cmd.exe's own bare-name resolution -- a genuine
+  Windows/cmd.exe limitation, not an Engram defect.
+- **Practical guidance**: avoid `&` in your portable root folder path.
+
 ---
 
 ## 3. Host Integration & Registry Commands
