@@ -7,6 +7,7 @@ import re
 import json
 import shutil
 import subprocess
+import _winapi
 from pathlib import Path
 
 
@@ -24,8 +25,6 @@ def _load_managed_links(sys_dir: Path) -> dict:
     return {}
 
 
-def _cmd(command: str) -> None:
-    subprocess.run(command, shell=True, check=True, capture_output=True)
 
 
 def _get_subst_mappings() -> dict:
@@ -69,7 +68,7 @@ def _ensure_junction(host: Path, portable: Path) -> None:
         raise
 
     if is_reparse:
-        _cmd(f'rmdir "{host}"')
+        os.rmdir(host)
     elif host.exists():
         for item in list(host.iterdir()):
             if item.name == "settings.local.json":
@@ -84,7 +83,7 @@ def _ensure_junction(host: Path, portable: Path) -> None:
                     dest.unlink()
             shutil.move(str(item), str(portable))
         host.rmdir()
-    _cmd(f'mklink /J "{host}" "{portable}"')
+    _winapi.CreateJunction(str(portable), str(host))
 
 
 def _remove_junction(host: Path) -> bool:

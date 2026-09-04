@@ -97,20 +97,20 @@ def uninstall(ctx: dict):
     helper_path = temp_dir / "EngramUninstallHelper.bat"
     
     helper_content = """@echo off
-setlocal
+setlocal enabledelayedexpansion
 set "BASE_DIR=%~1"
 set "JOURNAL_PATH=%~2"
 set "PARENT_PID=%~3"
 set "NPM_GLOBAL=%~4"
 
-echo Waiting for parent process (PID: %PARENT_PID%) to exit...
+echo Waiting for parent process (PID: !PARENT_PID!) to exit...
 set wait_count=0
 :WAIT_LOOP
-tasklist /FI "PID eq %PARENT_PID%" 2>NUL | find "%PARENT_PID%" >NUL
-if "%ERRORLEVEL%"=="0" (
-    if %wait_count% geq 30 (
+tasklist /FI "PID eq !PARENT_PID!" 2>NUL | find "!PARENT_PID!" >NUL
+if "!ERRORLEVEL!"=="0" (
+    if !wait_count! geq 30 (
         echo Parent process did not exit within 30s.
-        powershell -Command "$j=Get-Content '%JOURNAL_PATH%' -Raw|ConvertFrom-Json;$j.status='FAILED_FATAL';$j.steps+='directory_purge_timeout';$j|ConvertTo-Json -Depth 10|Set-Content '%JOURNAL_PATH%'"
+        powershell -Command "$j=Get-Content '!JOURNAL_PATH!' -Raw|ConvertFrom-Json;$j.status='FAILED_FATAL';$j.steps+='directory_purge_timeout';$j|ConvertTo-Json -Depth 10|Set-Content '!JOURNAL_PATH!'"
         exit /b 1
     )
     timeout /t 1 /nobreak >NUL
@@ -118,22 +118,22 @@ if "%ERRORLEVEL%"=="0" (
     goto WAIT_LOOP
 )
 
-echo Parent exited. Purging %BASE_DIR% and %NPM_GLOBAL%...
+echo Parent exited. Purging "!BASE_DIR!" and "!NPM_GLOBAL!"...
 
-if exist "%NPM_GLOBAL%" (
-    rmdir /s /q "%NPM_GLOBAL%"
+if exist "!NPM_GLOBAL!" (
+    rmdir /s /q "!NPM_GLOBAL!"
 )
 
-if exist "%BASE_DIR%" (
-    rmdir /s /q "%BASE_DIR%"
+if exist "!BASE_DIR!" (
+    rmdir /s /q "!BASE_DIR!"
 )
 
-if exist "%BASE_DIR%" (
+if exist "!BASE_DIR!" (
     echo Failed to delete some files.
-    powershell -Command "$j=Get-Content '%JOURNAL_PATH%' -Raw|ConvertFrom-Json;$j.status='FAILED_RECOVERABLE';$j.steps+='directory_purge';$j.error_recoverable=$true;$j|ConvertTo-Json -Depth 10|Set-Content '%JOURNAL_PATH%'"
+    powershell -Command "$j=Get-Content '!JOURNAL_PATH!' -Raw|ConvertFrom-Json;$j.status='FAILED_RECOVERABLE';$j.steps+='directory_purge';$j.error_recoverable=$true;$j|ConvertTo-Json -Depth 10|Set-Content '!JOURNAL_PATH!'"
 ) else (
     echo Purge completed successfully.
-    powershell -Command "$j=Get-Content '%JOURNAL_PATH%' -Raw|ConvertFrom-Json;$j.status='COMPLETED';$j.steps+='directory_purge';$j|ConvertTo-Json -Depth 10|Set-Content '%JOURNAL_PATH%'"
+    powershell -Command "$j=Get-Content '!JOURNAL_PATH!' -Raw|ConvertFrom-Json;$j.status='COMPLETED';$j.steps+='directory_purge';$j|ConvertTo-Json -Depth 10|Set-Content '!JOURNAL_PATH!'"
 )
 exit /b 0
 """

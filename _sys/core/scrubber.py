@@ -229,7 +229,10 @@ def _tier5(base_dir: Path, sys_dir: Path, dry_run: bool) -> int:
         bat_path = Path(os.environ.get("TEMP", str(sys_dir / "env"))) / "_purge_python.bat"
         bat_path.write_text(bat, encoding="mbcs")
         subprocess.Popen(
-            ["cmd", "/c", str(bat_path)],
+            # Use .\name with cwd= to avoid cmd.exe interpreting "&" in
+            # absolute paths as a statement separator (D11 ampersand fix).
+            ["cmd", "/c", f".\\{bat_path.name}"],
+            cwd=str(bat_path.parent),
             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_CONSOLE,
             close_fds=True,
         )

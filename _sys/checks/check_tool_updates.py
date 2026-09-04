@@ -310,9 +310,8 @@ def _planned_changes(proposal: dict[str, Any]) -> list[str]:
 
 
 def _run_install_step() -> subprocess.CompletedProcess:
-    install_bat = _PORTABLE_ROOT / "INSTALL.bat"
     return subprocess.run(
-        [str(install_bat), "--skip-update"],
+        [r".\INSTALL.bat", "--skip-update"],
         cwd=str(_PORTABLE_ROOT),
         capture_output=True,
         text=True,

@@ -270,7 +270,13 @@ def main(ctx: dict) -> None:
                 python_exe = sys_dir / "env" / "python" / "python.exe"
             subprocess.run([str(python_exe), str(target_file)], env=env)
         elif ext in (".bat", ".cmd"):
-            subprocess.run(["cmd", "/c", str(target_file)], env=env)
+            # Use .\name with cwd= to avoid cmd.exe interpreting "&" in
+            # absolute paths as a statement separator (D11 ampersand fix).
+            bat_dir = str(target_file.parent)
+            bat_name = target_file.name
+            subprocess.run(
+                ["cmd", "/c", f".\\{bat_name}"], env=env, cwd=bat_dir,
+            )
         else:
             os.startfile(str(target_file))
 

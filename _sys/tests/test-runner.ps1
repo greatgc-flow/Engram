@@ -152,10 +152,64 @@ if (-not $HostOnly) {
             log "  Results dir  : $localTR" "Gray"
             log "  Running sandbox-test.bat with PD=$physBase ..." "Cyan"
 
-            # sandbox-test.bat accepts %1 as PD override (added 2026-06-01)
-            $proc = Start-Process -FilePath "cmd.exe" `
-                -ArgumentList "/c `"`"$sandboxBat`" `"$physBase`"`" > `"$localTR\result.txt`" 2>&1" `
-                -Wait -PassThru -WindowStyle Hidden
+            # D11 ampersand fix, live-tested 2026-09-04: an "&" in $physBase
+            # breaks cmd.exe several ways. First attempt here (escaping "&"
+            # as "^&" inside an already-quoted -ArgumentList STRING) did NOT
+            # fix it -- confirmed both that form and a plain quoted
+            # single-string form truncate the received argument at "&" (a
+            # batch file's %~1 received "D:\Engram" instead of the full
+            # "D:\Engram&Peerhub\..."). An array-form -ArgumentList (each
+            # token as a separate array element) also still truncated the
+            # value the same way -- passing an "&"-laden value as a cmd.exe
+            # COMMAND-LINE ARGUMENT is unreliable however it's quoted.
+            # The reliable fix: pass it via an ENVIRONMENT VARIABLE instead
+            # (set directly on the child process's env block, never parsed
+            # as command-line text) and invoke the .bat by a relative path +
+            # -WorkingDirectory so no absolute "&"-laden path is embedded in
+            # the command line either. Verified working end-to-end (env var
+            # arrives intact) -- but ONLY if the receiving script expands it
+            # in a QUOTED context (e.g. `"%ENGRAM_SANDBOX_PD_OVERRIDE%"`);
+            # an unquoted `%VAR%` expansion still splits on "&" at THAT
+            # point regardless of how the value got into the process, since
+            # that's cmd.exe's own line-parsing of the batch file itself,
+            # unrelated to how the value arrived.
+            # CONTRACT CHANGE for whoever (re)creates sandbox-test.bat: this
+            # PD override no longer arrives as %1 -- it now arrives as the
+            # ENGRAM_SANDBOX_PD_OVERRIDE env var, and MUST be read quoted.
+            # NOTE: sandbox-test.bat does not currently exist in this repo
+            # (only run-sandbox-test.bat and sandbox-unit-test.wsb do) --
+            # this whole local-path (-not $UseWsb) branch is pre-existing
+            # dead code, unrelated to today's ampersand work; not fixed as
+            # part of this pass since there's nothing live to verify against
+            # end-to-end.
+            $sandboxBatName = Split-Path $sandboxBat -Leaf
+            $sandboxBatDir  = Split-Path $sandboxBat -Parent
+            $stdoutFile = Join-Path $localTR "result.txt"
+            $stderrFile = Join-Path $localTR "stderr.txt"
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = "cmd.exe"
+            # Windows PowerShell 5.1's ProcessStartInfo has no .ArgumentList
+            # (a .NET Core 2.1+/.NET 5+-only property) -- use the string
+            # .Arguments property instead. This is safe here specifically
+            # because $physBase no longer appears on the command line at
+            # all (see the environment-variable note above); the only text
+            # in Arguments is the relative .bat name, which never contains
+            # "&".
+            $psi.Arguments = "/c .\$sandboxBatName"
+            $psi.WorkingDirectory = $sandboxBatDir
+            $psi.UseShellExecute = $false
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            foreach ($e in [System.Environment]::GetEnvironmentVariables().GetEnumerator()) {
+                $psi.EnvironmentVariables[$e.Key] = $e.Value
+            }
+            $psi.EnvironmentVariables["ENGRAM_SANDBOX_PD_OVERRIDE"] = $physBase
+            $proc = [System.Diagnostics.Process]::Start($psi)
+            $stdoutContent = $proc.StandardOutput.ReadToEnd()
+            $stderrContent = $proc.StandardError.ReadToEnd()
+            $proc.WaitForExit()
+            Set-Content -Path $stdoutFile -Value $stdoutContent -Encoding utf8
+            Set-Content -Path $stderrFile -Value $stderrContent -Encoding utf8
 
             $localResult = Join-Path $localTR "result.txt"
             if (Test-Path $localResult) {
