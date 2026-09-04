@@ -63,24 +63,50 @@ if not defined BASE_DIR for %%I in ("%~dp0..\..") do set "BASE_DIR=%%~fI"
 set "_BASE=%BASE_DIR%"
 ```
 
-### 2.6 Ampersand (`&`) in the Portable Root Path -- Known, Not Fully Fixable
+### 2.6 Ampersand (`&`) in the Portable Root Path
 Unlike parens/spaces/Korean text, `&` is on cmd.exe's own documented `/C`
 special-character list, so it is **excluded** from the quote-preservation
 rule that protects those other cases (incl. the §3.1 double-quote trick) --
 no amount of extra quoting saves a command string that re-embeds an
-absolute path containing `&`. Confirmed 2026-09-04 via a real install test:
-- Fixed in our own code: never re-embed a `%~dp0`-derived absolute path
-  inside a `for /f ('command')`/backtick command-substitution or a `PATH`
-  env var used for cmd.exe-mediated resolution -- `cd /d "%~dp0"` once,
-  then use relative paths (INSTALL.bat); or call the real binary directly
-  instead of an intermediate `.cmd`/`.bat` wrapper (`provisioner.py`'s
-  npm installs now call `node.exe npm-cli.js` instead of `npm.cmd`).
-- **Not fixable by us**: the post-install canary health-check for
-  npm-published peer CLIs (`claude.cmd`/`codex.cmd`, not ours to edit)
-  still breaks once any `&`-laden directory is added to their subprocess
-  `PATH`, needed for cmd.exe's own bare-name resolution -- a genuine
-  Windows/cmd.exe limitation, not an Engram defect.
-- **Practical guidance**: avoid `&` in your portable root folder path.
+absolute path containing `&`, whether that path is the command itself, an
+argument to it, or a `PATH` entry used for cmd.exe's own bare-name
+resolution. Confirmed via real, live testing (2026-09-04, twice, in this
+repo's own real `&`-laden checkout) rather than reasoned about:
+- **Never re-embed an absolute `&`-laden path in any command string that
+  reaches cmd.exe.** Two concrete techniques, both empirically verified:
+  1. **`cd`/`cwd` + relative paths.** `cd /d "%~dp0"` once (INSTALL.bat),
+     or `cwd=` + a relative filename in `subprocess.run()` (`launcher.py`,
+     `scrubber.py`, `check_tool_updates.py`, `lifecycle_tester.py`) --
+     never re-embed the resolved absolute path as literal text afterward.
+  2. **Bypass the intermediate `.cmd`/`.bat` wrapper entirely and call
+     the real underlying binary.** `provisioner.py`'s npm installs call
+     `node.exe npm-cli.js` instead of `npm.cmd`; peerhub's
+     `pipe.py::_resolve_real_direct_binary()` resolves `claude.cmd`/
+     `codex.cmd` to `claude.exe`/`node.exe codex.js` at the dispatch
+     boundary. **This second technique is the general fix for the
+     `.cmd`/`.bat`-wrapper case** -- it was initially assumed the
+     post-install canary check for npm-published peer CLIs was a genuine
+     Windows limitation "not fixable by us" (this section's prior text);
+     that was wrong. `provisioner.py::_run_canary()` itself hasn't been
+     revisited with this fix yet (a known, low-risk follow-up), but the
+     limitation is not fundamental.
+  3. **When an `&`-laden VALUE genuinely must reach a batch script and
+     can't be avoided as a command-line argument** (rather than the .bat
+     itself): pass it via an **environment variable** instead of a CLI
+     argument (`test-runner.ps1`) -- `%VAR%`/`!VAR!` values delivered
+     this way still must be expanded in a QUOTED context by the
+     receiving script (an unquoted `echo %VAR%` still splits on `&`
+     regardless of how the value arrived; that's cmd.exe's own parsing
+     of the *receiving* line, unrelated to the delivery mechanism).
+- **Genuinely not fixable**: only when you must invoke a `.cmd`/`.bat`
+  file *and* cannot resolve to a real underlying binary *and* the value
+  must be a literal CLI argument on that exact invocation (not an env
+  var) -- narrower than originally thought, but real cmd.exe `/C`
+  parsing rules do still make that specific combination unfixable by
+  quoting alone.
+- **Practical guidance**: avoid `&` in your portable root folder path
+  when possible; where it can't be avoided, the techniques above cover
+  every case found in this codebase so far.
 
 ---
 

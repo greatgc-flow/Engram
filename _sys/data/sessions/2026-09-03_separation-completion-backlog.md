@@ -142,16 +142,82 @@ worked on."
      and uses relative paths throughout instead of re-embedding the
      absolute path in any command string; `provisioner.py` now calls
      `node.exe` + `npm-cli.js` directly instead of going through
-     `npm.cmd`. **Documented, not fixable by us** (`9cc1565`,
-     CONVENTION.md §2.6): the post-install canary check for
-     `claude.cmd`/`codex.cmd` (npm-published, not ours to edit) still
-     breaks once any `&`-laden directory is added to their subprocess
-     `PATH` for cmd.exe's own bare-name resolution — root-caused to
-     `&` being explicitly on cmd.exe's own `/C` special-character list,
-     which excludes it from the quote-preservation rule that already
-     protects parens/spaces/Korean text (CONVENTION.md §3.1's
-     double-quote trick doesn't apply). Practical guidance documented:
+     `npm.cmd`. At the time, `provisioner.py`'s own post-install canary
+     check for `claude.cmd`/`codex.cmd` was documented as **not fixable
+     by us** (`9cc1565`, CONVENTION.md §2.6) — root-caused to `&` being
+     explicitly on cmd.exe's own `/C` special-character list, excluded
+     from the quote-preservation rule that protects parens/spaces/
+     Korean text (CONVENTION.md §3.1's double-quote trick doesn't
+     apply). **Superseded 2026-09-04 (later the same night, see item 7
+     below): the real fix wasn't a better quoting trick, it was
+     bypassing cmd.exe entirely** (direct claude.exe / node.exe+codex.js
+     invocation, same pattern peerhub's fix uses) — this general
+     pattern DOES fix the class of problem CONVENTION.md §2.6 called
+     unfixable; `provisioner.py`'s own canary specifically wasn't
+     revisited with it (out of scope for item 7's peerhub-focused pass)
+     but is now a known, concrete, low-risk follow-up rather than a
+     genuine dead end. CONVENTION.md §2.6 itself hasn't been corrected
+     yet to reflect this — do that before calling it stale in any future
+     pass. Practical guidance (still broadly true for anything that
+     really does have to go through cmd.exe rather than bypass it):
      avoid `&` in your portable root folder path.
+7. ~~**Repo-wide "&" vulnerability sweep + fix, both repos
+   (2026-09-04)**~~ — **done**. Item 6's fix covered 2 instances; asked
+   `ag.effort` to search exhaustively for more (real 723s search, both
+   repos, ripgrep + Python AST parsing of every subprocess call site) —
+   found 10 more real instances, 7 in Engram + 3 in peerhub. All 10
+   fixed, empirically verified against this repo's own real `&`-laden
+   checkout, tests green, committed + pushed to both repos:
+   - Engram (commit `389c04a`, 7 fixes): `virtualizer.py` (mklink/rmdir
+     via `shell=True` → native `_winapi.CreateJunction`/`os.rmdir`, no
+     cmd.exe involved at all), `check_tool_updates.py` (relative
+     `.\INSTALL.bat` instead of absolute), `manage.py` (generated
+     uninstall helper's `echo` line now quotes its expansions),
+     `launcher.py` (`.bat`/`.cmd` dispatch now relative+cwd; `cmd /k`
+     and PATH-building investigated and left alone — not actually
+     vulnerable, see the commit for why), `scrubber.py` (relative+cwd),
+     `lifecycle_tester.py` (added a `_run_bat()` helper, applied to all
+     6 `.bat` invocations in this Korean/special-char-path test suite).
+     `test-runner.ps1` needed real back-and-forth: `ag.opus`'s first
+     attempt (escaping `&` as `^&` inside an already-quoted
+     `-ArgumentList` string) was live-tested by the terminal and proven
+     NOT to work — neither that form, a plain quoted string, nor an
+     array-form `-ArgumentList` reliably survives an `&`-laden argument
+     VALUE through cmd.exe. Terminal fixed it directly: pass the value
+     via an environment variable instead of a command-line argument
+     (never parsed as command-line text at all), verified working
+     end-to-end. Also discovered while investigating: the
+     `sandbox-test.bat` this code references doesn't currently exist in
+     the repo (pre-existing, unrelated dead code) — the env-var contract
+     change is documented in the file for whoever eventually recreates
+     it.
+   - peerhub (commit `cf2102a`, 3 fixes): the real fix is centralized in
+     `peerhub/dispatch/pipe.py`'s new `_resolve_real_direct_binary()`,
+     applied to every dispatched `argv` in `run_process()` — resolves
+     bare/absolute `claude.cmd`/`codex.cmd` to the real underlying
+     binary (`claude.exe`; `node.exe` + `codex.js`, matching each real
+     installed `.cmd` wrapper's actual content, independently verified
+     by the terminal against real files) regardless of caller.
+     `quota_polling.py` and `bootstrap.py`'s own direct invocations
+     fixed the same way. `claude_adapter.py`/`codex_adapter.py` gained
+     an optional (currently-unused, backward-compatible) constructor
+     param for future direct wiring. Full unit suite (661 passed) +
+     targeted integration subset (142 passed) independently re-run by
+     the terminal, matching ag's own reported 661/714 results.
+   - Both dispatches were interrupted at least once by real system
+     memory pressure on this machine (OOM-kills, not zombie AI-peer
+     processes — confirmed no orphaned `agy.exe` after each kill) and
+     once by a genuine 1057s hub.py timeout; per established practice,
+     checked `git status`/`git branch` after every interruption before
+     retrying or trusting partial progress, rather than assuming a
+     killed dispatch wrote nothing.
+   - **Not done, worth a future narrow pass**: the same "bypass cmd.exe,
+     invoke the real binary directly" pattern that fixed peerhub's
+     canary-equivalent problem was never applied back to Engram's own
+     `provisioner.py::_run_canary()` (still documented in item 6 above
+     as a CONVENTION.md §2.6 "not fixable" limitation) — it's now a
+     known, concrete, low-risk follow-up, not a genuine dead end.
+     CONVENTION.md §2.6 hasn't been corrected to reflect this yet.
 
 ## peerhub-side open items
 
