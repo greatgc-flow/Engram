@@ -41,146 +41,12 @@ _sys/data/last_base_dir.txt
 .env
 
 # =================================================================
-# 5. Agent Dynamic Data & Status Logs (Peer-Agnostic)
+# 5. Session plans and dynamic documentation (not tracked)
 # =================================================================
-# Root AI peer junction dirs (junctions → _sys/{peer}/project/)
-# Adding a new peer: add its root_dir here (see _sys/ai/peers.json)
-.claude/
-.gemini/
-.chatgpt/
-
-# Per-peer runtime state (peer-agnostic wildcard)
-_sys/*/project/settings.local.json
-_sys/*/status.json
-_sys/*/usage.json
-_sys/*/health.json
-_sys/health.json
-_sys/*/session-id.txt
-_sys/*/session-map.json
-_sys/*/session.lock
-_sys/*/session_state.json
-_sys/*/cq-*.txt
-_sys/mock_peer/
-_sys/codex/config/thread-writer-locks/
-
-# Claude auth/runtime data in config/ (tracked: CLAUDE.md, settings.json, statusline-command.sh)
-_sys/claude/config/.claude.json
-_sys/claude/config/.credentials.json
-_sys/claude/config/.last-cleanup
-_sys/claude/config/.last-update-result.json
-_sys/claude/config/backups/
-_sys/claude/config/cache/
-_sys/claude/config/daemon.lock
-_sys/claude/config/daemon.status.json
-_sys/claude/config/daemon/
-_sys/claude/config/file-history/
-_sys/claude/config/history.jsonl
-_sys/claude/config/jobs/
-_sys/claude/config/mcp-needs-auth-cache.json
-_sys/claude/config/paste-cache/
-_sys/claude/config/plans/
-_sys/claude/config/plugins/
-_sys/claude/config/projects/
-_sys/claude/config/sessions/
-_sys/claude/config/session-env/
-_sys/claude/config/shell-snapshots/
-_sys/claude/config/stats-cache.json
-_sys/claude/config/tasks/
-_sys/claude/config/telemetry/
-_sys/claude/config/tmp/
-_sys/claude/config/uploads/
-
-# Antigravity (agy) runtime data — tracked: bin/agentapi.bat
-# agentapi.bat and everything else in config/ are runtime-generated
-_sys/antigravity/config/brain/
-_sys/antigravity/config/conversations/
-_sys/antigravity/config/cache/
-_sys/antigravity/config/log/
-_sys/antigravity/config/implicit/
-_sys/antigravity/config/updater/
-_sys/antigravity/config/builtin/
-_sys/antigravity/config/knowledge/
-_sys/antigravity/config/*.log
-_sys/antigravity/config/*.jsonl
-_sys/antigravity/config/*.json
-_sys/antigravity/config/*.timestamp
-_sys/antigravity/config/installation_id
-_sys/antigravity/config/*.exe
-_sys/antigravity/config/bin/*.exe
-# Re-include tracked files
-_sys/antigravity/config/bin/agentapi.bat
-# IPC stateless home (A6): seeded auth/settings + per-call-emptied durable state.
-# Entirely runtime-generated — never tracked.
-_sys/antigravity/ipc-config/
-# Local skill install (large, runtime-managed) + scratch + runtime state
-_sys/antigravity/config/scratch/
-_sys/antigravity/config/skills/
-_sys/antigravity/config/jetski_state.pbtxt
-_sys/antigravity/config/presence/
-# Phantom nested _sys/ that a mis-resolved cwd occasionally recreates here
-# (worker cwd = config/ instead of the true portable root) — never legit.
-_sys/antigravity/config/_sys/
-
-# Codex runtime data in config/ (tracked: CODEX.md)
-_sys/codex/config/.codex/
-_sys/codex/config/.sandbox-bin/
-_sys/codex/config/.sandbox/
-_sys/codex/config/.sandbox-secrets/
-_sys/codex/config/.sandbox_migration
-_sys/codex/config/history/
-_sys/codex/config/sessions/
-_sys/codex/config/tmp/
-_sys/codex/config/*.sqlite
-_sys/codex/config/*.sqlite-*
-
-# Gemini auth/runtime data in config/ (tracked: GEMINI.md, CONTEXT.md, policies/)
-_sys/gemini/config/.gemini.host_backup/
-_sys/gemini/config/antigravity-cli/
-_sys/gemini/config/config/
-_sys/gemini/config/google_accounts.json
-_sys/gemini/config/history/
-_sys/gemini/config/installation_id
-_sys/gemini/config/oauth_creds.json
-_sys/gemini/config/projects.json
-_sys/gemini/config/settings.json
-_sys/gemini/config/state.json
-_sys/gemini/config/trustedFolders.json
-_sys/gemini/config/tmp/
-_sys/gemini/config/policies/auto-saved.toml
-
-# AI runtime state (changes every session — not tracked)
-_sys/data/operational_errors.jsonl
-_sys/ai/runtime-directives.jsonl
-_sys/ai/snapshots/*
-!_sys/ai/snapshots/hub_api.json
-_sys/ai/knowledge/logs/*.jsonl
-_sys/ai/ipc/
-_sys/ai/.lock/
-
-# Session plans and dynamic documentation (not tracked)
 /plans/
-
-# Deprecated: ratio/collab settings moved to _sys/ai/config.json
-_sys/ai/config.json
-_sys/gemini/config.json
 
 # Old version archives (moved to _sys/docs/Remains — not tracked)
 _sys/docs/Remains
-
-# =================================================================
-# 5b. Codex runtime data in config/ (untracked extras)
-# =================================================================
-_sys/codex/config/.personality_migration
-_sys/codex/config/auth.json
-_sys/codex/config/cache/
-_sys/codex/config/cap_sid
-_sys/codex/config/config.toml
-_sys/codex/config/history.jsonl
-_sys/codex/config/installation_id
-_sys/codex/config/models_cache.json
-_sys/codex/config/plugins/
-_sys/codex/config/skills/
-_sys/codex/config/version.json
 
 # =================================================================
 # 6. Test Environments & Results
@@ -236,28 +102,11 @@ __pycache__/
 
 # Test sandbox run-logs (E2 — were tracked + dirtied every test run)
 _sys/tests/_sys/data/logs/*.jsonl
-_sys/antigravity/config/*.db
-_sys/antigravity/config/*.db-shm
-_sys/antigravity/config/*.db-wal
-
-# Capability-leveling runtime measurement data (T41-T53): empirical ledger
-# (7-day TTL, regenerated by canary runs) + disposable canary workspaces.
-_sys/ai/knowledge/peer-capability-scores.jsonl
-_sys/data/capability-core/
-_sys/data/capability-canaries/
-
-# T92: runtime-only state files that don't match the plain *.tmp glob
-# (this one has a session-hash suffix after ".tmp") or aren't logs.
-_sys/claude/config/.claude.json.tmp.*
-_sys/data/check_contracts_state.json
 
 # 2026-08-09 cleanup: peerhub is its own standalone git repository (not a
-# submodule), and scheduled_tasks.lock is a live per-session runtime lock
-# (sessionId/pid/acquiredAt) -- neither belongs in P:'s own history.
+# submodule).
 peerhub/
 .peerhub/
-_sys/claude/project/scheduled_tasks.lock
-_sys/claude/config/.claude.json.bak*
 
 # Isolated install/verification test clones (not product source)
 /output/

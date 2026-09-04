@@ -28,7 +28,6 @@ LAUNCH_BAT  = SYS_DIR / "cli" / "launch.bat"
 START_BAT   = SYS_DIR / "start.bat"
 LAUNCHER_PY = SYS_DIR / "core" / "launcher.py"  # logic moved from cli/launcher.py (thin wrapper)
 ENV_JSON    = SYS_DIR / "env.json"
-PEERS_JSON  = SYS_DIR / "ai" / "peers.json"
 
 # Challenging paths for portability
 TRICKY_PATHS = [
@@ -191,7 +190,6 @@ class TestNodeJsPathSafety:
 
     Risk matrix:
       [A] NPM_CONFIG_PREFIX/CACHE — env.json tool_env_vars (SUBST-safe)
-      [B] CLAUDE_CONFIG_DIR — peers.json claude.env_vars (SUBST-safe)
       [C] PATH nodejs entries — env.json path_entries (SUBST-safe)
       [D] TARGET passed to VS Code — substituted in launcher.py
       [E] SUBST failure → RuntimeError in launcher.py
@@ -215,17 +213,6 @@ class TestNodeJsPathSafety:
         tool_vars = data.get("tool_env_vars", {})
         assert "NPM_CONFIG_CACHE" in tool_vars, \
             "NPM_CONFIG_CACHE not in env.json tool_env_vars"
-
-    # ── [B] Claude Code CLI path ─────────────────────────────────────────────
-    def test_claude_config_dir_uses_subst_derived_var(self):
-        """[B] claude junctions must be in managed-links.json."""
-        links_path = SYS_DIR / "managed-links.json"
-        if not links_path.exists():
-            links_path = SYS_DIR / "data" / "state" / "pathmap" / "managed-links.json"
-        data = json.loads(links_path.read_text(encoding="utf-8"))
-        entries = data.get("entries", {})
-        assert "claude_host" in entries or "claude_project" in entries
-
 
     # ── [C] PATH entries ─────────────────────────────────────────────────────
     def test_nodejs_path_entry_uses_env_dir_variable(self):

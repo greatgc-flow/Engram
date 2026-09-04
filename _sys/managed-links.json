@@ -1,26 +1,5 @@
 {
   "_version": "1.0",
-  "_help": "SSOT for all managed directory junctions.",
-  "entries": {
-    "claude_host": {
-      "relative_link_path": "EXTERNAL:%USERPROFILE%/.claude",
-      "relative_target_path": "claude/config",
-      "description": "Claude Code host configuration junction"
-    },
-    "claude_project": {
-      "relative_link_path": "../.claude",
-      "relative_target_path": "claude/project",
-      "description": "Claude Code project directory junction"
-    },
-    "antigravity_host": {
-      "relative_link_path": "EXTERNAL:%USERPROFILE%/.gemini/antigravity-cli",
-      "relative_target_path": "antigravity/config",
-      "description": "Antigravity CLI host configuration junction"
-    },
-    "antigravity_project": {
-      "relative_link_path": "../.agy",
-      "relative_target_path": "antigravity/project",
-      "description": "Antigravity CLI project directory junction"
-    }
-  }
+  "_help": "SSOT for all managed directory junctions. No entries currently defined -- Engram no longer ships AI-peer-specific directories (see _sys/data/sessions/2026-09-03_separation-completion-backlog.md); this file/mechanism stays as generic, reusable host-integration infrastructure for virtualizer.py.",
+  "entries": {}
 }

@@ -3,7 +3,6 @@
     "base": "{ROOT_DRIVE}",
     "sys": "{base}/_sys",
     "shared": "{base}/_shared",
-    "workspace_template": "{sys}/templates/workspace-base",
     "env": "{sys}/env",
     "nodejs": "{env}/nodejs",
     "python": "{env}/python",
@@ -13,10 +12,7 @@
     "generated": "{data}/generated",
     "logs": "{data}/logs",
     "temp": "{data}/temp",
-    "tools": "{sys}/tools",
-    "claude_config": "{sys}/claude/config",
-    "gemini_config": "{sys}/gemini/config",
-    "codex_config": "{sys}/codex/config"
+    "tools": "{sys}/tools"
   },
   "env_vars": {
     "PYTHONUTF8": "1",
