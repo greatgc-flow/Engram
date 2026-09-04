@@ -7,8 +7,21 @@ setlocal enabledelayedexpansion
 :: Runtime versions/URLs sourced from _sys\runtimes.json (no hardcoding).
 :: ================================================================
 
+:: cd to this script's own location FIRST, then use paths relative to it
+:: everywhere below (never %~dp0-prefixed). This runs before Python/SUBST
+:: exist, so it's the only portability net available yet -- and %~dp0 is an
+:: absolute path that can contain cmd.exe metacharacters (e.g. "&", which a
+:: real portable-root folder name hit 2026-09-04: "D:\Engram&Peerhub\...").
+:: A plain quoted top-level command tolerates "&" fine (this cd included),
+:: but re-embedding that absolute path inside a for /f ('command') or
+:: backtick command-substitution below does not -- cmd.exe re-parses that
+:: inner string as a fresh command line, where an unescaped "&" becomes a
+:: command separator. Relative paths never contain "&" here, so they sidestep
+:: the whole class of bug rather than requiring per-callsite escaping.
+cd /d "%~dp0"
+
 :: ── Runtime config from _sys\runtimes.json (fallback if missing) ──
-set "_RT=%~dp0_sys\runtimes.json"
+set "_RT=_sys\runtimes.json"
 set "PY_VER=3.13.4"
 set "PY_URL=https://www.python.org/ftp/python/3.13.4/python-3.13.4-embed-amd64.zip"
 set "GET_PIP_URL=https://bootstrap.pypa.io/get-pip.py"
@@ -18,7 +31,7 @@ if exist "!_RT!" (
     for /f "usebackq delims=" %%p in (`powershell -NoProfile -Command "((Get-Content '!_RT!')|ConvertFrom-Json).runtimes.python.get_pip_url"`) do set "GET_PIP_URL=%%p"
 )
 
-set "PY_DIR=%~dp0_sys\env\python"
+set "PY_DIR=_sys\env\python"
 set "PY_EXE=%PY_DIR%\python.exe"
 set "_PY_BUMP=0"
 set "_OLD_PY_VER=%PY_VER%"
@@ -81,9 +94,9 @@ echo ^>^>^> Checking for Portable Python %PY_VER%...
 
 if not exist "%PY_EXE%" (
     echo [i] Python not found. Bootstrapping Python !PY_VER!...
-    if not exist "%~dp0_sys\data\setup-files" mkdir "%~dp0_sys\data\setup-files"
+    if not exist "_sys\data\setup-files" mkdir "_sys\data\setup-files"
 
-    set "ZIP_PATH=%~dp0_sys\data\setup-files\python-bootstrap.zip"
+    set "ZIP_PATH=_sys\data\setup-files\python-bootstrap.zip"
 
     echo [i] Downloading Python embeddable zip...
     curl -L "!PY_URL!" -o "!ZIP_PATH!"
@@ -109,8 +122,8 @@ if not exist "%PY_EXE%" (
 
     :: Install pip
     echo [i] Installing pip from !GET_PIP_URL!...
-    curl -L "!GET_PIP_URL!" -o "%~dp0_sys\data\setup-files\get-pip.py"
-    "%PY_EXE%" "%~dp0_sys\data\setup-files\get-pip.py" --no-warn-script-location
+    curl -L "!GET_PIP_URL!" -o "_sys\data\setup-files\get-pip.py"
+    "%PY_EXE%" "_sys\data\setup-files\get-pip.py" --no-warn-script-location
 )
 
 :: Verify the bootstrap postcondition before the Python dispatcher is invoked.
@@ -137,11 +150,11 @@ if "!_PY_BUMP!"=="1" (
     )
     echo [OK] runtimes.json updated to Python !PY_VER!
     powershell -NoProfile -Command ^
-        "$log='%~dp0_sys\data\logs\runtimes_drift.jsonl'; $dir=Split-Path $log; if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force $dir | Out-Null }; $line = @{ timestamp=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'); source='install_bat_python_bootstrap'; old_version='!_OLD_PY_VER!'; new_version='!PY_VER!' } | ConvertTo-Json -Compress; Add-Content -Path $log -Value $line"
+        "$log='_sys\data\logs\runtimes_drift.jsonl'; $dir=Split-Path $log; if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force $dir | Out-Null }; $line = @{ timestamp=(Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'); source='install_bat_python_bootstrap'; old_version='!_OLD_PY_VER!'; new_version='!PY_VER!' } | ConvertTo-Json -Compress; Add-Content -Path $log -Value $line"
 )
 
 echo [OK] Python is ready. Handing over to dispatcher...
-call "%~dp0_sys\core\dispatch.bat" install %* || (echo [FATAL] Setup failed. & pause & exit /b 1)
+call "_sys\core\dispatch.bat" install %* || (echo [FATAL] Setup failed. & pause & exit /b 1)
 
 echo [OK] Setup completed successfully.
 endlocal
