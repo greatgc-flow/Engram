@@ -87,9 +87,9 @@ repo's own real `&`-laden checkout) rather than reasoned about:
      `.cmd`/`.bat`-wrapper case** -- it was initially assumed the
      post-install canary check for npm-published peer CLIs was a genuine
      Windows limitation "not fixable by us" (this section's prior text);
-     that was wrong. `provisioner.py::_run_canary()` itself hasn't been
-     revisited with this fix yet (a known, low-risk follow-up), but the
-     limitation is not fundamental.
+     that was wrong, and `provisioner.py::_run_canary()` now applies the
+     same fix (`_resolve_canary_direct_binary()`, 2026-09-04) -- verified
+     via 4 new tests, no longer a documented limitation.
   3. **When an `&`-laden VALUE genuinely must reach a batch script and
      can't be avoided as a command-line argument** (rather than the .bat
      itself): pass it via an **environment variable** instead of a CLI

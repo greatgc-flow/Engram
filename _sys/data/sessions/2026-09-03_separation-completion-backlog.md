@@ -211,13 +211,26 @@ worked on."
      checked `git status`/`git branch` after every interruption before
      retrying or trusting partial progress, rather than assuming a
      killed dispatch wrote nothing.
-   - **Not done, worth a future narrow pass**: the same "bypass cmd.exe,
-     invoke the real binary directly" pattern that fixed peerhub's
-     canary-equivalent problem was never applied back to Engram's own
-     `provisioner.py::_run_canary()` (still documented in item 6 above
-     as a CONVENTION.md §2.6 "not fixable" limitation) — it's now a
-     known, concrete, low-risk follow-up, not a genuine dead end.
-     CONVENTION.md §2.6 hasn't been corrected to reflect this yet.
+8. ~~**Apply the same fix to `provisioner.py::_run_canary()`
+   (2026-09-04, later the same night)**~~ — **done** (commit `01c1c4f`).
+   Closes item 7's own noted follow-up: `_resolve_canary_direct_binary()`
+   now resolves `claude.cmd`/`codex.cmd` to the real underlying binary
+   the same way peerhub's `pipe.py` does, before falling back to the
+   original `shell=True` behavior for any other `.cmd`/`.bat` target.
+   4 new tests (direct-binary success for both, a fallback-when-missing
+   case, a focused resolver unit test). CONVENTION.md §2.6 updated to
+   drop the now-stale "not fixable" framing. One transient, unrelated
+   test failure (`test_provisioner_extra_checksum.py`, a checksum
+   mismatch) appeared once on the full suite and did not reproduce in
+   isolation or across 3 full-suite re-runs — confirmed environmental
+   flake, not a regression, before committing.
+   This dispatch (and the two before it that same night) needed 3
+   retries total across real system memory pressure (OOM-kills) — each
+   time, checked `git status`/`git branch` before retrying rather than
+   assuming a killed dispatch wrote nothing; the final "killed" report
+   for this one turned out to have actually completed all the writes
+   before the kill landed, confirmed only by checking the working tree
+   directly rather than trusting the kill notification's timing.
 
 ## peerhub-side open items
 
