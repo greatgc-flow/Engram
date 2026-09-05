@@ -932,3 +932,146 @@ class TestNpmPeerCanaryAndRetry:
         monkeypatch.setattr(pv.subprocess, "run", fake_run_succeed)
         res = pv.ensure_peer_cli("claude", sys_dir=sys_dir)
         assert res["status"] == "success"
+
+    def test_canary_direct_binary_claude_bypasses_cmd_exe(self, monkeypatch, tmp_path):
+        sys_dir, _ = self._base_setup(tmp_path, canary={"argv": ["claude.cmd", "--version"], "expect_regex": "2\\.1\\.206"})
+        npm_global = sys_dir / "env" / "nodejs" / "npm-global"
+        real_exe = npm_global / "node_modules" / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
+
+        recorded_canary = {}
+
+        def fake_run(argv, **kwargs):
+            if "view" in argv:
+                return type("R", (), {"stdout": '"sha512-fake"', "returncode": 0})()
+            if "install" in argv:
+                npm_global.mkdir(parents=True, exist_ok=True)
+                (npm_global / "claude.cmd").write_text("@echo off\n", encoding="utf-8")
+                real_exe.parent.mkdir(parents=True, exist_ok=True)
+                real_exe.write_bytes(b"fake claude.exe binary")
+                return type("R", (), {"returncode": 0})()
+            if argv[0] == str(real_exe):
+                recorded_canary["argv"] = list(argv)
+                recorded_canary["shell"] = kwargs.get("shell")
+                return type("R", (), {"stdout": b"2.1.206", "stderr": b"", "returncode": 0})()
+            raise AssertionError(f"unexpected call: {argv}")
+
+        monkeypatch.setattr(pv.subprocess, "run", fake_run)
+        res = pv.ensure_peer_cli("claude", sys_dir=sys_dir)
+
+        assert res["status"] == "success"
+        assert recorded_canary["argv"] == [str(real_exe), "--version"]
+        assert recorded_canary["shell"] is False
+
+    def test_canary_direct_binary_codex_bypasses_cmd_exe(self, monkeypatch, tmp_path):
+        catalog_entry = {
+            "tool_id": "codex",
+            "enabled": True,
+            "aliases": ["codex", "cx"],
+            "version": "0.144.6",
+            "source": {
+                "url": "https://example/codex-0.144.6.tgz",
+                "discovery_id": "@openai/codex",
+                "discovery_provider": "npm",
+            },
+            "install": {
+                "mechanism": "npm_peer",
+                "bin": "codex.cmd",
+                "install_subdir": "tools/codex",
+            },
+            "canary": {
+                "argv": ["codex.cmd", "--version"],
+                "expect_regex": "0\\.144\\.6",
+            },
+        }
+        sys_dir = _make_sys_dir(tmp_path, catalog_tools=[catalog_entry])
+        node_exe = sys_dir / "env" / "nodejs" / "node.exe"
+        node_exe.parent.mkdir(parents=True, exist_ok=True)
+        node_exe.write_bytes(b"fake node")
+
+        npm_global = sys_dir / "env" / "nodejs" / "npm-global"
+        codex_js = npm_global / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
+
+        recorded_canary = {}
+
+        def fake_run(argv, **kwargs):
+            if "view" in argv:
+                return type("R", (), {"stdout": '"sha512-fake"', "returncode": 0})()
+            if "install" in argv:
+                npm_global.mkdir(parents=True, exist_ok=True)
+                (npm_global / "codex.cmd").write_text("@echo off\n", encoding="utf-8")
+                codex_js.parent.mkdir(parents=True, exist_ok=True)
+                codex_js.write_text("// fake codex.js", encoding="utf-8")
+                return type("R", (), {"returncode": 0})()
+            if argv[0] == str(node_exe) and argv[1] == str(codex_js):
+                recorded_canary["argv"] = list(argv)
+                recorded_canary["shell"] = kwargs.get("shell")
+                return type("R", (), {"stdout": b"0.144.6", "stderr": b"", "returncode": 0})()
+            raise AssertionError(f"unexpected call: {argv}")
+
+        monkeypatch.setattr(pv.subprocess, "run", fake_run)
+        res = pv.ensure_peer_cli("codex", sys_dir=sys_dir)
+
+        assert res["status"] == "success"
+        assert recorded_canary["argv"] == [str(node_exe), str(codex_js), "--version"]
+        assert recorded_canary["shell"] is False
+
+    def test_canary_direct_binary_fallback_when_underlying_missing(self, monkeypatch, tmp_path):
+        sys_dir, _ = self._base_setup(tmp_path, canary={"argv": ["claude.cmd", "--version"], "expect_regex": "2\\.1\\.206"})
+        npm_global = sys_dir / "env" / "nodejs" / "npm-global"
+
+        recorded_canary = {}
+
+        def fake_run(argv, **kwargs):
+            if "view" in argv:
+                return type("R", (), {"stdout": '"sha512-fake"', "returncode": 0})()
+            if "install" in argv:
+                npm_global.mkdir(parents=True, exist_ok=True)
+                (npm_global / "claude.cmd").write_text("@echo 2.1.206\n", encoding="utf-8")
+                return type("R", (), {"returncode": 0})()
+            if argv[0] == "claude.cmd":
+                recorded_canary["argv"] = list(argv)
+                recorded_canary["shell"] = kwargs.get("shell")
+                return type("R", (), {"stdout": b"2.1.206", "stderr": b"", "returncode": 0})()
+            raise AssertionError(f"unexpected call: {argv}")
+
+        monkeypatch.setattr(pv.subprocess, "run", fake_run)
+        res = pv.ensure_peer_cli("claude", sys_dir=sys_dir)
+
+        assert res["status"] == "success"
+        assert recorded_canary["argv"] == ["claude.cmd", "--version"]
+        assert recorded_canary["shell"] is True
+
+    def test_resolve_canary_direct_binary_unit(self, tmp_path):
+        target = tmp_path / "claude.cmd"
+        target.write_text("@echo off\n", encoding="utf-8")
+
+        # 1. Missing underlying binary -> None
+        assert pv._resolve_canary_direct_binary(target, ["claude.cmd", "--version"]) is None
+
+        # 2. claude.exe exists -> resolves directly
+        real_exe = tmp_path / "node_modules" / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
+        real_exe.parent.mkdir(parents=True, exist_ok=True)
+        real_exe.write_bytes(b"MZfake")
+        res = pv._resolve_canary_direct_binary(target, ["claude.cmd", "--version"])
+        assert res == [str(real_exe), "--version"]
+
+        # 3. codex.cmd + codex.js + node.exe -> resolves [node.exe, codex.js, --version]
+        target_codex = tmp_path / "codex.cmd"
+        target_codex.write_text("@echo off\n", encoding="utf-8")
+        codex_js = tmp_path / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
+        codex_js.parent.mkdir(parents=True, exist_ok=True)
+        codex_js.write_text("// codex", encoding="utf-8")
+        node_dir = tmp_path / "nodejs"
+        node_dir.mkdir()
+        node_exe = node_dir / "node.exe"
+        node_exe.write_bytes(b"node")
+
+        res_codex = pv._resolve_canary_direct_binary(
+            target_codex, ["codex.cmd", "--version"], nodejs_dir=node_dir
+        )
+        assert res_codex == [str(node_exe), str(codex_js), "--version"]
+
+        # 4. Unrecognized command -> None
+        target_other = tmp_path / "other.cmd"
+        target_other.write_text("@echo off\n", encoding="utf-8")
+        assert pv._resolve_canary_direct_binary(target_other, ["other.cmd", "--version"]) is None

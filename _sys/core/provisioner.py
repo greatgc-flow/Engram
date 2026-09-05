@@ -339,6 +339,93 @@ def _flatten_zip_extract(extract_root: Path, active_root: Path) -> None:
         shutil.copy2(str(exe), str(active_root / exe.name))
 
 
+def _resolve_canary_direct_binary(
+    target: Path,
+    argv: list[str],
+    nodejs_dir: Path | None = None,
+    run_env_path: str = "",
+) -> list[str] | None:
+    """Resolve npm-published .cmd wrappers to direct binary execution.
+
+    On Windows, invoking .cmd/.bat wrappers runs cmd.exe, which splits
+    command lines at bare '&' characters and fails if cwd or PATH contains
+    an '&'-laden directory. Bypassing the .cmd wrapper and executing the
+    real underlying binary directly avoids cmd.exe entirely.
+    """
+    if not argv or sys.platform != "win32":
+        return None
+
+    exe_name = Path(argv[0]).name.lower()
+    if exe_name not in ("claude.cmd", "codex.cmd"):
+        return None
+
+    cand_path: Path | None = None
+    if target.is_file():
+        cand_path = target
+    elif Path(argv[0]).is_file():
+        cand_path = Path(argv[0])
+    else:
+        for p in run_env_path.split(os.pathsep):
+            if not p:
+                continue
+            cand = Path(p) / argv[0]
+            try:
+                if cand.is_file():
+                    cand_path = cand
+                    break
+            except OSError:
+                continue
+
+    if cand_path is None:
+        return None
+
+    cmd_dir = cand_path.parent
+
+    if exe_name == "claude.cmd":
+        real_exe = cmd_dir / "node_modules" / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
+        if not real_exe.exists():
+            try:
+                real_exe = cand_path.resolve().parent / "node_modules" / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
+            except Exception:
+                pass
+        if real_exe.exists():
+            return [str(real_exe)] + list(argv[1:])
+
+    elif exe_name == "codex.cmd":
+        codex_js = cmd_dir / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
+        if not codex_js.exists():
+            try:
+                codex_js = cand_path.resolve().parent / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
+            except Exception:
+                pass
+
+        node_exe: Path | None = None
+        if nodejs_dir and (nodejs_dir / "node.exe").is_file():
+            node_exe = nodejs_dir / "node.exe"
+        elif (cmd_dir.parent / "node.exe").is_file():
+            node_exe = cmd_dir.parent / "node.exe"
+        elif (cmd_dir / "node.exe").is_file():
+            node_exe = cmd_dir / "node.exe"
+        else:
+            which_node = shutil.which("node.exe") or shutil.which("node")
+            if which_node:
+                node_exe = Path(which_node)
+
+        if codex_js.exists() and node_exe and node_exe.exists():
+            return [str(node_exe), str(codex_js)] + list(argv[1:])
+
+        codex_exe = cmd_dir / "node_modules" / "@openai" / "codex" / "node_modules" / "@openai" / "codex-win32-x64" / "vendor" / "x86_64-pc-windows-msvc" / "bin" / "codex.exe"
+        if not codex_exe.exists():
+            try:
+                codex_exe = cand_path.resolve().parent / "node_modules" / "@openai" / "codex" / "node_modules" / "@openai" / "codex-win32-x64" / "vendor" / "x86_64-pc-windows-msvc" / "bin" / "codex.exe"
+            except Exception:
+                pass
+        if codex_exe.exists():
+            return [str(codex_exe)] + list(argv[1:])
+
+    return None
+
+
 def _run_canary(tmp_dir: Path, canary: dict | None, env: dict | None = None) -> tuple[bool, str]:
     if not canary:
         return True, ""
@@ -365,7 +452,13 @@ def _run_canary(tmp_dir: Path, canary: dict | None, env: dict | None = None) -> 
     paths = [str(tmp_dir), str(nodejs_dir), str(venv_scripts), run_env.get("PATH", "")]
     run_env["PATH"] = os.pathsep.join(p for p in paths if p)
 
-    if target.suffix.lower() in (".cmd", ".bat"):
+    direct_args = _resolve_canary_direct_binary(
+        target, argv, nodejs_dir=nodejs_dir, run_env_path=run_env.get("PATH", "")
+    )
+    if direct_args is not None:
+        run_args = direct_args
+        use_shell = False
+    elif target.suffix.lower() in (".cmd", ".bat"):
         run_args = [argv[0]] + list(argv[1:])
         use_shell = True
     else:
