@@ -1,2 +1,3 @@
 @echo off
-call "%~dp0_sys\core\dispatch.bat" register %*
+cd /d "%~dp0"
+call "_sys\core\dispatch.bat" register %*

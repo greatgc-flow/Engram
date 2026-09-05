@@ -219,11 +219,11 @@ def _tier5(base_dir: Path, sys_dir: Path, dry_run: bool) -> int:
     try:
         if purge_dir.exists():
             shutil.rmtree(purge_dir, onerror=_on_rm_error)
-        py_dir.rename(purge_dir)
+        purge_dir_str = str(purge_dir).replace("%", "%%")
         bat = (
             "@echo off\r\n"
             f"timeout /T 5 /NOBREAK >nul\r\n"
-            f"rmdir /s /q \"{purge_dir}\"\r\n"
+            f"rmdir /s /q \"{purge_dir_str}\"\r\n"
             f"del \"%~f0\"\r\n"
         )
         bat_path = Path(os.environ.get("TEMP", str(sys_dir / "env"))) / "_purge_python.bat"

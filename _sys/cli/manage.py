@@ -97,11 +97,11 @@ def uninstall(ctx: dict):
     helper_path = temp_dir / "EngramUninstallHelper.bat"
     
     helper_content = """@echo off
-setlocal enabledelayedexpansion
 set "BASE_DIR=%~1"
 set "JOURNAL_PATH=%~2"
 set "PARENT_PID=%~3"
 set "NPM_GLOBAL=%~4"
+setlocal enabledelayedexpansion
 
 echo Waiting for parent process (PID: !PARENT_PID!) to exit...
 set wait_count=0

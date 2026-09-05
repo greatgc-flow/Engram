@@ -1,2 +1,3 @@
 @echo off
-call "%~dp0core\dispatch.bat" start %*
+cd /d "%~dp0"
+call "core\dispatch.bat" start %*

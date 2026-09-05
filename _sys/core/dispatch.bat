@@ -1,5 +1,5 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal DisableDelayedExpansion
 
 :: Minimal Bootstrap environment
 set "SYS_DIR=%~dp0.."

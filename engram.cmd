@@ -1,5 +1,6 @@
-﻿@echo off
-setlocal enabledelayedexpansion
+@echo off
+cd /d "%~dp0"
+setlocal DisableDelayedExpansion
 
 :: ============================================================================
 :: Engram Portable CLI Entrypoint
@@ -7,9 +8,6 @@ setlocal enabledelayedexpansion
 ::
 :: Provides unified CLI access to Engram portable runtime commands & PeerHub.
 :: ============================================================================
-
-set "ENGRAM_ROOT=%~dp0"
-if "%ENGRAM_ROOT:~-1%"=="\" set "ENGRAM_ROOT=%ENGRAM_ROOT:~0,-1%"
 
 :: ----------------------------------------------------------------------------
 :: Route commands
@@ -43,9 +41,9 @@ if /i "%SUBCMD%"=="uninstall" goto :cmd_uninstall
 if /i "%SUBCMD%"=="start" goto :cmd_launch
 
 :: Fallback: Try dispatch pipeline directly
-if exist "%ENGRAM_ROOT%\_sys\core\dispatch.bat" (
-    call "%ENGRAM_ROOT%\_sys\core\dispatch.bat" %SUBCMD% %1 %2 %3 %4 %5 %6 %7 %8 %9
-    exit /b !ERRORLEVEL!
+if exist "_sys\core\dispatch.bat" (
+    call "_sys\core\dispatch.bat" %SUBCMD% %1 %2 %3 %4 %5 %6 %7 %8 %9
+    exit /b %ERRORLEVEL%
 )
 
 echo [Error] Unknown command: %SUBCMD%
@@ -56,38 +54,38 @@ exit /b 1
 :: Subcommand Handlers
 :: ----------------------------------------------------------------------------
 :cmd_install
-call "%ENGRAM_ROOT%\INSTALL.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b !ERRORLEVEL!
+call ".\INSTALL.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %ERRORLEVEL%
 
 :cmd_status
-call "%ENGRAM_ROOT%\STATUS.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b !ERRORLEVEL!
+call ".\STATUS.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %ERRORLEVEL%
 
 :cmd_register
-call "%ENGRAM_ROOT%\register.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b !ERRORLEVEL!
+call ".\register.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %ERRORLEVEL%
 
 :cmd_unregister
-call "%ENGRAM_ROOT%\unregister.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b !ERRORLEVEL!
+call ".\unregister.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %ERRORLEVEL%
 
 :cmd_update
-call "%ENGRAM_ROOT%\UPDATE.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b !ERRORLEVEL!
+call ".\UPDATE.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %ERRORLEVEL%
 
 :cmd_cleanup
-call "%ENGRAM_ROOT%\CLEANUP.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b !ERRORLEVEL!
+call ".\CLEANUP.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %ERRORLEVEL%
 
 :cmd_tidy
-call "%ENGRAM_ROOT%\TIDY.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b !ERRORLEVEL!
+call ".\TIDY.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %ERRORLEVEL%
 
 
 
 :cmd_launch
-call "%ENGRAM_ROOT%\_sys\cli\launch.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b !ERRORLEVEL!
+call ".\_sys\cli\launch.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %ERRORLEVEL%
 
 
 
@@ -96,8 +94,8 @@ exit /b !ERRORLEVEL!
 :: Info Handlers
 :: ----------------------------------------------------------------------------
 :cmd_uninstall
-call "%ENGRAM_ROOT%\_sys\env\venv\Scripts\python.exe" "%ENGRAM_ROOT%\_sys\cli\manage.py" uninstall
-exit /b !ERRORLEVEL!
+call ".\_sys\env\venv\Scripts\python.exe" "_sys\cli\manage.py" uninstall
+exit /b %ERRORLEVEL%
 
 :show_version
 echo Engram v2.1.0 (Portable Dev Runtime)

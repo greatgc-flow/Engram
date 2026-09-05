@@ -1,12 +1,4 @@
 @echo off
-setlocal enabledelayedexpansion
-:: ================================================================
-:: INSTALL.bat  -  Portable Dev Environment Bootstrapper
-::
-:: Bootstraps minimal Python, then delegates to _sys\core\setup.py.
-:: Runtime versions/URLs sourced from _sys\runtimes.json (no hardcoding).
-:: ================================================================
-
 :: cd to this script's own location FIRST, then use paths relative to it
 :: everywhere below (never %~dp0-prefixed). This runs before Python/SUBST
 :: exist, so it's the only portability net available yet -- and %~dp0 is an
@@ -18,7 +10,19 @@ setlocal enabledelayedexpansion
 :: inner string as a fresh command line, where an unescaped "&" becomes a
 :: command separator. Relative paths never contain "&" here, so they sidestep
 :: the whole class of bug rather than requiring per-callsite escaping.
+::
+:: CRITICAL: "cd /d %~dp0" MUST happen BEFORE "setlocal enabledelayedexpansion"!
+:: If delayed expansion is enabled first, any "!" (exclamation point) in the
+:: folder path is stripped/corrupted during delayed expansion parsing, causing
+:: "cd /d" to fail with "The system cannot find the path specified".
 cd /d "%~dp0"
+setlocal enabledelayedexpansion
+:: ================================================================
+:: INSTALL.bat  -  Portable Dev Environment Bootstrapper
+::
+:: Bootstraps minimal Python, then delegates to _sys\core\setup.py.
+:: Runtime versions/URLs sourced from _sys\runtimes.json (no hardcoding).
+:: ================================================================
 
 :: ── Runtime config from _sys\runtimes.json (fallback if missing) ──
 set "_RT=_sys\runtimes.json"
