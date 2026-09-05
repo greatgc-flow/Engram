@@ -275,6 +275,27 @@ worked on."
      that same stray test run — reverted before pushing (amended +
      force-pushed after catching it in the post-push `git show --stat`).
      Full suite: 266 passed, 2 skipped (unchanged).
+10. ~~**cx cross-review of item 9 found 3 real regressions (2026-09-05)**~~
+   — **done** (commit `023e5b4`). Dispatched `cx.deepthink` for a
+   genuinely independent second opinion on `857d381` (after both the
+   terminal's own review AND `ag.opus`'s separate 8-commit audit had
+   already come back clean) — it found 3 real bugs the other two passes
+   missed: `scrubber.py`'s percent-escaping edit had accidentally
+   deleted the line that actually renames the live python runtime
+   before "purging" it (cleanup silently did nothing); `engram.cmd`'s
+   fallback dispatch block used `%ERRORLEVEL%` inside a parenthesized
+   block with delayed expansion disabled, silently discarding every
+   real exit code from that path (reproduced live: exit 9 reported as
+   0); `manage.py`'s uninstall helper passed an `&`-laden `base_dir` as
+   a positional CLI argument, which `subprocess.list2cmdline()` doesn't
+   quote for `&` (only whitespace) — a pre-existing bug tonight's
+   earlier fixes never touched. All 3 independently re-verified by the
+   terminal (real reproductions, not just trusting the reports) both
+   before AND after the fix (delegated to `ag.opus`). See
+   `reference_cx_crossreview_caught_regressions_2026_09_05` in the
+   memory system for the durable lesson: dispatch a genuinely different
+   peer for cross-review even after one prior pass already came back
+   clean — this is now standing practice, not a one-off.
 
 ## peerhub-side open items
 
