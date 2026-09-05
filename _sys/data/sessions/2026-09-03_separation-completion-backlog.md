@@ -231,6 +231,50 @@ worked on."
    for this one turned out to have actually completed all the writes
    before the kill landed, confirmed only by checking the working tree
    directly rather than trusting the kill notification's timing.
+9. ~~**Check the other batch-scripting special characters (`%`, `!`)
+   for the same class of bug (2026-09-05)**~~ — **done** (commit
+   `857d381`). Asked before G-pool's quota window reset whether a
+   portable root path containing a literal `%` or `!` breaks anything
+   the same way `&` did — it does, and `!` turned out worse than `&`:
+   - **`%`**: tonight's existing relative-path fix already fully
+     protects `INSTALL.bat`/`launcher.py` (no additional fix needed
+     there) — but exposed a SEPARATE bug: every root-level wrapper
+     `.bat` still calling a sub-script via an absolute `%~dp0`-prefixed
+     path (`STATUS.bat`, `UPDATE.bat`, `CLEANUP.bat`, `TIDY.bat`,
+     `register.bat`, `unregister.bat`, `_sys/start.bat`,
+     `_sys/cli/launch.bat`, `_sys/cli/manage.bat`, `engram.cmd`) broke
+     on a literal `%`, because cmd.exe's `CALL` re-expands `%` variables
+     a second time. `scrubber.py`'s generated purge script had the same
+     issue (fixed by escaping `%` as `%%`).
+   - **`!`**: a genuinely new, more severe bug — broke `INSTALL.bat`
+     itself (not just wrappers): `setlocal enabledelayedexpansion`
+     before `cd /d "%~dp0"` meant delayed expansion silently stripped
+     `!` out of `%~dp0`'s value, so `cd /d` failed **without erroring
+     out** — execution continued in the wrong directory. Fixed by
+     reordering (`cd` before `setlocal`) in `INSTALL.bat`/`engram.cmd`,
+     or switching to `setlocal DisableDelayedExpansion` entirely where
+     delayed expansion wasn't actually needed (`dispatch.bat`,
+     `STATUS.bat`, `UPDATE.bat`, `TIDY.bat`). `manage.py`'s generated
+     uninstall helper now captures `%~1`-`%~4` before enabling delayed
+     expansion (which its `WAIT_LOOP` genuinely does need, just
+     reordered). Also removed a genuine pre-existing UTF-8 BOM from
+     `engram.cmd` (a real CONVENTION.md §2.1 violation predating tonight,
+     found as a byproduct of the rewrite).
+   - Verified in real, fresh `%`/`!`-named folders (both by `ag.effort`
+     and independently re-verified by the terminal, including a
+     deliberate `%name%`-vs-active-env-var collision test). One real
+     scare during terminal verification: an actual `INSTALL.bat` run in
+     this repo's own dev worktree failed at the venv step — root-caused
+     to leftover pollution from `ag`'s OWN extensive in-place testing
+     (a stale `_sys/env` missing pip after repeated install/update
+     runs), unrelated to the diff; cleaned up, then a genuinely fresh
+     clone in a new real `!`-named folder confirmed full success
+     (all 18 components, exit 0). Also caught and fixed before this
+     landed: the initial commit accidentally included a regenerated
+     `_sys/tools/oh-my-posh/.install_manifest.json` timestamp/hash from
+     that same stray test run — reverted before pushing (amended +
+     force-pushed after catching it in the post-push `git show --stat`).
+     Full suite: 266 passed, 2 skipped (unchanged).
 
 ## peerhub-side open items
 

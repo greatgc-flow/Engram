@@ -63,7 +63,7 @@ if not defined BASE_DIR for %%I in ("%~dp0..\..") do set "BASE_DIR=%%~fI"
 set "_BASE=%BASE_DIR%"
 ```
 
-### 2.6 Ampersand (`&`) in the Portable Root Path
+### 2.6 Special Characters in the Portable Root Path (`&`, `%`, `!`)
 Unlike parens/spaces/Korean text, `&` is on cmd.exe's own documented `/C`
 special-character list, so it is **excluded** from the quote-preservation
 rule that protects those other cases (incl. the §3.1 double-quote trick) --
@@ -107,6 +107,33 @@ repo's own real `&`-laden checkout) rather than reasoned about:
 - **Practical guidance**: avoid `&` in your portable root folder path
   when possible; where it can't be avoided, the techniques above cover
   every case found in this codebase so far.
+
+**`%` and `!` (checked 2026-09-05, same real-live-testing standard):**
+these are different bug classes from `&`, not the same one:
+- **`%` (variable expansion):** the §2.6 fix above (relative paths after
+  `cd`) already fully protects `INSTALL.bat`/`launcher.py` -- but a
+  *second* bug exists in every root-level wrapper `.bat` that still
+  `call`s a sub-script via an absolute `%~dp0`-prefixed path: cmd.exe's
+  `CALL` command re-expands `%` a second time, so a literal `%` in the
+  path gets misread as starting an (often undefined) variable reference.
+  Every such wrapper now `cd`s first and calls by relative name instead
+  (see commit `857d381`).
+- **`!` (delayed-expansion reference) -- more severe than `&`:** if
+  `setlocal enabledelayedexpansion` is active BEFORE `%~dp0` (or any
+  other absolute-path expansion) is evaluated, a literal `!` in that
+  path gets silently stripped -- **not a hard error**: `cd /d` just
+  fails and the script keeps running in the wrong directory. Rule:
+  either evaluate `%~dp0` (via `cd /d` or a `set`) *before* enabling
+  delayed expansion, or don't enable delayed expansion at all if the
+  file doesn't actually need it (`setlocal DisableDelayedExpansion`
+  removes the hazard entirely rather than requiring careful ordering).
+  A generated batch script that captures `%~1..%~n` arguments and
+  *also* needs delayed expansion later (e.g. for its own loop/counter
+  logic) should capture the raw arguments first, then enable delayed
+  expansion (see `manage.py`'s uninstall helper).
+- Both confirmed via real fresh-folder testing (not reasoned about) --
+  see the separation backlog's 2026-09-05 entry for the specific
+  before/after evidence.
 
 ---
 
