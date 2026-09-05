@@ -5,21 +5,34 @@ Written at the point the full ratified v8 diet plan (Increments A-D, Gate
 shipped real releases (Engram v3.0.0, peerhub v0.1.8). This is the single
 pointer doc for "what's left" on both sides of the separation.
 
-**Bottom line as of 2026-09-05: the separation itself is done and verified.**
-A large, separate multi-night effort (items 6-10) also found and fixed a
-real class of cmd.exe path-parsing bugs (`&`/`%`/`!` in the portable root
-path) -- **this was NOT a permanent limitation as first assessed** (see
-item 6's original "not fixable by us" framing, corrected in item 8): the
-real fix was bypassing cmd.exe entirely for `.cmd`/`.bat` wrapper
-invocation, which generalizes well. That sweep is not fully closed yet --
-see item 10.5 below for what a cross-review (`cx.deepthink`) found still
-open (a residual `!`-argument regression, an untested `^` character, a
-never-reviewed `context_menu.json`/`registrar.py` gap, and no durable
-regression-test coverage for any of this). Everything ELSE remaining is
-either (a) waiting on something outside this session's control (winget
-human review, `cx`'s return for Gate 2 Lane 2), or (b) deliberately out of
-scope (peerhub's own general roadmap). Nothing else is "still being
-worked on."
+**Bottom line as of 2026-09-05 (end of session): the separation is fully
+done, verified, AND closed out end to end.** The multi-night `&`/`%`/`!`/`^`
+cmd.exe path-bug sweep (items 6-10) is now completely closed -- the
+`context_menu.json`/`registrar.py` gap item 10.5 flagged is fixed (sidecar
+files, fail-closed, atomic writes; a critical `root==phys_root` production
+flaw the terminal's own first fix missed was caught by a second
+`cx.deepthink` cross-review before shipping), and all of it now has real,
+empirically-verified regression test coverage (four separate historical
+buggy commits checked out and confirmed to genuinely fail against the new
+tests, not just pass against current code). **Gate 2 Lane 2 (trusted
+third-party adapter-manifest discovery) also got its required security
+review** -- dispatched early (cx has been reliably available all session;
+the original 2026-09-07 date assumed otherwise) rather than left waiting.
+Verdict: reject running it under Phase 1's model (admission-time hashing
+provides no real trust, several concrete attack paths found and
+independently re-verified by the terminal against real source); a safe
+inert-discovery-only subset was identified but the user chose NOT to
+build even that for now, so it stays fully documented and parked, not
+implemented. Full detail:
+`_sys/data/sessions/2026-09-03_gate2-lane2-deferred-security-note.md`
+(Engram side) and peerhub's
+`docs/design/PHASE1-MANIFEST-SCHEMA-V2-FINAL-SECURITY-REVIEW-2026-09-05.md`.
+Everything else remaining is either (a) waiting on something outside this
+session's control entirely (winget human review), or (b) deliberately out
+of scope (peerhub's own general roadmap, confirmed empty of other
+ready-to-pick-up items as of this session's own direct check of
+`docs/design/PEERHUB-BACKLOG-2026-08-27.md`). **Nothing else is "still
+being worked on."**
 
 ## Status: separation is real, verified in both directions
 
@@ -456,25 +469,25 @@ end-to-end; the remaining 19 are permanently waived (see item 2 below),
 not open work. Items directly relevant to the Engram/peerhub separation
 specifically (not peerhub's general roadmap):
 
-1. **Gate 2 Lane 2** (trusted third-party adapter-manifest discovery,
-   scanning `%LOCALAPPDATA%\PeerHub\adapters.d`) — deliberately NOT
-   implemented, unchanged since 2026-09-03. This is a real security trust
-   boundary over untrusted input that ultimately gates code execution (an
-   admitted manifest's named executable eventually gets spawned); the
-   admission engine it would need (ACL evaluation, executable hashing,
-   collision detection, atomic registry publication — see `docs/design/
-   PHASE1-MANIFEST-SCHEMA-V2-2026-08-20.md`) doesn't exist anywhere in
-   the codebase despite the design already being fully specified. Only
-   Lane 1 (built-in cc/cx/ag PATH-based discovery, no untrusted input) was
-   implemented (peerhub commit `c565386`). Resume once `cx` recovers
-   (2026-09-07) for genuine adversarial security review, or on your
-   explicit direction to proceed without one — see the Engram worktree's
-   `2026-09-03_gate2-lane2-deferred-security-note.md` for full reasoning.
-   **2026-09-04: a preliminary (not a substitute) second-opinion review is
-   now done** — `ag.opus`, 10 grounded findings, see peerhub's
-   `docs/design/PHASE1-MANIFEST-SCHEMA-V2-PRELIM-SECURITY-REVIEW-2026-09-04.md`.
-   cx's real 2026-09-07 review is still required; this just gives it a
-   concrete starting checklist.
+1. **CLOSED (2026-09-05) — Gate 2 Lane 2** (trusted third-party
+   adapter-manifest discovery, scanning `%LOCALAPPDATA%\PeerHub\adapters.d`)
+   — the required `cx.deepthink` adversarial security review is done
+   (dispatched early, on your explicit direction, rather than waiting for
+   the original 2026-09-07 date — cx has in fact been reliably available
+   all session). **Verdict: reject running Lane 2 under Phase 1's
+   validation model.** Admission-time hashing provides no real trust
+   (an attacker can place malicious bytes before admission, or point the
+   manifest at an already-trusted interpreter with the payload in
+   argv/stdin — no race needed at all), plus several more findings
+   independently re-verified by the terminal directly against real source/
+   tooling. Full report: peerhub's `docs/design/
+   PHASE1-MANIFEST-SCHEMA-V2-FINAL-SECURITY-REVIEW-2026-09-05.md`. A safe
+   inert-discovery-only subset (scan+display, never execute/probe/
+   register) was identified as a real, concretely-scoped option, but **you
+   chose not to build even that for now** — it stays fully documented and
+   parked, not implemented. Only Lane 1 (built-in cc/cx/ag PATH-based
+   discovery, no untrusted input) remains implemented (peerhub commit
+   `c565386`). Nothing further to do here unless you decide to revisit.
 2. **19 permanently-waived `LEGACY_CATALOG` actions** — each individually
    cited as an intentional, settled non-goal (host-environment-only
    tooling, an architecturally-incompatible generic write queue, upstream
