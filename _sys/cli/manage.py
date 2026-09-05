@@ -150,7 +150,8 @@ exit /b 0
     env["ENGRAM_UNINSTALL_PARENT_PID"] = str(parent_pid)
     env["ENGRAM_UNINSTALL_NPM_GLOBAL"] = str(npm_global)
     subprocess.Popen(
-        ["cmd.exe", "/c", str(helper_path)],
+        ["cmd.exe", "/c", f".\\{helper_path.name}"],
+        cwd=str(helper_path.parent),
         creationflags=DETACHED_PROCESS,
         close_fds=True,
         env=env,

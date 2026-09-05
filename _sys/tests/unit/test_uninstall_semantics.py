@@ -62,7 +62,8 @@ def test_uninstall_happy_path(mock_ctx):
         args = mock_popen.call_args[0][0]
         assert args[0] == "cmd.exe"
         assert args[1] == "/c"
-        helper_path = Path(args[2])
+        cwd = mock_popen.call_args.kwargs.get("cwd")
+        helper_path = Path(cwd) / args[2] if cwd else Path(args[2])
         assert helper_path.exists()
         assert helper_path.name == "EngramUninstallHelper.bat"
         assert "BASE_DIR" in helper_path.read_text(encoding="utf-8")
