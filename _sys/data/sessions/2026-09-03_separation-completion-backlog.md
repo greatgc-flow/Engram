@@ -1,15 +1,24 @@
-# Engram/peerhub separation — completion status & remaining backlog (2026-09-03, updated 2026-09-04)
+# Engram/peerhub separation — completion status & remaining backlog (2026-09-03, updated 2026-09-05)
 
 Written at the point the full ratified v8 diet plan (Increments A-D, Gate
 2 design, Gate 7, README rewrites) is complete and both projects have
 shipped real releases (Engram v3.0.0, peerhub v0.1.8). This is the single
 pointer doc for "what's left" on both sides of the separation.
 
-**Bottom line as of 2026-09-04: the separation itself is done and verified.**
-Everything genuinely remaining is either (a) waiting on something outside
-this session's control (winget human review, `cx`'s return), or (b) a real,
-permanent, documented limitation (the `&`-path issue), or (c) deliberately
-out of scope (peerhub's own general roadmap). Nothing is "still being
+**Bottom line as of 2026-09-05: the separation itself is done and verified.**
+A large, separate multi-night effort (items 6-10) also found and fixed a
+real class of cmd.exe path-parsing bugs (`&`/`%`/`!` in the portable root
+path) -- **this was NOT a permanent limitation as first assessed** (see
+item 6's original "not fixable by us" framing, corrected in item 8): the
+real fix was bypassing cmd.exe entirely for `.cmd`/`.bat` wrapper
+invocation, which generalizes well. That sweep is not fully closed yet --
+see item 10.5 below for what a cross-review (`cx.deepthink`) found still
+open (a residual `!`-argument regression, an untested `^` character, a
+never-reviewed `context_menu.json`/`registrar.py` gap, and no durable
+regression-test coverage for any of this). Everything ELSE remaining is
+either (a) waiting on something outside this session's control (winget
+human review, `cx`'s return for Gate 2 Lane 2), or (b) deliberately out of
+scope (peerhub's own general roadmap). Nothing else is "still being
 worked on."
 
 ## Status: separation is real, verified in both directions
@@ -296,6 +305,68 @@ worked on."
    memory system for the durable lesson: dispatch a genuinely different
    peer for cross-review even after one prior pass already came back
    clean — this is now standing practice, not a one-off.
+11. **`cx`'s broader post-completion audit (MECE / feedback-loop-closure
+   / higher-concept / self-review / human-convenience), 2026-09-05** —
+   went beyond re-reviewing individual commits and found several more
+   real, still-open items across the whole sweep:
+   - ~~**HIGH — `manage.py`'s uninstall helper still vulnerable**~~ —
+     **done** (commit `e794415`). Commit `023e5b4` moved the DATA to
+     env vars but still passed the helper SCRIPT'S OWN absolute path
+     directly to `subprocess.Popen`, which breaks the same way when
+     `_sys/core/launcher.py` redirects `TEMP` under an `&`-laden
+     portable root (confirmed real via `engram launch`). Fixed with
+     the same relative-path-plus-`cwd` pattern (delegated to
+     `ag.effort`, needed 3 retries across a genuine 3P-pool 7-day-cap
+     quarantine and other dispatch interruptions) — then the terminal's
+     own re-verification found ag's specific fix ALSO subtly incomplete
+     (a bare relative name fails; only the `.\`-prefixed form used
+     everywhere else tonight actually works) and corrected it directly
+     after pinning down the exact difference with a real repro.
+   - **MEDIUM, not yet fixed — a literal `!` in a CLI argument now gets
+     silently corrupted.** Commit `023e5b4` re-enabled delayed
+     expansion for the whole of `engram.cmd` (to fix the `%ERRORLEVEL%`
+     bug in one specific block) and then forwards `%1`-`%9` to the
+     dispatcher — but with delayed expansion active file-wide, a literal
+     `!` in any user-supplied argument (e.g. a filename) gets stripped/
+     misinterpreted before the dispatcher ever sees it. This is a new
+     trade-off introduced by fixing the `%ERRORLEVEL%` bug, not a
+     regression of an existing fix — needs a real design decision
+     (per-block delayed expansion via a sub-routine, or accept this as
+     a documented limitation) rather than a reflexive revert.
+   - **MEDIUM, not yet verified independently — `^` (caret) is a real
+     bug, not just an untested character.** `cx` reproduced live that an
+     absolute `CALL` to a batch file under a folder containing `^`
+     fails, while the same call via relative path + `cwd` succeeds —
+     consistent with everything else fixed tonight, meaning the same
+     fix pattern should close it, but this was found by `cx` reading/
+     probing, not by the dedicated `ag` dispatch tasked with checking
+     `^`/`@` specifically (which never returned a completed report
+     tonight — see below).
+   - **MEDIUM, not yet reviewed at all — `_sys/context_menu.json` /
+     `_sys/core/registrar.py`.** The registry-installed "Open in
+     Sandbox" relay embeds the physical portable root literally; `cx`
+     reproduced that a `%NAME%`-shaped root corrupts it via ambient
+     variable expansion (a real, different bug from anything already
+     fixed) and it was never touched by any pass tonight. This whole
+     file was outside the scope of every dispatch so far.
+   - **Test-coverage gap.** None of tonight's `&`/`%`/`!`/HIGH-bug
+     commits added a durable automated regression test that actually
+     exercises a real special-character path (`test_provisioner_
+     autoinstall.py`'s canary tests use ordinary `tmp_path` paths). All
+     confidence to date comes from one-off manual live-folder testing,
+     not anything that would catch a future regression automatically.
+   - Also flagged, not yet actioned: peerhub's `pipe.py`/`bootstrap.py`/
+     `quota_polling.py` each independently hardcode the Claude/Codex
+     package-layout resolution logic (3 copies, already drifted in
+     their exact fallback chains) — `cx`'s recommendation is a single
+     shared `resolve_direct_invocation()` boundary in peerhub, judged
+     worth doing now (unlike a broader cross-repo shared library, which
+     `cx` judged NOT worth building). See `reference_cx_...` memory
+     entries (to be added) for the full audit text.
+   - The dedicated `ag` dispatch tasked with checking `^`/`@` tonight
+     never returned a completed report (repeated dispatch interruptions
+     — see the session record) — this remains genuinely unverified by
+     that specific task, separate from `cx`'s own `^` finding above.
 
 ## peerhub-side open items
 
@@ -354,4 +425,4 @@ specifically (not peerhub's general roadmap):
 | GitHub Release | [v3.0.0](https://github.com/greatgc-flow/Engram/releases/tag/v3.0.0) | [v0.1.8](https://github.com/greatgc-flow/peerhub/releases/tag/v0.1.8) |
 | Install (working today) | git clone or release-zip download (see README) | `pip install "git+https://github.com/greatgc-flow/peerhub.git@v0.1.8"` |
 | Install (pending) | `winget install greatgc-flow.Engram` — [PR #428737](https://github.com/microsoft/winget-pkgs/pull/428737) open | — |
-| Tests (unit, 2026-09-04) | 262 passed, 2 skipped | 661 passed, 1 deselected, 13 subtests |
+| Tests (unit, 2026-09-05) | 266 passed, 2 skipped | 661 passed, 1 deselected, 13 subtests |
