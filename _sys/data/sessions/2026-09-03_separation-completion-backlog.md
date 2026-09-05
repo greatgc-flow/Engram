@@ -408,21 +408,21 @@ worked on."
      of silently writing a `"?"`-corrupted path — but does not make the
      mechanism codepage-portable. Matches the PowerShell/`.exe`-relay
      recommendation above; not started.
-   - **MOSTLY CLOSED — test-coverage gap.** Four of tonight's fixes now
-     have durable, empirically-verified automated regression tests
-     (all written by `ag`, independently re-verified by the terminal —
-     including, for 3 of the 4, actually checking out the real
+   - **CLOSED — test-coverage gap.** All of tonight's `&`/`%`/`!`/`^`
+     path-bug fixes now have durable, empirically-verified automated
+     regression tests (written by `ag`, independently re-verified by
+     the terminal — for 3 of 5, actually checking out the real
      historical buggy commit and confirming the new test genuinely
      fails against it, not just passes against current code):
      `test_registrar_caret_percent_relay_end_to_end` (registrar.py
      `^`/`%` relay fix), `test_engram_cmd_cli_entrypoint.py`'s Test B
      (engram.cmd's goto/ERRORLEVEL/`!` fix — verified against both
-     857d381 and 023e5b4), and `test_scrubber_tier5.py` (the
+     857d381 and 023e5b4), `test_scrubber_tier5.py` (the
      `py_dir.rename` regression cx caught in 857d381 — verified against
-     857d381 directly). Still no equivalent coverage for manage.py's
-     `.\`-prefix uninstall-helper fix specifically exercised via a real
-     `&`-laden subprocess run (only the mocked `test_uninstall_semantics.py`
-     exists) — the remaining gap, smaller in scope than before.
+     857d381 directly), and 2 new tests in `test_uninstall_semantics.py`
+     for manage.py's `.\`-prefix uninstall-helper fix (a real subprocess
+     run in a genuine `&`-laden directory, plus a sanity check that the
+     bare-name form genuinely still fails).
    - Also flagged, not yet actioned: peerhub's `pipe.py`/`bootstrap.py`/
      `quota_polling.py` each independently hardcode the Claude/Codex
      package-layout resolution logic (3 copies, already drifted in
