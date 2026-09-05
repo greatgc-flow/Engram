@@ -122,3 +122,58 @@ def test_uninstall_failure_path(mock_ctx):
         
         mock_exit.assert_called_once_with(1)
         mock_popen.assert_not_called()
+
+
+def test_uninstall_helper_invocation_pattern_actually_runs_in_ampersand_dir(tmp_path):
+    """The exact subprocess argv/cwd shape manage.py's uninstall() uses
+    (cmd.exe /c .\\HelperName.bat with cwd=parent, commit e794415) must
+    actually execute in a real "&"-laden directory. A bare relative name
+    (no ".\\" prefix) was found to fail with "not recognized as an internal
+    or external command" even with cwd correctly set -- only the
+    ".\\"-prefixed form works. Tests the real invocation pattern directly
+    rather than the full uninstall() pipeline (registry/junction cleanup,
+    parent-PID wait loop, journal updates), which is already covered by
+    the mocked tests above."""
+    import subprocess
+
+    fixture_dir = tmp_path / "engram&uninstall_test"
+    fixture_dir.mkdir()
+    helper_path = fixture_dir / "EngramUninstallHelper.bat"
+    helper_path.write_text("@echo off\r\necho HELPER_RAN\r\nexit /b 0\r\n", encoding="utf-8")
+
+    proc = subprocess.run(
+        ["cmd.exe", "/c", f".\\{helper_path.name}"],
+        cwd=str(helper_path.parent),
+        capture_output=True,
+        text=True,
+        encoding="mbcs",
+        errors="replace",
+    )
+    assert proc.returncode == 0, (
+        f"Expected the .\\-prefixed invocation to succeed.\n"
+        f"stdout: {proc.stdout}\nstderr: {proc.stderr}"
+    )
+    assert "HELPER_RAN" in proc.stdout
+
+
+def test_uninstall_helper_bare_name_invocation_fails_in_ampersand_dir(tmp_path):
+    """Sanity check for the test above: confirms the bare (non-".\\"-prefixed)
+    form genuinely fails in a real "&"-laden cwd, so the ".\\"-prefixed
+    test isn't vacuously passing for an unrelated reason."""
+    import subprocess
+
+    fixture_dir = tmp_path / "engram&uninstall_test2"
+    fixture_dir.mkdir()
+    helper_path = fixture_dir / "EngramUninstallHelper.bat"
+    helper_path.write_text("@echo off\r\necho HELPER_RAN\r\nexit /b 0\r\n", encoding="utf-8")
+
+    proc = subprocess.run(
+        ["cmd.exe", "/c", helper_path.name],  # bare, no ".\\" prefix -- the buggy form
+        cwd=str(helper_path.parent),
+        capture_output=True,
+        text=True,
+        encoding="mbcs",
+        errors="replace",
+    )
+    assert proc.returncode != 0
+    assert "HELPER_RAN" not in proc.stdout
