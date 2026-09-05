@@ -109,12 +109,12 @@ call ".\_sys\env\venv\Scripts\python.exe" "_sys\cli\manage.py" uninstall
 exit /b %ERRORLEVEL%
 
 :show_version
-echo Engram v2.1.0 (Portable Dev Runtime)
+echo Engram v3.1.0 (Portable Dev Runtime)
 exit /b 0
 
 :show_help
 echo ===============================================================================
-echo   Engram v2.1.0 - Portable Dev Runtime
+echo   Engram v3.1.0 - Portable Dev Runtime
 echo   Repository: https://github.com/greatgc-flow/Engram
 echo ===============================================================================
 echo.

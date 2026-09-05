@@ -33,8 +33,8 @@ Engram bootstraps a self-contained Windows dev environment — Python, Node.js, 
 
 ### Option A: Download the release zip (recommended right now)
 ```powershell
-# Download & extract Engram-v3.0.0-portable-x64.zip from the release, then:
-cd Engram-v3.0.0-portable-x64
+# Download & extract Engram-v3.1.0-portable-x64.zip from the release, then:
+cd Engram-v3.1.0-portable-x64
 .\INSTALL.bat
 .\register.bat
 ```
