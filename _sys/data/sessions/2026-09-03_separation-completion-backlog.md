@@ -333,28 +333,90 @@ worked on."
      regression of an existing fix — needs a real design decision
      (per-block delayed expansion via a sub-routine, or accept this as
      a documented limitation) rather than a reflexive revert.
-   - **MEDIUM, not yet verified independently — `^` (caret) is a real
-     bug, not just an untested character.** `cx` reproduced live that an
-     absolute `CALL` to a batch file under a folder containing `^`
-     fails, while the same call via relative path + `cwd` succeeds —
-     consistent with everything else fixed tonight, meaning the same
-     fix pattern should close it, but this was found by `cx` reading/
-     probing, not by the dedicated `ag` dispatch tasked with checking
-     `^`/`@` specifically (which never returned a completed report
-     tonight — see below).
-   - **MEDIUM, not yet reviewed at all — `_sys/context_menu.json` /
-     `_sys/core/registrar.py`.** The registry-installed "Open in
-     Sandbox" relay embeds the physical portable root literally; `cx`
-     reproduced that a `%NAME%`-shaped root corrupts it via ambient
-     variable expansion (a real, different bug from anything already
-     fixed) and it was never touched by any pass tonight. This whole
-     file was outside the scope of every dispatch so far.
-   - **Test-coverage gap.** None of tonight's `&`/`%`/`!`/HIGH-bug
-     commits added a durable automated regression test that actually
-     exercises a real special-character path (`test_provisioner_
-     autoinstall.py`'s canary tests use ordinary `tmp_path` paths). All
-     confidence to date comes from one-off manual live-folder testing,
-     not anything that would catch a future regression automatically.
+   - **RESOLVED 2026-09-05 — `^` (caret), `%` (percent) in
+     `_sys/context_menu.json` / `_sys/core/registrar.py`'s "Open in
+     Sandbox" relay.** Root cause, found via direct empirical testing
+     (many isolated real `.bat` repros, not simulated): a path value
+     containing a literal `^` that is embedded as ESCAPED LITERAL
+     SOURCE TEXT in a `set "X=...^^..."` statement (even correctly
+     doubled) still fails when later used as a `cd`/`pushd`/`call`
+     target — even though `echo` displays the stored value as if
+     correct. A value obtained via the special `%~dp0` parameter
+     expansion, or via `set /p VAR=<file` (reading raw bytes from a
+     data file, never parsed as cmd.exe syntax), does NOT carry this
+     taint. `call` specifically also fails on a set/p-loaded caret
+     value if the caret sits directly in the call's own path argument
+     — only `cd /d` into the caret-laden dir first, then `call` with a
+     bare RELATIVE name, works.
+     Fix: both `root` and `phys_root` are now written to sidecar data
+     files (`{key_name}.root.txt` / `{key_name}.physroot.txt`, zero
+     escaping needed) and loaded via `set /p`; the relay does
+     `cd /d "%SANDBOX_ROOT%" || goto :fail` then a relative `call`;
+     `setlocal DisableDelayedExpansion` is now explicit (was implicit);
+     `_write_sidecar` uses `errors="strict"` so an unrepresentable path
+     fails registration loudly instead of writing a silently-corrupted
+     `"?"` path; both the relay `.bat` and sidecar writes are now
+     atomic (write-to-temp + `os.replace`); all 3 cleanup code paths
+     (`_unregister_entry`, `_clean_orphans`, the saved-state unregister
+     pipeline) now also remove the sidecar files, and the pre-existing
+     `str(relay).rstrip(".bat")` bug (character-strip, not suffix-strip
+     — silently truncated any key_name ending in `a`/`b`/`t`) is fixed
+     to use `Path.stem`. **Cross-review by `cx.deepthink` caught a
+     critical flaw in the FIRST version of this fix**: it assumed
+     `root` was always a bare, metacharacter-free drive letter (true
+     only when a SUBST/virtual drive is mounted) — but
+     `virtualizer.py`'s current production `mount()` only creates
+     junctions and never sets `state["subst_drive"]`, so in real
+     production today `root == phys_root` exactly, meaning the
+     "fast path" branch was still embedding the arbitrary physical
+     path directly and unprotected. Fixed by sidecar-loading BOTH
+     values unconditionally. See
+     `reference_cx_crossreview_caught_regressions_2026_09_05.md` for
+     why this pattern (dispatch a second, genuinely independent peer
+     for cross-review even after your own manual verification looks
+     solid) keeps paying off.
+     Verified: full test suite (267 passed, 2 skipped, including a new
+     `test_registrar_caret_percent_relay_end_to_end` that actually
+     executes the generated relay via `subprocess` against a real
+     caret+percent-named directory) plus manual end-to-end runs of both
+     the success path and the fail-closed path.
+   - **STILL OPEN, confirmed real, narrower in scope — `%~1` (the
+     right-click target path) is not reliably preserved through nested
+     `call ... "%~1"` forwarding if the TARGET's own path contains a
+     literal `^` or `%`.** Confirmed independently by both the terminal
+     (direct `cmd.exe` repro: two nested `call` layers doubled a caret
+     to `^^`) and `cx` (`C:\caret^name` → `C:\caret^^name`,
+     `C:\pct%ZZARG%name` → ambient-variable-expanded). This is `CALL`'s
+     documented "expands its argument line twice" behavior, and it
+     affects any nested `call ... %*`/`call ... "%~1"` chain in this
+     codebase (`start.bat`, `engram.cmd`, the lifecycle wrappers all do
+     this), not just the sandbox relay — so it's a broader,
+     pre-existing argument-forwarding gap, separate from the
+     `SANDBOX_ROOT` fix above, and out of scope for tonight's fix. `cx`'s
+     suggested proper fix is a generated PowerShell (or small .exe)
+     relay reading a UTF-8 sidecar and invoking the Python dispatcher
+     directly with an argument array, removing the repeated
+     `cmd.exe`/`CALL` parse boundaries entirely — judged worth doing
+     but a materially bigger undertaking than the caret fix; not
+     started.
+   - **STILL OPEN — sidecar/relay mbcs encoding is codepage-dependent,
+     not universally portable.** `cx` confirmed a Korean+special-char
+     sidecar round-trips correctly under this host's default CP949, but
+     the identical content fails if `cmd.exe` is run under `chcp 65001`
+     (UTF-8 mode). `errors="strict"` (this fix) at least makes a
+     genuinely unrepresentable value fail registration loudly instead
+     of silently writing a `"?"`-corrupted path — but does not make the
+     mechanism codepage-portable. Matches the PowerShell/`.exe`-relay
+     recommendation above; not started.
+   - **PARTIALLY CLOSED — test-coverage gap.** The `^`/`%` sandbox-relay
+     fix above now has a durable automated regression test
+     (`test_registrar_caret_percent_relay_end_to_end`, added by
+     `ag.effort`, independently re-verified by the terminal) that
+     actually executes the generated relay via `subprocess` against a
+     real caret+percent-named directory — the first of tonight's fixes
+     to get this. None of the EARLIER `&`/`%`/`!`/HIGH-bug commits
+     (manage.py, engram.cmd) have equivalent coverage yet; those still
+     rely on one-off manual live-folder testing only.
    - Also flagged, not yet actioned: peerhub's `pipe.py`/`bootstrap.py`/
      `quota_polling.py` each independently hardcode the Claude/Codex
      package-layout resolution logic (3 copies, already drifted in
@@ -365,8 +427,14 @@ worked on."
      entries (to be added) for the full audit text.
    - The dedicated `ag` dispatch tasked with checking `^`/`@` tonight
      never returned a completed report (repeated dispatch interruptions
-     — see the session record) — this remains genuinely unverified by
-     that specific task, separate from `cx`'s own `^` finding above.
+     — see the session record). Superseded: the terminal's own direct
+     empirical investigation (see the RESOLVED `^`/`%` item above) fully
+     covered and fixed the `^` case; the production `cd /d "%~dp0"`
+     pattern used by every OTHER batch entrypoint tonight was confirmed
+     safe against `^` in its own script's directory (that mechanism
+     never needed a fix — only `registrar.py`'s `SANDBOX_ROOT`, which
+     must represent an ARBITRARY external path rather than the running
+     script's own location, did). `@` was not separately investigated.
 
 ## peerhub-side open items
 

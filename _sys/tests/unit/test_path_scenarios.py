@@ -184,3 +184,117 @@ class TestPathScenarios:
         assert data["subst_drive"] == "P", "드라이브 문자만 저장되어야 함"
         assert not re.search(r"[가-힣]", str(data["subst_drive"])), \
             "drivevalue에 한글이 없어야 함"
+
+    def test_registrar_caret_percent_relay_end_to_end(self, tmp_path):
+        """End-to-end: relay .bat survives physical paths with '^' and '%' via sidecar."""
+        import subprocess
+
+        # 1. Real physical root directory containing literal '^' and '%'
+        phys_root = tmp_path / "phys^root%dir"
+        sys_dir = phys_root / "_sys"
+        sys_dir.mkdir(parents=True, exist_ok=True)
+
+        # 2. Minimal start.bat inside _sys
+        start_bat = sys_dir / "start.bat"
+        start_bat.write_text("@echo off\r\necho START_HIT arg=%~1\r\nexit /b 0\r\n", encoding="mbcs")
+
+        # 3. Build context_menu config using the real relay.content_template from _sys/context_menu.json
+        real_cm_path = _sys_path / "context_menu.json"
+        assert real_cm_path.exists(), f"context_menu.json not found at {real_cm_path}"
+        with open(real_cm_path, "r", encoding="utf-8") as f:
+            real_cm = json.load(f)
+
+        ctx_menu = {
+            "win11_classic_menu": False,
+            "registry": {
+                "targets": {
+                    "Directory": {
+                        "path": r"Software\Classes\Directory\shell",
+                        "arg": "%V",
+                    }
+                }
+            },
+            "relay": {
+                "content_template": real_cm["relay"]["content_template"],
+            },
+            "entries": [
+                {
+                    "id": "sandbox_open",
+                    "label": "Open Sandbox ({DRIVE}:)",
+                    "icon": "",
+                    "targets": ["Directory"],
+                    "enabled": True,
+                }
+            ],
+        }
+        (sys_dir / "context_menu.json").write_text(json.dumps(ctx_menu), encoding="utf-8")
+
+        # 4. Realistic production context: no subst_drive set at all (the current
+        # default -- virtualizer.py only creates junctions, nothing sets
+        # state["subst_drive"] anymore), so registrar.apply() computes
+        # root == phys_root exactly. Both sidecars must therefore carry the
+        # same caret/percent-laden value, and the relay's fast-path sidecar
+        # read must resolve it correctly on the very first `set /p`.
+        ctx = _make_ctx(phys_root, tmp_path)
+        local_dir = ctx["paths"]["localappdata"]
+
+        # 5. Call registrar.apply(ctx) with mocking pattern matching existing test
+        with patch.dict(os.environ, {"LOCALAPPDATA": str(local_dir)}), \
+             patch("winreg.CreateKey", return_value=MagicMock()), \
+             patch("winreg.SetValueEx"), \
+             patch("winreg.CloseKey"), \
+             patch.object(registrar, "_resolve_icon", return_value=None), \
+             patch.object(registrar, "_clean_orphans"):
+            result = registrar.apply(ctx)
+
+        assert result["status"] == "success", f"registrar.apply failed: {result}"
+
+        # 6. Locate generated relay .bat and assert matching .physroot.txt sidecar exists with exact path
+        relay_bats = list(local_dir.glob("SandboxRun_*.bat"))
+        assert len(relay_bats) == 1, f"Expected exactly 1 relay .bat, found: {relay_bats}"
+        relay_bat_path = relay_bats[0]
+
+        physroot_sidecar = local_dir / f"{relay_bat_path.stem}.physroot.txt"
+        root_sidecar = local_dir / f"{relay_bat_path.stem}.root.txt"
+        assert physroot_sidecar.exists(), f"Matching sidecar file missing: {physroot_sidecar}"
+        assert root_sidecar.exists(), f"Matching root sidecar file missing: {root_sidecar}"
+
+        physroot_content = physroot_sidecar.read_bytes().decode("mbcs")
+        root_content = root_sidecar.read_bytes().decode("mbcs")
+        assert physroot_content == str(phys_root), (
+            f"Sidecar content mismatch:\nExpected: {str(phys_root)}\nActual: {physroot_content}"
+        )
+        # No subst_drive configured -> root == phys_root exactly (see step 4 comment).
+        assert root_content == str(phys_root), (
+            f"root.txt should equal phys_root when no subst_drive is set:\n"
+            f"Expected: {str(phys_root)}\nActual: {root_content}"
+        )
+
+        # 7 & 8. Execute generated relay .bat and verify stdout reaches start.bat with loud failure
+        proc = subprocess.run(
+            ["cmd.exe", "/c", str(relay_bat_path), "some_target_arg"],
+            capture_output=True,
+            text=True,
+            encoding="mbcs",
+        )
+        if proc.returncode != 0 and "&" in str(relay_bat_path):
+            # In worktrees with '&' in path (e.g. D:\Engram&Peerhub), cmd.exe /c strips
+            # outer quotes from the batch path. Fall back to double-quoted command line
+            # matching the exact pattern written to HKCU by registrar.py line 155.
+            proc = subprocess.run(
+                f'cmd.exe /c ""{relay_bat_path}" "some_target_arg""',
+                capture_output=True,
+                text=True,
+                encoding="mbcs",
+            )
+        assert "START_HIT arg=some_target_arg" in proc.stdout, (
+            f"Relay .bat failed to reach start.bat end-to-end.\n"
+            f"returncode: {proc.returncode}\n"
+            f"stdout: {proc.stdout}\n"
+            f"stderr: {proc.stderr}"
+        )
+        assert proc.returncode == 0, (
+            f"Relay .bat exited with non-zero code {proc.returncode}.\n"
+            f"stdout: {proc.stdout}\n"
+            f"stderr: {proc.stderr}"
+        )

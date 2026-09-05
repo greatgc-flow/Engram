@@ -6,7 +6,7 @@
 
   "relay": {
     "dir": "{localappdata}",
-    "content_template": "@echo off\r\nset \"SANDBOX_ROOT={root}\"\r\nif not exist \"%SANDBOX_ROOT%\\_sys\\start.bat\" set \"SANDBOX_ROOT={phys_root}\"\r\ncall \"%SANDBOX_ROOT%\\_sys\\start.bat\" \"%~1\"\r\n"
+    "content_template": "@echo off\r\nsetlocal DisableDelayedExpansion\r\nset /p SANDBOX_ROOT=<\"%~dp0{root_file}\"\r\nif exist \"%SANDBOX_ROOT%\\_sys\\start.bat\" goto :launch\r\nset /p SANDBOX_ROOT=<\"%~dp0{physroot_file}\"\r\n:launch\r\ncd /d \"%SANDBOX_ROOT%\" || goto :fail\r\ncall \".\\_sys\\start.bat\" \"%~1\"\r\nexit /b %ERRORLEVEL%\r\n:fail\r\necho [Error] Sandbox root not found: %SANDBOX_ROOT%\r\nexit /b 1\r\n"
   },
 
   "registry": {

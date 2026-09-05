@@ -44,9 +44,14 @@ def _registry_key_name(base_dir: Path) -> str:
     return f"SandboxRun_{_safe_key(base)}"
 
 
-def _expand(template: str, root: str, phys_root: str, drive: str) -> str:
+def _expand(
+    template: str, root: str, phys_root: str, drive: str,
+    physroot_file: str = "", root_file: str = "",
+) -> str:
     s = template.replace("{root}", root)
     s = s.replace("{phys_root}", phys_root)
+    s = s.replace("{physroot_file}", physroot_file)
+    s = s.replace("{root_file}", root_file)
     s = s.replace("{DRIVE}", drive)
     return s
 
@@ -77,11 +82,43 @@ def _resolve_icon(icon_template: str, paths: dict, relay_root: Path, key_name: s
     return str(icon_path)
 
 
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    # write-to-temp + os.replace: a concurrent context-menu launch that
+    # reads the relay .bat or a sidecar mid-write would otherwise see a
+    # truncated/partial file (plain write_bytes() truncates in place
+    # before writing the new content). os.replace() is atomic on the
+    # same volume, so readers always see either the old or the new
+    # complete file, never a partial one.
+    tmp_path = path.with_name(f"{path.name}.tmp-{os.getpid()}")
+    tmp_path.write_bytes(data)
+    os.replace(tmp_path, path)
+
+
 def _write_relay(relay_path: Path, content: str) -> None:
     # mbcs → UTF-8 BOM-less: cmd.exe reads UTF-8 with BOM on Windows 10+,
     # but MBCS is safer for paths with Korean/special chars on Korean locale systems.
     # We use mbcs with 'replace' to avoid hard failures on unmappable chars.
-    relay_path.write_bytes(content.encode("mbcs", errors="replace"))
+    _atomic_write_bytes(relay_path, content.encode("mbcs", errors="replace"))
+
+
+def _write_sidecar(sidecar_path: Path, value: str) -> None:
+    # Raw path text, no trailing newline. Loaded by the relay via
+    # `set /p VAR=<file`, which reads bytes as data -- NOT as cmd.exe
+    # command-line syntax, so "%", "^", "&" etc. all pass through with
+    # zero escaping needed. This sidesteps a cmd.exe quirk found
+    # 2026-09-05: a value containing a literal "^" that was written as
+    # ESCAPED LITERAL TEXT in a `set "X=...^^..."` statement (even
+    # correctly doubled) still fails when later used as a `cd`/`call`
+    # target, even though `echo` displays it as if correct -- but a
+    # caret-containing value loaded via `set /p` (or via the special
+    # `%~dp0` expansion) works correctly for `cd`/`pushd`. The taint
+    # is specifically about literal-source-text carets, not the
+    # character itself.
+    #
+    # errors="strict" (not "replace"): a path this can't round-trip
+    # through the active codepage must fail registration loudly, not
+    # silently write a "?"-corrupted path that then fails at launch time.
+    _atomic_write_bytes(sidecar_path, value.encode("mbcs", errors="strict"))
 
 
 def _register_entry(
@@ -100,9 +137,30 @@ def _register_entry(
     key_name    = f"{base_key}_{_safe_key(entry_id)}"
     targets     = entry.get("targets", list(targets_cfg.keys()))
 
-    # Write relay bat
+    # Write relay bat. Both `root` and `phys_root` are passed via sidecar
+    # data files (read with `set /p`, not embedded as literal batch text)
+    # -- see _write_sidecar for why this is the only mechanism found
+    # empirically that survives "%"/"^" in the path for cd/call purposes.
+    # `root` is NOT necessarily a bare drive letter: when no SUBST/virtual
+    # drive is mounted (the current production default -- virtualizer.py
+    # only creates junctions, nothing sets state["subst_drive"]), `root`
+    # equals `phys_root` exactly, i.e. the arbitrary physical path. So
+    # both values need the same sidecar treatment; neither is safe to
+    # embed directly. (Found via cx cross-review 2026-09-05 -- an earlier
+    # version of this fix wrongly assumed `root` was always a safe
+    # drive-letter path.)
     relay_path = relay_root / f"{key_name}.bat"
-    relay_content = _expand(relay_tmpl, root, phys_root, drive)
+    root_file = f"{key_name}.root.txt"
+    physroot_file = f"{key_name}.physroot.txt"
+    try:
+        _write_sidecar(relay_root / root_file, root)
+        _write_sidecar(relay_root / physroot_file, phys_root)
+    except UnicodeEncodeError as exc:
+        return {
+            "key_name": key_name, "relay": str(relay_path), "reg_keys": [],
+            "_errors": [f"sidecar write failed (unrepresentable path): {exc}"],
+        }
+    relay_content = _expand(relay_tmpl, root, phys_root, drive, physroot_file, root_file)
     _write_relay(relay_path, relay_content)
 
     # Resolve icon
@@ -171,7 +229,7 @@ def _unregister_entry(key_name: str, targets_cfg: dict, relay_root: Path) -> lis
         state = _hkcu_key_state(full_reg)
         if state != "absent":
             errors.append(f"registry key removal {state}: {full_reg}")
-    for ext in (".bat", ".ico"):
+    for ext in (".bat", ".ico", ".root.txt", ".physroot.txt"):
         p = relay_root / f"{key_name}{ext}"
         if p.exists():
             try:
@@ -200,12 +258,17 @@ def _clean_orphans(base_key: str, targets_cfg: dict, relay_root: Path) -> None:
                         subkey = winreg.EnumKey(key, i)
                         if subkey.startswith("SandboxRun_"):
                             relay = relay_root / f"{subkey}.bat"
+                            physroot_sidecar = relay_root / f"{subkey}.physroot.txt"
                             if not relay.exists():
                                 orphans.append(subkey)
-                            else:
-                                content = relay.read_text(encoding="mbcs", errors="ignore")
-                                m = re.search(r'set "SANDBOX_ROOT=(.*?)"', content, re.IGNORECASE)
-                                if m and not Path(m.group(1)).exists():
+                            elif physroot_sidecar.exists():
+                                # Read the authoritative sidecar directly rather than
+                                # grepping the relay .bat for a literal "set SANDBOX_ROOT="
+                                # line -- the current template loads both root and
+                                # phys_root via `set /p` from sidecar files, so no such
+                                # literal line exists in the .bat text anymore.
+                                stored = physroot_sidecar.read_bytes().decode("mbcs", errors="ignore")
+                                if stored and not Path(stored).exists():
                                     orphans.append(subkey)
                         i += 1
                     except OSError:
@@ -215,7 +278,7 @@ def _clean_orphans(base_key: str, targets_cfg: dict, relay_root: Path) -> None:
                     ["reg", "delete", f"HKCU\\{path_base}\\{subkey}", "/f"],
                     capture_output=True,
                 )
-                for ext in (".bat", ".ico"):
+                for ext in (".bat", ".ico", ".root.txt", ".physroot.txt"):
                     p = relay_root / f"{subkey}{ext}"
                     if p.exists():
                         p.unlink()
@@ -317,8 +380,11 @@ def remove(ctx: dict) -> dict:
             key_name = record.get("key_name", "")
             # Remove relay
             relay = Path(record.get("relay", ""))
-            for ext in ("", ".ico"):
-                p = Path(str(relay).rstrip(".bat") + ext) if ext else relay
+            for ext in ("", ".ico", ".root.txt", ".physroot.txt"):
+                # relay.stem, not rstrip(".bat") -- rstrip strips a *set* of
+                # trailing characters, not a suffix, and silently truncates
+                # any key_name ending in "a"/"b"/"t" (e.g. "..._test.bat").
+                p = relay.with_name(relay.stem + ext) if ext else relay
                 if p.exists():
                     try:
                         p.unlink()
