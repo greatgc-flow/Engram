@@ -66,3 +66,61 @@ this note's original deferral decision: "do not ship Lane 2 third-party
 admission with Phase 1's validation model." This does not close the
 item — cx's real review on 2026-09-07 is still required — but it gives
 cx's round a concrete starting checklist instead of a blank page.
+
+**2026-09-05 update — the required cx.deepthink review is DONE (dispatched
+early, on the user's explicit direction, rather than waiting for 09-07 —
+cx has in fact been available and reliable throughout this whole session,
+so the original quota-exhaustion assumption behind the 09-07 date was
+stale).** Full writeup: peerhub's
+`docs/design/PHASE1-MANIFEST-SCHEMA-V2-2026-08-20.md` review round
+(no separate file yet — see peerhub git/session record; the terminal
+independently spot-verified 3 of cx's most load-bearing claims directly
+against real source before trusting the report: (a) `adapter_id`/
+`peer_kind`'s schema patterns really are ASCII-only (`^[a-z0-9-]+$` /
+`^[a-z]+$`), confirming ag.opus's Unicode-homoglyph finding was
+overstated for those two fields specifically (but cx correctly found
+`aliases`/`profile_id`/`shim_names` have NO pattern constraint at all,
+so the homoglyph risk moves there instead of disappearing); (b) the
+claimed JSON-Schema trailing-LF bypass is real, reproduced directly
+with this environment's actual `jsonschema==4.26.0`:
+`Draft202012Validator({"type":"string","pattern":"^[a-z0-9-]+$"}).is_valid("evil\n")`
+returns `True`; (c) the claimed `env=None`-means-full-ambient-inheritance
+regression is real, confirmed by reading `peerhub/application/workflows.py`
+line 896-898 (`env=dict(...) if invocation_plan.environment_delta else None`)
+and `peerhub/dispatch/pipe.py`'s own `PipeRunnerConfig.env` docstring
+("defaults to inheriting the parent environment").
+
+**Verdict: REJECT / DO NOT RATIFY runnable Lane 2 under the Phase 1
+validation model described in the design doc.** cx found the design's
+core flaw runs deeper than ag.opus's TOCTOU-centric findings: admission-time
+hashing "authenticates no publisher or intent" — an attacker doesn't need
+a race at all, they can simply place malicious bytes at the target BEFORE
+admission (Phase 1 faithfully hashes and admits them), or point the
+manifest at an already-trusted system interpreter (`powershell.exe`,
+`python.exe`, `node.exe`) and put the actual payload in `argv`/`stdin`,
+which no amount of rehashing the interpreter itself would catch. cx's
+own summary: "admission-time hashing without authenticated provenance or
+explicit activation is change detection, not trust establishment."
+10 more concrete findings beyond this (untrusted `"status":"active"` as
+self-activation authority with no publisher/signature/admin-approval
+concept anywhere in the design; the manifest itself being unconstrained
+executable policy via argv/env/cwd even for an honestly-hashed binary;
+third-party adapters becoming indistinguishable from first-party ones
+downstream with no trust-tier field anywhere in `ResolvedPeerTarget`;
+real, reproduced JSON-Schema gaps beyond the LF bypass — duplicate keys,
+empty-profile/transport arrays, unbounded sizes; the RCU registry
+publication design missing the concurrency/revocation-epoch machinery it
+would actually need) — full detail in the peer's own report, archived in
+this session's record.
+
+**A safe, much narrower middle ground exists and was independently
+proposed by cx, not assumed by the terminal**: ship ONLY a passive,
+non-executable "candidate discovery" pass — scan the directory with a
+hardened reader, produce inert `CandidateAdapter` records, display them
+as "untrusted/unactivated," and never insert them into
+`resolve_peer_target()`, the routing/health candidate pool, or run any
+readiness/version probe against them. No execution, no probing, no trust
+grant — pure display. This is NOT yet authorized for implementation;
+it's the peer's recommendation, reported to the user alongside the
+verdict above, pending the user's own decision on whether/when to build
+even that narrower slice.
