@@ -1,6 +1,6 @@
 @echo off
 cd /d "%~dp0"
-setlocal enabledelayedexpansion
+setlocal DisableDelayedExpansion
 
 :: ============================================================================
 :: Engram Portable CLI Entrypoint
@@ -41,11 +41,22 @@ if /i "%SUBCMD%"=="uninstall" goto :cmd_uninstall
 if /i "%SUBCMD%"=="start" goto :cmd_launch
 
 :: Fallback: Try dispatch pipeline directly
-if exist "_sys\core\dispatch.bat" (
-    call "_sys\core\dispatch.bat" %SUBCMD% %1 %2 %3 %4 %5 %6 %7 %8 %9
-    exit /b !ERRORLEVEL!
-)
+:: No parenthesized block here on purpose -- %ERRORLEVEL% inside an
+:: `if (...) ( ... exit /b %ERRORLEVEL% )` block is expanded ONCE at
+:: parse time (before the block runs), so it would report the exit
+:: code from BEFORE the call, not the dispatcher's real result. The
+:: fix isn't delayed expansion (!ERRORLEVEL!) -- that would work too,
+:: but requires enabling delayed expansion for the whole file, which
+:: then silently corrupts a literal "!" in any user-supplied CLI
+:: argument forwarded via %1-%9 below. Using `goto` instead of `( )`
+:: avoids the parenthesized-block problem entirely, so %ERRORLEVEL%
+:: on its own line (freshly re-evaluated, not batch-expanded) is
+:: already correct with no expansion-mode trade-off either way.
+if not exist "_sys\core\dispatch.bat" goto :cmd_unknown
+call "_sys\core\dispatch.bat" %SUBCMD% %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %ERRORLEVEL%
 
+:cmd_unknown
 echo [Error] Unknown command: %SUBCMD%
 echo Run 'engram --help' for available commands.
 exit /b 1
