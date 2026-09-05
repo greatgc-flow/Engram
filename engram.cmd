@@ -1,6 +1,6 @@
 @echo off
 cd /d "%~dp0"
-setlocal DisableDelayedExpansion
+setlocal enabledelayedexpansion
 
 :: ============================================================================
 :: Engram Portable CLI Entrypoint
@@ -43,7 +43,7 @@ if /i "%SUBCMD%"=="start" goto :cmd_launch
 :: Fallback: Try dispatch pipeline directly
 if exist "_sys\core\dispatch.bat" (
     call "_sys\core\dispatch.bat" %SUBCMD% %1 %2 %3 %4 %5 %6 %7 %8 %9
-    exit /b %ERRORLEVEL%
+    exit /b !ERRORLEVEL!
 )
 
 echo [Error] Unknown command: %SUBCMD%

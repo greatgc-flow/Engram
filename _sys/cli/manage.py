@@ -97,10 +97,10 @@ def uninstall(ctx: dict):
     helper_path = temp_dir / "EngramUninstallHelper.bat"
     
     helper_content = """@echo off
-set "BASE_DIR=%~1"
-set "JOURNAL_PATH=%~2"
-set "PARENT_PID=%~3"
-set "NPM_GLOBAL=%~4"
+set "BASE_DIR=%ENGRAM_UNINSTALL_BASE_DIR%"
+set "JOURNAL_PATH=%ENGRAM_UNINSTALL_JOURNAL_PATH%"
+set "PARENT_PID=%ENGRAM_UNINSTALL_PARENT_PID%"
+set "NPM_GLOBAL=%ENGRAM_UNINSTALL_NPM_GLOBAL%"
 setlocal enabledelayedexpansion
 
 echo Waiting for parent process (PID: !PARENT_PID!) to exit...
@@ -144,10 +144,16 @@ exit /b 0
     
     print("  - Handing off to external uninstall helper...")
     DETACHED_PROCESS = 0x00000008
+    env = os.environ.copy()
+    env["ENGRAM_UNINSTALL_BASE_DIR"] = str(base_dir)
+    env["ENGRAM_UNINSTALL_JOURNAL_PATH"] = str(journal_path)
+    env["ENGRAM_UNINSTALL_PARENT_PID"] = str(parent_pid)
+    env["ENGRAM_UNINSTALL_NPM_GLOBAL"] = str(npm_global)
     subprocess.Popen(
-        ["cmd.exe", "/c", str(helper_path), str(base_dir), str(journal_path), str(parent_pid), str(npm_global)],
+        ["cmd.exe", "/c", str(helper_path)],
         creationflags=DETACHED_PROCESS,
-        close_fds=True
+        close_fds=True,
+        env=env,
     )
     sys.exit(0)
 

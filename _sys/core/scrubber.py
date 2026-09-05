@@ -219,6 +219,7 @@ def _tier5(base_dir: Path, sys_dir: Path, dry_run: bool) -> int:
     try:
         if purge_dir.exists():
             shutil.rmtree(purge_dir, onerror=_on_rm_error)
+        py_dir.rename(purge_dir)
         purge_dir_str = str(purge_dir).replace("%", "%%")
         bat = (
             "@echo off\r\n"
