@@ -63,7 +63,7 @@ if not defined BASE_DIR for %%I in ("%~dp0..\..") do set "BASE_DIR=%%~fI"
 set "_BASE=%BASE_DIR%"
 ```
 
-### 2.6 Special Characters in the Portable Root Path (`&`, `%`, `!`)
+### 2.6 Special Characters in the Portable Root Path (`&`, `%`, `!`, `^`)
 Unlike parens/spaces/Korean text, `&` is on cmd.exe's own documented `/C`
 special-character list, so it is **excluded** from the quote-preservation
 rule that protects those other cases (incl. the §3.1 double-quote trick) --
@@ -134,6 +134,39 @@ these are different bug classes from `&`, not the same one:
 - Both confirmed via real fresh-folder testing (not reasoned about) --
   see the separation backlog's 2026-09-05 entry for the specific
   before/after evidence.
+
+**`^` (escape character) -- different bug class again, a literal-source-text
+taint, not an expansion-time one (checked 2026-09-05):**
+- A value containing `^` that is written as escaped literal SOURCE TEXT in a
+  `set "X=...^^..."` statement is corrupted for any later use of `%X%` as a
+  `cd`/`pushd`/`call` target -- even though `echo %X%` displays it correctly.
+  The corruption happens because cmd.exe's line-parsing pass (which resolves
+  `^^` -> `^`) runs once at the `set` statement itself, but a *second*
+  cmd.exe parse pass re-tokenizes the value again when it's substituted into
+  a new command line, and that second pass sees a bare `^` and consumes the
+  next character as its escape target. `echo` never triggers that second
+  parse (the value is just printed), which is why `echo` alone is not a
+  reliable way to validate a `^`-laden path.
+- **Only two things survive**: `%~dp0` (a batch parameter expansion, not a
+  `set`-statement re-parse) and `set /p VAR=<file` (reads raw bytes from a
+  file with no cmd.exe syntax parsing at all). Anything that goes through a
+  `set "VAR=literal...^^...text"` assignment and is later used as a command
+  target is unsafe regardless of quoting.
+- **`call` is stricter than `cd`**: even a value loaded the SAFE way (e.g.
+  via `%~dp0`) still fails if used as a direct `call` target -- `call` runs
+  its own extra expansion pass beyond what `cd` does. Fix: `cd /d` into the
+  directory first, then `call` the target by relative name (the same
+  "resolve once via `cd`, never re-embed the absolute value" principle as
+  the `&` and `%` fixes above).
+- **Fix implemented**: `registrar.py` now writes the resolved path to a
+  sidecar file and reads it back with `set /p` instead of embedding it in a
+  `set "...^^..."` literal, avoiding the second-parse-pass hazard entirely.
+  (An initial fix attempt embedded the sidecar path itself as a literal
+  `^`-laden string and re-introduced the same bug one layer up -- caught by
+  cx cross-review before merge; the sidecar file's own path must also be
+  resolved via `%~dp0`/relative addressing, not re-embedded.)
+- Confirmed via real testing against a `^`-laden portable root, not reasoned
+  about.
 
 ---
 
