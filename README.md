@@ -93,7 +93,7 @@ python _sys\core\provisioner.py ensure-peer-cli agy
 Engram's job ends at "the AI CLI binary is installed, current, and reachable." Everything past that — inter-peer messaging, consensus rounds, quota-aware routing, governance directives — lives in the separate [**peerhub**](https://github.com/greatgc-flow/peerhub) package, installed independently on top of an Engram environment:
 
 ```bash
-pip install "git+https://github.com/greatgc-flow/peerhub.git@v0.1.8"
+pip install "git+https://github.com/greatgc-flow/peerhub.git@v0.1.10"
 peerhub adapter discover   # confirms which AI CLIs Engram installed are reachable
 ```
 
