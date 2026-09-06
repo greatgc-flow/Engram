@@ -280,6 +280,8 @@ def generate_manifest_installer(
     installer_url: str,
     schema_version: str = SCHEMA_VERSION,
 ) -> str:
+    import datetime
+    release_date = datetime.date.today().isoformat()
     return f"""# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.{schema_version}.schema.json
 
 PackageIdentifier: {PACKAGE_IDENTIFIER}
@@ -289,6 +291,7 @@ NestedInstallerType: portable
 NestedInstallerFiles:
   - RelativeFilePath: Engram.exe
     PortableCommandAlias: engram
+ReleaseDate: {release_date}
 Installers:
   - Architecture: x64
     InstallerUrl: {installer_url}

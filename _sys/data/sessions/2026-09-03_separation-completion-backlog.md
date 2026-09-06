@@ -86,16 +86,12 @@ being worked on."**
    `saturation_scan.py`/`test_doc_consistency.py` updated). Both old entry
    points are gone with the tree, so there's nothing left to carry a
    notice on.
-2. **Winget submission**: [microsoft/winget-pkgs#428737](https://github.com/microsoft/winget-pkgs/pull/428737)
-   is open, validated locally (`winget validate` clean). Status as of
-   2026-09-04: the `license/cla` check-run shows `completed`/`success`
-   ("All CLA requirements met") confirming the CLA is genuinely signed,
-   but the `Needs-CLA` **label** is still stuck on the issue (a known,
-   separate bot-sync desync — the check-run is the authoritative signal,
-   not the label). No PR activity since 2026-09-03T17:14 UTC. Purely
-   **waiting on a human Microsoft maintainer to review**, outside anyone's
-   control — nothing left to do on our side. A real local
-   `winget install --manifest ...` end-to-end test remains blocked in
+2. **Winget submission**: [microsoft/winget-pkgs#430265](https://github.com/microsoft/winget-pkgs/pull/430265)
+   is open, replacing the older closed PR #428737 (which failed due to a version-manifest filename bug, now fixed in `tools/winget/build_package.py`). Status as of
+   tonight (v3.1.1): passed validation stages 01-06 (Pull Request Validation, Manifest Validation, URLs
+   Validation, URL Domain Validation, Manifest Policy Validation, Catalog Content
+   Verification) plus license/cla. Stage 07 (Installers Scan) is in_progress with 08-10 queued.
+   A real local `winget install --manifest ...` end-to-end test remains blocked in
    this environment (`winget settings --enable LocalManifestFiles`
    requires admin rights not available here) — only `winget validate` was
    completed, disclosed honestly in the PR body. Worth doing once from a
@@ -526,6 +522,6 @@ specifically (not peerhub's general roadmap):
 | Latest tag | `v3.1.1` | `v0.1.10` |
 | GitHub Release | [v3.1.1](https://github.com/greatgc-flow/Engram/releases/tag/v3.1.1) | [v0.1.10](https://github.com/greatgc-flow/peerhub/releases/tag/v0.1.10) |
 | Install (working today) | git clone or release-zip download (see README) | `pip install "git+https://github.com/greatgc-flow/peerhub.git@v0.1.10"` |
-| Install (pending) | `winget install greatgc-flow.Engram` — [PR #428737](https://github.com/microsoft/winget-pkgs/pull/428737) open (still targets v3.0.0; not resubmitted this round) | — |
+| Install (pending) | `winget install greatgc-flow.Engram` — [PR #430265](https://github.com/microsoft/winget-pkgs/pull/430265) open (targets v3.1.1) | — |
 | Tests (unit, 2026-09-06) | 274 passed, 2 skipped | 671 passed, 1 deselected, 13 subtests |
 | CI (2026-09-06) | none configured | fully green for the first time (`python -m pyright`: 0 errors; `pytest`: 1452 passed repo-wide) |
