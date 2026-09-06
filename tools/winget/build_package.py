@@ -376,7 +376,7 @@ def generate_manifests(
     manifest_dir.mkdir(parents=True, exist_ok=True)
 
     files = {
-        f"{PACKAGE_IDENTIFIER}.version.yaml": generate_manifest_version(version, schema_version),
+        f"{PACKAGE_IDENTIFIER}.yaml": generate_manifest_version(version, schema_version),
         f"{PACKAGE_IDENTIFIER}.installer.yaml": generate_manifest_installer(version, sha256_hex, installer_url, schema_version),
         f"{PACKAGE_IDENTIFIER}.locale.en-US.yaml": generate_manifest_locale_en(version, schema_version),
         f"{PACKAGE_IDENTIFIER}.locale.ko-KR.yaml": generate_manifest_locale_ko(version, schema_version),
