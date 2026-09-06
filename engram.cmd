@@ -6,7 +6,7 @@ setlocal DisableDelayedExpansion
 :: Engram Portable CLI Entrypoint
 :: https://github.com/greatgc-flow/Engram
 ::
-:: Provides unified CLI access to Engram portable runtime commands & PeerHub.
+:: Provides unified CLI access to Engram portable runtime commands.
 :: ============================================================================
 
 :: ----------------------------------------------------------------------------

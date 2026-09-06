@@ -11,6 +11,7 @@ creeping back into Engram's tracked source.
 """
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -117,3 +118,21 @@ def test_environment_lifecycle_core_is_intact() -> None:
 def test_runtime_catalog_is_present() -> None:
     """Engram's installed-runtime catalog is environment scope and must stay."""
     assert (_SYS_DIR / "runtimes.json").exists(), "missing runtime catalog: runtimes.json"
+
+
+def test_runtime_catalog_does_not_manage_peerhub() -> None:
+    """PeerHub must be an independently pip-installed product, never an
+    Engram-provisioned tool -- Engram advertising peerhub (README) is fine,
+    but runtimes.json pinning its exact version reintroduces a release-to-
+    release coupling this contract exists to prevent. Also guards against
+    pip_tool (the install_mechanism built specifically for that coupling)
+    ever being reintroduced for any tool."""
+    catalog = json.loads((_SYS_DIR / "runtimes.json").read_text(encoding="utf-8"))
+    tools = catalog.get("tools", {})
+    assert "peerhub" not in tools, "peerhub must not be a runtimes.json-managed tool"
+    for name, cfg in tools.items():
+        assert cfg.get("install_mechanism") != "pip_tool", (
+            f"tool {name!r} uses pip_tool -- this mechanism was removed with peerhub "
+            "and must not be reintroduced without a fresh design (isolation, integrity, "
+            "canary, rollback, dedicated tests)"
+        )

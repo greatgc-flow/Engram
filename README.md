@@ -18,7 +18,7 @@ Engram bootstraps a self-contained Windows dev environment — Python, Node.js, 
 ## What it does
 
 - **Portable runtime virtualization** — Python, Node.js, Git, VS Code, and PowerShell are downloaded, pinned by version+hash in `_sys/runtimes.json`, and run entirely from inside the portable folder. Nothing touches `C:\Program Files` or the registry.
-- **Generic tool catalog** — dev CLI tools (ripgrep, bat, fd, delta, fzf, jq, gh, sqlite, oh-my-posh, peerhub) install/update through one pinned, hash-verified pipeline (`_sys/runtimes.json`'s `tools` section).
+- **Generic tool catalog** — dev CLI tools (ripgrep, bat, fd, delta, fzf, jq, gh, sqlite, oh-my-posh) install/update through one pinned, hash-verified pipeline (`_sys/runtimes.json`'s `tools` section).
 - **AI-CLI lifecycle management** — a separate catalog (`_sys/tool-catalog.v1.json`) tracks Claude Code / Codex / agy the same way: install, version-pin, canary-verify. Engram never talks to these tools' models or protocols — it only manages the binaries.
 - **Junction-based registration, not drive-letter SUBST** — `register` creates directory junctions (host config → portable config, host project dir → portable project dir) driven by `_sys/managed-links.json`; `unregister` tears them down cleanly. No virtual drive letter to leak across reboots.
 - **Real uninstall** — `engram uninstall` computes an installation-scoped ID, writes a journal outside the install directory (survives the directory's own deletion), and hands off to an external helper that waits for the running process to exit before purging the folder — so a running instance never tries to delete the directory it's executing from.
@@ -90,11 +90,11 @@ python _sys\core\provisioner.py ensure-peer-cli agy
 
 ## AI-to-AI collaboration → peerhub
 
-Engram's job ends at "the AI CLI binary is installed, current, and reachable." Everything past that — inter-peer messaging, consensus rounds, quota-aware routing, governance directives — lives in the separate [**peerhub**](https://github.com/greatgc-flow/peerhub) package, installed independently on top of an Engram environment:
+Engram's job ends at "the AI CLI binary is installed, current, and reachable." Everything past that — inter-peer messaging, consensus rounds, quota-aware routing, governance directives — lives in the separate [**peerhub**](https://github.com/greatgc-flow/peerhub) package. Engram never installs it, pins its version, or invokes it — that would reintroduce exactly the coupling this separation removed. Install it yourself, whenever you want it, entirely independently:
 
 ```bash
-pip install "git+https://github.com/greatgc-flow/peerhub.git@v0.1.11"
-peerhub adapter discover   # confirms which AI CLIs Engram installed are reachable
+pip install peerhub
+peerhub adapter discover   # you can run this yourself to confirm which AI CLIs Engram installed are reachable
 ```
 
 See [peerhub's own README](https://github.com/greatgc-flow/peerhub#readme) for the full command set.
