@@ -5,10 +5,11 @@ Written at the point the full ratified v8 diet plan (Increments A-D, Gate
 shipped real releases. This is the single pointer doc for "what's left"
 on both sides of the separation.
 
-**Release state as of 2026-09-06: Engram v3.1.1, peerhub v0.1.10** (both
+**Release state as of 2026-09-06: Engram v3.1.1, peerhub v0.1.11** (both
 tagged, pushed, and published as GitHub Releases with real notes; Engram's
-release carries the built portable zip as an asset). v3.1.0/v0.1.9 shipped
-first (the `&`/`%`/`!`/`^` sweep + Lane 2 review below); v0.1.10 followed
+release carries the built portable zip as an asset; peerhub is also now
+published on PyPI -- `pip install peerhub` -- for the first time). v3.1.0/v0.1.9
+shipped first (the `&`/`%`/`!`/`^` sweep + Lane 2 review below); v0.1.10 followed
 same-session after a separate, unrelated initiative (peerhub's own CI
 health -- see `docs/design/` in the peerhub repo and this session's memory
 `reference_peerhub_ci_fully_green_2026_09_06.md` -- fixed peerhub's
@@ -18,7 +19,15 @@ patch release rather than folding it into v0.1.9). A final cross-repo
 audit pass then found v3.1.0's bundled zip still pinned peerhub at 0.1.9
 (the stale pin predating v0.1.10's real bug fixes) and that the caret
 finding was undocumented in `CONVENTION.md` itself -- both fixed and
-shipped as Engram v3.1.1.
+shipped as Engram v3.1.1. A subsequent PyPI-distribution cross-check
+(cx.deepthink) then found peerhub v0.1.10 itself had a stale hardcoded
+`__version__` and a tag/build provenance gap (the published artifact
+didn't match what the `v0.1.10` tag pointed to, since it was published via
+a manual `workflow_dispatch` after the tag was cut) -- fixed and shipped
+as peerhub v0.1.11, the first release where tag/build/publish all bind to
+the same commit. Engram's own `_sys/runtimes.json` pin and README were
+bumped to match (0.1.10 -> 0.1.11) in this same pass; no functional
+change, so no new Engram release was cut just for the pin bump this time.
 
 **Bottom line as of 2026-09-05 (end of session): the separation is fully
 done, verified, AND closed out end to end.** The multi-night `&`/`%`/`!`/`^`
@@ -519,9 +528,9 @@ specifically (not peerhub's general roadmap):
 
 | | Engram | peerhub |
 |---|---|---|
-| Latest tag | `v3.1.1` | `v0.1.10` |
-| GitHub Release | [v3.1.1](https://github.com/greatgc-flow/Engram/releases/tag/v3.1.1) | [v0.1.10](https://github.com/greatgc-flow/peerhub/releases/tag/v0.1.10) |
-| Install (working today) | git clone or release-zip download (see README) | `pip install "git+https://github.com/greatgc-flow/peerhub.git@v0.1.10"` |
-| Install (pending) | `winget install greatgc-flow.Engram` — [PR #430265](https://github.com/microsoft/winget-pkgs/pull/430265) open (targets v3.1.1) | — |
-| Tests (unit, 2026-09-06) | 274 passed, 2 skipped | 671 passed, 1 deselected, 13 subtests |
-| CI (2026-09-06) | none configured | fully green for the first time (`python -m pyright`: 0 errors; `pytest`: 1452 passed repo-wide) |
+| Latest tag | `v3.1.1` | `v0.1.11` |
+| GitHub Release | [v3.1.1](https://github.com/greatgc-flow/Engram/releases/tag/v3.1.1) | [v0.1.11](https://github.com/greatgc-flow/peerhub/releases/tag/v0.1.11) |
+| Install (working today) | git clone or release-zip download (see README) | `pip install peerhub` (PyPI, real since v0.1.10) or `pip install "git+https://github.com/greatgc-flow/peerhub.git@v0.1.11"` |
+| Install (pending) | `winget install greatgc-flow.Engram` — [PR #430265](https://github.com/microsoft/winget-pkgs/pull/430265) passed all 10 automated validation stages, awaiting a human Microsoft maintainer merge | — |
+| Tests (unit, 2026-09-06) | 274 passed, 2 skipped | 1453 passed, 2 skipped, 9 deselected, 13 subtests |
+| CI (2026-09-06) | none configured | fully green (`python -m pyright`: 0 errors; `pytest`: 1453 passed repo-wide) |

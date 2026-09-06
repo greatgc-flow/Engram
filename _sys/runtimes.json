@@ -200,8 +200,8 @@
             ]
         },
         "peerhub": {
-            "version": "0.1.10",
-            "url": "git+https://github.com/greatgc-flow/peerhub.git@v0.1.10",
+            "version": "0.1.11",
+            "url": "git+https://github.com/greatgc-flow/peerhub.git@v0.1.11",
             "type": "pip",
             "discovery_provider": "github_releases",
             "discovery_id": "greatgc-flow/peerhub",
