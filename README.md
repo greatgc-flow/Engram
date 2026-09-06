@@ -33,8 +33,8 @@ Engram bootstraps a self-contained Windows dev environment — Python, Node.js, 
 
 ### Option A: Download the release zip (recommended right now)
 ```powershell
-# Download & extract Engram-v3.1.1-portable-x64.zip from the release, then:
-cd Engram-v3.1.1-portable-x64
+# Download & extract Engram-v3.2.0-portable-x64.zip from the release, then:
+cd Engram-v3.2.0-portable-x64
 .\INSTALL.bat
 .\register.bat
 ```
@@ -62,7 +62,7 @@ cd Engram
 ```powershell
 winget install greatgc-flow.Engram
 ```
-This does **not work yet** — the manifest was submitted as [microsoft/winget-pkgs#428737](https://github.com/microsoft/winget-pkgs/pull/428737) and is pending Microsoft's review/merge (validated locally with `winget validate` first, passes clean). Once merged, this command will bootstrap the same v3.0.0 archive as Option A automatically, and the `engram` command becomes available system-wide without a manual clone.
+This does **not work yet** — the manifest was submitted as [microsoft/winget-pkgs#430265](https://github.com/microsoft/winget-pkgs/pull/430265) and has passed all 10 automated validation stages; it's now pending a human Microsoft maintainer's merge. Once merged, this command will bootstrap the latest Engram archive as Option A automatically, and the `engram` command becomes available system-wide without a manual clone.
 
 ## Command Reference
 
