@@ -5,7 +5,7 @@ Written at the point the full ratified v8 diet plan (Increments A-D, Gate
 shipped real releases. This is the single pointer doc for "what's left"
 on both sides of the separation.
 
-**Release state as of 2026-09-06: Engram v3.1.0, peerhub v0.1.10** (both
+**Release state as of 2026-09-06: Engram v3.1.1, peerhub v0.1.10** (both
 tagged, pushed, and published as GitHub Releases with real notes; Engram's
 release carries the built portable zip as an asset). v3.1.0/v0.1.9 shipped
 first (the `&`/`%`/`!`/`^` sweep + Lane 2 review below); v0.1.10 followed
@@ -14,8 +14,11 @@ health -- see `docs/design/` in the peerhub repo and this session's memory
 `reference_peerhub_ci_fully_green_2026_09_06.md` -- fixed peerhub's
 GitHub Actions CI, broken since at least 2026-09-02, to fully green for
 the first time; found several real bugs along the way, hence the second
-patch release rather than folding it into v0.1.9). Engram had zero
-additional commits after v3.1.0, so it did not need a second release.
+patch release rather than folding it into v0.1.9). A final cross-repo
+audit pass then found v3.1.0's bundled zip still pinned peerhub at 0.1.9
+(the stale pin predating v0.1.10's real bug fixes) and that the caret
+finding was undocumented in `CONVENTION.md` itself -- both fixed and
+shipped as Engram v3.1.1.
 
 **Bottom line as of 2026-09-05 (end of session): the separation is fully
 done, verified, AND closed out end to end.** The multi-night `&`/`%`/`!`/`^`
@@ -520,9 +523,9 @@ specifically (not peerhub's general roadmap):
 
 | | Engram | peerhub |
 |---|---|---|
-| Latest tag | `v3.1.0` | `v0.1.10` |
-| GitHub Release | [v3.1.0](https://github.com/greatgc-flow/Engram/releases/tag/v3.1.0) | [v0.1.10](https://github.com/greatgc-flow/peerhub/releases/tag/v0.1.10) |
+| Latest tag | `v3.1.1` | `v0.1.10` |
+| GitHub Release | [v3.1.1](https://github.com/greatgc-flow/Engram/releases/tag/v3.1.1) | [v0.1.10](https://github.com/greatgc-flow/peerhub/releases/tag/v0.1.10) |
 | Install (working today) | git clone or release-zip download (see README) | `pip install "git+https://github.com/greatgc-flow/peerhub.git@v0.1.10"` |
-| Install (pending) | `winget install greatgc-flow.Engram` — [PR #428737](https://github.com/microsoft/winget-pkgs/pull/428737) open (still targets v3.0.0; not resubmitted for v3.1.0 this round) | — |
+| Install (pending) | `winget install greatgc-flow.Engram` — [PR #428737](https://github.com/microsoft/winget-pkgs/pull/428737) open (still targets v3.0.0; not resubmitted this round) | — |
 | Tests (unit, 2026-09-06) | 274 passed, 2 skipped | 671 passed, 1 deselected, 13 subtests |
 | CI (2026-09-06) | none configured | fully green for the first time (`python -m pyright`: 0 errors; `pytest`: 1452 passed repo-wide) |
