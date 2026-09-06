@@ -5,7 +5,7 @@ Written at the point the full ratified v8 diet plan (Increments A-D, Gate
 shipped real releases. This is the single pointer doc for "what's left"
 on both sides of the separation.
 
-**Release state as of 2026-09-06: Engram v3.1.1, peerhub v0.1.11** (both
+**Release state as of 2026-09-06: Engram v3.2.0, peerhub v0.1.11** (both
 tagged, pushed, and published as GitHub Releases with real notes; Engram's
 release carries the built portable zip as an asset; peerhub is also now
 published on PyPI -- `pip install peerhub` -- for the first time). v3.1.0/v0.1.9
@@ -25,9 +25,20 @@ shipped as Engram v3.1.1. A subsequent PyPI-distribution cross-check
 didn't match what the `v0.1.10` tag pointed to, since it was published via
 a manual `workflow_dispatch` after the tag was cut) -- fixed and shipped
 as peerhub v0.1.11, the first release where tag/build/publish all bind to
-the same commit. Engram's own `_sys/runtimes.json` pin and README were
-bumped to match (0.1.10 -> 0.1.11) in this same pass; no functional
-change, so no new Engram release was cut just for the pin bump this time.
+the same commit. Finally, the user asked why Engram pinned peerhub's exact
+version at all ("advertising it is fine, but the product itself must be
+completely independent") -- this reopened Gate 4 below as its own explicit
+ratification round (ag drafted, cx adversarially cross-reviewed; cx also
+correctly caught that ag's other draft proposals for Gates 1/5/6/7 were
+stale re-litigation of work already shipped 2026-09-03, and firmly
+rejected reopening Gates 2/3's already-parked Lane 2 security design).
+Ratified resolution: Engram no longer lists peerhub in `runtimes.json`'s
+tools catalog, the `pip_tool` install mechanism (built only for peerhub)
+was deleted outright with a permanent boundary-regression test guarding
+against reintroduction, and Engram no longer even opportunistically
+auto-invokes `peerhub adapter discover` -- shipped as Engram v3.2.0 (minor
+bump, since removing a previously-offered capability is a real behavior
+change, not a patch-level fix).
 
 **Bottom line as of 2026-09-05 (end of session): the separation is fully
 done, verified, AND closed out end to end.** The multi-night `&`/`%`/`!`/`^`
@@ -528,9 +539,9 @@ specifically (not peerhub's general roadmap):
 
 | | Engram | peerhub |
 |---|---|---|
-| Latest tag | `v3.1.1` | `v0.1.11` |
-| GitHub Release | [v3.1.1](https://github.com/greatgc-flow/Engram/releases/tag/v3.1.1) | [v0.1.11](https://github.com/greatgc-flow/peerhub/releases/tag/v0.1.11) |
+| Latest tag | `v3.2.0` | `v0.1.11` |
+| GitHub Release | [v3.2.0](https://github.com/greatgc-flow/Engram/releases/tag/v3.2.0) | [v0.1.11](https://github.com/greatgc-flow/peerhub/releases/tag/v0.1.11) |
 | Install (working today) | git clone or release-zip download (see README) | `pip install peerhub` (PyPI, real since v0.1.10) or `pip install "git+https://github.com/greatgc-flow/peerhub.git@v0.1.11"` |
-| Install (pending) | `winget install greatgc-flow.Engram` — [PR #430265](https://github.com/microsoft/winget-pkgs/pull/430265) passed all 10 automated validation stages, awaiting a human Microsoft maintainer merge | — |
+| Install (pending) | `winget install greatgc-flow.Engram` — [PR #430265](https://github.com/microsoft/winget-pkgs/pull/430265) (targets v3.1.1, one version behind — resubmitting for v3.2.0 deliberately deferred until #430265 lands, see Gate 7 in the master plan) passed all 10 automated validation stages, awaiting a human Microsoft maintainer merge | — |
 | Tests (unit, 2026-09-06) | 274 passed, 2 skipped | 1453 passed, 2 skipped, 9 deselected, 13 subtests |
 | CI (2026-09-06) | none configured | fully green (`python -m pyright`: 0 errors; `pytest`: 1453 passed repo-wide) |
