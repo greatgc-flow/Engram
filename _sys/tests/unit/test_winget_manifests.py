@@ -1,9 +1,24 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 repo_root = Path(__file__).resolve().parent.parent.parent.parent
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
+
+# tools/ is a maintainer-only release-packaging directory, deliberately
+# excluded from the portable zip build (SYS_EXCLUDE_DIR_PATTERNS covers
+# _sys/tools/, and repo-root tools/ is never walked at all) -- see
+# tools/winget/build_package.py's own "zero-bloat portable runtime"
+# contract. A real, from-scratch install of a release zip has this test
+# file (it ships under _sys/tests/) but not the module it imports; skip
+# rather than fail collection when that's the case, instead of shipping
+# dev-only packaging tooling just to keep this one test importable.
+pytest.importorskip(
+    "tools.winget.build_package",
+    reason="tools/ is excluded from the portable release zip by design",
+)
 
 from tools.winget.build_package import (
     generate_manifest_version,

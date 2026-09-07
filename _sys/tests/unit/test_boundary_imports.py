@@ -3,6 +3,14 @@ from pathlib import Path
 
 _SYS_DIR = Path(__file__).resolve().parents[2]
 
+# Vendored/third-party trees under _sys/ that this boundary check must not
+# scan -- e.g. _sys/env/**/site-packages/pip/_vendor/requests has its own
+# real, legitimate `hooks` submodule, unrelated to this repo's own deleted
+# _sys/hooks/ directory that FORBIDDEN_MODULES' bare "hooks" entry targets.
+# Found on a real fresh install: a freshly-provisioned venv/pip vendored
+# copy tripped this false positive on a name collision alone.
+_VENDORED_DIR_NAMES = {"env"}
+
 # Forbidden paths and modules removed across the Diet Plan increments.
 FORBIDDEN_MODULES = [
     "_sys.hooks", "hooks",
@@ -41,7 +49,12 @@ def test_no_forbidden_imports():
     for py_file in _SYS_DIR.rglob("*.py"):
         if py_file.name == "test_boundary_imports.py":
             continue
-            
+
+        rel_parts = set(py_file.relative_to(_SYS_DIR).parts)
+        if rel_parts.intersection(_VENDORED_DIR_NAMES):
+            continue
+
+
         try:
             content = py_file.read_text(encoding="utf-8")
             tree = ast.parse(content, filename=str(py_file))

@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 # Add repo root to sys.path
 repo_root = Path(__file__).resolve().parent.parent.parent.parent
 if str(repo_root) not in sys.path:
@@ -24,6 +26,13 @@ def test_version_json_valid():
         assert p.isdigit()
 
 def test_build_package_default_version():
+    # tools/ is a maintainer-only release-packaging directory, deliberately
+    # excluded from the portable zip build -- skip on a real release-zip
+    # install rather than failing (see test_winget_manifests.py's own note).
+    pytest.importorskip(
+        "tools.winget.build_package",
+        reason="tools/ is excluded from the portable release zip by design",
+    )
     # Import build_package and check DEFAULT_VERSION
     from tools.winget.build_package import DEFAULT_VERSION, SCHEMA_VERSION
     info = load_version_info()
