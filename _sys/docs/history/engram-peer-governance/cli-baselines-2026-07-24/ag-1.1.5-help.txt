@@ -1,0 +1,81 @@
+=== agy.exe --version ===
+1.1.5
+=== agy.exe --help ===
+Usage of agy.exe:
+  --add-dir                       Add a directory to the workspace (repeatable) (default [])
+  --agent                         Agent for the current CLI session
+  -c                              Short alias for --continue
+  --continue                      Continue the most recent conversation
+  --conversation                  Resume a previous conversation by ID
+  --dangerously-skip-permissions  Auto-approve all tool permission requests without prompting
+  --effort                        Reasoning effort for the current CLI session (low|medium|high)
+  -i                              Short alias for --prompt-interactive
+  --log-file                      Override CLI log file path
+  --mode                          Set the agent execution mode for this session (accept-edits, plan)
+  --model                         Model for the current CLI session
+  --new-project                   Create a new project for this session
+  -p                              Short alias for --print
+  --print                         Run a single prompt non-interactively and print the response
+  --print-timeout                 Timeout for print mode wait (default 5m0s)
+  --project                       Project ID for the current CLI session
+  --prompt                        Alias for --print
+  --prompt-interactive            Run an initial prompt interactively and continue the session
+  --sandbox                       Run in a sandbox with terminal restrictions enabled
+
+Available subcommands:
+  agent           List available agents
+  agents          List available agents
+  changelog       Show changelog and release notes
+  help            Show help for subcommands
+  install         Configure environment paths and shell settings
+  models          List available models
+  plugin          Manage plugins (install, uninstall, list, enable, disable)
+  plugins         Alias for plugin
+  update          Update CLI
+=== agy.exe agent --help ===
+Usage: agy.exe agent [flags]
+
+List available agents
+
+Flags:
+  -h      Show help
+  --help  Show help
+
+=== agy.exe plugin --help ===
+Usage: agy.exe plugin <command> [arguments]
+
+Commands:
+  list                   List imported plugins
+  import [source]        Import plugins from gemini or claude
+  install <target>       Install a plugin (supports plugin@marketplace)
+  uninstall <name>       Uninstall a plugin
+  enable <name>          Enable a plugin
+  disable <name>         Disable a plugin
+  validate [path]        Validate a plugin
+  link <mp> <target>     Generate link to a marketplace
+  help                   Show this help
+
+=== agy.exe install --help ===
+Usage: agy.exe install [flags]
+
+Configure environment paths and shell settings
+
+Flags:
+  --dir           Custom directory target to configure PATH for
+  -h              Show help
+  --help          Show help
+  --skip-aliases  Bypasses shell profile alias purging
+  --skip-path     Bypasses shell profile PATH appending
+
+=== agy.exe update --help ===
+Usage of update:
+
+=== agy.exe changelog --help ===
+Usage: agy.exe changelog [flags]
+
+Show changelog and release notes
+
+Flags:
+  -h      Show help
+  --help  Show help
+
