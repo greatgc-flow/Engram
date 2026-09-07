@@ -18,6 +18,17 @@
 > ledger (T-absent-audit item, backlog) exists to prevent. Don't just apply a
 > decision — come back and close its own tracking doc in the same pass.
 >
+> **Update 2026-09-04:** §6 adds a real, local, empirical bake-off between
+> `ag.effort` (gemini-3.8-flash-high, bumped 2026-09-03 from 3.7) and
+> `ag.deepthink` (Gemini 3.1 Pro High) — the first DIR-004-qualifying local
+> measurement either profile has had (everything above is still the 2026-07-13
+> declared/unverified composite). Result: the ag tier inversion this doc
+> already flagged in §3/§4.1 (deepthink scores below effort on the external
+> composite) reproduces on real local tasks too, on the newer flash generation.
+> `orchestration.json`'s `intelligence_evidence` for both profiles now carries
+> this measurement alongside the still-present declared composite (superseded,
+> not deleted).
+>
 > **SUPERSEDED-IN-SPIRIT (2026-07-13):** the single composite scalar below is now
 > the **declared bootstrap layer** of the capability-leveling framework
 > (`ops/capability-leveling.md`). It is `declared/unverified` and **never enters a
@@ -257,6 +268,62 @@ untrustworthy until a 3-pass `min-of-3` confirms it.
 The measurement **infrastructure** is complete and honest; what it reveals is that
 easy probes can't separate frontier reasoning — itself a valuable, DIR-004-correct
 result (measured absence of a gap, not a guessed ranking).
+
+## 4.9 ag.effort vs ag.deepthink bake-off on the new flash generation (2026-09-04)
+
+Real, local, `--session-policy fresh` dispatches, 2 tasks x 2 profiles (one
+`ag.deepthink` run needed a retry — see below), run to answer a direct
+operator question ("which is better, flash-3.8-high or pro-3.1-high?") using
+otherwise-idle 3P/G-pool headroom. This is the first local measurement against
+the **new** `gemini-3.8-flash-high` (bumped 2026-09-03 from 3.7, see
+orchestration.json's `ag.effort` profile note) — everything in §4.1-§4.8 above
+measured the prior 3.5/3.7 flash generation.
+
+**Task A — deterministic state-machine trace** (5-instruction program, 2 passes,
+bitwise XOR + modulo + conditional branch + conditional swap; single correct
+answer `A=8 B=10 C=4 D=3`, independently verified by hand before dispatch):
+- `ag.effort`: correct, 54s, first attempt.
+- `ag.deepthink`: **first attempt timed out at 929s** (`execution_state=uncertain`,
+  hub soft-skip, no corruption — see the `Zombie Timeout Mechanism` /
+  `ag Open-Ended Task Failure Mode` operational notes). Retried once: correct,
+  27s. Consistent with §4.8's finding that this class of closed-form task
+  **does not discriminate** correctness between these models — both got it
+  exactly right. The timeout itself is a genuine reliability data point, but a
+  single occurrence isn't enough to call it a pattern rather than a transient
+  PTY/network hiccup.
+
+**Task B — 7-simultaneous-constraint short-copy writing task** (exact sentence
+count, a mandated first word, a numeral, a full sentence with zero occurrences
+of the letter "e", a question, an exact 8-word sentence, an exact word-count-2
+recurring term — all mechanically graded, not subjective):
+- `ag.effort`: **all 7 constraints satisfied**, 52s, output was exactly the 5
+  requested sentences with nothing else.
+- `ag.deepthink`: **all 7 constraints satisfied within the 5 sentences
+  themselves** (the content was equally correct), 64s, but the raw reply
+  **also included a `PROGRESS 1: ...` tracking line as a preamble** — both
+  profiles received the identical hub-injected incremental-progress
+  instruction (`oversized ask detected (task_items=7 > limit=5)`), but only
+  `ag.deepthink` let that leak into the answer, violating the explicit "output
+  ONLY the 5 sentences" instruction. `ag.effort` suppressed it correctly.
+
+**Honest verdict (DIR-004):** on this small (2-task) local sample, raw
+correctness ties — consistent with §4.8's standing finding that easy/closed-
+form probes don't discriminate frontier-tier reasoning between these models.
+Where a real difference showed up was **speed (~2x, effort faster on both
+tasks) and stricter instruction-following under an injected complication**
+(effort didn't leak the harness's own progress-tracking text into its answer;
+deepthink did), plus one unexplained timeout for deepthink that may or may not
+recur. This reproduces, on the new 3.8-flash generation, the same
+`ag.deepthink`-scores-below-`ag.effort` pattern the 2026-07-13 declared
+composite already flagged (§3, "ag tier inversion") and §4.1 already accepted
+as a **deliberate policy exception** (deepthink is kept for long-context/tool-
+use/multi-turn resilience, not raw single-shot score) — this bake-off does not
+overturn that policy call, it's a second, independent, empirical data point
+consistent with it. **Not** a claim that flash is "smarter" in general, nor
+that these 2 tasks are a discriminating benchmark per §4.8's own caveat about
+easy probes. `orchestration.json`'s `intelligence_evidence` for both profiles
+now cites this section alongside (not replacing) the still-present 2026-07-13
+declared composite.
 
 ## 5. Risks / caveats (DIR-004)
 

@@ -16,6 +16,7 @@
   "legacy": {
     "config_file": "local.config.bat"
   },
+  "_model_currency_check_2026_09_08": "Live re-verification of every configured model across cc/ag/cx, requested ahead of a P: freeze. cc: probed both claude-opus-4-8 and claude-opus-5 directly (a genuinely-invalid model string, claude-totally-fake-model-xyz, was confirmed to fail hard with exit 1 and a clear error -- not a silent fallback -- establishing that a clean exit + correct self-identification IS trustworthy evidence here, unlike agy's CCPA-fallback failure mode); both are real, but each self-identified correctly under a 'what is your exact model name/version' probe (claude-opus-4-8 -> 'Claude Opus 4.8', claude-opus-5 -> 'Claude Opus 5') -- cc.deepthink's existing claude-opus-5 is correctly the newer of the two, no change needed. claude-haiku-5 was probed and confirmed NOT to exist (same hard-fail signature) -- cc.standard's claude-haiku-4-5-20251001 remains current. ag: `agy.exe models` catalog re-enumerated in full -- no Gemini Pro tier beyond gemini-3.1-pro-high/-low exists (ag.deepthink unchanged, correct), no flash tier beyond gemini-3.8-flash-high/-low exists (ag.standard/effort unchanged, correct, and already bumped 2026-09-03), agy's own Claude integration still only exposes claude-opus-4-6-thinking (ag.opus unchanged -- agy's own catalog gates this, not a string I can override). cx: gpt-5.7 probed via `codex exec -c model=`, confirmed NOT to exist (real 400 invalid_request_error, not a silent fallback); gpt-5.6-sol reconfirmed working. Net result: zero changes needed anywhere -- every profile was already correctly on the newest available model as of this check.",
   "canary_config": {
     "budget_cap": 4,
     "budget_window_hours": 12,
@@ -272,6 +273,15 @@
             "as_of": "2026-08-17",
             "_stale_model_warning": "This estimate was declared for the PRIOR model (gemini-3.7-flash-high), not re-measured for gemini-3.8-flash-high after the 2026-09-03 bump -- carried forward as the best available prior signal, not a claim that it still applies. Re-measure before relying on it for routing decisions."
           },
+          "local_empirical_probe": {
+            "kind": "task_specific_bakeoff",
+            "compared_against": "ag.deepthink",
+            "result": "tied_on_correctness_ahead_on_speed_and_instruction_following",
+            "verification": "measured",
+            "source_ref": "_sys/docs-v2/ops/intelligence-scores.md#4-9-ag-effort-vs-ag-deepthink-bake-off-on-the-new-flash-generation-2026-09-04",
+            "as_of": "2026-09-04",
+            "_note": "2-task local bake-off, not a discriminating benchmark (see doc's own §4.8 caveat: easy/closed-form probes don't discriminate frontier reasoning here). Tied with ag.deepthink on raw correctness; ~2x faster on both tasks; did not leak a hub-injected progress-tracking preamble into its answer where ag.deepthink did. Does not supersede the external_composite estimate above -- a second, independent, consistent data point alongside it."
+          },
           "runtime_context_window": 1048576,
           "validated_at": "2026-09-03",
           "validation_method": "cli_reality_probe:model_resolver_log_match_no_ccpa_fallback",
@@ -298,6 +308,15 @@
             "verification": "unverified",
             "source_ref": "_sys/docs-v2/ops/intelligence-scores.md#1-source-data-dir-004-declared-unverified",
             "as_of": "2026-07-13"
+          },
+          "local_empirical_probe": {
+            "kind": "task_specific_bakeoff",
+            "compared_against": "ag.effort",
+            "result": "tied_on_correctness_behind_on_speed_and_instruction_following",
+            "verification": "measured",
+            "source_ref": "_sys/docs-v2/ops/intelligence-scores.md#4-9-ag-effort-vs-ag-deepthink-bake-off-on-the-new-flash-generation-2026-09-04",
+            "as_of": "2026-09-04",
+            "_note": "2-task local bake-off, not a discriminating benchmark (see doc's own §4.8 caveat). Tied with ag.effort on raw correctness (one task-1 attempt timed out at 929s, execution_state=uncertain, soft-skip, then correct on retry -- reliability data point, not confirmed as a pattern from a single occurrence); ~2x slower on both tasks; leaked a hub-injected progress-tracking preamble into its task-2 answer despite the explicit 'output only the 5 sentences' instruction, where ag.effort did not. Reproduces, on the new flash generation, the same ag-tier-inversion pattern this doc's §3/§4.1 already flagged and already accepted as a deliberate policy exception (deepthink is kept for long_context/tool_use/multi_turn resilience, not raw single-shot score) -- does not overturn that policy call."
           },
           "profile_intent": {
             "selection_basis": "resilience_over_external_composite",
