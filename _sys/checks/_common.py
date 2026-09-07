@@ -16,6 +16,28 @@ _CHECKS_DIR = Path(__file__).parent
 _SYS_DIR = _CHECKS_DIR.parent
 _PORTABLE_ROOT = _SYS_DIR.parent
 
+# Shared vocabulary of vendor, cache, and peer-tool directories across checkers & packaging.
+# Reconciles real on-disk spellings:
+# - "temp": Engram runtime temp (_sys/data/temp)
+# - "tmp": transient workspace temp directory
+# - ".tmp": Codex peer cache hidden directory
+VENDOR_CACHE_DIRS: frozenset[str] = frozenset({
+    "env",
+    "tools",
+    "__pycache__",
+    ".git",
+    ".ai",
+    ".claude",
+    ".codex",
+    ".agy",
+    ".peerhub",
+    ".vscode",
+    "node_modules",
+    "temp",
+    "tmp",
+    ".tmp",
+})
+
 
 
 def build_env() -> dict:

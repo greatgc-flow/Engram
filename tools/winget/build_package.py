@@ -43,8 +43,13 @@ try:
     if str(_repo_root) not in sys.path:
         sys.path.insert(0, str(_repo_root))
     from _sys.core.version import VERSION as DEFAULT_VERSION, WINGET_SCHEMA_VERSION as SCHEMA_VERSION
+    from _sys.checks._common import VENDOR_CACHE_DIRS
 except ImportError:
-    pass
+    VENDOR_CACHE_DIRS = frozenset({
+        "env", "tools", "__pycache__", ".git", ".ai", ".claude",
+        ".codex", ".agy", ".peerhub", ".vscode", "node_modules",
+        "temp", "tmp", ".tmp",
+    })
 
 MONIKER = "engram"
 
@@ -119,29 +124,17 @@ ROOT_FILES_ALLOW = {
 }
 
 SYS_EXCLUDE_DIR_PATTERNS = {
-    "env",
-    "tools",
-    "temp",
     "logs",
     "state",
     "setup-files",
-    "__pycache__",
     ".pytest_cache",
-}
+} | {d for d in VENDOR_CACHE_DIRS if not d.startswith(".")}
 
-GLOBAL_EXCLUDE_PATTERNS = {
-    ".git",
+GLOBAL_EXCLUDE_PATTERNS = set(VENDOR_CACHE_DIRS) | {
     ".gitattributes",
     ".gitignore",
-    ".agy",
-    ".ai",
-    ".claude",
-    ".codex",
-    ".peerhub",
-    ".vscode",
     "_archive",
     "output",
-    "tmp",
     "workspace",
     "dist",
     "manifests",

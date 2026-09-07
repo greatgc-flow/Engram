@@ -17,18 +17,16 @@ from pathlib import Path
 SYS_DIR = Path(__file__).resolve().parent.parent
 PORTABLE_ROOT = SYS_DIR.parent
 
+_CHECKS_DIR = SYS_DIR / "checks"
+if str(_CHECKS_DIR) not in sys.path:
+    sys.path.insert(0, str(_CHECKS_DIR))
+from _common import VENDOR_CACHE_DIRS
+
 ALLOWLIST = {
     ".agents",
-    ".agy",
-    ".ai",
-    ".claude",
-    ".codex",
-    ".git",
     ".gitattributes",
     ".gitignore",
-    ".peerhub",
     ".pytest_cache",
-    ".vscode",
     "_archive",
     "_sys",
     "AGENTS.md",
@@ -46,15 +44,16 @@ ALLOWLIST = {
     "PROTOCOL.md",
     "README.md",
     "register.bat",
+    "requirements-dev.txt",
     "STATUS.bat",
     "TIDY.bat",
-    "tmp",
-    "tools",
     "UPDATE.bat",
     "unregister.bat",
     "workspace",
-    "wrapper.cs"
-}
+    "wrapper.cs",
+} | (VENDOR_CACHE_DIRS & {
+    ".agy", ".ai", ".claude", ".codex", ".git", ".peerhub", ".vscode", "tools", "tmp",
+})
 
 def check_root() -> list[str]:
     errors = []

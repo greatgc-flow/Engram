@@ -18,7 +18,8 @@
       "install": {
         "mechanism": "npm_peer",
         "bin": "claude.cmd",
-        "install_subdir": "tools/claude"
+        "install_subdir": "tools/claude",
+        "npm_entry_path": "bin/claude.exe"
       },
       "canary": {
         "argv": [
@@ -47,7 +48,9 @@
       "install": {
         "mechanism": "npm_peer",
         "bin": "codex.cmd",
-        "install_subdir": "tools/codex"
+        "install_subdir": "tools/codex",
+        "npm_entry_path": "bin/codex.js",
+        "npm_native_exe_path": "node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe"
       },
       "canary": {
         "argv": [

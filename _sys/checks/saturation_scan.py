@@ -21,8 +21,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
 
+_CHECKS_DIR = Path(__file__).resolve().parent
+if str(_CHECKS_DIR) not in sys.path:
+    sys.path.insert(0, str(_CHECKS_DIR))
+from _common import VENDOR_CACHE_DIRS
 
-# ─── Thresholds ────────────────────────────────────────────────────────────────
+# ─── Cadence & Thresholds ──────────────────────────────────────────────────────
+_COMMIT_CHECK_INTERVAL: int = 10
+
 LINE_LIMITS: dict[str, int] = {
     ".py": 600,
     ".md": 400,
@@ -30,17 +36,14 @@ LINE_LIMITS: dict[str, int] = {
     ".bat": 200,
 }
 
-EXCLUDE_DIRS: frozenset[str] = frozenset({
-    "env", "tools", "data", "__pycache__", ".git", "node_modules",
-    "results", "tmp", "history",
+EXCLUDE_DIRS: frozenset[str] = VENDOR_CACHE_DIRS | frozenset({
+    "data", "results", "history",
     # Vendor/marketplace/cache content installed by peer CLIs under
     # {peer}/config/ (antigravity skills marketplace, codex plugin cache
     # + built-in skill system, claude plugin marketplace, peer-generated
     # scratch/cache dirs) - not this project's own source, so its line
-    # counts shouldn't be graded against our conventions. ".tmp"/".system"
-    # deliberately duplicate "tmp" for the dotfile-named variant actually
-    # used by codex's cache dir (a plain "tmp" match doesn't catch ".tmp").
-    ".tmp", ".system", "skills", "plugins", "marketplaces", "cache", "scratch",
+    # counts shouldn't be graded against our conventions.
+    ".system", "skills", "plugins", "marketplaces", "cache", "scratch",
     "brain",  # ag's own cross-session memory store, not this project's source
 })
 
@@ -293,8 +296,8 @@ def main() -> None:
         # commit_count=0 is grouped with "missing" (T89 criterion c): nothing
         # writes this key yet, so an explicit 0 is as untrustworthy a trigger
         # as a missing key, and 0 % 10 == 0 would otherwise fire every time.
-        if commit_count == 0 or commit_count % 10 != 0:
-            print(f"[SKIP] commit_count={commit_count} — not a multiple of 10. Use --force to run now.")
+        if commit_count == 0 or commit_count % _COMMIT_CHECK_INTERVAL != 0:
+            print(f"[SKIP] commit_count={commit_count} — not a multiple of {_COMMIT_CHECK_INTERVAL}. Use --force to run now.")
             sys.exit(0)
 
     count_display = commit_count if commit_count is not None else "untracked"

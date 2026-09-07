@@ -35,14 +35,14 @@ _PRODUCTION_PREFIXES = (
     "_sys/core/",
     "_sys/hooks/",
 )
-_EXCLUDED_PARTS = {
+sys.path.insert(0, str(_CHECKS_DIR))
+from _common import IndexView, WorktreeView, VENDOR_CACHE_DIRS  # noqa: E402
+
+_EXCLUDED_PARTS = VENDOR_CACHE_DIRS | {
     "test",
     "tests",
-    "env",
-    "tools",
     "vendor",
     "third_party",
-    "__pycache__",
 }
 _TAG_MARKER = "WIRING-EXEMPT:"
 _VALID_TAG_RE = re.compile(
@@ -53,9 +53,6 @@ _VALID_TAG_RE = re.compile(
 _HUNK_RE = re.compile(
     r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@"
 )
-
-sys.path.insert(0, str(_CHECKS_DIR))
-from _common import IndexView, WorktreeView  # noqa: E402
 
 
 class FileView(Protocol):

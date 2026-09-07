@@ -344,6 +344,7 @@ def _resolve_canary_direct_binary(
     argv: list[str],
     nodejs_dir: Path | None = None,
     run_env_path: str = "",
+    sys_dir: Path | None = None,
 ) -> list[str] | None:
     """Resolve npm-published .cmd wrappers to direct binary execution.
 
@@ -356,8 +357,35 @@ def _resolve_canary_direct_binary(
         return None
 
     exe_name = Path(argv[0]).name.lower()
-    if exe_name not in ("claude.cmd", "codex.cmd"):
+
+    catalog = _load_tool_catalog(sys_dir) if sys_dir else {}
+    if not catalog:
+        catalog = _load_tool_catalog(_default_sys_dir())
+
+    tool_entry: dict | None = None
+    for tool in catalog.get("tools", []):
+        install_cfg = tool.get("install", {})
+        if install_cfg.get("bin", "").lower() == exe_name:
+            tool_entry = tool
+            break
+
+    if not tool_entry:
         return None
+
+    source_cfg = tool_entry.get("source", {})
+    discovery_id = source_cfg.get("discovery_id")
+    if not discovery_id:
+        return None
+
+    install_cfg = tool_entry.get("install", {})
+    npm_entry_path = install_cfg.get("npm_entry_path") or tool_entry.get("npm_entry_path")
+    candidate_rel_entries: list[Path] = []
+    if npm_entry_path:
+        candidate_rel_entries.append(Path("node_modules") / Path(discovery_id) / Path(npm_entry_path))
+    else:
+        bin_stem = Path(install_cfg.get("bin", exe_name)).stem
+        candidate_rel_entries.append(Path("node_modules") / Path(discovery_id) / "bin" / f"{bin_stem}.exe")
+        candidate_rel_entries.append(Path("node_modules") / Path(discovery_id) / "bin" / f"{bin_stem}.js")
 
     cand_path: Path | None = None
     if target.is_file():
@@ -381,47 +409,44 @@ def _resolve_canary_direct_binary(
 
     cmd_dir = cand_path.parent
 
-    if exe_name == "claude.cmd":
-        real_exe = cmd_dir / "node_modules" / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
-        if not real_exe.exists():
+    for rel_entry in candidate_rel_entries:
+        entry_file = cmd_dir / rel_entry
+        if not entry_file.exists():
             try:
-                real_exe = cand_path.resolve().parent / "node_modules" / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
-            except Exception:
-                pass
-        if real_exe.exists():
-            return [str(real_exe)] + list(argv[1:])
-
-    elif exe_name == "codex.cmd":
-        codex_js = cmd_dir / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
-        if not codex_js.exists():
-            try:
-                codex_js = cand_path.resolve().parent / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
+                entry_file = cand_path.resolve().parent / rel_entry
             except Exception:
                 pass
 
-        node_exe: Path | None = None
-        if nodejs_dir and (nodejs_dir / "node.exe").is_file():
-            node_exe = nodejs_dir / "node.exe"
-        elif (cmd_dir.parent / "node.exe").is_file():
-            node_exe = cmd_dir.parent / "node.exe"
-        elif (cmd_dir / "node.exe").is_file():
-            node_exe = cmd_dir / "node.exe"
-        else:
-            which_node = shutil.which("node.exe") or shutil.which("node")
-            if which_node:
-                node_exe = Path(which_node)
+        if entry_file.suffix.lower() == ".exe" and entry_file.exists():
+            return [str(entry_file)] + list(argv[1:])
 
-        if codex_js.exists() and node_exe and node_exe.exists():
-            return [str(node_exe), str(codex_js)] + list(argv[1:])
+        if entry_file.suffix.lower() == ".js":
+            node_exe: Path | None = None
+            if nodejs_dir and (nodejs_dir / "node.exe").is_file():
+                node_exe = nodejs_dir / "node.exe"
+            elif (cmd_dir.parent / "node.exe").is_file():
+                node_exe = cmd_dir.parent / "node.exe"
+            elif (cmd_dir / "node.exe").is_file():
+                node_exe = cmd_dir / "node.exe"
+            else:
+                which_node = shutil.which("node.exe") or shutil.which("node")
+                if which_node:
+                    node_exe = Path(which_node)
 
-        codex_exe = cmd_dir / "node_modules" / "@openai" / "codex" / "node_modules" / "@openai" / "codex-win32-x64" / "vendor" / "x86_64-pc-windows-msvc" / "bin" / "codex.exe"
-        if not codex_exe.exists():
+            if entry_file.exists() and node_exe and node_exe.exists():
+                return [str(node_exe), str(entry_file)] + list(argv[1:])
+
+    npm_native_path = install_cfg.get("npm_native_exe_path") or tool_entry.get("npm_native_exe_path")
+    if npm_native_path:
+        rel_native = Path("node_modules") / Path(discovery_id) / Path(npm_native_path)
+        native_exe = cmd_dir / rel_native
+        if not native_exe.exists():
             try:
-                codex_exe = cand_path.resolve().parent / "node_modules" / "@openai" / "codex" / "node_modules" / "@openai" / "codex-win32-x64" / "vendor" / "x86_64-pc-windows-msvc" / "bin" / "codex.exe"
+                native_exe = cand_path.resolve().parent / rel_native
             except Exception:
                 pass
-        if codex_exe.exists():
-            return [str(codex_exe)] + list(argv[1:])
+        if native_exe.exists():
+            return [str(native_exe)] + list(argv[1:])
 
     return None
 
@@ -453,7 +478,7 @@ def _run_canary(tmp_dir: Path, canary: dict | None, env: dict | None = None) -> 
     run_env["PATH"] = os.pathsep.join(p for p in paths if p)
 
     direct_args = _resolve_canary_direct_binary(
-        target, argv, nodejs_dir=nodejs_dir, run_env_path=run_env.get("PATH", "")
+        target, argv, nodejs_dir=nodejs_dir, run_env_path=run_env.get("PATH", ""), sys_dir=sys_dir
     )
     if direct_args is not None:
         run_args = direct_args

@@ -4,11 +4,6 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
-# Centralized Constants
-DEFAULT_NODEJS_VERSION = "22.22.3"
-DEFAULT_PYTHON_VERSION = "3.13.4"
-DEFAULT_GIT_VERSION = "2.49.0"
-
 class ConfigManager:
     _instance = None
     _global_config: Dict[str, Any] = None
