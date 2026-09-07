@@ -467,14 +467,15 @@ being worked on."**
      for manage.py's `.\`-prefix uninstall-helper fix (a real subprocess
      run in a genuine `&`-laden directory, plus a sanity check that the
      bare-name form genuinely still fails).
-   - Also flagged, not yet actioned: peerhub's `pipe.py`/`bootstrap.py`/
+   - ~~Also flagged, not yet actioned: peerhub's `pipe.py`/`bootstrap.py`/
      `quota_polling.py` each independently hardcode the Claude/Codex
      package-layout resolution logic (3 copies, already drifted in
-     their exact fallback chains) — `cx`'s recommendation is a single
-     shared `resolve_direct_invocation()` boundary in peerhub, judged
-     worth doing now (unlike a broader cross-repo shared library, which
-     `cx` judged NOT worth building). See `reference_cx_...` memory
-     entries (to be added) for the full audit text.
+     their exact fallback chains)~~ — **done, peerhub commit `0b3a471`**
+     (found stale during a 2026-09-07 peerhub session, confirmed against
+     current source: all 3 call sites now import
+     `peerhub.core.binary_resolution.resolve_direct_binary()`). This note
+     had not been updated on the Engram side after peerhub fixed it
+     independently.
    - The dedicated `ag` dispatch tasked with checking `^`/`@` tonight
      never returned a completed report (repeated dispatch interruptions
      — see the session record). Superseded: the terminal's own direct
