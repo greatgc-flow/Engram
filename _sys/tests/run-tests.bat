@@ -1,5 +1,10 @@
 @echo off
 :: run-tests.bat - Test execution entry point
+::
+:: First time running this? The portable venv does not ship pytest/hypothesis
+:: by design (dev-only, not part of the runtime install) -- run this once:
+::   _sys\env\venv\Scripts\python.exe -m pip install -r ..\..\requirements-dev.txt
+::
 :: Usage:
 :: run-tests [--unit]        pytest unit tests (fast, ~5s)
 :: run-tests [--lifecycle]   system lifecycle/portability tests

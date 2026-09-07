@@ -1,0 +1,12 @@
+# Dev/test-only dependencies for running _sys/tests/run-tests.bat.
+# Not part of the portable runtime install (INSTALL.bat never installs
+# these) -- found missing entirely during a 2026-09-08 fresh-install
+# verification pass, where "python -m pytest" failed with
+# "No module named pytest" on a bare install, with no documented way to
+# know what to install to run the test suite at all.
+#
+# Install into the portable venv with:
+#   _sys\env\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+pytest
+hypothesis
+pytest-timeout
