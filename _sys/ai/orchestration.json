@@ -17,6 +17,7 @@
     "config_file": "local.config.bat"
   },
   "_model_currency_check_2026_09_08": "Live re-verification of every configured model across cc/ag/cx, requested ahead of a P: freeze. cc: probed both claude-opus-4-8 and claude-opus-5 directly (a genuinely-invalid model string, claude-totally-fake-model-xyz, was confirmed to fail hard with exit 1 and a clear error -- not a silent fallback -- establishing that a clean exit + correct self-identification IS trustworthy evidence here, unlike agy's CCPA-fallback failure mode); both are real, but each self-identified correctly under a 'what is your exact model name/version' probe (claude-opus-4-8 -> 'Claude Opus 4.8', claude-opus-5 -> 'Claude Opus 5') -- cc.deepthink's existing claude-opus-5 is correctly the newer of the two, no change needed. claude-haiku-5 was probed and confirmed NOT to exist (same hard-fail signature) -- cc.standard's claude-haiku-4-5-20251001 remains current. ag: `agy.exe models` catalog re-enumerated in full -- no Gemini Pro tier beyond gemini-3.1-pro-high/-low exists (ag.deepthink unchanged, correct), no flash tier beyond gemini-3.8-flash-high/-low exists (ag.standard/effort unchanged, correct, and already bumped 2026-09-03), agy's own Claude integration still only exposes claude-opus-4-6-thinking (ag.opus unchanged -- agy's own catalog gates this, not a string I can override). cx: gpt-5.7 probed via `codex exec -c model=`, confirmed NOT to exist (real 400 invalid_request_error, not a silent fallback); gpt-5.6-sol reconfirmed working. Net result: zero changes needed anywhere -- every profile was already correctly on the newest available model as of this check.",
+  "_model_currency_check_2026_09_08_correction": "Same-day correction, later pass: the note above's 'zero changes needed anywhere' was overstated for cc -- it never probed the fable tier at all. Re-run found cc.fable's claude-fable-5 stale (claude-fable-5-1 exists in-catalog), though the fable family is currently credit-exhausted so no working reply was obtained either way (see cc.fable's own notes). cc.standard/effort/deepthink were correctly checked and remain current. ag was independently re-confirmed fully current, including the historical deepthink label/slug bug now resolved on both forms. cx could not be re-checked this pass -- real usage-limit exhaustion confirmed live ('try again at 11:35 PM'), not a code/config issue; cx.deepthink=gpt-6-astra (bumped earlier the same day) presumed still current pending a later re-check once quota resets.",
   "canary_config": {
     "budget_cap": 4,
     "budget_window_hours": 12,
@@ -105,7 +106,7 @@
           "profile_class": "tier",
           "quota_families": ["C"],
           "runtime_context_window": 200000,
-          "validated_at": "2026-07-27",
+          "validated_at": "2026-09-08",
           "validation_method": "successful_invocation",
           "reasoning_effort": "low",
           "cost_tier": "low",
@@ -132,9 +133,10 @@
             "as_of": "2026-07-13"
           },
           "runtime_context_window": 1000000,
-          "validated_at": "2026-07-27",
+          "validated_at": "2026-09-08",
           "validation_method": "successful_invocation",
           "_validation_note": "model_id updated 2026-07-19 from stale claude-sonnet-4-6 to claude-sonnet-5; confirmed via direct canary invocation (claude.cmd --model claude-sonnet-5 --effort high -p ... -> exit 0, correct reply).",
+          "_context_window_caveat_2026_09_08": "1000000 assumes the bare model_id auto-upgrades to the [1m] context variant; `claude-opus-5[1m]` was separately confirmed to work as an explicit operand (returns ok1m, exit 0, this account is entitled), but whether the bare id silently gets the same upgrade internally was not fully resolved. Not changed pending an explicit decision on whether profile_args should request `[1m]` directly instead of relying on an implicit gate.",
           "reasoning_effort": "high",
           "cost_tier": "mid",
           "routing_state": "eligible",
@@ -161,8 +163,9 @@
             "as_of": "2026-07-13"
           },
           "runtime_context_window": 1000000,
-          "validated_at": "2026-07-27",
+          "validated_at": "2026-09-08",
           "validation_method": "successful_invocation",
+          "_context_window_caveat_2026_09_08": "See cc.effort's identical caveat -- same bare-id-vs-[1m] open question, not yet resolved.",
           "reasoning_effort": "high",
           "cost_tier": "high",
           "routing_state": "eligible",
@@ -174,9 +177,9 @@
           ]
         },
         "fable": {
-          "model_id": "claude-fable-5",
+          "model_id": "claude-fable-5-1",
           "selection_mode": "pinned",
-          "model_availability": "verified_local",
+          "model_availability": "unverified_credits_exhausted",
           "profile_class": "specialty",
           "quota_families": ["F", "C"],
           "intelligence_evidence": {
@@ -188,14 +191,16 @@
             "as_of": "2026-07-13"
           },
           "runtime_context_window": 1000000,
-          "validated_at": "2026-07-27",
-          "validation_method": "successful_invocation",
+          "validated_at": "2026-09-08",
+          "validation_method": "catalog_membership_plus_credits_error_signature_not_working_invocation",
+          "_model_id_fix_note_2026_09_08": "bumped from claude-fable-5 to claude-fable-5-1 (newer point release, confirmed present in the CLI's own extracted catalog). NOT confirmed via a working self-identifying reply -- both claude-fable-5 and claude-fable-5-1 currently fail with a distinct 'you're out of usage credits' signature (not unrecognized_model), meaning the fable family is credit-exhausted, not misconfigured. Re-probed claude-opus-5 immediately after to confirm this is scoped to fable specifically, not a general outage -- opus-5 returned exit 0 normally. Tier remains unusable until fable-family credits are restored; do not treat model_availability as verified_local until a real reply is obtained.",
+          "_new_family_note_2026_09_08": "A previously-unknown 'claude-mythos-5'/'claude-mythos-5-1' family now exists in the CLI's extracted catalog. Both are catalog-present but return a generic access-denied signature (not unrecognized_model, not credits) -- no working access today. Recorded so a future sweep doesn't rediscover this cold; not adopted anywhere.",
           "reasoning_effort": "high",
           "cost_tier": "high",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "claude-fable-5",
+            "claude-fable-5-1",
             "--effort",
             "high"
           ]
