@@ -2195,7 +2195,7 @@
       "category": "architecture",
       "owner": "unassigned",
       "blocker": "waiting on the 5-part activation gate in the blueprint doc (named accountable-owner integration + committed delivery intent + concrete unsatisfiable use case + executable conformance fixtures + maintenance/funding commitment), OR a monolith-caused operational failure that reopens review (still requires fresh R:10 approval either way)",
-      "evidence_commit": [],
+      "evidence_commit": ["f08e949"],
       "supersedes": [],
       "source_refs": [
         "_sys/docs-v2/ops/engram-refactor-blueprint-2026-07-20.md",

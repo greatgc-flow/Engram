@@ -17,10 +17,11 @@ _SYS_DIR = _CHECKS_DIR.parent
 _PORTABLE_ROOT = _SYS_DIR.parent
 
 # Shared vocabulary of vendor, cache, and peer-tool directories across checkers & packaging.
-# Reconciles real on-disk spellings:
-# - "temp": Engram runtime temp (_sys/data/temp)
-# - "tmp": transient workspace temp directory
-# - ".tmp": Codex peer cache hidden directory
+# Empirically verified across live/portable-dev and runtime layouts:
+# - "temp": Engram runtime sandbox temp directory (_sys/data/temp, configured via env TEMP/TMP in launcher.py)
+# - "tmp": Portable root transient workspace temp (<portable_root>/tmp), plus _sys/env/git/tmp and _sys/codex/config/tmp
+# - ".tmp": Codex peer CLI cache/scratch hidden directory (_sys/codex/config/.tmp)
+# All three spellings genuinely exist on disk and serve distinct tools, so all three are load-bearing in packaging exclusions and hygiene scans.
 VENDOR_CACHE_DIRS: frozenset[str] = frozenset({
     "env",
     "tools",
