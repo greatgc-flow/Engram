@@ -18,10 +18,17 @@ _PORTABLE_ROOT = _SYS_DIR.parent
 
 # Shared vocabulary of vendor, cache, and peer-tool directories across checkers & packaging.
 # Empirically verified across live/portable-dev and runtime layouts:
-# - "temp": Engram runtime sandbox temp directory (_sys/data/temp, configured via env TEMP/TMP in launcher.py)
-# - "tmp": Portable root transient workspace temp (<portable_root>/tmp), plus _sys/env/git/tmp and _sys/codex/config/tmp
-# - ".tmp": Codex peer CLI cache/scratch hidden directory (_sys/codex/config/.tmp)
-# All three spellings genuinely exist on disk and serve distinct tools, so all three are load-bearing in packaging exclusions and hygiene scans.
+# - "temp": Engram runtime sandbox temp directory (_sys/data/temp, configured via env TEMP/TMP in launcher.py, swept by tidy_temp.py / scrubber.py).
+# - "tmp": Portable root transient workspace temp (<portable_root>/tmp, swept by tidy_temp.py:ROOT_TMP_DIR), plus _sys/env/git/tmp and _sys/codex/config/tmp.
+# - ".tmp": Codex peer CLI cache/scratch hidden directory (_sys/codex/config/.tmp), generated externally by Codex CLI.
+#
+# Consolidation Analysis:
+# Consolidating to a single spelling is NOT safe because:
+# 1. Distinct Ownership: "temp" is an Engram runtime sandbox convention; "tmp" is the workspace root convention; ".tmp" is generated externally by Codex CLI.
+# 2. Packaging Safety: tools/winget/build_package.py excludes VENDOR_CACHE_DIRS via GLOBAL_EXCLUDE_PATTERNS. Removing any spelling risks bundling runtime scratch into release archives.
+# 3. Root Hygiene Precision: _sys/checks/check_root_hygiene.py intersects VENDOR_CACHE_DIRS with an allowlist that permits "tmp" at repository root while strictly prohibiting accidental "temp" or ".tmp" root pollution.
+# 4. Scanner Exclusion: _sys/checks/check_unreferenced_functions.py and saturation_scan.py exclude all three to prevent false-positive scanning of disposable scratch files.
+# Therefore, all three spellings genuinely exist, serve distinct tools, and are load-bearing.
 VENDOR_CACHE_DIRS: frozenset[str] = frozenset({
     "env",
     "tools",

@@ -14,7 +14,8 @@ import provisioner as pv  # noqa: E402
 
 def _make_zip(path: Path, content: bytes = b"fixture") -> None:
     with zipfile.ZipFile(path, "w") as zf:
-        zf.writestr("file.txt", content)
+        zinfo = zipfile.ZipInfo(filename="file.txt", date_time=(2026, 1, 1, 0, 0, 0))
+        zf.writestr(zinfo, content)
 
 
 def test_install_extra_uses_secure_download_not_bare_download(monkeypatch, tmp_path):
