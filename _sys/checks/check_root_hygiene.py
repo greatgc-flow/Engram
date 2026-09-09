@@ -52,7 +52,7 @@ ALLOWLIST = {
     "workspace",
     "wrapper.cs",
 } | (VENDOR_CACHE_DIRS & {
-    ".agy", ".ai", ".claude", ".codex", ".git", ".peerhub", ".vscode", "tools", "tmp",
+    ".agy", ".ai", ".claude", ".codex", ".engram", ".git", ".peerhub", ".vscode", "tools", "tmp",
 })
 
 def check_root() -> list[str]:

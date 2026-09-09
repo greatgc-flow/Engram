@@ -12,6 +12,15 @@ if str(CHECKS_DIR) not in sys.path:
 
 from check_root_hygiene import check_root, check_closure, main, ALLOWLIST
 
+
+def test_allowlist_includes_engram_dotdir():
+    """Dotdir consolidation (ratified 2026-09-09, PeerHub P0 item 5):
+    `.engram/` must be allowlisted at the repo root before anything
+    creates it, or a populated `.engram/` would immediately fail root
+    hygiene."""
+    assert ".engram" in ALLOWLIST
+
+
 @patch("check_root_hygiene.PORTABLE_ROOT")
 def test_check_root_clean(mock_root):
     # Mock PORTABLE_ROOT.iterdir to return only ALLOWLIST items

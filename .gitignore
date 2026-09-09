@@ -108,5 +108,11 @@ _sys/tests/_sys/data/logs/*.jsonl
 peerhub/
 .peerhub/
 
+# Dotdir consolidation (ratified 2026-09-09): live personal/durable
+# settings root for Engram-managed AI CLIs (Claude Code/Codex/Antigravity/
+# git/gh) once redirected there -- contains real credentials and caches,
+# never bundled into a git repo or a release archive.
+.engram/
+
 # Isolated install/verification test clones (not product source)
 /output/

@@ -39,6 +39,7 @@ VENDOR_CACHE_DIRS: frozenset[str] = frozenset({
     ".codex",
     ".agy",
     ".peerhub",
+    ".engram",
     ".vscode",
     "node_modules",
     "temp",
