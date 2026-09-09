@@ -180,6 +180,12 @@ def do_restore(src_dir: Path, force: bool) -> None:
 
     settings_src = src_dir / "claude-settings"
     if settings_src.is_dir():
+        # On a genuinely fresh install (e.g. a brand-new portable
+        # environment that has never run Claude Code / touched _sys/ai/
+        # yet), these destinations don't exist yet -- found via a real
+        # fresh-install test (D:\tttt, 2026-09-09), unlike memory/'s
+        # restore just above which already mkdir's its parent.
+        CLAUDE_SETTINGS_SRC.mkdir(parents=True, exist_ok=True)
         for item in settings_src.iterdir():
             if item.is_file():
                 shutil.copy2(item, CLAUDE_SETTINGS_SRC / item.name)
@@ -187,6 +193,7 @@ def do_restore(src_dir: Path, force: bool) -> None:
 
     ai_src = src_dir / "ai-config"
     if ai_src.is_dir():
+        AI_CONFIG_SRC.mkdir(parents=True, exist_ok=True)
         for item in ai_src.iterdir():
             if item.is_file():
                 shutil.copy2(item, AI_CONFIG_SRC / item.name)
