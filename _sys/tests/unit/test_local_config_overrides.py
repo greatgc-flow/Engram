@@ -107,6 +107,65 @@ def test_build_env_honors_local_config_override(tmp_path):
     assert env["NPM_CONFIG_PREFIX"] == "D:\\custom-npm-global"
 
 
+# ── .engram/ dotdir consolidation (ratified 2026-09-09, item 6) ────────────
+
+
+def _make_engram_sys_dir(tmp_path: Path) -> Path:
+    sys_dir = tmp_path / "_sys"
+    sys_dir.mkdir()
+    (sys_dir / "env.json").write_text(
+        '{"env_vars": {}, "tool_env_vars": {'
+        '"CLAUDE_CONFIG_DIR": {"base": "engram", "sub": "claude"}, '
+        '"CODEX_HOME": {"base": "engram", "sub": "codex"}, '
+        '"GEMINI_DIR": {"base": "engram", "sub": "agy"}, '
+        '"GH_CONFIG_DIR": {"base": "engram", "sub": "gh"}, '
+        '"PEERHUB_CONFIG_HOME": {"base": "engram", "sub": "peerhub/config"}'
+        '}, "path_entries": []}',
+        encoding="utf-8",
+    )
+    return sys_dir
+
+
+def test_build_env_resolves_ai_cli_vars_under_engram_dotdir(tmp_path):
+    sys_dir = _make_engram_sys_dir(tmp_path)
+    env = build_env(tmp_path, sys_dir)
+    assert env["CLAUDE_CONFIG_DIR"] == str(tmp_path / ".engram" / "claude")
+    assert env["CODEX_HOME"] == str(tmp_path / ".engram" / "codex")
+    assert env["GEMINI_DIR"] == str(tmp_path / ".engram" / "agy")
+    assert env["GH_CONFIG_DIR"] == str(tmp_path / ".engram" / "gh")
+    assert env["PEERHUB_CONFIG_HOME"] == str(tmp_path / ".engram" / "peerhub" / "config")
+
+
+def test_build_env_creates_engram_subdirs_idempotently(tmp_path):
+    sys_dir = _make_engram_sys_dir(tmp_path)
+    build_env(tmp_path, sys_dir)
+    build_env(tmp_path, sys_dir)  # must not raise the second time
+    for sub in ("claude", "codex", "agy", "gh"):
+        assert (tmp_path / ".engram" / sub).is_dir()
+    assert (tmp_path / ".engram" / "peerhub" / "config").is_dir()
+
+
+def test_build_env_git_config_global_retargeted_to_engram_when_present(tmp_path, monkeypatch):
+    monkeypatch.delenv("GIT_CONFIG_GLOBAL", raising=False)
+    sys_dir = _make_engram_sys_dir(tmp_path)
+    engram_git = tmp_path / ".engram" / "git"
+    engram_git.mkdir(parents=True)
+    (engram_git / ".gitconfig").write_text("[user]\nname = test\n", encoding="utf-8")
+
+    env = build_env(tmp_path, sys_dir)
+
+    assert env["GIT_CONFIG_GLOBAL"] == str(engram_git / ".gitconfig")
+
+
+def test_build_env_git_config_global_absent_when_no_file_exists(tmp_path, monkeypatch):
+    """The .exists() guard is kept -- retargeting must not fabricate a
+    GIT_CONFIG_GLOBAL pointing at a file that was never created."""
+    monkeypatch.delenv("GIT_CONFIG_GLOBAL", raising=False)
+    sys_dir = _make_engram_sys_dir(tmp_path)
+    env = build_env(tmp_path, sys_dir)
+    assert "GIT_CONFIG_GLOBAL" not in env
+
+
 # ── _resolve_default_target ──────────────────────────────────────────────────
 
 def test_default_target_falls_back_to_base_dir_when_no_workspace(tmp_path):

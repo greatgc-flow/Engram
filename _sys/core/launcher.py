@@ -71,11 +71,18 @@ def _load_local_config_overrides(sys_dir: Path) -> dict[str, str]:
     return overrides
 
 
-def _resolve_path_entry(base: str, sub: str, sys_dir: Path) -> Path:
+def _resolve_path_entry(base: str, sub: str, sys_dir: Path, base_dir: Path | None = None) -> Path:
+    # "engram" (dotdir consolidation, ratified 2026-09-09, item 6): the
+    # consolidated personal/durable-settings root for Engram-managed AI
+    # CLIs, at the portable root -- a sibling of _sys/, not under it, so
+    # `base_dir` (not `sys_dir`) anchors it. Falls back to sys_dir's parent
+    # if base_dir isn't supplied, so existing callers that only pass
+    # sys_dir don't break.
     bases = {
-        "sys":   sys_dir,
-        "env":   sys_dir / "env",
-        "tools": sys_dir / "tools",
+        "sys":    sys_dir,
+        "env":    sys_dir / "env",
+        "tools":  sys_dir / "tools",
+        "engram": (base_dir if base_dir is not None else sys_dir.parent) / ".engram",
     }
     return bases.get(base, sys_dir) / sub
 
@@ -123,17 +130,26 @@ def build_env(base_dir: Path, sys_dir: Path) -> dict:
         if k in overrides:
             env[k] = overrides[k]
         else:
-            env[k] = str(_resolve_path_entry(spec["base"], spec["sub"], sys_dir))
+            env[k] = str(_resolve_path_entry(spec["base"], spec["sub"], sys_dir, base_dir))
+
+    # .engram/ subdirs (dotdir consolidation, item 6): created idempotently
+    # so a tool redirected there via the env vars above always finds a real
+    # directory on first launch, without needing a separate migration step.
+    for sub in ("claude", "codex", "agy", "gh"):
+        (base_dir / ".engram" / sub).mkdir(parents=True, exist_ok=True)
+    (base_dir / ".engram" / "peerhub" / "config").mkdir(parents=True, exist_ok=True)
 
     # PATH from env.json path_entries
     entries = [
-        _resolve_path_entry(e["base"], e["sub"], sys_dir)
+        _resolve_path_entry(e["base"], e["sub"], sys_dir, base_dir)
         for e in env_cfg.get("path_entries", [])
     ]
     env["PATH"] = ";".join(str(p) for p in entries if p.exists()) + ";" + env.get("PATH", "")
 
-    # Git config
-    gitconfig = sys_dir / "git-config" / ".gitconfig"
+    # Git config -- retargeted to .engram/git/.gitconfig (item 6). The
+    # .exists() guard is deliberately kept: retargeting must not fabricate
+    # GIT_CONFIG_GLOBAL pointing at a file nothing has created yet.
+    gitconfig = base_dir / ".engram" / "git" / ".gitconfig"
     if gitconfig.exists():
         env["GIT_CONFIG_GLOBAL"] = str(gitconfig)
 
