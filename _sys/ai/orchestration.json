@@ -480,7 +480,7 @@
           ]
         },
         "deepthink": {
-          "model_id": "gpt-6-astra",
+          "model_id": "gpt-5.6-sol",
           "selection_mode": "pinned",
           "model_availability": "verified_local",
           "profile_class": "tier",
@@ -491,20 +491,19 @@
             "source_kind": "declared",
             "verification": "unverified",
             "source_ref": "_sys/docs-v2/ops/intelligence-scores.md#1-source-data-dir-004-declared-unverified",
-            "as_of": "2026-07-13",
-            "_stale_model_warning": "This estimate was declared for the PRIOR model (gpt-5.6-sol), not re-measured for gpt-6-astra after the 2026-09-08 bump -- carried forward as the best available prior signal only, not a claim that it still applies."
+            "as_of": "2026-07-13"
           },
-          "runtime_context_window": 14000,
-          "_context_window_note": "2026-09-08: 14000 is a CONFIRMED LOWER BOUND, not the model's ceiling -- an 8016-word (14,135-token, per codex's own reported usage) sentinel probe with 3 unique markers at start/middle/end succeeded cleanly, correctly recovering all 3 (MARKER_START/MIDDLE/END), proving real processing of the full input, not just declared/self-reported. The prior model's live-confirmed 272000 does not carry over to a different model, and model-registry.json has no gpt-6 entry yet (vendor docs not yet published as of this bump) -- discovered live that hub.py's dispatch-target composition hard-requires a positive runtime_context_window (UnknownModelCapacityError otherwise, blocking every dispatch), so an honest measured-lower-bound value was required here, not an absent/null placeholder. Do not treat 14000 as the true ceiling -- a larger probe has simply not been run yet; re-probe with a bigger sentinel before relying on this number being tight.",
-          "validated_at": "2026-09-08",
-          "validation_method": "direct_cli_probe_plus_2task_bakeoff_vs_prior_model",
-          "_bump_note": "2026-09-08: bumped from gpt-5.6-sol to gpt-6-astra (new generation, discovered via a fresh Engram/peerhub-side install investigation, no tier suffix exists -- codex has no model-listing command like agy's, so `gpt-6-mini/nano/luna/terra/sol/nova/stella/orion` were all probed and confirmed NOT to exist via a real 400 invalid_request_error before settling on the one bare working name). Bake-off vs gpt-5.6-sol: 1 clean deterministic task (4-step conditional-swap arithmetic puzzle) -- both models answered correctly, gpt-5.6-sol slightly faster (7.5s vs 9.6s); a second code-reasoning task was inconclusive due to a shell-quoting harness bug on both sides (not a model difference). This is a real but narrow, non-discriminating probe per this doc's own established 'easy probes don't discriminate frontier reasoning' finding -- not strong evidence of a capability gain, just confirmation the new model works and isn't worse. cx.standard/cx.effort deliberately left on the proven gpt-5.6 family (luna/terra) pending their own evidence.",
+          "runtime_context_window": 272000,
+          "_context_window_fix_note": "2026-07-24: same fix as cx.standard -- corrected from stale 372000 to live-confirmed 272000 (Codex 0.144.6 release notes + `codex debug models`).",
+          "validated_at": "2026-07-27",
+          "validation_method": "codex_debug_models_and_successful_invocation",
+          "_revert_note": "2026-09-09: reverted from gpt-6-astra back to gpt-5.6-sol per explicit user request -- gpt-6-astra's quota consumption (quota_families X pool) was judged too high in practice after the 2026-09-08 bump. Not a capability regression per the bump commit's own bake-off finding (tied correctness, gpt-5.6-sol slightly faster) -- this is a quota-cost decision, not a quality one. gpt-6-astra's own measured data (14000-token confirmed lower bound, bake-off notes) remains in git history (commit 4b32cc0/9c07b5f) if reconsidered later.",
           "reasoning_effort": "xhigh",
           "cost_tier": "high",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
-            "gpt-6-astra",
+            "gpt-5.6-sol",
             "-c",
             "model_reasoning_effort=\"xhigh\""
           ]
