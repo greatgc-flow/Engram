@@ -19,6 +19,18 @@ this environment to a second location (D:\\tttt) surfaced the same need
 for Codex and Antigravity: each has its own memory/settings/rules that are
 just as durable and just as un-backed-up as Claude Code's.
 
+On P: specifically, `.ais/` stays a shadow copy as described above --
+P:'s own live config dirs are the source of truth, unchanged. A different
+environment can instead make `.ais/` the ONLY live location (point
+CLAUDE_CONFIG_DIR/CODEX_HOME/GEMINI_DIR directly at `.ais/{claude,codex,
+agy}/` -- confirmed working, no subst/junction needed) and delete the
+duplicate `_sys/{tool}/config` copies entirely once redirected -- this
+is what D:\\tttt does (see `D:\\tttt\\ais-env.bat`). That environment no
+longer needs this script's `--restore` at all: moving `.ais/` alone (plus
+ais-env.bat) IS the whole portable package. This script's own
+docstring/SyncItem table still describes P:'s split (non-redirected)
+layout, since P: itself is frozen and unchanged.
+
 `.ais/` layout:
     .ais/
       MANIFEST.txt
