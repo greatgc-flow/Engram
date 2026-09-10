@@ -41,6 +41,7 @@ ALLOWLIST = {
     "INSTALL.bat",
     "LICENSE",
     "manifests",
+    "menu-cleanup.bat",
     "output",
     "PROTOCOL.md",
     "README.md",

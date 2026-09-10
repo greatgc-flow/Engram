@@ -116,6 +116,7 @@ ROOT_FILES_ALLOW = {
     "TIDY.bat",
     "register.bat",
     "unregister.bat",
+    "menu-cleanup.bat",
     "wrapper.cs",
     "Engram.exe",
     "LICENSE",

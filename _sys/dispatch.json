@@ -37,6 +37,13 @@
             "idempotent": true,
             "failure_policy": "continue"
         },
+        "registry.clean_orphans": {
+            "module": "core.registrar",
+            "method": "clean_orphans",
+            "config": "context_menu.json",
+            "idempotent": true,
+            "failure_policy": "abort"
+        },
         "scrub.run": {
             "module": "core.scrubber",
             "method": "run",
@@ -76,6 +83,9 @@
         ],
         "cleanup": [
             "scrub.run"
+        ],
+        "menu-cleanup": [
+            "registry.clean_orphans"
         ],
         "start": [
             "env.launch"

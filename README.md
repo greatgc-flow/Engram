@@ -5,7 +5,7 @@
 
   [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078d4.svg)](https://www.microsoft.com/windows)
   [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-  [![Tests: 306 green](https://img.shields.io/badge/tests-306%20green-brightgreen.svg)](_sys/tests/unit)
+  [![Tests: 314 green](https://img.shields.io/badge/tests-314%20green-brightgreen.svg)](_sys/tests/unit)
   [![AI collaboration: peerhub](https://img.shields.io/badge/AI%20collaboration-peerhub-8a2be2.svg)](https://github.com/greatgc-flow/peerhub)
 </div>
 
@@ -33,8 +33,8 @@ Engram bootstraps a self-contained Windows dev environment — Python, Node.js, 
 
 ### Option A: Download the release zip (recommended right now)
 ```powershell
-# Download & extract Engram-v3.2.5-portable-x64.zip from the release, then:
-cd Engram-v3.2.5-portable-x64
+# Download & extract Engram-v3.2.6-portable-x64.zip from the release, then:
+cd Engram-v3.2.6-portable-x64
 .\INSTALL.bat
 .\register.bat
 ```
@@ -77,6 +77,7 @@ This does **not work yet** — the manifest was submitted as [microsoft/winget-p
 | `engram update` | Discover and apply pinned-version updates across the catalog |
 | `engram cleanup` | Tiered cache/temp reclamation (`_sys/core/scrubber.py`) |
 | `engram tidy` | Interactive, dry-run-first temp-file cleanup preview |
+| `engram menu-cleanup` | On-demand sweep of every right-click context-menu entry (any install, not just this one) — removes ones whose recorded folder no longer exists |
 | `engram launch` / `start` | Open the registered environment (VS Code + shell) |
 | `engram uninstall` | Full removal: registry/junction teardown, then a background helper purges the folder once this process exits |
 | `engram version` / `--version` / `-v` | Print the current version (`_sys/core/version.json`) |

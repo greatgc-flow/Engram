@@ -253,8 +253,30 @@ def _unregister_entry(key_name: str, targets_cfg: dict, relay_root: Path) -> lis
     return errors
 
 
-def _clean_orphans(base_key: str, targets_cfg: dict, relay_root: Path) -> None:
-    """Remove stale SandboxRun_ keys whose relay bat no longer points to a valid path."""
+def _clean_orphans(base_key: str, targets_cfg: dict, relay_root: Path) -> list[str]:
+    """Remove stale SandboxRun_ keys whose relay bat no longer points to a valid path.
+
+    `base_key` is accepted for call-site symmetry with the entries this scan
+    sweeps alongside (apply()/remove() both compute one for the *current*
+    install), but the scan itself is deliberately global: it enumerates every
+    SandboxRun_* subkey under each configured registry target, not just ones
+    prefixed with `base_key`, because a genuinely orphaned entry by definition
+    belongs to some *other*, no-longer-existing install -- scoping to
+    `base_key` would make this find nothing but the entry currently being
+    registered/torn down.
+
+    Returns the de-duplicated list of removed entry key names (e.g.
+    "SandboxRun_D_foo"), empty when nothing was stale. One conceptual
+    context-menu entry is typically registered under several targets (see
+    context_menu.json's `entries[].targets`) but shares a single relay .bat
+    and sidecar pair, so the same key name can be found -- and its registry
+    key actually deleted -- once per target in the loop below; de-duplicating
+    here is what makes the returned count mean "N stale entries", not "N
+    registry-target rows touched". Callers that only care about the side
+    effect (apply()/remove()) can ignore the return value; clean_orphans()
+    below reports it back to the CLI.
+    """
+    removed: list[str] = []
     for target_cfg in targets_cfg.values():
         path_base = target_cfg["path"]
         try:
@@ -291,8 +313,10 @@ def _clean_orphans(base_key: str, targets_cfg: dict, relay_root: Path) -> None:
                     if p.exists():
                         p.unlink()
                 print(f"  [OK] Orphan removed: {subkey}")
+                removed.append(subkey)
         except Exception:
             continue
+    return list(dict.fromkeys(removed))
 
 
 def apply(ctx: dict) -> dict:
@@ -439,3 +463,61 @@ def remove(ctx: dict) -> dict:
         return {"status": "failed", "operation": "registry.remove", "errors": errors}
     print("\n  Remove complete.")
     return {"status": "success"}
+
+
+def clean_orphans(ctx: dict) -> dict:
+    """Standalone, on-demand orphan sweep across every SandboxRun_* context-menu
+    entry -- for ANY install, not only the one currently running this command.
+
+    apply() and remove() already run this sweep as a side effect, but only
+    when register/unregister happens to run on some (any) install -- there
+    was previously no way to force it on demand. This is that on-demand path,
+    wired to `engram menu-cleanup`.
+
+    Deliberately independent of registration state: it never reads or writes
+    register.state.json (unlike remove(), which falls back to it), and does
+    not require the current directory to be a registered or even valid
+    Engram install. It only needs context_menu.json (to know which registry
+    target paths to scan -- the same targets apply()/remove() use) and
+    %LOCALAPPDATA% (to find each entry's relay .bat and .physroot.txt
+    sidecar, which is how a stale entry's recorded physical root is checked
+    for existence). That is exactly what lets a user force a cleanup after
+    deleting or moving *some other* install's folder, without ever running
+    register/unregister again anywhere.
+    """
+    sys_dir    = ctx["sys_dir"]
+    base_dir   = ctx.get("base_dir")
+    relay_root = Path(os.environ.get("LOCALAPPDATA", ""))
+
+    cfg = _load_context_menu(sys_dir)
+    if not cfg:
+        # A missing/empty context_menu.json means no registry target paths
+        # are known to scan -- a valid no-op, not a pipeline failure (same
+        # convention as apply()/remove() above).
+        print("  [Warning] context_menu.json missing or empty — nothing to clean")
+        return {"status": "success", "operation": "menu.clean_orphans", "removed": []}
+
+    targets_cfg = cfg.get("registry", {}).get("targets", {})
+    # base_key is accepted only for signature symmetry with apply()/remove()'s
+    # own _clean_orphans() calls -- it is not actually used inside
+    # _clean_orphans (the scan enumerates every SandboxRun_* key regardless),
+    # so an empty/best-effort value here is harmless.
+    base_key = _registry_key_name(base_dir) if base_dir else ""
+
+    print(f"\n{'='*50}")
+    print(" Registrar: menu-cleanup (orphan sweep)")
+    print(f"{'='*50}")
+
+    if not targets_cfg:
+        print("  [Warning] No registry targets configured — nothing to clean")
+        return {"status": "success", "operation": "menu.clean_orphans", "removed": []}
+
+    removed = _clean_orphans(base_key, targets_cfg, relay_root)
+
+    if removed:
+        plural = "y" if len(removed) == 1 else "ies"
+        print(f"\n  {len(removed)} orphaned entr{plural} removed: {', '.join(removed)}")
+    else:
+        print("\n  Nothing to clean — no orphaned context-menu entries found.")
+
+    return {"status": "success", "operation": "menu.clean_orphans", "removed": removed}

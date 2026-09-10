@@ -36,6 +36,7 @@ if /i "%SUBCMD%"=="unregister" goto :cmd_unregister
 if /i "%SUBCMD%"=="update" goto :cmd_update
 if /i "%SUBCMD%"=="cleanup" goto :cmd_cleanup
 if /i "%SUBCMD%"=="tidy" goto :cmd_tidy
+if /i "%SUBCMD%"=="menu-cleanup" goto :cmd_menu_cleanup
 if /i "%SUBCMD%"=="launch" goto :cmd_launch
 if /i "%SUBCMD%"=="uninstall" goto :cmd_uninstall
 if /i "%SUBCMD%"=="start" goto :cmd_launch
@@ -92,6 +93,10 @@ exit /b %ERRORLEVEL%
 call ".\TIDY.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
+:cmd_menu_cleanup
+call ".\menu-cleanup.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %ERRORLEVEL%
+
 
 
 :cmd_launch
@@ -128,6 +133,7 @@ echo   register              Mount virtual dev drive (P:) and register context m
 echo   unregister            Unmount virtual dev drive and deregister context menu
 echo   update                Check and apply latest stable runtime and tool updates
 echo   cleanup / tidy        Clean temporary logs, caches, and orphaned files
+echo   menu-cleanup          Remove orphaned right-click context-menu entries (any install)
 echo.
 echo Options:
 echo   --version, -v         Display Engram version information
