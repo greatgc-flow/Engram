@@ -5,13 +5,13 @@
 
   [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078d4.svg)](https://www.microsoft.com/windows)
   [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-  [![Tests: 303 green](https://img.shields.io/badge/tests-303%20green-brightgreen.svg)](_sys/tests/unit)
+  [![Tests: 306 green](https://img.shields.io/badge/tests-306%20green-brightgreen.svg)](_sys/tests/unit)
   [![AI collaboration: peerhub](https://img.shields.io/badge/AI%20collaboration-peerhub-8a2be2.svg)](https://github.com/greatgc-flow/peerhub)
 </div>
 
 <br/>
 
-Engram bootstraps a self-contained Windows dev environment — Python, Node.js, Git, VS Code, and a handful of CLI tools — into one portable folder, with no host-machine installs and no registry residue. `register` links it into your user profile via directory junctions; `unregister`/`uninstall` remove every trace, including a background helper that finishes cleanup after the process holding the folder open has exited.
+Engram bootstraps a self-contained Windows dev environment — Python, Node.js, Git, VS Code, and a handful of CLI tools — into one portable folder, with no host-machine installs and no registry residue. `register` sets up the right-click context menu (and, if you've configured any, host-profile directory junctions — none by default); `unregister`/`uninstall` remove every trace, including a background helper that finishes cleanup after the process holding the folder open has exited.
 
 > **Note on scope:** Engram used to also orchestrate AI-to-AI peer collaboration directly. That entire layer has moved to the standalone [**peerhub**](https://github.com/greatgc-flow/peerhub) package — Engram itself no longer knows what a "peer debate" or "consensus round" is. What Engram *does* still do on the AI-tooling side is install, update, and status-check third-party AI CLIs (Claude Code, Codex, etc.) as ordinary managed tools, exactly like it manages ripgrep or Node.js. If you want AI-to-AI collaboration, install peerhub separately on top of an Engram environment.
 
@@ -33,8 +33,8 @@ Engram bootstraps a self-contained Windows dev environment — Python, Node.js, 
 
 ### Option A: Download the release zip (recommended right now)
 ```powershell
-# Download & extract Engram-v3.2.4-portable-x64.zip from the release, then:
-cd Engram-v3.2.4-portable-x64
+# Download & extract Engram-v3.2.5-portable-x64.zip from the release, then:
+cd Engram-v3.2.5-portable-x64
 .\INSTALL.bat
 .\register.bat
 ```
@@ -49,7 +49,7 @@ cd Engram
 :: 2. Bootstrap the portable environment (Python, Node, Git, VS Code, tools)
 .\INSTALL.bat
 
-:: 3. Register it — creates the host-profile junctions
+:: 3. Register it — sets up the right-click context menu
 .\register.bat
 
 :: 4. (Optional) Preview/clean temporary workspace files (dry-run + confirm)
@@ -72,8 +72,8 @@ This does **not work yet** — the manifest was submitted as [microsoft/winget-p
 |---|---|
 | `engram install` / `setup` | Bootstrap the portable runtime and tool catalog |
 | `engram status` / `doctor` | Report environment health (runtimes, tools, junction state) |
-| `engram register` | Create the host-profile junctions (equivalent to `register.bat`) |
-| `engram unregister` | Remove the junctions, leaving the portable folder itself intact |
+| `engram register` | Set up the right-click context menu and any configured host-profile junctions (equivalent to `register.bat`) |
+| `engram unregister` | Undo whatever `register` set up, leaving the portable folder itself intact |
 | `engram update` | Discover and apply pinned-version updates across the catalog |
 | `engram cleanup` | Tiered cache/temp reclamation (`_sys/core/scrubber.py`) |
 | `engram tidy` | Interactive, dry-run-first temp-file cleanup preview |
