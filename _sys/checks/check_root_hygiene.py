@@ -34,6 +34,7 @@ ALLOWLIST = {
     "CLEANUP.bat",
     "CONVENTION.md",
     "dist",
+    "docs",
     "engram.cmd",
     "Engram.exe",
     "GEMINI.md",

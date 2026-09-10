@@ -21,6 +21,13 @@ def test_allowlist_includes_engram_dotdir():
     assert ".engram" in ALLOWLIST
 
 
+def test_allowlist_includes_docs():
+    """`docs/` became a real, git-tracked root entry (dotdir consolidation
+    design docs, item 13's engram-dotdir.md) -- found failing
+    check_root_hygiene during this item's own MECE release-gate sweep."""
+    assert "docs" in ALLOWLIST
+
+
 @patch("check_root_hygiene.PORTABLE_ROOT")
 def test_check_root_clean(mock_root):
     # Mock PORTABLE_ROOT.iterdir to return only ALLOWLIST items
