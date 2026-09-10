@@ -46,13 +46,19 @@ def _registry_key_name(base_dir: Path) -> str:
 
 def _expand(
     template: str, root: str, phys_root: str, drive: str,
-    physroot_file: str = "", root_file: str = "",
+    physroot_file: str = "", root_file: str = "", folder: str = "",
 ) -> str:
     s = template.replace("{root}", root)
     s = s.replace("{phys_root}", phys_root)
     s = s.replace("{physroot_file}", physroot_file)
     s = s.replace("{root_file}", root_file)
     s = s.replace("{DRIVE}", drive)
+    # {FOLDER}: the install's own folder name (base_dir.name) -- distinct
+    # from {DRIVE}, which collides whenever two installs share a physical
+    # drive (e.g. D:\t2 and D:\tttt both render "D:") and which implies a
+    # SUBST/virtual drive is in play when the production default is not
+    # to mount one at all. Preferred in context_menu.json's shipped label.
+    s = s.replace("{FOLDER}", folder)
     return s
 
 
@@ -124,13 +130,15 @@ def _write_sidecar(sidecar_path: Path, value: str) -> None:
 def _register_entry(
     entry: dict, cfg: dict, base_key: str,
     relay_root: Path, paths: dict,
-    root: str, phys_root: str, drive: str,
+    root: str, phys_root: str, drive: str, folder: str = "",
 ) -> dict | None:
     entry_id = entry.get("id", "entry")
     label    = entry.get("label", entry_id)
-    label    = _expand(label, root, phys_root, drive)
+    label    = _expand(label, root, phys_root, drive, folder=folder)
     if not drive:
         label = re.sub(r"\s*\(?\{DRIVE\}:?\)?", "", label)
+    if not folder:
+        label = re.sub(r"\s*\(?\{FOLDER\}\)?", "", label)
 
     targets_cfg = cfg.get("registry", {}).get("targets", {})
     relay_tmpl  = cfg.get("relay", {}).get("content_template", "")
@@ -326,7 +334,7 @@ def apply(ctx: dict) -> dict:
             key_name = f"{base_key}_{_safe_key(entry.get('id', 'entry'))}"
             errors.extend(_unregister_entry(key_name, targets_cfg, relay_root))
             continue
-        record = _register_entry(entry, cfg, base_key, relay_root, paths, root, phys_root, drive)
+        record = _register_entry(entry, cfg, base_key, relay_root, paths, root, phys_root, drive, base_dir.name)
         if record:
             errors.extend(record.pop("_errors", []))
             written.append(record)

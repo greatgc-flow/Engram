@@ -35,3 +35,7 @@ This refuses outright (rather than guessing) if `.ais/` turns out to be a `backu
 ## Global vs. workspace
 
 `.engram/` is Engram's **global** tier — one per portable installation, holding your personal AI-CLI state. It is not, and never becomes, a per-project thing: a project's own settings live in that project's own dot-directories (`.peerhub/`, `.git/config`, `.vscode/settings.json`, `.claude/settings.json`) exactly as they always have. Engram's job here is limited to choosing *where the global root is*; it never merges or overlays a tool's own project-vs-global config resolution — each tool already does that correctly on its own.
+
+## Relationship to `register.bat`'s SUBST/junction machinery
+
+`register.bat` has its own, separate optional host-integration step (a directory-junction step driven by `_sys/managed-links.json`, and legacy read-support for a SUBST drive letter saved by an older Engram version). That machinery is unrelated to `.engram/` and does not need to run for `.engram/` to work: `managed-links.json` ships with zero entries, so a fresh `register` creates no junctions, and nothing in the current codebase ever creates a new SUBST mapping — only an install carried forward from an older version (one that saved `subst_drive` in `register.state.json` before that write path was removed) still has one, and only for backward compatibility does Engram keep re-mounting it on launch. A brand-new install never needs either.

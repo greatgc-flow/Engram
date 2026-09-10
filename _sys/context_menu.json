@@ -25,7 +25,7 @@
     {
       "id": "sandbox_open",
       "enabled": true,
-      "label": "Open in Sandbox ({DRIVE}:)",
+      "label": "Open in Sandbox ({FOLDER})",
       "icon": "{env}/vscode/Code.exe",
       "targets": ["Directory/Background", "Directory", "Drive", "*", "lnkfile"]
     }

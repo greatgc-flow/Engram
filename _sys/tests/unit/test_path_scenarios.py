@@ -121,6 +121,75 @@ class TestPathScenarios:
         for cmd in cmd_values:
             assert cmd.startswith('cmd.exe /c ""'), f"이중인용부호 래핑 없음: {cmd}"
 
+    def test_expand_substitutes_folder_placeholder(self):
+        """{FOLDER} renders as the install's own folder name -- distinct
+        from {DRIVE}, which the shipped context_menu.json used to use and
+        which collides whenever two installs share a physical drive."""
+        rendered = registrar._expand(
+            "Open in Sandbox ({FOLDER})",
+            root="D:\\t2", phys_root="D:\\t2", drive="D",
+            folder="t2",
+        )
+        assert rendered == "Open in Sandbox (t2)"
+
+    def test_expand_folder_and_drive_are_independent(self):
+        """Two installs sharing a drive letter must not collide: {FOLDER}
+        distinguishes them even though {DRIVE} alone would not."""
+        one = registrar._expand("({FOLDER})", root="", phys_root="", drive="D", folder="t2")
+        two = registrar._expand("({FOLDER})", root="", phys_root="", drive="D", folder="tttt")
+        assert one != two
+        assert one == "(t2)"
+        assert two == "(tttt)"
+
+    def test_registry_label_uses_folder_name_not_drive_letter(self, korean_base, tmp_path):
+        """The shipped default label reads {FOLDER}: two installs on the
+        same physical drive must render distinct, recognizable labels
+        rather than both saying e.g. 'Open in Sandbox (D:)'."""
+        sys_dir = korean_base / "_sys"
+        ctx_menu = {
+            "win11_classic_menu": False,
+            "registry": {
+                "targets": {
+                    "Directory": {
+                        "path": r"Software\Classes\Directory\shell",
+                        "arg": "%V",
+                    }
+                }
+            },
+            "relay": {
+                "content_template": '@echo off\ncall "{root}\\_sys\\start.bat" "%~1"'
+            },
+            "entries": [
+                {
+                    "id": "sandbox_open",
+                    "label": "Open in Sandbox ({FOLDER})",
+                    "icon": "",
+                    "targets": ["Directory"],
+                    "enabled": True,
+                }
+            ],
+        }
+        sys_dir.mkdir(parents=True, exist_ok=True)
+        (sys_dir / "context_menu.json").write_text(json.dumps(ctx_menu), encoding="utf-8")
+
+        ctx = _make_ctx(korean_base, tmp_path)
+        local_dir = ctx["paths"]["localappdata"]
+
+        with patch.dict(os.environ, {"LOCALAPPDATA": str(local_dir)}), \
+             patch("winreg.CreateKey", return_value=MagicMock()), \
+             patch("winreg.SetValueEx") as mock_set_val, \
+             patch("winreg.CloseKey"), \
+             patch.object(registrar, "_resolve_icon", return_value=None), \
+             patch.object(registrar, "_clean_orphans"):
+            result = registrar.apply(ctx)
+
+        assert result["status"] == "success"
+        label_values = [
+            str(c.args[4]) for c in mock_set_val.call_args_list
+            if len(c.args) >= 5 and c.args[1] == ""
+        ]
+        assert f"Open in Sandbox ({korean_base.name})" in label_values
+
     def test_registry_apply_reports_failed_write(self, korean_base, tmp_path):
         """A registry write error must make register fail truthfully."""
         sys_dir = korean_base / "_sys"
