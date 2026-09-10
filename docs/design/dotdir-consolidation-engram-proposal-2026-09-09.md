@@ -1,6 +1,7 @@
 # Engram-Side Personal/Durable Settings Consolidation Proposal
 **Date**: 2026-09-09
 **Author**: Antigravity
+**Status**: SUPERSEDED by [`dotdir-consolidation-RATIFIED-2026-09-09.md`](https://github.com/greatgc-flow/peerhub/blob/main/docs/design/dotdir-consolidation-RATIFIED-2026-09-09.md) (peerhub repo), which corrected several stale citations here (this proposal was written against an out-of-date Engram tree) and is now fully implemented as `.engram/` (see `docs/engram-dotdir.md`). Kept for its Round-1 reasoning; do not treat anything below as current design authority on its own.
 
 ## 1. Tool Inventory and Verdict
 
