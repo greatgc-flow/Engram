@@ -99,6 +99,10 @@ peerhub adapter discover   # you can run this yourself to confirm which AI CLIs 
 
 See [peerhub's own README](https://github.com/greatgc-flow/peerhub#readme) for the full command set.
 
+## AI CLI personal config: `.engram/`
+
+Every AI CLI Engram manages reads and writes its personal, durable data (memory, settings, session history) from one consolidated, automatic root — `.engram/{claude,codex,agy}/`, plus peerhub's own global config at `.engram/peerhub/config/`. No `subst` drive, no directory junction, and nothing to run by hand: it's pure environment-variable redirection, applied at every launch. `.engram/` is a **live** root — it accumulates real credentials and caches over time, so it's gitignored and never copied wholesale; [`_sys/checks/backup_personal_data.py`](_sys/checks/backup_personal_data.py) extracts just the safe, durable subset for backup instead. Full detail: [`docs/engram-dotdir.md`](docs/engram-dotdir.md).
+
 ## What's next
 
 See [`_sys/data/sessions/2026-09-03_separation-completion-backlog.md`](_sys/data/sessions/2026-09-03_separation-completion-backlog.md) for the full remaining-work backlog on both sides of the separation (Engram + peerhub), and what's deliberately deferred and why.

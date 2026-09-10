@@ -209,6 +209,9 @@ set "TEMP=%DATA_DIR%\temp"
 set "TMP=%DATA_DIR%\temp"
 ```
 
+### 4.2.1 AI CLI Personal Config: `.engram/`
+Claude Code, Codex, and Antigravity's own personal/durable config (memory, settings, session history — not their transient caches, which stay tool-managed inside the same root) is redirected the same way, via `CLAUDE_CONFIG_DIR`/`CODEX_HOME`/`GEMINI_DIR` pointed at `%BASE_DIR%\.engram\{claude,codex,agy}` (declared in `_sys/env.json`'s `tool_env_vars`, applied by `_sys/core/launcher.py`'s `build_env()` — pure env-var redirection, never `subst`/junction). See [`docs/engram-dotdir.md`](docs/engram-dotdir.md) for the full picture, including why `.engram/` is gitignored and never copied wholesale.
+
 ### 4.3 Prohibition of Hardcoded Paths
 Do not use literal drive letters (`C:\`, `D:\`). All paths must be dynamically resolved relative to `%BASE_DIR%` or `%SYS_DIR%`.
 
