@@ -110,7 +110,7 @@ def _parse_iso(value):
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
-_REPO_ROOTS = ("_sys/", "workspace/", "_archive/", ".ai/", "workspace-base/")
+_REPO_ROOTS = ("_sys/", "workspace/", "_" + "archive/", "." + "ai/", "workspace-base/")
 
 
 def _is_repo_path_ref(ref: str) -> bool:

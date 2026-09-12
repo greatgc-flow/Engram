@@ -36,7 +36,7 @@ def test_launcher_log_append_mode(tmp_path):
         launcher.main(ctx)
         
     # Verify a log file was created and written to
-    log_dir = tmp_path / "_archive" / "logs"
+    log_dir = tmp_path / "_sys" / "data" / "logs" / "launcher"
     log_files = list(log_dir.glob("start_*.log"))
     assert len(log_files) == 1
     

@@ -46,7 +46,7 @@ try:
     from _sys.checks._common import VENDOR_CACHE_DIRS
 except ImportError:
     VENDOR_CACHE_DIRS = frozenset({
-        "env", "tools", "__pycache__", ".git", ".ai", ".claude",
+        "env", "tools", "__pycache__", ".git", ".claude",
         ".codex", ".agy", ".peerhub", ".vscode", "node_modules",
         "temp", "tmp", ".tmp",
     })

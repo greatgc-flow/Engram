@@ -20,7 +20,8 @@ from typing import Any
 
 _SYS_DIR = Path(__file__).resolve().parents[1]
 _PORTABLE_ROOT = _SYS_DIR.parent
-_DEFAULT_CACHE = _PORTABLE_ROOT / ".ai" / "tool_discovery_cache.json"
+from _sys.core import state_paths
+_DEFAULT_CACHE = state_paths.discovery_cache(_SYS_DIR)
 
 
 def _now_utc() -> str:

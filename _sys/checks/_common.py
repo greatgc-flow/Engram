@@ -34,7 +34,6 @@ VENDOR_CACHE_DIRS: frozenset[str] = frozenset({
     "tools",
     "__pycache__",
     ".git",
-    ".ai",
     ".claude",
     ".codex",
     ".agy",
@@ -233,4 +232,3 @@ class WorktreeView:
         if not p.exists():
             raise FileNotFoundError(f"File '{rel_path}' not found in worktree")
         return p.read_text(encoding="utf-8", errors="replace")
-

@@ -27,8 +27,9 @@ sys.path.insert(0, str(_SYS_DIR / "core"))
 import version_resolver  # noqa: E402
 
 RUNTIMES_PATH = _SYS_DIR / "runtimes.json"
-ARCHIVE_ROOT = _PORTABLE_ROOT / "_archive" / "tool-updates"
-DISCOVERY_CACHE_PATH = _PORTABLE_ROOT / ".ai" / "tool_discovery_cache.json"
+from _sys.core import state_paths
+ARCHIVE_ROOT = state_paths.proposals_dir(_PORTABLE_ROOT / "_sys")
+DISCOVERY_CACHE_PATH = state_paths.discovery_cache(_PORTABLE_ROOT / "_sys")
 RETENTION_KEEP = 20
 
 EXIT_OK = 0

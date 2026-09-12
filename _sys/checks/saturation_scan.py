@@ -228,7 +228,6 @@ def _read_commit_count(sys_root: Path) -> int | None:
     """
     for candidate in [
         sys_root / "data" / "state" / "state.json",
-        sys_root.parent / ".ai" / "state.json",
     ]:
         if candidate.exists():
             try:

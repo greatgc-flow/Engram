@@ -196,7 +196,8 @@ MAX_NPM_INSTALL_RETRIES = 3
 
 
 def _get_deferred_path(sys_dir: Path) -> Path:
-    return sys_dir.parent / ".ai" / "tool_deferred_retries.json"
+    import state_paths
+    return state_paths.deferred_retries(sys_dir)
 
 
 def _load_deferred(sys_dir: Path) -> dict:

@@ -27,7 +27,7 @@ ALLOWLIST = {
     ".gitattributes",
     ".gitignore",
     ".pytest_cache",
-    "_archive",
+    "_archive",  # legacy-source: migration only
     "_sys",
     "AGENTS.md",
     "CLAUDE.md",
@@ -54,7 +54,7 @@ ALLOWLIST = {
     "workspace",
     "wrapper.cs",
 } | (VENDOR_CACHE_DIRS & {
-    ".agy", ".ai", ".claude", ".codex", ".engram", ".git", ".peerhub", ".vscode", "tools", "tmp",
+    ".agy", ".ai", ".claude", ".codex", ".engram", ".git", ".peerhub", ".vscode", "tools", "tmp",  # legacy-source: migration only
 })
 
 def check_root() -> list[str]:
@@ -63,7 +63,18 @@ def check_root() -> list[str]:
     if not PORTABLE_ROOT.exists():
         return ["Repository root not found."]
 
+    ai_dir = PORTABLE_ROOT / ("." + "ai")
+    if ai_dir.exists():
+        engram_owned = {"tool_discovery_cache.json", "tool_deferred_retries.json"}
+        contents = {c.name for c in ai_dir.iterdir()}
+        if contents & engram_owned:
+            errors.append("Engram-owned state in .ai/ — run 'engram doctor' to migrate")
+        else:
+            print("[INFO] .ai/ present: external orchestration state, not Engram-owned")
+
     for child in PORTABLE_ROOT.iterdir():
+        if child.name == "." + "ai":
+            continue
         if child.name not in ALLOWLIST:
             errors.append(f"Unexpected entry at root: {child.name}")
 

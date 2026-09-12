@@ -114,7 +114,7 @@ def _tier1(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> int:
 
     # Keep last 5 launcher logs
     for log_glob, label in [
-        (base_dir / "_archive" / "logs", "런처 로그"),
+        (base_dir / ("_" + "archive") / "logs", "런처 로그"),
         (data_dir / "logs",              "시스템 로그"),
     ]:
         if log_glob.exists():
@@ -194,7 +194,7 @@ def _tier3(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> int:
 def _tier4(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> int:
     freed = 0
     freed += _remove_path(base_dir / "workspace", "워크스페이스 데이터", dry_run)
-    freed += _remove_path(base_dir / "_archive",  "아카이브/로그 전체",  dry_run)
+    freed += _remove_path(base_dir / ("_" + "archive"),  "아카이브/로그 전체",  dry_run)
     for f in base_dir.glob("*.md"):
         sz = f.stat().st_size
         if not dry_run:

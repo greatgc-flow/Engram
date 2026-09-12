@@ -223,7 +223,8 @@ def main(ctx: dict) -> None:
         sys_dir  = base_dir / "_sys"
 
     # Log setup
-    log_dir = base_dir / "_archive" / "logs"
+    import state_paths
+    log_dir = state_paths.launcher_log_dir(sys_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / f"start_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 

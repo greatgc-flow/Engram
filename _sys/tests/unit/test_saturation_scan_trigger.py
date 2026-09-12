@@ -22,7 +22,7 @@ def test_read_commit_count_returns_none_when_no_state_file(tmp_path):
 def test_read_commit_count_returns_none_when_key_missing(tmp_path):
     sys_root = tmp_path / "_sys"
     sys_root.mkdir()
-    ai_state = tmp_path / ".ai" / "state.json"
+    ai_state = sys_root / "data" / "state" / "state.json"
     ai_state.parent.mkdir(parents=True)
     ai_state.write_text(json.dumps({"leader": "cc"}), encoding="utf-8")
 
@@ -32,7 +32,7 @@ def test_read_commit_count_returns_none_when_key_missing(tmp_path):
 def test_read_commit_count_returns_value_when_key_present(tmp_path):
     sys_root = tmp_path / "_sys"
     sys_root.mkdir()
-    ai_state = tmp_path / ".ai" / "state.json"
+    ai_state = sys_root / "data" / "state" / "state.json"
     ai_state.parent.mkdir(parents=True)
     ai_state.write_text(json.dumps({"commit_count": 20}), encoding="utf-8")
 
@@ -77,7 +77,7 @@ def test_main_skips_explicit_zero_commit_count(tmp_path, capsys):
     writes this key yet and 0 % 10 == 0 would otherwise fire every time."""
     sys_root = tmp_path / "_sys"
     sys_root.mkdir()
-    ai_state = tmp_path / ".ai" / "state.json"
+    ai_state = sys_root / "data" / "state" / "state.json"
     ai_state.parent.mkdir(parents=True)
     ai_state.write_text(json.dumps({"commit_count": 0}), encoding="utf-8")
 
@@ -95,7 +95,7 @@ def test_main_skips_explicit_zero_commit_count(tmp_path, capsys):
 def test_main_runs_when_forced_despite_explicit_zero_commit_count(tmp_path, capsys):
     sys_root = tmp_path / "_sys"
     sys_root.mkdir()
-    ai_state = tmp_path / ".ai" / "state.json"
+    ai_state = sys_root / "data" / "state" / "state.json"
     ai_state.parent.mkdir(parents=True)
     ai_state.write_text(json.dumps({"commit_count": 0}), encoding="utf-8")
 
@@ -114,7 +114,7 @@ def test_main_runs_when_forced_despite_explicit_zero_commit_count(tmp_path, caps
 def test_main_still_skips_non_multiple_when_count_present(tmp_path, capsys):
     sys_root = tmp_path / "_sys"
     sys_root.mkdir()
-    ai_state = tmp_path / ".ai" / "state.json"
+    ai_state = sys_root / "data" / "state" / "state.json"
     ai_state.parent.mkdir(parents=True)
     ai_state.write_text(json.dumps({"commit_count": 7}), encoding="utf-8")
 
