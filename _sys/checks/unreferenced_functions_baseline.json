@@ -28,11 +28,6 @@
       "reason": "legacy_zero_production_callers"
     },
     {
-      "path": "_sys/core/scrubber.py",
-      "name": "_host_registration_active",
-      "reason": "legacy_zero_production_callers"
-    },
-    {
       "path": "_sys/core/timestamps.py",
       "name": "parse_iso_timestamp",
       "reason": "became unreferenced when the legacy peer-coordination layer was removed in the Engram/peerhub separation (2026-08-19); retained with test coverage"

@@ -1,5 +1,5 @@
 """
-manage.py - Thin wrapper. Logic moved to core.virtualizer + core.registrar.
+manage.py - Thin wrapper. Logic moved to core.registrar.
 Kept for backward compatibility and direct CLI invocation.
 """
 import subprocess

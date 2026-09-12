@@ -77,27 +77,6 @@ def _confirm(msg: str, all_yes: bool, dry_run: bool) -> bool:
     return input(msg).lower().startswith("y")
 
 
-def _host_registration_active(base_dir: Path) -> bool:
-    """True if host integration is still mounted."""
-    try:
-        from core.virtualizer import _get_subst_mappings
-    except Exception:
-        try:
-            from virtualizer import _get_subst_mappings  # dispatched context
-        except Exception:
-            return False
-    try:
-        for _letter, target in _get_subst_mappings().items():
-            try:
-                if Path(target).resolve() == Path(base_dir).resolve():
-                    return True
-            except OSError:
-                continue
-    except Exception:
-        return False
-    return False
-
-
 # ── Tier implementations ──────────────────────────────────────────────────────
 
 def _tier1(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> int:
