@@ -6997,9 +6997,14 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         _update_pty_thread("in progress")
 
         # A7 (CONDITION-1): run the child in the project root (one level above
-        # .ai), WITHOUT .resolve() — byte-for-byte parity with the subprocess
-        # branch's proc_cwd so the cc/cx path is not perturbed.
-        proc_cwd = str(ai_root.parent) if ai_root else None
+        # .ai), WITH .resolve() — byte-for-byte parity with the subprocess
+        # branch's proc_cwd so the cc/cx path is not perturbed. Resolving is
+        # required (not just permitted) on a SUBST drive: Codex's own sandbox
+        # resolves P:\ to its real target internally, so an unresolved P:\
+        # cwd here caused a real apparent-path/real-path mismatch that made
+        # Codex reject legitimate writes as "outside the project" (see
+        # reference_codex_subst_sandbox_conflict_2026_08_21).
+        proc_cwd = str(ai_root.parent.resolve()) if ai_root else None
 
         result: "_PtyAskResult | None" = None
         lease_status = "open"
@@ -7279,7 +7284,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
 
     # Use git root as cwd so peer subprocesses don't scatter temp files in the caller's cwd.
     # ai_root is typically .ai/ inside the project root; go one level up.
-    proc_cwd = str(ai_root.parent) if ai_root else None
+    # Resolved to keep parity with the PTY branch above (A7 CONDITION-1) and
+    # to avoid the same SUBST apparent-path/real-path mismatch.
+    proc_cwd = str(ai_root.parent.resolve()) if ai_root else None
 
     logger = _get_logger()
     if logger:
