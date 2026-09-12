@@ -4277,11 +4277,20 @@ def _session_reuse_enabled(node: dict, session_policy: str) -> bool:
     return mode == "reuse"
 
 
-def _session_rotation_threshold() -> float | None:
+def _session_rotation_threshold(peer_id: str | None = None) -> float | None:
     """Return the configured session-rotation ratio, or None if unusable."""
-    value = (_load_protocol_cfg().get("active_constraints", {}) or {}).get(
-        "session_rotation_utilization_threshold"
-    )
+    constraints = (_load_protocol_cfg().get("active_constraints", {}) or {})
+    
+    if peer_id:
+        by_peer = constraints.get("session_rotation_utilization_threshold_by_peer")
+        if isinstance(by_peer, dict):
+            val = by_peer.get(peer_id)
+            if isinstance(val, (int, float)) and not isinstance(val, bool):
+                threshold = float(val)
+                if 0.0 < threshold <= 1.0:
+                    return threshold
+
+    value = constraints.get("session_rotation_utilization_threshold")
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     threshold = float(value)
@@ -6781,7 +6790,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     # A measured over-threshold session is retired, but session management
     # remains enabled so this fresh invocation can replace it for later reuse.
     if existing_session:
-        rotation_threshold = _session_rotation_threshold()
+        rotation_threshold = _session_rotation_threshold(health_peer)
         utilization_pct = (
             _measured_session_utilization_pct(
                 health_peer, scope_key, existing_session
