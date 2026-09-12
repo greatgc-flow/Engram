@@ -6843,9 +6843,9 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         _update_pty_thread("in progress")
 
         # A7 (CONDITION-1): run the child in the project root (one level above
-        # .ai), WITHOUT .resolve() — byte-for-byte parity with the subprocess
+        # .ai), WITH .resolve() — byte-for-byte parity with the subprocess
         # branch's proc_cwd so the cc/cx path is not perturbed.
-        proc_cwd = str(ai_root.parent) if ai_root else None
+        proc_cwd = str(ai_root.parent.resolve()) if ai_root else None
 
         result: "_PtyAskResult | None" = None
         lease_status = "open"
@@ -7125,7 +7125,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
 
     # Use git root as cwd so peer subprocesses don't scatter temp files in the caller's cwd.
     # ai_root is typically .ai/ inside the project root; go one level up.
-    proc_cwd = str(ai_root.parent) if ai_root else None
+    proc_cwd = str(ai_root.parent.resolve()) if ai_root else None
 
     logger = _get_logger()
     if logger:

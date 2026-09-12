@@ -735,6 +735,16 @@ class CodexAdapter(BaseAdapter):
 
     node_id = "cx"
 
+    def context_policy(self, node: dict[str, Any]) -> ContextPolicy:
+        """Codex (like Agy) can read files live via its own tools, so it doesn't need a static pre-embedded snapshot.
+        Static room-context embedded in the prompt at dispatch time can go stale by the time Codex's apply_patch actually runs,
+        especially on a long/oversized ask, causing context-line-mismatch failures."""
+        return ContextPolicy(
+            query_first=True,
+            skip_room_context=True,
+            skip_room_context_when_complete=True,
+        )
+
     def build_cmd(self, node: dict[str, Any], query: str, session_id: str | None = None) -> tuple[list[str], bool]:
         return super().build_cmd(node, query, session_id)
 
