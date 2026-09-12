@@ -60,7 +60,7 @@ def _build_ctx(cmd: str, extra_args: list) -> dict:
     return ctx
 
 
-_REGISTER_STATE_KEYS = {"subst_drive", "registry_entries", "junctions"}
+_REGISTER_STATE_KEYS = {"registry_entries"}
 
 
 def _write_state(ctx: dict) -> None:

@@ -1,7 +1,7 @@
 """
 launcher.py - Environment setup and process spawning for Portable Dev Environment.
 PATH and env vars driven by env.json. No hardcoding.
-Physical root is source of truth; SUBST drive is an optional alias.
+Physical root is source of truth.
 """
 import os
 import re
@@ -85,26 +85,6 @@ def _resolve_path_entry(base: str, sub: str, sys_dir: Path, base_dir: Path | Non
         "engram": (base_dir if base_dir is not None else sys_dir.parent) / ".engram",
     }
     return bases.get(base, sys_dir) / sub
-
-
-def _map_subst_drive(base_dir: Path, drive: str) -> None:
-    """Ensure SUBST drive is mapped; remap if occupied by a different path."""
-    drive_root = f"{drive}:\\"
-    if os.path.exists(drive_root):
-        if not (Path(drive_root) / "_sys" / "core" / "launcher.py").exists():
-            subprocess.run(["subst", f"{drive}:", "/D"], capture_output=True)
-            res = subprocess.run(["subst", f"{drive}:", str(base_dir)], capture_output=True)
-            if res.returncode != 0:
-                raise RuntimeError(f"Drive {drive}: occupied and cannot be remapped. Run register.bat.")
-    else:
-        res = subprocess.run(["subst", f"{drive}:", str(base_dir)], capture_output=True)
-        if res.returncode != 0:
-            raise RuntimeError(f"subst {drive}: failed")
-        for _ in range(10):
-            if os.path.exists(drive_root):
-                time.sleep(0.2)
-                break
-            time.sleep(1)
 
 
 def build_env(base_dir: Path, sys_dir: Path) -> dict:
@@ -191,36 +171,12 @@ def _relocate(base_dir: Path, sys_dir: Path) -> None:
 
 
 def main(ctx: dict) -> None:
-    """Launch the sandbox: apply SUBST, build env, open VS Code."""
-    base_dir_phys = ctx["base_dir"]
-    sys_dir_phys  = ctx["sys_dir"]
-    args          = ctx["args"]
+    """Launch the sandbox: build env, open VS Code."""
+    base_dir = ctx["base_dir"]
+    sys_dir  = ctx["sys_dir"]
+    args     = ctx["args"]
 
-    _relocate(base_dir_phys, sys_dir_phys)
-
-    # Read saved SUBST drive (new: state.json, fallback: legacy config.json)
-    state_file = ctx["paths"]["state"] / "register.state.json"
-    drive      = None
-    if state_file.exists():
-        try:
-            saved = json.loads(state_file.read_text(encoding="utf-8"))
-            drive = saved.get("subst_drive")
-        except Exception:
-            pass
-    if drive is None:
-        legacy = sys_dir_phys / "config.json"
-        if legacy.exists():
-            try:
-                drive = json.loads(legacy.read_text(encoding="utf-8")).get("SUBST_DRIVE_LETTER")
-            except Exception:
-                pass
-
-    base_dir = base_dir_phys
-    sys_dir  = sys_dir_phys
-    if drive:
-        _map_subst_drive(base_dir_phys, drive)
-        base_dir = Path(f"{drive}:\\")
-        sys_dir  = base_dir / "_sys"
+    _relocate(base_dir, sys_dir)
 
     # Log setup
     import state_paths
@@ -244,12 +200,7 @@ def main(ctx: dict) -> None:
     # Determine target
     raw_target = args[0] if args else ""
     if raw_target:
-        t_path = Path(raw_target).resolve()
-        if drive and str(base_dir_phys) in str(t_path):
-            target = str(t_path)
-            raw_target = target.replace(str(base_dir_phys), str(base_dir))
-        else:
-            raw_target = str(t_path)
+        raw_target = str(Path(raw_target).resolve())
 
     if not raw_target:
         target_dir = _resolve_default_target(base_dir, sys_dir)

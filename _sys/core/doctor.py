@@ -60,34 +60,55 @@ def check_python(sys_dir: Path) -> dict:
             "detail": f"{installed} (matches declared)"}
 
 
-def check_subst(base_dir: Path) -> dict:
-    try:
-        from core.virtualizer import _get_subst_mappings
-    except Exception:
+def check_legacy_host_integration(base_dir: Path, sys_dir: Path) -> dict:
+    """Check for legacy SUBST or directory junction records in this install only."""
+    state_file = sys_dir / "data" / "state" / "register.state.json"
+    legacy_cfg = sys_dir / "config.json"
+    
+    subst_drive = None # legacy-detect
+    junctions = [] # legacy-detect
+    subst_letter = None # legacy-detect
+
+    if state_file.exists():
         try:
-            from virtualizer import _get_subst_mappings
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+            subst_drive = data.get("subst_drive") # legacy-detect
+            junctions = data.get("junctions", []) # legacy-detect
         except Exception:
-            return {"name": "subst_drive", "ok": True, "level": "warning",
-                    "detail": "could not read SUBST mappings"}
-    try:
-        mappings = _get_subst_mappings()
-    except Exception:
-        mappings = {}
-    # base_dir's own drive letter (e.g. "P") when we are running FROM the mount.
-    own_letter = str(base_dir.drive).rstrip(":").upper()
-    for letter, target in mappings.items():
-        norm = str(letter).rstrip(":").upper()
-        if norm == own_letter:
-            return {"name": "subst_drive", "ok": True, "level": "ok",
-                    "detail": f"mounted at {norm}: (running from the mount)"}
+            pass
+
+    if legacy_cfg.exists():
         try:
-            if Path(target).resolve() == Path(base_dir).resolve():
-                return {"name": "subst_drive", "ok": True, "level": "ok",
-                        "detail": f"mounted at {norm}:"}
-        except OSError:
-            continue
-    return {"name": "subst_drive", "ok": True, "level": "info",
-            "detail": "not mounted (run register.bat to mount the P: drive)"}
+            cfg_data = json.loads(legacy_cfg.read_text(encoding="utf-8"))
+            subst_letter = cfg_data.get("SUBST_DRIVE_LETTER") # legacy-detect
+        except Exception:
+            pass
+
+    has_legacy = bool(subst_drive or junctions or subst_letter)
+    if has_legacy:
+        drive_name = subst_drive or subst_letter or "X"
+        instructions = [
+            f"Run: subst {drive_name}: /D (first run 'subst' and confirm '{drive_name}:\\: => {base_dir}')", # legacy-detect
+        ]
+        if junctions:
+            for j in junctions:
+                host = j.get("host") if isinstance(j, dict) else str(j)
+                instructions.append(f'Run: rmdir "{host}"')
+        instructions.append(f"Delete 'subst_drive' and 'junctions' entries from {state_file}") # legacy-detect
+        detail = "legacy host integration recorded. Instructions:\n    " + "\n    ".join(instructions)
+        return {
+            "name": "legacy_host_integration",
+            "ok": True,
+            "level": "warning",
+            "detail": detail,
+        }
+
+    return {
+        "name": "legacy_host_integration",
+        "ok": True,
+        "level": "ok",
+        "detail": "clean (no legacy SUBST or junctions recorded)",
+    }
 
 
 def check_registration(base_dir: Path, sys_dir: Path) -> dict:
@@ -241,7 +262,7 @@ def run(ctx: dict) -> dict[str, Any]:
     checks = [
         check_python(sys_dir),
         check_components(sys_dir),
-        check_subst(base_dir),
+        check_legacy_host_integration(base_dir, sys_dir),
         check_registration(base_dir, sys_dir),
         check_sessions(base_dir),
         check_elevation(),

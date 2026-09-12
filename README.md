@@ -11,7 +11,7 @@
 
 <br/>
 
-Engram bootstraps a self-contained Windows dev environment — Python, Node.js, Git, VS Code, and a handful of CLI tools — into one portable folder, with no host-machine installs and no registry residue. `register` sets up the right-click context menu (and, if you've configured any, host-profile directory junctions — none by default); `unregister`/`uninstall` remove every trace, including a background helper that finishes cleanup after the process holding the folder open has exited.
+Engram bootstraps a self-contained Windows dev environment — Python, Node.js, Git, VS Code, and a handful of CLI tools — into one portable folder, with no host-machine installs and no registry residue. `register` sets up the right-click context menu; `unregister`/`uninstall` remove every trace, including a background helper that finishes cleanup after the process holding the folder open has exited.
 
 > **Note on scope:** Engram used to also orchestrate AI-to-AI peer collaboration directly. That entire layer has moved to the standalone [**peerhub**](https://github.com/greatgc-flow/peerhub) package — Engram itself no longer knows what a "peer debate" or "consensus round" is. What Engram *does* still do on the AI-tooling side is install, update, and status-check third-party AI CLIs (Claude Code, Codex, etc.) as ordinary managed tools, exactly like it manages ripgrep or Node.js. If you want AI-to-AI collaboration, install peerhub separately on top of an Engram environment.
 
@@ -20,7 +20,7 @@ Engram bootstraps a self-contained Windows dev environment — Python, Node.js, 
 - **Portable runtime virtualization** — Python, Node.js, Git, VS Code, and PowerShell are downloaded, pinned by version+hash in `_sys/runtimes.json`, and run entirely from inside the portable folder. Nothing touches `C:\Program Files` or the registry.
 - **Generic tool catalog** — dev CLI tools (ripgrep, bat, fd, delta, fzf, jq, gh, sqlite, oh-my-posh) install/update through one pinned, hash-verified pipeline (`_sys/runtimes.json`'s `tools` section).
 - **AI-CLI lifecycle management** — a separate catalog (`_sys/tool-catalog.v1.json`) tracks Claude Code / Codex / agy the same way: install, version-pin, canary-verify. Engram never talks to these tools' models or protocols — it only manages the binaries.
-- **No junctions or SUBST drive by default** — a fresh install creates neither: `register`'s directory-junction step is driven entirely by `_sys/managed-links.json`, which ships with zero entries (AI-CLI personal config is redirected via plain environment variables instead, see `docs/engram-dotdir.md`), and nothing in the current registration flow ever mounts a virtual drive. The junction machinery (`_sys/core/virtualizer.py`) stays available as generic host-integration infrastructure for the rare case a future entry is added to `managed-links.json`; `unregister` tears down whatever `register` actually created, cleanly, either way.
+- **No junctions or SUBST drive** — Engram uses no directory junctions and mounts no virtual drive: AI-CLI personal config is redirected via plain environment variables instead (see `docs/engram-dotdir.md`), and paths are always resolved physical.
 - **Real uninstall** — `engram uninstall` computes an installation-scoped ID, writes a journal outside the install directory (survives the directory's own deletion), and hands off to an external helper that waits for the running process to exit before purging the folder — so a running instance never tries to delete the directory it's executing from.
 - **On-demand tool updates** — `UPDATE.bat` discovers newer versions of every catalog entry and applies them through the same pinned, hash-verified install path used for first-time setup.
 - **Zero-bloat by construction** — the packaging pipeline (`tools/winget/build_package.py`) only ever bundles an explicit root-file allowlist plus `_sys/`, minus caches/temp/state; nothing accumulates into the distributed archive that wasn't put there on purpose.
@@ -71,15 +71,15 @@ This does **not work yet** — the manifest was submitted as [microsoft/winget-p
 | Command | Does |
 |---|---|
 | `engram install` / `setup` | Bootstrap the portable runtime and tool catalog |
-| `engram status` / `doctor` | Report environment health (runtimes, tools, junction state) |
-| `engram register` | Set up the right-click context menu and any configured host-profile junctions (equivalent to `register.bat`) |
+| `engram status` / `doctor` | Report environment health (runtimes, tools, configuration) |
+| `engram register` | Set up the right-click context menu (equivalent to `register.bat`) |
 | `engram unregister` | Undo whatever `register` set up, leaving the portable folder itself intact |
 | `engram update` | Discover and apply pinned-version updates across the catalog |
 | `engram cleanup` | Tiered cache/temp reclamation (`_sys/core/scrubber.py`) |
 | `engram tidy` | Interactive, dry-run-first temp-file cleanup preview |
 | `engram menu-cleanup` | On-demand sweep of every right-click context-menu entry (any install, not just this one) — removes ones whose recorded folder no longer exists |
 | `engram launch` / `start` | Open the registered environment (VS Code + shell) |
-| `engram uninstall` | Full removal: registry/junction teardown, then a background helper purges the folder once this process exits |
+| `engram uninstall` | Full removal: registry teardown, then a background helper purges the folder once this process exits |
 | `engram version` / `--version` / `-v` | Print the current version (`_sys/core/version.json`) |
 
 To install or update an individual AI CLI tool directly:

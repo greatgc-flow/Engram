@@ -140,13 +140,13 @@ echo   engram ^<command^> [options...]
 echo.
 echo Lifecycle ^& Environment:
 echo   install               Bootstrap portable Python and deploy all toolchains
-echo   status / doctor       Report environment health, tool status, and junction state
-echo   register              Set up right-click context menu and host-profile junctions
-echo   unregister            Remove right-click context menu and host-profile junctions
+echo   status / doctor       Report environment health, tool status, and configuration
+echo   register              Set up right-click context menu
+echo   unregister            Remove right-click context menu
 echo   update                Check and apply latest stable runtime and tool updates
 echo   cleanup / tidy        Clean temporary logs, caches, and orphaned files
 echo   menu-cleanup          Remove orphaned right-click context-menu entries (any install)
-echo   uninstall             Full removal: registry/junction teardown and folder purge
+echo   uninstall             Full removal: registry teardown and folder purge
 echo.
 echo Options:
 echo   --version, -v         Display Engram version information

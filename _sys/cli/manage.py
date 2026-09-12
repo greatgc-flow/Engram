@@ -58,10 +58,8 @@ def main():
 
     try:
         if args.action == "register":
-            from core.virtualizer import mount
-            from core.registrar   import apply
+            from core.registrar import apply
             import datetime, json
-            mount(ctx)
             apply(ctx)
             # Persist state
             state_dir = ctx["paths"]["state"]
@@ -72,10 +70,8 @@ def main():
             print(f"  [OK] State saved → {state_file.relative_to(base_dir)}")
 
         elif args.action == "unregister":
-            from core.registrar   import remove
-            from core.virtualizer import unmount
+            from core.registrar import remove
             remove(ctx)
-            unmount(ctx)
             for f in ("register.state.json",):
                 sf = ctx["paths"]["state"] / f
                 if sf.exists():

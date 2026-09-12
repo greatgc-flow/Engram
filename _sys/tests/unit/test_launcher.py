@@ -7,71 +7,7 @@ import pytest
 SYS = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SYS))
 
-from core.launcher import _map_subst_drive, _relocate
-
-# --- Tests for _map_subst_drive ---
-
-@patch("core.launcher.subprocess.run")
-@patch("core.launcher.os.path.exists")
-@patch("core.launcher.time.sleep")
-def test_map_subst_drive_not_mapped_yet(mock_sleep, mock_exists, mock_run):
-    """Standard case: drive is not currently mapped, subst succeeds."""
-    mock_exists.side_effect = [False, True]
-
-    mock_res = MagicMock()
-    mock_res.returncode = 0
-    mock_run.return_value = mock_res
-
-    _map_subst_drive(Path("C:/my/base"), "Z")
-
-    mock_run.assert_called_once_with(["subst", "Z:", "C:\\my\\base"], capture_output=True)
-    # os.path.exists's 2nd call (inside the post-mapping poll loop) returns True
-    # on the first iteration, which sleeps once before breaking.
-    mock_sleep.assert_called_once_with(0.2)
-
-@patch("core.launcher.subprocess.run")
-@patch("core.launcher.os.path.exists")
-@patch("core.launcher.Path.exists")
-@patch("core.launcher.time.sleep")
-def test_map_subst_drive_already_correctly_mapped(mock_sleep, mock_path_exists, mock_exists, mock_run):
-    """Edge case: drive is already correctly mapped to our workspace."""
-    mock_exists.return_value = True
-    mock_path_exists.return_value = True
-
-    _map_subst_drive(Path("C:/my/base"), "Z")
-    mock_run.assert_not_called()
-
-@patch("core.launcher.subprocess.run")
-@patch("core.launcher.os.path.exists")
-@patch("core.launcher.Path.exists")
-@patch("core.launcher.time.sleep")
-def test_map_subst_drive_occupied_and_remap_succeeds(mock_sleep, mock_path_exists, mock_exists, mock_run):
-    """High-risk case: drive occupied by another path, must be removed and re-added."""
-    mock_exists.return_value = True
-    mock_path_exists.return_value = False
-
-    mock_res = MagicMock()
-    mock_res.returncode = 0
-    mock_run.return_value = mock_res
-
-    _map_subst_drive(Path("C:/my/base"), "Z")
-
-    assert mock_run.call_count == 2
-    mock_run.assert_any_call(["subst", "Z:", "/D"], capture_output=True)
-    mock_run.assert_any_call(["subst", "Z:", "C:\\my\\base"], capture_output=True)
-
-@patch("core.launcher.subprocess.run")
-@patch("core.launcher.os.path.exists")
-def test_map_subst_drive_subst_fails_directly(mock_exists, mock_run):
-    """Failure case: drive not occupied but subst fails."""
-    mock_exists.return_value = False
-
-    mock_res = MagicMock()
-    mock_res.returncode = 1
-    mock_run.return_value = mock_res
-
-    with pytest.raises(RuntimeError, match="subst Z: failed"):
-        _map_subst_drive(Path("C:/my/base"), "Z")
+from core.launcher import _relocate
 
 # --- Tests for _relocate ---
 

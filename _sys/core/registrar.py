@@ -55,9 +55,8 @@ def _expand(
     s = s.replace("{DRIVE}", drive)
     # {FOLDER}: the install's own folder name (base_dir.name) -- distinct
     # from {DRIVE}, which collides whenever two installs share a physical
-    # drive (e.g. D:\t2 and D:\tttt both render "D:") and which implies a
-    # SUBST/virtual drive is in play when the production default is not
-    # to mount one at all. Preferred in context_menu.json's shipped label.
+    # drive (e.g. D:\t2 and D:\tttt both render "D:"). Preferred in
+    # context_menu.json's shipped label.
     s = s.replace("{FOLDER}", folder)
     return s
 
@@ -149,14 +148,6 @@ def _register_entry(
     # data files (read with `set /p`, not embedded as literal batch text)
     # -- see _write_sidecar for why this is the only mechanism found
     # empirically that survives "%"/"^" in the path for cd/call purposes.
-    # `root` is NOT necessarily a bare drive letter: when no SUBST/virtual
-    # drive is mounted (the current production default -- virtualizer.py
-    # only creates junctions, nothing sets state["subst_drive"]), `root`
-    # equals `phys_root` exactly, i.e. the arbitrary physical path. So
-    # both values need the same sidecar treatment; neither is safe to
-    # embed directly. (Found via cx cross-review 2026-09-05 -- an earlier
-    # version of this fix wrongly assumed `root` was always a safe
-    # drive-letter path.)
     relay_path = relay_root / f"{key_name}.bat"
     root_file = f"{key_name}.root.txt"
     physroot_file = f"{key_name}.physroot.txt"
@@ -333,9 +324,8 @@ def apply(ctx: dict) -> dict:
         print("  [Warning] context_menu.json missing or empty — skipped (no context menus)")
         return {"status": "success", "operation": "registry.apply", "skipped": True}
 
-    drive      = virt_state.get("subst_drive") or base_dir.drive.rstrip(":")
-    root       = str(Path(f"{drive}:\\")) if virt_state.get("subst_drive") else str(base_dir)
-    phys_root  = str(base_dir)
+    drive      = base_dir.drive.rstrip(":")
+    root       = phys_root = str(base_dir)
     relay_root = Path(os.environ.get("LOCALAPPDATA", ""))
     base_key   = _registry_key_name(Path(root))
     targets_cfg = cfg.get("registry", {}).get("targets", {})

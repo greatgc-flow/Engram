@@ -12,8 +12,8 @@ non-ASCII (Korean) characters in:
   - PATH entries
   - cwd of the launched process (VS Code TARGET_DIR)
 
-SUBST is the only mechanism that converts Korean physical paths to ASCII.
-These tests verify that SUBST protection is in place at every relevant point.
+Paths are preserved cleanly without truncation or quote collapse.
+These tests verify that path protection is in place at every relevant point.
 """
 import re
 import json
@@ -63,13 +63,12 @@ class TestRegistryCommandFormat:
         r"E:\dev (copy)",
     ])
     def test_physical_path_in_registry_cmd(self, base_path):
-        """Physical path (no SUBST) must be used in registry to survive reboot."""
+        """Physical path must be used in registry to survive reboot."""
         sys.path.insert(0, str(SYS_DIR / "cli"))
         import manage
         base = Path(base_path)
         script = base / "_sys" / "cli" / "launch.bat"
         cmd = f'cmd.exe /c ""{script}" "%V""'
-        # Must NOT use SUBST placeholder like 'E:\_sys'
         assert str(script) in cmd
         # Must not reference a different drive as the root
         assert base_path[:2] in cmd  # drive letter present
@@ -216,7 +215,7 @@ class TestNodeJsPathSafety:
 
     # ── [C] PATH entries ─────────────────────────────────────────────────────
     def test_nodejs_path_entry_uses_env_dir_variable(self):
-        """[C] nodejs PATH entries must be in env.json path_entries (SUBST-safe)."""
+        """[C] nodejs PATH entries must be in env.json path_entries (safe)."""
         data = json.loads(ENV_JSON.read_text(encoding="utf-8"))
         path_entries = data.get("path_entries", [])
         nodejs_entries = [e for e in path_entries if "nodejs" in e.get("sub", "")]
@@ -224,87 +223,6 @@ class TestNodeJsPathSafety:
         for entry in nodejs_entries:
             assert entry.get("base") in ("env", "sys"), \
                 f"nodejs entry must use env/sys base: {entry}"
-
-    # ── [D] TARGET substitution ──────────────────────────────────────────────
-    @pytest.mark.parametrize("korean_base,subst,target,expected", [
-        (
-            r"D:\테스트_폴더\PortableDev", "P:",
-            r"D:\테스트_폴더\PortableDev\workspace\myproj",
-            r"P:\workspace\myproj",
-        ),
-        (
-            r"D:\PortableDev (2) - 복사본", "P:",
-            r"D:\PortableDev (2) - 복사본\workspace",
-            r"P:\workspace",
-        ),
-        (
-            r"E:\한글경로\SandboxDev", "Q:",
-            r"E:\한글경로\SandboxDev\workspace\project",
-            r"Q:\workspace\project",
-        ),
-    ])
-    def test_target_substitution_removes_korean_before_nodejs(
-        self, korean_base, subst, target, expected
-    ):
-        """[D] TARGET substitution must replace Korean physical base with SUBST path.
-        The result is passed as cwd/arg to VS Code (Electron/Node.js) — must be ASCII."""
-        # Simulates: set "TARGET=!TARGET:%BASE_DIR_PHYS%=%BASE_DIR%!"
-        result = target.replace(korean_base, subst)
-        assert result == expected, f"Substitution result mismatch: {result}"
-        assert not re.search(r"[가-힣]", result), \
-            f"Korean characters remain in TARGET after substitution: {result}"
-
-    def test_target_outside_base_dir_unchanged(self):
-        """[D] External paths (outside BASE_DIR_PHYS) must NOT be substituted.
-        User opens external projects — those paths must be passed as-is."""
-        korean_base = r"D:\테스트_폴더\PortableDev"
-        subst = "P:"
-        for external in [r"C:\Users\user\project", r"E:\other\repo", r"D:\unrelated"]:
-            result = external.replace(korean_base, subst)
-            assert result == external, \
-                f"External path must be unchanged by TARGET substitution: {result}"
-
-    def test_start_bat_has_target_substitution_logic(self):
-        """[D] launcher.py must substitute physical path with SUBST in target."""
-        content = LAUNCHER_PY.read_text(encoding="utf-8", errors="ignore")
-        assert "base_dir_phys" in content, \
-            "launcher.py must track physical base dir (base_dir_phys)"
-        assert "target.replace" in content, \
-            "launcher.py must replace physical path with SUBST path in target"
-
-    # ── [E] SUBST failure handling ───────────────────────────────────────────
-    def test_subst_failure_causes_error_exit_not_korean_fallback(self):
-        """[E] launcher.py must raise RuntimeError on SUBST failure (no silent fallback)."""
-        content = LAUNCHER_PY.read_text(encoding="utf-8", errors="ignore")
-        assert "RuntimeError" in content, \
-            "launcher.py must raise RuntimeError on SUBST failure"
-        assert "map_subst_drive" in content, \
-            "launcher.py must have map_subst_drive() function"
-
-    # ── [F] Unregistered fallback ────────────────────────────────────────────
-    def test_unregistered_fallback_has_explicit_warning(self):
-        """[F] launcher.py must handle no-SUBST case (fall back to physical path)."""
-        content = LAUNCHER_PY.read_text(encoding="utf-8", errors="ignore")
-        assert "subst_drive" in content.lower(), \
-            "launcher.py must read subst_drive from config"
-        assert "base_dir_phys" in content, \
-            "launcher.py must track physical base_dir_phys for fallback"
-
-    def test_korean_unregistered_gets_temp_subst(self):
-        """[F] launcher.py handles unregistered case via physical path fallback."""
-        content = LAUNCHER_PY.read_text(encoding="utf-8", errors="ignore")
-        assert "subst_drive" in content.lower()
-        assert "base_dir_phys" in content
-
-    def test_start_bat_verifies_subst_target_before_reuse(self):
-        """[S-3] launcher.py must verify existing SUBST maps to this env."""
-        content = LAUNCHER_PY.read_text(encoding="utf-8", errors="ignore")
-        # Sentinel check: verify SUBST points to this env's launcher.py
-        assert "launcher.py" in content, \
-            "launcher.py must verify SUBST drive via sentinel file check"
-        # Must release wrong SUBST with /D before remapping
-        assert '"/D"' in content or "'/D'" in content or '"/D"' in content, \
-            "launcher.py must release wrong SUBST mapping with /D"
 
 
 class TestManagePySubstEncoding:

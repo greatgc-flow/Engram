@@ -73,17 +73,57 @@ def test_check_components_missing_is_warning_not_failure(tmp_path):
     assert r["level"] in ("warning", "ok")
 
 
-def test_check_subst_detects_running_from_mount(tmp_path, monkeypatch):
-    monkeypatch.setattr("core.virtualizer._get_subst_mappings", lambda: {"P": r"D:\PortableDev"})
-    r = doctor.check_subst(Path("P:/"))
+def test_check_legacy_host_integration_clean(tmp_path):
+    sys_dir = tmp_path / "_sys"
+    sys_dir.mkdir(parents=True)
+    r = doctor.check_legacy_host_integration(tmp_path, sys_dir)
     assert r["ok"] is True and r["level"] == "ok"
-    assert "P:" in r["detail"]
+    assert "clean" in r["detail"]
 
 
-def test_check_subst_not_mounted_is_info(tmp_path, monkeypatch):
-    monkeypatch.setattr("core.virtualizer._get_subst_mappings", lambda: {})
-    r = doctor.check_subst(tmp_path)
-    assert r["ok"] is True and r["level"] == "info"
+def test_check_legacy_host_integration_with_subst_drive(tmp_path):
+    sys_dir = tmp_path / "_sys"
+    state_dir = sys_dir / "data" / "state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "register.state.json").write_text(json.dumps({"subst_drive": "P"}), encoding="utf-8")
+    r = doctor.check_legacy_host_integration(tmp_path, sys_dir)
+    assert r["ok"] is True and r["level"] == "warning"
+    assert "subst P: /D" in r["detail"]
+
+
+def test_check_legacy_host_integration_with_junctions(tmp_path):
+    sys_dir = tmp_path / "_sys"
+    state_dir = sys_dir / "data" / "state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "register.state.json").write_text(json.dumps({
+        "junctions": [{"host": "C:\\Users\\user\\.claude"}]
+    }), encoding="utf-8")
+    r = doctor.check_legacy_host_integration(tmp_path, sys_dir)
+    assert r["ok"] is True and r["level"] == "warning"
+    assert 'rmdir "C:\\Users\\user\\.claude"' in r["detail"]
+
+
+def test_check_legacy_host_integration_with_subst_letter_in_config(tmp_path):
+    sys_dir = tmp_path / "_sys"
+    sys_dir.mkdir(parents=True)
+    (sys_dir / "config.json").write_text(json.dumps({"SUBST_DRIVE_LETTER": "Z"}), encoding="utf-8")
+    r = doctor.check_legacy_host_integration(tmp_path, sys_dir)
+    assert r["ok"] is True and r["level"] == "warning"
+    assert "subst Z: /D" in r["detail"]
+
+
+def test_doctor_never_spawns_subst(tmp_path, monkeypatch):
+    import subprocess
+    def no_subst(args, *a, **kw):
+        if isinstance(args, (list, tuple)) and args and "subst" in str(args[0]).lower():
+            raise AssertionError("doctor must never spawn subst.exe!")
+        return subprocess.run(args, *a, **kw)
+    monkeypatch.setattr(subprocess, "run", no_subst)
+    sys_dir = tmp_path / "_sys"
+    _write_runtimes(sys_dir, "3.14.5")
+    monkeypatch.setattr(doctor, "_installed_python_version", lambda sd: "3.14.5")
+    res = doctor.run({"base_dir": tmp_path, "sys_dir": sys_dir, "args": ["--json"]})
+    assert res["status"] == "success"
 
 
 def test_check_elevation_standard_user_is_ok(monkeypatch):
@@ -99,7 +139,7 @@ def test_run_overall_failed_only_when_python_broken(tmp_path, monkeypatch):
     sys_dir = tmp_path / "_sys"
     _write_runtimes(sys_dir, "3.14.5")
     monkeypatch.setattr(doctor, "_installed_python_version", lambda sd: None)  # python broken
-    monkeypatch.setattr(doctor, "check_subst", lambda b: {"name": "subst_drive", "ok": True, "level": "info", "detail": "x"})
+    monkeypatch.setattr(doctor, "check_legacy_host_integration", lambda b, s: {"name": "legacy_host_integration", "ok": True, "level": "ok", "detail": "x"})
     monkeypatch.setattr(doctor, "check_registration", lambda b, s: {"name": "context_menu", "ok": True, "level": "info", "detail": "x"})
     monkeypatch.setattr(doctor, "check_sessions", lambda b: {"name": "sessions", "ok": True, "level": "ok", "detail": "x"})
     res = doctor.run({"base_dir": tmp_path, "sys_dir": sys_dir, "args": ["--json"]})
@@ -110,7 +150,7 @@ def test_run_healthy_when_python_ok(tmp_path, monkeypatch):
     sys_dir = tmp_path / "_sys"
     _write_runtimes(sys_dir, "3.14.5")
     monkeypatch.setattr(doctor, "_installed_python_version", lambda sd: "3.14.5")
-    monkeypatch.setattr(doctor, "check_subst", lambda b: {"name": "subst_drive", "ok": True, "level": "ok", "detail": "x"})
+    monkeypatch.setattr(doctor, "check_legacy_host_integration", lambda b, s: {"name": "legacy_host_integration", "ok": True, "level": "ok", "detail": "x"})
     monkeypatch.setattr(doctor, "check_registration", lambda b, s: {"name": "context_menu", "ok": True, "level": "ok", "detail": "x"})
     monkeypatch.setattr(doctor, "check_sessions", lambda b: {"name": "sessions", "ok": True, "level": "ok", "detail": "x"})
     res = doctor.run({"base_dir": tmp_path, "sys_dir": sys_dir, "args": []})

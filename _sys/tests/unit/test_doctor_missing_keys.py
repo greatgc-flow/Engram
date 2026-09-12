@@ -11,7 +11,7 @@ def test_doctor_missing_keys_no_crash(monkeypatch, capsys):
     
     monkeypatch.setattr(core.doctor, "check_python", lambda sys_dir: {"ok": False, "level": "error"})
     monkeypatch.setattr(core.doctor, "check_components", lambda sys_dir: {"ok": True})
-    monkeypatch.setattr(core.doctor, "check_subst", lambda base_dir: {"ok": False})
+    monkeypatch.setattr(core.doctor, "check_legacy_host_integration", lambda base_dir, sys_dir: {"ok": False})
     monkeypatch.setattr(core.doctor, "check_registration", lambda base_dir, sys_dir: {"ok": False})
     monkeypatch.setattr(core.doctor, "check_sessions", lambda sys_dir: {"ok": True})
     monkeypatch.setattr(core.doctor, "check_elevation", lambda: {"ok": False})

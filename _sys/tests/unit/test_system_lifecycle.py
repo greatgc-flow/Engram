@@ -27,7 +27,6 @@ for p in (_cli_path, _sys_path):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
-from core import virtualizer  # noqa: E402
 from core import registrar  # noqa: E402
 from core import scrubber  # noqa: E402
 import cleanup  # noqa: E402
@@ -65,28 +64,42 @@ class TestSystemLifecycle:
         (sys_dir / "local.config.bat").write_text(":: user config", encoding="utf-8")
         return base_dir
 
-    def test_registration_flow_mount_unmount(self, mock_env, tmp_path):
-        """mount creates junctions from managed-links.json and unmount removes them."""
+    def test_menu_enable_disable_round_trip(self, mock_env, tmp_path):
+        """menu enable/disable round-trips cleanly using registrar without virtualizer."""
         ctx = _make_ctx(mock_env, tmp_path)
-        links = {
-            "_version": "1.0",
-            "entries": {
-                "test_link": {
-                    "relative_link_path": "../test_junction",
-                    "relative_target_path": "test_target"
+        ctx_menu = {
+            "win11_classic_menu": False,
+            "registry": {
+                "targets": {
+                    "Directory": {
+                        "path": r"Software\Classes\Directory\shell",
+                        "arg": "%V",
+                    }
                 }
-            }
+            },
+            "entries": [
+                {
+                    "id": "open_folder",
+                    "label": "Open Engram",
+                    "targets": ["Directory"],
+                    "enabled": True,
+                }
+            ],
         }
-        (mock_env / "_sys" / "managed-links.json").write_text(json.dumps(links), encoding="utf-8")
-        with patch.object(virtualizer, "_ensure_junction") as mock_ensure, \
-             patch.object(virtualizer, "_remove_junction", return_value=True) as mock_remove:
-            mount_result = virtualizer.mount(ctx)
-            assert mount_result["status"] == "success"
-            assert mock_ensure.called
+        (mock_env / "_sys" / "context_menu.json").write_text(json.dumps(ctx_menu), encoding="utf-8")
+        with patch.object(registrar, "_write_relay"), \
+             patch.object(registrar, "_write_sidecar"), \
+             patch("winreg.CreateKey", return_value=MagicMock()), \
+             patch("winreg.SetValueEx"), \
+             patch("winreg.CloseKey"), \
+             patch("subprocess.run", return_value=MagicMock(returncode=0)), \
+             patch.object(registrar, "_clean_orphans"):
+            apply_res = registrar.apply(ctx)
+            assert apply_res["status"] == "success"
+            assert "registry_entries" in ctx["state"]
 
-            unmount_result = virtualizer.unmount(ctx)
-            assert unmount_result["status"] == "success"
-            assert mock_remove.called
+            remove_res = registrar.remove(ctx)
+            assert remove_res["status"] == "success"
 
 
     def test_registrar_apply_empty_or_missing_config_is_success_not_failure(self, mock_env, tmp_path):

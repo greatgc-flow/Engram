@@ -74,14 +74,14 @@ TAGS_KO = [
 SHORT_DESC_EN = "Portable Developer Runtime & Virtual Environment Engine for Windows"
 DESC_EN = (
     "Engram is a zero-bloat, self-contained Windows portable runtime environment that "
-    "provides virtual drive management and isolated Python/Node/Git environments. It can "
-    "optionally install, update, and manage the status of third-party AI CLI tools, but all "
-    "AI-to-AI collaboration itself is handled by the separate peerhub package."
+    "provides isolated Python/Node/Git environments without requiring host installation or "
+    "registry changes. It can optionally install, update, and manage the status of third-party "
+    "AI CLI tools, but all AI-to-AI collaboration itself is handled by the separate peerhub package."
 )
 
 SHORT_DESC_KO = "Windows용 무설치 포터블 개발 런타임 및 가상 환경 엔진"
 DESC_KO = (
-    "Engram은 가상 드라이브 관리(P:)와 격리된 Python/Node/Git 환경을 제공하는 "
+    "Engram은 호스트 설치나 레지스트리 수정 없이 격리된 Python/Node/Git 환경을 제공하는 "
     "Windows 전용 독립형 무설치 포터블 런타임 환경입니다. 서드파티 AI CLI 도구의 "
     "설치·업데이트·상태 확인을 선택적으로 지원하며, AI 간 협업 자체는 별도의 "
     "peerhub 패키지가 담당합니다."

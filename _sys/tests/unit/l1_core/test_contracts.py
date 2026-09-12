@@ -110,7 +110,7 @@ def test_console_runner_is_a_pure_process_wrapper() -> None:
 def test_environment_lifecycle_core_is_intact() -> None:
     """The portable-environment lifecycle modules Engram owns must remain."""
     core = _SYS_DIR / "core"
-    for name in ("provisioner.py", "dispatcher.py", "virtualizer.py",
+    for name in ("provisioner.py", "dispatcher.py",
                  "registrar.py", "updater.py", "doctor.py", "scrubber.py"):
         assert (core / name).exists(), f"missing Engram lifecycle module: {name}"
 

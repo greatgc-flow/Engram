@@ -1,7 +1,6 @@
 """
 Path Scenarios Test (PATH)
-Verify registration and execution with Korean paths and SUBST conflicts.
-Migrated from manage.py API to core.virtualizer + core.registrar (new API).
+Verify registration and execution with Korean paths and special characters.
 """
 import datetime
 import json
@@ -16,7 +15,7 @@ _sys_path = Path(__file__).parent.parent.parent  # _sys/
 if str(_sys_path) not in sys.path:
     sys.path.insert(0, str(_sys_path))
 
-from core import virtualizer, registrar  # noqa: E402
+from core import registrar  # noqa: E402
 
 _real_os_exists = os.path.exists
 
@@ -54,22 +53,8 @@ class TestPathScenarios:
         (base / "_sys" / "ai").mkdir(parents=True)
         return base
 
-
-    def test_start_bat_emulation_logic(self, tmp_path):
-        """Scenario 5: start.bat 경로 파생 로직 — SUBST 치환 후 한글 문자 제거 확인."""
-        sys_dir_phys = tmp_path / "테스트_폴더" / "PortableDev" / "_sys"
-        sys_dir_phys.mkdir(parents=True)
-        base_dir_phys = sys_dir_phys.parent
-
-        assert "테스트_폴더" in str(base_dir_phys)
-        subst_drive = "Z:"
-        target_phys = str(base_dir_phys / "workspace" / "project1")
-        target_virtual = target_phys.replace(str(base_dir_phys), subst_drive)
-        assert target_virtual == "Z:\\workspace\\project1"
-        assert "테스트_폴더" not in target_virtual
-
-    def test_registry_command_uses_subst_path(self, korean_base, tmp_path):
-        """Scenario 6: 레지스트리 명령에 cmd.exe /c \"\" 이중인용부호 래핑 확인."""
+    def test_registry_command_double_quotes_wrapping(self, korean_base, tmp_path):
+        """Scenario: 레지스트리 명령에 cmd.exe /c \"\" 이중인용부호 래핑 확인."""
         sys_dir = korean_base / "_sys"
         ctx_menu = {
             "win11_classic_menu": False,
@@ -87,7 +72,7 @@ class TestPathScenarios:
             "entries": [
                 {
                     "id": "sandbox_open",
-                    "label": "Open Sandbox ({DRIVE}:)",
+                    "label": "Open Sandbox ({FOLDER})",
                     "icon": "",
                     "targets": ["Directory"],
                     "enabled": True,
@@ -98,7 +83,6 @@ class TestPathScenarios:
         (sys_dir / "context_menu.json").write_text(json.dumps(ctx_menu), encoding="utf-8")
 
         ctx = _make_ctx(korean_base, tmp_path)
-        ctx["state"]["subst_drive"] = "P"
         local_dir = ctx["paths"]["localappdata"]
 
         with patch.dict(os.environ, {"LOCALAPPDATA": str(local_dir)}), \
@@ -209,7 +193,7 @@ class TestPathScenarios:
                     "entries": [
                         {
                             "id": "sandbox_open",
-                            "label": "Open Sandbox ({DRIVE}:)",
+                            "label": "Open Sandbox ({FOLDER})",
                             "icon": "",
                             "targets": ["Directory"],
                             "enabled": True,
@@ -220,7 +204,6 @@ class TestPathScenarios:
             encoding="utf-8",
         )
         ctx = _make_ctx(korean_base, tmp_path)
-        ctx["state"]["subst_drive"] = "P"
 
         with patch.dict(os.environ, {"LOCALAPPDATA": str(ctx["paths"]["localappdata"])}), \
              patch("winreg.CreateKey", side_effect=PermissionError("denied")), \
@@ -230,29 +213,6 @@ class TestPathScenarios:
 
         assert result["status"] == "failed"
         assert any("registry write failed" in error for error in result["errors"])
-
-
-    def test_local_config_no_non_ascii_fix(self, korean_base, tmp_path):
-        """register.state.json: 드라이브 문자 저장, 한글 값 없음."""
-        ctx = _make_ctx(korean_base, tmp_path)
-        ctx["state"]["subst_drive"] = "P"
-        ctx["state"]["junctions"] = []
-
-        state_dir = ctx["paths"]["state"]
-        state_dir.mkdir(parents=True, exist_ok=True)
-        state_file = state_dir / "register.state.json"
-        payload = {
-            "timestamp": datetime.datetime.now().isoformat(),
-            "base_dir":  str(korean_base),
-            **ctx["state"],
-        }
-        state_file.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-
-        data = json.loads(state_file.read_text(encoding="utf-8"))
-        assert "subst_drive" in data, "state에 subst_drive 키가 있어야 함"
-        assert data["subst_drive"] == "P", "드라이브 문자만 저장되어야 함"
-        assert not re.search(r"[가-힣]", str(data["subst_drive"])), \
-            "drivevalue에 한글이 없어야 함"
 
     def test_registrar_caret_percent_relay_end_to_end(self, tmp_path):
         """End-to-end: relay .bat survives physical paths with '^' and '%' via sidecar."""

@@ -9,14 +9,6 @@
             "idempotent": true,
             "failure_policy": "abort"
         },
-        "virtual.mount": {
-            "module": "core.virtualizer",
-            "method": "mount",
-            "config": "managed-links.json",
-            "idempotent": true,
-            "failure_policy": "warn",
-            "state_key": "register"
-        },
         "registry.apply": {
             "module": "core.registrar",
             "method": "apply",
@@ -24,12 +16,6 @@
             "idempotent": true,
             "failure_policy": "warn",
             "state_key": "register"
-        },
-        "virtual.unmount": {
-            "module": "core.virtualizer",
-            "method": "unmount",
-            "idempotent": true,
-            "failure_policy": "continue"
         },
         "registry.remove": {
             "module": "core.registrar",
@@ -76,14 +62,23 @@
             "provision.deploy",
             "state.write"
         ],
+        "menu-enable": [
+            "registry.apply",
+            "state.write"
+        ],
+        "menu-disable": [
+            "registry.remove",
+            "state.prune"
+        ],
+        "menu-clean": [
+            "registry.clean_orphans"
+        ],
         "register": [
-            "virtual.mount",
             "registry.apply",
             "state.write"
         ],
         "unregister": [
             "registry.remove",
-            "virtual.unmount",
             "state.prune"
         ],
         "cleanup": [
