@@ -1313,8 +1313,26 @@ def _write_handoff(session_dir: Path, sections: dict) -> None:
     sections["ACTIVE_THREADS"]    = sections.get("ACTIVE_THREADS", [])[-HANDOFF_MAX_THREADS:]
     
     text = _render_handoff(sections)
-    while len(text) > HANDOFF_MAX_CHARS and sections["RECENT_COMPLETED"]:
-        sections["RECENT_COMPLETED"].pop(0)
+    # Enforce the total bound across every section. The old loop only evicted
+    # RECENT_COMPLETED, so another large section could remain over the limit.
+    eviction_order = (
+        "RECENT_COMPLETED",
+        "CONSENSUS_HISTORY",
+        "ACTIVE_THREADS",
+        "PENDING_ISSUES",
+        "KEY_DECISIONS",
+        "GOAL",
+    )
+    while len(text) > HANDOFF_MAX_CHARS:
+        evicted = False
+        for section in eviction_order:
+            items = sections.get(section, [])
+            if items:
+                items.pop(0)
+                evicted = True
+                break
+        if not evicted:
+            break
         text = _render_handoff(sections)
         
     # Dual Write
@@ -2402,7 +2420,7 @@ def _build_terminal_relay_frame(
     return "\n".join(lines)
 
 
-def _build_ask_query_with_context(ai_root: Path | None, query: str, to_peer: str | None = None) -> str:
+def _build_ask_query_with_context(ai_root: Path | None, query: str, to_peer: str | None = None, oversized_detected: bool = False) -> str:
 
     if ai_root is None:
         return query
@@ -2421,7 +2439,12 @@ def _build_ask_query_with_context(ai_root: Path | None, query: str, to_peer: str
 
     lines = list(policy.preamble_lines) if policy else []
     query_first = bool(policy and policy.query_first)
-    skip_room = bool(policy and policy.skip_room_context)
+    is_self_contained = "[IPC BOUNDARY]" in query
+    skip_directives = is_self_contained and oversized_detected
+    if is_self_contained and oversized_detected:
+        skip_room = True
+    else:
+        skip_room = bool(policy and policy.skip_room_context) or oversized_detected
     skip_completed = bool(policy and policy.skip_room_context_when_complete)
     # skip_room_context drops room context unconditionally; the *_when_complete
     # variant only fires for completed rooms. Either suppresses [HUB CONTEXT]/[HANDOFF].
@@ -2440,6 +2463,8 @@ def _build_ask_query_with_context(ai_root: Path | None, query: str, to_peer: str
             ])
 
     def _append_directives_and_lessons(dst: list[str]) -> None:
+        if skip_directives:
+            return
         # ── User Directives 주입 (_sys/ai/user-directives.md) ────────
         directives_path = Path(__file__).parent.parent / "ai" / "user-directives.md"
         if directives_path.exists():
@@ -2480,6 +2505,14 @@ def _build_ask_query_with_context(ai_root: Path | None, query: str, to_peer: str
         if handoff_path.exists() and include_room_context:
             handoff = handoff_path.read_text(encoding="utf-8", errors="replace").strip()
             selected_sections = policy.handoff_sections if policy else None
+            if selected_sections is None:
+                session_cfg = _load_protocol_cfg().get("session", {})
+                selected_sections = tuple(
+                    session_cfg.get(
+                        "context_fill_sections",
+                        ("GOAL", "PENDING_ISSUES", "KEY_DECISIONS", "ACTIVE_THREADS"),
+                    )
+                )
             if selected_sections is not None and handoff:
                 sections = _parse_handoff(handoff)
                 filtered_lines = []
@@ -4641,14 +4674,6 @@ def _stream_process_output(proc, cmd, input_bytes, heartbeat_sec, zombie_timeout
     (raw_out: bytes, raw_err: bytes)."""
     import threading
 
-    if input_bytes is not None and proc.stdin:
-        try:
-            proc.stdin.write(input_bytes)
-            proc.stdin.flush()
-            proc.stdin.close()
-        except Exception:
-            pass
-
     out_buf = bytearray()
     err_buf = bytearray()
     lock = threading.Lock()
@@ -4692,6 +4717,25 @@ def _stream_process_output(proc, cmd, input_bytes, heartbeat_sec, zombie_timeout
     )
     t_out.start()
     t_err.start()
+
+    # Write input concurrently with output draining. Writing first can
+    # deadlock when the child fills stdout before it begins reading stdin.
+    def _write_input():
+        if input_bytes is None or proc.stdin is None:
+            return
+        try:
+            proc.stdin.write(input_bytes)
+            proc.stdin.flush()
+        except Exception:
+            pass
+        finally:
+            try:
+                proc.stdin.close()
+            except Exception:
+                pass
+
+    t_in = threading.Thread(target=_write_input, daemon=True)
+    t_in.start()
 
     deadline = t0 + (timeout_sec if timeout_sec > 0 else float("inf"))
     silent_warning_sec = _silent_startup_warning_sec()
@@ -4739,6 +4783,7 @@ def _stream_process_output(proc, cmd, input_bytes, heartbeat_sec, zombie_timeout
 
     t_out.join(timeout=1.0)
     t_err.join(timeout=1.0)
+    t_in.join(timeout=1.0)
     with lock:
         return bytes(out_buf), bytes(err_buf)
 
@@ -6112,8 +6157,10 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             # response/output is left untouched (recoverable), only the
             # exit code signals non-clean completion.
             _append_ask_history(ai_root, to, query_file, output_file, elapsed, False, "UNATTRIBUTED_GOVERNED_CHANGE")
+            # Do not suppress success -- publish the peer's output to the terminal 
+            # so the quota spent on this dispatch is not wasted, even if a violation occurred.
             if pending_success is not None:
-                pending_success.suppress()
+                pending_success.publish()
             if inner_exc is None:
                 sys.exit(1)
         elif pending_success is not None:
@@ -6486,6 +6533,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     except (TypeError, ValueError):
         short_reply_warning_chars = 0
 
+    oversized_detected = False
     if _depth == 0 and _escalation_depth == 0 and (max_ask_tasks > 0 or max_ask_chars > 0):
         oversized_reasons, oversized_task_count, oversized_char_count = _oversized_ask_stats(
             user_query_raw, max_ask_tasks, max_ask_chars
@@ -6538,7 +6586,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
             ai_root=ai_root,
         )
     if include_context:
-        query = _build_ask_query_with_context(ai_root, query, to_peer=to)
+        query = _build_ask_query_with_context(ai_root, query, to_peer=to, oversized_detected=oversized_detected)
 
 
     # ── ContextGate check & C3 Capacity Planner ────────────────
@@ -6548,7 +6596,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         ]
         injected_context = ""
         if include_context and ai_root:
-            injected_context = _build_ask_query_with_context(ai_root, "", to_peer=to)
+            injected_context = _build_ask_query_with_context(ai_root, "", to_peer=to, oversized_detected=oversized_detected)
             if injected_context:
                 context_blocks.append({"text": injected_context, "priority": 10, "mandatory": False})
 

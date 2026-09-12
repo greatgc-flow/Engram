@@ -60,6 +60,54 @@ print("STDERR 2", file=sys.stderr)
     assert "STDERR 2" in process_err_str
 
 
+def test_stream_process_output_drains_stdout_while_writing_large_stdin():
+    """Regression: parent and child must not deadlock on opposite full pipes."""
+    payload = b"i" * (256 * 1024)
+    script = (
+        "import sys\n"
+        "sys.stdout.buffer.write(b'o' * (256 * 1024))\n"
+        "sys.stdout.buffer.flush()\n"
+        "data = sys.stdin.buffer.read()\n"
+        "print(f'\\nstdin-bytes:{len(data)}', flush=True)\n"
+    )
+    proc = subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    result = {}
+
+    def _run():
+        try:
+            result["value"] = hub._stream_process_output(
+                proc=proc,
+                cmd=[sys.executable, "-c", script],
+                input_bytes=payload,
+                heartbeat_sec=0.05,
+                zombie_timeout_sec=5.0,
+                timeout_sec=5.0,
+                ai_root=None,
+                to="large-stdin",
+                lease_timeout_sec=5.0,
+            )
+        except BaseException as exc:
+            result["error"] = exc
+
+    worker = threading.Thread(target=_run, daemon=True)
+    worker.start()
+    worker.join(timeout=3.0)
+    if worker.is_alive():
+        proc.kill()
+        worker.join(timeout=2.0)
+
+    assert not worker.is_alive(), "large stdin/stdout exchange deadlocked"
+    assert "error" not in result
+    stdout, stderr = result["value"]
+    assert b"stdin-bytes:262144" in stdout
+    assert stderr == b""
+
+
 def test_stream_process_output_warns_on_silent_startup_without_killing(tmp_path, monkeypatch):
     """A peer that stays silent past the (non-lethal) warning threshold must
     emit a peer_silent_startup telemetry event but NEVER be killed by it -

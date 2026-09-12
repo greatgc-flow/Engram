@@ -674,6 +674,19 @@ class ClaudeAdapter(BaseAdapter):
                 use_stdin = True
             else:
                 processed_args.append(arg)
+        # Claude's default print-mode output is buffered until the whole agent
+        # turn finishes. Hub's silence watchdog needs observable progress, so
+        # select the vendor's streaming JSON transport at the adapter boundary.
+        if "--output-format" in processed_args:
+            output_index = processed_args.index("--output-format")
+            if output_index + 1 < len(processed_args):
+                processed_args[output_index + 1] = "stream-json"
+            else:
+                processed_args.append("stream-json")
+        else:
+            processed_args.extend(["--output-format", "stream-json"])
+        if "--verbose" not in processed_args:
+            processed_args.append("--verbose")
         return [invoke] + processed_args + node.get("profile_args", []), use_stdin
 
     def build_session_cmd(
@@ -694,7 +707,42 @@ class ClaudeAdapter(BaseAdapter):
         return SessionInvocation(cmd, use_stdin, effective_id)
 
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
+        events = self._stream_events(stdout)
+        for event in reversed(events):
+            if event.get("type") == "result":
+                result = event.get("result")
+                if isinstance(result, str) and result.strip():
+                    return result.strip()
+        for event in reversed(events):
+            result = event.get("result")
+            if isinstance(result, str) and result.strip():
+                return result.strip()
         return stdout.strip()
+
+    @staticmethod
+    def _stream_events(stdout: str) -> list[dict[str, Any]]:
+        events: list[dict[str, Any]] = []
+        for line in stdout.splitlines():
+            candidate = line.strip()
+            object_start = candidate.find("{")
+            if object_start < 0:
+                continue
+            try:
+                event = json.loads(candidate[object_start:])
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if isinstance(event, dict):
+                events.append(event)
+        return events
+
+    def extract_session_id(
+        self, stdout: str, node: dict[str, Any], command_session_id: str | None
+    ) -> str | None:
+        for event in reversed(self._stream_events(stdout)):
+            session_id = event.get("session_id")
+            if isinstance(session_id, str) and session_id.strip():
+                return session_id.strip()
+        return command_session_id
 
     def extract_usage(self, stdout: str, node: dict[str, Any], session_id: str | None = None) -> dict[str, Any]:
         if not session_id:

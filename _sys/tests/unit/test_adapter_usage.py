@@ -59,6 +59,33 @@ def test_claude_extract_usage_missing_file_returns_empty(tmp_path, monkeypatch):
     assert hub_peer.ClaudeAdapter().extract_usage("", {}, session_id="missing") == {}
 
 
+def test_claude_command_streams_progress_and_keeps_prompt_out_of_argv():
+    query = "x" * 20_000
+    cmd, use_stdin = hub_peer.ClaudeAdapter().build_cmd(
+        {"invoke": "claude.cmd", "invoke_args": ["-p", "{query}"]}, query
+    )
+
+    assert use_stdin is True
+    assert query not in cmd
+    assert "-" in cmd
+    assert cmd[cmd.index("--output-format") + 1] == "stream-json"
+    assert "--verbose" in cmd
+
+
+def test_claude_stream_output_returns_final_result_and_session_id():
+    raw = "\n".join(
+        [
+            json.dumps({"type": "system", "subtype": "init", "session_id": "session-live"}),
+            json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "working"}]}}),
+            json.dumps({"type": "result", "subtype": "success", "result": "final answer", "session_id": "session-live"}),
+        ]
+    )
+    adapter = hub_peer.ClaudeAdapter()
+
+    assert adapter.parse_output(raw, {}) == "final answer"
+    assert adapter.extract_session_id(raw, {}, "command-id") == "session-live"
+
+
 def test_claude_extract_usage_session_mismatch_returns_empty(tmp_path, monkeypatch):
     projects = tmp_path / "claude-projects"
     monkeypatch.setattr(hub_peer, "_claude_projects_dir", lambda: projects)

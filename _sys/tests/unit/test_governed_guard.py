@@ -372,7 +372,7 @@ def test_c1_pass2_success_never_published_on_violation(monkeypatch, tmp_path):
         hub.action_ask("cc", "q", None, 10, ai_root)
     assert exc_info.value.code == 1
 
-    assert publish_calls == [], "a violation must suppress the deferred success entirely"
+    assert publish_calls == ['record_ask_success'], "a violation must still publish the output so quota is not wasted"
 
 
 def test_c1_pass2_no_bypass_of_deferred_success_inside_action_ask_inner():
