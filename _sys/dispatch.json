@@ -64,6 +64,11 @@
             "module": "core.doctor",
             "method": "run",
             "failure_policy": "abort"
+        },
+        "uninstall.run": {
+            "module": "core.uninstaller",
+            "method": "run",
+            "failure_policy": "abort"
         }
     },
     "pipelines": {
@@ -96,6 +101,9 @@
         ],
         "status": [
             "status.run"
+        ],
+        "uninstall": [
+            "uninstall.run"
         ]
     }
 }

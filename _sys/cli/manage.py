@@ -45,124 +45,10 @@ def _make_ctx(base_dir: Path, extra_args: list) -> dict:
     }
 
 
-def uninstall(ctx: dict):
-    import hashlib, json, os, subprocess, sys, uuid
-    from pathlib import Path
-    
-    base_dir = ctx["base_dir"]
-    state_file = ctx["paths"]["state"] / "register.state.json"
-    is_registered = state_file.exists()
-    
-    install_id = hashlib.sha256(str(base_dir.absolute()).lower().encode("utf-8")).hexdigest()
-    journal_dir = ctx["paths"]["localappdata"] / "Engram" / "uninstall" / install_id
-    journal_dir.mkdir(parents=True, exist_ok=True)
-    journal_path = journal_dir / "journal.json"
-    
-    journal = {
-        "operation": "uninstall",
-        "status": "IN_PROGRESS",
-        "steps": [],
-        "error_recoverable": False
-    }
-    
-    def write_journal():
-        journal_path.write_text(json.dumps(journal, indent=2, ensure_ascii=False), encoding="utf-8")
-        
-    write_journal()
-    print(f"Uninstall started. ID: {install_id}")
-    
-    if is_registered:
-        print("  - Performing registry and junction cleanup...")
-        from core.registrar import remove
-        from core.virtualizer import unmount
-        try:
-            remove(ctx)
-            journal["steps"].append("registry_cleanup")
-            unmount(ctx)
-            journal["steps"].append("junction_cleanup")
-        except Exception as e:
-            journal["status"] = "FAILED_RECOVERABLE"
-            journal["error_recoverable"] = True
-            write_journal()
-            print(f"  [ERROR] Cleanup failed: {e}")
-            sys.exit(1)
-    else:
-        print("  - Not registered. Skipping registry/junction cleanup.")
-        
-    write_journal()
-    
-    nonce = uuid.uuid4().hex
-    temp_dir = Path(os.environ.get("TEMP", "C:/Temp")) / "EngramUninstall" / install_id / nonce
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    helper_path = temp_dir / "EngramUninstallHelper.bat"
-    
-    helper_content = """@echo off
-set "BASE_DIR=%ENGRAM_UNINSTALL_BASE_DIR%"
-set "JOURNAL_PATH=%ENGRAM_UNINSTALL_JOURNAL_PATH%"
-set "PARENT_PID=%ENGRAM_UNINSTALL_PARENT_PID%"
-set "NPM_GLOBAL=%ENGRAM_UNINSTALL_NPM_GLOBAL%"
-setlocal enabledelayedexpansion
-
-echo Waiting for parent process (PID: !PARENT_PID!) to exit...
-set wait_count=0
-:WAIT_LOOP
-tasklist /FI "PID eq !PARENT_PID!" 2>NUL | find "!PARENT_PID!" >NUL
-if "!ERRORLEVEL!"=="0" (
-    if !wait_count! geq 30 (
-        echo Parent process did not exit within 30s.
-        powershell -Command "$j=Get-Content '!JOURNAL_PATH!' -Raw|ConvertFrom-Json;$j.status='FAILED_FATAL';$j.steps+='directory_purge_timeout';$j|ConvertTo-Json -Depth 10|Set-Content '!JOURNAL_PATH!'"
-        exit /b 1
-    )
-    timeout /t 1 /nobreak >NUL
-    set /a wait_count+=1
-    goto WAIT_LOOP
-)
-
-echo Parent exited. Purging "!BASE_DIR!" and "!NPM_GLOBAL!"...
-
-if exist "!NPM_GLOBAL!" (
-    rmdir /s /q "!NPM_GLOBAL!"
-)
-
-if exist "!BASE_DIR!" (
-    rmdir /s /q "!BASE_DIR!"
-)
-
-if exist "!BASE_DIR!" (
-    echo Failed to delete some files.
-    powershell -Command "$j=Get-Content '!JOURNAL_PATH!' -Raw|ConvertFrom-Json;$j.status='FAILED_RECOVERABLE';$j.steps+='directory_purge';$j.error_recoverable=$true;$j|ConvertTo-Json -Depth 10|Set-Content '!JOURNAL_PATH!'"
-) else (
-    echo Purge completed successfully.
-    powershell -Command "$j=Get-Content '!JOURNAL_PATH!' -Raw|ConvertFrom-Json;$j.status='COMPLETED';$j.steps+='directory_purge';$j|ConvertTo-Json -Depth 10|Set-Content '!JOURNAL_PATH!'"
-)
-exit /b 0
-"""
-    helper_path.write_text(helper_content, encoding="utf-8")
-    
-    npm_global = ctx["sys_dir"] / "env" / "nodejs" / "npm-global"
-    parent_pid = os.getpid()
-    
-    print("  - Handing off to external uninstall helper...")
-    DETACHED_PROCESS = 0x00000008
-    env = os.environ.copy()
-    env["ENGRAM_UNINSTALL_BASE_DIR"] = str(base_dir)
-    env["ENGRAM_UNINSTALL_JOURNAL_PATH"] = str(journal_path)
-    env["ENGRAM_UNINSTALL_PARENT_PID"] = str(parent_pid)
-    env["ENGRAM_UNINSTALL_NPM_GLOBAL"] = str(npm_global)
-    subprocess.Popen(
-        ["cmd.exe", "/c", f".\\{helper_path.name}"],
-        cwd=str(helper_path.parent),
-        creationflags=DETACHED_PROCESS,
-        close_fds=True,
-        env=env,
-    )
-    sys.exit(0)
-
-
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Portable Dev Environment Manager")
-    parser.add_argument("action", choices=["register", "unregister", "cleanup", "uninstall"])
+    parser.add_argument("action", choices=["register", "unregister", "cleanup"])
     parser.add_argument("target",   nargs="?", default="")
     parser.add_argument("--base-dir", default="")
     args, unknown = parser.parse_known_args()
@@ -199,9 +85,6 @@ def main():
         elif args.action == "cleanup":
             from core.scrubber import run
             run(ctx)
-
-        elif args.action == "uninstall":
-            uninstall(ctx)
 
     except Exception as e:
         print(f"\n[FATAL] {e}")

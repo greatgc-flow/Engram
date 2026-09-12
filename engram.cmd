@@ -110,7 +110,7 @@ exit /b %ERRORLEVEL%
 :: Info Handlers
 :: ----------------------------------------------------------------------------
 :cmd_uninstall
-call ".\_sys\env\venv\Scripts\python.exe" "_sys\cli\manage.py" uninstall
+call "_sys\core\dispatch.bat" uninstall %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :show_version
