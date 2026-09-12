@@ -43,7 +43,8 @@ from snapshot import (
     _build_profile_rows, _clamped_remaining_from_used_frac,
     _quota_remaining, _context_remaining, _effort_strength,
     _derive_headroom_rows, _next_headroom_target, _fmt_remaining,
-    _profile_id_from_scope, _session_context_measured, _build_session_rows,
+    _profile_id_from_scope, _resolve_profile_attribution,
+    _session_context_measured, _build_session_rows,
     _governance_params, _alert, _compute_alerts, normalize_peer,
     collect_snapshot, snapshot_hash, snapshot_failover_target,
 )
@@ -2291,7 +2292,9 @@ def render_tokens(stdout=None):
 _DEFAULT_COST_LOG_PATH = SYS_DIR / "data" / "logs" / "cost-log.jsonl"
 
 
-def load_recent_session_consumption(cost_log_path: Path, limit: int = 10) -> list:
+def load_recent_session_consumption(
+    cost_log_path: Path, limit: int = 10, orchestration: dict | None = None,
+) -> list:
     """Aggregate cost-log.jsonl rows into per-(root_peer, session) token totals,
     most-recent first (design doc §3.3-3.4).
 
@@ -2306,6 +2309,11 @@ def load_recent_session_consumption(cost_log_path: Path, limit: int = 10) -> lis
     """
     if not cost_log_path.exists():
         return []
+    if orchestration is None:
+        try:
+            orchestration = _read_orchestration()
+        except Exception:
+            orchestration = {}
 
     groups: dict[tuple, dict] = {}
     lines = cost_log_path.read_text(encoding="utf-8").splitlines()
@@ -2336,8 +2344,22 @@ def load_recent_session_consumption(cost_log_path: Path, limit: int = 10) -> lis
 
         group = groups.setdefault(
             (root_peer, session_key),
-            {"peer": root_peer, "session_id": session_key, "turns": {}, "cumulative": {}},
+            {
+                "peer": root_peer, "session_id": session_key,
+                "turns": {}, "cumulative": {},
+                "explicit_profiles": set(), "model_ids": set(),
+            },
         )
+
+        profile_id = row.get("profile_id")
+        if profile_id:
+            group["explicit_profiles"].add(str(profile_id))
+        peer_text = str(peer_id)
+        if "." in peer_text:
+            group["explicit_profiles"].add(peer_text)
+        model_id = row.get("model_id")
+        if model_id:
+            group["model_ids"].add(str(model_id))
 
         turn_id = row.get("turn_id")
         dedup_sub = turn_id or ask_id or f"__line_{line_no}"
@@ -2388,6 +2410,12 @@ def load_recent_session_consumption(cost_log_path: Path, limit: int = 10) -> lis
 
         results.append({
             "peer": root_peer,
+            "profile": _resolve_profile_attribution(
+                root_peer,
+                group["explicit_profiles"],
+                group["model_ids"],
+                orchestration,
+            ),
             "session_id": session_key,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
@@ -2412,18 +2440,22 @@ def render_sessions(stdout=None, snapshot=None):
     render_recent_consumption(out)
 
 
-def render_recent_consumption(stdout=None, cost_log_path=None, limit=10):
-    """Recent token-consuming sessions (design doc §3): peer/session, tokens,
-    cost, most-recent first. Unknown fields render 'unknown' (DIR-004: never
-    guess/fabricate a number diag can't measure)."""
+def render_recent_consumption(
+    stdout=None, cost_log_path=None, limit=10, orchestration=None,
+):
+    """Recent token-consuming sessions (design doc §3): peer/profile/session,
+    tokens, cost, most-recent first. Unknown fields render 'unknown' (DIR-004:
+    never guess/fabricate a value diag can't measure)."""
     out = stdout or sys.stdout
     path = cost_log_path or _DEFAULT_COST_LOG_PATH
-    rows = load_recent_session_consumption(path, limit=limit)
+    rows = load_recent_session_consumption(
+        path, limit=limit, orchestration=orchestration,
+    )
     out.write(f"\nRECENT TOKEN CONSUMPTION (last {limit} sessions)\n")
     if not rows:
         out.write("(no recent session consumption)\n")
         return
-    out.write("PEER   SESSION                        INPUT      OUTPUT     TOTAL      COST_USD   COVERAGE       LAST_TS\n")
+    out.write("PEER   PROFILE                            SESSION                        INPUT      OUTPUT     TOTAL      COST_USD   COVERAGE       LAST_TS\n")
     for row in rows:
         def _n(v):
             return f"{v:,}" if isinstance(v, (int, float)) else "unknown"
@@ -2431,6 +2463,7 @@ def render_recent_consumption(stdout=None, cost_log_path=None, limit=10):
         cost_s = f"${cost:.4f}" if isinstance(cost, (int, float)) else "unknown"
         out.write(
             f"{str(row.get('peer') or '?'):<6} "
+            f"{str(row.get('profile') or '?'):<34} "
             f"{_elide_display(str(row.get('session_id') or '-'), 30):<30} "
             f"{_n(row.get('input_tokens')):<10} "
             f"{_n(row.get('output_tokens')):<10} "

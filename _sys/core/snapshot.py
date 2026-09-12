@@ -1687,6 +1687,72 @@ def _profile_id_from_scope(scope_key, peer_id):
     return peer_id
 
 
+def _resolve_profile_attribution(
+    peer_id, explicit_profiles=None, model_ids=None, orchestration=None,
+):
+    """Resolve measured consumption evidence to a profile without guessing.
+
+    An explicit profile recorded by the producer is authoritative. Legacy rows
+    may instead be reverse-mapped through the peer's declared runtime/model ID;
+    collisions are surfaced as ambiguous rather than resolved arbitrarily.
+    """
+    root_peer = str(peer_id or "?").split(".", 1)[0]
+    prefix = f"{root_peer}."
+
+    explicit = sorted({
+        str(profile) for profile in explicit_profiles or []
+        if str(profile).startswith(prefix) and str(profile)[len(prefix):]
+    })
+
+    def _ambiguous(profiles):
+        names = sorted({
+            profile[len(prefix):] if profile.startswith(prefix) else profile
+            for profile in profiles
+        })
+        return f"{root_peer} (ambiguous: {'|'.join(names)})"
+
+    if len(explicit) == 1:
+        return explicit[0]
+    if len(explicit) > 1:
+        return _ambiguous(explicit)
+
+    models = sorted({str(model) for model in model_ids or [] if str(model)})
+    if len(models) != 1:
+        return f"{root_peer} (unknown)"
+
+    if orchestration is None:
+        try:
+            orchestration = _read_orchestration()
+        except Exception:
+            orchestration = {}
+    nodes = (
+        orchestration.get("hub_nodes", [])
+        if isinstance(orchestration, dict) else []
+    )
+    node = next((
+        item for item in nodes
+        if isinstance(item, dict) and item.get("node_id") == root_peer
+    ), None)
+    profiles = (node or {}).get("profiles", {})
+    matches = []
+    if isinstance(profiles, dict):
+        for profile_name, profile in profiles.items():
+            if not isinstance(profile, dict):
+                continue
+            declared_models = {
+                str(profile.get(key))
+                for key in ("model_id", "runtime_model")
+                if profile.get(key)
+            }
+            if models[0] in declared_models:
+                matches.append(f"{root_peer}.{profile_name}")
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        return _ambiguous(matches)
+    return f"{root_peer} (unknown)"
+
+
 def _session_context_measured(peer_id, entry, profile_row, observed_at):
     """Per-session context/model read from a REAL per-session source only (FP-1).
     cx: state_5.sqlite threads(id)->rollout_path; cc: projects/*/<session_id>.jsonl;

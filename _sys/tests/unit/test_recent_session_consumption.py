@@ -4,6 +4,7 @@ Recent session token consumption telemetry instrumentation and aggregation logic
 import sys
 import json
 import inspect
+import io
 from pathlib import Path
 from typing import Any
 import pytest
@@ -150,6 +151,77 @@ def test_aggregation_same_session_across_asks_groups_together(tmp_path):
     assert session["input_tokens"] == 250
     assert session["output_tokens"] == 50
     assert session["total_tokens"] == 300
+
+
+def test_profile_attribution_prefers_explicit_profile_then_unique_model_and_renders(tmp_path):
+    """Fresh sessions remain attributable even though they are intentionally absent
+    from the reusable-session registry."""
+    cost_log = tmp_path / "cost-log.jsonl"
+    cost_log.write_text("\n".join([
+        json.dumps({
+            "ts": "2026-09-12T07:13:32Z", "peer_id": "cx.astra",
+            "profile_id": "cx.astra", "model_id": "gpt-6-astra",
+            "session_id": "sess-astra", "turn_id": "ask-1",
+            "token_scope": "turn", "input_tokens": 100, "output_tokens": 20,
+        }),
+        json.dumps({
+            "ts": "2026-09-12T07:14:32Z", "peer_id": "cx",
+            "model_id": "gpt-5.6-sol", "session_id": "sess-deepthink",
+            "turn_id": "ask-2", "token_scope": "turn",
+            "input_tokens": 200, "output_tokens": 30,
+        }),
+    ]), encoding="utf-8")
+    orchestration = {"hub_nodes": [{
+        "node_id": "cx", "type": "peer", "profiles": {
+            "deepthink": {"model_id": "gpt-5.6-sol"},
+            "astra": {"model_id": "gpt-6-astra"},
+        },
+    }]}
+
+    rows = {
+        row["session_id"]: row
+        for row in diag.load_recent_session_consumption(
+            cost_log, orchestration=orchestration,
+        )
+    }
+    assert rows["sess-astra"]["profile"] == "cx.astra"
+    assert rows["sess-deepthink"]["profile"] == "cx.deepthink"
+
+    out = io.StringIO()
+    diag.render_recent_consumption(
+        out, cost_log_path=cost_log, orchestration=orchestration,
+    )
+    rendered = out.getvalue()
+    assert "PROFILE" in rendered.splitlines()[2]
+    assert "cx.astra" in rendered
+    assert "cx.deepthink" in rendered
+
+
+def test_profile_attribution_labels_model_collision_ambiguous(tmp_path):
+    cost_log = tmp_path / "cost-log.jsonl"
+    cost_log.write_text(json.dumps({
+        "ts": "2026-09-12T07:13:32Z", "peer_id": "cx",
+        "model_id": "shared-model", "session_id": "sess-ambiguous",
+        "turn_id": "ask-1", "token_scope": "turn",
+        "input_tokens": 100, "output_tokens": 20,
+    }), encoding="utf-8")
+    orchestration = {"hub_nodes": [{
+        "node_id": "cx", "type": "peer", "profiles": {
+            "standard": {"model_id": "shared-model"},
+            "effort": {"model_id": "shared-model"},
+        },
+    }]}
+
+    rows = diag.load_recent_session_consumption(
+        cost_log, orchestration=orchestration,
+    )
+    assert rows[0]["profile"] == "cx (ambiguous: effort|standard)"
+
+    out = io.StringIO()
+    diag.render_recent_consumption(
+        out, cost_log_path=cost_log, orchestration=orchestration,
+    )
+    assert "cx (ambiguous: effort|standard)" in out.getvalue()
 
 
 def test_aggregation_groups_by_root_peer_id(tmp_path):
