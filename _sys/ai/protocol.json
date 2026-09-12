@@ -267,6 +267,8 @@
                                                                                     ]
                                                           },
                                "current_collab_rate":  10,
+                               "session_rotation_utilization_threshold":  0.75,
+                               "_session_rotation_utilization_threshold_doc":  "Automatically retire and replace a reusable peer session when its real per-session snapshot utilization_pct is at or above this ratio. Missing or unmeasurable utilization fails open and preserves normal reuse (DIR-004).",
                                "ipc_query_file_naming":  "{peer_id}-{YYYYMMDDHHMMSS}-{tag}.txt",
                                "_ipc_query_file_naming_doc":  "The {tag} segment is any short descriptive label (e.g. `r2a`, `zombie1`, `trial1`) -- it does NOT need to be exactly 4 random chars. Corrected 2026-07-18: the original {rand4} example was read literally by _is_ephemeral_query_file's regex (exactly 4 alphanumeric chars), but in practice almost every dispatch ever made (terminal and peers alike) used a descriptive tag of a different length, so the single-use auto-delete path silently never fired for ~655 accumulated files back to 2026-06-20. Any {peer_id}-{14-digit-timestamp}-{anything}.txt in ipc/ is now correctly treated as single-use.",
                                "staged_query_file_warn_age_hours":  1,

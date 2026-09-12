@@ -4277,6 +4277,59 @@ def _session_reuse_enabled(node: dict, session_policy: str) -> bool:
     return mode == "reuse"
 
 
+def _session_rotation_threshold() -> float | None:
+    """Return the configured session-rotation ratio, or None if unusable."""
+    value = (_load_protocol_cfg().get("active_constraints", {}) or {}).get(
+        "session_rotation_utilization_threshold"
+    )
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    threshold = float(value)
+    return threshold if 0.0 < threshold <= 1.0 else None
+
+
+def _measured_session_utilization_pct(
+    peer_id: str,
+    scope_key: str,
+    existing_session: dict,
+) -> float | None:
+    """Read one active session's measured utilization from the shared snapshot.
+
+    Only an exact peer + session-id match in snapshot ``sessions`` is accepted;
+    peer/profile aggregates are intentionally ignored (DIR-004). Any missing,
+    malformed, or unavailable measurement fails open by returning None.
+    """
+    if not _SNAPSHOT_AVAILABLE or snapshot is None:
+        return None
+    session_id = existing_session.get("session_id")
+    if not session_id:
+        return None
+    try:
+        snap = snapshot.collect_snapshot(use_cache=True)
+    except Exception:
+        return None
+    sessions = snap.get("sessions", []) if isinstance(snap, dict) else []
+    if not isinstance(sessions, list):
+        return None
+    for row in sessions:
+        if not isinstance(row, dict):
+            continue
+        if row.get("peer") != peer_id or row.get("session_id") != session_id:
+            continue
+        measured_scope = row.get("scope_key")
+        if measured_scope and measured_scope != scope_key:
+            continue
+        context = row.get("context")
+        if not isinstance(context, dict):
+            return None
+        utilization = context.get("utilization_pct")
+        if isinstance(utilization, bool) or not isinstance(utilization, (int, float)):
+            return None
+        utilization = float(utilization)
+        return utilization if 0.0 <= utilization < float("inf") else None
+    return None
+
+
 def _is_ephemeral_query_file(path: Path) -> bool:
     """True only for hub-auto-named, single-use query files.
 
@@ -6724,6 +6777,41 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                 print(f"[HUB:WARN] {health_peer} session fingerprint drift ({stored_fp} → {current_fp}), retiring for fresh start", file=sys.stderr)
                 _retire_session(health_peer, scope_key, "fingerprint_drift", ai_root)
                 existing_session = None
+
+    # A measured over-threshold session is retired, but session management
+    # remains enabled so this fresh invocation can replace it for later reuse.
+    if existing_session:
+        rotation_threshold = _session_rotation_threshold()
+        utilization_pct = (
+            _measured_session_utilization_pct(
+                health_peer, scope_key, existing_session
+            )
+            if rotation_threshold is not None
+            else None
+        )
+        threshold_pct = (
+            rotation_threshold * 100.0
+            if rotation_threshold is not None
+            else None
+        )
+        if (
+            utilization_pct is not None
+            and threshold_pct is not None
+            and utilization_pct >= threshold_pct
+        ):
+            session_id = existing_session.get("session_id")
+            _retire_session(
+                health_peer,
+                scope_key,
+                "context_utilization_threshold",
+                ai_root,
+            )
+            existing_session = None
+            print(
+                f"[HUB:WARN] auto-rotated {profile_id} session {session_id}: "
+                f"utilization {utilization_pct:.1f}% >= threshold {threshold_pct:.1f}%",
+                file=sys.stderr,
+            )
 
     # ── Command construction (Adapter-based) ───────────────────
     # r-8b3b grammar (LL-009): refuse to build a command whose model operand
