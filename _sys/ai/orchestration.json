@@ -507,6 +507,36 @@
             "-c",
             "model_reasoning_effort=\"xhigh\""
           ]
+        },
+        "astra": {
+          "model_id": "gpt-6-astra",
+          "selection_mode": "pinned",
+          "model_availability": "verified_local",
+          "profile_class": "tier",
+          "quota_families": ["X"],
+          "intelligence_evidence": {
+            "estimate": {"kind": "point", "value": 59.0, "approximate": true},
+            "scale": "external_composite",
+            "source_kind": "declared",
+            "verification": "unverified",
+            "source_ref": "_sys/docs-v2/ops/intelligence-scores.md#1-source-data-dir-004-declared-unverified",
+            "as_of": "2026-07-13",
+            "_stale_model_warning": "Estimate declared for the prior model (gpt-5.6-sol), not re-measured for gpt-6-astra -- carried forward as the best available prior signal only."
+          },
+          "runtime_context_window": null,
+          "_context_window_note": "Unmeasured for gpt-6-astra as of the 2026-09-08 bump -- no gpt-6 entry existed in model-registry.json yet. Left absent rather than guessed.",
+          "validated_at": "2026-09-08",
+          "validation_method": "direct_cli_probe_plus_2task_bakeoff_vs_prior_model",
+          "_provenance_note": "2026-09-12: re-added as its OWN opt-in tier (astra), separate from deepthink. History: bumped cx.deepthink to gpt-6-astra 2026-09-08 (commit 9c07b5f) after a 2-task bake-off found tied correctness vs gpt-5.6-sol (gpt-5.6-sol slightly faster) -- confirmation the new model works and isn't worse, not evidence of a capability gain. Reverted cx.deepthink back to gpt-5.6-sol 2026-09-09 (commit 4b32cc0) because gpt-6-astra's quota_families X consumption was judged too high for routine use -- a cost decision, not quality. User explicitly requested this dedicated 'astra' tier 2026-09-12 to make gpt-6-astra deliberately addressable (--to cx.astra) for reserved high-stakes use (e.g. final design ratification) without reinstating it as cx.deepthink's routine default.",
+          "reasoning_effort": "xhigh",
+          "cost_tier": "high",
+          "routing_state": "eligible",
+          "profile_args": [
+            "--model",
+            "gpt-6-astra",
+            "-c",
+            "model_reasoning_effort=\"xhigh\""
+          ]
         }
       },
       "pattern": "std_cli_jsonl"
