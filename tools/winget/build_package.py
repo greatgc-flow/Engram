@@ -117,7 +117,6 @@ ROOT_FILES_ALLOW = {
     "register.bat",
     "unregister.bat",
     "menu-cleanup.bat",
-    "wrapper.cs",
     "Engram.exe",
     "LICENSE",
     "README.md",

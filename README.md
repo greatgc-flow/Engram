@@ -5,7 +5,7 @@
 
   [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078d4.svg)](https://www.microsoft.com/windows)
   [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-  [![Tests: 314 green](https://img.shields.io/badge/tests-314%20green-brightgreen.svg)](_sys/tests/unit)
+  [![Tests: 330 green](https://img.shields.io/badge/tests-330%20green-brightgreen.svg)](_sys/tests/unit)
   [![AI collaboration: peerhub](https://img.shields.io/badge/AI%20collaboration-peerhub-8a2be2.svg)](https://github.com/greatgc-flow/peerhub)
 </div>
 
@@ -33,8 +33,8 @@ Engram bootstraps a self-contained Windows dev environment — Python, Node.js, 
 
 ### Option A: Download the release zip (recommended right now)
 ```powershell
-# Download & extract Engram-v3.2.6-portable-x64.zip from the release, then:
-cd Engram-v3.2.6-portable-x64
+# Download & extract Engram-v3.2.7-portable-x64.zip from the release, then:
+cd Engram-v3.2.7-portable-x64
 .\INSTALL.bat
 .\register.bat
 ```
