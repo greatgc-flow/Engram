@@ -113,13 +113,25 @@ exit /b %ERRORLEVEL%
 call "_sys\core\dispatch.bat" uninstall %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
+:get_version
+set "_ENGRAM_VER=unknown"
+if exist "_sys\core\version.json" (
+    for /f "usebackq delims=" %%v in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "try { (Get-Content '_sys\core\version.json' -Raw | ConvertFrom-Json).version } catch { 'unknown' }"` ) do (
+        set "_ENGRAM_VER=%%v"
+    )
+)
+if "%_ENGRAM_VER%"=="" set "_ENGRAM_VER=unknown"
+exit /b 0
+
 :show_version
-echo Engram v3.2.0 (Portable Dev Runtime)
+call :get_version
+echo Engram v%_ENGRAM_VER% (Portable Dev Runtime)
 exit /b 0
 
 :show_help
+call :get_version
 echo ===============================================================================
-echo   Engram v3.2.0 - Portable Dev Runtime
+echo   Engram v%_ENGRAM_VER% - Portable Dev Runtime
 echo   Repository: https://github.com/greatgc-flow/Engram
 echo ===============================================================================
 echo.
@@ -128,12 +140,13 @@ echo   engram ^<command^> [options...]
 echo.
 echo Lifecycle ^& Environment:
 echo   install               Bootstrap portable Python and deploy all toolchains
-echo   status / doctor       Check runtime health, virtual drives, and tool status
-echo   register              Mount virtual dev drive (P:) and register context menu
-echo   unregister            Unmount virtual dev drive and deregister context menu
+echo   status / doctor       Report environment health, tool status, and junction state
+echo   register              Set up right-click context menu and host-profile junctions
+echo   unregister            Remove right-click context menu and host-profile junctions
 echo   update                Check and apply latest stable runtime and tool updates
 echo   cleanup / tidy        Clean temporary logs, caches, and orphaned files
 echo   menu-cleanup          Remove orphaned right-click context-menu entries (any install)
+echo   uninstall             Full removal: registry/junction teardown and folder purge
 echo.
 echo Options:
 echo   --version, -v         Display Engram version information

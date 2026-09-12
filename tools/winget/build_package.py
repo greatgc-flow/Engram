@@ -493,6 +493,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Setup directories
     dist_dir = (repo_root / args.dist_dir).resolve()
     version = args.version
+    if not version or version.lower() == "unknown":
+        print(
+            "[ERROR] Cannot package build with version 'unknown'. Ensure _sys/core/version.json is valid or specify --version.",
+            file=sys.stderr,
+        )
+        return 1
 
     if args.manifest_dir:
         manifest_dir = (repo_root / args.manifest_dir).resolve()
