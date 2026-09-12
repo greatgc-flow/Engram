@@ -72,6 +72,46 @@ def test_claude_command_streams_progress_and_keeps_prompt_out_of_argv():
     assert "--verbose" in cmd
 
 
+def test_claude_session_resume_adds_autocompact_auto():
+    adapter = hub_peer.ClaudeAdapter()
+    node = {"invoke": "claude.cmd", "invoke_args": ["-p", "{query}"]}
+
+    # Resumed session: --autocompact auto is appended
+    resumed = adapter.build_session_cmd(node, "resume turn", session_id="session-123")
+    assert "--resume" in resumed.cmd
+    assert resumed.cmd[resumed.cmd.index("--resume") + 1] == "session-123"
+    assert "--autocompact" in resumed.cmd
+    assert resumed.cmd[resumed.cmd.index("--autocompact") + 1] == "auto"
+
+    # Fresh (non-resumed) session: --autocompact auto is NOT present
+    fresh = adapter.build_session_cmd(node, "fresh turn", session_id=None)
+    assert "--autocompact" not in fresh.cmd
+    assert "--session-id" in fresh.cmd
+    assert "--resume" not in fresh.cmd
+
+    # Fresh invocation via build_cmd: --autocompact is NOT present
+    fresh_cmd, _ = adapter.build_cmd(node, "fresh turn")
+    assert "--autocompact" not in fresh_cmd
+
+    # Pre-existing/explicit --autocompact in node profile_args is not duplicated
+    configured = adapter.build_session_cmd(
+        {**node, "profile_args": ["--autocompact", "50000"]},
+        "custom compact",
+        session_id="session-123",
+    )
+    assert configured.cmd.count("--autocompact") == 1
+    assert configured.cmd[configured.cmd.index("--autocompact") + 1] == "50000"
+
+    # Pre-existing/explicit --autocompact=50000 style is also not duplicated
+    configured_eq = adapter.build_session_cmd(
+        {**node, "profile_args": ["--autocompact=50000"]},
+        "custom compact eq",
+        session_id="session-123",
+    )
+    assert "--autocompact" not in configured_eq.cmd
+    assert "--autocompact=50000" in configured_eq.cmd
+
+
 def test_claude_stream_output_returns_final_result_and_session_id():
     raw = "\n".join(
         [

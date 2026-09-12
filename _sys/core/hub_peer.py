@@ -700,6 +700,8 @@ class ClaudeAdapter(BaseAdapter):
         if session_id:
             if "--resume" not in cmd and "--session-id" not in cmd:
                 cmd.extend(["--resume", session_id])
+            if not any(arg == "--autocompact" or arg.startswith("--autocompact=") for arg in cmd):
+                cmd.extend(["--autocompact", "auto"])
         else:
             if "--session-id" not in cmd:
                 cmd.extend(["--session-id", effective_id])
