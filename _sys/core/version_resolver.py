@@ -535,6 +535,76 @@ def _resolve_sqlite(discovery_id: str = "sqlite-tools-win-x64") -> dict[str, Any
     )
 
 
+def _resolve_python() -> dict[str, Any]:
+    provider = "endoflife_python"
+    req = urllib.request.Request(
+        "https://endoflife.date/api/python.json",
+        headers={"User-Agent": "portable-dev-version-resolver"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            if int(resp.getcode()) != 200:
+                return _result(
+                    status="error",
+                    provider=provider,
+                    discovery_id="python",
+                    detail=f"endoflife.date returned HTTP {resp.getcode()}",
+                    error_type="http_error",
+                )
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except urllib.error.HTTPError as exc:
+        return _result(
+            status="error",
+            provider=provider,
+            discovery_id="python",
+            detail=f"endoflife.date returned HTTP {exc.code}",
+            error_type="http_error",
+        )
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return _result(
+            status="error",
+            provider=provider,
+            discovery_id="python",
+            detail=str(exc),
+            error_type="network_error",
+        )
+    except json.JSONDecodeError as exc:
+        return _result(
+            status="error",
+            provider=provider,
+            discovery_id="python",
+            detail=f"invalid endoflife.date JSON: {exc.msg}",
+            error_type="parse_error",
+        )
+
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    latest = None
+    for entry in data:
+        eol = entry.get("eol")
+        if eol is False or eol is None or (isinstance(eol, str) and eol > now_str):
+            version = entry.get("latest")
+            if version and re.match(r"^\d+\.\d+\.\d+$", str(version)):
+                latest = str(version)
+                break
+    
+    if not latest:
+        return _result(
+            status="error",
+            provider=provider,
+            discovery_id="python",
+            detail="no active python version found",
+            error_type="missing_version",
+        )
+    
+    return _result(
+        status="ok",
+        provider=provider,
+        discovery_id="python",
+        latest_version=latest,
+        source="endoflife.date",
+    )
+
+
 def resolve_latest(
     tool_name: str,
     provider: str,
@@ -548,6 +618,8 @@ def resolve_latest(
         result = _resolve_npm(discovery_id)
     elif provider == "sqlite_org_page":
         result = _resolve_sqlite(discovery_id)
+    elif provider == "endoflife_python":
+        result = _resolve_python()
     elif provider == "manual":
         result = _result(status="manual", provider=provider, discovery_id=discovery_id)
     else:

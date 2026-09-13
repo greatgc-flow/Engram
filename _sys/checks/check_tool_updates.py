@@ -88,13 +88,15 @@ def _versions_equal(a: str, b: str) -> bool:
 CATALOG_PATH = _SYS_DIR / "tool-catalog.v1.json"
 
 
-def _iter_discoverable_entries(runtimes: dict[str, Any]):
+def _iter_discoverable_entries(runtimes: dict[str, Any], only: list[str] | None = None):
     for section in ("tools", "runtimes"):
         entries = runtimes.get(section, {})
         if not isinstance(entries, dict):
             continue
         for name, cfg in entries.items():
             if not isinstance(cfg, dict):
+                continue
+            if only is not None and name not in only:
                 continue
             provider = cfg.get("discovery_provider")
             if not provider or provider == "manual":
@@ -116,6 +118,8 @@ def _iter_discoverable_entries(runtimes: dict[str, Any]):
                     continue
                 name = tool.get("tool_id")
                 if not name or name in runtimes.get("tools", {}):
+                    continue
+                if only is not None and name not in only:
                     continue
                 source = tool.get("source", {})
                 provider = source.get("discovery_provider")
@@ -151,14 +155,19 @@ def _update_entry_from_discovery(entry: dict[str, Any], discovery: dict[str, Any
         entry[algo] = value
 
 
-def discover_updates() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+def discover_updates(only: list[str] | None = None) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     base_sha = _sha256_file(RUNTIMES_PATH)
     runtimes = _read_json(RUNTIMES_PATH)
     proposed = copy.deepcopy(runtimes)
 
+    catalog_base_sha = _sha256_file(CATALOG_PATH) if CATALOG_PATH.exists() else None
+    catalog = _read_json(CATALOG_PATH) if CATALOG_PATH.exists() else {}
+    proposed_catalog = copy.deepcopy(catalog)
+
     payload: dict[str, Any] = {
         "artifact_dir": None,
         "base_sha256": base_sha,
+        "catalog_base_sha256": catalog_base_sha,
         "updates_discovered": [],
         "up_to_date": [],
         "rate_limited": [],
@@ -166,7 +175,7 @@ def discover_updates() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         "not_checked": [],
     }
 
-    for section, name, cfg, provider, config_error, not_checked_reason in _iter_discoverable_entries(runtimes):
+    for section, name, cfg, provider, config_error, not_checked_reason in _iter_discoverable_entries(runtimes, only):
         if not_checked_reason:
             payload["not_checked"].append({
                 "component": name,
@@ -221,8 +230,22 @@ def discover_updates() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         payload["updates_discovered"].append(update)
         if section in proposed and name in proposed[section]:
             _update_entry_from_discovery(proposed[section][name], discovery)
+        elif section == "catalog":
+            for i, tool in enumerate(proposed_catalog.get("tools", [])):
+                if isinstance(tool, dict) and tool.get("tool_id") == name:
+                    tool["version"] = latest_version
+                    if "source" in tool and isinstance(tool["source"], dict):
+                        if discovery.get("url"):
+                            tool["source"]["url"] = discovery.get("url")
+                        algo = discovery.get("checksum_algo")
+                        value = discovery.get("checksum_value")
+                        if algo and value and algo in {"sha256", "sha512", "sha3_256"}:
+                            if "digest" in tool["source"]:
+                                existing_digest = tool["source"]["digest"]
+                                if isinstance(existing_digest, str) and existing_digest.startswith(f"{algo}:"):
+                                    tool["source"]["digest"] = f"{algo}:{value}"
 
-    return payload, runtimes, proposed
+    return payload, runtimes, proposed, catalog, proposed_catalog
 
 
 
@@ -235,7 +258,7 @@ def prune_tool_update_archives(archive_root: Path = ARCHIVE_ROOT, keep: int = RE
         shutil.rmtree(old, ignore_errors=True)
 
 
-def write_proposal_artifacts(payload: dict[str, Any], runtimes: dict[str, Any], proposed: dict[str, Any]) -> Path:
+def write_proposal_artifacts(payload: dict[str, Any], runtimes: dict[str, Any], proposed: dict[str, Any], catalog: dict[str, Any], proposed_catalog: dict[str, Any]) -> Path:
     artifact_dir = ARCHIVE_ROOT / _utc_stamp()
     suffix = 1
     while artifact_dir.exists():
@@ -247,9 +270,13 @@ def write_proposal_artifacts(payload: dict[str, Any], runtimes: dict[str, Any], 
     proposal_path = artifact_dir / "proposal.json"
     proposed_path = artifact_dir / "runtimes.proposed.json"
     diff_path = artifact_dir / "runtimes.diff"
+    catalog_proposed_path = artifact_dir / "tool-catalog.proposed.json"
+    catalog_diff_path = artifact_dir / "tool-catalog.diff"
 
     _write_json(proposal_path, payload)
     _write_json(proposed_path, proposed)
+    if proposed_catalog:
+        _write_json(catalog_proposed_path, proposed_catalog)
 
     current_text = json.dumps(runtimes, ensure_ascii=False, indent=4).splitlines(keepends=True)
     proposed_text = json.dumps(proposed, ensure_ascii=False, indent=4).splitlines(keepends=True)
@@ -260,6 +287,17 @@ def write_proposal_artifacts(payload: dict[str, Any], runtimes: dict[str, Any], 
         tofile=str(proposed_path),
     )
     diff_path.write_text("".join(diff), encoding="utf-8")
+
+    if catalog and proposed_catalog:
+        catalog_current_text = json.dumps(catalog, ensure_ascii=False, indent=4).splitlines(keepends=True)
+        catalog_proposed_text = json.dumps(proposed_catalog, ensure_ascii=False, indent=4).splitlines(keepends=True)
+        catalog_diff = difflib.unified_diff(
+            catalog_current_text,
+            catalog_proposed_text,
+            fromfile=str(CATALOG_PATH),
+            tofile=str(catalog_proposed_path),
+        )
+        catalog_diff_path.write_text("".join(catalog_diff), encoding="utf-8")
 
     prune_tool_update_archives()
     return artifact_dir
@@ -278,7 +316,19 @@ def verify_proposal_still_valid(artifact_dir: str | Path) -> bool:
         current = _sha256_file(RUNTIMES_PATH)
     except OSError:
         return False
-    return current == expected
+    if current != expected:
+        return False
+
+    expected_catalog = proposal.get("catalog_base_sha256")
+    if expected_catalog is not None:
+        try:
+            current_catalog = _sha256_file(CATALOG_PATH) if CATALOG_PATH.exists() else None
+        except OSError:
+            return False
+        if current_catalog != expected_catalog:
+            return False
+
+    return True
 
 
 def _resolve_artifact_dir_under_archive(artifact_dir: str | Path) -> Path:
@@ -363,15 +413,41 @@ def apply_proposal(
         result["errors"].append(f"invalid runtimes.proposed.json: {exc}")
         return EXIT_INVALID_PROPOSAL, result
 
+    catalog_proposed_path = resolved_dir / "tool-catalog.proposed.json"
+    catalog_backup_path = resolved_dir / "tool-catalog.v1.json.bak"
+
+    has_catalog_update = proposal.get("catalog_base_sha256") is not None and catalog_proposed_path.exists()
+    proposed_catalog: dict[str, Any] = {}
+    
+    if has_catalog_update:
+        try:
+            proposed_catalog = _read_json(catalog_proposed_path)
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            result["errors"].append(f"invalid tool-catalog.proposed.json: {exc}")
+            return EXIT_INVALID_PROPOSAL, result
+
     if not yes:
         result["confirmation_required"] = True
         return EXIT_CONFIRMATION_REQUIRED, result
 
     try:
         shutil.copy2(RUNTIMES_PATH, backup_path)
+        if has_catalog_update and CATALOG_PATH.exists():
+            shutil.copy2(CATALOG_PATH, catalog_backup_path)
+
         _atomic_write_json(RUNTIMES_PATH, proposed)
+        try:
+            if has_catalog_update:
+                _atomic_write_json(CATALOG_PATH, proposed_catalog)
+        except OSError as catalog_exc:
+            # Revert runtimes.json if catalog write fails
+            shutil.copy2(backup_path, RUNTIMES_PATH)
+            raise OSError(f"catalog apply failed, reverted runtimes.json: {catalog_exc}")
+
         result["applied"] = True
         result["backup_path"] = _display_path(backup_path)
+        if has_catalog_update:
+            result["catalog_backup_path"] = _display_path(catalog_backup_path)
     except OSError as exc:
         result["errors"].append(f"apply failed: {exc}")
         return EXIT_ERROR, result
@@ -395,9 +471,9 @@ def apply_proposal(
 
 
 def run(*, propose_diff: bool = False) -> dict[str, Any]:
-    payload, runtimes, proposed = discover_updates()
+    payload, runtimes, proposed, catalog, proposed_catalog = discover_updates()
     if propose_diff:
-        write_proposal_artifacts(payload, runtimes, proposed)
+        write_proposal_artifacts(payload, runtimes, proposed, catalog, proposed_catalog)
     return payload
 
 

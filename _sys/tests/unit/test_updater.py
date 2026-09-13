@@ -37,7 +37,7 @@ def test_updater_not_checked_in_discover_payload(tmp_path, monkeypatch):
     import core.version_resolver as version_resolver
     monkeypatch.setattr(version_resolver, "resolve_latest", mock_resolve)
     
-    payload, runtimes, proposed = check_tool_updates.discover_updates()
+    payload, runtimes, proposed, catalog, proposed_catalog = check_tool_updates.discover_updates()
     not_checked = payload.get("not_checked", [])
     
     # Should contain node (no provider) and python (manual)
