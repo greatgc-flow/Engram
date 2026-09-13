@@ -106,12 +106,6 @@ namespace Engram {
                 return 1;
             }
 
-            // v3.2.7-only special case: with no args AND _sys\env\python\python.exe absent, forward "install"
-            string pythonExe = Path.Combine(exeDir, "_sys", "env", "python", "python.exe");
-            if (args.Length == 0 && !File.Exists(pythonExe)) {
-                args = new string[] { "install" };
-            }
-
             StringBuilder cmdLine = new StringBuilder();
             cmdLine.Append("/d /s /c \"\"");
             cmdLine.Append(engramCmd);

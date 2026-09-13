@@ -5,10 +5,12 @@ Scenarios tested:
 1. Compilation via build_exe.py (skips gracefully if csc.exe unavailable).
 2. Arguments with spaces, '!', '&', trailing backslash, and embedded quotes arrive intact.
 3. Exit code propagation (e.g. exit 7).
-4. v3.2.7-only special case: with no args and _sys/env/python/python.exe absent, forwards 'install'.
-5. When _sys/env/python/python.exe exists and no args given, runs with no extra args.
-6. Missing engram.cmd displays 'engram.cmd not found next to <path>' and exits 1.
-7. Invocation through a file symlink resolves final target directory and finds engram.cmd.
+4. With no args, runs with no extra args regardless of whether
+   _sys/env/python/python.exe exists -- the P0-2 double-click-forwards-install
+   special case is retired in P1-7, since bare 'engram' now handles first-run
+   itself in engram.cmd.
+5. Missing engram.cmd displays 'engram.cmd not found next to <path>' and exits 1.
+6. Invocation through a file symlink resolves final target directory and finds engram.cmd.
 """
 import os
 from pathlib import Path
@@ -122,14 +124,16 @@ def test_args_forwarding_and_exit_code_propagation(built_engram_exe):
     assert '"embed\\"quote"' in proc.stdout
 
 
-def test_double_click_install_special_case_v327(built_engram_exe):
-    """When called with no args and _sys/env/python/python.exe absent, forwards 'install'."""
+def test_double_click_when_python_absent(built_engram_exe):
+    """When called with no args and python.exe is absent, no args are forwarded
+    (the P0-2 install-forwarding special case is retired in P1-7; bare
+    'engram' now runs engram.cmd's own first-run flow with zero args)."""
     special_dir, exe_path = built_engram_exe
 
     stub_cmd = special_dir / "engram.cmd"
     stub_cmd.write_text(
         "@echo off\r\n"
-        "echo CALLED_WITH=%*\r\n"
+        "echo CALLED_WITH=[%*]\r\n"
         "exit /b 0\r\n",
         encoding="utf-8"
     )
@@ -141,7 +145,7 @@ def test_double_click_install_special_case_v327(built_engram_exe):
 
     proc = subprocess.run([str(exe_path)], capture_output=True, text=True, encoding="utf-8")
     assert proc.returncode == 0
-    assert "CALLED_WITH=install" in proc.stdout
+    assert "CALLED_WITH=[]" in proc.stdout
 
 
 def test_double_click_when_python_present(built_engram_exe):
