@@ -391,3 +391,148 @@ def test_m1_retire_empty_directory_removal(tmp_path):
     assert not (base_dir / "deep" / "dir" / "structure").exists()
     assert not (base_dir / "deep" / "dir").exists()
     assert not (base_dir / "deep").exists()
+
+
+from _sys.core.layout_migration import m2_move_engram_state
+
+def test_m2_tttt_shaped(tmp_path):
+    base_dir = tmp_path
+    sys_dir = base_dir / "_sys"
+    sys_dir.mkdir()
+    
+    ai_dir = base_dir / ".ai"
+    ai_dir.mkdir()
+    (ai_dir / "tool_discovery_cache.json").write_text("{}")
+    
+    ok, report = m2_move_engram_state(base_dir, sys_dir)
+    assert ok
+    assert report["moved"] == [".ai/tool_discovery_cache.json"]
+    assert report["external_left"] == []
+    assert report["conflicts"] == []
+    
+    assert not ai_dir.exists()
+    assert (sys_dir / "data" / "state" / "update" / "tool_discovery_cache.json").exists()
+
+def test_m2_t2_shaped(tmp_path):
+    base_dir = tmp_path
+    sys_dir = base_dir / "_sys"
+    sys_dir.mkdir()
+    
+    ok, report = m2_move_engram_state(base_dir, sys_dir)
+    assert ok
+    assert report["moved"] == []
+    assert report["external_left"] == []
+    assert report["conflicts"] == []
+
+def test_m2_mixed_ai(tmp_path):
+    base_dir = tmp_path
+    sys_dir = base_dir / "_sys"
+    sys_dir.mkdir()
+    
+    ai_dir = base_dir / ".ai"
+    ai_dir.mkdir()
+    (ai_dir / "tool_discovery_cache.json").write_text("{}")
+    (ai_dir / "some_other_hub_state.json").write_text("{}")
+    
+    ok, report = m2_move_engram_state(base_dir, sys_dir)
+    assert ok
+    assert report["moved"] == [".ai/tool_discovery_cache.json"]
+    assert report["external_left"] == [".ai/some_other_hub_state.json"]
+    assert report["conflicts"] == []
+    
+    assert ai_dir.exists()
+    assert (ai_dir / "some_other_hub_state.json").exists()
+    assert not (ai_dir / "tool_discovery_cache.json").exists()
+    assert (sys_dir / "data" / "state" / "update" / "tool_discovery_cache.json").exists()
+
+def test_m2_archive_both(tmp_path):
+    base_dir = tmp_path
+    sys_dir = base_dir / "_sys"
+    sys_dir.mkdir()
+    
+    archive_dir = base_dir / "_archive"
+    logs_dir = archive_dir / "logs"
+    updates_dir = archive_dir / "tool-updates"
+    
+    logs_dir.mkdir(parents=True)
+    updates_dir.mkdir(parents=True)
+    
+    (logs_dir / "start_20260101.log").write_text("log")
+    
+    update_sub = updates_dir / "2026-01-01"
+    update_sub.mkdir()
+    (update_sub / "proposal.json").write_text("{}")
+    
+    ok, report = m2_move_engram_state(base_dir, sys_dir)
+    assert ok
+    
+    assert set(report["moved"]) == {
+        "_archive/logs/start_20260101.log",
+        "_archive/tool-updates/2026-01-01/proposal.json"
+    }
+    assert report["external_left"] == []
+    assert report["conflicts"] == []
+    
+    assert not archive_dir.exists()
+    assert (sys_dir / "data" / "logs" / "launcher" / "start_20260101.log").exists()
+    assert (sys_dir / "data" / "state" / "update" / "proposals" / "2026-01-01" / "proposal.json").exists()
+
+def test_m2_destination_conflict(tmp_path):
+    base_dir = tmp_path
+    sys_dir = base_dir / "_sys"
+    sys_dir.mkdir()
+    
+    ai_dir = base_dir / ".ai"
+    ai_dir.mkdir()
+    (ai_dir / "tool_discovery_cache.json").write_text("src")
+    
+    dst = sys_dir / "data" / "state" / "update" / "tool_discovery_cache.json"
+    dst.parent.mkdir(parents=True)
+    dst.write_text("dst")
+    
+    ok, report = m2_move_engram_state(base_dir, sys_dir)
+    assert ok
+    assert report["moved"] == []
+    assert report["external_left"] == []
+    assert report["conflicts"] == [".ai/tool_discovery_cache.json"]
+    
+    assert ai_dir.exists()
+    assert (ai_dir / "tool_discovery_cache.json").read_text() == "src"
+    assert dst.read_text() == "dst"
+
+def test_m2_untouched_dirs(tmp_path):
+    base_dir = tmp_path
+    sys_dir = base_dir / "_sys"
+    sys_dir.mkdir()
+    
+    engram_dir = base_dir / ".engram"
+    engram_dir.mkdir()
+    (engram_dir / "some_file").write_text("keep")
+    
+    workspace_dir = base_dir / "workspace"
+    workspace_dir.mkdir()
+    (workspace_dir / "project").write_text("keep2")
+    
+    archive_dir = base_dir / "_archive"
+    archive_dir.mkdir()
+    (archive_dir / "keep3").write_text("keep3")
+    
+    import hashlib
+    def get_snapshot():
+        snap = {}
+        for p in base_dir.rglob("*"):
+            if p.is_file():
+                snap[p.relative_to(base_dir).as_posix()] = hashlib.sha256(p.read_bytes()).hexdigest()
+        return snap
+        
+    before = get_snapshot()
+    
+    ok, report = m2_move_engram_state(base_dir, sys_dir)
+    assert ok
+    
+    assert report["moved"] == []
+    assert report["external_left"] == ["_archive/keep3"]
+    assert report["conflicts"] == []
+    
+    after = get_snapshot()
+    assert before == after

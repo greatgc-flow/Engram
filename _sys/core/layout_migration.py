@@ -315,3 +315,127 @@ def m1_retire_shipped_files(base_dir: Path, sys_dir: Path) -> tuple[bool, Dict[s
             curr = curr.parent
 
     return not errors_occurred, {"retired": retired, "kept_modified": kept_modified}
+
+# WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 orchestration wiring happens in a follow-up dispatch"
+def m2_move_engram_state(base_dir: Path, sys_dir: Path) -> tuple[bool, Dict[str, List[str]]]:
+    import os
+    
+    moved = []
+    external_left = []
+    conflicts = []
+    errors_occurred = False
+    
+    def is_owned(rel_path_str: str) -> bool:
+        if rel_path_str in [".ai/tool_discovery_cache.json", ".ai/tool_deferred_retries.json"]:  # legacy-source: migration only
+            return True
+        if rel_path_str.startswith("_archive/logs/start_") and rel_path_str.endswith(".log"):  # legacy-source: migration only
+            parts = rel_path_str.split("/")
+            if len(parts) == 3:
+                return True
+        if rel_path_str.startswith("_archive/tool-updates/"):  # legacy-source: migration only
+            return True
+        return False
+        
+    def is_base_dir(rel_path_str: str) -> bool:
+        return rel_path_str in [".ai", "_archive", "_archive/logs", "_archive/tool-updates"]  # legacy-source: migration only
+        
+    owned_to_move = []
+    
+    for root_name in [".ai", "_archive"]:  # legacy-source: migration only
+        root_path = base_dir / root_name
+        if root_path.exists() and root_path.is_dir():
+            for p in root_path.rglob("*"):
+                try:
+                    rel = p.relative_to(base_dir).as_posix()
+                except ValueError:
+                    continue
+                
+                if is_base_dir(rel):
+                    continue
+                    
+                if is_owned(rel):
+                    owned_to_move.append(p)
+                else:
+                    external_left.append(rel)
+                    
+    dirs_to_check = set()
+    
+    for p in owned_to_move:
+        try:
+            rel = p.relative_to(base_dir).as_posix()
+        except ValueError:
+            continue
+            
+        if p.is_file():
+            dst = None
+            if rel == ".ai/tool_discovery_cache.json":  # legacy-source: migration only
+                dst = sys_dir / "data" / "state" / "update" / "tool_discovery_cache.json"
+            elif rel == ".ai/tool_deferred_retries.json":  # legacy-source: migration only
+                dst = sys_dir / "data" / "state" / "update" / "tool_deferred_retries.json"
+            elif rel.startswith("_archive/logs/start_"):  # legacy-source: migration only
+                dst = sys_dir / "data" / "logs" / "launcher" / p.name
+            elif rel.startswith("_archive/tool-updates/"):  # legacy-source: migration only
+                sub_rel = p.relative_to(base_dir / "_archive" / "tool-updates")  # legacy-source: migration only
+                dst = sys_dir / "data" / "state" / "update" / "proposals" / sub_rel
+                
+            if dst:
+                if dst.exists():
+                    conflicts.append(rel)
+                else:
+                    try:
+                        dst.parent.mkdir(parents=True, exist_ok=True)
+                        os.replace(p, dst)
+                        moved.append(rel)
+                        dirs_to_check.add(p.parent)
+                    except Exception as e:
+                        logger.error(f"Error moving {rel}: {e}")
+                        errors_occurred = True
+                        
+    def _is_dir_allowed_to_remove(d: Path) -> bool:
+        try:
+            rel = d.relative_to(base_dir).as_posix()
+        except ValueError:
+            return False
+        if rel == ".":
+            return False
+        allowed = [".ai", "_archive", "_archive/logs", "_archive/tool-updates"]  # legacy-source: migration only
+        if rel in allowed:
+            return True
+        if rel.startswith("_archive/tool-updates/"):  # legacy-source: migration only
+            return True
+        return False
+        
+    for root_name in [".ai", "_archive/logs", "_archive/tool-updates", "_archive"]:  # legacy-source: migration only
+        p = base_dir / root_name
+        if p.exists() and p.is_dir():
+            dirs_to_check.add(p)
+            
+    sorted_dirs = sorted(list(dirs_to_check), key=lambda p: len(p.parts), reverse=True)
+    for d in sorted_dirs:
+        curr = d
+        while curr != base_dir and curr.is_relative_to(base_dir):
+            if not _is_dir_allowed_to_remove(curr):
+                break
+            if curr.exists() and curr.is_dir():
+                try:
+                    if not any(curr.iterdir()):
+                        curr.rmdir()
+                    else:
+                        break
+                except Exception as e:
+                    logger.error(f"Error removing dir {curr}: {e}")
+                    errors_occurred = True
+                    break
+            else:
+                break
+            curr = curr.parent
+            
+    moved.sort()
+    external_left.sort()
+    conflicts.sort()
+    
+    return not errors_occurred, {
+        "moved": moved,
+        "external_left": external_left,
+        "conflicts": conflicts
+    }
