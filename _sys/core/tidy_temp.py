@@ -266,6 +266,8 @@ def _rm(path: Path, apply: bool) -> int:
         ROOT / "_sys" / "env" / "python",
         ROOT / "_sys" / "tools" / "rg",
         ROOT / "_sys" / "data" / "state",
+        ROOT / "_sys" / "runtimes.json",
+        ROOT / "_sys" / "tool-catalog.v1.json",
     ]
     
     # Also protect root files like .vscode, _state, WORKLOG.md, and all *.md

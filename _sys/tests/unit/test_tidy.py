@@ -32,7 +32,10 @@ def mock_env(tmp_path):
     
     (sys_dir / "data" / "state").mkdir(parents=True)
     (sys_dir / "data" / "state" / "register.state.json").write_text("{}")
-    
+
+    (sys_dir / "runtimes.json").write_text('{"runtimes": {}}')
+    (sys_dir / "tool-catalog.v1.json").write_text('{"tools": []}')
+
     (base_dir / ".vscode").mkdir()
     (base_dir / ".vscode" / "settings.json").write_text("{}")
     
@@ -105,6 +108,8 @@ class TestTidy:
             assert after["_sys\\env\\python\\python.exe"] == before["_sys\\env\\python\\python.exe"]
             assert after["_sys\\tools\\rg\\rg.exe"] == before["_sys\\tools\\rg\\rg.exe"]
             assert after["_sys\\data\\state\\register.state.json"] == before["_sys\\data\\state\\register.state.json"]
+            assert after["_sys\\runtimes.json"] == before["_sys\\runtimes.json"]
+            assert after["_sys\\tool-catalog.v1.json"] == before["_sys\\tool-catalog.v1.json"]
             assert after[".vscode\\settings.json"] == before[".vscode\\settings.json"]
             assert after["_state"] == before["_state"]
             assert after["WORKLOG.md"] == before["WORKLOG.md"]
@@ -133,3 +138,9 @@ class TestTidy:
                 
             with pytest.raises(AssertionError, match="Defense in depth: tidy attempted to delete protected root file"):
                 tidy_temp._rm(mock_env / "WORKLOG.md", True)
+
+            with pytest.raises(AssertionError, match="Defense in depth: tidy attempted to delete protected path"):
+                tidy_temp._rm(mock_env / "_sys" / "runtimes.json", True)
+
+            with pytest.raises(AssertionError, match="Defense in depth: tidy attempted to delete protected path"):
+                tidy_temp._rm(mock_env / "_sys" / "tool-catalog.v1.json", True)
