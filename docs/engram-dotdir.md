@@ -39,3 +39,5 @@ This refuses outright (rather than guessing) if `.ais/` turns out to be a `backu
 ## Relationship to legacy SUBST/junction machinery
 
 Engram does not use SUBST drives or directory junctions. Earlier versions of Engram supported an optional host-integration step (directory junctions and virtual drive letter mounting), but that machinery has been completely removed in favor of pure environment-variable redirection and clean physical paths. A fresh install creates neither, and no ongoing remounting or link management occurs.
+
+If you are upgrading an older install that has a recorded mapping or junction, `engram doctor` or the layout migration will detect it and provide exact manual teardown instructions (e.g., `subst X: /D` and `rmdir` for the junction host).

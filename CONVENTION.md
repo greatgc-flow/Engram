@@ -183,7 +183,7 @@ taint, not an expansion-time one (checked 2026-09-05):**
     ```
 
 ### 3.2 Dispatch Pattern
-`engram.cmd` and `_sys/core/bootstrap.bat` must remain minimal harnesses that delegate execution logic to Python modules under `_sys/core/` or `_sys/cli/`.
+The root has no batch files; `engram.cmd` routes to `_sys/core/dispatch.bat`.
 
 ---
 
@@ -228,7 +228,7 @@ When parsing large or untrusted JSON files from PowerShell, avoid `ConvertFrom-J
 
 ### 5.2 Script Files
 - **PowerShell**: PascalCase (`Install_Menu.ps1`, `Remove_Menu.ps1`).
-- **Batch (root & _sys)**: lowercase kebab-case (`register.bat`, `unregister.bat`, `install.bat`, `cleanup.bat`).
+- **Batch**: All batch files (all under `_sys/`) use lowercase kebab-case (`dispatch.bat`, `bootstrap.bat`).
 
 ### 5.3 Tools Subfolders
 - Fixed layout: `tools/{tool-name}/{executable}.exe` (e.g. `tools/ripgrep/rg.exe`, `tools/jq/jq.exe`).

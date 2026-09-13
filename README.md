@@ -31,61 +31,44 @@ Engram bootstraps a self-contained Windows dev environment — Python, Node.js, 
 
 ## Quick Start
 
-### Option A: Download the release zip (recommended right now)
-```powershell
-# Download & extract Engram-v3.2.7-portable-x64.zip from the release, then:
-cd Engram-v3.2.7-portable-x64
-.\engram.cmd
-```
-Double-clicking `Engram.exe` works the same way. The first run prompts to set up the portable environment, then optionally to add the Explorer right-click menu entry.
+1. Download the latest `Engram-vX.Y.Z-portable-x64.zip` release.
+2. Extract the zip to a folder on your drive.
+3. Double-click `Engram.exe` or run `engram` from a terminal. 
 
-[Latest release](https://github.com/greatgc-flow/Engram/releases/latest) — this is the exact archive the Winget submission below packages, so it's already validated (`winget validate` passes clean).
+The first run will prompt to bootstrap the portable environment (Python, Node, Git, VS Code, tools) and optionally register the Explorer right-click context menu.
 
-### Option B: Git clone
-```bat
-:: 1. Clone the repository
-git clone https://github.com/greatgc-flow/Engram.git
-cd Engram
+**Upgrading an existing install:**
+1. Close VS Code and any shell launched from the install.
+2. Extract the new zip **into the existing install folder**, choosing *Replace* for conflicts.
+3. Run `engram` (or `engram doctor`).
 
-:: 2. Run engram -- first run bootstraps the portable environment
-::    (Python, Node, Git, VS Code, tools) and offers to register the
-::    right-click context menu
-.\engram.cmd
-
-:: 3. (Optional) Preview/clean temporary workspace files (dry-run + confirm)
-.\engram.cmd tidy
-```
-
-> `engram doctor` reports environment health, and `engram update` checks every catalog entry for newer pinned versions.
-
-### Option C: Winget (submitted, not yet live)
-```powershell
-winget install greatgc-flow.Engram
-```
-This does **not work yet** — the manifest was submitted as [microsoft/winget-pkgs#430265](https://github.com/microsoft/winget-pkgs/pull/430265) and has passed all 10 automated validation stages; it's now pending a human Microsoft maintainer's merge. Once merged, this command will bootstrap the latest Engram archive as Option A automatically, and the `engram` command becomes available system-wide without a manual clone.
+> Run `engram update` to keep Engram and everything it manages current. Anything it cannot check automatically is listed by name under "Not checked" — never counted as up to date.
 
 ## Command Reference
 
-`engram.cmd` (or the plain `engram` command after a Winget install) dispatches every lifecycle action:
+`engram.cmd` (or `Engram.exe`) dispatches every lifecycle action. There are no other batch files in the root.
 
-| Command | Does |
-|---|---|
-| `engram` / `engram open [PATH]` | Open a workspace (default action). On first run (no portable Python yet), prompts to bootstrap the environment and optionally register the right-click context menu. |
-| `engram update [--check] [--yes] [--only NAME[,NAME...]]` | Discover and apply pinned-version updates across the catalog |
-| `engram doctor [--json]` | Report environment health (runtimes, tools, configuration) |
-| `engram menu [status\|enable\|disable\|clean]` | Manage the right-click context menu; bare `menu`/`menu status` is read-only |
-| `engram tidy [--apply] [--deep]` | Dry-run-first temp-file cleanup preview; `--apply` deletes the planned items |
-| `engram uninstall [--yes] [--purge-data]` | Full removal: registry teardown, then a background helper purges the folder once this process exits |
-| `engram version` / `--version` / `-v` | Print the current version (`_sys/core/version.json`) |
-| `engram help` / `--help` / `-h` | List these commands |
+| Verb | Behavior | Exit codes |
+|---|---|---|
+| `engram` / `open [PATH]` | Open a workspace (default action). On first run (no Python), prints plan and prompts to set up here. If missing, prompts to add right-click menu entry. Otherwise dispatches the `start` pipeline. | 0 ok; 1 not set up / declined / bootstrap failed; launcher errors propagated |
+| `update [--check] [--yes] [--only NAME[,NAME...]]` | Discover and apply updates across the catalog. `--check` prints the plan without writing. `--yes` skips confirmation. `--only` restricts to specific components. | 0 success or nothing to do; 1 one or more components failed; 2 usage error; 3 declined |
+| `doctor [--json]` | Unchanged zero-network contract reporting environment health. | 0 healthy; 1 broken |
+| `menu` / `menu status` | Read-only: check whether context menu entries are present. | 0 |
+| `menu enable` | Apply registry entries to add right-click context menu. Idempotent. | 0 / 1 |
+| `menu disable` | Remove right-click context menu registry entries. Idempotent. | 0 / 1 |
+| `menu clean` | Clean up orphaned context menu entries. | 0 / 1 |
+| `tidy [--apply] [--deep]` | Default is a dry run (print plan). `--apply` deletes planned items (pytest/VS Code/npm caches). `--deep` also cleans setup files, old rollback dirs, and `__pycache__`. | 0 |
+| `uninstall [--yes] [--purge-data]` | Deletes Engram's program files by allowlist. Leaves `.engram/` (settings/credentials) and `workspace/` untouched by default. `--purge-data` adds `.engram/` and `workspace/` to the deletion plan, requiring un-bypassable typed confirmation. Hands off to a background helper that waits for Engram to exit before deletion. | 0 handed off; 1 failed before hand-off; 3 declined |
+| `version` / `--version` / `-v` | Print the current version (e.g. `Engram <version> (Portable Dev Runtime)`). | 0 |
+| `help` / `--help` / `-h` / `/?` | List the available commands. | 0 |
 
-`install`, `setup`, `status`, `register`, `unregister`, `cleanup`, `menu-cleanup`, `launch`, and `start` are retired verbs — each prints its replacement above and exits 2 rather than silently aliasing.
+`install`, `setup`, `status`, `register`, `unregister`, `menu-cleanup`, `cleanup`, `launch`, and `start` are retired verbs — each prints its replacement and exits 2 rather than silently aliasing.
 
-To install or update an individual AI CLI tool directly:
+To install or update an individual AI CLI tool directly, you can use:
 ```bat
-python _sys\core\provisioner.py ensure-peer-cli claude
-python _sys\core\provisioner.py ensure-peer-cli codex
-python _sys\core\provisioner.py ensure-peer-cli agy
+engram update --only claude
+engram update --only codex
+engram update --only agy
 ```
 
 ## AI-to-AI collaboration → peerhub
