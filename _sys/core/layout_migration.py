@@ -71,8 +71,8 @@ def _merge_component_maps(
             
     return ordered_merged
 
-# WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="Called dynamically by P1-6 layout migration"
-def merge_declarations() -> None:
+# WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="Called dynamically by P1-6 layout migration."
+def merge_declarations(dry_run: bool = False) -> List[str]:
     files = ["runtimes.json", "tool-catalog.v1.json"]
     
     defaults_dir = Path("_sys/defaults")
@@ -80,17 +80,20 @@ def merge_declarations() -> None:
     base_state_dir = Path("_sys/data/state/defaults-base")
     manifest_base_dir = Path("_sys/core/release-manifests/3.2.6-defaults")
     
-    merge_declarations_impl(defaults_dir, live_dir, base_state_dir, manifest_base_dir, files)
+    return merge_declarations_impl(defaults_dir, live_dir, base_state_dir, manifest_base_dir, files, dry_run=dry_run)
 
-def merge_declarations_impl(defaults_dir: Path, live_dir: Path, base_state_dir: Path, manifest_base_dir: Path, files: List[str]) -> None:
-    base_state_dir.mkdir(parents=True, exist_ok=True)
+def merge_declarations_impl(defaults_dir: Path, live_dir: Path, base_state_dir: Path, manifest_base_dir: Path, files: List[str], dry_run: bool = False) -> List[str]:
+    if not dry_run:
+        base_state_dir.mkdir(parents=True, exist_ok=True)
+    
+    all_reports = []
     
     for filename in files:
         live_path = live_dir / filename
         default_path = defaults_dir / filename
         
         if not live_path.exists():
-            if default_path.exists():
+            if default_path.exists() and not dry_run:
                 shutil.copy2(default_path, live_path)
             continue
             
@@ -158,20 +161,24 @@ def merge_declarations_impl(defaults_dir: Path, live_dir: Path, base_state_dir: 
             if reports:
                 for r in reports:
                     logger.info(r)
+                all_reports.extend(reports)
                     
-            pre_merge_bak = base_state_dir / f"{filename}.pre-merge.bak"
-            shutil.copy2(live_path, pre_merge_bak)
-            
-            _atomic_write_json(live_path, merged)
-            
-            if default_path.exists():
-                shutil.copy2(default_path, base_path)
+            if not dry_run:
+                pre_merge_bak = base_state_dir / f"{filename}.pre-merge.bak"
+                shutil.copy2(live_path, pre_merge_bak)
+                
+                _atomic_write_json(live_path, merged)
+                
+                if default_path.exists():
+                    shutil.copy2(default_path, base_path)
                 
         except Exception as e:
             logger.error(f"Failed to merge {filename}: {e}")
             sys.exit(1)
+            
+    return all_reports
 
-# WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 orchestration wiring happens in a follow-up dispatch"
+# WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 orchestration wiring happens in a follow-up dispatch."
 def m0_preflight(base_dir: Path, sys_dir: Path) -> bool:
     from _sys.core.doctor import check_legacy_host_integration
     result = check_legacy_host_integration(base_dir, sys_dir)
@@ -184,8 +191,8 @@ def m0_preflight(base_dir: Path, sys_dir: Path) -> bool:
         print(result.get("detail", "legacy host integration recorded."))
         return False
     return True
-# WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 wiring happens in follow-up dispatch"
-def m1_retire_shipped_files(base_dir: Path, sys_dir: Path) -> tuple[bool, Dict[str, List[str]]]:
+# WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 wiring happens in follow-up dispatch."
+def m1_retire_shipped_files(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> tuple[bool, Dict[str, List[str]]]:
     import os
 
     current_manifest_path = sys_dir / "core" / "release-manifest.json"
@@ -264,7 +271,8 @@ def m1_retire_shipped_files(base_dir: Path, sys_dir: Path) -> tuple[bool, Dict[s
             try:
                 actual_hash = _compute_sha256(file_path)
                 if actual_hash in expected_hashes:
-                    file_path.unlink()
+                    if not dry_run:
+                        file_path.unlink()
                     retired.append(path_str)
                     dirs_to_check.add(file_path.parent)
                 else:
@@ -295,29 +303,30 @@ def m1_retire_shipped_files(base_dir: Path, sys_dir: Path) -> tuple[bool, Dict[s
                 return True
         return False
 
-    for d in sorted_dirs:
-        curr = d
-        while curr != base_dir and curr.is_relative_to(base_dir):
-            if _is_dir_protected(curr):
-                break
-            if curr.exists() and curr.is_dir():
-                try:
-                    if not any(curr.iterdir()):
-                        curr.rmdir()
-                    else:
-                        break
-                except Exception as e:
-                    logger.error(f"Error removing dir {curr}: {e}")
-                    errors_occurred = True
+    if not dry_run:
+        for d in sorted_dirs:
+            curr = d
+            while curr != base_dir and curr.is_relative_to(base_dir):
+                if _is_dir_protected(curr):
                     break
-            else:
-                break
-            curr = curr.parent
+                if curr.exists() and curr.is_dir():
+                    try:
+                        if not any(curr.iterdir()):
+                            curr.rmdir()
+                        else:
+                            break
+                    except Exception as e:
+                        logger.error(f"Error removing dir {curr}: {e}")
+                        errors_occurred = True
+                        break
+                else:
+                    break
+                curr = curr.parent
 
     return not errors_occurred, {"retired": retired, "kept_modified": kept_modified}
 
 # WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 orchestration wiring happens in a follow-up dispatch"
-def m2_move_engram_state(base_dir: Path, sys_dir: Path) -> tuple[bool, Dict[str, List[str]]]:
+def m2_move_engram_state(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> tuple[bool, Dict[str, List[str]]]:
     import os
     
     moved = []
@@ -383,8 +392,9 @@ def m2_move_engram_state(base_dir: Path, sys_dir: Path) -> tuple[bool, Dict[str,
                     conflicts.append(rel)
                 else:
                     try:
-                        dst.parent.mkdir(parents=True, exist_ok=True)
-                        os.replace(p, dst)
+                        if not dry_run:
+                            dst.parent.mkdir(parents=True, exist_ok=True)
+                            os.replace(p, dst)
                         moved.append(rel)
                         dirs_to_check.add(p.parent)
                     except Exception as e:
@@ -410,25 +420,26 @@ def m2_move_engram_state(base_dir: Path, sys_dir: Path) -> tuple[bool, Dict[str,
         if p.exists() and p.is_dir():
             dirs_to_check.add(p)
             
-    sorted_dirs = sorted(list(dirs_to_check), key=lambda p: len(p.parts), reverse=True)
-    for d in sorted_dirs:
-        curr = d
-        while curr != base_dir and curr.is_relative_to(base_dir):
-            if not _is_dir_allowed_to_remove(curr):
-                break
-            if curr.exists() and curr.is_dir():
-                try:
-                    if not any(curr.iterdir()):
-                        curr.rmdir()
-                    else:
-                        break
-                except Exception as e:
-                    logger.error(f"Error removing dir {curr}: {e}")
-                    errors_occurred = True
+    if not dry_run:
+        sorted_dirs = sorted(list(dirs_to_check), key=lambda p: len(p.parts), reverse=True)
+        for d in sorted_dirs:
+            curr = d
+            while curr != base_dir and curr.is_relative_to(base_dir):
+                if not _is_dir_allowed_to_remove(curr):
                     break
-            else:
-                break
-            curr = curr.parent
+                if curr.exists() and curr.is_dir():
+                    try:
+                        if not any(curr.iterdir()):
+                            curr.rmdir()
+                        else:
+                            break
+                    except Exception as e:
+                        logger.error(f"Error removing dir {curr}: {e}")
+                        errors_occurred = True
+                        break
+                else:
+                    break
+                curr = curr.parent
             
     moved.sort()
     external_left.sort()
@@ -439,3 +450,60 @@ def m2_move_engram_state(base_dir: Path, sys_dir: Path) -> tuple[bool, Dict[str,
         "external_left": external_left,
         "conflicts": conflicts
     }
+# WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 orchestration wiring happens in a follow-up dispatch"
+def migrate_layout(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> int:
+    import datetime
+    from _sys.core.version import load_version_info
+    
+    if not m0_preflight(base_dir, sys_dir):
+        return 1
+        
+    m1_ok, m1_report = m1_retire_shipped_files(base_dir, sys_dir, dry_run=dry_run)
+    m2_ok, m2_report = m2_move_engram_state(base_dir, sys_dir, dry_run=dry_run)
+    
+    m3_report = merge_declarations(dry_run=dry_run)
+    
+    version_file = sys_dir / "data" / "state" / "version.json"
+    if not version_file.exists():
+        version_file = sys_dir / "core" / "version.json"
+        
+    engram_version = load_version_info(version_file).get("version", "unknown")
+    
+    migrated_at = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat()
+    
+    report = {
+        "retired": m1_report["retired"],
+        "kept_modified": m1_report["kept_modified"],
+        "moved": m2_report["moved"],
+        "external_left": m2_report["external_left"],
+        "conflicts": m2_report.get("conflicts", []),
+        "merged": m3_report
+    }
+    
+    layout_data = {
+        "layout_version": 2,
+        "engram_version": engram_version,
+        "migrated_at": migrated_at,
+        "report": report
+    }
+    
+    print("\n--- Layout Migration Summary ---")
+    if dry_run:
+        print("[DRY RUN] No changes were made.")
+    print(f"Engram Version: {engram_version}")
+    print(f"Retired shipped files: {len(report['retired'])}")
+    print(f"Kept modified shipped files: {len(report['kept_modified'])}")
+    print(f"Moved engram state files: {len(report['moved'])}")
+    print(f"Conflicts moving engram state files: {len(report['conflicts'])}")
+    print(f"External/unknown legacy state left behind: {len(report['external_left'])}")
+    print(f"Merge actions: {len(report['merged'])}")
+    
+    if not dry_run:
+        layout_json_path = sys_dir / "data" / "state" / "layout.json"
+        layout_json_path.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write_json(layout_json_path, layout_data)
+        
+    if not m1_ok or not m2_ok:
+        return 1
+        
+    return 0

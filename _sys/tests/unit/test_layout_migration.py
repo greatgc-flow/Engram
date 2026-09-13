@@ -536,3 +536,214 @@ def test_m2_untouched_dirs(tmp_path):
     
     after = get_snapshot()
     assert before == after
+from _sys.core.layout_migration import migrate_layout
+
+def test_migrate_layout_m0_refusal(tmp_path, capsys):
+    base_dir = tmp_path
+    sys_dir = base_dir / "_sys"
+    sys_dir.mkdir()
+    
+    state_dir = sys_dir / "data" / "state"
+    state_dir.mkdir(parents=True)
+    state_file = state_dir / "register.state.json"
+    state_file.write_text(json.dumps({
+        "subst_drive": "W",
+        "junctions": [{"host": "C:\\some_host"}]
+    }))
+    
+    import hashlib
+    def get_snapshot():
+        snap = {}
+        for p in base_dir.rglob("*"):
+            if p.is_file():
+                snap[p.relative_to(base_dir).as_posix()] = hashlib.sha256(p.read_bytes()).hexdigest()
+        return snap
+        
+    before = get_snapshot()
+    
+    result = migrate_layout(base_dir, sys_dir)
+    assert result == 1
+    
+    after = get_snapshot()
+    assert before == after
+    
+    captured = capsys.readouterr().out
+    assert "subst W: /D" in captured
+    assert "Layout Migration Summary" not in captured
+
+def test_migrate_layout_success_and_idempotency(tmp_path, capsys, monkeypatch):
+    base_dir = tmp_path
+    sys_dir = base_dir / "_sys"
+    sys_dir.mkdir()
+    
+    monkeypatch.chdir(base_dir)
+    
+    core_dir = sys_dir / "core"
+    core_dir.mkdir(parents=True)
+    manifest_dir = core_dir / "release-manifests"
+    manifest_dir.mkdir(parents=True)
+    
+    current = core_dir / "release-manifest.json"
+    current.write_text(json.dumps({"files": {}}))
+    
+    import hashlib
+    retirable_content = b"old file content"
+    sha = hashlib.sha256(retirable_content).hexdigest().upper()
+    old_manifest = manifest_dir / "3.2.6.json"
+    old_manifest.write_text(json.dumps({
+        "version": "3.2.6",
+        "files": {"foo/bar.txt": sha}
+    }))
+    
+    state_dir = sys_dir / "data" / "state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "layout.json").write_text(json.dumps({"engram_version": "3.2.6"}))
+    
+    target_dir = base_dir / "foo"
+    target_dir.mkdir()
+    target_file = target_dir / "bar.txt"
+    target_file.write_bytes(retirable_content)
+    
+    ai_dir = base_dir / ".ai"
+    ai_dir.mkdir()
+    (ai_dir / "tool_discovery_cache.json").write_text("{}")
+    
+    defaults_dir = sys_dir / "defaults"
+    defaults_dir.mkdir(parents=True)
+    
+    # We need base_state so that ours==base is true, 
+    # causing it to take upstream (theirs) and NOT report a conflict,
+    # OR we can just let ours!=base and check that it reports a conflict.
+    # The test asserted len(merged) > 0, so let's let it report a conflict!
+    # A conflict will happen if ours!=base. Since base doesn't exist, ours!=base.
+    # So it will keep ours and report it!
+    
+    with open(sys_dir / "runtimes.json", "w") as f:
+        json.dump({"runtimes": {"python": {"version": "3.13"}}}, f)
+        
+    with open(defaults_dir / "runtimes.json", "w") as f:
+        json.dump({"runtimes": {"python": {"version": "3.14"}}}, f)
+        
+    with open(sys_dir / "tool-catalog.v1.json", "w") as f:
+        json.dump({"tools": []}, f)
+        
+    with open(defaults_dir / "tool-catalog.v1.json", "w") as f:
+        json.dump({"tools": []}, f)
+        
+    result = migrate_layout(base_dir, sys_dir)
+    assert result == 0
+    
+    layout_data = json.loads((state_dir / "layout.json").read_text())
+    assert layout_data["layout_version"] == 2
+    assert layout_data["report"]["retired"] == ["foo/bar.txt"]
+    assert layout_data["report"]["moved"] == [".ai/tool_discovery_cache.json"]
+    assert len(layout_data["report"]["merged"]) > 0
+    
+    assert not target_file.exists()
+    assert not ai_dir.exists()
+    
+    # Because ours != base, it keeps ours!
+    with open(sys_dir / "runtimes.json") as f:
+        merged_runtimes = json.load(f)
+    assert merged_runtimes["runtimes"]["python"]["version"] == "3.13"
+    
+    def get_snapshot():
+        snap = {}
+        for p in base_dir.rglob("*"):
+            if p.is_file() and not p.name.endswith(".bak"):
+                snap[p.relative_to(base_dir).as_posix()] = hashlib.sha256(p.read_bytes()).hexdigest()
+        return snap
+        
+    end_of_run_1_snap = get_snapshot()
+    
+    result2 = migrate_layout(base_dir, sys_dir)
+    assert result2 == 0
+    
+    layout_data2 = json.loads((state_dir / "layout.json").read_text())
+    assert layout_data2["report"]["retired"] == []
+    assert layout_data2["report"]["moved"] == []
+    
+    end_of_run_2_snap = get_snapshot()
+    del end_of_run_1_snap["_sys/data/state/layout.json"]
+    del end_of_run_2_snap["_sys/data/state/layout.json"]
+    
+    # Pre-merge bak files will be overwritten, but since the content is identical, hash is identical.
+    # BUT wait, the pre-merge bak file might change if the content changed?
+    # runtimes.json is identical to run 1's end state. So pre-merge bak of run 2 is the same as pre-merge bak of run 1!
+    assert end_of_run_1_snap == end_of_run_2_snap
+
+
+def test_migrate_layout_dry_run(tmp_path, capsys, monkeypatch):
+    base_dir = tmp_path
+    sys_dir = base_dir / "_sys"
+    sys_dir.mkdir()
+    
+    monkeypatch.chdir(base_dir)
+    
+    core_dir = sys_dir / "core"
+    core_dir.mkdir(parents=True)
+    manifest_dir = core_dir / "release-manifests"
+    manifest_dir.mkdir(parents=True)
+    
+    current = core_dir / "release-manifest.json"
+    current.write_text(json.dumps({"files": {}}))
+    
+    import hashlib
+    retirable_content = b"old file content"
+    sha = hashlib.sha256(retirable_content).hexdigest().upper()
+    old_manifest = manifest_dir / "3.2.6.json"
+    old_manifest.write_text(json.dumps({
+        "version": "3.2.6",
+        "files": {"foo/bar.txt": sha}
+    }))
+    
+    state_dir = sys_dir / "data" / "state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "layout.json").write_text(json.dumps({"engram_version": "3.2.6"}))
+    
+    target_dir = base_dir / "foo"
+    target_dir.mkdir()
+    target_file = target_dir / "bar.txt"
+    target_file.write_bytes(retirable_content)
+    
+    ai_dir = base_dir / ".ai"
+    ai_dir.mkdir()
+    (ai_dir / "tool_discovery_cache.json").write_text("{}")
+    
+    defaults_dir = sys_dir / "defaults"
+    defaults_dir.mkdir(parents=True)
+    
+    with open(sys_dir / "runtimes.json", "w") as f:
+        json.dump({"runtimes": {"python": {"version": "3.13"}}}, f)
+        
+    with open(defaults_dir / "runtimes.json", "w") as f:
+        json.dump({"runtimes": {"python": {"version": "3.14"}}}, f)
+        
+    with open(sys_dir / "tool-catalog.v1.json", "w") as f:
+        json.dump({"tools": []}, f)
+        
+    with open(defaults_dir / "tool-catalog.v1.json", "w") as f:
+        json.dump({"tools": []}, f)
+    
+    def get_snapshot():
+        snap = {}
+        for p in base_dir.rglob("*"):
+            if p.is_file():
+                snap[p.relative_to(base_dir).as_posix()] = hashlib.sha256(p.read_bytes()).hexdigest()
+        return snap
+        
+    before = get_snapshot()
+    
+    result = migrate_layout(base_dir, sys_dir, dry_run=True)
+    assert result == 0
+    
+    after = get_snapshot()
+    assert before == after
+    
+    layout_data = json.loads((state_dir / "layout.json").read_text())
+    assert "layout_version" not in layout_data
+    
+    captured = capsys.readouterr().out
+    assert "[DRY RUN]" in captured
+    assert "Retired shipped files: 1" in captured
+    assert "Moved engram state files: 1" in captured
