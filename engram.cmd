@@ -1,4 +1,5 @@
 @echo off
+set "ENGRAM_CALLER_CWD=%CD%"
 cd /d "%~dp0"
 setlocal DisableDelayedExpansion
 
@@ -79,12 +80,34 @@ exit /b 2
 :: ----------------------------------------------------------------------------
 
 :cmd_open
+if not exist ".\_sys\env\python\python.exe" (
+    call :do_first_run
+    if errorlevel 1 exit /b 1
+)
 call "_sys\core\dispatch.bat" start %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :cmd_open_implicit
+if not exist ".\_sys\env\python\python.exe" (
+    call :do_first_run
+    if errorlevel 1 exit /b 1
+)
 call "_sys\core\dispatch.bat" start "%SUBCMD%" %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
+
+:do_first_run
+echo This will set up Engram's portable Python, tools, and runtimes in "%CD%"
+set "SETUP_CHOICE="
+set /p "SETUP_CHOICE=Set up Engram here now? [Y/n] "
+if /i "%SETUP_CHOICE%"=="n" exit /b 1
+call "_sys\core\bootstrap.bat"
+if errorlevel 1 exit /b 1
+if not exist "workspace\" mkdir "workspace"
+if exist "_sys\data\state\register.state.json" exit /b 0
+set "MENU_CHOICE="
+set /p MENU_CHOICE=Add "Open in Engram" to the Explorer right-click menu? [y/N] 
+if /i "%MENU_CHOICE%"=="y" call "_sys\core\dispatch.bat" menu-enable
+exit /b 0
 
 :check_setup
 if not exist ".\_sys\env\python\python.exe" (

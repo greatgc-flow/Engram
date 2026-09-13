@@ -37,6 +37,19 @@ def ampersand_fixture(tmp_path: Path):
     engram_cmd_copy = fixture_dir / "engram.cmd"
     engram_cmd_copy.write_text(content, encoding="utf-8")
 
+    # Dummy python.exe so 'set up' condition holds by default
+    # We use find.exe so it runs as a CLI app and fails the '-c' command silently with errorlevel 2,
+    # preventing _MIGRATE_LAYOUT=1 and avoiding GUI error popups from invalid exes.
+    py_dir = fixture_dir / "_sys" / "env" / "python"
+    py_dir.mkdir(parents=True, exist_ok=True)
+    import shutil
+    shutil.copy(r"C:\Windows\System32\find.exe", py_dir / "python.exe")
+
+    # Dummy layout.json to prevent migration auto-trigger from failing
+    state_dir = fixture_dir / "_sys" / "data" / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "layout.json").write_text('{"layout_version": 2}', encoding="utf-8")
+
     return fixture_dir, engram_cmd_copy
 
 
@@ -127,8 +140,13 @@ def test_literal_exclamation_mark_preserved_in_forwarded_arg_in_ampersand_dir(am
 def test_engram_cmd_auto_trigger_blocks_on_m0_refusal(ampersand_fixture):
     fixture_dir, engram_cmd_copy = ampersand_fixture
     sys_core = fixture_dir / "_sys" / "core"
-    sys_core.mkdir(parents=True)
+    sys_core.mkdir(parents=True, exist_ok=True)
     
+    # Ensure layout.json does NOT exist to trigger migration
+    layout_json = fixture_dir / "_sys" / "data" / "state" / "layout.json"
+    if layout_json.exists():
+        layout_json.unlink()
+
     fake_python = fixture_dir / "_sys" / "env" / "python" / "python.exe"
     fake_python.parent.mkdir(parents=True, exist_ok=True)
     fake_python.write_text("", encoding="utf-8")

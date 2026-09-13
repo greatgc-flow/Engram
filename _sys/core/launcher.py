@@ -200,7 +200,11 @@ def main(ctx: dict) -> None:
     # Determine target
     raw_target = args[0] if args else ""
     if raw_target:
-        raw_target = str(Path(raw_target).resolve())
+        caller_cwd = os.environ.get("ENGRAM_CALLER_CWD")
+        if caller_cwd:
+            raw_target = str((Path(caller_cwd) / raw_target).resolve())
+        else:
+            raw_target = str(Path(raw_target).resolve())
 
     if not raw_target:
         target_dir = _resolve_default_target(base_dir, sys_dir)
