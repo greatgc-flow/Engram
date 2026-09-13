@@ -2306,6 +2306,15 @@ def load_recent_session_consumption(
     (latest snapshot only, since the provider already reports a running total).
     A group with both scopes present sums turns only and reports
     token_coverage="partial" (the cumulative rows are corroboration, not data).
+    token_scope="unknown" rows (a producer couldn't tell whether its usage
+    was a per-turn increment or a cumulative snapshot) are NEVER summed into
+    the total, in either bucket -- an unresolved scope is not evidence either
+    way, and silently treating it as an independent turn is exactly the bug
+    that once inflated a real session's reported total by 8.5x (see
+    docs/design/quota-efficiency-RATIFIED-cx-astra-2026-09-13.md section 4).
+    A group with only unknown-scoped rows reports token_coverage="unknown"
+    and leaves input/output/reasoning/total as None rather than fabricating
+    a number from data of undetermined shape.
     """
     if not cost_log_path.exists():
         return []
@@ -2346,7 +2355,7 @@ def load_recent_session_consumption(
             (root_peer, session_key),
             {
                 "peer": root_peer, "session_id": session_key,
-                "turns": {}, "cumulative": {},
+                "turns": {}, "cumulative": {}, "unknown": {},
                 "explicit_profiles": set(), "model_ids": set(),
             },
         )
@@ -2366,7 +2375,13 @@ def load_recent_session_consumption(
         ts = row.get("ts") or ""
         entry = {"row": row, "ts": ts, "line_no": line_no}
 
-        bucket = group["cumulative"] if row.get("token_scope") == "session_cumulative" else group["turns"]
+        scope = row.get("token_scope")
+        if scope == "session_cumulative":
+            bucket = group["cumulative"]
+        elif scope == "unknown":
+            bucket = group["unknown"]
+        else:
+            bucket = group["turns"]
         existing = bucket.get(dedup_sub)
         if existing is None or (ts, line_no) >= (existing["ts"], existing["line_no"]):
             bucket[dedup_sub] = entry
@@ -2384,18 +2399,22 @@ def load_recent_session_consumption(
     for (root_peer, session_key), group in groups.items():
         turn_entries = list(group["turns"].values())
         cumulative_entries = list(group["cumulative"].values())
+        unknown_entries = list(group.get("unknown", {}).values())
 
         if turn_entries:
             rows_for_totals = [e["row"] for e in turn_entries]
-            coverage = "partial" if cumulative_entries else "full"
+            coverage = "partial" if (cumulative_entries or unknown_entries) else "full"
         elif cumulative_entries:
             latest = max(cumulative_entries, key=lambda e: (e["ts"], e["line_no"]))
             rows_for_totals = [latest["row"]]
-            coverage = "cumulative_only"
+            coverage = "partial" if unknown_entries else "cumulative_only"
+        elif unknown_entries:
+            rows_for_totals = []
+            coverage = "unknown"
         else:
             continue
 
-        all_entries = turn_entries + cumulative_entries
+        all_entries = turn_entries + cumulative_entries + unknown_entries
         last_ts = max((e["ts"] for e in all_entries), default="")
 
         input_tokens = _sum_field(rows_for_totals, "input_tokens")

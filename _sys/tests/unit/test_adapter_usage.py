@@ -272,6 +272,7 @@ def test_codex_extract_usage_parses_jsonl_stream():
     assert usage == {
         "input_tokens": 11,
         "output_tokens": 13,
+        "token_scope": "unknown",
         "reasoning_tokens": 5,
     }
 

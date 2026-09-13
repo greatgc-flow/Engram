@@ -151,7 +151,7 @@ def _normalize_usage(usage: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _usage_from_obj(obj: dict[str, Any]) -> dict[str, Any]:
+def _usage_candidates(obj: dict[str, Any]) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     usage = obj.get("usage")
     if isinstance(usage, dict):
@@ -164,9 +164,57 @@ def _usage_from_obj(obj: dict[str, Any]) -> dict[str, Any]:
         if isinstance(nested_usage, dict):
             candidates.append(nested_usage)
     candidates.append(obj)
+    return candidates
 
-    for candidate in candidates:
+
+def _usage_from_obj(obj: dict[str, Any]) -> dict[str, Any]:
+    for candidate in _usage_candidates(obj):
         normalized = _normalize_usage(candidate)
+        if normalized:
+            return normalized
+    return {}
+
+
+def _normalize_codex_usage(usage: dict[str, Any]) -> dict[str, Any]:
+    """Codex-specific usage normalizer.
+
+    Unlike the generic vendor convention _normalize_usage() assumes (where
+    input_tokens EXCLUDES cache hits, so cached_input_tokens/
+    cache_creation_input_tokens must be added on top), Codex's own
+    input_tokens is already INCLUSIVE of any cached subset. Summing them
+    again here would double-count -- this is exactly the bug that inflated
+    a real ~36.3M-token session to a reported ~306.9M (see
+    docs/design/quota-efficiency-RATIFIED-cx-astra-2026-09-13.md section 4).
+    Never add cached_input_tokens / cache_creation_input_tokens to
+    input_tokens for Codex; retain them as separate, non-summed fields.
+    """
+    input_tokens = _first_token_value(usage, ("input_tokens",))
+    cached_input_tokens = _first_token_value(usage, ("cached_input_tokens",))
+    cache_creation_input_tokens = _first_token_value(usage, ("cache_creation_input_tokens",))
+    output_tokens = _first_token_value(usage, ("output_tokens",))
+
+    details = usage.get("output_tokens_details") or {}
+    reasoning_tokens = _first_token_value(usage, ("reasoning_tokens", "reasoning_output_tokens"))
+    if reasoning_tokens is None and isinstance(details, dict):
+        reasoning_tokens = _first_token_value(details, ("reasoning_tokens",))
+
+    if input_tokens is None and output_tokens is None and reasoning_tokens is None:
+        return {}
+    result: dict[str, Any] = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "reasoning_tokens": reasoning_tokens,
+    }
+    if cached_input_tokens is not None:
+        result["cached_input_tokens"] = cached_input_tokens
+    if cache_creation_input_tokens is not None:
+        result["cache_creation_input_tokens"] = cache_creation_input_tokens
+    return result
+
+
+def _codex_usage_from_obj(obj: dict[str, Any]) -> dict[str, Any]:
+    for candidate in _usage_candidates(obj):
+        normalized = _normalize_codex_usage(candidate)
         if normalized:
             return normalized
     return {}
@@ -943,8 +991,14 @@ class CodexAdapter(BaseAdapter):
                             "token_scope": "turn",
                         }
                         continue
-                parsed = _usage_from_obj(obj)
+                parsed = _codex_usage_from_obj(obj)
                 if parsed:
+                    # This event's name alone doesn't tell us whether its
+                    # usage is a per-turn increment or a session-cumulative
+                    # snapshot (contract point 3) -- mark it explicitly
+                    # unknown rather than letting a downstream summation
+                    # silently treat it as an independent, summable turn.
+                    parsed.setdefault("token_scope", "unknown")
                     latest = parsed
         except Exception:
             return {}

@@ -1829,7 +1829,17 @@ def _parse_reset_time(text: str) -> str | None:
             now = datetime.now()
             dt = datetime.combine(now.date(), t)
             if dt <= now:
-                dt += timedelta(days=1)
+                # A bare time-of-day with no date is ambiguous once it has
+                # already passed today: it may genuinely mean "tomorrow", or
+                # it may be clock skew / processing delay on a message that
+                # meant "very soon". Rolling forward a full day here has
+                # fabricated real 24h blocks that were empirically false
+                # (see docs/design/quota-efficiency-RATIFIED-cx-astra-2026-09-13.md
+                # section 4 / bug 3) -- return None instead so the caller
+                # falls back to the standard short transient-failure backoff
+                # rather than committing to an invented day-long wait.
+                # "Unknown is not zero", but it is also not "one day".
+                return None
             return dt.isoformat()
         except ValueError:
             pass

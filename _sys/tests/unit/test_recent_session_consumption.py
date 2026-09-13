@@ -127,6 +127,52 @@ def test_codex_producer_selects_last_token_usage_never_total():
     assert usage.get("token_scope") == "turn"
 
 
+def test_codex_producer_generic_fallback_does_not_double_count_cached_tokens():
+    """Regression for the 8.5x inflation bug (RATIFIED 2026-09-13 section 4):
+    any non-token_count Codex event fell through to the generic, additive
+    _usage_from_obj()/_normalize_usage() path, which wrongly summed
+    input_tokens + cached_input_tokens for a vendor whose input_tokens is
+    already inclusive. The exact repro from the ratified doc: 100/90 -> must
+    NOT become 190, and the scope must be marked 'unknown' rather than a
+    summable 'turn'.
+    """
+    adapter = hub_peer.CodexAdapter()
+    node = {"invoke_args": ["exec", "--json"]}
+
+    raw_stdout = json.dumps({
+        "type": "turn.completed",
+        "usage": {"input_tokens": 100, "cached_input_tokens": 90, "output_tokens": 12},
+    })
+
+    usage = adapter.extract_usage(raw_stdout, node, session_id="some-session")
+
+    assert usage["input_tokens"] == 100
+    assert usage["output_tokens"] == 12
+    assert usage.get("cached_input_tokens") == 90
+    assert usage.get("token_scope") == "unknown"
+
+
+def test_codex_producer_generic_fallback_matches_ratified_repro_values():
+    """Reproduces the exact six-ask numeric evidence from the ratified doc's
+    table: each 'logged input' value was raw_cumulative_input + cached_subset.
+    The fixed normalizer must report only the raw (already-inclusive) value.
+    """
+    adapter = hub_peer.CodexAdapter()
+    node = {"invoke_args": ["exec", "--json"]}
+
+    raw_stdout = json.dumps({
+        "type": "turn.completed",
+        "usage": {
+            "input_tokens": 15659250,
+            "cached_input_tokens": 15439616,
+            "output_tokens": 1000,
+        },
+    })
+    usage = adapter.extract_usage(raw_stdout, node, session_id="s")
+    assert usage["input_tokens"] == 15659250  # NOT 31,098,866
+    assert usage.get("token_scope") == "unknown"
+
+
 # ── 3. Aggregation Engine Tests ───────────────────────────────────────────────
 
 def test_aggregation_same_session_across_asks_groups_together(tmp_path):
@@ -377,6 +423,53 @@ def test_aggregation_mixed_scope_uses_turns_only_and_reports_partial(tmp_path):
     res = diag.load_recent_session_consumption(cost_log)
     assert len(res) == 1
     # Sum only the turn rows (input=100, output=20)
+    assert res[0]["input_tokens"] == 100
+    assert res[0]["output_tokens"] == 20
+    assert res[0]["token_coverage"] == "partial"
+
+
+def test_aggregation_unknown_only_group_reports_no_fabricated_total(tmp_path):
+    """A group with only token_scope='unknown' rows (regression for the
+    8.5x-inflation bug's root cause) must never sum them into a total --
+    an unresolved producer scope is not evidence of an independent turn.
+    """
+    cost_log = tmp_path / "cost-log.jsonl"
+    cost_log.write_text("\n".join([
+        json.dumps({
+            "ts": "2026-09-13T10:00:00Z", "peer_id": "cx", "model_id": "m", "token_scope": "unknown",
+            "session_id": "sess-1", "turn_id": "t1", "input_tokens": 31098866, "output_tokens": 1000
+        }),
+        json.dumps({
+            "ts": "2026-09-13T10:01:00Z", "peer_id": "cx", "model_id": "m", "token_scope": "unknown",
+            "session_id": "sess-1", "turn_id": "t2", "input_tokens": 71453616, "output_tokens": 2000
+        }),
+    ]), encoding="utf-8")
+
+    res = diag.load_recent_session_consumption(cost_log)
+    assert len(res) == 1
+    assert res[0]["input_tokens"] is None
+    assert res[0]["output_tokens"] is None
+    assert res[0]["total_tokens"] is None
+    assert res[0]["token_coverage"] == "unknown"
+
+
+def test_aggregation_mixed_turn_and_unknown_excludes_unknown_from_sum(tmp_path):
+    """A group with real turn rows plus unknown-scoped rows must sum the
+    turn rows only, excluding the unknown ones, and report 'partial'."""
+    cost_log = tmp_path / "cost-log.jsonl"
+    cost_log.write_text("\n".join([
+        json.dumps({
+            "ts": "2026-09-13T10:00:00Z", "peer_id": "cx", "model_id": "m", "token_scope": "turn",
+            "session_id": "sess-1", "turn_id": "t1", "input_tokens": 100, "output_tokens": 20
+        }),
+        json.dumps({
+            "ts": "2026-09-13T10:01:00Z", "peer_id": "cx", "model_id": "m", "token_scope": "unknown",
+            "session_id": "sess-1", "turn_id": "t2", "input_tokens": 71453616, "output_tokens": 2000
+        }),
+    ]), encoding="utf-8")
+
+    res = diag.load_recent_session_consumption(cost_log)
+    assert len(res) == 1
     assert res[0]["input_tokens"] == 100
     assert res[0]["output_tokens"] == 20
     assert res[0]["token_coverage"] == "partial"
