@@ -765,3 +765,36 @@ def test_run_pipeline(tmp_path, monkeypatch):
     result_fail = layout_migration.run_pipeline(ctx_no_dry)
     assert result_fail == {'status': 'error'}
 
+
+def test_layout_migration_core_update_cleanup(tmp_path):
+    import core.layout_migration as lm
+    
+    base_dir = tmp_path / "base"
+    sys_dir = base_dir / "_sys"
+    sys_dir.mkdir(parents=True)
+    
+    old_exe = base_dir / "Engram.exe.old"
+    old_exe.write_text("old")
+    
+    temp_update = sys_dir / "data" / "temp" / "core-update" / "1.2.3"
+    temp_update.mkdir(parents=True)
+    (temp_update / "update.zip").write_text("zip content")
+    
+    # Needs to be valid layout or migration will fail early?
+    # We should just call migrate_layout
+    res = lm.migrate_layout(base_dir, sys_dir)
+    
+    # We only care that the cleanup happened, regardless of migration success,
+    # or at least that it happened if migration reaches that point.
+    # Actually, if m1_ok or m2_ok fails, does it reach the cleanup?
+    # Looking at the code:
+    # m1_ok = _migrate_v20_to_v21(...)
+    # m2_ok = _migrate_tools_to_tool_catalog(...)
+    # layout_data["last_migration"] = "v2.1"
+    # _atomic_write_json(...)
+    # <cleanup>
+    # if not m1_ok or not m2_ok: return 1
+    # So it reaches cleanup regardless of m1/m2 failure.
+    
+    assert not old_exe.exists()
+    assert not (sys_dir / "data" / "temp" / "core-update").exists()
