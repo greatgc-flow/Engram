@@ -66,11 +66,12 @@ def test_fallback_unknown_subcommand_exit_code_fidelity_in_ampersand_dir(ampersa
             errors="replace",
         )
 
-    assert proc.returncode == 1, (
-        f"Expected exit code 1 for unknown subcommand, got {proc.returncode}.\n"
-        f"stdout: {proc.stdout}\n"
-        f"stderr: {proc.stderr}"
-    )
+        assert proc.returncode == 2, (
+            f"Expected exit code 2 for unknown subcommand, got {proc.returncode}.\n"
+            f"stdout: {proc.stdout}\n"
+            f"stderr: {proc.stderr}"
+        )
+        assert "Unknown command: some_totally_unknown_subcommand" in proc.stdout
     assert "Unknown command" in proc.stdout, (
         f"Expected 'Unknown command' in stdout.\n"
         f"stdout: {proc.stdout}\n"
@@ -92,7 +93,7 @@ def test_literal_exclamation_mark_preserved_in_forwarded_arg_in_ampersand_dir(am
     )
 
     proc = subprocess.run(
-        ["cmd.exe", "/c", str(engram_cmd_copy), "somecmd", "file!name.txt"],
+        ["cmd.exe", "/c", str(engram_cmd_copy), "open", "file!name.txt"],
         cwd=str(fixture_dir),
         capture_output=True,
         text=True,
@@ -104,7 +105,7 @@ def test_literal_exclamation_mark_preserved_in_forwarded_arg_in_ampersand_dir(am
         # when invoked as a list. Fall back to double-quoted command line matching
         # the documented workaround pattern (CONVENTION.md line 143, test_path_scenarios.py line 285).
         proc = subprocess.run(
-            f'cmd.exe /c ""{engram_cmd_copy}" somecmd file!name.txt"',
+            f'cmd.exe /c ""{engram_cmd_copy}" open file!name.txt"',
             cwd=str(fixture_dir),
             capture_output=True,
             text=True,

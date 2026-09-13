@@ -30,8 +30,21 @@
             "idempotent": true,
             "failure_policy": "abort"
         },
+        "registry.menu_status": {
+            "module": "core.registrar",
+            "method": "menu_status",
+            "config": "context_menu.json",
+            "idempotent": true,
+            "failure_policy": "abort"
+        },
         "scrub.run": {
             "module": "core.scrubber",
+            "method": "run",
+            "idempotent": true,
+            "failure_policy": "abort"
+        },
+        "tidy.run": {
+            "module": "core.tidy_temp",
             "method": "run",
             "idempotent": true,
             "failure_policy": "abort"
@@ -46,7 +59,7 @@
             "method": "run",
             "failure_policy": "abort"
         },
-        "status.run": {
+        "doctor.run": {
             "module": "core.doctor",
             "method": "run",
             "failure_policy": "abort"
@@ -79,6 +92,9 @@
         "menu-clean": [
             "registry.clean_orphans"
         ],
+        "menu-status": [
+            "registry.menu_status"
+        ],
         "register": [
             "registry.apply",
             "state.write"
@@ -93,6 +109,9 @@
         "menu-cleanup": [
             "registry.clean_orphans"
         ],
+        "tidy": [
+            "tidy.run"
+        ],
         "start": [
             "env.launch"
         ],
@@ -100,8 +119,8 @@
         "update": [
             "update.run"
         ],
-        "status": [
-            "status.run"
+        "doctor": [
+            "doctor.run"
         ],
         "uninstall": [
             "uninstall.run"

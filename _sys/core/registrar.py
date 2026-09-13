@@ -244,7 +244,7 @@ def _unregister_entry(key_name: str, targets_cfg: dict, relay_root: Path) -> lis
     return errors
 
 
-def _clean_orphans(base_key: str, targets_cfg: dict, relay_root: Path) -> list[str]:
+def _clean_orphans(base_key: str, targets_cfg: dict, relay_root: Path, dry_run: bool = False) -> list[str]:
     """Remove stale SandboxRun_ keys whose relay bat no longer points to a valid path.
 
     `base_key` is accepted for call-site symmetry with the entries this scan
@@ -295,15 +295,16 @@ def _clean_orphans(base_key: str, targets_cfg: dict, relay_root: Path) -> list[s
                     except OSError:
                         break
             for subkey in orphans:
-                subprocess.run(
-                    ["reg", "delete", f"HKCU\\{path_base}\\{subkey}", "/f"],
-                    capture_output=True,
-                )
-                for ext in (".bat", ".ico", ".root.txt", ".physroot.txt"):
-                    p = relay_root / f"{subkey}{ext}"
-                    if p.exists():
-                        p.unlink()
-                print(f"  [OK] Orphan removed: {subkey}")
+                if not dry_run:
+                    subprocess.run(
+                        ["reg", "delete", f"HKCU\\{path_base}\\{subkey}", "/f"],
+                        capture_output=True,
+                    )
+                    for ext in (".bat", ".ico", ".root.txt", ".physroot.txt"):
+                        p = relay_root / f"{subkey}{ext}"
+                        if p.exists():
+                            p.unlink()
+                    print(f"  [OK] Orphan removed: {subkey}")
                 removed.append(subkey)
         except Exception:
             continue
@@ -511,3 +512,35 @@ def clean_orphans(ctx: dict) -> dict:
         print("\n  Nothing to clean — no orphaned context-menu entries found.")
 
     return {"status": "success", "operation": "menu.clean_orphans", "removed": removed}
+
+
+def menu_status(ctx: dict) -> dict:
+    """Read-only check for menu registration status and orphaned entries."""
+    sys_dir    = ctx["sys_dir"]
+    base_dir   = ctx.get("base_dir")
+    relay_root = Path(os.environ.get("LOCALAPPDATA", ""))
+
+    print(f"\n{'='*50}")
+    print(" Registrar: menu-status")
+    print(f"{'='*50}")
+
+    try:
+        from core import doctor
+        reg_check = doctor.check_registration(base_dir, sys_dir)
+        print(f"  Menu Status: {reg_check.get('detail', 'unknown')}")
+    except Exception as e:
+        print(f"  [Warning] Could not check registration: {e}")
+
+    cfg = _load_context_menu(sys_dir)
+    if cfg:
+        targets_cfg = cfg.get("registry", {}).get("targets", {})
+        base_key = _registry_key_name(base_dir) if base_dir else ""
+        if targets_cfg:
+            orphans = _clean_orphans(base_key, targets_cfg, relay_root, dry_run=True)
+            if orphans:
+                plural = "y" if len(orphans) == 1 else "ies"
+                print(f"  Found {len(orphans)} orphaned entr{plural} (run 'engram menu clean' to remove): {', '.join(orphans)}")
+            else:
+                print("  No orphaned context-menu entries found.")
+
+    return {"status": "success", "operation": "menu.status"}

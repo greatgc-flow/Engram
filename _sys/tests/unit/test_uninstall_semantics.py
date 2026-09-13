@@ -493,6 +493,17 @@ def test_case_7_engram_cmd_uninstall_forwards_arguments(tmp_path):
     engram_cmd_copy = fixture_dir / "engram.cmd"
     engram_cmd_copy.write_text(content, encoding="utf-8")
 
+    # Dummy python.exe so 'set up' condition holds by default
+    py_dir = fixture_dir / "_sys" / "env" / "python"
+    py_dir.mkdir(parents=True, exist_ok=True)
+    import sys, shutil
+    shutil.copy(sys.executable, py_dir / "python.exe")
+
+    # Dummy layout.json to bypass migrate-layout auto-trigger
+    state_dir = fixture_dir / "_sys" / "data" / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "layout.json").write_text('{"layout_version": 2}', encoding="utf-8")
+
     # Create stub _sys/core/dispatch.bat
     core_dir = fixture_dir / "_sys" / "core"
     core_dir.mkdir(parents=True, exist_ok=True)

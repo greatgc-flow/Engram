@@ -10,7 +10,6 @@ Verifies the canonical command surface defined in the ratified spec:
 
 Per the P1 ratified plan and terminal directive, forward-looking contract tests
 that depend on the P1-7 rewrite are marked with:
-@pytest.mark.xfail(reason="pending P1-7: command surface rewrite", strict=True)
 """
 import os
 import subprocess
@@ -49,7 +48,8 @@ def surface_root(tmp_path: Path):
     # Dummy python.exe so 'set up' condition holds by default
     py_dir = root / "_sys" / "env" / "python"
     py_dir.mkdir(parents=True, exist_ok=True)
-    (py_dir / "python.exe").write_bytes(b"dummy_python")
+    import sys, shutil
+    shutil.copy(sys.executable, py_dir / "python.exe")
     
     state_dir = root / "_sys" / "data" / "state"
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -82,7 +82,6 @@ def run_engram(root: Path, *args: str, cwd: Path | None = None) -> subprocess.Co
 # 1. Public verbs and flags (§3.2)
 # ----------------------------------------------------------------------------
 
-@pytest.mark.xfail(reason="pending P1-7: command surface rewrite", strict=True)
 def test_bare_invocation_routes_to_open(surface_root):
     """engram with no args routes to 'open' (§3.2 rule 1)."""
     proc = run_engram(surface_root)
@@ -108,7 +107,6 @@ def test_bare_invocation_routes_to_open(surface_root):
     (["tidy", "--apply"], "tidy"),
     (["tidy", "--deep"], "tidy"),
 ])
-@pytest.mark.xfail(reason="pending P1-7: command surface rewrite", strict=True)
 def test_public_verbs_dispatch(surface_root, verb_args, expected_pipeline):
     """Every §3.2 verb routes to its canonical dispatch pipeline."""
     proc = run_engram(surface_root, *verb_args)
@@ -129,7 +127,6 @@ def test_uninstall_dispatches_cleanly(surface_root, uninstall_args):
 
 
 @pytest.mark.parametrize("version_flag", ["version", "--version", "-v"])
-@pytest.mark.xfail(reason="pending P1-7: command surface rewrite", strict=True)
 def test_version_surface(surface_root, version_flag):
     """'engram version', '--version', '-v' output 'Engram <version> (Portable Dev Runtime)' without 'v' prefix (§3.2, §3.3)."""
     proc = run_engram(surface_root, version_flag)
@@ -139,7 +136,6 @@ def test_version_surface(surface_root, version_flag):
 
 
 @pytest.mark.parametrize("help_flag", ["help", "--help", "-h", "/?"])
-@pytest.mark.xfail(reason="pending P1-7: command surface rewrite", strict=True)
 def test_help_surface_clean(surface_root, help_flag):
     """'engram help' lists canonical §3.2 verbs with no mention of P: or legacy batch files."""
     proc = run_engram(surface_root, help_flag)
@@ -172,7 +168,6 @@ def test_help_surface_clean(surface_root, help_flag):
     ("launch", "engram open"),
     ("start", "engram open"),
 ])
-@pytest.mark.xfail(reason="pending P1-7: command surface rewrite", strict=True)
 def test_retired_verbs_exit_2_with_guidance(surface_root, retired_verb, recommended_replacement):
     """Retired verbs exit 2 and print replacement guidance (§3.4)."""
     proc = run_engram(surface_root, retired_verb)
@@ -185,7 +180,6 @@ def test_retired_verbs_exit_2_with_guidance(surface_root, retired_verb, recommen
 # 3. Unknown command (§3.2 rule 5)
 # ----------------------------------------------------------------------------
 
-@pytest.mark.xfail(reason="pending P1-7: command surface rewrite", strict=True)
 def test_unknown_command_exits_2(surface_root):
     """Unknown command exits 2 and directs user to 'engram help' (§3.2 rule 5)."""
     proc = run_engram(surface_root, "totally_unknown_subcmd_xyz")
@@ -198,7 +192,6 @@ def test_unknown_command_exits_2(surface_root):
 # 4. Existing path routes to open (§3.2 rule 4)
 # ----------------------------------------------------------------------------
 
-@pytest.mark.xfail(reason="pending P1-7: command surface rewrite", strict=True)
 def test_existing_path_routes_to_open(surface_root):
     """First arg matching an existing directory routes to open <path> (§3.2 rule 4)."""
     proj_dir = surface_root / "my_project"
@@ -215,7 +208,6 @@ def test_existing_path_routes_to_open(surface_root):
 # ----------------------------------------------------------------------------
 
 @pytest.mark.parametrize("verb", ["doctor", "menu", "tidy", "uninstall"])
-@pytest.mark.xfail(reason="pending P1-7: command surface rewrite", strict=True)
 def test_not_set_up_rule_rejects_with_exit_1(surface_root, verb):
     """When python.exe is missing, doctor/menu/tidy/uninstall exit 1 with setup message (§3.2)."""
     # Remove python stub to simulate fresh/not-set-up environment

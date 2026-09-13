@@ -314,5 +314,21 @@ def main() -> int:
     return 0
 
 
+def run(ctx: dict) -> dict:
+    """Entry point for dispatch.bat (engram tidy pipeline)."""
+    # Convert ctx["args"] to sys.argv for argparse inside main()
+    # (or we could just call main() and let it read sys.argv, but ctx["args"] 
+    # is the canonical way dispatch args are passed).
+    old_argv = sys.argv
+    try:
+        sys.argv = ["tidy_temp.py"] + (ctx.get("args") or [])
+        rc = main()
+        return {"status": "success" if rc == 0 else "failed", "operation": "tidy.run"}
+    except SystemExit as e:
+        return {"status": "success" if e.code == 0 else "failed", "operation": "tidy.run"}
+    finally:
+        sys.argv = old_argv
+
+
 if __name__ == "__main__":
     sys.exit(main())

@@ -14,7 +14,7 @@ setlocal DisableDelayedExpansion
 :: ----------------------------------------------------------------------------
 set "SUBCMD=%~1"
 
-if "%SUBCMD%"=="" goto :show_help
+if "%SUBCMD%"=="" goto :cmd_open
 if /i "%SUBCMD%"=="help" goto :show_help
 if /i "%SUBCMD%"=="--help" goto :show_help
 if /i "%SUBCMD%"=="-h" goto :show_help
@@ -40,100 +40,160 @@ if "%_MIGRATE_LAYOUT%"=="1" (
 )
 :: -------------------------------------
 
-:: Shift first argument so %* in sub-scripts receives remaining arguments
+:: Existing path routes to open
+if exist "%SUBCMD%\" goto :cmd_open_implicit
+
+:: Shift first argument so %1-%9 in sub-scripts receives remaining arguments
 shift
 
-if /i "%SUBCMD%"=="install" goto :cmd_install
-if /i "%SUBCMD%"=="setup" goto :cmd_install
-if /i "%SUBCMD%"=="status" goto :cmd_status
-if /i "%SUBCMD%"=="doctor" goto :cmd_status
-if /i "%SUBCMD%"=="register" goto :cmd_register
-if /i "%SUBCMD%"=="unregister" goto :cmd_unregister
+:: 1. Public verbs
+if /i "%SUBCMD%"=="open" goto :cmd_open
 if /i "%SUBCMD%"=="update" goto :cmd_update
-if /i "%SUBCMD%"=="cleanup" goto :cmd_cleanup
+if /i "%SUBCMD%"=="doctor" goto :cmd_doctor
+if /i "%SUBCMD%"=="menu" goto :cmd_menu
 if /i "%SUBCMD%"=="tidy" goto :cmd_tidy
-if /i "%SUBCMD%"=="menu-cleanup" goto :cmd_menu_cleanup
-if /i "%SUBCMD%"=="launch" goto :cmd_launch
 if /i "%SUBCMD%"=="uninstall" goto :cmd_uninstall
-if /i "%SUBCMD%"=="start" goto :cmd_launch
 
-:: Fallback: Try dispatch pipeline directly
-:: No parenthesized block here on purpose -- %ERRORLEVEL% inside an
-:: `if (...) ( ... exit /b %ERRORLEVEL% )` block is expanded ONCE at
-:: parse time (before the block runs), so it would report the exit
-:: code from BEFORE the call, not the dispatcher's real result. The
-:: fix isn't delayed expansion (!ERRORLEVEL!) -- that would work too,
-:: but requires enabling delayed expansion for the whole file, which
-:: then silently corrupts a literal "!" in any user-supplied CLI
-:: argument forwarded via %1-%9 below. Using `goto` instead of `( )`
-:: avoids the parenthesized-block problem entirely, so %ERRORLEVEL%
-:: on its own line (freshly re-evaluated, not batch-expanded) is
-:: already correct with no expansion-mode trade-off either way.
-if not exist "_sys\core\dispatch.bat" goto :cmd_unknown
-call "_sys\core\dispatch.bat" %SUBCMD% %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b %ERRORLEVEL%
+:: 2. Retired verbs
+if /i "%SUBCMD%"=="install" goto :retired_install
+if /i "%SUBCMD%"=="setup" goto :retired_install
+if /i "%SUBCMD%"=="status" goto :retired_status
+if /i "%SUBCMD%"=="register" goto :retired_register
+if /i "%SUBCMD%"=="unregister" goto :retired_unregister
+if /i "%SUBCMD%"=="menu-cleanup" goto :retired_menu_cleanup
+if /i "%SUBCMD%"=="cleanup" goto :retired_cleanup
+if /i "%SUBCMD%"=="launch" goto :retired_launch
+if /i "%SUBCMD%"=="start" goto :retired_launch
+
+goto :cmd_unknown
 
 :cmd_unknown
 echo [Error] Unknown command: %SUBCMD%
-echo Run 'engram --help' for available commands.
-exit /b 1
+echo Run 'engram help' for available commands.
+exit /b 2
 
 :: ----------------------------------------------------------------------------
 :: Subcommand Handlers
 :: ----------------------------------------------------------------------------
-:cmd_install
-call ".\INSTALL.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
+
+:cmd_open
+call "_sys\core\dispatch.bat" start %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
-:cmd_status
-call ".\STATUS.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
+:cmd_open_implicit
+:: Implicit open doesn't consume the first argument as a verb, so we don't use the shifted %1-%9.
+:: We pass %SUBCMD% and the unshifted remaining arguments. However, we already shifted above,
+:: wait, no. The shift is AFTER `goto :cmd_open_implicit`! Let's check:
+:: `if exist "%SUBCMD%\" goto :cmd_open_implicit` is BEFORE `shift`.
+:: So we must not shift yet. We just pass `%1 %2 ... %9` to dispatch.
+call "_sys\core\dispatch.bat" start %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
-:cmd_register
-call ".\register.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
+:check_setup
+if not exist ".\_sys\env\python\python.exe" (
+    echo Engram is not set up.
+    echo Run 'engram' to initialize the environment.
+    exit /b 1
+)
+exit /b 0
+
+:cmd_doctor
+call :check_setup
+if errorlevel 1 exit /b 1
+call "_sys\core\dispatch.bat" doctor %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
-:cmd_unregister
-call ".\unregister.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b %ERRORLEVEL%
-
-:cmd_update
-call ".\UPDATE.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b %ERRORLEVEL%
-
-:cmd_cleanup
-call ".\CLEANUP.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
+:cmd_menu
+call :check_setup
+if errorlevel 1 exit /b 1
+:: if no args, default to status
+if "%~1"=="" (
+    call "_sys\core\dispatch.bat" menu-status
+    exit /b %ERRORLEVEL%
+)
+if /i "%~1"=="status" (
+    call "_sys\core\dispatch.bat" menu-status %2 %3 %4 %5 %6 %7 %8 %9
+    exit /b %ERRORLEVEL%
+)
+if /i "%~1"=="enable" (
+    call "_sys\core\dispatch.bat" menu-enable %2 %3 %4 %5 %6 %7 %8 %9
+    exit /b %ERRORLEVEL%
+)
+if /i "%~1"=="disable" (
+    call "_sys\core\dispatch.bat" menu-disable %2 %3 %4 %5 %6 %7 %8 %9
+    exit /b %ERRORLEVEL%
+)
+if /i "%~1"=="clean" (
+    call "_sys\core\dispatch.bat" menu-clean %2 %3 %4 %5 %6 %7 %8 %9
+    exit /b %ERRORLEVEL%
+)
+:: Unknown menu subcommand, let dispatch.bat handle or show error
+call "_sys\core\dispatch.bat" menu-%1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :cmd_tidy
-call ".\TIDY.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
+call :check_setup
+if errorlevel 1 exit /b 1
+call "_sys\core\dispatch.bat" tidy %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
-:cmd_menu_cleanup
-call ".\menu-cleanup.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
+:cmd_update
+call "_sys\core\dispatch.bat" update %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
-
-
-:cmd_launch
-call ".\_sys\cli\launch.bat" %1 %2 %3 %4 %5 %6 %7 %8 %9
+:cmd_uninstall
+call :check_setup
+if errorlevel 1 exit /b 1
+call "_sys\core\dispatch.bat" uninstall %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
+:: ----------------------------------------------------------------------------
+:: Retired Verbs Handlers
+:: ----------------------------------------------------------------------------
+:retired_install
+echo [Notice] '%SUBCMD%' is retired. Use: engram
+exit /b 2
 
+:retired_status
+echo [Notice] '%SUBCMD%' is retired. Use: engram doctor
+exit /b 2
 
+:retired_register
+echo [Notice] '%SUBCMD%' is retired. Use: engram menu enable
+exit /b 2
+
+:retired_unregister
+echo [Notice] '%SUBCMD%' is retired. Use: engram menu disable
+exit /b 2
+
+:retired_menu_cleanup
+echo [Notice] '%SUBCMD%' is retired. Use: engram menu clean
+exit /b 2
+
+:retired_cleanup
+echo [Notice] '%SUBCMD%' is retired. Use: engram tidy
+exit /b 2
+
+:retired_launch
+echo [Notice] '%SUBCMD%' is retired. Use: engram open
+exit /b 2
 
 :: ----------------------------------------------------------------------------
 :: Info Handlers
 :: ----------------------------------------------------------------------------
-:cmd_uninstall
-call "_sys\core\dispatch.bat" uninstall %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b %ERRORLEVEL%
 
 :get_version
 set "_ENGRAM_VER=unknown"
 if exist "_sys\core\version.json" (
-    for /f "usebackq delims=" %%v in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "try { (Get-Content '_sys\core\version.json' -Raw | ConvertFrom-Json).version } catch { 'unknown' }"` ) do (
-        set "_ENGRAM_VER=%%v"
+    if exist ".\_sys\env\python\python.exe" (
+        for /f "usebackq delims=" %%v in (`.\_sys\env\python\python.exe -c "import json, sys; sys.stdout.write(json.load(open(r'_sys\core\version.json', encoding='utf-8')).get('version', 'unknown'))" 2^>nul`) do (
+            set "_ENGRAM_VER=%%v"
+        )
+    )
+    if "%_ENGRAM_VER%"=="unknown" (
+        for /f "usebackq delims=" %%v in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "try { (Get-Content '_sys\core\version.json' -Raw | ConvertFrom-Json).version } catch { 'unknown' }" 2^>nul`) do (
+            set "_ENGRAM_VER=%%v"
+        )
     )
 )
 if "%_ENGRAM_VER%"=="" set "_ENGRAM_VER=unknown"
@@ -141,13 +201,13 @@ exit /b 0
 
 :show_version
 call :get_version
-echo Engram v%_ENGRAM_VER% (Portable Dev Runtime)
+echo Engram %_ENGRAM_VER% (Portable Dev Runtime)
 exit /b 0
 
 :show_help
 call :get_version
 echo ===============================================================================
-echo   Engram v%_ENGRAM_VER% - Portable Dev Runtime
+echo   Engram %_ENGRAM_VER% - Portable Dev Runtime
 echo   Repository: https://github.com/greatgc-flow/Engram
 echo ===============================================================================
 echo.
@@ -155,18 +215,15 @@ echo Usage:
 echo   engram ^<command^> [options...]
 echo.
 echo Lifecycle ^& Environment:
-echo   install               Bootstrap portable Python and deploy all toolchains
-echo   status / doctor       Report environment health, tool status, and configuration
-echo   register              Set up right-click context menu
-echo   unregister            Remove right-click context menu
-echo   update                Check and apply latest stable runtime and tool updates
-echo   cleanup / tidy        Clean temporary logs, caches, and orphaned files
-echo   menu-cleanup          Remove orphaned right-click context-menu entries (any install)
-echo   uninstall             Full removal: registry teardown and folder purge
+echo   engram open           Open a workspace (default action)
+echo   engram update         Check and apply latest stable runtime and tool updates
+echo   engram doctor         Report environment health, tool status, and configuration
+echo   engram menu           Manage right-click context menu (status, enable, disable, clean)
+echo   engram tidy           Clean temporary logs, caches, and orphaned files
+echo   engram uninstall      Full removal: registry teardown and folder purge
 echo.
 echo Options:
 echo   --version, -v         Display Engram version information
 echo   --help, -h            Display this help message
 echo.
 exit /b 0
-
