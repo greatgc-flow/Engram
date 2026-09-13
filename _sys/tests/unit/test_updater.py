@@ -55,6 +55,7 @@ def test_updater_run_zero_updates(monkeypatch, capsys):
             "not_checked": []
         }
     monkeypatch.setattr(check_tool_updates, "run", mock_run)
+    monkeypatch.setattr("core.updater.check_components", lambda sys_dir: {})
     
     res = updater.run({"args": []})
     assert res == {"status": "success", "detail": "No updates discovered"}
@@ -66,10 +67,11 @@ def test_updater_run_dry_run(monkeypatch, capsys):
     def mock_run(propose_diff=False):
         return {
             "artifact_dir": "mock_dir",
-            "updates_discovered": [{"tool": "A", "current_version": "1", "latest_version": "2"}],
+            "updates_discovered": [{"tool": "A", "section": "tools", "current_version": "1", "latest_version": "2"}],
             "not_checked": []
         }
     monkeypatch.setattr(check_tool_updates, "run", mock_run)
+    monkeypatch.setattr("core.updater.check_components", lambda sys_dir: {})
     
     apply_called = False
     def mock_apply(*args, **kwargs):
@@ -82,55 +84,65 @@ def test_updater_run_dry_run(monkeypatch, capsys):
     assert res == {"status": "success", "detail": "Dry run complete"}
     assert not apply_called
     out = capsys.readouterr().out
-    assert "Planned changes" in out
+    assert "Dry run complete" in out
 
 def test_updater_run_yes_calls_apply(monkeypatch):
     """run() with --yes calls apply_proposal(artifact_dir_exactly_from_payload, yes=True) and maps exit 0->success."""
     def mock_run(propose_diff=False):
         return {
             "artifact_dir": "mock_dir_123",
-            "updates_discovered": [{"tool": "A", "current_version": "1", "latest_version": "2"}],
+            "updates_discovered": [{"tool": "A", "section": "tools", "current_version": "1", "latest_version": "2"}],
             "not_checked": []
         }
     monkeypatch.setattr(check_tool_updates, "run", mock_run)
+    monkeypatch.setattr("core.updater.check_components", lambda sys_dir: {})
     
     apply_args = None
-    def mock_apply(artifact_dir, yes, install):
+    def mock_apply(artifact_dir, yes):
         nonlocal apply_args
-        apply_args = (artifact_dir, yes, install)
+        apply_args = (artifact_dir, yes)
         return 0, {"applied": True}
     monkeypatch.setattr(check_tool_updates, "apply_proposal", mock_apply)
     
+    # We also need to mock provisioner.deploy for this test so it doesn't fail
+    import core.provisioner as provisioner
+    monkeypatch.setattr(provisioner, "deploy", lambda ctx: {"status": "success"})
+    
     res = updater.run({"args": ["--yes"]})
     assert res == {"status": "success", "apply_result": {"applied": True}}
-    assert apply_args == ("mock_dir_123", True, False)
+    assert apply_args == ("mock_dir_123", True)
 
-def test_updater_run_exit_4_incomplete(monkeypatch):
-    """exit 4 -> status 'incomplete'."""
+def test_updater_run_deploy_failure(monkeypatch):
+    """deploy error -> status 'incomplete'."""
     def mock_run(propose_diff=False):
         return {
             "artifact_dir": "mock_dir",
-            "updates_discovered": [{"tool": "A", "current_version": "1", "latest_version": "2"}],
+            "updates_discovered": [{"tool": "A", "section": "tools", "current_version": "1", "latest_version": "2"}],
             "not_checked": []
         }
     monkeypatch.setattr(check_tool_updates, "run", mock_run)
+    monkeypatch.setattr("core.updater.check_components", lambda sys_dir: {})
     
     def mock_apply(*args, **kwargs):
-        return 4, {"backup_path": "some_backup_path"}
+        return 0, {"applied": True, "backup_path": "some_backup_path"}
     monkeypatch.setattr(check_tool_updates, "apply_proposal", mock_apply)
+
+    import core.provisioner as provisioner
+    monkeypatch.setattr(provisioner, "deploy", lambda ctx: {"status": "error", "detail": "simulated deploy failure"})
     
     res = updater.run({"args": ["--yes"]})
-    assert res == {"status": "incomplete", "detail": "applied but INSTALL failed", "backup": "some_backup_path"}
+    assert res == {"status": "incomplete", "detail": "applied but deploy failed"}
 
 def test_updater_run_declined_prompt(monkeypatch):
     """a declined prompt (monkeypatch input to 'n') does NOT call apply_proposal and returns success."""
     def mock_run(propose_diff=False):
         return {
             "artifact_dir": "mock_dir",
-            "updates_discovered": [{"tool": "A", "current_version": "1", "latest_version": "2"}],
+            "updates_discovered": [{"tool": "A", "section": "tools", "current_version": "1", "latest_version": "2"}],
             "not_checked": []
         }
     monkeypatch.setattr(check_tool_updates, "run", mock_run)
+    monkeypatch.setattr("core.updater.check_components", lambda sys_dir: {})
     
     # Mock input
     monkeypatch.setattr('builtins.input', lambda prompt: 'n')
@@ -142,6 +154,7 @@ def test_updater_run_declined_prompt(monkeypatch):
         return 0, {}
     monkeypatch.setattr(check_tool_updates, "apply_proposal", mock_apply)
     
-    res = updater.run({"args": []})
-    assert res == {"status": "success", "detail": "Update declined by user"}
+    with pytest.raises(SystemExit) as exc:
+        updater.run({"args": []})
+    assert exc.value.code == 3
     assert not apply_called
