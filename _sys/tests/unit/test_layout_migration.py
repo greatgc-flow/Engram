@@ -611,13 +611,8 @@ def test_migrate_layout_success_and_idempotency(tmp_path, capsys, monkeypatch):
     defaults_dir = sys_dir / "defaults"
     defaults_dir.mkdir(parents=True)
     
-    # We need base_state so that ours==base is true, 
-    # causing it to take upstream (theirs) and NOT report a conflict,
-    # OR we can just let ours!=base and check that it reports a conflict.
-    # The test asserted len(merged) > 0, so let's let it report a conflict!
-    # A conflict will happen if ours!=base. Since base doesn't exist, ours!=base.
-    # So it will keep ours and report it!
-    
+    # No base_state exists yet, so ours != base: the merge keeps ours and
+    # reports it, exercising the "merged" report path.
     with open(sys_dir / "runtimes.json", "w") as f:
         json.dump({"runtimes": {"python": {"version": "3.13"}}}, f)
         
@@ -642,7 +637,6 @@ def test_migrate_layout_success_and_idempotency(tmp_path, capsys, monkeypatch):
     assert not target_file.exists()
     assert not ai_dir.exists()
     
-    # Because ours != base, it keeps ours!
     with open(sys_dir / "runtimes.json") as f:
         merged_runtimes = json.load(f)
     assert merged_runtimes["runtimes"]["python"]["version"] == "3.13"
@@ -667,9 +661,6 @@ def test_migrate_layout_success_and_idempotency(tmp_path, capsys, monkeypatch):
     del end_of_run_1_snap["_sys/data/state/layout.json"]
     del end_of_run_2_snap["_sys/data/state/layout.json"]
     
-    # Pre-merge bak files will be overwritten, but since the content is identical, hash is identical.
-    # BUT wait, the pre-merge bak file might change if the content changed?
-    # runtimes.json is identical to run 1's end state. So pre-merge bak of run 2 is the same as pre-merge bak of run 1!
     assert end_of_run_1_snap == end_of_run_2_snap
 
 
