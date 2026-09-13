@@ -215,3 +215,139 @@ def test_updater_core_staging_hash_mismatch(monkeypatch, capsys, tmp_path):
     assert exc.value.code == 1
     out = capsys.readouterr().out
     assert 'Checksum mismatch' in out
+def test_updater_core_staged_path_escape(monkeypatch, capsys, tmp_path):
+    import core.updater as updater
+    import core.version_resolver as version_resolver
+    import zipfile
+    import shutil
+    
+    monkeypatch.setattr(updater, '_PORTABLE_ROOT', tmp_path)
+    monkeypatch.setattr(updater, '_SYS_DIR', tmp_path / '_sys')
+    (tmp_path / '_sys' / 'core').mkdir(parents=True)
+    (tmp_path / '_sys' / 'core' / 'version.json').write_text('{"version": "1.0.0"}')
+    
+    prebuilt_zip = tmp_path / "prebuilt.zip"
+    with zipfile.ZipFile(prebuilt_zip, 'w') as zf:
+        zf.writestr('_sys/core/version.json', '{"version": "9.9.9"}')
+        zf.writestr('README.md', 'dummy')
+        zf.writestr('_sys/env/evil.txt', 'malicious')
+        
+    import hashlib
+    h = hashlib.sha256()
+    with open(prebuilt_zip, 'rb') as f:
+        for chunk in iter(lambda: f.read(65536), b''):
+            h.update(chunk)
+    zip_hash = h.hexdigest()
+    
+    def mock_run(propose_diff=False):
+        return {'artifact_dir': 'mock_dir', 'updates_discovered': [], 'not_checked': [], 'could_not_check': []}
+    monkeypatch.setattr(updater.check_tool_updates, 'run', mock_run)
+    monkeypatch.setattr(updater, 'check_components', lambda sys_dir: {})
+    
+    def mock_resolve(*args, **kwargs):
+        return {'status': 'ok', 'latest_version': '9.9.9', 'url': 'http://fake', 'checksum_algo': 'sha256', 'checksum_value': zip_hash}
+    monkeypatch.setattr(version_resolver, 'resolve_latest', mock_resolve)
+    
+    monkeypatch.setattr('builtins.input', lambda prompt: 'y')
+    monkeypatch.setattr(updater.check_tool_updates, 'apply_proposal', lambda *args, **kwargs: (0, {'applied': True, 'backup_path': 'fake'}))
+    import core.provisioner as provisioner
+    monkeypatch.setattr(provisioner, 'deploy', lambda ctx: {'status': 'success', 'installed': [], 'failed': [], 'deferred': []})
+    
+    def mock_urlretrieve(url, path):
+        shutil.copyfile(prebuilt_zip, path)
+    import urllib.request
+    monkeypatch.setattr(urllib.request, 'urlretrieve', mock_urlretrieve)
+    monkeypatch.setattr(updater.check_tool_updates, '_atomic_write_json', lambda *args: None)
+    
+    with pytest.raises(SystemExit) as exc:
+        updater.run({'args': []})
+    
+    assert exc.value.code == 1
+    out = capsys.readouterr().out
+    assert "falls under protected area '_sys/env'" in out
+
+def test_updater_core_staging_a_and_b_bang_root(monkeypatch, capsys, tmp_path):
+    import core.updater as updater
+    import core.version_resolver as version_resolver
+    import zipfile
+    import subprocess
+    import shutil
+    
+    special_root = tmp_path / "a&b!"
+    special_root.mkdir()
+    
+    monkeypatch.setattr(updater, '_PORTABLE_ROOT', special_root)
+    monkeypatch.setattr(updater, '_SYS_DIR', special_root / '_sys')
+    (special_root / '_sys' / 'core').mkdir(parents=True)
+    (special_root / '_sys' / 'core' / 'version.json').write_text('{"version": "1.0.0"}')
+    (special_root / '_sys' / 'core' / 'core_update_helper.ps1').write_text('# dummy ps1')
+    
+    prebuilt_zip = tmp_path / "prebuilt2.zip"
+    with zipfile.ZipFile(prebuilt_zip, 'w') as zf:
+        zf.writestr('_sys/core/version.json', '{"version": "9.9.9"}')
+        zf.writestr('Engram.exe', 'dummy exe')
+        
+    import hashlib
+    h = hashlib.sha256()
+    with open(prebuilt_zip, 'rb') as f:
+        for chunk in iter(lambda: f.read(65536), b''):
+            h.update(chunk)
+    zip_hash = h.hexdigest()
+
+    def mock_run(propose_diff=False):
+        return {'artifact_dir': 'mock_dir', 'updates_discovered': [], 'not_checked': [], 'could_not_check': []}
+    monkeypatch.setattr(updater.check_tool_updates, 'run', mock_run)
+    monkeypatch.setattr(updater, 'check_components', lambda sys_dir: {})
+    
+    def mock_resolve(*args, **kwargs):
+        return {'status': 'ok', 'latest_version': '9.9.9', 'url': 'http://fake', 'checksum_algo': 'sha256', 'checksum_value': zip_hash}
+    monkeypatch.setattr(version_resolver, 'resolve_latest', mock_resolve)
+    
+    monkeypatch.setattr('builtins.input', lambda prompt: 'y')
+    monkeypatch.setattr(updater.check_tool_updates, 'apply_proposal', lambda *args, **kwargs: (0, {'applied': True, 'backup_path': 'fake'}))
+    
+    import core.provisioner as provisioner
+    monkeypatch.setattr(provisioner, 'deploy', lambda ctx: {'status': 'success', 'installed': [], 'failed': [], 'deferred': []})
+    
+    def mock_urlretrieve(url, path):
+        shutil.copyfile(prebuilt_zip, path)
+    import urllib.request
+    monkeypatch.setattr(urllib.request, 'urlretrieve', mock_urlretrieve)
+    monkeypatch.setattr(updater.check_tool_updates, '_atomic_write_json', lambda *args: None)
+    
+    popen_called_with = []
+    class DummyPopen:
+        def __init__(self, args, **kwargs):
+            popen_called_with.append(args)
+    monkeypatch.setattr(subprocess, 'Popen', DummyPopen)
+    
+    import core.layout
+    monkeypatch.setattr(core.layout, 'INSTALL_ROOT_ENTRIES', ['_sys', 'Engram.exe'])
+    
+    res = updater.run({'args': []})
+    
+    assert res['status'] == 'success'
+    assert len(popen_called_with) == 1
+    args = popen_called_with[0]
+    assert "powershell.exe" in args
+    assert "-File" in args
+def test_updater_core_channel_winget(monkeypatch, capsys, tmp_path):
+    import core.updater as updater
+    import os
+    
+    local_appdata = tmp_path / "LocalAppData"
+    winget_packages = local_appdata / "Microsoft" / "WinGet" / "Packages"
+    engram_root = winget_packages / "greatgc-flow.Engram_1.0.0"
+    engram_root.mkdir(parents=True)
+    
+    monkeypatch.setattr(updater, '_PORTABLE_ROOT', engram_root)
+    monkeypatch.setattr(os, 'environ', {'LOCALAPPDATA': str(local_appdata)})
+    
+    def mock_run(propose_diff=False):
+        return {'artifact_dir': 'mock_dir', 'updates_discovered': [], 'not_checked': [], 'could_not_check': []}
+    monkeypatch.setattr(updater.check_tool_updates, 'run', mock_run)
+    monkeypatch.setattr(updater, 'check_components', lambda sys_dir: {})
+    
+    updater.run({'args': []})
+    out = capsys.readouterr().out
+    assert 'Engram core (managed by WinGet — run winget upgrade greatgc-flow.Engram)' in out

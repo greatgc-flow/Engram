@@ -249,3 +249,45 @@ def test_pick_windows_asset_no_windows_assets_returns_none():
 def test_pick_windows_asset_non_list_assets_returns_none():
     assert vr._pick_windows_asset({"assets": "not-a-list"}) is None
     assert vr._pick_windows_asset({}) is None
+
+
+def test_engram_release_missing_digest(monkeypatch, tmp_path):
+    monkeypatch.setattr(vr.shutil, "which", lambda name: None)
+    release = {
+        "tag_name": "v1.2.3",
+        "assets": [
+            {
+                "name": "Engram-v1.2.3-portable-x64.zip",
+                "browser_download_url": "https://example/Engram.zip"
+            }
+        ]
+    }
+    monkeypatch.setattr(
+        vr.urllib.request,
+        "urlopen",
+        lambda req, timeout=30: FakeResponse(json.dumps(release)),
+    )
+    result = vr.resolve_latest("engram", "engram_release", "1.0.0", "owner/engram", tmp_path / "cache.json")
+    assert result["status"] == "error"
+    assert result["error_type"] == "missing_digest"
+
+
+def test_engram_release_missing_asset(monkeypatch, tmp_path):
+    monkeypatch.setattr(vr.shutil, "which", lambda name: None)
+    release = {
+        "tag_name": "v1.2.3",
+        "assets": [
+            {
+                "name": "Engram-v1.2.3-WRONG-NAME.zip",
+                "browser_download_url": "https://example/Engram.zip"
+            }
+        ]
+    }
+    monkeypatch.setattr(
+        vr.urllib.request,
+        "urlopen",
+        lambda req, timeout=30: FakeResponse(json.dumps(release)),
+    )
+    result = vr.resolve_latest("engram", "engram_release", "1.0.0", "owner/engram", tmp_path / "cache.json")
+    assert result["status"] == "error"
+    assert result["error_type"] == "missing_asset"
