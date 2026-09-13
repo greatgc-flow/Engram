@@ -112,7 +112,6 @@ ROOT_FILES_ALLOW = {
     "Engram.exe",
     "LICENSE",
     "README.md",
-    "CONVENTION.md",
 }
 
 SYS_EXCLUDE_DIR_PATTERNS = {
@@ -192,6 +191,13 @@ def collect_package_files(repo_root: Path) -> list[tuple[Path, str]]:
 
                 full_path = Path(root) / file
                 arcname = str(full_path.relative_to(repo_root)).replace("\\", "/")
+
+                # The live runtimes.json / tool-catalog.v1.json are created on
+                # first bootstrap and never shipped; only their _sys/defaults/
+                # counterparts travel in the package (P1-7 dotdir contract).
+                if arcname in ("_sys/runtimes.json", "_sys/tool-catalog.v1.json"):
+                    continue
+
                 items.append((full_path, arcname))
 
     # Sort deterministically for reproducible archives

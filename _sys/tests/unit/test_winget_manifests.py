@@ -25,6 +25,9 @@ from tools.winget.build_package import (
     generate_manifest_installer,
     generate_manifest_locale_en,
     generate_manifest_locale_ko,
+    collect_package_files,
+    create_portable_archive,
+    ROOT_FILES_ALLOW,
 )
 
 def test_manifest_generation():
@@ -68,3 +71,79 @@ def test_manifest_generation():
     # prose mention that peerhub is a separate, optional companion package
     # is accurate post-separation and is allowed (DESC_KO says exactly that).
     assert "\n  - peerhub\n" not in l_ko_yaml.lower()
+
+
+def test_root_files_allow_matches_p1_10_contract():
+    """P1-10: ROOT_FILES_ALLOW is exactly the 4 files the ratified doc names."""
+    assert ROOT_FILES_ALLOW == {"engram.cmd", "Engram.exe", "README.md", "LICENSE"}
+
+
+def test_portable_archive_matches_p1_10_contract(tmp_path):
+    """P1-10: build a real archive from this checkout and verify its contents.
+
+    create_portable_archive always writes _sys/core/release-manifest.json and
+    _sys/core/release-manifests/<version>.json into the real repo tree as a
+    side effect (that's the release-manifest-generation contract, not a test
+    artifact) -- use an unmistakably disposable version string and delete
+    both afterward so no fake entry lingers in the historical manifests dir.
+    """
+    import json
+    import zipfile
+
+    version = "0.0.0-test-p1-10"
+    manifest_path = repo_root / "_sys" / "core" / "release-manifest.json"
+    version_manifest_path = (
+        repo_root / "_sys" / "core" / "release-manifests" / f"{version}.json"
+    )
+    assert not version_manifest_path.exists(), (
+        "disposable test version manifest already exists; pick a different "
+        "version string or investigate why it wasn't cleaned up last run"
+    )
+
+    try:
+        zip_path, sha256_hex, count, total_uncompressed = create_portable_archive(
+            repo_root, tmp_path, version
+        )
+
+        with zipfile.ZipFile(zip_path) as zf:
+            names = set(zf.namelist())
+
+        root_entries = {n for n in names if "/" not in n}
+        assert root_entries == {"engram.cmd", "Engram.exe", "README.md", "LICENSE"}
+        assert any(n == "_sys/" or n.startswith("_sys/") for n in names)
+
+        excluded_dir_prefixes = (
+            "_sys/env/",
+            "_sys/tools/",
+            "_sys/data/state/",
+            "_sys/data/logs/",
+            "_sys/data/temp/",
+        )
+        for name in names:
+            assert not name.startswith(excluded_dir_prefixes), name
+
+        assert "_sys/runtimes.json" not in names
+        assert "_sys/tool-catalog.v1.json" not in names
+        assert not any(n.startswith(".ai/") or n == ".ai" for n in names)
+        assert not any(n.startswith("_archive/") or n == "_archive" for n in names)
+        assert not any(n.endswith(".bat") and "/" not in n for n in names)
+        assert not any(n.endswith("wrapper.cs") for n in names)
+
+        assert "_sys/core/release-manifest.json" in names
+        with zipfile.ZipFile(zip_path) as zf:
+            manifest_data = json.loads(zf.read("_sys/core/release-manifest.json"))
+        assert manifest_data["version"] == version
+        manifest_files = manifest_data["files"]
+        # Every zip entry except the manifest itself must appear in its own
+        # file list with a matching hash, and the manifest must not list any
+        # file that isn't actually in the zip.
+        assert set(manifest_files) == (names - {"_sys/core/release-manifest.json"})
+        for arcname, expected_hash in manifest_files.items():
+            with zipfile.ZipFile(zip_path) as zf:
+                import hashlib
+
+                actual = hashlib.sha256(zf.read(arcname)).hexdigest().upper()
+            assert actual == expected_hash, arcname
+    finally:
+        manifest_path.unlink(missing_ok=True)
+        version_manifest_path.unlink(missing_ok=True)
