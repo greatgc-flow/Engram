@@ -170,3 +170,159 @@ def merge_declarations_impl(defaults_dir: Path, live_dir: Path, base_state_dir: 
         except Exception as e:
             logger.error(f"Failed to merge {filename}: {e}")
             sys.exit(1)
+# WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 wiring happens in follow-up dispatch"
+def m0_preflight(base_dir: Path, sys_dir: Path) -> bool:
+    from _sys.core.doctor import check_legacy_host_integration
+    result = check_legacy_host_integration(base_dir, sys_dir)
+    if result.get("level") == "warning":
+        state_file = sys_dir / "data" / "state" / "register.state.json"
+        subst_drive = "X"
+        junctions = []
+        if state_file.exists():
+            try:
+                with open(state_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    subst_drive = data.get("subst_drive") or "X"
+                    junctions = data.get("junctions") or []
+            except Exception:
+                pass
+        
+        print(f"first run `subst` and confirm the line `{subst_drive}:\\: => {base_dir}`; do nothing if it points elsewhere.")
+        print(f"subst {subst_drive}: /D")
+        for j in junctions:
+            host = j.get("host") if isinstance(j, dict) else str(j)
+            print(f'rmdir "{host}"')
+        print("delete the subst_drive key and junctions entries from `_sys/data/state/register.state.json`.")
+        return False
+    return True
+# WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 wiring happens in follow-up dispatch"
+def m1_retire_shipped_files(base_dir: Path, sys_dir: Path) -> tuple[bool, Dict[str, List[str]]]:
+    import os
+
+    current_manifest_path = sys_dir / "core" / "release-manifest.json"
+    if not current_manifest_path.exists():
+        return True, {"retired": [], "kept_modified": []}
+    
+    current_manifest = {}
+    try:
+        with open(current_manifest_path, "r", encoding="utf-8") as f:
+            current_manifest = json.load(f).get("files", {})
+    except Exception:
+        pass
+
+    layout_file = sys_dir / "data" / "state" / "layout.json"
+    candidate_manifests = []
+    manifests_dir = sys_dir / "core" / "release-manifests"
+    
+    engram_version = None
+    if layout_file.exists():
+        try:
+            with open(layout_file, "r", encoding="utf-8") as f:
+                engram_version = json.load(f).get("engram_version")
+        except Exception:
+            pass
+            
+    if engram_version and (manifests_dir / f"{engram_version}.json").exists():
+        candidate_manifests.append(manifests_dir / f"{engram_version}.json")
+    elif manifests_dir.exists():
+        candidate_manifests.extend(manifests_dir.glob("*.json"))
+
+    def _is_protected(rel_path_str: str) -> bool:
+        p = rel_path_str.replace("\\", "/")
+        if p in ("_sys/runtimes.json", "_sys/tool-catalog.v1.json"):
+            return True
+        protected_prefixes = (
+            ".engram/",
+            "workspace/",
+            "_sys/env/",
+            "_sys/tools/",
+            "_sys/data/",
+        )
+        for pref in protected_prefixes:
+            if p.startswith(pref):
+                return True
+        return False
+
+    def _compute_sha256(file_path: Path) -> str:
+        import hashlib
+        h = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            while chunk := f.read(65536):
+                h.update(chunk)
+        return h.hexdigest().upper()
+
+    to_retire = {}
+    for cand in candidate_manifests:
+        try:
+            with open(cand, "r", encoding="utf-8") as f:
+                files_map = json.load(f).get("files", {})
+                for path_str, hash_val in files_map.items():
+                    if path_str not in current_manifest:
+                        if not _is_protected(path_str):
+                            to_retire.setdefault(path_str, set()).add(hash_val)
+        except Exception:
+            pass
+
+    retired = []
+    kept_modified = []
+    errors_occurred = False
+    
+    dirs_to_check = set()
+
+    for path_str, expected_hashes in to_retire.items():
+        file_path = base_dir / path_str
+        if file_path.exists() and file_path.is_file():
+            try:
+                actual_hash = _compute_sha256(file_path)
+                if actual_hash in expected_hashes:
+                    file_path.unlink()
+                    retired.append(path_str)
+                    dirs_to_check.add(file_path.parent)
+                else:
+                    kept_modified.append(path_str)
+            except Exception as e:
+                logger.error(f"Error processing {path_str}: {e}")
+                errors_occurred = True
+
+    sorted_dirs = sorted(list(dirs_to_check), key=lambda p: len(p.parts), reverse=True)
+    
+    def _is_dir_protected(d: Path) -> bool:
+        try:
+            rel = d.relative_to(base_dir).as_posix()
+        except ValueError:
+            return True
+        if rel == ".":
+            return True
+        
+        protected_prefixes = (
+            ".engram",
+            "workspace",
+            "_sys/env",
+            "_sys/tools",
+            "_sys/data",
+        )
+        for pref in protected_prefixes:
+            if rel == pref or rel.startswith(pref + "/"):
+                return True
+        return False
+
+    for d in sorted_dirs:
+        curr = d
+        while curr != base_dir and curr.is_relative_to(base_dir):
+            if _is_dir_protected(curr):
+                break
+            if curr.exists() and curr.is_dir():
+                try:
+                    if not any(curr.iterdir()):
+                        curr.rmdir()
+                    else:
+                        break
+                except Exception as e:
+                    logger.error(f"Error removing dir {curr}: {e}")
+                    errors_occurred = True
+                    break
+            else:
+                break
+            curr = curr.parent
+
+    return not errors_occurred, {"retired": retired, "kept_modified": kept_modified}

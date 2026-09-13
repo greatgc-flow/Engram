@@ -178,3 +178,215 @@ def test_atomic_write_exception(migration_env, monkeypatch):
     # Verify live file is intact
     with open(migration_env["live"] / "runtimes.json") as f:
         assert json.load(f) == ours_json
+
+from _sys.core.layout_migration import m0_preflight, m1_retire_shipped_files
+
+def test_m0_preflight_refusal(tmp_path, capsys):
+    base_dir = tmp_path
+    sys_dir = base_dir / "_sys"
+    sys_dir.mkdir()
+    
+    state_dir = sys_dir / "data" / "state"
+    state_dir.mkdir(parents=True)
+    
+    state_file = state_dir / "register.state.json"
+    state_file.write_text(json.dumps({
+        "subst_drive": "W",
+        "junctions": [{"host": "C:\\some_host"}]
+    }))
+    
+    # Snapshot before
+    before = list(tmp_path.rglob("*"))
+    
+    assert not m0_preflight(base_dir, sys_dir)
+    
+    captured = capsys.readouterr().out
+    assert "subst W: /D" in captured
+    assert "rmdir \"C:\\some_host\"" in captured
+    assert "delete the subst_drive key and junctions entries from `_sys/data/state/register.state.json`." in captured
+    
+    # Snapshot after
+    after = list(tmp_path.rglob("*"))
+    assert before == after
+
+def test_m0_preflight_clean(tmp_path, capsys):
+    base_dir = tmp_path
+    sys_dir = base_dir / "_sys"
+    sys_dir.mkdir()
+    
+    # absent state file -> proceeds
+    assert m0_preflight(base_dir, sys_dir)
+    
+    # clean state file
+    state_dir = sys_dir / "data" / "state"
+    state_dir.mkdir(parents=True)
+    state_file = state_dir / "register.state.json"
+    state_file.write_text(json.dumps({"subst_drive": None, "junctions": []}))
+    
+    assert m0_preflight(base_dir, sys_dir)
+
+def test_m1_retire_identical_file(tmp_path):
+    base_dir = tmp_path
+    sys_dir = base_dir / "_sys"
+    core_dir = sys_dir / "core"
+    core_dir.mkdir(parents=True)
+    
+    manifest_dir = core_dir / "release-manifests"
+    manifest_dir.mkdir(parents=True)
+    
+    current = core_dir / "release-manifest.json"
+    current.write_text(json.dumps({"files": {}}))
+    
+    import hashlib
+    content = b"old file content"
+    sha = hashlib.sha256(content).hexdigest().upper()
+    
+    old_manifest = manifest_dir / "3.2.6.json"
+    old_manifest.write_text(json.dumps({
+        "version": "3.2.6",
+        "files": {"foo/bar.txt": sha}
+    }))
+    
+    # layout file pointing to 3.2.6
+    state_dir = sys_dir / "data" / "state"
+    state_dir.mkdir(parents=True)
+    (state_dir / "layout.json").write_text(json.dumps({"engram_version": "3.2.6"}))
+    
+    target_dir = base_dir / "foo"
+    target_dir.mkdir()
+    target_file = target_dir / "bar.txt"
+    target_file.write_bytes(content)
+    
+    ok, report = m1_retire_shipped_files(base_dir, sys_dir)
+    assert ok
+    assert report["retired"] == ["foo/bar.txt"]
+    assert report["kept_modified"] == []
+    
+    assert not target_file.exists()
+    assert not target_dir.exists()
+
+def test_m1_retire_modified_file(tmp_path):
+    base_dir = tmp_path
+    sys_dir = base_dir / "_sys"
+    core_dir = sys_dir / "core"
+    core_dir.mkdir(parents=True)
+    
+    manifest_dir = core_dir / "release-manifests"
+    manifest_dir.mkdir(parents=True)
+    
+    current = core_dir / "release-manifest.json"
+    current.write_text(json.dumps({"files": {}}))
+    
+    import hashlib
+    content = b"old file content"
+    sha = hashlib.sha256(content).hexdigest().upper()
+    
+    old_manifest = manifest_dir / "3.2.6.json"
+    old_manifest.write_text(json.dumps({
+        "version": "3.2.6",
+        "files": {"foo/modified.txt": sha}
+    }))
+    
+    target_dir = base_dir / "foo"
+    target_dir.mkdir()
+    target_file = target_dir / "modified.txt"
+    target_file.write_bytes(b"modified content")
+    
+    ok, report = m1_retire_shipped_files(base_dir, sys_dir)
+    assert ok
+    assert report["retired"] == []
+    assert report["kept_modified"] == ["foo/modified.txt"]
+    
+    assert target_file.exists()
+
+def test_m1_retire_no_current_manifest(tmp_path):
+    base_dir = tmp_path
+    sys_dir = base_dir / "_sys"
+    core_dir = sys_dir / "core"
+    core_dir.mkdir(parents=True)
+    
+    ok, report = m1_retire_shipped_files(base_dir, sys_dir)
+    assert ok
+    assert report["retired"] == []
+    assert report["kept_modified"] == []
+
+def test_m1_retire_protected_paths(tmp_path):
+    base_dir = tmp_path
+    sys_dir = base_dir / "_sys"
+    core_dir = sys_dir / "core"
+    core_dir.mkdir(parents=True)
+    
+    manifest_dir = core_dir / "release-manifests"
+    manifest_dir.mkdir(parents=True)
+    
+    current = core_dir / "release-manifest.json"
+    current.write_text(json.dumps({"files": {}}))
+    
+    import hashlib
+    content = b"protected"
+    sha = hashlib.sha256(content).hexdigest().upper()
+    
+    protected_files = [
+        "_sys/runtimes.json",
+        "_sys/tool-catalog.v1.json",
+        ".engram/foo",
+        "workspace/bar",
+        "_sys/env/baz",
+        "_sys/tools/qux",
+        "_sys/data/state"
+    ]
+    
+    files_map = {p: sha for p in protected_files}
+    old_manifest = manifest_dir / "3.2.6.json"
+    old_manifest.write_text(json.dumps({
+        "version": "3.2.6",
+        "files": files_map
+    }))
+    
+    for p in protected_files:
+        f = base_dir / p
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(content)
+        
+    ok, report = m1_retire_shipped_files(base_dir, sys_dir)
+    assert ok
+    assert report["retired"] == []
+    assert report["kept_modified"] == []
+    
+    for p in protected_files:
+        assert (base_dir / p).exists()
+
+def test_m1_retire_empty_directory_removal(tmp_path):
+    base_dir = tmp_path
+    sys_dir = base_dir / "_sys"
+    core_dir = sys_dir / "core"
+    core_dir.mkdir(parents=True)
+    
+    manifest_dir = core_dir / "release-manifests"
+    manifest_dir.mkdir(parents=True)
+    
+    current = core_dir / "release-manifest.json"
+    current.write_text(json.dumps({"files": {}}))
+    
+    import hashlib
+    content = b"deep"
+    sha = hashlib.sha256(content).hexdigest().upper()
+    
+    old_manifest = manifest_dir / "3.2.6.json"
+    old_manifest.write_text(json.dumps({
+        "version": "3.2.6",
+        "files": {"deep/dir/structure/file.txt": sha}
+    }))
+    
+    target_dir = base_dir / "deep" / "dir" / "structure"
+    target_dir.mkdir(parents=True)
+    target_file = target_dir / "file.txt"
+    target_file.write_bytes(content)
+    
+    ok, report = m1_retire_shipped_files(base_dir, sys_dir)
+    assert ok
+    assert report["retired"] == ["deep/dir/structure/file.txt"]
+    
+    assert not (base_dir / "deep" / "dir" / "structure").exists()
+    assert not (base_dir / "deep" / "dir").exists()
+    assert not (base_dir / "deep").exists()
