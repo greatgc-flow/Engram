@@ -128,6 +128,7 @@ SYS_EXCLUDE_DIR_PATTERNS = {
     "state",
     "setup-files",
     ".pytest_cache",
+    "release-manifests",
 } | {d for d in VENDOR_CACHE_DIRS if not d.startswith(".")}
 
 GLOBAL_EXCLUDE_PATTERNS = set(VENDOR_CACHE_DIRS) | {
@@ -193,6 +194,7 @@ def collect_package_files(repo_root: Path) -> list[tuple[Path, str]]:
                     or file.endswith(".log")
                     or file == ".DS_Store"
                     or file.startswith(".git")
+                    or file == "release-manifest.json"
                 ):
                     continue
 
@@ -223,6 +225,31 @@ def create_portable_archive(
 
     print(f"[PACK] Building portable bundle: {zip_path.name}")
     print(f"       Found {len(file_items)} files ({total_uncompressed / (1024 * 1024):.2f} MB uncompressed)")
+
+    # Generate release manifest
+    manifest_data = {
+        "version": version,
+        "files": {}
+    }
+    for src, arcname in file_items:
+        manifest_data["files"][arcname] = compute_sha256(src)
+
+    # Write to _sys/core/release-manifest.json
+    manifest_path = repo_root / "_sys" / "core" / "release-manifest.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest_data, f, indent=2, sort_keys=True)
+    
+    # Write the committed copy to _sys/core/release-manifests/<version>.json
+    manifests_dir = repo_root / "_sys" / "core" / "release-manifests"
+    manifests_dir.mkdir(parents=True, exist_ok=True)
+    version_manifest_path = manifests_dir / f"{version}.json"
+    with open(version_manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest_data, f, indent=2, sort_keys=True)
+
+    # Add the manifest to the zip payload
+    file_items.append((manifest_path, "_sys/core/release-manifest.json"))
+    total_uncompressed += manifest_path.stat().st_size
 
     # Temporary zip write to ensure atomic replacement
     tmp_zip = zip_path.with_suffix(".tmp.zip")
