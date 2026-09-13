@@ -24,6 +24,10 @@ setlocal enabledelayedexpansion
 :: Runtime versions/URLs sourced from _sys\runtimes.json (no hardcoding).
 :: ================================================================
 
+:: ── Bootstrap default configuration ──
+if not exist "_sys\runtimes.json" copy /y "_sys\defaults\runtimes.json" "_sys\runtimes.json" >nul
+if not exist "_sys\tool-catalog.v1.json" copy /y "_sys\defaults\tool-catalog.v1.json" "_sys\tool-catalog.v1.json" >nul
+
 :: ── Runtime config from _sys\runtimes.json (fallback if missing) ──
 set "_RT=_sys\runtimes.json"
 set "PY_VER=3.13.4"
