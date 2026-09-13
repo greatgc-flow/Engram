@@ -46,18 +46,20 @@ def main():
         print("Could not find the expected zip asset.")
         return 1
 
+    api_digest = asset.get("digest")
+    if not api_digest or not api_digest.lower().startswith("sha256:"):
+        print(f"Release has no usable sha256 digest for the asset; refusing (got: {api_digest!r}).")
+        return 1
+    expected_sha256 = api_digest.split(":", 1)[1].lower()
+
     download_url = asset["browser_download_url"]
     print(f"Downloading {download_url}...")
-    
+
     with tempfile.TemporaryFile() as tmp_file:
         with urllib.request.urlopen(download_url) as resp:
             shutil_copyfileobj = getattr(urllib.request, "shutil", __import__("shutil")).copyfileobj
             shutil_copyfileobj(resp, tmp_file)
-        
-        tmp_file.seek(0)
-        
-        # Verify sha256 of the zip itself if it's in the release body
-        # But we will just compute it
+
         tmp_file.seek(0)
         zip_sha256 = hashlib.sha256()
         while True:
@@ -65,16 +67,21 @@ def main():
             if not chunk:
                 break
             zip_sha256.update(chunk)
-        zip_sha256_hex = zip_sha256.hexdigest().upper()
+        zip_sha256_hex = zip_sha256.hexdigest().lower()
         print(f"Zip SHA256: {zip_sha256_hex}")
-        
-        # Check if the release body contains the hash for verification
-        body = release_data.get("body", "").upper()
-        if zip_sha256_hex in body:
-            print("Zip SHA256 matches the release notes digest.")
-        else:
-            print("Note: Zip SHA256 not found in release notes.")
-            
+
+        # Verify against the GitHub API's own digest for this asset -- this is
+        # the authenticity gate: everything downstream (M1 migration's decision
+        # about which files are safely "shipped and deletable") trusts this
+        # manifest, so a mismatch must refuse rather than merely warn.
+        if zip_sha256_hex != expected_sha256:
+            print(
+                f"REFUSING: downloaded zip sha256 ({zip_sha256_hex}) does not match "
+                f"the GitHub API asset digest ({expected_sha256})."
+            )
+            return 1
+        print("Zip SHA256 verified against the GitHub API asset digest.")
+
         tmp_file.seek(0)
         manifest_data = {
             "version": version,
