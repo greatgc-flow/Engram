@@ -35,7 +35,7 @@
 - SUBST or junction used for drive-letter-agnostic access (P: → actual drive path)
 
 ### A4. Lifecycle Scripts
-- _sys/core/bootstrap.bat: bootstrap runtimes, AI CLIs, tools from clean checkout
+- INSTALL.bat: bootstrap runtimes, AI CLIs, tools from clean checkout
 - CLEANUP.bat: remove all bootstrapped content (env, Node, all AI CLIs, root .peer dirs)
 - REGISTER.bat: host integration (SUBST, context menu, PATH)
 - UNREGISTER.bat: remove host integration

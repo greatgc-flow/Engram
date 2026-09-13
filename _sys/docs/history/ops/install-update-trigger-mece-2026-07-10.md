@@ -5,7 +5,7 @@ infrastructure (commit `03af006`) so that **every** component — including peer
 CLIs (claude/codex/agy), not just auxiliary tools — actually gets *updated* in
 place, not merely bootstrapped when missing. Triggered by the user's request:
 "peer CLIs and every other component need to actually update; consider
-_sys/core/bootstrap.bat as the trigger (renaming/refactoring it is fine)."
+INSTALL.bat as the trigger (renaming/refactoring it is fine)."
 
 ## Starting state (before this design)
 
@@ -21,25 +21,25 @@ _sys/core/bootstrap.bat as the trigger (renaming/refactoring it is fine)."
   `runtimes.json`'s declared version was bumped — that required a human to
   manually apply a `--propose-diff` artifact AND separately invoke
   `ensure_tool`/`ensure_peer_cli` by hand.
-- `_sys/core/bootstrap.bat` (root) already has its own, older, unrelated self-update
+- `INSTALL.bat` (root) already has its own, older, unrelated self-update
   pattern — but only for Python: on every run it live-queries
   `https://endoflife.date/api/python.json`, and if a newer non-EOL version
   exists, it directly overwrites `runtimes.json`'s `runtimes.python.*` fields
   via inline PowerShell and re-bootstraps — no review step, no diff artifact.
   This predates D10 and exists purely because Python must exist before any
   Python script (including `check_tool_updates.py`) can run.
-- `_sys/core/bootstrap.bat` → `_sys/core/dispatch.bat install` → `dispatcher.py`'s
+- `INSTALL.bat` → `_sys/core/dispatch.bat install` → `dispatcher.py`'s
   `install` pipeline (`dispatch.json`: `provision.deploy` → `state.write`) →
   `provisioner.deploy(ctx)`, which still calls the **old**
   `_install_tools()`/`_install_ai_peers()` — naive `sentinel.exists()` /
   `peer_cmd.exists()` checks, no version comparison at all. Re-running
-  `_sys/core/bootstrap.bat` today does not update an already-installed tool or peer CLI
+  `INSTALL.bat` today does not update an already-installed tool or peer CLI
   even if `runtimes.json`'s declared version has since changed.
 
 ## MECE axes and final unanimous position
 
 ### (A) Trigger
-**Split trigger.** `_sys/core/bootstrap.bat` = *apply*: every run, unconditionally syncs
+**Split trigger.** `INSTALL.bat` = *apply*: every run, unconditionally syncs
 local disk to whatever `runtimes.json` currently declares, via `ensure_tool`/
 `ensure_peer_cli` looped over every `tools`/`peers` entry. A new `UPDATE.bat`
 = *discover*: explicit, opt-in, runs
@@ -51,7 +51,7 @@ cap already a D10 concern) and must never run unconditionally on every boot.
 ### (B) Scope per component class
 - **Aux tools** (`runtimes.json.tools`, ripgrep/bat/fd/delta/fzf/jq/gh/sqlite/
   oh-my-posh) and **peer CLIs** (`peers.json.peers`, claude/codex/agy) both
-  get `_sys/core/bootstrap.bat`'s apply-current-declared-version treatment.
+  get `INSTALL.bat`'s apply-current-declared-version treatment.
 - **Base runtimes** (`runtimes.json.runtimes`: python/nodejs/git/vscode/pwsh/
   ffmpeg) are **explicitly out of scope** for this round — each has bespoke
   install logic (7z self-extractor, zip-then-move, direct zip-extract) that
@@ -61,39 +61,39 @@ cap already a D10 concern) and must never run unconditionally on every boot.
 ### (C) Governance
 The review gate stays on the **discover/bump** step (a human accepts an
 `UPDATE.bat`-generated diff into `runtimes.json`), never on the **apply**
-step (`_sys/core/bootstrap.bat` only ever installs whatever `runtimes.json`, once bumped
+step (`INSTALL.bat` only ever installs whatever `runtimes.json`, once bumped
 via the reviewed path, already declares). This is what preserves
 `collab_rate=10`'s `requires_unanimous` for `config_edits` (the bump) while
-still letting `_sys/core/bootstrap.bat` freely re-sync disk state to an already-approved
+still letting `INSTALL.bat` freely re-sync disk state to an already-approved
 config on every run.
 
 ### (D) Mechanism reuse
-No — `_sys/core/bootstrap.bat`'s inline PowerShell/`endoflife.date` Python self-update
+No — `INSTALL.bat`'s inline PowerShell/`endoflife.date` Python self-update
 logic stays a permanent, isolated special case. `version_resolver.py` needs
 Python to already exist to run; it cannot be used to discover the Python
 version needed to bootstrap Python itself. (Amendment: this special case
 must append an audit/drift log line on each live rewrite — see below.)
 
 ### (E) Naming / refactor
-`_sys/core/bootstrap.bat` keeps its name; its contract shifts from "ensure components
+`INSTALL.bat` keeps its name; its contract shifts from "ensure components
 exist" to "ensure components exist **and exactly match** `runtimes.json`".
 A new `UPDATE.bat` is added for the discovery/propose-diff flow.
 
 ### (F) Failure modes
-- Offline: `_sys/core/bootstrap.bat` falls back to the local `runtimes.json` / skips
+- Offline: `INSTALL.bat` falls back to the local `runtimes.json` / skips
   Python discovery silently; must never brick an otherwise-working env.
 - File locks (Windows) on zip/exe tools: already handled generically by
   `_install_atomic`'s `in_use_retry_at_session_boundary` + deferred-retry.
 - npm peer install failures: see the ratified spec below (this was the one
   point of genuine three-way dissent in this discussion).
-- Rate limits: avoided entirely by keeping discovery out of `_sys/core/bootstrap.bat`'s
+- Rate limits: avoided entirely by keeping discovery out of `INSTALL.bat`'s
   every-run path.
 
 ### (G) Security / trust
 Registry/GitHub checksums prove transport integrity only, not upstream
 trustworthiness — insufficient grounds to auto-apply a newly *discovered*
 version without human review. The `runtimes.json` bump is and remains the
-review checkpoint; this is unaffected by how aggressively `_sys/core/bootstrap.bat`
+review checkpoint; this is unaffected by how aggressively `INSTALL.bat`
 re-applies an already-approved config.
 
 ## Implementation plan (ratified)
@@ -155,14 +155,14 @@ these files do not exist; rejected as fabricated).
    active lease on that peer. If active, defer with an honestly-labeled
    `in_use` status — this is the one case in this design where "in use" is
    actually measured (a live lease), not guessed.
-8. **_sys/core/bootstrap.bat Python self-update audit trail** (fable amendment): the
+8. **INSTALL.bat Python self-update audit trail** (fable amendment): the
    existing live `endoflife.date` rewrite of `runtimes.json` must append a
    one-line drift/audit log record (old version → new version, timestamp,
    `source=install_bat_python_bootstrap`) so this governed file's history
    stays reconstructible even though the rewrite itself stays unreviewed
    (justified purely by the hard Python bootstrap-ordering constraint).
 9. **`UPDATE.bat` (new, root)**: guards on portable Python's presence
-   ("run _sys/core/bootstrap.bat first" if absent), then runs
+   ("run INSTALL.bat first" if absent), then runs
    `_sys\env\python\python.exe _sys\checks\check_tool_updates.py --propose-diff`
    and prints instructions to review the generated artifact under
    `_archive/tool-updates/<UTC>/`.
@@ -200,7 +200,7 @@ serious structural bug caught in the final ratification pass.
 
 - **Python**: has real install code (embeddable zip, `._pth` edit to enable
   `site`, `get-pip.py`). Separately has its OWN older self-update mechanism
-  in `_sys/core/bootstrap.bat` (live `endoflife.date` query, direct PowerShell rewrite of
+  in `INSTALL.bat` (live `endoflife.date` query, direct PowerShell rewrite of
   `runtimes.json`, no review) — predates D10/D11, exists because Python must
   exist before any Python script (including `ensure_tool` itself) can run.
 - **Node.js**: has real install code — zip extract to temp, then the single
@@ -300,7 +300,7 @@ to `nodejs_old` and swap in a freshly-extracted vendor zip containing no
 `npm-global` at all — silently destroying both installed peer CLIs. Worse:
 the Tier 2 `_old`-purge this round adds for `env_dir` (mirroring D10's
 `tools_dir` purge) would then delete the only surviving copy. The full
-`_sys/core/bootstrap.bat` loop would eventually self-heal (the runtime batch runs before
+`INSTALL.bat` loop would eventually self-heal (the runtime batch runs before
 the peer batch, and the already-current fast path's on-disk-exists check
 would notice the missing binary and reinstall on the *next* run) — but a
 standalone `ensure_runtime("nodejs")` call, or a bare `--retry-deferred`
@@ -337,7 +337,7 @@ system could brick itself"):**
 ### Explicitly out of scope / unaffected
 
 - Nothing else remains base-runtime-side after this round: only (a) Python's
-  own `_sys/core/bootstrap.bat` self-update (hard bootstrap-ordering exception) and (b)
+  own `INSTALL.bat` self-update (hard bootstrap-ordering exception) and (b)
   the Python venv itself (not an immutable vendor binary, but now gets
   measured package pinning per item 5) stay outside the unified model.
 

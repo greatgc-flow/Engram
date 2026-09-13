@@ -232,9 +232,9 @@ The inventory below covers the complete tracked tree at `b920574`. A directory-l
 | Item | Classification | Required action |
 |---|---|---|
 | `.gitattributes`, `.gitignore`, `LICENSE` | Core repository infrastructure | Keep; remove only obsolete AI-specific ignore rules. |
-| `Engram.exe` | Core installer launcher | Keep. Its source only locates and launches `_sys/core/bootstrap.bat` (`ENGRAM_MAIN\wrapper.cs:5-20`). |
+| `Engram.exe` | Core installer launcher | Keep. Its source only locates and launches `INSTALL.bat` (`ENGRAM_MAIN\wrapper.cs:5-20`). |
 | `wrapper.cs` | Core installer launcher source | Keep. |
-| `_sys/core/bootstrap.bat` | Core, but currently drives a mixed runtime catalog | Keep the Python/environment bootstrap (`ENGRAM_MAIN\_sys/core/bootstrap.bat:4-18`, `:80-144`); remove AI runtimes from the catalog/backend. |
+| `INSTALL.bat` | Core, but currently drives a mixed runtime catalog | Keep the Python/environment bootstrap (`ENGRAM_MAIN\INSTALL.bat:4-18`, `:80-144`); remove AI runtimes from the catalog/backend. |
 | `UPDATE.bat` | Core | Keep the environment update front end (`ENGRAM_MAIN\UPDATE.bat:1-16`); prune AI providers from updater/provisioner inputs. |
 | `STATUS.bat` | Core | Keep (`ENGRAM_MAIN\STATUS.bat:1-10`); remove AI-peer/session reporting from `doctor.py`. |
 | `register.bat`, `unregister.bat` | Core | Keep the P-drive/context-menu lifecycle. `engram.cmd` dispatches them at `:71-75`, and `manage.py` invokes mount/unmount at `:61-76`. |
@@ -246,7 +246,7 @@ The inventory below covers the complete tracked tree at `b920574`. A directory-l
 | `PROTOCOL.md` | Peer-collaboration pointer | Delete; PeerHub owns collaboration protocol. |
 | `CONVENTION.md` | Partly core | Retain after removing Hub protection and AI-governance references (`ENGRAM_MAIN\CONVENTION.md:1-12`). |
 
-There is no tracked `UN_sys/core/bootstrap.bat` at `b920574`. The future architecture should decide explicitly whether `unregister.bat` plus cleanup is the supported uninstall procedure or whether Engram needs an actual uninstall front end.
+There is no tracked `UNINSTALL.bat` at `b920574`. The future architecture should decide explicitly whether `unregister.bat` plus cleanup is the supported uninstall procedure or whether Engram needs an actual uninstall front end.
 
 ### 3.2 `tools/winget` and `manifests`
 

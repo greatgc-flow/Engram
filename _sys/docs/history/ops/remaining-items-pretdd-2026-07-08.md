@@ -123,7 +123,7 @@ cx's sharpened spec, confirmed by cc.fable as ready as-spec'd: new
 `_sys/checks/check_root_hygiene.py` (not extending check_docs_mece.py). Allowlist =
 today's verified live root entries (`.agents .ai .claude .git .gitattributes .gitignore
 .pytest_cache .vscode _archive _sys AGENTS.md CLAUDE.md CLEANUP.bat CONVENTION.md
-Engram.exe GEMINI.md _sys/core/bootstrap.bat PROTOCOL.md README.md register.bat tmp unregister.bat
+Engram.exe GEMINI.md INSTALL.bat PROTOCOL.md README.md register.bat tmp unregister.bat
 workspace wrapper.cs`). Default mode scans root children only, exits 2 on unexpected
 entries. `--closure` mode also runs git status/diff-check/check_backlog.py. NOT
 pre-commit-blocking on day one (legitimate root additions need an allowlist-update

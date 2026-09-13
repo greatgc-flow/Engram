@@ -28,7 +28,7 @@ actual sha256 of the directive's text).
 
 | Category / Path | Owner | Resolution |
 |---|---|---|
-| Root lifecycle scripts (`_sys/core/bootstrap.bat`, `UPDATE.bat`, `STATUS.bat`, `CLEANUP.bat`, `TIDY.bat`, `engram.cmd`, `register.bat`, `unregister.bat`) | **Engram** | Essential to the portable workspace; prune AI runtimes/PeerHub routing. Retains provider-neutral `launch`/`start` commands. |
+| Root lifecycle scripts (`INSTALL.bat`, `UPDATE.bat`, `STATUS.bat`, `CLEANUP.bat`, `TIDY.bat`, `engram.cmd`, `register.bat`, `unregister.bat`) | **Engram** | Essential to the portable workspace; prune AI runtimes/PeerHub routing. Retains provider-neutral `launch`/`start` commands. |
 | AI-CLI lifecycle | **Engram** | Retains optional AI-CLI install/uninstall/update/status-check as ordinary tool-catalog entries — matches the master plan's own stated scope, corrects the original plan's drift from it. |
 | `Engram.exe` / `wrapper.cs` | **Engram** | Keep (core bootstrap). |
 | `tools/winget` & `manifests` | **Engram** | Deferred to Gate 7. Canonical builder kept, AI-specific inclusions stripped, duplicate `build_winget_package.py` deleted. |

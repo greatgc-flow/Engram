@@ -1,5 +1,5 @@
 {
-    "_comment": "Runtime version and download URL registry. Single source of truth for _sys/core/bootstrap.bat and setup.py.",
+    "_comment": "Runtime version and download URL registry. Single source of truth for INSTALL.bat and setup.py.",
     "runtimes": {
         "python": {
             "version": "3.14.5",

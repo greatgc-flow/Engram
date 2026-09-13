@@ -13,7 +13,7 @@ This proposal addresses the user's core complaint: *"The batch files and engram.
 
 After investigating every file at the repo root, the dispatch pipeline, update mechanism, and the `.ai` folder mystery, I propose:
 
-1. **Eliminate 6 of 8 standalone `.bat` files** — collapse to `engram.cmd`/`Engram.exe` as the single public CLI, keeping only `_sys/core/bootstrap.bat` (pre-Python bootstrap).
+1. **Eliminate 6 of 8 standalone `.bat` files** — collapse to `engram.cmd`/`Engram.exe` as the single public CLI, keeping only `INSTALL.bat` (pre-Python bootstrap).
 2. **One update command** — `engram update` as the single, intuitive "keep everything current" flow.
 3. **Don't rename `_sys/`** — instead, reduce visible root clutter so users never need to look at it.
 4. **Consolidate `.ai/` into `.engram/state/`** — eliminate the mystery dot-folder entirely.
@@ -27,7 +27,7 @@ After investigating every file at the repo root, the dispatch pipeline, update m
 
 | Standalone file | Lines | What it does | `engram.cmd` equivalent | Verdict |
 |---|---|---|---|---|
-| [`_sys/core/bootstrap.bat`](../../_sys/core/bootstrap.bat) (165 lines) | 165 | Pre-Python bootstrap: downloads embedded Python, installs pip, then calls `_sys/core/dispatch.bat install` ([line 161](../../_sys/core/bootstrap.bat#L161)) | `engram install` → calls `_sys/core/bootstrap.bat` ([engram.cmd:69](../../engram.cmd#L69)) | **KEEP** — only entry point that works before Python exists. The `engram.cmd` install subcommand literally delegates to this file. |
+| [`INSTALL.bat`](../../INSTALL.bat) (165 lines) | 165 | Pre-Python bootstrap: downloads embedded Python, installs pip, then calls `_sys/core/dispatch.bat install` ([line 161](../../INSTALL.bat#L161)) | `engram install` → calls `INSTALL.bat` ([engram.cmd:69](../../engram.cmd#L69)) | **KEEP** — only entry point that works before Python exists. The `engram.cmd` install subcommand literally delegates to this file. |
 | [`UPDATE.bat`](../../UPDATE.bat) (18 lines) | 18 | Python-exists guard + `_sys/core/dispatch.bat update` ([line 16](../../UPDATE.bat#L16)) | `engram update` → calls `UPDATE.bat` ([engram.cmd:85](../../engram.cmd#L85)) | **ELIMINATE** — 100% identical to `engram update`. The 3-line Python guard is already in `dispatch.bat` ([dispatch.bat:9-20](../../_sys/core/dispatch.bat#L9)). |
 | [`STATUS.bat`](../../STATUS.bat) (12 lines) | 12 | Python-exists guard + `_sys/core/dispatch.bat status` ([line 10](../../STATUS.bat#L10)) | `engram status` → calls `STATUS.bat` ([engram.cmd:73](../../engram.cmd#L73)) | **ELIMINATE** — 100% identical. |
 | [`CLEANUP.bat`](../../CLEANUP.bat) (4 lines) | 4 | `cd` + `_sys/core/dispatch.bat cleanup` ([line 3](../../CLEANUP.bat#L3)) | `engram cleanup` → calls `CLEANUP.bat` ([engram.cmd:89](../../engram.cmd#L89)) | **ELIMINATE** — 100% identical. |
@@ -36,7 +36,7 @@ After investigating every file at the repo root, the dispatch pipeline, update m
 | [`unregister.bat`](../../unregister.bat) (4 lines) | 4 | `cd` + `_sys/core/dispatch.bat unregister` | `engram unregister` → calls `unregister.bat` ([engram.cmd:81](../../engram.cmd#L81)) | **ELIMINATE** — 100% identical. |
 | [`menu-cleanup.bat`](../../menu-cleanup.bat) (4 lines) | 4 | `cd` + `_sys/core/dispatch.bat menu-cleanup` | `engram menu-cleanup` → calls `menu-cleanup.bat` ([engram.cmd:97](../../engram.cmd#L97)) | **ELIMINATE** — 100% identical. |
 
-**Summary**: Every standalone `.bat` except `_sys/core/bootstrap.bat` is a 4-18 line trampoline that does nothing `engram.cmd` doesn't already do. `engram.cmd`'s subcommand handlers ([lines 68-98](../../engram.cmd#L68)) literally `call` these batch files verbatim. The indirection is pure redundancy.
+**Summary**: Every standalone `.bat` except `INSTALL.bat` is a 4-18 line trampoline that does nothing `engram.cmd` doesn't already do. `engram.cmd`'s subcommand handlers ([lines 68-98](../../engram.cmd#L68)) literally `call` these batch files verbatim. The indirection is pure redundancy.
 
 ### Proposed Public API
 
@@ -44,7 +44,7 @@ After cleanup, the visible root should have exactly **2 entry points**:
 
 | Entry point | Purpose |
 |---|---|
-| `_sys/core/bootstrap.bat` | First-time bootstrap (required: runs before Python exists). Retained as-is. |
+| `INSTALL.bat` | First-time bootstrap (required: runs before Python exists). Retained as-is. |
 | `engram.cmd` / `Engram.exe` | Every other command: `install`, `update`, `status`, `register`, `unregister`, `cleanup`, `tidy`, `menu-cleanup`, `launch`, `uninstall`, `version`, `help`. |
 
 The 6 eliminated `.bat` files should be replaced by **`engram.cmd` subcommand handlers that call `_sys/core/dispatch.bat` directly** instead of bouncing through the now-deleted wrappers. This is trivial — e.g., `:cmd_update` changes from:
@@ -80,12 +80,12 @@ exit /b %ERRORLEVEL%
 | # | What gets updated | How | Entry point |
 |---|---|---|---|
 | 1 | **Tools** (ripgrep, bat, fd, delta, fzf, jq, oh-my-posh, gh) | GitHub Releases discovery via `version_resolver.py`, proposal diff via `check_tool_updates.py`, apply via `provisioner.py` | `engram update` / `UPDATE.bat` → `updater.py` ([updater.py:17-90](../../_sys/core/updater.py#L17)) |
-| 2 | **Python runtime** | `endoflife.date` API check at install time only | `_sys/core/bootstrap.bat` ([lines 62-95](../../_sys/core/bootstrap.bat#L62)): auto-upgrade on FIRST install only, never on subsequent runs. If already installed, prints "newer available" info but explicitly says "not auto-applied" ([line 75](../../_sys/core/bootstrap.bat#L75)). |
+| 2 | **Python runtime** | `endoflife.date` API check at install time only | `INSTALL.bat` ([lines 62-95](../../INSTALL.bat#L62)): auto-upgrade on FIRST install only, never on subsequent runs. If already installed, prints "newer available" info but explicitly says "not auto-applied" ([line 75](../../INSTALL.bat#L75)). |
 | 3 | **Engram itself** | `git pull` (manual) | No built-in mechanism. User must know to `git pull` the repo. |
 
 ### Problems
 
-1. **Python update is install-time-only, not rerunnable.** A user who runs `engram update` expecting it to update Python gets... nothing about Python. The Python check only happens in `_sys/core/bootstrap.bat` ([line 62](../../_sys/core/bootstrap.bat#L62)), and even then it explicitly declines to auto-apply if Python is already installed ([line 73-76](../../_sys/core/bootstrap.bat#L73)).
+1. **Python update is install-time-only, not rerunnable.** A user who runs `engram update` expecting it to update Python gets... nothing about Python. The Python check only happens in `INSTALL.bat` ([line 62](../../INSTALL.bat#L62)), and even then it explicitly declines to auto-apply if Python is already installed ([line 73-76](../../INSTALL.bat#L73)).
 
 2. **No self-update.** `engram update` updates tools but not Engram's own code. There's no `git pull` or release-check mechanism. The user must manually pull from GitHub.
 
@@ -122,8 +122,8 @@ Apply these updates? [y/N]
 
 Implementation requires:
 - Adding a self-update check to `updater.py` (compare local `version.json` against GitHub Releases API for `greatgc-flow/Engram`, then `git pull` if behind).
-- Adding runtime version discovery to `updater.py` for Node.js and other runtimes that have `discovery_provider` metadata (Python's endoflife.date check from `_sys/core/bootstrap.bat` should be extracted into a Python function and integrated here).
-- Fixing the version display: `engram.cmd` should read from `version.json` instead of hardcoding. Since `engram.cmd` runs before Python exists, use PowerShell JSON parsing (already demonstrated in `_sys/core/bootstrap.bat` [line 33](../../_sys/core/bootstrap.bat#L33)).
+- Adding runtime version discovery to `updater.py` for Node.js and other runtimes that have `discovery_provider` metadata (Python's endoflife.date check from `INSTALL.bat` should be extracted into a Python function and integrated here).
+- Fixing the version display: `engram.cmd` should read from `version.json` instead of hardcoding. Since `engram.cmd` runs before Python exists, use PowerShell JSON parsing (already demonstrated in `INSTALL.bat` [line 33](../../INSTALL.bat#L33)).
 
 ---
 
@@ -159,7 +159,7 @@ The real fix is to reduce the VISIBLE root to just what a user needs:
 
 **Before** (current root, 18 user-visible items):
 ```
-CLEANUP.bat        _sys/core/bootstrap.bat       STATUS.bat      TIDY.bat
+CLEANUP.bat        INSTALL.bat       STATUS.bat      TIDY.bat
 UPDATE.bat         engram.cmd        Engram.exe      register.bat
 unregister.bat     menu-cleanup.bat  CONVENTION.md   README.md
 LICENSE            wrapper.cs        requirements-dev.txt
@@ -169,7 +169,7 @@ tools/             workspace/        .ai/            .engram/
 
 **After** (proposed, 8-9 user-visible items):
 ```
-_sys/core/bootstrap.bat        engram.cmd        Engram.exe      README.md
+INSTALL.bat        engram.cmd        Engram.exe      README.md
 CONVENTION.md      LICENSE
 _sys/              workspace/        .engram/
 ```
@@ -186,7 +186,7 @@ Eliminated:
 - 6 standalone `.bat` files (folded into `engram.cmd`)
 - `.ai/` folder (consolidated into `.engram/state/`, see §4)
 
-With this cleanup, a user opening the portable root in Explorer sees **the 3 things they actually interact with** (`_sys/core/bootstrap.bat`, `engram.cmd`/`Engram.exe`, `workspace/`) plus `_sys/` which they can safely ignore — like a `.git/` folder.
+With this cleanup, a user opening the portable root in Explorer sees **the 3 things they actually interact with** (`INSTALL.bat`, `engram.cmd`/`Engram.exe`, `workspace/`) plus `_sys/` which they can safely ignore — like a `.git/` folder.
 
 ---
 
@@ -260,7 +260,7 @@ The `.engram/` root ([`docs/engram-dotdir.md`](../../docs/engram-dotdir.md)) was
 
 Meanwhile, [`_sys/core/version.json:2`](../../_sys/core/version.json#L2) says `"version": "3.2.6"`.
 
-**Fix**: Read from `version.json` at runtime using the same PowerShell JSON parsing pattern already used in `_sys/core/bootstrap.bat` ([line 33](../../_sys/core/bootstrap.bat#L33)):
+**Fix**: Read from `version.json` at runtime using the same PowerShell JSON parsing pattern already used in `INSTALL.bat` ([line 33](../../INSTALL.bat#L33)):
 
 ```bat
 :show_version
@@ -281,7 +281,7 @@ The repo has BOTH a root-level `tools/` directory and `_sys/tools/`. The `env.js
 
 ### 6.2 `CONVENTION.md` §5.2 inconsistency
 
-§5.2 ([line 231](../../CONVENTION.md#L231)) says "Batch (root & _sys): lowercase kebab-case (`register.bat`, `unregister.bat`, `install.bat`, `cleanup.bat`)." But the actual files are UPPERCASE: `_sys/core/bootstrap.bat`, `UPDATE.bat`, `STATUS.bat`, `CLEANUP.bat`, `TIDY.bat`. The convention doc contradicts the actual naming. Since Windows filesystems are case-insensitive this is cosmetic, but the inconsistency should be resolved one way or the other.
+§5.2 ([line 231](../../CONVENTION.md#L231)) says "Batch (root & _sys): lowercase kebab-case (`register.bat`, `unregister.bat`, `install.bat`, `cleanup.bat`)." But the actual files are UPPERCASE: `INSTALL.bat`, `UPDATE.bat`, `STATUS.bat`, `CLEANUP.bat`, `TIDY.bat`. The convention doc contradicts the actual naming. Since Windows filesystems are case-insensitive this is cosmetic, but the inconsistency should be resolved one way or the other.
 
 ### 6.3 `workspace/` semantics
 
@@ -330,7 +330,7 @@ Existing installs at `D:\tttt` and `D:\t2` (both v3.2.6) must survive this restr
 
 | Area | Before | After | Effort |
 |---|---|---|---|
-| Root `.bat` files | 8 standalone files | 1 (`_sys/core/bootstrap.bat`) | Low: delete 6 files, update 6 `engram.cmd` handlers |
+| Root `.bat` files | 8 standalone files | 1 (`INSTALL.bat`) | Low: delete 6 files, update 6 `engram.cmd` handlers |
 | CLI surface | `engram.cmd` + 8 `.bat` aliases | `engram.cmd` only | Low |
 | Update story | 3 separate paths (tools only, Python install-time only, git-pull for Engram) | 1 unified `engram update` | Medium: add self-update + runtime discovery to `updater.py` |
 | `_sys/` naming | `_sys/` | `_sys/` (unchanged) | Zero |
@@ -355,8 +355,8 @@ All citations in this document reference files in `D:\Engram&Peerhub\engram-main
 | menu-cleanup.bat full content | `menu-cleanup.bat` | 1-4 | cd + dispatch.bat, nothing else |
 | STATUS.bat full content | `STATUS.bat` | 1-12 | Python guard + dispatch.bat, nothing else |
 | TIDY.bat direct call | `TIDY.bat` | 6-12 | Calls tidy_temp.py directly, not dispatch.bat |
-| _sys/core/bootstrap.bat Python bootstrap | `_sys/core/bootstrap.bat` | 62-95 | endoflife.date API check, first-install only |
-| _sys/core/bootstrap.bat final delegation | `_sys/core/bootstrap.bat` | 161 | Delegates to dispatch.bat install |
+| INSTALL.bat Python bootstrap | `INSTALL.bat` | 62-95 | endoflife.date API check, first-install only |
+| INSTALL.bat final delegation | `INSTALL.bat` | 161 | Delegates to dispatch.bat install |
 | dispatch.bat Python guard | `_sys/core/dispatch.bat` | 9-20 | Same guard as standalone .bat files |
 | dispatch.json pipelines | `_sys/dispatch.json` | 69-100 | update, status, cleanup all defined |
 | updater.py flow | `_sys/core/updater.py` | 17-90 | Tools-only update |

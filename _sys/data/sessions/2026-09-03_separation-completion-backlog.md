@@ -174,7 +174,7 @@ being worked on."**
    as `_sys/docs/history/`.
 6. ~~**Real fresh-install verification (2026-09-04)**~~ — **done**.
    Ran the actual documented install paths in genuinely fresh folders
-   (`_sys/core/bootstrap.bat` on a clean clone, `pip install "git+...@v0.1.8"` into
+   (`INSTALL.bat` on a clean clone, `pip install "git+...@v0.1.8"` into
    a fresh venv) rather than trusting the test suite alone. Found and
    fixed 3 more real bugs no prior pass caught, all committed + pushed +
    re-verified against a real install:
@@ -188,10 +188,10 @@ being worked on."**
      components present".
    - **A real portable-root-path bug**: a folder path containing `&`
      (this session's own `D:\Engram&Peerhub\...` worktree location)
-     breaks `_sys/core/bootstrap.bat`'s Python-version `for /f` lines and, deeper,
+     breaks `INSTALL.bat`'s Python-version `for /f` lines and, deeper,
      `provisioner.py`'s npm-based peer-CLI installs (`npm.cmd` is an
      npm-generated launcher with the identical hazard). Fixed both
-     layers we own (`f2fd8e1`): `_sys/core/bootstrap.bat` now `cd /d "%~dp0"` once
+     layers we own (`f2fd8e1`): `INSTALL.bat` now `cd /d "%~dp0"` once
      and uses relative paths throughout instead of re-embedding the
      absolute path in any command string; `provisioner.py` now calls
      `node.exe` + `npm-cli.js` directly instead of going through
@@ -224,7 +224,7 @@ being worked on."**
    - Engram (commit `389c04a`, 7 fixes): `virtualizer.py` (mklink/rmdir
      via `shell=True` → native `_winapi.CreateJunction`/`os.rmdir`, no
      cmd.exe involved at all), `check_tool_updates.py` (relative
-     `.\_sys\core\bootstrap.bat` instead of absolute), `manage.py` (generated
+     `.\INSTALL.bat` instead of absolute), `manage.py` (generated
      uninstall helper's `echo` line now quotes its expansions),
      `launcher.py` (`.bat`/`.cmd` dispatch now relative+cwd; `cmd /k`
      and PATH-building investigated and left alone — not actually
@@ -290,7 +290,7 @@ being worked on."**
    portable root path containing a literal `%` or `!` breaks anything
    the same way `&` did — it does, and `!` turned out worse than `&`:
    - **`%`**: tonight's existing relative-path fix already fully
-     protects `_sys/core/bootstrap.bat`/`launcher.py` (no additional fix needed
+     protects `INSTALL.bat`/`launcher.py` (no additional fix needed
      there) — but exposed a SEPARATE bug: every root-level wrapper
      `.bat` still calling a sub-script via an absolute `%~dp0`-prefixed
      path (`STATUS.bat`, `UPDATE.bat`, `CLEANUP.bat`, `TIDY.bat`,
@@ -299,12 +299,12 @@ being worked on."**
      on a literal `%`, because cmd.exe's `CALL` re-expands `%` variables
      a second time. `scrubber.py`'s generated purge script had the same
      issue (fixed by escaping `%` as `%%`).
-   - **`!`**: a genuinely new, more severe bug — broke `_sys/core/bootstrap.bat`
+   - **`!`**: a genuinely new, more severe bug — broke `INSTALL.bat`
      itself (not just wrappers): `setlocal enabledelayedexpansion`
      before `cd /d "%~dp0"` meant delayed expansion silently stripped
      `!` out of `%~dp0`'s value, so `cd /d` failed **without erroring
      out** — execution continued in the wrong directory. Fixed by
-     reordering (`cd` before `setlocal`) in `_sys/core/bootstrap.bat`/`engram.cmd`,
+     reordering (`cd` before `setlocal`) in `INSTALL.bat`/`engram.cmd`,
      or switching to `setlocal DisableDelayedExpansion` entirely where
      delayed expansion wasn't actually needed (`dispatch.bat`,
      `STATUS.bat`, `UPDATE.bat`, `TIDY.bat`). `manage.py`'s generated
@@ -316,7 +316,7 @@ being worked on."**
    - Verified in real, fresh `%`/`!`-named folders (both by `ag.effort`
      and independently re-verified by the terminal, including a
      deliberate `%name%`-vs-active-env-var collision test). One real
-     scare during terminal verification: an actual `_sys/core/bootstrap.bat` run in
+     scare during terminal verification: an actual `INSTALL.bat` run in
      this repo's own dev worktree failed at the venv step — root-caused
      to leftover pollution from `ag`'s OWN extensive in-place testing
      (a stale `_sys/env` missing pip after repeated install/update
