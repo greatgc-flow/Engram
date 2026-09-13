@@ -158,3 +158,60 @@ def test_updater_run_declined_prompt(monkeypatch):
         updater.run({"args": []})
     assert exc.value.code == 3
     assert not apply_called
+
+def test_updater_core_channel_git(monkeypatch, capsys, tmp_path):
+    import core.updater as updater
+    monkeypatch.setattr(updater, '_PORTABLE_ROOT', tmp_path)
+    (tmp_path / '.git').mkdir()
+    def mock_run(propose_diff=False):
+        return {'artifact_dir': 'mock_dir', 'updates_discovered': [], 'not_checked': [], 'could_not_check': []}
+    monkeypatch.setattr(updater.check_tool_updates, 'run', mock_run)
+    monkeypatch.setattr(updater, 'check_components', lambda sys_dir: {})
+    updater.run({'args': []})
+    out = capsys.readouterr().out
+    assert 'Engram core (git checkout' in out
+
+def test_updater_core_discovery_error(monkeypatch, capsys, tmp_path):
+    import core.updater as updater
+    import core.version_resolver as version_resolver
+    monkeypatch.setattr(updater, '_PORTABLE_ROOT', tmp_path)
+    def mock_run(propose_diff=False):
+        return {'artifact_dir': 'mock_dir', 'updates_discovered': [], 'not_checked': [], 'could_not_check': []}
+    monkeypatch.setattr(updater.check_tool_updates, 'run', mock_run)
+    monkeypatch.setattr(updater, 'check_components', lambda sys_dir: {})
+    def mock_resolve(*args, **kwargs):
+        return {'status': 'error', 'error_type': 'missing_digest', 'detail': 'release has no digest; refusing'}
+    monkeypatch.setattr(version_resolver, 'resolve_latest', mock_resolve)
+    updater.run({'args': []})
+    out = capsys.readouterr().out
+    assert 'Engram core (missing_digest: release has no digest; refusing)' in out
+
+def test_updater_core_staging_hash_mismatch(monkeypatch, capsys, tmp_path):
+    import core.updater as updater
+    import core.version_resolver as version_resolver
+    monkeypatch.setattr(updater, '_PORTABLE_ROOT', tmp_path)
+    monkeypatch.setattr(updater, '_SYS_DIR', tmp_path / '_sys')
+    (tmp_path / '_sys' / 'core').mkdir(parents=True)
+    (tmp_path / '_sys' / 'core' / 'version.json').write_text('{"version": "1.0.0"}')
+    def mock_run(propose_diff=False):
+        return {'artifact_dir': 'mock_dir', 'updates_discovered': [], 'not_checked': [], 'could_not_check': []}
+    monkeypatch.setattr(updater.check_tool_updates, 'run', mock_run)
+    monkeypatch.setattr(updater, 'check_components', lambda sys_dir: {})
+    def mock_resolve(*args, **kwargs):
+        return {'status': 'ok', 'latest_version': '9.9.9', 'url': 'http://fake', 'checksum_algo': 'sha256', 'checksum_value': 'expectedhash'}
+    monkeypatch.setattr(version_resolver, 'resolve_latest', mock_resolve)
+    monkeypatch.setattr('builtins.input', lambda prompt: 'y')
+    monkeypatch.setattr(updater.check_tool_updates, 'apply_proposal', lambda *args, **kwargs: (0, {'applied': True, 'backup_path': 'fake'}))
+    import core.provisioner as provisioner
+    monkeypatch.setattr(provisioner, 'deploy', lambda ctx: {'status': 'success', 'installed': [], 'failed': [], 'deferred': []})
+    def mock_urlretrieve(url, path):
+        with open(path, 'wb') as f:
+            f.write(b'badcontent')
+    import urllib.request
+    monkeypatch.setattr(urllib.request, 'urlretrieve', mock_urlretrieve)
+    monkeypatch.setattr(updater.check_tool_updates, '_atomic_write_json', lambda *args: None)
+    with pytest.raises(SystemExit) as exc:
+        updater.run({'args': []})
+    assert exc.value.code == 1
+    out = capsys.readouterr().out
+    assert 'Checksum mismatch' in out

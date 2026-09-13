@@ -31,7 +31,7 @@ if exist ".\_sys\env\python\python.exe" (
     if not exist ".\_sys\data\state\layout.json" (
         set "_MIGRATE_LAYOUT=1"
     ) else (
-        ".\_sys\env\python\python.exe" -c "import json, sys; sys.exit(0 if json.load(open(r'.\_sys\data\state\layout.json', encoding='utf-8')).get('layout_version', 0) < 2 else 1)" 2>nul
+        ".\_sys\env\python\python.exe" -c "import json, sys; l=json.load(open(r'.\_sys\data\state\layout.json', encoding='utf-8')); v=json.load(open(r'.\_sys\core\version.json', encoding='utf-8')).get('version', 'unknown'); sys.exit(0 if l.get('layout_version', 0) < 2 or l.get('engram_version', 'unknown') != v else 1)" 2>nul
         if not errorlevel 1 set "_MIGRATE_LAYOUT=1"
     )
 )

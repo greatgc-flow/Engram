@@ -503,6 +503,18 @@ def migrate_layout(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> int:
         layout_json_path.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write_json(layout_json_path, layout_data)
         
+        # Section 8.4: delete Engram.exe.old and temp staging dir
+        old_exe = base_dir / "Engram.exe.old"
+        if old_exe.exists():
+            try:
+                old_exe.unlink()
+            except OSError:
+                pass
+                
+        temp_update_dir = sys_dir / "data" / "temp" / "core-update"
+        if temp_update_dir.exists():
+            shutil.rmtree(temp_update_dir, ignore_errors=True)
+        
     if not m1_ok or not m2_ok:
         return 1
         

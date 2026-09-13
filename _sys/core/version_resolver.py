@@ -605,6 +605,170 @@ def _resolve_python() -> dict[str, Any]:
     )
 
 
+def _resolve_engram_release(discovery_id: str, cache_path: Path | None = None) -> dict[str, Any]:
+    cache_path = cache_path or _DEFAULT_CACHE
+    provider = "engram_release"
+    cache = _load_cache(cache_path)
+    cached = _cache_get(cache, provider, discovery_id)
+    etag = cached.get("etag")
+
+    gh_result = _gh_api_latest(discovery_id, str(etag) if etag else None)
+    if gh_result is not None:
+        status_code, headers, body = gh_result
+    else:
+        url = f"https://api.github.com/repos/{discovery_id}/releases/latest"
+        req_headers = {"Accept": "application/vnd.github+json", "User-Agent": "portable-dev-version-resolver"}
+        if etag:
+            req_headers["If-None-Match"] = str(etag)
+        req = urllib.request.Request(url, headers=req_headers)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                status_code = int(resp.getcode())
+                headers = resp.headers
+                body = resp.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            status_code = int(exc.code)
+            headers = exc.headers
+            body_bytes = exc.read() if hasattr(exc, "read") else b""
+            body = body_bytes.decode("utf-8", errors="replace") if isinstance(body_bytes, bytes) else str(body_bytes)
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            return _result(
+                status="error",
+                provider=provider,
+                discovery_id=discovery_id,
+                detail=str(exc),
+                error_type="network_error",
+            )
+
+    if status_code == 304:
+        cached_version = cached.get("cached_latest_version")
+        if cached_version:
+            return _result(
+                status="ok",
+                provider=provider,
+                discovery_id=discovery_id,
+                latest_version=str(cached_version),
+                url=cached.get("cached_url"),
+                checksum_algo=cached.get("checksum_algo"),
+                checksum_value=cached.get("checksum_value"),
+                checksum_source=cached.get("checksum_source"),
+                source="cache_304",
+            )
+        return _result(
+            status="error",
+            provider=provider,
+            discovery_id=discovery_id,
+            detail="GitHub returned 304 but no cached_latest_version exists",
+            error_type="cache_miss",
+        )
+
+    if status_code == 403:
+        return _result(
+            status="discovery_unavailable",
+            provider=provider,
+            discovery_id=discovery_id,
+            detail="GitHub discovery unavailable or rate limited",
+            error_type="rate_limited",
+        )
+
+    if status_code != 200:
+        return _result(
+            status="error",
+            provider=provider,
+            discovery_id=discovery_id,
+            detail=f"GitHub returned HTTP {status_code}",
+            error_type="http_error",
+        )
+
+    try:
+        release = json.loads(body)
+    except json.JSONDecodeError as exc:
+        return _result(
+            status="error",
+            provider=provider,
+            discovery_id=discovery_id,
+            detail=f"invalid GitHub JSON: {exc.msg}",
+            error_type="parse_error",
+        )
+
+    tag = release.get("tag_name") or release.get("name")
+    if not tag:
+        return _result(
+            status="error",
+            provider=provider,
+            discovery_id=discovery_id,
+            detail="GitHub release has no tag_name",
+            error_type="missing_version",
+        )
+
+    latest_version = _normalize_version(str(tag))
+    target_asset_name = f"Engram-v{latest_version}-portable-x64.zip"
+    
+    assets = release.get("assets", [])
+    target_asset = None
+    if isinstance(assets, list):
+        for asset in assets:
+            if isinstance(asset, dict) and str(asset.get("name")) == target_asset_name:
+                target_asset = asset
+                break
+
+    if not target_asset:
+        return _result(
+            status="error",
+            provider=provider,
+            discovery_id=discovery_id,
+            detail=f"no asset named {target_asset_name}",
+            error_type="missing_asset",
+        )
+        
+    url = target_asset.get("browser_download_url")
+    if not url:
+        return _result(
+            status="error",
+            provider=provider,
+            discovery_id=discovery_id,
+            detail="target asset has no browser_download_url",
+            error_type="missing_url",
+        )
+
+    digest = target_asset.get("digest")
+    if not digest or not str(digest).startswith("sha256:"):
+        return _result(
+            status="error",
+            provider=provider,
+            discovery_id=discovery_id,
+            detail="release has no digest; refusing",
+            error_type="missing_digest",
+        )
+        
+    checksum_algo = "sha256"
+    checksum_value = str(digest)[7:]
+
+    etag_header = _header_get(headers, "ETag")
+    cache_values = {
+        "cached_latest_version": latest_version,
+        "cached_url": str(url),
+        "checksum_algo": checksum_algo,
+        "checksum_value": checksum_value,
+        "checksum_source": "github_api_digest"
+    }
+    if etag_header:
+        cache_values["etag"] = etag_header
+    _cache_put(cache_path, cache, provider, discovery_id, cache_values)
+
+    return _result(
+        status="ok",
+        provider=provider,
+        discovery_id=discovery_id,
+        latest_version=latest_version,
+        url=str(url),
+        checksum_algo=checksum_algo,
+        checksum_value=checksum_value,
+        checksum_source="github_api_digest",
+        source="github_api",
+    )
+
+
 def resolve_latest(
     tool_name: str,
     provider: str,
@@ -620,6 +784,8 @@ def resolve_latest(
         result = _resolve_sqlite(discovery_id)
     elif provider == "endoflife_python":
         result = _resolve_python()
+    elif provider == "engram_release":
+        result = _resolve_engram_release(discovery_id, cache_path)
     elif provider == "manual":
         result = _result(status="manual", provider=provider, discovery_id=discovery_id)
     else:
