@@ -24,6 +24,22 @@ if /i "%SUBCMD%"=="version" goto :show_version
 if /i "%SUBCMD%"=="--version" goto :show_version
 if /i "%SUBCMD%"=="-v" goto :show_version
 
+:: --- Layout Migration Auto-Trigger ---
+set "_MIGRATE_LAYOUT=0"
+if exist ".\_sys\env\python\python.exe" (
+    if not exist ".\_sys\data\state\layout.json" (
+        set "_MIGRATE_LAYOUT=1"
+    ) else (
+        ".\_sys\env\python\python.exe" -c "import json, sys; sys.exit(0 if json.load(open(r'.\_sys\data\state\layout.json', encoding='utf-8')).get('layout_version', 0) < 2 else 1)" 2>nul
+        if not errorlevel 1 set "_MIGRATE_LAYOUT=1"
+    )
+)
+if "%_MIGRATE_LAYOUT%"=="1" (
+    call ".\_sys\core\dispatch.bat" migrate-layout
+    if not exist ".\_sys\data\state\layout.json" exit /b 1
+)
+:: -------------------------------------
+
 :: Shift first argument so %* in sub-scripts receives remaining arguments
 shift
 

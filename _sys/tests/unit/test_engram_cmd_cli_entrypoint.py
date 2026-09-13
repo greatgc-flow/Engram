@@ -122,3 +122,35 @@ def test_literal_exclamation_mark_preserved_in_forwarded_arg_in_ampersand_dir(am
         f"stdout: {proc.stdout}\n"
         f"stderr: {proc.stderr}"
     )
+
+def test_engram_cmd_auto_trigger_blocks_on_m0_refusal(ampersand_fixture):
+    fixture_dir, engram_cmd_copy = ampersand_fixture
+    sys_core = fixture_dir / "_sys" / "core"
+    sys_core.mkdir(parents=True)
+    
+    fake_python = fixture_dir / "_sys" / "env" / "python" / "python.exe"
+    fake_python.parent.mkdir(parents=True, exist_ok=True)
+    fake_python.write_text("", encoding="utf-8")
+    
+    dispatch_bat = sys_core / "dispatch.bat"
+    dispatch_bat.write_text(
+        "@echo off\necho dispatch.bat called with %*\nexit /b 1\n",
+        encoding="utf-8"
+    )
+    
+    status_bat = fixture_dir / "STATUS.bat"
+    status_bat.write_text("@echo STATUS RAN\nexit /b 0\n", encoding="utf-8")
+    
+    import subprocess
+    proc = subprocess.run(
+        f'cmd.exe /c ""{engram_cmd_copy}" status"',
+        cwd=str(fixture_dir),
+        capture_output=True,
+        text=True,
+        encoding="mbcs",
+        errors="replace"
+    )
+    
+    assert proc.returncode == 1
+    assert "dispatch.bat called with migrate-layout" in proc.stdout
+    assert "STATUS RAN" not in proc.stdout

@@ -738,3 +738,30 @@ def test_migrate_layout_dry_run(tmp_path, capsys, monkeypatch):
     assert "[DRY RUN]" in captured
     assert "Retired shipped files: 1" in captured
     assert "Moved engram state files: 1" in captured
+
+
+def test_run_pipeline(tmp_path, monkeypatch):
+    from _sys.core import layout_migration
+    called_with = []
+    
+    def mock_migrate_layout(base, sys, dry_run=False):
+        called_with.append((base, sys, dry_run))
+        return 0
+        
+    monkeypatch.setattr(layout_migration, 'migrate_layout', mock_migrate_layout)
+    
+    ctx = {'base_dir': str(tmp_path), 'sys_dir': str(tmp_path / '_sys'), 'args': ['--dry-run']}
+    result = layout_migration.run_pipeline(ctx)
+    
+    assert result == {'status': 'ok'}
+    assert len(called_with) == 1
+    assert called_with[0][2] is True
+    
+    def mock_migrate_layout_fail(base, sys, dry_run=False):
+        return 1
+        
+    monkeypatch.setattr(layout_migration, 'migrate_layout', mock_migrate_layout_fail)
+    ctx_no_dry = {'base_dir': str(tmp_path), 'sys_dir': str(tmp_path / '_sys')}
+    result_fail = layout_migration.run_pipeline(ctx_no_dry)
+    assert result_fail == {'status': 'error'}
+

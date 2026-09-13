@@ -173,3 +173,31 @@ def test_install_python_update_cannot_rewrite_pin_while_interpreter_exists():
         "runtimes.python.version='!PY_VER!'"
     )
     assert "rolling back the bootstrap" in content
+
+
+
+def test_migrate_layout_dispatch_wiring():
+    """
+    Verify that the migrate-layout pipeline is correctly mapped to 
+    core.layout_migration.run_pipeline in dispatch.json and the method exists.
+    """
+    import json
+    from pathlib import Path
+    
+    root_dir = Path(__file__).parent.parent.parent.parent
+    sys_dir = root_dir / "_sys"
+    
+    dispatch_file = sys_dir / "dispatch.json"
+    assert dispatch_file.exists()
+    dispatch_data = json.loads(dispatch_file.read_text(encoding="utf-8"))
+    
+    migrate_pipeline = dispatch_data["pipelines"]["migrate-layout"]
+    assert migrate_pipeline[0] == "migration.run_layout_migration"
+    
+    migrate_op = dispatch_data["operations"]["migration.run_layout_migration"]
+    assert migrate_op["module"] == "core.layout_migration"
+    assert migrate_op["method"] == "run_pipeline"
+    
+    # Assert module has method
+    from _sys.core import layout_migration
+    assert hasattr(layout_migration, "run_pipeline")

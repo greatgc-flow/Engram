@@ -50,6 +50,10 @@ def surface_root(tmp_path: Path):
     py_dir = root / "_sys" / "env" / "python"
     py_dir.mkdir(parents=True, exist_ok=True)
     (py_dir / "python.exe").write_bytes(b"dummy_python")
+    
+    state_dir = root / "_sys" / "data" / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "layout.json").write_text('{"layout_version": 2}', encoding="utf-8")
 
     return root
 

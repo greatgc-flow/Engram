@@ -507,3 +507,19 @@ def migrate_layout(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> int:
         return 1
         
     return 0
+
+
+
+# WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="Called dynamically by core.dispatcher via dispatch.json."
+def run_pipeline(ctx: dict) -> dict:
+    base_dir = Path(ctx.get("base_dir", "."))
+    sys_dir = Path(ctx.get("sys_dir", "_sys"))
+    args = ctx.get("args", [])
+    dry_run = "--dry-run" in args
+    
+    result = migrate_layout(base_dir, sys_dir, dry_run=dry_run)
+    
+    if result == 0:
+        return {"status": "ok"}
+    else:
+        return {"status": "error"}

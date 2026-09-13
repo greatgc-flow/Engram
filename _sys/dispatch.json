@@ -55,6 +55,12 @@
             "module": "core.uninstaller",
             "method": "run",
             "failure_policy": "abort"
+        },
+        "migration.run_layout_migration": {
+            "module": "core.layout_migration",
+            "method": "run_pipeline",
+            "idempotent": true,
+            "failure_policy": "abort"
         }
     },
     "pipelines": {
@@ -99,6 +105,9 @@
         ],
         "uninstall": [
             "uninstall.run"
+        ],
+        "migrate-layout": [
+            "migration.run_layout_migration"
         ]
     }
 }
