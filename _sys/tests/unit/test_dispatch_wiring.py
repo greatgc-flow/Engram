@@ -158,7 +158,7 @@ def test_dispatcher_continues_unregister_but_preserves_state_on_failure(monkeypa
 
 def test_install_python_update_cannot_rewrite_pin_while_interpreter_exists():
     root_dir = Path(__file__).parent.parent.parent.parent
-    content = (root_dir / "INSTALL.bat").read_text(encoding="utf-8")
+    content = (root_dir / "_sys/core/bootstrap.bat").read_text(encoding="utf-8")
 
     assert content.index('set "PY_EXE=%PY_DIR%\\python.exe"') < content.index(
         "Checking for latest stable Python"

@@ -38,7 +38,7 @@ ALLOWLIST = {
     "engram.cmd",
     "Engram.exe",
     "GEMINI.md",
-    "INSTALL.bat",
+    "_sys/core/bootstrap.bat",
     "LICENSE",
     "manifests",
     "menu-cleanup.bat",

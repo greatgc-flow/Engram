@@ -64,7 +64,7 @@ def main(target_dir):
     manage_bat = tgt / "register.bat"
     unreg_bat = tgt / "unregister.bat"
     start_bat = tgt / "_sys" / "start.bat"
-    install_bat = tgt / "install.bat"
+    install_bat = tgt / "_sys\core\bootstrap.bat"
 
     log(f"=== Starting MECE Lifecycle Test on {tgt} ===")
 

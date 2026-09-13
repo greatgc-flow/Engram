@@ -29,7 +29,7 @@ Configuration).
 
 Hand-authored executable logic and orchestration scripts.
 
-- Root: `INSTALL.bat`, `CLEANUP.bat`, `register.bat`, `unregister.bat`,
+- Root: `_sys/core/bootstrap.bat`, `CLEANUP.bat`, `register.bat`, `unregister.bat`,
   `wrapper.cs`
 - `_sys/start.bat`
 - `_sys/core/` — the orchestration engine (`hub.py`, `dispatcher.py`,
@@ -197,7 +197,7 @@ entries maps to exactly one place above:
 | `CONVENTION.md` | Instructions & Documentation (prescriptive) |
 | `Engram.exe` | Provisioned Components & Scaffolding |
 | `GEMINI.md` | Instructions & Documentation (prescriptive) |
-| `INSTALL.bat` | Source |
+| `_sys/core/bootstrap.bat` | Source |
 | `PROTOCOL.md` | Instructions & Documentation (prescriptive) |
 | `README.md` | Instructions & Documentation (prescriptive) |
 | `register.bat` | Source |

@@ -6,7 +6,7 @@
 ## Quick Start (new machine)
 
 ```
-1. INSTALL.bat           # bootstrap Python + provision tools/runtimes (no admin)
+1. _sys/core/bootstrap.bat           # bootstrap Python + provision tools/runtimes (no admin)
 2. register.bat          # mount SUBST P: drive + add right-click context menu
 3. STATUS.bat            # verify the environment is healthy
 4. _sys\cli\claude.bat   # launch a peer (or codex.bat / agy.bat)
@@ -20,7 +20,7 @@ No Administrator rights are required for any of these — see **Permissions** be
 
 | Command | Purpose | Mutates | Admin? | Reversible |
 |---------|---------|---------|:------:|------------|
-| `INSTALL.bat` | Bootstrap Python; provision tools/runtimes to match `runtimes.json` | portable tree | No | re-run / `CLEANUP.bat` |
+| `_sys/core/bootstrap.bat` | Bootstrap Python; provision tools/runtimes to match `runtimes.json` | portable tree | No | re-run / `CLEANUP.bat` |
 | `register.bat` | Mount SUBST `P:` + HKCU context menu + peer junctions | host (per-user) | No | `unregister.bat` |
 | `STATUS.bat` | Read-only health check (mount, versions, sessions, registration) | nothing | No | n/a |
 | `UPDATE.bat` | Discover -> confirm -> apply tool/runtime version bumps | `runtimes.json` + tree | No | backup in `_archive/tool-updates/` |
@@ -33,7 +33,7 @@ reporting success.
 
 ---
 
-## Install / Repair — `INSTALL.bat`
+## Install / Repair — `_sys/core/bootstrap.bat`
 
 - Bootstraps a portable Python (embeddable build) if none is present, then
   provisions every tool/runtime declared in `_sys/runtimes.json`.

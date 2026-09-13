@@ -23,7 +23,7 @@ all 5.
   `runtimes.tools.{ripgrep,bat,fd,delta,fzf,jq,gh,sqlite,agy,...}` (`{version, url,
   type, bin, extras}`). At least one entry (`agy`) already declares an unused
   `sha512` field.
-- `_sys/core/provisioner.py`'s `deploy(ctx)` (reached via INSTALL.bat →
+- `_sys/core/provisioner.py`'s `deploy(ctx)` (reached via _sys/core/bootstrap.bat →
   dispatch.bat install → setup.py) does the actual one-time install:
   `_install_tools()` downloads/extracts each `runtimes.json` tool entry into
   `_sys/tools/<name>/`; `_install_ai_peers()` does `npm install -g <pkg>` for

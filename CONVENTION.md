@@ -74,7 +74,7 @@ resolution. Confirmed via real, live testing (2026-09-04, twice, in this
 repo's own real `&`-laden checkout) rather than reasoned about:
 - **Never re-embed an absolute `&`-laden path in any command string that
   reaches cmd.exe.** Two concrete techniques, both empirically verified:
-  1. **`cd`/`cwd` + relative paths.** `cd /d "%~dp0"` once (INSTALL.bat),
+  1. **`cd`/`cwd` + relative paths.** `cd /d "%~dp0"` once (_sys/core/bootstrap.bat),
      or `cwd=` + a relative filename in `subprocess.run()` (`launcher.py`,
      `scrubber.py`, `check_tool_updates.py`, `lifecycle_tester.py`) --
      never re-embed the resolved absolute path as literal text afterward.
@@ -111,7 +111,7 @@ repo's own real `&`-laden checkout) rather than reasoned about:
 **`%` and `!` (checked 2026-09-05, same real-live-testing standard):**
 these are different bug classes from `&`, not the same one:
 - **`%` (variable expansion):** the §2.6 fix above (relative paths after
-  `cd`) already fully protects `INSTALL.bat`/`launcher.py` -- but a
+  `cd`) already fully protects `_sys/core/bootstrap.bat`/`launcher.py` -- but a
   *second* bug exists in every root-level wrapper `.bat` that still
   `call`s a sub-script via an absolute `%~dp0`-prefixed path: cmd.exe's
   `CALL` command re-expands `%` a second time, so a literal `%` in the
@@ -183,7 +183,7 @@ taint, not an expansion-time one (checked 2026-09-05):**
     ```
 
 ### 3.2 Dispatch Pattern
-Root-level batch files (`register.bat`, `unregister.bat`, `INSTALL.bat`, `CLEANUP.bat`) must remain minimal harnesses that delegate execution logic to Python modules under `_sys/core/` or `_sys/cli/`.
+Root-level batch files (`register.bat`, `unregister.bat`, `_sys/core/bootstrap.bat`, `CLEANUP.bat`) must remain minimal harnesses that delegate execution logic to Python modules under `_sys/core/` or `_sys/cli/`.
 
 ---
 

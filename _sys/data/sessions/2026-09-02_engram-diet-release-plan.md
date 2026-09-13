@@ -25,7 +25,7 @@ PeerHub will need to rewrite those paths, not copy them verbatim.
 
 | Category / Path | Owner | Resolution |
 |---|---|---|
-| Root lifecycle scripts (`INSTALL.bat`, `UPDATE.bat`, `STATUS.bat`, `CLEANUP.bat`, `TIDY.bat`, `engram.cmd`, `register.bat`, `unregister.bat`) | **Engram** | Essential to the portable workspace; prune AI runtimes/PeerHub routing from them. |
+| Root lifecycle scripts (`_sys/core/bootstrap.bat`, `UPDATE.bat`, `STATUS.bat`, `CLEANUP.bat`, `TIDY.bat`, `engram.cmd`, `register.bat`, `unregister.bat`) | **Engram** | Essential to the portable workspace; prune AI runtimes/PeerHub routing from them. |
 | `tools/winget` & `manifests` | **Engram** | Generic packaging stays (canonical builder: `build_package.py`); strip AI-specific inclusions and multi-agent descriptions. |
 | `_sys/ai` (all config/orchestration/directives) | **PeerHub** | Every file deletes from Engram. |
 | Vendor trees (`_sys/antigravity`, `_sys/claude`, `_sys/codex`) | **PeerHub** | Vendor config/trust/launchers delete entirely. |
@@ -123,7 +123,7 @@ start until PeerHub can reliably detect and map cc/ag/cx itself.**
 Exclusively a portable-dev-environment lifecycle manager, entirely
 oblivious to multi-agent collaboration/routing/consensus.
 
-- `Engram.exe`/`INSTALL.bat` bootstrap the Python environment + portable
+- `Engram.exe`/`_sys/core/bootstrap.bat` bootstrap the Python environment + portable
   tool payload (`fd`/`rg`/`gh`/`jq`/etc.) — no AI wrappers.
 - `engram.cmd` exposes exactly: `install`, `update`, `register` (mount
   P-drive + context menus), `unregister`, `status`, `cleanup`, `tidy`.

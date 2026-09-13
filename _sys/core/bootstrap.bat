@@ -15,20 +15,20 @@
 :: If delayed expansion is enabled first, any "!" (exclamation point) in the
 :: folder path is stripped/corrupted during delayed expansion parsing, causing
 :: "cd /d" to fail with "The system cannot find the path specified".
-cd /d "%~dp0"
+cd /d "%~dp0..\.."
 setlocal enabledelayedexpansion
 :: ================================================================
-:: INSTALL.bat  -  Portable Dev Environment Bootstrapper
+:: _sys/core/bootstrap.bat  -  Portable Dev Environment Bootstrapper
 ::
 :: Bootstraps minimal Python, then delegates to _sys\core\setup.py.
 :: Runtime versions/URLs sourced from _sys\runtimes.json (no hardcoding).
 :: ================================================================
 
-:: ── Bootstrap default configuration ──
+:: -- Bootstrap default configuration --
 if not exist "_sys\runtimes.json" copy /y "_sys\defaults\runtimes.json" "_sys\runtimes.json" >nul
 if not exist "_sys\tool-catalog.v1.json" copy /y "_sys\defaults\tool-catalog.v1.json" "_sys\tool-catalog.v1.json" >nul
 
-:: ── Runtime config from _sys\runtimes.json (fallback if missing) ──
+:: -- Runtime config from _sys\runtimes.json (fallback if missing) --
 set "_RT=_sys\runtimes.json"
 set "PY_VER=3.13.4"
 set "PY_URL=https://www.python.org/ftp/python/3.13.4/python-3.13.4-embed-amd64.zip"
@@ -58,12 +58,12 @@ if exist "%PY_EXE%" (
         echo [Error] Python consistency check failed.
         echo         Installed: !_INSTALLED_PY_VER!
         echo         Declared : !PY_VER!
-        echo Close portable tools, remove _sys\env\python, then rerun INSTALL.bat.
+        echo Close portable tools, remove _sys\env\python, then rerun _sys/core/bootstrap.bat.
         exit /b 1
     )
 )
 
-:: ── Auto-fetch latest stable Python (skip with --skip-update) ──
+:: -- Auto-fetch latest stable Python (skip with --skip-update) --
 set "_SKIP_UPDATE=0"
 for %%A in (%*) do if /i "%%A"=="--skip-update" set "_SKIP_UPDATE=1"
 
@@ -77,7 +77,7 @@ if "!_SKIP_UPDATE!"=="0" (
             if exist "%PY_EXE%" (
                 echo [i] Python !PY_VER! is installed; newer !_LATEST_VER! is available.
                 echo [i] Not auto-applied: safe in-place Python replacement is not implemented.
-                echo [i] To upgrade, close portable tools, remove _sys\env\python, then rerun INSTALL.bat.
+                echo [i] To upgrade, close portable tools, remove _sys\env\python, then rerun _sys/core/bootstrap.bat.
             ) else (
                 echo [i] New Python version available for first install: !_LATEST_VER! (pinned: !PY_VER!)
                 set "_NEW_URL=https://www.python.org/ftp/python/!_LATEST_VER!/python-!_LATEST_VER!-embed-amd64.zip"

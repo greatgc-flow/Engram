@@ -312,7 +312,7 @@ def _planned_changes(proposal: dict[str, Any]) -> list[str]:
 
 def _run_install_step() -> subprocess.CompletedProcess:
     return subprocess.run(
-        [r".\INSTALL.bat", "--skip-update"],
+        [r".\_sys\core\bootstrap.bat", "--skip-update"],
         cwd=str(_PORTABLE_ROOT),
         capture_output=True,
         text=True,
@@ -407,7 +407,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--propose-diff", action="store_true", help="write read-only proposal artifacts")
     parser.add_argument("--apply", metavar="ARTIFACT_DIR", help="apply a previously generated proposal")
     parser.add_argument("--yes", action="store_true", help="confirm --apply mutation")
-    parser.add_argument("--install", action="store_true", help="run INSTALL.bat --skip-update after successful --apply --yes")
+    parser.add_argument("--install", action="store_true", help="run _sys/core/bootstrap.bat --skip-update after successful --apply --yes")
     args = parser.parse_args(argv)
 
     if args.install and not args.apply:

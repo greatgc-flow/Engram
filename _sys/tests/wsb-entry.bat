@@ -13,11 +13,11 @@ echo [WSB] 1. Cloning SCRIPTS ONLY...
 :: Exclude binaries to test a fresh install
 robocopy "%SRC%" "%TGT%" /MIR /XD env tools .git _archive workspace node_modules pip-cache npm-cache > "%RES%\robocopy_log.txt"
 
-echo [WSB] 2. Bootstrapping Environment via install.bat...
+echo [WSB] 2. Bootstrapping Environment via _sys\core\bootstrap.bat...
 set "CI=1"
 cd /d "%TGT%"
 :: Execute install and redirect output simply
-call install.bat --skip-vscode --skip-claude > "%RES%\install_log.txt" 2>&1
+call _sys\core\bootstrap.bat --skip-vscode --skip-claude > "%RES%\install_log.txt" 2>&1
 
 if errorlevel 1 (
     echo [WSB] Setup/Bootstrap FAILED. >> "%RES%\summary.txt"

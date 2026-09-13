@@ -6,7 +6,7 @@ This document records the essential workspace configuration and portable compone
 
 | Path | Purpose |
 |---|---|
-| `INSTALL.bat` | Rebuild portable runtimes and tools from a minimal checkout. |
+| `_sys/core/bootstrap.bat` | Rebuild portable runtimes and tools from a minimal checkout. |
 | `register.bat` | Register host integration such as SUBST and Explorer context menu. |
 | `unregister.bat` | Remove host integration. |
 | `CLEANUP.bat` | Run cleanup tiers for generated data and local caches. |

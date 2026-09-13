@@ -35,7 +35,7 @@ Neither author saw the other's document. Every load-bearing claim in both was re
 ### 0.1 Pre-verified by the orchestrator (re-read anyway, all confirmed)
 
 - `_sys/core/version_resolver.py:23` (`_DEFAULT_CACHE = _PORTABLE_ROOT / ".ai" / "tool_discovery_cache.json"`) and `_sys/core/provisioner.py:198-199` (`_get_deferred_path` → `sys_dir.parent / ".ai" / "tool_deferred_retries.json"`) write into a literal root `.ai/`.
-- `wrapper.cs:7-21` never reads `args`, runs only `INSTALL.bat`, and also **never propagates the exit code**: `Main` returns `void` and there is no `Environment.Exit(p.ExitCode)`, so `Engram.exe` always exits 0. That second defect is new.
+- `wrapper.cs:7-21` never reads `args`, runs only `_sys/core/bootstrap.bat`, and also **never propagates the exit code**: `Main` returns `void` and there is no `Environment.Exit(p.ExitCode)`, so `Engram.exe` always exits 0. That second defect is new.
 - `_sys/cli/manage.py:127-129` (the generated `EngramUninstallHelper.bat`) runs `rmdir /s /q "!BASE_DIR!"` unconditionally.
 
 ### 0.2 New facts neither proposal reported (all measured 2026-09-12)
@@ -69,7 +69,7 @@ These carry more weight in the rulings below than anything in either proposal.
 - `engram.cmd:117,122` hardcode `v3.2.0` while `version.json:2` = `3.2.6`.
 - Every `.ai` citation in ag §4(B) (`version_resolver.py:23`, `check_tool_updates.py:31`, `provisioner.py:199`, `config.py:65-66,112`, `saturation_scan.py:231`, `check_root_hygiene.py:57`, `_common.py:37`, `check_backlog.py:113`).
 - The CONVENTION.md §5.2 casing contradiction (`CONVENTION.md` §5.2 prescribes `install.bat`/`cleanup.bat`).
-- INSTALL.bat's first-install-only Python bump (`INSTALL.bat:62-95`).
+- _sys/core/bootstrap.bat's first-install-only Python bump (`_sys/core/bootstrap.bat:62-95`).
 
 **Minor inaccuracies:** the wrapper line counts are each one too high (UPDATE.bat is 17 lines, STATUS.bat 11, the four trampolines 3, TIDY.bat 15). No ruling depends on them.
 
@@ -213,9 +213,9 @@ The fallback that dispatches unknown words straight into a pipeline (`engram.cmd
 
 | Verb | Behavior | Exit codes |
 |---|---|---|
-| `open [PATH]` | **First run** (no Python): print one plan line (components from `runtimes.json` + `tool-catalog.v1.json`, and the target root), then prompt `Set up Engram here now? [Y/n]`. On yes, run `_sys\core\bootstrap.bat` (the former `INSTALL.bat` body, §3.5); on no, exit 1. After a successful bootstrap, create `workspace\` if absent. If `register.state.json` is absent, ask once: `Add "Open in Engram" to the Explorer right-click menu? [y/N]` (yes → `menu enable`). **Every run:** dispatch the `start` pipeline, i.e. `launcher.main` with its existing target rules (`launcher.py:165-179`, `:243-263`). A path is resolved relative to the caller's cwd before `engram.cmd` changes directory: `engram.cmd` captures `%CD%` into `ENGRAM_CALLER_CWD` before `cd /d "%~dp0"`, and `launcher.main` resolves relative `PATH` against it. | 0 ok; 1 not set up / declined / bootstrap failed; launcher errors are propagated |
+| `open [PATH]` | **First run** (no Python): print one plan line (components from `runtimes.json` + `tool-catalog.v1.json`, and the target root), then prompt `Set up Engram here now? [Y/n]`. On yes, run `_sys\core\bootstrap.bat` (the former `_sys/core/bootstrap.bat` body, §3.5); on no, exit 1. After a successful bootstrap, create `workspace\` if absent. If `register.state.json` is absent, ask once: `Add "Open in Engram" to the Explorer right-click menu? [y/N]` (yes → `menu enable`). **Every run:** dispatch the `start` pipeline, i.e. `launcher.main` with its existing target rules (`launcher.py:165-179`, `:243-263`). A path is resolved relative to the caller's cwd before `engram.cmd` changes directory: `engram.cmd` captures `%CD%` into `ENGRAM_CALLER_CWD` before `cd /d "%~dp0"`, and `launcher.main` resolves relative `PATH` against it. | 0 ok; 1 not set up / declined / bootstrap failed; launcher errors are propagated |
 | `update` | Full contract in §8. `--check`: discover and print the plan; writes nothing except the discovery cache (`_sys/data/state/update/discovery-cache.json`). `--yes`: skip the single confirmation, and nothing else. `--only`: comma-separated component IDs (`engram`, runtime names, `runtimes.json` tool names, catalog `tool_id`s); an unknown ID exits 2 before any network call. | 0 success or nothing to do; 1 one or more components failed (others still applied); 2 usage error; 3 declined at prompt |
-| `doctor [--json]` | Unchanged zero-network contract (`doctor.py:1-16`). `check_subst` is replaced by `check_legacy_host_integration` (§7). Every `run INSTALL.bat` / `run register.bat` hint is rewritten to the new verbs. | 0 healthy; 1 broken (as today, `doctor.py:12-16`) |
+| `doctor [--json]` | Unchanged zero-network contract (`doctor.py:1-16`). `check_subst` is replaced by `check_legacy_host_integration` (§7). Every `run _sys/core/bootstrap.bat` / `run register.bat` hint is rewritten to the new verbs. | 0 healthy; 1 broken (as today, `doctor.py:12-16`) |
 | `menu` / `menu status` | Read-only: whether this install's entries are present (reusing `doctor.check_registration`) and the number of orphaned `SandboxRun_*` entries found by `registrar.clean_orphans` in a new `dry_run=True` mode. | 0 |
 | `menu enable` | Pipeline `menu-enable: ["registry.apply", "state.write"]`. Idempotent. | 0 / 1 |
 | `menu disable` | Pipeline `menu-disable: ["registry.remove", "state.prune"]`. Idempotent; no state = no-op success. | 0 / 1 |
@@ -244,7 +244,7 @@ Each prints `'engram X' was renamed: use 'engram Y'.` and exits 2. This table li
 | Path | Fate |
 |---|---|
 | `UPDATE.bat`, `STATUS.bat`, `CLEANUP.bat`, `TIDY.bat`, `register.bat`, `unregister.bat`, `menu-cleanup.bat` | Deleted. |
-| `INSTALL.bat` | Moved to `_sys/core/bootstrap.bat`. First line becomes `cd /d "%~dp0..\.."`; all existing relative paths and the `&`/`!` hardening comments are kept verbatim. Its final line calls `dispatch.bat install` exactly as today. `check_tool_updates._run_install_step()` (`:312-318`) is removed together with `--install` (§8). |
+| `_sys/core/bootstrap.bat` | Moved to `_sys/core/bootstrap.bat`. First line becomes `cd /d "%~dp0..\.."`; all existing relative paths and the `&`/`!` hardening comments are kept verbatim. Its final line calls `dispatch.bat install` exactly as today. `check_tool_updates._run_install_step()` (`:312-318`) is removed together with `--install` (§8). |
 | `wrapper.cs` | Moved to `tools/winget/wrapper.cs` (dev-only, next to the packager). `Engram.exe` stays at root and is rebuilt by new `tools/winget/build_exe.py` (Framework `csc.exe /target:exe /optimize+`). |
 | `CONVENTION.md`, `requirements-dev.txt` | Stay in the repo; `CONVENTION.md` leaves the package. |
 | `_sys/cli/launch.bat`, `_sys/cli/launch`, `_sys/cli/launcher.py`, `_sys/cli/cleanup.py`, `_sys/cli/manage.bat`, `_sys/cli/manage` (its `_bat-shim` target does not exist), `_sys/cli/manage.py` | Deleted. `manage.py`'s `uninstall()` moves to `_sys/core/uninstaller.py` (§6). Its `register`/`unregister`/`cleanup` actions duplicate dispatch pipelines, and `get_subst_mappings` (`:15-30`) is already listed as unreferenced (`unreferenced_functions_baseline.json:16-17`). |
@@ -314,7 +314,7 @@ Both fixtures carry locally advanced pins (N2). Today the zip ships `_sys/runtim
 
 **Ruling: split shipped defaults from live declarations.**
 - The package ships **defaults** at `_sys/defaults/runtimes.json` and `_sys/defaults/tool-catalog.v1.json`. In the repo these become the tracked files (a `git mv`).
-- The live files `_sys/runtimes.json` and `_sys/tool-catalog.v1.json` are **never shipped** and are gitignored. They are created from the defaults on first bootstrap (`bootstrap.bat`, before its first read at the old `INSTALL.bat:28-36`: `if not exist "_sys\runtimes.json" copy /y "_sys\defaults\runtimes.json" "_sys\runtimes.json" >nul`, and likewise for the catalog). Afterwards they are merged forward by M3 below.
+- The live files `_sys/runtimes.json` and `_sys/tool-catalog.v1.json` are **never shipped** and are gitignored. They are created from the defaults on first bootstrap (`bootstrap.bat`, before its first read at the old `_sys/core/bootstrap.bat:28-36`: `if not exist "_sys\runtimes.json" copy /y "_sys\defaults\runtimes.json" "_sys\runtimes.json" >nul`, and likewise for the catalog). Afterwards they are merged forward by M3 below.
 - Every reader of the live paths stays unchanged: `doctor.py:28,146`, `provisioner`, `check_tool_updates.py:29,87`, `bootstrap.bat`.
 - Consequence: **extracting any future zip over an install is safe by construction.** The zip contains nothing that is user data or live state. A packaging test asserts this (P1-10).
 
@@ -465,7 +465,7 @@ If M0 or `doctor` finds a recorded integration, print, for this install only:
 
 1. **Discover per component, isolating errors.** One provider failure lands that component in "Could not check" and never blocks the others. This fixes N9 (`updater.py:29-30`).
    - **Engram core:** §8.4.
-   - **Runtimes:** Python via a new `endoflife_python` provider in `version_resolver.py`, a port of the query at `INSTALL.bat:68-69`. It is shown as a **manual** item (§8.3). `nodejs`/`git`/`vscode`/`pwsh` stay "Not checked: no discovery provider" until P2-1.
+   - **Runtimes:** Python via a new `endoflife_python` provider in `version_resolver.py`, a port of the query at `_sys/core/bootstrap.bat:68-69`. It is shown as a **manual** item (§8.3). `nodejs`/`git`/`vscode`/`pwsh` stay "Not checked: no discovery provider" until P2-1.
    - **Tools:** `runtimes.json` `tools`, unchanged discovery.
    - **AI CLIs:** catalog discovery, with apply fixed (§8.3).
    - **Repairs:** components that `doctor.check_components` reports missing, planned as reinstall at their current pin.
@@ -473,7 +473,7 @@ If M0 or `doctor` finds a recorded integration, print, for this install only:
 3. `--check` stops here. Exit 1 if "Could not check" is non-empty, else 0.
 4. **Confirm once:** `Apply N changes? [y/N]`, unless `--yes`. Declining exits 3.
 5. **Apply declarations.** Write the proposal to `_sys/data/state/update/proposals/<stamp>/` with the base sha256 of **both** live files. Re-verify both hashes, back up both, and replace both atomically (both-or-neither; on a second-replace failure restore the first from backup).
-6. **Reconcile** by calling `provisioner.deploy(ctx)` **in-process**. This replaces the `--install` subprocess `.\INSTALL.bat --skip-update` (`check_tool_updates.py:312-318`). `--install` is removed from `updater.py` and `check_tool_updates.py`: the deploy is no longer an optional second phase.
+6. **Reconcile** by calling `provisioner.deploy(ctx)` **in-process**. This replaces the `--install` subprocess `.\_sys\core\bootstrap.bat --skip-update` (`check_tool_updates.py:312-318`). `--install` is removed from `updater.py` and `check_tool_updates.py`: the deploy is no longer an optional second phase.
 7. **Verify per component** with the provisioner postcondition or canary. For a component that failed or was deferred, **revert only that component's entry** in the live declaration to its backup value, so a failure can never leave a new pin with an old binary presented as success. Record it in the receipt.
 8. **Core last:** stage and hand off (§8.4); print `Engram will finish updating to X when this window closes.`
 9. **Receipt** at `_sys/data/state/update/receipts/<stamp>.json`: plan, applied, reverted, deferred, errors, core handoff. Exit 0 if everything selected succeeded, else 1.
@@ -485,7 +485,7 @@ If M0 or `doctor` finds a recorded integration, print, for this install only:
   - `write_proposal_artifacts()` also writes `tool-catalog.proposed.json` and `tool-catalog.diff`; `proposal.json` gains `catalog_base_sha256`.
   - `verify_proposal_still_valid()` checks both hashes.
   - `apply_proposal()` writes both files (both-or-neither).
-- **Python:** listed as `Python 3.14.7 -> 3.14.x (manual: close Engram, delete _sys\env\python, then run 'engram update --yes')`. Deleting the interpreter makes `update` bootstrap, and the first-install bump in `bootstrap.bat` (`INSTALL.bat:71-88` logic, unchanged) picks up the latest version. Never auto-applied: that is the running-interpreter hazard §1 keeps out of scope.
+- **Python:** listed as `Python 3.14.7 -> 3.14.x (manual: close Engram, delete _sys\env\python, then run 'engram update --yes')`. Deleting the interpreter makes `update` bootstrap, and the first-install bump in `bootstrap.bat` (`_sys/core/bootstrap.bat:71-88` logic, unchanged) picks up the latest version. Never auto-applied: that is the running-interpreter hazard §1 keeps out of scope.
 - **`--only`** filters the entry iteration in `_iter_discoverable_entries()`, plus the core and repairs phases, before any network call.
 
 ### 8.4 Engram core update (bounded in-place overlay; the one piece of cx's lifecycle that N1 makes mandatory)
@@ -513,8 +513,8 @@ If M0 or `doctor` finds a recorded integration, print, for this install only:
 
 | Point | ag | cx | Ruling | Deciding evidence |
 |---|---|---|---|---|
-| Entrance | `engram.cmd` + keep `INSTALL.bat` | Native `Engram.exe` bootstrapper; `engram.cmd` shim for one release | `engram.cmd` stays the dispatcher; `Engram.exe` becomes a correct thin forwarder; **no** root `.bat` | Forwarding fixes the alias defect in about 40 lines; a native rewrite duplicates the dispatcher (§1) |
-| `INSTALL.bat` | Keep at root | Remove (first run bootstraps) | Moved to `_sys/core/bootstrap.bat`; first run and `update` call it | The pre-Python bootstrap is needed; a public file for it is not |
+| Entrance | `engram.cmd` + keep `_sys/core/bootstrap.bat` | Native `Engram.exe` bootstrapper; `engram.cmd` shim for one release | `engram.cmd` stays the dispatcher; `Engram.exe` becomes a correct thin forwarder; **no** root `.bat` | Forwarding fixes the alias defect in about 40 lines; a native rewrite duplicates the dispatcher (§1) |
+| `_sys/core/bootstrap.bat` | Keep at root | Remove (first run bootstraps) | Moved to `_sys/core/bootstrap.bat`; first run and `update` call it | The pre-Python bootstrap is needed; a public file for it is not |
 | `cleanup` vs `tidy` | Keep both | `tidy` only | `tidy` only; destructive tiers deleted | Tier 4 deletes `workspace/` and README (N11) |
 | Registration verbs | Keep `register`/`unregister`/`menu-cleanup` | `menu enable\|disable\|repair` | `menu [status\|enable\|disable\|clean]` | cx's `repair` conflated two actions; split into `enable` + `clean` |
 | Engram self-update | `git pull` | Generations + pointer + native staging | Hash-verified in-place overlay via post-exit helper (§8.4) | N1 (no git in real installs); interpreter untouched (§1) |
@@ -559,10 +559,10 @@ If M0 or `doctor` finds a recorded integration, print, for this install only:
    - a manifest-diff assertion that `.engram/` and `workspace/` are untouched in every case.
 7. **Command surface** (depends on P1-3, P1-6; turns P1-1 green).
    - Rewrite `engram.cmd` per §3.2–§3.4 and add the first-run flow and `ENGRAM_CALLER_CWD`.
-   - Move `INSTALL.bat` to `_sys/core/bootstrap.bat`; add `_sys/cli/engram.cmd`.
+   - Move `_sys/core/bootstrap.bat` to `_sys/core/bootstrap.bat`; add `_sys/cli/engram.cmd`.
    - Delete the 7 root wrappers and the `_sys/cli` shims listed in §3.5.
    - Add pipelines `menu-enable`, `menu-disable`, `menu-clean`, `tidy`, and `registrar.clean_orphans(dry_run=True)` for `menu status`.
-   - Update `lifecycle_tester.py`, `integration-test.ps1`, `local-test.bat`, `test_launcher_paths.py`, `test_dispatch_wiring.py` (`INSTALL.bat` → `_sys/core/bootstrap.bat`) and `test_check_tool_updates.py:325`.
+   - Update `lifecycle_tester.py`, `integration-test.ps1`, `local-test.bat`, `test_launcher_paths.py`, `test_dispatch_wiring.py` (`_sys/core/bootstrap.bat` → `_sys/core/bootstrap.bat`) and `test_check_tool_updates.py:325`.
    - Remove the P0-2 double-click special case.
 8. **Tidy** (depends on P1-7). `core.tidy_temp.run(ctx)` with `--apply`/`--deep` per §3.3; delete `scrubber.py`, `_sys/cli/cleanup.py`, `test_scrubber_tier2.py`, `test_scrubber_tier5.py`, and the Tier-4 cases in `test_system_lifecycle.py`. *Tests:* §6.3.
 9. **Update flow** (depends on P1-2, P1-4). Implement §8.2–§8.3 in `updater.py` / `check_tool_updates.py` / `version_resolver.py` (`endoflife_python`). *Tests:*

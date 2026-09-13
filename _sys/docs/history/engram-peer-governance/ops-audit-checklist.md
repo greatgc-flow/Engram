@@ -9,7 +9,7 @@
 
 | ID | Check | Pass Criteria |
 |----|-------|---------------|
-| A-01 | Python fallback version in `INSTALL.bat` (line `set "PY_VER=..."`) matches README badge | Both show same `x.y.z` |
+| A-01 | Python fallback version in `_sys/core/bootstrap.bat` (line `set "PY_VER=..."`) matches README badge | Both show same `x.y.z` |
 | A-02 | `_assign_subst`: drive conflict resolution — skips A, B, C and any letter whose mapped path `exists()` | Assigned letter ≠ taken letters; test `SYS-R4` passes |
 | A-03 | `_release_subst`: emits `subst /D` on unmount | `test_registration_flow_sys_r1_r2` verifies `/D` call |
 | A-04 | Test mocks for SUBST use selective `_no_drive_exists()`, NOT `return_value=False` | **Python 3.14+**: `Path.exists()` delegates to `os.path.exists()` — global False mock breaks real dir checks |

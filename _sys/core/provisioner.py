@@ -773,7 +773,7 @@ def ensure_runtime(name: str, orch: dict | None = None, sys_dir: Path | None = N
         return {
             "status": "error",
             "detail": f"Python version mismatch (running={running_version}, declared={declared_version}). "
-                      f"Python must be updated via INSTALL.bat's own bootstrap mechanism, not ensure_runtime.",
+                      f"Python must be updated via _sys/core/bootstrap.bat's own bootstrap mechanism, not ensure_runtime.",
         }
 
     cfg = dict(cfg)

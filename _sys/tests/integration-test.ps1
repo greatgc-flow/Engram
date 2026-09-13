@@ -2,7 +2,7 @@
 # integration-test.ps1  -  Engram Full Integration Test Suite (MECE Lifecycle)
 #
 # Coverage:
-#   A. Zero-base component completeness (install.bat)
+#   A. Zero-base component completeness (_sys\core\bootstrap.bat)
 #   B. Registration state verification (register.bat / unregister.bat)
 #   C. Cleanup verification (CLEANUP.bat)
 # ================================================================

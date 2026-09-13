@@ -35,7 +35,7 @@ Engram bootstraps a self-contained Windows dev environment — Python, Node.js, 
 ```powershell
 # Download & extract Engram-v3.2.7-portable-x64.zip from the release, then:
 cd Engram-v3.2.7-portable-x64
-.\INSTALL.bat
+.\_sys\core\bootstrap.bat
 .\register.bat
 ```
 [Latest release](https://github.com/greatgc-flow/Engram/releases/latest) — this is the exact archive the Winget submission below packages, so it's already validated (`winget validate` passes clean).
@@ -47,7 +47,7 @@ git clone https://github.com/greatgc-flow/Engram.git
 cd Engram
 
 :: 2. Bootstrap the portable environment (Python, Node, Git, VS Code, tools)
-.\INSTALL.bat
+.\_sys\core\bootstrap.bat
 
 :: 3. Register it — sets up the right-click context menu
 .\register.bat

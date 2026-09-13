@@ -175,14 +175,15 @@ class TestSystemLifecycle:
 
     def test_cleanup_tier4_source_files_survive(self, mock_env):
         """SYS-C4: Tier 4 후 소스 스크립트 생존, 데이터/문서만 삭제."""
-        (mock_env / "install.bat").write_text(":: install", encoding="utf-8")
+        (mock_env / r"_sys\core").mkdir(parents=True, exist_ok=True)
+        (mock_env / r"_sys\core\bootstrap.bat").write_text(":: install", encoding="utf-8")
         (mock_env / "register.bat").write_text(":: register", encoding="utf-8")
         (mock_env / "CLEANUP.bat").write_text(":: cleanup", encoding="utf-8")
         (mock_env / "_sys" / "start.bat").write_text(":: start", encoding="utf-8")
 
         cleanup.run_cleanup(tier=4, all_yes=True, base_dir=mock_env)
 
-        assert (mock_env / "install.bat").exists(), "install.bat은 Tier4 후 생존해야 함"
+        assert (mock_env / r"_sys\core\bootstrap.bat").exists(), r"_sys\core\bootstrap.bat은 Tier4 후 생존해야 함"
         assert (mock_env / "register.bat").exists(), "register.bat은 Tier4 후 생존해야 함"
         assert (mock_env / "CLEANUP.bat").exists(), "CLEANUP.bat은 Tier4 후 생존해야 함"
         assert (mock_env / "_sys").exists(), "_sys/ 폴더는 Tier4 후 생존해야 함"

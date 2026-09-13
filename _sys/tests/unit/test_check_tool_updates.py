@@ -286,7 +286,7 @@ def test_apply_yes_writes_backup_and_replaces_runtimes_with_proposed(monkeypatch
     assert current == proposed
 
 
-def test_apply_install_success_runs_install_bat_skip_update(monkeypatch, tmp_path):
+def test_apply_install_success_runs_bootstrap_bat_skip_update(monkeypatch, tmp_path):
     runtimes_path = tmp_path / "runtimes.json"
     _write_runtimes(runtimes_path)
 
@@ -322,7 +322,7 @@ def test_apply_install_success_runs_install_bat_skip_update(monkeypatch, tmp_pat
     assert apply_payload["install_succeeded"] is True
     assert calls
     assert calls[0][0][-1] == "--skip-update"
-    assert str(calls[0][0][0]).endswith("INSTALL.bat")
+    assert str(calls[0][0][0]).endswith(r"_sys\core\bootstrap.bat")
 
 
 def test_apply_install_failure_returns_4_after_successful_apply(monkeypatch, tmp_path):

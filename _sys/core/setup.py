@@ -1,7 +1,7 @@
 """
 setup.py - Thin wrapper. Logic moved to core.provisioner.
 Kept for backward compatibility (legacy callers). 
-Modern entry points (INSTALL.bat) route through dispatch.bat -> dispatcher.py -> core.provisioner.deploy.
+Modern entry points (_sys/core/bootstrap.bat) route through dispatch.bat -> dispatcher.py -> core.provisioner.deploy.
 """
 import sys
 from pathlib import Path

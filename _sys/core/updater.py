@@ -9,7 +9,7 @@ from checks import check_tool_updates
 def _parse_args(args: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Updater runner")
     parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
-    parser.add_argument("--install", action="store_true", help="Run INSTALL.bat after successful apply")
+    parser.add_argument("--install", action="store_true", help="Run _sys/core/bootstrap.bat after successful apply")
     parser.add_argument("--dry-run", action="store_true", help="Discover and show proposal, apply nothing")
     return parser.parse_args(args)
 

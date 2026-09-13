@@ -290,7 +290,7 @@ def run(ctx: dict) -> None:
         freed += _tier4(base_dir, sys_dir, dry_run)
 
     if tier >= 5:
-        if not _confirm("\n  [!!!] 최종 경고: Python 삭제 (INSTALL.bat 재실행 필수) 계속할까요? [y/N]: ", all_yes, dry_run):
+        if not _confirm("\n  [!!!] 최종 경고: Python 삭제 (_sys/core/bootstrap.bat 재실행 필수) 계속할까요? [y/N]: ", all_yes, dry_run):
             _print_summary(freed, dry_run)
             return
         print("\n[Tier 5] Purge — Python 런타임 삭제")

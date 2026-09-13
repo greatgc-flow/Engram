@@ -208,7 +208,7 @@ gaps.
 ## 7. Hardcoded but Genuinely Un-Generalizable Exceptions
 Per Constraint #5, exceptions must be flagged explicitly:
 
-1.  **The Bootstrap Shell Layer (`INSTALL.bat` / `launcher.sh`):** To launch Python, we need a shell script. Shell syntax (cmd/bash) is inherently OS-specific. This layer should do nothing more than resolve the Python executable path and pass arguments.
+1.  **The Bootstrap Shell Layer (`_sys/core/bootstrap.bat` / `launcher.sh`):** To launch Python, we need a shell script. Shell syntax (cmd/bash) is inherently OS-specific. This layer should do nothing more than resolve the Python executable path and pass arguments.
 2.  **Low-Level OS API Calls (Terminal / PTY):** e.g., `pywinpty` for AntiGravity's transport on Windows. These must be encapsulated behind a General interface (e.g., `ITerminal`), but the concrete classes will inherently contain specific hardcoded syscalls.
 3.  **Process Supervision & Command Resolution:** Managing subprocesses (starting, tracking PIDs, killing trees) touches OS primitives heavily.
 4.  **Filesystem Permissions & Locking:** Atomic file replacements and read/write locks behave fundamentally differently on NTFS vs. POSIX.
