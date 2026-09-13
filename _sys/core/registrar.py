@@ -517,7 +517,7 @@ def clean_orphans(ctx: dict) -> dict:
 def menu_status(ctx: dict) -> dict:
     """Read-only check for menu registration status and orphaned entries."""
     sys_dir    = ctx["sys_dir"]
-    base_dir   = ctx.get("base_dir")
+    base_dir   = ctx["base_dir"]
     relay_root = Path(os.environ.get("LOCALAPPDATA", ""))
 
     print(f"\n{'='*50}")

@@ -40,13 +40,12 @@ if "%_MIGRATE_LAYOUT%"=="1" (
 )
 :: -------------------------------------
 
-:: Existing path routes to open
-if exist "%SUBCMD%\" goto :cmd_open_implicit
-
 :: Shift first argument so %1-%9 in sub-scripts receives remaining arguments
 shift
 
-:: 1. Public verbs
+:: 1. Public verbs (checked before the existing-path fallback: a folder that
+:: happens to be named like a verb is opened only via the explicit
+:: 'engram open <name>', per the ratified command-surface rule ordering)
 if /i "%SUBCMD%"=="open" goto :cmd_open
 if /i "%SUBCMD%"=="update" goto :cmd_update
 if /i "%SUBCMD%"=="doctor" goto :cmd_doctor
@@ -65,6 +64,9 @@ if /i "%SUBCMD%"=="cleanup" goto :retired_cleanup
 if /i "%SUBCMD%"=="launch" goto :retired_launch
 if /i "%SUBCMD%"=="start" goto :retired_launch
 
+:: 3. Existing path routes to open (only reached once SUBCMD matched no verb)
+if exist "%SUBCMD%\" goto :cmd_open_implicit
+
 goto :cmd_unknown
 
 :cmd_unknown
@@ -81,12 +83,7 @@ call "_sys\core\dispatch.bat" start %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :cmd_open_implicit
-:: Implicit open doesn't consume the first argument as a verb, so we don't use the shifted %1-%9.
-:: We pass %SUBCMD% and the unshifted remaining arguments. However, we already shifted above,
-:: wait, no. The shift is AFTER `goto :cmd_open_implicit`! Let's check:
-:: `if exist "%SUBCMD%\" goto :cmd_open_implicit` is BEFORE `shift`.
-:: So we must not shift yet. We just pass `%1 %2 ... %9` to dispatch.
-call "_sys\core\dispatch.bat" start %1 %2 %3 %4 %5 %6 %7 %8 %9
+call "_sys\core\dispatch.bat" start "%SUBCMD%" %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :check_setup
@@ -127,9 +124,9 @@ if /i "%~1"=="clean" (
     call "_sys\core\dispatch.bat" menu-clean %2 %3 %4 %5 %6 %7 %8 %9
     exit /b %ERRORLEVEL%
 )
-:: Unknown menu subcommand, let dispatch.bat handle or show error
-call "_sys\core\dispatch.bat" menu-%1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b %ERRORLEVEL%
+echo [Error] Unknown menu command: %1
+echo Run 'engram help' for available commands.
+exit /b 2
 
 :cmd_tidy
 call :check_setup

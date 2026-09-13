@@ -203,6 +203,19 @@ def test_existing_path_routes_to_open(surface_root):
     assert "DISPATCH_PIPELINE=start" in proc.stdout
 
 
+def test_verb_name_directory_still_runs_the_verb(surface_root):
+    """A directory literally named like a verb runs the verb, not 'open' on
+    that directory -- verb matching (rule 2) takes priority over the
+    existing-path fallback (rule 4). Accessing such a folder requires the
+    explicit 'engram open <name>' (§3.2)."""
+    verb_dir = surface_root / "update"
+    verb_dir.mkdir()
+
+    proc = run_engram(surface_root, "update")
+    assert proc.returncode == 0
+    assert "DISPATCH_PIPELINE=update" in proc.stdout
+
+
 # ----------------------------------------------------------------------------
 # 5. The 'Not set up' rule (§3.2)
 # ----------------------------------------------------------------------------
