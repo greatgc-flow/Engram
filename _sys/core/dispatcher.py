@@ -51,7 +51,7 @@ def _build_ctx(cmd: str, extra_args: list) -> dict:
         "state":    {},
     }
     # Pre-load prior register state for commands that undo it
-    if cmd in ("unregister", "cleanup"):
+    if cmd in ("unregister",):
         for fname in ("register.state.json", "install.state.json"):
             sf = paths["state"] / fname
             if sf.exists():

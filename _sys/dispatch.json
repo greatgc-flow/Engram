@@ -37,12 +37,6 @@
             "idempotent": true,
             "failure_policy": "abort"
         },
-        "scrub.run": {
-            "module": "core.scrubber",
-            "method": "run",
-            "idempotent": true,
-            "failure_policy": "abort"
-        },
         "tidy.run": {
             "module": "core.tidy_temp",
             "method": "run",
@@ -102,9 +96,6 @@
         "unregister": [
             "registry.remove",
             "state.prune"
-        ],
-        "cleanup": [
-            "scrub.run"
         ],
         "menu-cleanup": [
             "registry.clean_orphans"

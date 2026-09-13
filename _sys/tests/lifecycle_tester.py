@@ -127,18 +127,6 @@ def main(target_dir):
     if check_registry(leaf): raise AssertionError("Registry still exists!")
     log("Unregister passed.")
 
-    log("\n=== 5. Test ZeroBase Cleanup (Tier 4) ===")
-    cleanup_bat = tgt / "cleanup.bat"
-    # Supply CLI args to answer 'yes' to prompts
-    subprocess.run(
-        ["cmd", "/c", f".\\{cleanup_bat.relative_to(tgt)}", "--tier", "4", "--all"],
-        cwd=str(tgt), check=True, input=b"\n",
-    )
-    if (tgt / "_sys" / "env" / "venv").exists(): raise AssertionError("_sys/env/venv not deleted!")
-    if (tgt / "_sys" / "env" / "nodejs").exists(): raise AssertionError("_sys/env/nodejs not deleted!")
-    if (tgt / "workspace").exists(): raise AssertionError("workspace not deleted!")
-    if list(tgt.glob("*.md")): raise AssertionError("Root markdown files not deleted!")
-    log("ZeroBase Cleanup passed.")
 
     log("\n=== 6. Test Install (Setup) ===")
     subprocess.run(

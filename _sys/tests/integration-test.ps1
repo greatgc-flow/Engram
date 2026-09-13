@@ -4,7 +4,6 @@
 # Coverage:
 #   A. Zero-base component completeness (_sys\core\bootstrap.bat)
 #   B. Registration state verification (engram menu enable / menu disable)
-#   C. Cleanup verification (scrubber.py)
 # ================================================================
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -104,12 +103,7 @@ if (Test-Path $regStatePath) {
     T "SUBST drive captured in state" ($null -ne $substDrive)
 }
 
-# ================================================================
-# GROUP C: Cleanup Safety
-# ================================================================
-H "GROUP C: Cleanup Utility Readiness"
 
-T "scrubber.py exists"  (Test-Path "$SYS\core\scrubber.py")
 
 Write-Host "`n================================================================"
 Write-Host "  RESULT: PASS=$pass  FAIL=$fail  TOTAL=$total"

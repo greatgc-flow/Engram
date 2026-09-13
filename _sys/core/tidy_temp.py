@@ -201,6 +201,27 @@ def plan_pip_cache() -> list[Path]:
     return list(PIP_CACHE_DIR.iterdir())
 
 
+
+def plan_pycache() -> list[Path]:
+    return [p for p in (ROOT / "_sys").rglob("__pycache__") if p.is_dir()]
+
+def plan_pytest_cache_default() -> list[Path]:
+    p = ROOT / "_sys" / "tests" / ".pytest_cache"
+    return [p] if p.exists() else []
+
+def plan_launcher_logs(deep: bool) -> list[Path]:
+    if not deep:
+        return []
+    log_dir = ROOT / "_sys" / "data" / "logs"
+    if not log_dir.exists():
+        return []
+    logs = sorted(
+        [f for f in log_dir.rglob("*.log") if f.is_file()],
+        key=lambda f: f.stat().st_mtime
+    )
+    # keep the 5 most recent
+    return logs[:-5] if len(logs) > 5 else []
+
 def _vscode_is_running() -> bool:
     try:
         result = subprocess.run(
@@ -234,8 +255,27 @@ def plan_vscode_caches() -> list[Path]:
     ]
 
 
+
 def _rm(path: Path, apply: bool) -> int:
     """Returns bytes freed (best-effort, 0 for dry-run)."""
+    # Defense in depth: NEVER delete from these protected paths
+    protected = [
+        ROOT / "workspace",
+        ROOT / ".engram",
+        ROOT / "_archive",  # legacy-source: migration only
+        ROOT / "_sys" / "env" / "python",
+        ROOT / "_sys" / "tools" / "rg",
+        ROOT / "_sys" / "data" / "state",
+    ]
+    
+    # Also protect root files like .vscode, _state, WORKLOG.md, and all *.md
+    if path.parent == ROOT and (path.name in [".vscode", "_state", "WORKLOG.md"] or path.name.endswith(".md")):
+        raise AssertionError(f"Defense in depth: tidy attempted to delete protected root file {path}")
+        
+    for prot in protected:
+        if path == prot or prot in path.parents:
+            raise AssertionError(f"Defense in depth: tidy attempted to delete protected path {path}")
+
     if path.is_dir():
         size = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
     else:
@@ -262,18 +302,19 @@ def _rm(path: Path, apply: bool) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="actually delete (default: dry-run)")
+    ap.add_argument("--deep", action="store_true", help="include deeper cleans (e.g., launcher logs)")
     ap.add_argument(
         "--only", default=None,
         help=(
             "comma-separated subset: tmp,data_temp,brain,vscode,"
-            "pytest_cache,winget_cache,npm_cache,pip_cache,vscode_cache"
+            "pytest_cache,winget_cache,npm_cache,pip_cache,vscode_cache,pycache,pytest_cache_default,launcher_logs"
         ),
     )
     args = ap.parse_args()
 
     default_targets = (
         "tmp,data_temp,brain,vscode,"
-        "pytest_cache,winget_cache,npm_cache,pip_cache,vscode_cache"
+        "pytest_cache,winget_cache,npm_cache,pip_cache,vscode_cache,pycache,pytest_cache_default,launcher_logs"
     )
     targets = set((args.only or default_targets).split(","))
     now = datetime.datetime.now().timestamp()
@@ -305,6 +346,9 @@ def main() -> int:
     run("winget_cache", "winget_cache", plan_winget_cache())
     run("npm_cache", "npm_cache", plan_npm_cache())
     run("pip_cache", "pip_cache", plan_pip_cache())
+    run("pycache", "pycache", plan_pycache())
+    run("pytest_cache_default", "pytest_cache_default", plan_pytest_cache_default())
+    run("launcher_logs", "launcher_logs", plan_launcher_logs(args.deep))
     if "vscode_cache" in targets and VSCODE_USER_DATA_DIR.exists() and _vscode_is_running():
         print("[vscode_cache] skipped: VSCode (Code.exe) is currently running")
     run("vscode_cache", "vscode_cache", plan_vscode_caches())

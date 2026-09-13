@@ -18,7 +18,7 @@ _PORTABLE_ROOT = _SYS_DIR.parent
 
 # Shared vocabulary of vendor, cache, and peer-tool directories across checkers & packaging.
 # Empirically verified across live/portable-dev and runtime layouts:
-# - "temp": Engram runtime sandbox temp directory (_sys/data/temp, configured via env TEMP/TMP in launcher.py, swept by tidy_temp.py / scrubber.py).
+# - "temp": Engram runtime sandbox temp directory (_sys/data/temp, configured via env TEMP/TMP in launcher.py, swept by tidy_temp.py).
 # - "tmp": Portable root transient workspace temp (<portable_root>/tmp, swept by tidy_temp.py:ROOT_TMP_DIR), plus _sys/env/git/tmp and _sys/codex/config/tmp.
 # - ".tmp": Codex peer CLI cache/scratch hidden directory (_sys/codex/config/.tmp), generated externally by Codex CLI.
 #

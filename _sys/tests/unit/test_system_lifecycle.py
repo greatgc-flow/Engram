@@ -28,8 +28,6 @@ for p in (_cli_path, _sys_path):
         sys.path.insert(0, str(p))
 
 from core import registrar  # noqa: E402
-from core import scrubber  # noqa: E402
-import cleanup  # noqa: E402
 
 
 def _make_ctx(base_dir: Path, tmp_path: Path) -> dict:
@@ -121,74 +119,3 @@ class TestSystemLifecycle:
              patch("subprocess.run", return_value=MagicMock(returncode=0)):
             result = registrar.remove(ctx)
         assert result["status"] == "success"
-
-    def test_cleanup_tiers_sys_c1(self, mock_env):
-        """SYS-C1: 클린업 티어별 MECE 검증."""
-        (mock_env / "_sys" / "data" / "temp").mkdir()
-        (mock_env / "_sys" / "data" / "temp" / "junk.tmp").write_text("junk")
-        (mock_env / "_sys" / "env" / "venv").mkdir()
-
-        cleanup.run_cleanup(tier=1, all_yes=True, base_dir=mock_env)
-        assert not (mock_env / "_sys" / "data" / "temp").exists()
-        assert (mock_env / "_sys" / "env" / "venv").exists()
-
-        cleanup.run_cleanup(tier=2, all_yes=True, base_dir=mock_env)
-        assert not (mock_env / "_sys" / "env" / "venv").exists()
-        assert (mock_env / "workspace").exists()
-
-        cleanup.run_cleanup(tier=4, all_yes=True, base_dir=mock_env)
-        assert not (mock_env / "workspace").exists()
-        assert not (mock_env / "_archive").exists()
-        assert not (mock_env / "README.md").exists()
-        # local.config.bat is a source config (not data) — Tier 4 does NOT delete it
-        assert (mock_env / "_sys" / "local.config.bat").exists()
-
-
-    def test_tier2_never_deletes_register_state_ledger(self, mock_env):
-        """T30 (ag-caught orphan risk): cleanup must NEVER delete
-        register.state.json — a dropped SUBST drive can leave HKCU/junctions that
-        only this ledger + unregister.bat can remove. install.state.json is fine."""
-        state_dir = mock_env / "_sys" / "data" / "state"
-        state_dir.mkdir(parents=True)
-        (state_dir / "register.state.json").write_text("{}", encoding="utf-8")
-        (state_dir / "install.state.json").write_text("{}", encoding="utf-8")
-
-        cleanup.run_cleanup(tier=2, all_yes=True, base_dir=mock_env)
-
-        assert (state_dir / "register.state.json").exists()   # preserved (teardown ledger)
-        assert not (state_dir / "install.state.json").exists()  # install state cleaned
-
-    def test_cleanup_tier3_resets_runtime(self, mock_env):
-        """SYS-C3: Tier 3이 env/ 런타임 삭제(python 제외), tools/와 workspace는 유지."""
-        env_dir = mock_env / "_sys" / "env"
-        (env_dir / "python").mkdir(parents=True)
-        (env_dir / "nodejs").mkdir(parents=True)
-        (mock_env / "_sys" / "tools" / "rg").mkdir(parents=True)
-
-
-        cleanup.run_cleanup(tier=3, all_yes=True, base_dir=mock_env)
-
-        assert not (env_dir / "nodejs").exists(), "Tier3: env/nodejs 삭제되어야 함"
-        assert (env_dir / "python").exists(), "Tier3: env/python은 유지되어야 함"
-        assert (mock_env / "_sys" / "tools").exists(), "Tier3: tools/는 유지되어야 함"
-        assert (mock_env / "workspace").exists(), "Tier3: workspace는 유지되어야 함"
-
-    def test_cleanup_tier4_source_files_survive(self, mock_env):
-        """SYS-C4: Tier 4 후 소스 스크립트 생존, 데이터/문서만 삭제."""
-        (mock_env / r"_sys\core").mkdir(parents=True, exist_ok=True)
-        (mock_env / r"_sys\core\bootstrap.bat").write_text(":: install", encoding="utf-8")
-        (mock_env / "register.bat").write_text(":: register", encoding="utf-8")
-        (mock_env / "CLEANUP.bat").write_text(":: cleanup", encoding="utf-8")
-        (mock_env / "_sys" / "start.bat").write_text(":: start", encoding="utf-8")
-
-        cleanup.run_cleanup(tier=4, all_yes=True, base_dir=mock_env)
-
-        assert (mock_env / r"_sys\core\bootstrap.bat").exists(), r"_sys\core\bootstrap.bat은 Tier4 후 생존해야 함"
-        assert (mock_env / "register.bat").exists(), "register.bat은 Tier4 후 생존해야 함"
-        assert (mock_env / "CLEANUP.bat").exists(), "CLEANUP.bat은 Tier4 후 생존해야 함"
-        assert (mock_env / "_sys").exists(), "_sys/ 폴더는 Tier4 후 생존해야 함"
-        assert (mock_env / "_sys" / "start.bat").exists(), "start.bat은 Tier4 후 생존해야 함"
-
-        assert not (mock_env / "workspace").exists(), "workspace는 Tier4에서 삭제되어야 함"
-        assert not (mock_env / "_archive").exists(), "_archive는 Tier4에서 삭제되어야 함"
-        assert not (mock_env / "README.md").exists(), "*.md는 Tier4에서 삭제되어야 함"

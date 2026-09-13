@@ -111,7 +111,7 @@ def test_environment_lifecycle_core_is_intact() -> None:
     """The portable-environment lifecycle modules Engram owns must remain."""
     core = _SYS_DIR / "core"
     for name in ("provisioner.py", "dispatcher.py",
-                 "registrar.py", "updater.py", "doctor.py", "scrubber.py"):
+                 "registrar.py", "updater.py", "doctor.py", "tidy_temp.py"):
         assert (core / name).exists(), f"missing Engram lifecycle module: {name}"
 
 
