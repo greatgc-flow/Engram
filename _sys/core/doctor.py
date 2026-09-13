@@ -5,9 +5,9 @@ and free of active sessions - the "am I healthy right now?" one-shot the
 install/update/cleanup lifecycle was missing. Read-only: it mutates nothing and
 performs NO network calls (version discovery is UPDATE's job, not status's).
 
-Usage (via dispatch 'status' pipeline / STATUS.bat):
-    STATUS.bat            human-readable report
-    STATUS.bat --json     machine-readable JSON
+Usage (via dispatch 'doctor' pipeline / engram.cmd):
+    engram doctor            human-readable report
+    engram doctor --json     machine-readable JSON
 
 Exit/return: run(ctx) returns a dict whose "status" is "failed" ONLY on a
 genuinely broken install (portable python missing, or declared python version
@@ -146,7 +146,7 @@ def check_registration(base_dir: Path, sys_dir: Path) -> dict:
                 pass
     if total and present == 0:
         return {"name": "context_menu", "ok": True, "level": "info",
-                "detail": "configured but not registered (run register.bat)"}
+                "detail": "configured but not registered (run 'engram menu enable')"}
     return {"name": "context_menu", "ok": True, "level": "ok",
             "detail": f"{present}/{total} HKCU entries present"}
 

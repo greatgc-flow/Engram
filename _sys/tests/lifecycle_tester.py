@@ -1,3 +1,14 @@
+# STALE (pre-dates P1-7, in fact pre-dates P1-2/P1-3): this manual dev script's
+# main() still checks for a SUBST drive and _sys/config.json, both removed in
+# P1-2/P1-3, and calls register.bat/unregister.bat directly as standalone
+# .bat files, which no longer exist after P1-7 (use `engram.cmd menu enable`
+# / `engram.cmd menu disable`). It is not imported or executed by the
+# automated pytest suite (only statically scanned by test_boundary_imports.py
+# for forbidden imports), so this staleness does not fail CI, but main() will
+# not run correctly as-is. Needs a full rewrite against the current
+# architecture before next use; tracked as a standing follow-up, not fixed
+# in P1-7 part D (out of that item's actual scope: deleting the root
+# wrappers + _sys/cli shims, not re-architecting this script).
 import sys
 import os
 import subprocess

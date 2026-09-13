@@ -3,8 +3,8 @@
 #
 # Coverage:
 #   A. Zero-base component completeness (_sys\core\bootstrap.bat)
-#   B. Registration state verification (register.bat / unregister.bat)
-#   C. Cleanup verification (CLEANUP.bat)
+#   B. Registration state verification (engram menu enable / menu disable)
+#   C. Cleanup verification (scrubber.py)
 # ================================================================
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -109,7 +109,6 @@ if (Test-Path $regStatePath) {
 # ================================================================
 H "GROUP C: Cleanup Utility Readiness"
 
-T "CLEANUP.bat present" (Test-Path "$BASE\CLEANUP.bat")
 T "scrubber.py exists"  (Test-Path "$SYS\core\scrubber.py")
 
 Write-Host "`n================================================================"

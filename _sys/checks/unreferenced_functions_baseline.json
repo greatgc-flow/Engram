@@ -13,11 +13,6 @@
       "reason": "legacy_zero_production_callers"
     },
     {
-      "path": "_sys/cli/manage.py",
-      "name": "get_subst_mappings",
-      "reason": "legacy_zero_production_callers"
-    },
-    {
       "path": "_sys/core/env_loader.py",
       "name": "load_json_env",
       "reason": "became unreferenced when the legacy peer-coordination layer was removed in the Engram/peerhub separation (2026-08-19); retained with test coverage"

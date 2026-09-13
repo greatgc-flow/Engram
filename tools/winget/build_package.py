@@ -109,13 +109,6 @@ def get_release_notes_ko(version: str) -> str:
 # ── File Filter Rules for Clean Portable Archive ───────────────────────────
 ROOT_FILES_ALLOW = {
     "engram.cmd",
-    "STATUS.bat",
-    "UPDATE.bat",
-    "CLEANUP.bat",
-    "TIDY.bat",
-    "register.bat",
-    "unregister.bat",
-    "menu-cleanup.bat",
     "Engram.exe",
     "LICENSE",
     "README.md",

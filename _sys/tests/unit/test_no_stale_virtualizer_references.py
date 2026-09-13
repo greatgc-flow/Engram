@@ -2,14 +2,13 @@ from pathlib import Path
 
 _ROOT = Path(__file__).parent.parent.parent.parent
 
-# P1-3 (commit 0048275) deleted _sys/core/virtualizer.py entirely. These two
-# files each carried a leftover reference to it afterward (a dead-code import
-# guarded by a swallowed exception in scrubber.py, and a stale docstring
-# mention in manage.py) -- neither is a real functional bug on its own, but
-# both are misleading: they read as if virtualizer.py still exists.
+# P1-3 (commit 0048275) deleted _sys/core/virtualizer.py entirely. scrubber.py
+# carried a leftover reference to it afterward (a dead-code import guarded by
+# a swallowed exception) -- not a real functional bug on its own, but
+# misleading: it read as if virtualizer.py still existed. (_sys/cli/manage.py,
+# which had a similar stale docstring mention, was itself deleted in P1-7.)
 _FILES_MUST_NOT_MENTION_VIRTUALIZER = (
     "_sys/core/scrubber.py",
-    "_sys/cli/manage.py",
 )
 
 

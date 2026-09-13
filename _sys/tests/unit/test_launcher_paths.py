@@ -24,7 +24,6 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 SYS_DIR = Path(__file__).parent.parent.parent
-LAUNCH_BAT  = SYS_DIR / "cli" / "launch.bat"
 START_BAT   = SYS_DIR / "start.bat"
 LAUNCHER_PY = SYS_DIR / "core" / "launcher.py"  # logic moved from cli/launcher.py (thin wrapper)
 ENV_JSON    = SYS_DIR / "env.json"
@@ -44,10 +43,8 @@ class TestRegistryCommandFormat:
 
     def test_cmd_str_quotes_all_components(self):
         """cmd.exe /c ""path" "arg"" pattern — both path and arg quoted."""
-        sys.path.insert(0, str(SYS_DIR / "cli"))
-        import manage
         base = Path(r"D:\PortableDev (2) - 복사본")
-        script = base / "_sys" / "cli" / "launch.bat"
+        script = base / "_sys" / "start.bat"
         cmd = f'cmd.exe /c ""{script}" "%V""'
         # Outer wrapper: cmd.exe /c "..."
         assert cmd.startswith('cmd.exe /c "')
@@ -64,10 +61,8 @@ class TestRegistryCommandFormat:
     ])
     def test_physical_path_in_registry_cmd(self, base_path):
         """Physical path must be used in registry to survive reboot."""
-        sys.path.insert(0, str(SYS_DIR / "cli"))
-        import manage
         base = Path(base_path)
-        script = base / "_sys" / "cli" / "launch.bat"
+        script = base / "_sys" / "start.bat"
         cmd = f'cmd.exe /c ""{script}" "%V""'
         assert str(script) in cmd
         # Must not reference a different drive as the root
@@ -145,30 +140,10 @@ class TestSubstPathNormalization:
 
 
 class TestLaunchBatStructure:
-    """launch.bat must self-locate via %~dp0 for SUBST-resilient operation."""
-
-    def test_launch_bat_uses_tilde_dp0(self):
-        """launch.bat must derive SYS_DIR from %~dp0 (not hardcoded path).
-        %~dp0 gives the physical location of the batch file itself, allowing
-        the script to work both when called via SUBST and via physical path."""
-        content = LAUNCH_BAT.read_text(encoding="utf-8", errors="ignore")
-        assert "%~dp0" in content, "launch.bat must use %~dp0 for self-location"
-
-    def test_launch_bat_calls_start_bat(self):
-        """launch.bat must relay to start.bat via the derived path."""
-        content = LAUNCH_BAT.read_text(encoding="utf-8", errors="ignore")
-        assert "start.bat" in content, "launch.bat must call start.bat"
-        # Must forward all arguments
-        assert "%*" in content, "launch.bat must forward %* to start.bat"
-
-    def test_launch_bat_no_hardcoded_drive(self):
-        """launch.bat must not have any hardcoded drive letter paths."""
-        import re
-        content = LAUNCH_BAT.read_text(encoding="utf-8", errors="ignore")
-        hardcoded = re.search(r'(?<!%~dp0)[A-Z]:\\(?!sys)', content, re.IGNORECASE)
-        # If found, it's a potential portability issue
-        assert hardcoded is None, \
-            f"Potential hardcoded path in launch.bat: {hardcoded.group()}"
+    """launcher.py (Python) now owns path safety; _sys/cli/launch.bat and its
+    %~dp0 self-location/SUBST-resilience concerns were retired in P1-7 along
+    with the rest of the _sys/cli shims (SUBST support itself was already
+    removed in P1-3)."""
 
     def test_start_bat_uses_delayed_expansion_in_blocks(self):
         """Path safety for () characters.
@@ -223,27 +198,6 @@ class TestNodeJsPathSafety:
         for entry in nodejs_entries:
             assert entry.get("base") in ("env", "sys"), \
                 f"nodejs entry must use env/sys base: {entry}"
-
-
-class TestManagePySubstEncoding:
-    """manage.py must use OEM encoding when reading subst command output."""
-
-    def test_subst_output_uses_oem_encoding(self):
-        """[S-6/A] subst command output must be read with encoding='oem'.
-        Windows cmd tools use OEM code page (cp949 on Korean, cp1252 on English).
-        text=True without encoding uses ANSI which misreads Korean paths on some locales."""
-        manage_py = SYS_DIR / "cli" / "manage.py"
-        content = manage_py.read_text(encoding="utf-8", errors="ignore")
-        # Both get_subst_mappings() and global_cleanup() call subst
-        # Both must use encoding='oem' not just text=True
-        subst_calls = [
-            line for line in content.splitlines()
-            if '["subst"]' in line and 'check_output' in line
-        ]
-        assert subst_calls, "No subprocess.check_output(['subst']) calls found in manage.py"
-        for call in subst_calls:
-            assert "encoding='oem'" in call, \
-                f"subst call must use encoding='oem': {call.strip()}"
 
 
 class TestVSCodeLaunchArg:

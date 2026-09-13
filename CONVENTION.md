@@ -183,7 +183,7 @@ taint, not an expansion-time one (checked 2026-09-05):**
     ```
 
 ### 3.2 Dispatch Pattern
-Root-level batch files (`register.bat`, `unregister.bat`, `_sys/core/bootstrap.bat`, `CLEANUP.bat`) must remain minimal harnesses that delegate execution logic to Python modules under `_sys/core/` or `_sys/cli/`.
+`engram.cmd` and `_sys/core/bootstrap.bat` must remain minimal harnesses that delegate execution logic to Python modules under `_sys/core/` or `_sys/cli/`.
 
 ---
 

@@ -143,7 +143,7 @@ def _tier2(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> int:
     # State files (host-specific)
     if (data_dir / "state" / "register.state.json").exists():
         print("  [Keep] 등록 상태 (register.state.json) — 정리로 삭제하지 않습니다. "
-              "호스트 등록을 없애려면 unregister.bat 를 실행하세요.")
+              "호스트 등록을 없애려면 'engram menu disable' 를 실행하세요.")
     freed += _remove_path(data_dir / "state" / "install.state.json",  "설치 상태 (install.state.json)",  dry_run)
     freed += _remove_path(sys_dir  / "config.json",                   "시스템 로컬 설정 (config.json)",  dry_run)
 

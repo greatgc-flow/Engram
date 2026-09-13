@@ -22,7 +22,7 @@ Engram bootstraps a self-contained Windows dev environment — Python, Node.js, 
 - **AI-CLI lifecycle management** — a separate catalog (`_sys/tool-catalog.v1.json`) tracks Claude Code / Codex / agy the same way: install, version-pin, canary-verify. Engram never talks to these tools' models or protocols — it only manages the binaries.
 - **No junctions or SUBST drive** — Engram uses no directory junctions and mounts no virtual drive: AI-CLI personal config is redirected via plain environment variables instead (see `docs/engram-dotdir.md`), and paths are always resolved physical.
 - **Real uninstall** — `engram uninstall` computes an installation-scoped ID, writes a journal outside the install directory (survives the directory's own deletion), and hands off to an external helper that waits for the running process to exit before purging the folder — so a running instance never tries to delete the directory it's executing from.
-- **On-demand tool updates** — `UPDATE.bat` discovers newer versions of every catalog entry and applies them through the same pinned, hash-verified install path used for first-time setup.
+- **On-demand tool updates** — `engram update` discovers newer versions of every catalog entry and applies them through the same pinned, hash-verified install path used for first-time setup.
 - **Zero-bloat by construction** — the packaging pipeline (`tools/winget/build_package.py`) only ever bundles an explicit root-file allowlist plus `_sys/`, minus caches/temp/state; nothing accumulates into the distributed archive that wasn't put there on purpose.
 
 ## Prerequisites
@@ -35,9 +35,10 @@ Engram bootstraps a self-contained Windows dev environment — Python, Node.js, 
 ```powershell
 # Download & extract Engram-v3.2.7-portable-x64.zip from the release, then:
 cd Engram-v3.2.7-portable-x64
-.\_sys\core\bootstrap.bat
-.\register.bat
+.\engram.cmd
 ```
+Double-clicking `Engram.exe` works the same way. The first run prompts to set up the portable environment, then optionally to add the Explorer right-click menu entry.
+
 [Latest release](https://github.com/greatgc-flow/Engram/releases/latest) — this is the exact archive the Winget submission below packages, so it's already validated (`winget validate` passes clean).
 
 ### Option B: Git clone
@@ -46,17 +47,16 @@ cd Engram-v3.2.7-portable-x64
 git clone https://github.com/greatgc-flow/Engram.git
 cd Engram
 
-:: 2. Bootstrap the portable environment (Python, Node, Git, VS Code, tools)
-.\_sys\core\bootstrap.bat
+:: 2. Run engram -- first run bootstraps the portable environment
+::    (Python, Node, Git, VS Code, tools) and offers to register the
+::    right-click context menu
+.\engram.cmd
 
-:: 3. Register it — sets up the right-click context menu
-.\register.bat
-
-:: 4. (Optional) Preview/clean temporary workspace files (dry-run + confirm)
-.\TIDY.bat
+:: 3. (Optional) Preview/clean temporary workspace files (dry-run + confirm)
+.\engram.cmd tidy
 ```
 
-> Once registered, `.\STATUS.bat` reports environment health, and `.\UPDATE.bat` checks every catalog entry for newer pinned versions.
+> `engram doctor` reports environment health, and `engram update` checks every catalog entry for newer pinned versions.
 
 ### Option C: Winget (submitted, not yet live)
 ```powershell
@@ -70,17 +70,16 @@ This does **not work yet** — the manifest was submitted as [microsoft/winget-p
 
 | Command | Does |
 |---|---|
-| `engram install` / `setup` | Bootstrap the portable runtime and tool catalog |
-| `engram status` / `doctor` | Report environment health (runtimes, tools, configuration) |
-| `engram register` | Set up the right-click context menu (equivalent to `register.bat`) |
-| `engram unregister` | Undo whatever `register` set up, leaving the portable folder itself intact |
-| `engram update` | Discover and apply pinned-version updates across the catalog |
-| `engram cleanup` | Tiered cache/temp reclamation (`_sys/core/scrubber.py`) |
-| `engram tidy` | Interactive, dry-run-first temp-file cleanup preview |
-| `engram menu-cleanup` | On-demand sweep of every right-click context-menu entry (any install, not just this one) — removes ones whose recorded folder no longer exists |
-| `engram launch` / `start` | Open the registered environment (VS Code + shell) |
-| `engram uninstall` | Full removal: registry teardown, then a background helper purges the folder once this process exits |
+| `engram` / `engram open [PATH]` | Open a workspace (default action). On first run (no portable Python yet), prompts to bootstrap the environment and optionally register the right-click context menu. |
+| `engram update [--check] [--yes] [--only NAME[,NAME...]]` | Discover and apply pinned-version updates across the catalog |
+| `engram doctor [--json]` | Report environment health (runtimes, tools, configuration) |
+| `engram menu [status\|enable\|disable\|clean]` | Manage the right-click context menu; bare `menu`/`menu status` is read-only |
+| `engram tidy [--apply] [--deep]` | Dry-run-first temp-file cleanup preview; `--apply` deletes the planned items |
+| `engram uninstall [--yes] [--purge-data]` | Full removal: registry teardown, then a background helper purges the folder once this process exits |
 | `engram version` / `--version` / `-v` | Print the current version (`_sys/core/version.json`) |
+| `engram help` / `--help` / `-h` | List these commands |
+
+`install`, `setup`, `status`, `register`, `unregister`, `cleanup`, `menu-cleanup`, `launch`, and `start` are retired verbs — each prints its replacement above and exits 2 rather than silently aliasing.
 
 To install or update an individual AI CLI tool directly:
 ```bat
