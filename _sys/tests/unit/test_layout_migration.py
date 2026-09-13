@@ -203,7 +203,8 @@ def test_m0_preflight_refusal(tmp_path, capsys):
     captured = capsys.readouterr().out
     assert "subst W: /D" in captured
     assert "rmdir \"C:\\some_host\"" in captured
-    assert "delete the subst_drive key and junctions entries from `_sys/data/state/register.state.json`." in captured
+    assert "Delete 'subst_drive' and 'junctions' entries from" in captured
+    assert "register.state.json" in captured
     
     # Snapshot after
     after = list(tmp_path.rglob("*"))

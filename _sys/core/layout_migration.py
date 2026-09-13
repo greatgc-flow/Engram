@@ -170,29 +170,18 @@ def merge_declarations_impl(defaults_dir: Path, live_dir: Path, base_state_dir: 
         except Exception as e:
             logger.error(f"Failed to merge {filename}: {e}")
             sys.exit(1)
-# WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 wiring happens in follow-up dispatch"
+
+# WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 orchestration wiring happens in a follow-up dispatch"
 def m0_preflight(base_dir: Path, sys_dir: Path) -> bool:
     from _sys.core.doctor import check_legacy_host_integration
     result = check_legacy_host_integration(base_dir, sys_dir)
     if result.get("level") == "warning":
-        state_file = sys_dir / "data" / "state" / "register.state.json"
-        subst_drive = "X"
-        junctions = []
-        if state_file.exists():
-            try:
-                with open(state_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    subst_drive = data.get("subst_drive") or "X"
-                    junctions = data.get("junctions") or []
-            except Exception:
-                pass
-        
-        print(f"first run `subst` and confirm the line `{subst_drive}:\\: => {base_dir}`; do nothing if it points elsewhere.")
-        print(f"subst {subst_drive}: /D")
-        for j in junctions:
-            host = j.get("host") if isinstance(j, dict) else str(j)
-            print(f'rmdir "{host}"')
-        print("delete the subst_drive key and junctions entries from `_sys/data/state/register.state.json`.")
+        # Reuse the already-correct instructions from the doctor check itself
+        # (it accounts for both register.state.json's subst_drive AND the
+        # legacy _sys/config.json SUBST_DRIVE_LETTER fallback) rather than
+        # re-deriving a narrower version here that would print a placeholder
+        # drive letter when only the config.json signal is present.
+        print(result.get("detail", "legacy host integration recorded."))
         return False
     return True
 # WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 wiring happens in follow-up dispatch"
