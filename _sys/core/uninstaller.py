@@ -20,6 +20,7 @@ import subprocess
 import sys
 from typing import List, Tuple
 import uuid
+from core.layout import INSTALL_ROOT_ENTRIES
 
 # Constant list of top-level _sys program entries for v3.2.7 (Ratified §6.1)
 V326_SYS_PROGRAM_ENTRIES = {
@@ -43,14 +44,6 @@ V326_SYS_PROGRAM_ENTRIES = {
     "tools",
 }
 
-ROOT_PROGRAM_NAMES = {
-    "engram.exe",
-    "engram.cmd",
-    "readme.md",
-    "license",
-    "wrapper.cs",
-    "convention.md",
-}
 
 
 @dataclass
@@ -121,7 +114,7 @@ def plan_uninstall(base_dir: Path, sys_dir: Path, purge_data: bool = False) -> U
                     plan.targets.append(entry_path)
                 else:
                     plan.items_to_keep.append((entry_path, "your projects"))
-            elif name_lower in ROOT_PROGRAM_NAMES or name_lower.endswith(".bat"):
+            elif name_lower in {s.lower() for s in INSTALL_ROOT_ENTRIES} or name_lower.endswith(".bat"):
                 plan.targets.append(entry_path)
             else:
                 # Unknown root entry
