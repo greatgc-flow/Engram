@@ -130,7 +130,8 @@ these are different bug classes from `&`, not the same one:
   A generated batch script that captures `%~1..%~n` arguments and
   *also* needs delayed expansion later (e.g. for its own loop/counter
   logic) should capture the raw arguments first, then enable delayed
-  expansion (see `manage.py`'s uninstall helper).
+  expansion (see `_sys/core/bootstrap.bat`'s ordering of `cd /d %~dp0`
+  before `setlocal enabledelayedexpansion`).
 - Both confirmed via real fresh-folder testing (not reasoned about) --
   see the separation backlog's 2026-09-05 entry for the specific
   before/after evidence.
@@ -173,7 +174,7 @@ taint, not an expansion-time one (checked 2026-09-05):**
 ## 3. Host Integration & Registry Commands
 
 ### 3.1 Registry Command Quoting
-- Always wrap registry commands with double quotes: `cmd.exe /c ""<physical_path>\_sys\cli\launch.bat" "%V.""`.
+- Always wrap registry commands with double quotes: `cmd.exe /c ""<relay_path>" "%V.""`, where `<relay_path>` is the generated per-entry relay `.bat` (see `_sys/context_menu.json`'s `content_template`), which itself calls `.\_sys\start.bat`.
 - **Trailing Backslash Escape Fix (CRITICAL)**:
   - Windows passes directory targets (such as `P:\`) with a trailing backslash. In a command like `"%V"`, this becomes `"P:\"`, escaping the closing quote and corrupting arguments.
   - Always append a dot to the argument: `"%V."`.
