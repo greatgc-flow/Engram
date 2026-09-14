@@ -239,9 +239,10 @@
       "memory": "session",
       "session_mode": "reuse",
       "timeout": 0,
-      "default_profile": "deepthink",
+      "default_profile": "effort",
       "interactive_default_profile": "effort",
-      "_interactive_default_profile_note": "Used only by cli/peer_console.py for human-driven interactive terminal launches (agy.bat etc). hub.py IPC ask still uses default_profile (deepthink) unchanged. Per-session override always wins; this only sets the launch-time seed. Added 2026-07-19.",
+      "_default_profile_note": "Changed 2026-09-14 (R:10 unanimous, ag+cx ACCEPT) from deepthink to effort, extending the 2026-08-15 cc-only Accord to all 3 peers: routine hub.py IPC ask/broadcast no longer defaults to burning deepthink-tier quota. deepthink (or cx.astra) remains available on explicit request for design/architecture work and stays the enforced floor for binding_vote_risk_8_plus_min_tier (protocol.json decision_tier_floor, unaffected by this change). Neither peer identified a routine (non-design, non-binding-vote) category that should keep deepthink as its default; no comparative failure-rate data existed either way (ag: DIR-004, no empirical probe attached; cx: none available).",
+      "_interactive_default_profile_note": "Used only by cli/peer_console.py for human-driven interactive terminal launches (agy.bat etc). hub.py IPC ask now also uses effort (see _default_profile_note above, 2026-09-14). Per-session override always wins; this only sets the launch-time seed. Added 2026-07-19.",
       "capability_class": "unsandboxed_trusted_mutation",
       "profiles": {
         "standard": {
@@ -418,9 +419,10 @@
       "memory": "session",
       "session_mode": "reuse",
       "timeout": 0,
-      "default_profile": "deepthink",
+      "default_profile": "effort",
       "interactive_default_profile": "effort",
-      "_interactive_default_profile_note": "Used only by cli/peer_console.py for human-driven interactive terminal launches (codex.bat etc). hub.py IPC ask still uses default_profile (deepthink) unchanged. Per-session override always wins; this only sets the launch-time seed. Added 2026-07-19.",
+      "_default_profile_note": "Changed 2026-09-14 (R:10 unanimous, ag+cx ACCEPT) from deepthink to effort, extending the 2026-08-15 cc-only Accord to all 3 peers: routine hub.py IPC ask/broadcast no longer defaults to burning deepthink-tier quota. deepthink/cx.astra remain available on explicit request for design/architecture work and stay the enforced floor for binding_vote_risk_8_plus_min_tier (protocol.json decision_tier_floor, unaffected by this change). cx's own ACCEPT noted its quota headroom was ~1% at review time, favoring this change, though that is a contextual/reported figure, not an independently measured comparison.",
+      "_interactive_default_profile_note": "Used only by cli/peer_console.py for human-driven interactive terminal launches (codex.bat etc). hub.py IPC ask now also uses effort (see _default_profile_note above, 2026-09-14). Per-session override always wins; this only sets the launch-time seed. Added 2026-07-19.",
       "capability_class": "sandboxed_mutation",
       "profiles": {
         "standard": {
