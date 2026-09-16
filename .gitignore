@@ -259,3 +259,12 @@ _sys/data/check_contracts_state.json
 # (sessionId/pid/acquiredAt) -- neither belongs in P:'s own history.
 peerhub/
 _sys/claude/project/scheduled_tasks.lock
+
+# 2026-09-16 cleanup: local-only runtime state/caches that showed up as
+# untracked noise in `git status` -- none of these belong in P:'s history.
+# .peerhub/ is a live per-checkout peerhub SQLite DB (WAL journaling);
+# .ais/ is local AI-tool session/config data; .pnpm-store/ is pnpm's
+# content-addressable package cache.
+.peerhub/
+.ais/
+.pnpm-store/
