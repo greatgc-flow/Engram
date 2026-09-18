@@ -5,7 +5,6 @@ import argparse
 import sys
 import shutil
 import json
-import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -34,13 +33,10 @@ def _download_and_stage_core_update(
 
     provisioner._secure_download(url, zip_path)
 
-    h = hashlib.sha256()
-    with open(zip_path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    if h.hexdigest().lower() != checksum_value.lower():
+    actual_hash = provisioner._hash_file(zip_path, "sha256")
+    if actual_hash.lower() != checksum_value.lower():
         raise ValueError(
-            f"Checksum mismatch: expected {checksum_value}, got {h.hexdigest()}"
+            f"Checksum mismatch: expected {checksum_value}, got {actual_hash}"
         )
 
     if staged_dir.exists():
@@ -390,11 +386,8 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                 for path_str, expected_hash in manifest_files.items():
                     target_file = staged_dir / path_str
                     if target_file.exists() and target_file.is_file():
-                        th = hashlib.sha256()
-                        with open(target_file, "rb") as f:
-                            for chunk in iter(lambda: f.read(65536), b""):
-                                th.update(chunk)
-                        if th.hexdigest().upper() != expected_hash.upper():
+                        actual_file_hash = provisioner._hash_file(target_file, "sha256")
+                        if actual_file_hash.upper() != expected_hash.upper():
                             raise ValueError(f"staged file '{path_str}' hash mismatch")
 
             # Handoff

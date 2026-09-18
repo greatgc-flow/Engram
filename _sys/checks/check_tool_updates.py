@@ -27,7 +27,7 @@ sys.path.insert(0, str(_SYS_DIR / "core"))
 import version_resolver  # noqa: E402
 
 RUNTIMES_PATH = _SYS_DIR / "runtimes.json"
-from _sys.core import state_paths
+from _sys.core import provisioner, state_paths
 ARCHIVE_ROOT = state_paths.proposals_dir(_PORTABLE_ROOT / "_sys")
 DISCOVERY_CACHE_PATH = state_paths.discovery_cache(_PORTABLE_ROOT / "_sys")
 RETENTION_KEEP = 20
@@ -44,11 +44,7 @@ def _utc_stamp() -> str:
 
 
 def _sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
+    return provisioner._hash_file(path, "sha256")
 
 
 def _read_json(path: Path) -> dict[str, Any]:
