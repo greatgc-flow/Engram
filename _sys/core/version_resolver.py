@@ -20,7 +20,7 @@ from typing import Any
 
 _SYS_DIR = Path(__file__).resolve().parents[1]
 _PORTABLE_ROOT = _SYS_DIR.parent
-from _sys.core import state_paths
+from _sys.core import provisioner, state_paths
 _DEFAULT_CACHE = state_paths.discovery_cache(_SYS_DIR)
 
 
@@ -29,11 +29,8 @@ def _now_utc() -> str:
 
 
 def _load_cache(cache_path: Path) -> dict[str, Any]:
-    try:
-        data = json.loads(cache_path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except (OSError, json.JSONDecodeError):
-        return {}
+    data = provisioner.load_json_with_fallback(cache_path, exceptions=(OSError, json.JSONDecodeError))
+    return data if isinstance(data, dict) else {}
 
 
 def _save_cache(cache_path: Path, cache: dict[str, Any]) -> None:

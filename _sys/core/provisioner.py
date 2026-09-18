@@ -55,13 +55,18 @@ def load_json_with_fallback(
     Shared implementation for the near-identical "check exists, try to
     parse, tolerate failure" pattern independently reimplemented across
     dispatcher.py, launcher.py, doctor.py, this module's own
-    _load_tool_catalog/_load_deferred, and registrar.py's
-    _load_context_menu -- which varied only in which exception types they
-    caught and whether they printed a warning on failure. Two call sites
-    with genuinely different semantics are deliberately NOT migrated to
-    this helper: provisioner._load_runtimes (fails loudly by design,
-    runtimes.json is required, not optional) and version_resolver's
-    _load_cache (also validates the parsed result is actually a dict).
+    _load_tool_catalog/_load_deferred, registrar.py's _load_context_menu,
+    updater.py's version-info ImportError fallback, and check_encoding.py's
+    _load_governance -- which varied only in which exception types they
+    caught and whether they printed a warning on failure. version_resolver's
+    _load_cache also uses this as its base load (via the `exceptions=`
+    param to match its narrower OSError/JSONDecodeError catch), layering
+    its own isinstance(dict) validation on top -- that extra check is NOT
+    something this generic helper does, so callers needing it must still
+    validate the return value themselves. One call site has genuinely
+    different semantics and is deliberately NOT migrated: provisioner.
+    _load_runtimes (fails loudly by design, runtimes.json is required,
+    not optional).
     """
 
     if default is None:
