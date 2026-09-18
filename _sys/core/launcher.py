@@ -114,9 +114,13 @@ def build_env(base_dir: Path, sys_dir: Path) -> dict:
     # .engram/ subdirs (dotdir consolidation, item 6): created idempotently
     # so a tool redirected there via the env vars above always finds a real
     # directory on first launch, without needing a separate migration step.
-    for sub in ("claude", "codex", "agy", "gh"):
-        (base_dir / ".engram" / sub).mkdir(parents=True, exist_ok=True)
-    (base_dir / ".engram" / "peerhub" / "config").mkdir(parents=True, exist_ok=True)
+    # Derived directly from tool_env_vars (not a separately-hardcoded list)
+    # so a new "base": "engram" entry can't silently go uncreated.
+    for spec in env_cfg.get("tool_env_vars", {}).values():
+        if spec.get("base") == "engram":
+            _resolve_path_entry(spec["base"], spec["sub"], sys_dir, base_dir).mkdir(
+                parents=True, exist_ok=True
+            )
 
     # PATH from env.json path_entries
     entries = [
