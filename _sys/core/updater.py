@@ -107,12 +107,7 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
         from core.version import load_version_info
         current_version_info = load_version_info(_SYS_DIR / "core" / "version.json")
     except ImportError:
-        def _fallback_load_version_info(path):
-            try:
-                return json.loads(path.read_text(encoding="utf-8"))
-            except Exception:
-                return {}
-        current_version_info = _fallback_load_version_info(_SYS_DIR / "core" / "version.json")
+        current_version_info = provisioner.load_json_with_fallback(_SYS_DIR / "core" / "version.json")
 
     current_engram_version = current_version_info.get("version", "unknown")
     
