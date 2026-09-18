@@ -37,6 +37,9 @@ _SYS_DIR = _CHECKS_DIR.parent
 _ROOT = _SYS_DIR.parent
 _GOVERNANCE_PATH = _SYS_DIR / "ai" / "governance_params.json"
 
+sys.path.insert(0, str(_ROOT))
+from _sys.core import provisioner
+
 # Governed text globs (repo-relative, forward slashes). Extend via governance.
 _DEFAULT_GOVERNED = [
     "_sys/docs-v2/**/*.md",
@@ -62,12 +65,7 @@ _QMARK_GAIN_MIN = 2
 
 
 def _load_governance() -> dict:
-    if _GOVERNANCE_PATH.exists():
-        try:
-            return json.loads(_GOVERNANCE_PATH.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return {}
+    return provisioner.load_json_with_fallback(_GOVERNANCE_PATH)
 
 
 def _config() -> tuple[list[str], list[str]]:
