@@ -12,12 +12,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from core import provisioner
+
 
 def _load_json(path: Path) -> dict:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    return provisioner.load_json_with_fallback(path)
 
 
 # The only 2 settings _sys/local.config.bat.template documents. Kept as an

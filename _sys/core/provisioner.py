@@ -16,7 +16,42 @@ import urllib.request
 import uuid
 import zipfile
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
+
+
+def load_json_with_fallback(
+    path: Path,
+    *,
+    default: Any = None,
+    exceptions: tuple[type[BaseException], ...] = (Exception,),
+    warn_label: str | None = None,
+) -> Any:
+    """Load JSON from `path`, returning `default` (a fresh {} if not
+    given) if the file is missing or fails to parse.
+
+    Shared implementation for the near-identical "check exists, try to
+    parse, tolerate failure" pattern independently reimplemented across
+    dispatcher.py, launcher.py, doctor.py, this module's own
+    _load_tool_catalog/_load_deferred, and registrar.py's
+    _load_context_menu -- which varied only in which exception types they
+    caught and whether they printed a warning on failure. Two call sites
+    with genuinely different semantics are deliberately NOT migrated to
+    this helper: provisioner._load_runtimes (fails loudly by design,
+    runtimes.json is required, not optional) and version_resolver's
+    _load_cache (also validates the parsed result is actually a dict).
+    """
+
+    if default is None:
+        default = {}
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except exceptions as e:
+        if warn_label:
+            print(f"[Warning] Failed to load {warn_label}: {e}")
+        return default
 
 
 def _load_runtimes(sys_dir: Path) -> tuple[dict, dict, dict]:
@@ -103,13 +138,7 @@ def _extract(zip_path: Path, dest: Path) -> None:
 
 
 def _load_tool_catalog(sys_dir: Path) -> dict:
-    p = sys_dir / "tool-catalog.v1.json"
-    if p.exists():
-        try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return {}
+    return load_json_with_fallback(sys_dir / "tool-catalog.v1.json")
 
 
 def _check_python_version(V: dict) -> None:
@@ -201,13 +230,9 @@ def _get_deferred_path(sys_dir: Path) -> Path:
 
 
 def _load_deferred(sys_dir: Path) -> dict:
-    p = _get_deferred_path(sys_dir)
-    if p.exists():
-        try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            pass
-    return {}
+    return load_json_with_fallback(
+        _get_deferred_path(sys_dir), exceptions=(OSError, json.JSONDecodeError)
+    )
 
 
 def _save_deferred(sys_dir: Path, data: dict) -> None:

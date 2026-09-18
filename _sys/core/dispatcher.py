@@ -14,14 +14,11 @@ base_dir = sys_dir.parent
 if str(sys_dir) not in sys.path:
     sys.path.insert(0, str(sys_dir))
 
+from core import provisioner
+
 
 def _load_json(path: Path) -> dict:
-    if path.exists():
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except Exception as e:
-            print(f"[Warning] Failed to load {path.name}: {e}")
-    return {}
+    return provisioner.load_json_with_fallback(path, warn_label=path.name)
 
 
 def _resolve_paths(base_dir: Path) -> dict:

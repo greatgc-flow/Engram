@@ -5,30 +5,24 @@ are sourced from context_menu.json. No hardcoding.
 """
 import os
 import re
-import json
 import subprocess
 import winreg
 from pathlib import Path
 
+from core import provisioner
+
 
 def _load_context_menu(sys_dir: Path) -> dict:
-    p = sys_dir / "context_menu.json"
-    if p.exists():
-        try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except Exception as e:
-            print(f"  [Warning] Failed to load context_menu.json: {e}")
-    return {}
+    return provisioner.load_json_with_fallback(
+        sys_dir / "context_menu.json", warn_label="context_menu.json"
+    )
 
 
 def _load_state(ctx: dict) -> dict:
     state_file = ctx["paths"]["state"] / "register.state.json"
-    if state_file.exists():
-        try:
-            return json.loads(state_file.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return ctx.get("prior_state", {})
+    return provisioner.load_json_with_fallback(
+        state_file, default=ctx.get("prior_state", {})
+    )
 
 
 def _safe_key(text: str) -> str:

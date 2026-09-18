@@ -23,13 +23,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from core import provisioner
+
 
 def _load_runtimes(sys_dir: Path) -> dict:
-    path = sys_dir / "runtimes.json"
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    return provisioner.load_json_with_fallback(sys_dir / "runtimes.json")
 
 
 def _installed_python_version(sys_dir: Path) -> str | None:
@@ -69,20 +67,12 @@ def check_legacy_host_integration(base_dir: Path, sys_dir: Path) -> dict:
     junctions = [] # legacy-detect
     subst_letter = None # legacy-detect
 
-    if state_file.exists():
-        try:
-            data = json.loads(state_file.read_text(encoding="utf-8"))
-            subst_drive = data.get("subst_drive") # legacy-detect
-            junctions = data.get("junctions", []) # legacy-detect
-        except Exception:
-            pass
+    data = provisioner.load_json_with_fallback(state_file)
+    subst_drive = data.get("subst_drive") # legacy-detect
+    junctions = data.get("junctions", []) # legacy-detect
 
-    if legacy_cfg.exists():
-        try:
-            cfg_data = json.loads(legacy_cfg.read_text(encoding="utf-8"))
-            subst_letter = cfg_data.get("SUBST_DRIVE_LETTER") # legacy-detect
-        except Exception:
-            pass
+    cfg_data = provisioner.load_json_with_fallback(legacy_cfg)
+    subst_letter = cfg_data.get("SUBST_DRIVE_LETTER") # legacy-detect
 
     has_legacy = bool(subst_drive or junctions or subst_letter)
     if has_legacy:
@@ -164,11 +154,7 @@ def _tool_present(sys_dir: Path, name: str, cfg: dict) -> bool:
 
 
 def _load_tool_catalog(sys_dir: Path) -> dict:
-    path = sys_dir / "tool-catalog.v1.json"
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    return provisioner.load_json_with_fallback(sys_dir / "tool-catalog.v1.json")
 
 
 def check_components(sys_dir: Path) -> dict:
