@@ -2,6 +2,26 @@ import os
 import json
 import re
 
+
+def _interpolate_braces(value: str, resolved: dict) -> str:
+    """Replace every `{key}` in `value` with `resolved[key]`, repeating up
+    to 5 passes so a value that itself contains another `{key}` (e.g.
+    `"sys"` resolving to `"{base}/_sys"`) settles once `base` is already
+    resolved. Shared by EnvironmentLoader._interpolate (which also handles
+    `{ROOT_DRIVE}` and OS-path normalization on top of this) and
+    load_json_env's own resolution loop -- both used to reimplement this
+    exact loop independently."""
+
+    for _ in range(5):
+        matches = re.findall(r"\{([^}]+)\}", value)
+        if not matches:
+            break
+        for match in matches:
+            if match in resolved:
+                value = value.replace(f"{{{match}}}", resolved[match])
+    return value
+
+
 class EnvironmentLoader:
     def __init__(self, config_path: str, root_drive: str):
         self.config_path = config_path
@@ -23,18 +43,11 @@ class EnvironmentLoader:
     def _interpolate(self, value: str) -> str:
         # Resolve {ROOT_DRIVE} first
         value = value.replace("{ROOT_DRIVE}", self.root_drive)
-        
-        # We need to resolve {key} using self.paths
-        # If the key isn't in self.paths yet, it might be resolved later, 
-        # but typically paths are defined in order.
-        for _ in range(5):
-            matches = re.findall(r"\{([^}]+)\}", value)
-            if not matches:
-                break
-            for match in matches:
-                if match in self.paths:
-                    value = value.replace(f"{{{match}}}", self.paths[match])
-                
+
+        # Resolve {key} using self.paths (a key not yet in self.paths is
+        # left as-is for this pass; typically paths are defined in order).
+        value = _interpolate_braces(value, self.paths)
+
         # Normalize slashes to OS standard (Windows -> \)
         # But ensure P: becomes P:\ if it stands alone or has a trailing slash in the interpolation
         normalized = os.path.normpath(value)
@@ -80,14 +93,7 @@ def load_json_env(config_path: str):
     resolved_paths = {}
     
     def resolve_val(val: str):
-        for _ in range(5):
-            matches = re.findall(r"\{([^}]+)\}", val)
-            if not matches:
-                break
-            for match in matches:
-                if match in resolved_paths:
-                    val = val.replace(f"{{{match}}}", resolved_paths[match])
-        return val
+        return _interpolate_braces(val, resolved_paths)
 
     for k, v in paths.items():
         resolved_paths[k] = resolve_val(v)
