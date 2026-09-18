@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from _sys.checks.check_tool_updates import _atomic_write_json
+from _sys.core import provisioner
 
 logger = logging.getLogger(__name__)
 
@@ -240,12 +241,7 @@ def m1_retire_shipped_files(base_dir: Path, sys_dir: Path, dry_run: bool = False
         return False
 
     def _compute_sha256(file_path: Path) -> str:
-        import hashlib
-        h = hashlib.sha256()
-        with open(file_path, "rb") as f:
-            while chunk := f.read(65536):
-                h.update(chunk)
-        return h.hexdigest().upper()
+        return provisioner._hash_file(file_path, "sha256").upper()
 
     to_retire = {}
     for cand in candidate_manifests:
