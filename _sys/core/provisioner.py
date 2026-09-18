@@ -32,6 +32,16 @@ def venv_python_exe(sys_dir: Path) -> Path:
     return sys_dir / "env" / "venv" / "Scripts" / "python.exe"
 
 
+def vscode_exe(sys_dir: Path) -> Path:
+    """Path to the portable VS Code executable shipped under env/vscode/."""
+    return sys_dir / "env" / "vscode" / "Code.exe"
+
+
+def npm_global_dir(sys_dir: Path) -> Path:
+    """Path to the shared npm global-install directory under env/nodejs/."""
+    return sys_dir / "env" / "nodejs" / "npm-global"
+
+
 def load_json_with_fallback(
     path: Path,
     *,
@@ -1005,7 +1015,7 @@ def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = 
         if not node_exe.exists():
             return {"status": "error", "detail": "Node.js not installed; run provisioner deploy for nodejs first"}
 
-        npm_global = env_dir / "nodejs" / "npm-global"
+        npm_global = npm_global_dir(sys_dir)
         bin_name = install.get("bin", f"{tool_id}.cmd")
         peer_cmd = npm_global / bin_name
 
@@ -1130,7 +1140,7 @@ def _runtime_postcondition(sys_dir: Path, name: str, cfg: dict) -> bool:
         "python": [portable_python_exe(sys_dir)],
         "nodejs": [runtime_dir / "node.exe"],
         "git": [runtime_dir / "cmd" / "git.exe", runtime_dir / "bin" / "git.exe"],
-        "vscode": [runtime_dir / "Code.exe"],
+        "vscode": [vscode_exe(sys_dir)],
         "pwsh": [runtime_dir / "pwsh.exe"],
     }.get(name)
     if expected is None:
@@ -1149,7 +1159,7 @@ def _peer_postcondition(sys_dir: Path, peer_id: str, cfg: dict) -> bool:
     mechanism = install.get("mechanism")
     if mechanism == "npm_peer":
         bin_name = install.get("bin", f"{peer_id}.cmd")
-        return (sys_dir / "env" / "nodejs" / "npm-global" / bin_name).exists()
+        return (npm_global_dir(sys_dir) / bin_name).exists()
     install_subdir = install.get("install_subdir", f"tools/{peer_id}")
     bin_name = install.get("bin", f"{peer_id}.exe")
     return (sys_dir / install_subdir / bin_name).exists()

@@ -224,7 +224,7 @@ def main(ctx: dict) -> None:
     os.chdir(target_dir)
 
     if run_mode == "DEV":
-        vscode_exe = sys_dir / "env" / "vscode" / "Code.exe"
+        vscode_exe = provisioner.vscode_exe(sys_dir)
         if vscode_exe.exists():
             log(f"[OK] VS Code: {target_dir}")
             subprocess.Popen([str(vscode_exe), "."], env=env)

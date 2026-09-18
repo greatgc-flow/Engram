@@ -148,7 +148,7 @@ def _tool_present(sys_dir: Path, name: str, cfg: dict) -> bool:
     bin_name = cfg.get("bin", f"{name}.exe")
     if (sys_dir / "tools" / name / bin_name).exists():
         return True
-    if (sys_dir / "env" / "nodejs" / "npm-global" / f"{name}.cmd").exists():
+    if (provisioner.npm_global_dir(sys_dir) / f"{name}.cmd").exists():
         return True
     return False
 
@@ -194,9 +194,10 @@ def check_components(sys_dir: Path) -> dict:
             continue
         checked += 1
         bin_name = tool.get("install", {}).get("bin", f"{tool_id}.exe")
+        npm_global = provisioner.npm_global_dir(sys_dir) if provisioner else sys_dir / "env" / "nodejs" / "npm-global"
         present = (
             (sys_dir / "tools" / tool_id / bin_name).exists()
-            or (sys_dir / "env" / "nodejs" / "npm-global" / f"{tool_id}.cmd").exists()
+            or (npm_global / f"{tool_id}.cmd").exists()
         )
         if not present:
             missing.append(f"tool/{tool_id}")
