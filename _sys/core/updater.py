@@ -331,7 +331,6 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     # Core update handoff would go here (Section 8.4)
     if core_update:
         print("\nStaging Engram core update...")
-        import subprocess
         from core.layout import INSTALL_ROOT_ENTRIES
 
         target_version = core_update["latest_version"]
@@ -409,22 +408,8 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
             plan_file = temp_update_dir / "plan.json"
             plan_file.write_text(json.dumps(plan_payload, indent=2, ensure_ascii=False), encoding="utf-8")
             
-            flags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
-            subprocess.Popen(
-                [
-                    "powershell.exe",
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-File",
-                    str(helper_dest),
-                    "-PlanPath",
-                    str(plan_file),
-                ],
-                cwd=str(temp_update_dir),
-                creationflags=flags,
-                close_fds=True,
+            provisioner._launch_detached_powershell_helper(
+                helper_dest, plan_file, temp_update_dir
             )
             
             print(f"\nEngram will finish updating to {target_version} when this window closes.")

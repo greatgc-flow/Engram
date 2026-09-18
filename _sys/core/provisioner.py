@@ -332,6 +332,38 @@ def _secure_download(url: str, dest_path: Path) -> dict:
     }
 
 
+def _launch_detached_powershell_helper(
+    helper_script: Path, plan_file: Path, cwd: Path
+) -> subprocess.Popen:
+    """Launch a PowerShell helper script as a detached background process
+    and return immediately without waiting for it.
+
+    Shared by updater.py (core_update_helper.ps1) and uninstaller.py
+    (uninstall_helper.ps1) -- both used to independently build the exact
+    same argv shape and creation flags for handing off to an external
+    PowerShell helper that outlives this process (e.g. to replace files
+    this process itself has open, or to finish cleanup after this process
+    exits)."""
+
+    flags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+    return subprocess.Popen(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(helper_script),
+            "-PlanPath",
+            str(plan_file),
+        ],
+        cwd=str(cwd),
+        creationflags=flags,
+        close_fds=True,
+    )
+
+
 def _flatten_zip_extract(extract_root: Path, active_root: Path) -> None:
     """Copy every *.exe found anywhere under extract_root up to the flat
     active_root layout (mirrors _install_tools' existing rglob-flatten so

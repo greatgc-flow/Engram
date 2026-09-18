@@ -16,11 +16,11 @@ import json
 import os
 from pathlib import Path
 import shutil
-import subprocess
 import sys
 from typing import List, Tuple
 import uuid
 from core.layout import INSTALL_ROOT_ENTRIES
+from core import provisioner
 
 # Constant list of top-level _sys program entries for v3.2.7 (Ratified §6.1)
 V326_SYS_PROGRAM_ENTRIES = {
@@ -278,21 +278,5 @@ def run(ctx: dict) -> None:
     shutil.copyfile(helper_src, helper_dest)
 
     print("  - Handing off to external uninstall helper...")
-    flags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
-    subprocess.Popen(
-        [
-            "powershell.exe",
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(helper_dest),
-            "-PlanPath",
-            str(plan_file),
-        ],
-        cwd=str(temp_dir),
-        creationflags=flags,
-        close_fds=True,
-    )
+    provisioner._launch_detached_powershell_helper(helper_dest, plan_file, temp_dir)
     sys.exit(0)
