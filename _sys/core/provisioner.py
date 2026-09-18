@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+TOOL_CATALOG_FILENAME = "tool-catalog.v1.json"
+
 
 def load_json_with_fallback(
     path: Path,
@@ -138,7 +140,7 @@ def _extract(zip_path: Path, dest: Path) -> None:
 
 
 def _load_tool_catalog(sys_dir: Path) -> dict:
-    return load_json_with_fallback(sys_dir / "tool-catalog.v1.json")
+    return load_json_with_fallback(sys_dir / TOOL_CATALOG_FILENAME)
 
 
 def _check_python_version(V: dict) -> None:

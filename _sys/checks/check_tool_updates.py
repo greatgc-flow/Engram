@@ -81,7 +81,7 @@ def _versions_equal(a: str, b: str) -> bool:
     return norm(a) == norm(b)
 
 
-CATALOG_PATH = _SYS_DIR / "tool-catalog.v1.json"
+CATALOG_PATH = _SYS_DIR / provisioner.TOOL_CATALOG_FILENAME
 
 
 def _iter_discoverable_entries(runtimes: dict[str, Any], only: list[str] | None = None):
@@ -104,37 +104,31 @@ def _iter_discoverable_entries(runtimes: dict[str, Any], only: list[str] | None 
                 continue
             yield section, name, cfg, str(provider), None, None
 
-    catalog_path = RUNTIMES_PATH.parent / "tool-catalog.v1.json"
-    if catalog_path.exists():
-        try:
-            catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
-
-            for tool in catalog.get("tools", []):
-                if not isinstance(tool, dict):
-                    continue
-                name = tool.get("tool_id")
-                if not name or name in runtimes.get("tools", {}):
-                    continue
-                if only is not None and name not in only:
-                    continue
-                source = tool.get("source", {})
-                provider = source.get("discovery_provider")
-                discovery_id = source.get("discovery_id")
-                cfg = {
-                    "version": tool.get("version", ""),
-                    "discovery_provider": provider,
-                    "discovery_id": discovery_id,
-                    "url": source.get("url"),
-                }
-                if not provider or provider == "manual":
-                    yield "catalog", name, cfg, None, None, "no discovery_provider" if not provider else "manual"
-                    continue
-                if not discovery_id:
-                    yield "catalog", name, cfg, None, "missing discovery_id", None
-                    continue
-                yield "catalog", name, cfg, str(provider), None, None
-        except Exception:
-            pass
+    catalog = provisioner.load_json_with_fallback(RUNTIMES_PATH.parent / provisioner.TOOL_CATALOG_FILENAME)
+    for tool in catalog.get("tools", []):
+        if not isinstance(tool, dict):
+            continue
+        name = tool.get("tool_id")
+        if not name or name in runtimes.get("tools", {}):
+            continue
+        if only is not None and name not in only:
+            continue
+        source = tool.get("source", {})
+        provider = source.get("discovery_provider")
+        discovery_id = source.get("discovery_id")
+        cfg = {
+            "version": tool.get("version", ""),
+            "discovery_provider": provider,
+            "discovery_id": discovery_id,
+            "url": source.get("url"),
+        }
+        if not provider or provider == "manual":
+            yield "catalog", name, cfg, None, None, "no discovery_provider" if not provider else "manual"
+            continue
+        if not discovery_id:
+            yield "catalog", name, cfg, None, "missing discovery_id", None
+            continue
+        yield "catalog", name, cfg, str(provider), None, None
 
 
 

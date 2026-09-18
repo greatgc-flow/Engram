@@ -288,7 +288,7 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
         if catalog_backup_path and Path(catalog_backup_path).exists():
             try:
                 old_catalog = json.loads(Path(catalog_backup_path).read_text(encoding="utf-8"))
-                live_catalog_path = _SYS_DIR / "tool-catalog.v1.json"
+                live_catalog_path = _SYS_DIR / provisioner.TOOL_CATALOG_FILENAME
                 live_catalog = json.loads(live_catalog_path.read_text(encoding="utf-8"))
                 
                 changed = False

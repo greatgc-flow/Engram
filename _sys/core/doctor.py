@@ -154,7 +154,7 @@ def _tool_present(sys_dir: Path, name: str, cfg: dict) -> bool:
 
 
 def _load_tool_catalog(sys_dir: Path) -> dict:
-    return provisioner.load_json_with_fallback(sys_dir / "tool-catalog.v1.json")
+    return provisioner.load_json_with_fallback(sys_dir / provisioner.TOOL_CATALOG_FILENAME)
 
 
 def check_components(sys_dir: Path) -> dict:
