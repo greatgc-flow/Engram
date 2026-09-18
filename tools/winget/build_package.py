@@ -38,6 +38,14 @@ COPYRIGHT = "Copyright (c) 2026 greatgc-flow"
 DEFAULT_LOCALE = "en-US"
 SCHEMA_VERSION = "1.12.0"
 DEFAULT_VERSION = "2.1.0"
+
+
+def release_zip_name(version: str) -> str:
+    return f"{PACKAGE_NAME}-v{version}-portable-x64.zip"
+
+
+def release_download_url(version: str) -> str:
+    return f"{PACKAGE_URL}/releases/download/v{version}/{release_zip_name(version)}"
 try:
     _repo_root = Path(__file__).resolve().parent.parent.parent
     if str(_repo_root) not in sys.path:
@@ -215,7 +223,7 @@ def create_portable_archive(
     (zip_path, sha256_uppercase, file_count, total_uncompressed_bytes)
     """
     dist_dir.mkdir(parents=True, exist_ok=True)
-    zip_name = f"Engram-v{version}-portable-x64.zip"
+    zip_name = release_zip_name(version)
     zip_path = dist_dir / zip_name
 
     file_items = collect_package_files(repo_root)
@@ -527,11 +535,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.manifest_dir:
         manifest_dir = (repo_root / args.manifest_dir).resolve()
     else:
-        manifest_dir = (repo_root / "manifests" / "g" / "greatgc-flow" / "Engram" / version).resolve()
+        manifest_dir = (repo_root / "manifests" / "g" / PUBLISHER / PACKAGE_NAME / version).resolve()
 
-    installer_url = args.installer_url or (
-        f"https://github.com/greatgc-flow/Engram/releases/download/v{version}/Engram-v{version}-portable-x64.zip"
-    )
+    installer_url = args.installer_url or release_download_url(version)
 
     print("=" * 78)
     print(f"  Engram Winget Package Builder — v{version}")
@@ -539,7 +545,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print("=" * 78)
 
     # 1. Package Zip Archive
-    zip_name = f"Engram-v{version}-portable-x64.zip"
+    zip_name = release_zip_name(version)
     zip_path = dist_dir / zip_name
 
     if args.skip_zip and zip_path.exists():
@@ -591,8 +597,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"  winget install --manifest \"{manifest_dir}\"")
     print("\n[Next Steps - Upstream Winget PR Submission]")
     print("  1. Fork https://github.com/microsoft/winget-pkgs")
-    print(f"  2. Copy manifests/g/greatgc-flow/Engram/{version} into manifests/g/greatgc-flow/Engram/{version}/")
-    print(f"  3. Submit PR: 'Add greatgc-flow.Engram version {version}'")
+    print(f"  2. Copy manifests/g/{PUBLISHER}/{PACKAGE_NAME}/{version} into manifests/g/{PUBLISHER}/{PACKAGE_NAME}/{version}/")
+    print(f"  3. Submit PR: 'Add {PACKAGE_IDENTIFIER} version {version}'")
     print("=" * 78)
 
     return 0

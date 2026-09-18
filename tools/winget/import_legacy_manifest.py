@@ -15,6 +15,9 @@ import zipfile
 from pathlib import Path
 import sys
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from build_package import PUBLISHER, PACKAGE_NAME, release_zip_name
+
 def compute_sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest().upper()
 
@@ -33,7 +36,7 @@ def main():
     defaults_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Fetching release data for v{version}...")
-    api_url = f"https://api.github.com/repos/greatgc-flow/Engram/releases/tags/v{version}"
+    api_url = f"https://api.github.com/repos/{PUBLISHER}/{PACKAGE_NAME}/releases/tags/v{version}"
     try:
         with urllib.request.urlopen(api_url) as resp:
             release_data = json.loads(resp.read())
@@ -41,7 +44,7 @@ def main():
         print(f"Failed to fetch release info: {e}")
         return 1
     
-    asset = next((a for a in release_data["assets"] if a["name"] == f"Engram-v{version}-portable-x64.zip"), None)
+    asset = next((a for a in release_data["assets"] if a["name"] == release_zip_name(version)), None)
     if not asset:
         print("Could not find the expected zip asset.")
         return 1
