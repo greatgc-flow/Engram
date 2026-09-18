@@ -9,7 +9,7 @@ import subprocess
 import winreg
 from pathlib import Path
 
-from core import provisioner
+from core import provisioner, state_paths
 
 
 def _load_context_menu(sys_dir: Path) -> dict:
@@ -19,7 +19,7 @@ def _load_context_menu(sys_dir: Path) -> dict:
 
 
 def _load_state(ctx: dict) -> dict:
-    state_file = ctx["paths"]["state"] / "register.state.json"
+    state_file = ctx["paths"]["state"] / state_paths.REGISTER_STATE_FILENAME
     return provisioner.load_json_with_fallback(
         state_file, default=ctx.get("prior_state", {})
     )

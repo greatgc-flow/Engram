@@ -14,7 +14,7 @@ base_dir = sys_dir.parent
 if str(sys_dir) not in sys.path:
     sys.path.insert(0, str(sys_dir))
 
-from core import provisioner
+from core import provisioner, state_paths
 
 
 def _load_json(path: Path) -> dict:
@@ -49,7 +49,7 @@ def _build_ctx(cmd: str, extra_args: list) -> dict:
     }
     # Pre-load prior register state for commands that undo it
     if cmd in ("unregister",):
-        for fname in ("register.state.json", "install.state.json"):
+        for fname in (state_paths.REGISTER_STATE_FILENAME, "install.state.json"):
             sf = paths["state"] / fname
             if sf.exists():
                 ctx["prior_state"] = _load_json(sf)
@@ -73,13 +73,13 @@ def _write_state(ctx: dict) -> None:
     print(f"  [OK] State saved → _sys/data/state/{state_file.name}")
     # install pipeline also performs registration ops → keep register.state.json in sync
     if ctx["command"] != "register" and _REGISTER_STATE_KEYS & ctx.get("state", {}).keys():
-        reg_file = state_dir / "register.state.json"
+        reg_file = state_dir / state_paths.REGISTER_STATE_FILENAME
         reg_file.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def _prune_state(ctx: dict) -> None:
     state_dir = ctx["paths"]["state"]
-    for target in ("register.state.json",):
+    for target in (state_paths.REGISTER_STATE_FILENAME,):
         f = state_dir / target
         if f.exists():
             f.unlink()

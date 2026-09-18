@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from core import provisioner
+from core import provisioner, state_paths
 
 
 def _load_runtimes(sys_dir: Path) -> dict:
@@ -60,7 +60,7 @@ def check_python(sys_dir: Path) -> dict:
 
 def check_legacy_host_integration(base_dir: Path, sys_dir: Path) -> dict:
     """Check for legacy SUBST or directory junction records in this install only."""
-    state_file = sys_dir / "data" / "state" / "register.state.json"
+    state_file = state_paths.register_state(sys_dir)
     legacy_cfg = sys_dir / "config.json"
     
     subst_drive = None # legacy-detect

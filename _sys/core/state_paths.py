@@ -1,8 +1,16 @@
 import os
 from pathlib import Path
 
+REGISTER_STATE_FILENAME = "register.state.json"
+
+def state_dir(sys_dir: Path) -> Path:
+    return sys_dir / "data" / "state"
+
+def register_state(sys_dir: Path) -> Path:
+    return state_dir(sys_dir) / REGISTER_STATE_FILENAME
+
 def update_dir(sys_dir: Path) -> Path:
-    return sys_dir / "data" / "state" / "update"
+    return state_dir(sys_dir) / "update"
 
 def discovery_cache(sys_dir: Path) -> Path:
     return update_dir(sys_dir) / "tool_discovery_cache.json"

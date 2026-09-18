@@ -20,7 +20,7 @@ import sys
 from typing import List, Tuple
 import uuid
 from core.layout import INSTALL_ROOT_ENTRIES
-from core import provisioner
+from core import provisioner, state_paths
 
 # Constant list of top-level _sys program entries for v3.2.7 (Ratified §6.1)
 V326_SYS_PROGRAM_ENTRIES = {
@@ -241,7 +241,7 @@ def run(ctx: dict) -> None:
     journal_path.write_text(json.dumps(journal, indent=2, ensure_ascii=False), encoding="utf-8")
 
     # 4. Host cleanup
-    state_file = ctx.get("paths", {}).get("state", sys_dir / "data" / "state") / "register.state.json"
+    state_file = ctx.get("paths", {}).get("state", state_paths.state_dir(sys_dir)) / state_paths.REGISTER_STATE_FILENAME
     if state_file.exists():
         from core.registrar import remove
         try:
