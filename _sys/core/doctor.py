@@ -31,7 +31,7 @@ def _load_runtimes(sys_dir: Path) -> dict:
 
 
 def _installed_python_version(sys_dir: Path) -> str | None:
-    py = sys_dir / "env" / "python" / "python.exe"
+    py = provisioner.portable_python_exe(sys_dir)
     if not py.exists():
         return None
     try:

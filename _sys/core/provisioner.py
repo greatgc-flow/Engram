@@ -22,6 +22,16 @@ from urllib.parse import urlparse
 TOOL_CATALOG_FILENAME = "tool-catalog.v1.json"
 
 
+def portable_python_exe(sys_dir: Path) -> Path:
+    """Path to the portable (non-venv) Python interpreter shipped under env/."""
+    return sys_dir / "env" / "python" / "python.exe"
+
+
+def venv_python_exe(sys_dir: Path) -> Path:
+    """Path to the project-local virtualenv's Python interpreter."""
+    return sys_dir / "env" / "venv" / "Scripts" / "python.exe"
+
+
 def load_json_with_fallback(
     path: Path,
     *,
@@ -1117,7 +1127,7 @@ _DEPLOY_DEFERRED_STATUSES = {
 def _runtime_postcondition(sys_dir: Path, name: str, cfg: dict) -> bool:
     runtime_dir = sys_dir / "env" / name
     expected = {
-        "python": [runtime_dir / "python.exe"],
+        "python": [portable_python_exe(sys_dir)],
         "nodejs": [runtime_dir / "node.exe"],
         "git": [runtime_dir / "cmd" / "git.exe", runtime_dir / "bin" / "git.exe"],
         "vscode": [runtime_dir / "Code.exe"],
@@ -1238,7 +1248,7 @@ def deploy(ctx: dict) -> dict:
 
     # ── Python venv (not an immutable vendor binary - stays procedural) ──
     print("\n>>> Python venv")
-    venv_py = env_dir / "venv" / "Scripts" / "python.exe"
+    venv_py = venv_python_exe(sys_dir)
     venv_creation_failed = False
     if force or not venv_py.exists():
         try:

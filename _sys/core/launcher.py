@@ -236,9 +236,9 @@ def main(ctx: dict) -> None:
         log(f"[OK] Running: {target_file}")
         ext = target_file.suffix.lower()
         if ext == ".py":
-            python_exe = sys_dir / "env" / "venv" / "Scripts" / "python.exe"
+            python_exe = provisioner.venv_python_exe(sys_dir)
             if not python_exe.exists():
-                python_exe = sys_dir / "env" / "python" / "python.exe"
+                python_exe = provisioner.portable_python_exe(sys_dir)
             subprocess.run([str(python_exe), str(target_file)], env=env)
         elif ext in (".bat", ".cmd"):
             # Use .\name with cwd= to avoid cmd.exe interpreting "&" in
