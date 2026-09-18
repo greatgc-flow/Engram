@@ -204,11 +204,11 @@ def test_updater_core_staging_hash_mismatch(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(updater.check_tool_updates, 'apply_proposal', lambda *args, **kwargs: (0, {'applied': True, 'backup_path': 'fake'}))
     import core.provisioner as provisioner
     monkeypatch.setattr(provisioner, 'deploy', lambda ctx: {'status': 'success', 'installed': [], 'failed': [], 'deferred': []})
-    def mock_urlretrieve(url, path):
-        with open(path, 'wb') as f:
+    def mock_secure_download(url, dest_path):
+        with open(dest_path, 'wb') as f:
             f.write(b'badcontent')
-    import urllib.request
-    monkeypatch.setattr(urllib.request, 'urlretrieve', mock_urlretrieve)
+        return {}
+    monkeypatch.setattr(provisioner, '_secure_download', mock_secure_download)
     monkeypatch.setattr(updater.check_tool_updates, '_atomic_write_json', lambda *args: None)
     with pytest.raises(SystemExit) as exc:
         updater.run({'args': []})
@@ -253,18 +253,86 @@ def test_updater_core_staged_path_escape(monkeypatch, capsys, tmp_path):
     import core.provisioner as provisioner
     monkeypatch.setattr(provisioner, 'deploy', lambda ctx: {'status': 'success', 'installed': [], 'failed': [], 'deferred': []})
     
-    def mock_urlretrieve(url, path):
-        shutil.copyfile(prebuilt_zip, path)
-    import urllib.request
-    monkeypatch.setattr(urllib.request, 'urlretrieve', mock_urlretrieve)
+    def mock_secure_download(url, dest_path):
+        shutil.copyfile(prebuilt_zip, dest_path)
+        return {}
+    monkeypatch.setattr(provisioner, '_secure_download', mock_secure_download)
     monkeypatch.setattr(updater.check_tool_updates, '_atomic_write_json', lambda *args: None)
     
     with pytest.raises(SystemExit) as exc:
         updater.run({'args': []})
-    
+
     assert exc.value.code == 1
     out = capsys.readouterr().out
     assert "falls under protected area '_sys/env'" in out
+
+
+def test_updater_core_update_rejects_zip_slip_traversal(monkeypatch, capsys, tmp_path):
+    """Regression test for the real zip-slip vulnerability this session
+    found and fixed: _download_and_stage_core_update() must reject an
+    archive member whose relative path escapes the staging directory
+    (e.g. '../evil.txt') during extraction itself -- not merely flag it
+    after the fact via the '_sys/env'-style protected-area walk above,
+    which only ever inspects staged_dir's own contents and would never
+    see a file that a zip-slip write placed OUTSIDE staged_dir in the
+    first place. Before the fix, this called zipfile.ZipFile.extractall()
+    directly with no path validation; now it calls provisioner._extract(),
+    which raises ValueError via _validate_archive_members()."""
+
+    import core.updater as updater
+    import core.version_resolver as version_resolver
+    import zipfile
+    import shutil
+
+    monkeypatch.setattr(updater, '_PORTABLE_ROOT', tmp_path)
+    monkeypatch.setattr(updater, '_SYS_DIR', tmp_path / '_sys')
+    (tmp_path / '_sys' / 'core').mkdir(parents=True)
+    (tmp_path / '_sys' / 'core' / 'version.json').write_text('{"version": "1.0.0"}')
+
+    malicious_zip = tmp_path / "malicious.zip"
+    with zipfile.ZipFile(malicious_zip, 'w') as zf:
+        zf.writestr('_sys/core/version.json', '{"version": "9.9.9"}')
+        # A real zip-slip entry: escapes the staging directory entirely.
+        zf.writestr('../../escaped_evil.txt', 'malicious payload')
+
+    import hashlib
+    h = hashlib.sha256()
+    with open(malicious_zip, 'rb') as f:
+        for chunk in iter(lambda: f.read(65536), b''):
+            h.update(chunk)
+    zip_hash = h.hexdigest()
+
+    def mock_run(propose_diff=False):
+        return {'artifact_dir': 'mock_dir', 'updates_discovered': [], 'not_checked': [], 'could_not_check': []}
+    monkeypatch.setattr(updater.check_tool_updates, 'run', mock_run)
+    monkeypatch.setattr(updater, 'check_components', lambda sys_dir: {})
+
+    def mock_resolve(*args, **kwargs):
+        return {'status': 'ok', 'latest_version': '9.9.9', 'url': 'http://fake', 'checksum_algo': 'sha256', 'checksum_value': zip_hash}
+    monkeypatch.setattr(version_resolver, 'resolve_latest', mock_resolve)
+
+    monkeypatch.setattr('builtins.input', lambda prompt: 'y')
+    monkeypatch.setattr(updater.check_tool_updates, 'apply_proposal', lambda *args, **kwargs: (0, {'applied': True, 'backup_path': 'fake'}))
+    import core.provisioner as provisioner
+    monkeypatch.setattr(provisioner, 'deploy', lambda ctx: {'status': 'success', 'installed': [], 'failed': [], 'deferred': []})
+
+    def mock_secure_download(url, dest_path):
+        shutil.copyfile(malicious_zip, dest_path)
+        return {}
+    monkeypatch.setattr(provisioner, '_secure_download', mock_secure_download)
+    monkeypatch.setattr(updater.check_tool_updates, '_atomic_write_json', lambda *args: None)
+
+    with pytest.raises(SystemExit) as exc:
+        updater.run({'args': []})
+
+    assert exc.value.code == 1
+    out = capsys.readouterr().out
+    assert "escapes extraction root" in out
+    # The critical assertion: the malicious entry must never have been
+    # written to disk anywhere outside the staging directory.
+    assert not (tmp_path.parent / "escaped_evil.txt").exists()
+    assert not (tmp_path / "escaped_evil.txt").exists()
+
 
 def test_updater_core_staging_a_and_b_bang_root(monkeypatch, capsys, tmp_path):
     import core.updater as updater
@@ -309,10 +377,10 @@ def test_updater_core_staging_a_and_b_bang_root(monkeypatch, capsys, tmp_path):
     import core.provisioner as provisioner
     monkeypatch.setattr(provisioner, 'deploy', lambda ctx: {'status': 'success', 'installed': [], 'failed': [], 'deferred': []})
     
-    def mock_urlretrieve(url, path):
-        shutil.copyfile(prebuilt_zip, path)
-    import urllib.request
-    monkeypatch.setattr(urllib.request, 'urlretrieve', mock_urlretrieve)
+    def mock_secure_download(url, dest_path):
+        shutil.copyfile(prebuilt_zip, dest_path)
+        return {}
+    monkeypatch.setattr(provisioner, '_secure_download', mock_secure_download)
     monkeypatch.setattr(updater.check_tool_updates, '_atomic_write_json', lambda *args: None)
     
     popen_called_with = []

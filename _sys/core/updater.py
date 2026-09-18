@@ -5,6 +5,7 @@ import argparse
 import sys
 import shutil
 import json
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,38 @@ from core.doctor import check_components
 
 _PORTABLE_ROOT = Path(__file__).resolve().parent.parent.parent
 _SYS_DIR = _PORTABLE_ROOT / "_sys"
+
+
+def _download_and_stage_core_update(
+    url: str, checksum_value: str, zip_path: Path, staged_dir: Path
+) -> None:
+    """Securely download and extract a core-update archive.
+
+    Reuses provisioner's already-hardened `_secure_download` (rejects
+    cross-host redirects except a narrow verified-CDN allowlist) and
+    `_extract` (rejects zip-slip path-traversal and symlink archive
+    members) instead of a raw `urllib.request.urlretrieve` +
+    `zipfile.ZipFile(...).extractall()`, which has neither protection --
+    a malicious or compromised update archive could otherwise write
+    outside `staged_dir` during extraction itself, before any of this
+    function's own post-extraction content checks ever run.
+    """
+
+    provisioner._secure_download(url, zip_path)
+
+    h = hashlib.sha256()
+    with open(zip_path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    if h.hexdigest().lower() != checksum_value.lower():
+        raise ValueError(
+            f"Checksum mismatch: expected {checksum_value}, got {h.hexdigest()}"
+        )
+
+    if staged_dir.exists():
+        shutil.rmtree(staged_dir, ignore_errors=True)
+    staged_dir.mkdir(parents=True)
+    provisioner._extract(zip_path, staged_dir)
 
 
 def _parse_args(args: list[str]) -> argparse.Namespace:
@@ -302,40 +335,23 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     # Core update handoff would go here (Section 8.4)
     if core_update:
         print("\nStaging Engram core update...")
-        import urllib.request
-        import zipfile
-        import hashlib
         import subprocess
         from core.layout import INSTALL_ROOT_ENTRIES
-        
+
         target_version = core_update["latest_version"]
         temp_update_dir = _SYS_DIR / "data" / "temp" / "core-update" / target_version
         temp_update_dir.mkdir(parents=True, exist_ok=True)
-        
+
         zip_path = temp_update_dir / "update.zip"
         staged_dir = temp_update_dir / "staged"
         backup_dir = temp_update_dir / "backup"
-        
+
         try:
             print(f"  - Downloading {core_update['url']}...")
-            urllib.request.urlretrieve(core_update["url"], zip_path)
-            
-            # verify hash
-            h = hashlib.sha256()
-            with open(zip_path, "rb") as f:
-                for chunk in iter(lambda: f.read(65536), b""):
-                    h.update(chunk)
-            if h.hexdigest().lower() != core_update["checksum_value"].lower():
-                raise ValueError(f"Checksum mismatch: expected {core_update['checksum_value']}, got {h.hexdigest()}")
-                
-            # Extract
-            if staged_dir.exists():
-                shutil.rmtree(staged_dir, ignore_errors=True)
-            staged_dir.mkdir(parents=True)
-            
-            with zipfile.ZipFile(zip_path, "r") as zf:
-                zf.extractall(staged_dir)
-                
+            _download_and_stage_core_update(
+                core_update["url"], core_update["checksum_value"], zip_path, staged_dir
+            )
+
             root_entries = list(staged_dir.iterdir())
             if len(root_entries) == 1 and root_entries[0].is_dir():
                 wrapped_dir = root_entries[0]
