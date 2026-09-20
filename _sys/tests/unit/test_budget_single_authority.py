@@ -10,7 +10,8 @@ import sys
 from pathlib import Path
 import pytest
 
-ROOT = Path(__file__).resolve().parents[3]
+from _sys.core.root import find_root
+ROOT = find_root(__file__).parent
 
 
 def test_single_authority_for_canary_budget():

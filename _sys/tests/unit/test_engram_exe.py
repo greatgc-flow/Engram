@@ -18,7 +18,9 @@ import subprocess
 import sys
 import pytest
 
-_SYS_DIR = Path(__file__).resolve().parents[2]
+from _sys.core.root import find_root
+
+_SYS_DIR = find_root(__file__)
 REPO_ROOT = _SYS_DIR.parent
 
 if str(_SYS_DIR) not in sys.path:

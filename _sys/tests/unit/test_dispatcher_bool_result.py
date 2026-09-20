@@ -5,7 +5,9 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 # Import the module to test
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "_sys"))
+from _sys.core.root import find_root
+
+sys.path.insert(0, str(find_root(__file__)))
 from core.dispatcher import _run_operation, run_pipeline
 
 # Create a dummy module that returns False

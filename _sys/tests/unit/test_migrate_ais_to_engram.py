@@ -7,7 +7,9 @@ from unittest.mock import patch
 
 import pytest
 
-SYS = Path(__file__).resolve().parents[2]
+from _sys.core.root import find_root
+
+SYS = find_root(__file__)
 sys.path.insert(0, str(SYS / "core"))
 
 from migrate_ais_to_engram import (  # noqa: E402

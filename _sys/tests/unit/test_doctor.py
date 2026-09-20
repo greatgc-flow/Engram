@@ -4,7 +4,9 @@ import json
 import sys
 from pathlib import Path
 
-SYS_DIR = Path(__file__).resolve().parents[2]  # _sys/
+from _sys.core.root import find_root
+
+SYS_DIR = find_root(__file__)  # _sys/
 if str(SYS_DIR) not in sys.path:
     sys.path.insert(0, str(SYS_DIR))
 

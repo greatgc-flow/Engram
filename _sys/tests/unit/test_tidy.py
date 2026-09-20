@@ -5,7 +5,9 @@ from unittest.mock import patch
 import pytest
 
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from _sys.core.root import find_root
+
+sys.path.insert(0, str(find_root(__file__)))
 from core import tidy_temp
 
 @pytest.fixture

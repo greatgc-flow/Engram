@@ -3,7 +3,9 @@ import json
 from pathlib import Path
 import sys
 
-SYS_DIR = Path(__file__).resolve().parent.parent.parent
+from _sys.core.root import find_root
+
+SYS_DIR = find_root(__file__)
 sys.path.insert(0, str(SYS_DIR))
 
 from checks.check_backlog import check_backlog

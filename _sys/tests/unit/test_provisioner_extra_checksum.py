@@ -7,7 +7,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-SYS_DIR = Path(__file__).resolve().parent.parent.parent  # _sys/
+from _sys.core.root import find_root
+
+SYS_DIR = find_root(__file__)  # _sys/
 sys.path.insert(0, str(SYS_DIR / "core"))
 import provisioner as pv  # noqa: E402
 

@@ -21,8 +21,10 @@ def _no_drive_exists(path: object) -> bool:
         return False
     return _real_os_exists(path)
 
-_cli_path = Path(__file__).parent.parent.parent / "cli"
-_sys_path  = Path(__file__).parent.parent.parent
+from _sys.core.root import find_root
+
+_sys_path = find_root(__file__)
+_cli_path = _sys_path / "cli"
 for p in (_cli_path, _sys_path):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))

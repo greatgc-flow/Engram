@@ -5,7 +5,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-SYS_DIR = Path(__file__).resolve().parents[2]
+from _sys.core.root import find_root
+
+SYS_DIR = find_root(__file__)
 if str(SYS_DIR / "checks") not in sys.path:
     sys.path.insert(0, str(SYS_DIR / "checks"))
 

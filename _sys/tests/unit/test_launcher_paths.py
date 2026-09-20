@@ -22,8 +22,9 @@ import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 import pytest
+from _sys.core.root import find_root
 
-SYS_DIR = Path(__file__).parent.parent.parent
+SYS_DIR = find_root(__file__)
 START_BAT   = SYS_DIR / "start.bat"
 LAUNCHER_PY = SYS_DIR / "core" / "launcher.py"  # logic moved from cli/launcher.py (thin wrapper)
 ENV_JSON    = SYS_DIR / "env.json"

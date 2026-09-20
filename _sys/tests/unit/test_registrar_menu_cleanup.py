@@ -15,7 +15,9 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 import sys
 
-_sys_path = Path(__file__).parent.parent.parent  # _sys/
+from _sys.core.root import find_root
+
+_sys_path = find_root(__file__)  # _sys/
 if str(_sys_path) not in sys.path:
     sys.path.insert(0, str(_sys_path))
 

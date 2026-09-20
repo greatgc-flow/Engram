@@ -1,9 +1,10 @@
 import os
 import re
 from pathlib import Path
+from _sys.core.root import find_root
 
 def test_no_legacy_state_literals():
-    root = Path(__file__).parent.parent.parent.parent
+    root = find_root(__file__).parent
 
     # Regex to match path-segment literal .ai or _archive
     # (^|[\/"'])\.ai([\/"']|$)

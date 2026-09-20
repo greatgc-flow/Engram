@@ -10,7 +10,9 @@ from types import SimpleNamespace
 import pytest
 
 
-SYS_DIR = Path(__file__).resolve().parents[2]
+from _sys.core.root import find_root
+
+SYS_DIR = find_root(__file__)
 CHECKS_DIR = SYS_DIR / "checks"
 CLI_DIR = SYS_DIR / "cli"
 sys.path.insert(0, str(CHECKS_DIR))

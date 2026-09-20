@@ -3,7 +3,9 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "_sys"))
+from _sys.core.root import find_root
+
+sys.path.insert(0, str(find_root(__file__)))
 from core.doctor import run
 
 def test_doctor_missing_keys_no_crash(monkeypatch, capsys):

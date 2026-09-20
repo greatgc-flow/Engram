@@ -5,7 +5,9 @@ from pathlib import Path
 
 import pytest
 
-repo_root = Path(__file__).resolve().parent.parent.parent.parent
+from _sys.core.root import find_root
+
+repo_root = find_root(__file__).parent
 manifest_path = repo_root / "_sys" / "core" / "release-manifests" / "3.2.6.json"
 
 

@@ -5,7 +5,10 @@ from pathlib import Path
 
 import pytest
 
-SYS_DIR = Path(__file__).parent.parent.parent
+from _sys.core.root import find_root
+
+SYS_DIR = find_root(__file__)
+ROOT_DIR = SYS_DIR.parent
 if str(SYS_DIR) not in sys.path:
     sys.path.insert(0, str(SYS_DIR))
 
@@ -18,7 +21,7 @@ def test_actual_dispatch_wiring():
     - dispatch.json routes 'install' to 'provision.deploy' (core.provisioner.deploy)
     - setup.py delegates to core.provisioner.deploy directly (legacy compat)
     """
-    root_dir = Path(__file__).parent.parent.parent.parent
+    root_dir = ROOT_DIR
     sys_dir = root_dir / "_sys"
     
     # 1. Assert modern wiring (dispatcher.py -> dispatch.json -> core.provisioner.deploy)
@@ -157,7 +160,7 @@ def test_dispatcher_continues_unregister_but_preserves_state_on_failure(monkeypa
 
 
 def test_install_python_update_cannot_rewrite_pin_while_interpreter_exists():
-    root_dir = Path(__file__).parent.parent.parent.parent
+    root_dir = ROOT_DIR
     content = (root_dir / "_sys/core/bootstrap.bat").read_text(encoding="utf-8")
 
     assert content.index('set "PY_EXE=%PY_DIR%\\python.exe"') < content.index(
@@ -184,7 +187,7 @@ def test_migrate_layout_dispatch_wiring():
     import json
     from pathlib import Path
     
-    root_dir = Path(__file__).parent.parent.parent.parent
+    root_dir = ROOT_DIR
     sys_dir = root_dir / "_sys"
     
     dispatch_file = sys_dir / "dispatch.json"
@@ -208,7 +211,7 @@ def test_backup_restore_reset_dispatch_wiring():
     Verify that backup, restore, and reset pipelines are correctly mapped
     to checks.backup_personal_data methods in dispatch.json and the methods exist.
     """
-    root_dir = Path(__file__).parent.parent.parent.parent
+    root_dir = ROOT_DIR
     sys_dir = root_dir / "_sys"
 
     dispatch_file = sys_dir / "dispatch.json"

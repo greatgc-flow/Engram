@@ -3,8 +3,10 @@ import sys
 from pathlib import Path
 import pytest
 
+from _sys.core.root import find_root
+
 # Add _sys/core to path
-_core_dir = Path(__file__).parent.parent.parent / "core"
+_core_dir = find_root(__file__) / "core"
 sys.path.insert(0, str(_core_dir))
 
 from env_loader import load_json_env, EnvironmentLoader

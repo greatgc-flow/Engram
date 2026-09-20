@@ -4,8 +4,10 @@ import pytest
 from pathlib import Path
 import sys
 
+from _sys.core.root import find_root
+
 # Add _sys to path so we can import core
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+sys.path.insert(0, str(find_root(__file__)))
 
 try:
     from core.env_loader import EnvironmentLoader
@@ -66,7 +68,7 @@ def test_environment_loader_applies_to_os(mock_env_json):
     assert os.environ.get("NPM_CONFIG_PREFIX") == "P:\\_sys\\env\\nodejs\\npm-global"
 
 def test_real_environment_json():
-    real_config_path = Path(__file__).parent.parent.parent / "config" / "environment.json"
+    real_config_path = find_root(__file__) / "config" / "environment.json"
     if not real_config_path.exists():
         pytest.skip("environment.json not found")
         

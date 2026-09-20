@@ -5,7 +5,9 @@ import sys
 from pathlib import Path
 
 # Add _sys/checks to sys.path so we can import check_root_hygiene
-SYS_DIR = Path(__file__).resolve().parent.parent.parent
+from _sys.core.root import find_root
+
+SYS_DIR = find_root(__file__)
 CHECKS_DIR = SYS_DIR / "checks"
 if str(CHECKS_DIR) not in sys.path:
     sys.path.insert(0, str(CHECKS_DIR))

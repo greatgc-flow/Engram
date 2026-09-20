@@ -6,6 +6,7 @@ import os
 import re
 import pytest
 from pathlib import Path
+from _sys.core.root import find_root
 
 class TestDocConsistency:
     """Validate documentation structure and presence."""
@@ -13,7 +14,7 @@ class TestDocConsistency:
     @pytest.fixture
     def doc_root(self):
         """Root directory of the project."""
-        return Path(__file__).parent.parent.parent.parent
+        return find_root(__file__).parent
 
     def test_mandatory_docs_presence(self, doc_root):
         """Ensure all constitutional and core documents exist."""

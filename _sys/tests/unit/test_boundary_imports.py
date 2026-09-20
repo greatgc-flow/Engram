@@ -1,7 +1,8 @@
 import ast
 from pathlib import Path
 
-_SYS_DIR = Path(__file__).resolve().parents[2]
+from _sys.core.root import find_root
+_SYS_DIR = find_root(__file__)
 
 # Vendored/third-party trees under _sys/ that this boundary check must not
 # scan -- e.g. _sys/env/**/site-packages/pip/_vendor/requests has its own

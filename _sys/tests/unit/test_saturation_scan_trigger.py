@@ -8,7 +8,9 @@ import json
 import sys
 from pathlib import Path
 
-SYS_DIR = Path(__file__).resolve().parent.parent.parent  # _sys/
+from _sys.core.root import find_root
+
+SYS_DIR = find_root(__file__)  # _sys/
 sys.path.insert(0, str(SYS_DIR / "checks"))
 import saturation_scan as sat  # noqa: E402
 

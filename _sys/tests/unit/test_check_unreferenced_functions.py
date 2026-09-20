@@ -7,6 +7,7 @@ from pathlib import Path
 
 from _sys.checks import check_unreferenced_functions as checker
 from _sys.checks import _common
+from _sys.core.root import find_root
 
 
 class MemoryView:
@@ -345,7 +346,7 @@ def test_full_tree_main_is_advisory_even_with_findings(monkeypatch, capsys):
 
 
 def test_context_ack_is_absent_and_apply_security_semantics_is_current_debt():
-    root = Path(__file__).resolve().parents[3]
+    root = find_root(__file__).parent
     view = checker.WorktreeView(root)
     paths = checker.production_python_paths(view)
     candidates, findings, edges = checker.analyze_functions(

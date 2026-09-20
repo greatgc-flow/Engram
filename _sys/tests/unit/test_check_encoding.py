@@ -12,7 +12,9 @@ from unittest.mock import patch
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]  # _sys/
+from _sys.core.root import find_root
+
+ROOT = find_root(__file__)  # _sys/
 GUARD = ROOT / "checks" / "check_encoding.py"
 
 

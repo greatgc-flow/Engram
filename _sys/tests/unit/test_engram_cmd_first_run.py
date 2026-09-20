@@ -4,7 +4,9 @@ import subprocess
 from pathlib import Path
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+from _sys.core.root import find_root
+
+REPO_ROOT = find_root(__file__).parent
 ENGRAM_CMD = REPO_ROOT / "engram.cmd"
 
 @pytest.fixture

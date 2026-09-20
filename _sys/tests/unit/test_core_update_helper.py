@@ -2,9 +2,10 @@ import json
 import subprocess
 import os
 from pathlib import Path
+from _sys.core.root import find_root
 
 def test_core_update_helper_rollback_byte_identical(tmp_path):
-    sys_dir = Path(__file__).resolve().parents[2]
+    sys_dir = find_root(__file__)
     ps1_path = sys_dir / "core" / "core_update_helper.ps1"
     
     target_dir = tmp_path / "target"

@@ -9,7 +9,9 @@ from pathlib import Path
 
 import pytest
 
-SYS = Path(__file__).resolve().parents[2]
+from _sys.core.root import find_root
+
+SYS = find_root(__file__)
 CHECKS_DIR = SYS / "checks"
 if str(CHECKS_DIR) not in sys.path:
     sys.path.insert(0, str(CHECKS_DIR))

@@ -3,7 +3,9 @@ from pathlib import Path
 
 import pytest
 
-repo_root = Path(__file__).resolve().parent.parent.parent.parent
+from _sys.core.root import find_root
+
+repo_root = find_root(__file__).parent
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
