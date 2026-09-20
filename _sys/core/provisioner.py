@@ -19,6 +19,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+_CORE_DIR = Path(__file__).resolve().parent
+if str(_CORE_DIR) not in sys.path:
+    sys.path.insert(0, str(_CORE_DIR))
+
+from root import find_root  # noqa: E402
+
 TOOL_CATALOG_FILENAME = "tool-catalog.v1.json"
 
 
@@ -235,7 +241,7 @@ def _install_extra(tool_name: str, extra: dict, dest_dir: Path, setup_dir: Path)
 
 
 def _default_sys_dir() -> Path:
-    return Path(__file__).resolve().parent.parent
+    return find_root(__file__)
 
 
 # ── D10: on-demand ensure-tool / ensure-peer-cli (auto-install/auto-update) ──
@@ -549,14 +555,7 @@ def _run_canary(tmp_dir: Path, canary: dict | None, env: dict | None = None) -> 
     run_env = os.environ.copy()
     if env:
         run_env.update(env)
-    curr = tmp_dir.resolve()
-    sys_dir = curr
-    while curr.name != "_sys" and curr.parent != curr:
-        curr = curr.parent
-    if curr.name == "_sys":
-        sys_dir = curr
-    else:
-        sys_dir = tmp_dir.parent.parent
+    sys_dir = find_root(tmp_dir)
     nodejs_dir = sys_dir / "env" / "nodejs"
     venv_scripts = sys_dir / "env" / "venv" / "Scripts"
     paths = [str(tmp_dir), str(nodejs_dir), str(venv_scripts), run_env.get("PATH", "")]
@@ -1438,6 +1437,9 @@ if __name__ == "__main__":
 
     # standalone run: build minimal ctx
     _sys = Path(__file__).parent.parent.resolve()
+    sys.path.insert(0, str(_sys / "core"))
+    from root import bootstrap_root_package  # noqa: E402
+    bootstrap_root_package(_sys)
     ctx = {
         "base_dir": _sys.parent,
         "sys_dir":  _sys,

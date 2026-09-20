@@ -6,9 +6,13 @@ Modern entry points (_sys/core/bootstrap.bat) route through dispatch.bat -> disp
 import sys
 from pathlib import Path
 
-_sys = Path(__file__).parent.parent.resolve()
-if str(_sys) not in sys.path:
-    sys.path.insert(0, str(_sys))
+_SYS_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_SYS_DIR / "core"))
+from root import bootstrap_root_package  # noqa: E402
+bootstrap_root_package(_SYS_DIR)
+
+if str(_SYS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SYS_DIR))
 
 from core.provisioner import deploy  # noqa: F401
 
@@ -16,13 +20,13 @@ if __name__ == "__main__":
     import traceback
     from core.provisioner import deploy
 
-    _base = _sys.parent
+    _base = _SYS_DIR.parent
     ctx = {
         "base_dir": _base,
-        "sys_dir":  _sys,
+        "sys_dir":  _SYS_DIR,
         "paths":    {
-            "state":     _sys / "data" / "state",
-            "generated": _sys / "data" / "generated",
+            "state":     _SYS_DIR / "data" / "state",
+            "generated": _SYS_DIR / "data" / "generated",
         },
         "args":  sys.argv[1:],
         "state": {},
