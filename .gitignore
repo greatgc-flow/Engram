@@ -1,4 +1,4 @@
-﻿# Engram: Minimal Core Git Ignore (MECE)
+# Engram: Minimal Core Git Ignore (MECE)
 # =================================================================
 # 1. User Workspaces, Data, and Archives
 # =================================================================
@@ -83,3 +83,12 @@ peerhub/
 /output/
 _sys/runtimes.json
 _sys/tool-catalog.v1.json
+
+# Runtime-generated data, mutable telemetry, and personal backups (Finding H-2)
+_sys/data/backups/
+_sys/data/operational_errors.jsonl
+_sys/data/*.jsonl
+_sys/data/state/
+_sys/data/logs/
+_sys/data/setup-files/
+_sys/data/temp/

@@ -120,12 +120,15 @@ def test_portable_archive_matches_p1_10_contract(tmp_path):
             "_sys/data/state/",
             "_sys/data/logs/",
             "_sys/data/temp/",
+            "_sys/data/backups/",
         )
         for name in names:
             assert not name.startswith(excluded_dir_prefixes), name
 
         assert "_sys/runtimes.json" not in names
         assert "_sys/tool-catalog.v1.json" not in names
+        assert "_sys/data/operational_errors.jsonl" not in names
+        assert not any(n.endswith(".jsonl") for n in names)
         assert not any(n.startswith(".ai/") or n == ".ai" for n in names)
         assert not any(n.startswith("_archive/") or n == "_archive" for n in names)
         assert not any(n.endswith(".bat") and "/" not in n for n in names)
@@ -149,3 +152,40 @@ def test_portable_archive_matches_p1_10_contract(tmp_path):
     finally:
         manifest_path.unlink(missing_ok=True)
         version_manifest_path.unlink(missing_ok=True)
+
+
+def test_collect_package_files_excludes_backups_and_runtime_data(tmp_path: Path):
+    """Regression test (finding H-2): backups and mutable operational_errors.jsonl must never be packaged."""
+    for rf in ("engram.cmd", "Engram.exe", "README.md", "LICENSE"):
+        (tmp_path / rf).write_text("root file", encoding="utf-8")
+
+    sys_dir = tmp_path / "_sys"
+    (sys_dir / "core").mkdir(parents=True)
+    (sys_dir / "core" / "dispatcher.py").write_text("# core", encoding="utf-8")
+
+    data_dir = sys_dir / "data"
+    (data_dir / "backups").mkdir(parents=True)
+    (data_dir / "backups" / "engram_backup_20260920_120000.zip").write_bytes(b"PK00fakezip")
+    (data_dir / "operational_errors.jsonl").write_text('{"error": "ephemeral"}\n', encoding="utf-8")
+    (data_dir / "OPEN-ITEMS-FROM-MIGRATED-BACKLOG.md").write_text("# Doc Note", encoding="utf-8")
+
+    (data_dir / "logs").mkdir(parents=True)
+    (data_dir / "logs" / "session.log").write_text("log", encoding="utf-8")
+    (data_dir / "state").mkdir(parents=True)
+    (data_dir / "state" / "install.state.json").write_text("{}", encoding="utf-8")
+
+    collected = collect_package_files(tmp_path)
+    arcnames = {arcname for _, arcname in collected}
+
+    # Assert required files are included
+    assert "engram.cmd" in arcnames
+    assert "README.md" in arcnames
+    assert "_sys/core/dispatcher.py" in arcnames
+    assert "_sys/data/OPEN-ITEMS-FROM-MIGRATED-BACKLOG.md" in arcnames
+
+    # Assert excluded files/directories are NOT packaged
+    assert not any("backups" in a for a in arcnames)
+    assert "_sys/data/operational_errors.jsonl" not in arcnames
+    assert not any(a.endswith(".jsonl") for a in arcnames)
+    assert not any(a.startswith("_sys/data/logs/") for a in arcnames)
+    assert not any(a.startswith("_sys/data/state/") for a in arcnames)

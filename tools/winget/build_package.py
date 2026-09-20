@@ -135,6 +135,7 @@ SYS_EXCLUDE_DIR_PATTERNS = {
     "setup-files",
     ".pytest_cache",
     "release-manifests",
+    "backups",
 } | {d for d in VENDOR_CACHE_DIRS if not d.startswith(".")}
 
 GLOBAL_EXCLUDE_PATTERNS = set(VENDOR_CACHE_DIRS) | {
@@ -198,6 +199,7 @@ def collect_package_files(repo_root: Path) -> list[tuple[Path, str]]:
                     or file.endswith(".pyo")
                     or file.endswith(".tmp")
                     or file.endswith(".log")
+                    or file.endswith(".jsonl")
                     or file == ".DS_Store"
                     or file.startswith(".git")
                     or file == "release-manifest.json"
