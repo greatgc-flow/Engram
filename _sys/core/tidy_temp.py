@@ -25,7 +25,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+_SYS_DIR = Path(__file__).resolve().parents[1]
+ROOT = _SYS_DIR.parent
+
+sys.path.insert(0, str(_SYS_DIR / "core"))
+from root import bootstrap_root_package  # noqa: E402
+bootstrap_root_package(_SYS_DIR)
 
 # ── root tmp/: leftover test-probe files ────────────────────────────────
 ROOT_TMP_DIR = ROOT / "tmp"

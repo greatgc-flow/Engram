@@ -15,11 +15,21 @@ import zipfile
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+_TOOLS_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _TOOLS_DIR.parent.parent
+_SYS_DIR = _REPO_ROOT / "_sys"
+
+sys.path.insert(0, str(_SYS_DIR / "core"))
+from root import bootstrap_root_package  # noqa: E402
+bootstrap_root_package(_SYS_DIR)
+
+sys.path.insert(0, str(_TOOLS_DIR))
 from build_package import PUBLISHER, PACKAGE_NAME, release_zip_name
+
 
 def compute_sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest().upper()
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -27,8 +37,8 @@ def main():
     args = parser.parse_args()
     version = args.version
 
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    manifests_dir = repo_root / "_sys" / "core" / "release-manifests"
+    repo_root = _REPO_ROOT
+    manifests_dir = _SYS_DIR / "core" / "release-manifests"
     defaults_dir = manifests_dir / f"{version}-defaults"
     
     # Create directories
@@ -114,6 +124,7 @@ def main():
     
     print(f"Wrote manifest to {manifest_path}")
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

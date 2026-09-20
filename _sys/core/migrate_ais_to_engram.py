@@ -35,7 +35,13 @@ import shutil
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+_CORE_DIR = Path(__file__).resolve().parent
+_SYS_DIR = _CORE_DIR.parent
+
+sys.path.insert(0, str(_CORE_DIR))
+from root import bootstrap_root_package  # noqa: E402
+bootstrap_root_package(_SYS_DIR)
+
 from provisioner import _is_peer_leased  # noqa: E402  (private, deliberate reuse -- see module docstring)
 
 # Filenames that look like vendor credentials -- never silently unremarked

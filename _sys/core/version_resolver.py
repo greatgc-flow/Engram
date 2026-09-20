@@ -11,6 +11,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -20,6 +21,11 @@ from typing import Any
 
 _SYS_DIR = Path(__file__).resolve().parents[1]
 _PORTABLE_ROOT = _SYS_DIR.parent
+
+sys.path.insert(0, str(_SYS_DIR / "core"))
+from root import bootstrap_root_package  # noqa: E402
+bootstrap_root_package(_SYS_DIR)
+
 from _sys.core import provisioner, state_paths
 _DEFAULT_CACHE = state_paths.discovery_cache(_SYS_DIR)
 

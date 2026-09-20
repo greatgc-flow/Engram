@@ -46,10 +46,17 @@ def release_zip_name(version: str) -> str:
 
 def release_download_url(version: str) -> str:
     return f"{PACKAGE_URL}/releases/download/v{version}/{release_zip_name(version)}"
+
+
+_TOOLS_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _TOOLS_DIR.parent.parent
+_SYS_DIR = _REPO_ROOT / "_sys"
+
+sys.path.insert(0, str(_SYS_DIR / "core"))
+from root import bootstrap_root_package  # noqa: E402
+bootstrap_root_package(_SYS_DIR)
+
 try:
-    _repo_root = Path(__file__).resolve().parent.parent.parent
-    if str(_repo_root) not in sys.path:
-        sys.path.insert(0, str(_repo_root))
     from _sys.core.version import VERSION as DEFAULT_VERSION, WINGET_SCHEMA_VERSION as SCHEMA_VERSION
     from _sys.checks._common import VENDOR_CACHE_DIRS
 except ImportError:
@@ -519,8 +526,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     # Resolve repo root relative to this script
-    script_dir = Path(__file__).resolve().parent
-    repo_root = script_dir.parent.parent
+    repo_root = _REPO_ROOT
 
     # Setup directories
     dist_dir = (repo_root / args.dist_dir).resolve()

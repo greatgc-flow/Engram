@@ -11,11 +11,13 @@ from pathlib import Path
 
 sys_dir = Path(__file__).parent.parent.resolve()
 base_dir = sys_dir.parent
+
+sys.path.insert(0, str(sys_dir / "core"))
+from root import bootstrap_root_package  # noqa: E402
+bootstrap_root_package(sys_dir)
+
 if str(sys_dir) not in sys.path:
     sys.path.insert(0, str(sys_dir))
-
-from core.root import bootstrap_root_package
-bootstrap_root_package(sys_dir)
 
 from core import provisioner, state_paths
 

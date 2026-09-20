@@ -10,6 +10,11 @@ import sys
 
 _TOOLS_WINGET_DIR = Path(__file__).resolve().parent
 REPO_ROOT = _TOOLS_WINGET_DIR.parent.parent
+_SYS_DIR = REPO_ROOT / "_sys"
+
+sys.path.insert(0, str(_SYS_DIR / "core"))
+from root import bootstrap_root_package  # noqa: E402
+bootstrap_root_package(_SYS_DIR)
 
 
 def find_csc() -> str | None:
