@@ -68,6 +68,21 @@
             "method": "run_pipeline",
             "idempotent": true,
             "failure_policy": "abort"
+        },
+        "backup.run": {
+            "module": "checks.backup_personal_data",
+            "method": "run_backup",
+            "failure_policy": "abort"
+        },
+        "restore.run": {
+            "module": "checks.backup_personal_data",
+            "method": "run_restore",
+            "failure_policy": "abort"
+        },
+        "reset.run": {
+            "module": "checks.backup_personal_data",
+            "method": "run_reset",
+            "failure_policy": "abort"
         }
     },
     "pipelines": {
@@ -118,6 +133,15 @@
         ],
         "migrate-layout": [
             "migration.run_layout_migration"
+        ],
+        "backup": [
+            "backup.run"
+        ],
+        "restore": [
+            "restore.run"
+        ],
+        "reset": [
+            "reset.run"
         ]
     }
 }

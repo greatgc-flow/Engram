@@ -201,3 +201,33 @@ def test_migrate_layout_dispatch_wiring():
     # Assert module has method
     from _sys.core import layout_migration
     assert hasattr(layout_migration, "run_pipeline")
+
+
+def test_backup_restore_reset_dispatch_wiring():
+    """
+    Verify that backup, restore, and reset pipelines are correctly mapped
+    to checks.backup_personal_data methods in dispatch.json and the methods exist.
+    """
+    root_dir = Path(__file__).parent.parent.parent.parent
+    sys_dir = root_dir / "_sys"
+
+    dispatch_file = sys_dir / "dispatch.json"
+    assert dispatch_file.exists()
+    dispatch_data = json.loads(dispatch_file.read_text(encoding="utf-8"))
+
+    for verb, op_id, expected_method in [
+        ("backup", "backup.run", "run_backup"),
+        ("restore", "restore.run", "run_restore"),
+        ("reset", "reset.run", "run_reset"),
+    ]:
+        pipeline = dispatch_data["pipelines"][verb]
+        assert pipeline[0] == op_id
+        op = dispatch_data["operations"][op_id]
+        assert op["module"] == "checks.backup_personal_data"
+        assert op["method"] == expected_method
+
+    from checks import backup_personal_data
+    assert hasattr(backup_personal_data, "run_backup")
+    assert hasattr(backup_personal_data, "run_restore")
+    assert hasattr(backup_personal_data, "run_reset")
+

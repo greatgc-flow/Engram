@@ -377,6 +377,8 @@ def test_context_ack_is_absent_and_apply_security_semantics_is_current_debt():
         method = operation["method"]
         if module.startswith("core."):
             target_path = "_sys/core/" + module.split(".", 1)[1] + ".py"
+        elif module.startswith("checks."):
+            target_path = "_sys/checks/" + module.split(".", 1)[1] + ".py"
         else:
             raise AssertionError(f"unexpected live dispatch module: {module}")
         assert "_sys/dispatch.json:dispatch_root" in edges[(target_path, method)]

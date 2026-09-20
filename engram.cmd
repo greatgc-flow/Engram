@@ -53,6 +53,9 @@ if /i "%SUBCMD%"=="doctor" goto :cmd_doctor
 if /i "%SUBCMD%"=="menu" goto :cmd_menu
 if /i "%SUBCMD%"=="tidy" goto :cmd_tidy
 if /i "%SUBCMD%"=="uninstall" goto :cmd_uninstall
+if /i "%SUBCMD%"=="backup" goto :cmd_backup
+if /i "%SUBCMD%"=="restore" goto :cmd_restore
+if /i "%SUBCMD%"=="reset" goto :cmd_reset
 
 :: 2. Retired verbs
 if /i "%SUBCMD%"=="install" goto :retired_install
@@ -167,6 +170,24 @@ if errorlevel 1 exit /b 1
 call "_sys\core\dispatch.bat" uninstall %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
+:cmd_backup
+call :check_setup
+if errorlevel 1 exit /b 1
+call "_sys\core\dispatch.bat" backup %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %ERRORLEVEL%
+
+:cmd_restore
+call :check_setup
+if errorlevel 1 exit /b 1
+call "_sys\core\dispatch.bat" restore %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %ERRORLEVEL%
+
+:cmd_reset
+call :check_setup
+if errorlevel 1 exit /b 1
+call "_sys\core\dispatch.bat" reset %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %ERRORLEVEL%
+
 :: ----------------------------------------------------------------------------
 :: Retired Verbs Handlers
 :: ----------------------------------------------------------------------------
@@ -241,6 +262,11 @@ echo   engram doctor         Report environment health, tool status, and configu
 echo   engram menu           Manage right-click context menu (status, enable, disable, clean)
 echo   engram tidy           Clean temporary logs, caches, and orphaned files
 echo   engram uninstall      Full removal: registry teardown and folder purge
+echo.
+echo Backup ^& State:
+echo   engram backup         Back up personal AI data to a zip archive
+echo   engram restore        Restore personal AI data from a backup archive/bundle
+echo   engram reset          Reset personal AI data (.engram/ by default; --all includes workspace/)
 echo.
 echo Options:
 echo   --version, -v         Display Engram version information
