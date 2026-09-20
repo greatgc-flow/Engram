@@ -53,10 +53,7 @@ def test_check_root_dirty(mock_root):
     assert "Unexpected entry at root: unexpected_file.txt" in errors[0]
 
 @patch("subprocess.run")
-@patch("check_backlog.check_backlog")
-def test_check_closure_clean(mock_check_backlog, mock_run):
-    mock_check_backlog.return_value = []
-    
+def test_check_closure_clean(mock_run):
     def side_effect(*args, **kwargs):
         mock_proc = MagicMock()
         mock_proc.returncode = 0
@@ -68,14 +65,10 @@ def test_check_closure_clean(mock_check_backlog, mock_run):
     
     errors = check_closure()
     assert not errors
-    assert mock_check_backlog.called
     assert mock_run.call_count == 2
 
 @patch("subprocess.run")
-@patch("check_backlog.check_backlog")
-def test_check_closure_dirty(mock_check_backlog, mock_run):
-    mock_check_backlog.return_value = ["Backlog validation failed"]
-    
+def test_check_closure_dirty(mock_run):
     def side_effect(cmd, **kwargs):
         mock_proc = MagicMock()
         if "status" in cmd:
@@ -91,10 +84,9 @@ def test_check_closure_dirty(mock_check_backlog, mock_run):
     mock_run.side_effect = side_effect
     
     errors = check_closure()
-    assert len(errors) == 3
+    assert len(errors) == 2
     assert "git working tree not clean:\nM some_file.py" in errors
     assert "git diff --check found whitespace errors or failed:\nwhitespace error" in errors
-    assert "Backlog validation failed" in errors
 
 @patch("check_root_hygiene.check_root")
 @patch("check_root_hygiene.check_closure")

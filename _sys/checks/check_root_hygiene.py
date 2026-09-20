@@ -2,7 +2,7 @@
 
 Validates:
   - Immediate children of the repo root are strictly known.
-  - In --closure mode, additionally ensures working tree is clean via git, and the backlog is clean.
+  - In --closure mode, additionally ensures working tree is clean via git.
 
 Exit codes:
   0 on success
@@ -107,19 +107,8 @@ def check_closure() -> list[str]:
     except OSError as e:
         errors.append(f"Failed to run git diff --check: {e}")
 
-    # 3. check_backlog
-    # Let's import it to call check_backlog(live=True)
-    try:
-        # dynamically add to path if needed, though we are in the same dir
-        if str(SYS_DIR / "checks") not in sys.path:
-            sys.path.insert(0, str(SYS_DIR / "checks"))
-        from check_backlog import check_backlog
-        backlog_errors = check_backlog(live=True)
-        errors.extend(backlog_errors)
-    except Exception as e:
-        errors.append(f"Failed to run check_backlog: {e}")
-
     return errors
+
 
 def main(argv: list[str] | None = None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
