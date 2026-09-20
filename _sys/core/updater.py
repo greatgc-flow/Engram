@@ -2,18 +2,25 @@
 updater.py - First-class update dispatch pipeline.
 """
 import argparse
+import os
 import sys
 import shutil
 import json
 from pathlib import Path
 from typing import Any
 
+_CORE_DIR = Path(__file__).resolve().parent
+_SYS_DIR = _CORE_DIR.parent
+_PORTABLE_ROOT = _SYS_DIR.parent
+if str(_CORE_DIR) not in sys.path:
+    sys.path.insert(0, str(_CORE_DIR))
+
+from root import bootstrap_root_package, find_root  # noqa: E402
+bootstrap_root_package(_SYS_DIR)
+
 from checks import check_tool_updates
 from core import provisioner
 from core.doctor import check_components
-
-_PORTABLE_ROOT = Path(__file__).resolve().parent.parent.parent
-_SYS_DIR = _PORTABLE_ROOT / "_sys"
 
 
 def _download_and_stage_core_update(
@@ -95,7 +102,6 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     # ---------------------------------------------------------
     # Engram Core Channel Detection & Discovery
     # ---------------------------------------------------------
-    import os
     from core import version_resolver
     from checks.check_tool_updates import DISCOVERY_CACHE_PATH
     
@@ -364,9 +370,15 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                     
             # Check no staged path falls under protected areas
             protected = [
-                ".engram", "workspace", "_sys/env", "_sys/tools", "_sys/data",
-                "_sys/runtimes.json", "_sys/tool-catalog.v1.json"
+                ".engram", "workspace",
+                f"{_SYS_DIR.name}/env", f"{_SYS_DIR.name}/tools", f"{_SYS_DIR.name}/data",
+                f"{_SYS_DIR.name}/runtimes.json", f"{_SYS_DIR.name}/tool-catalog.v1.json",
             ]
+            if _SYS_DIR.name != "_sys":
+                protected.extend([
+                    "_sys/env", "_sys/tools", "_sys/data",
+                    "_sys/runtimes.json", "_sys/tool-catalog.v1.json",
+                ])
             for p in staged_dir.rglob("*"):
                 rel_p = p.relative_to(staged_dir).as_posix()
                 for prot in protected:
@@ -398,7 +410,8 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                 "staged_dir": str(staged_dir),
                 "backup_dir": str(backup_dir),
                 "journal_path": str(journal_path),
-                "parent_pid": os.getpid()
+                "parent_pid": os.getpid(),
+                "sys_dir_name": _SYS_DIR.name,
             }
             plan_file = temp_update_dir / "plan.json"
             plan_file.write_text(json.dumps(plan_payload, indent=2, ensure_ascii=False), encoding="utf-8")

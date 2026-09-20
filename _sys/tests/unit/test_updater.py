@@ -1,6 +1,13 @@
 import pytest
 from pathlib import Path
 import json
+import sys
+
+from _sys.core.root import find_root
+
+_SYS_DIR = find_root(__file__)
+if str(_SYS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SYS_DIR))
 
 from core import updater
 from checks import check_tool_updates
@@ -419,3 +426,128 @@ def test_updater_core_channel_winget(monkeypatch, capsys, tmp_path):
     updater.run({'args': []})
     out = capsys.readouterr().out
     assert 'Engram core (managed by WinGet — run winget upgrade greatgc-flow.Engram)' in out
+
+
+def test_updater_core_staging_renamed_sys_dir(monkeypatch, capsys, tmp_path):
+    """Core update staging correctly passes sys_dir_name in plan.json for renamed installations."""
+    import core.updater as updater
+    import core.version_resolver as version_resolver
+    import zipfile
+    import subprocess
+    import shutil
+
+    special_root = tmp_path / "custom_install"
+    special_root.mkdir()
+    renamed_sys = special_root / "my_runtime"
+
+    monkeypatch.setattr(updater, '_PORTABLE_ROOT', special_root)
+    monkeypatch.setattr(updater, '_SYS_DIR', renamed_sys)
+    (renamed_sys / 'core').mkdir(parents=True)
+    (renamed_sys / 'core' / 'version.json').write_text('{"version": "1.0.0"}')
+    (renamed_sys / 'core' / 'core_update_helper.ps1').write_text('# dummy ps1')
+
+    # Release zip has standard _sys internal naming per packaging convention
+    prebuilt_zip = tmp_path / "release_v2.zip"
+    with zipfile.ZipFile(prebuilt_zip, 'w') as zf:
+        zf.writestr('_sys/core/version.json', '{"version": "2.0.0"}')
+        zf.writestr('Engram.exe', 'dummy exe')
+
+    import hashlib
+    h = hashlib.sha256()
+    with open(prebuilt_zip, 'rb') as f:
+        for chunk in iter(lambda: f.read(65536), b''):
+            h.update(chunk)
+    zip_hash = h.hexdigest()
+
+    monkeypatch.setattr(updater.check_tool_updates, 'run', lambda propose_diff=False: {
+        'artifact_dir': 'mock_dir', 'updates_discovered': [], 'not_checked': [], 'could_not_check': []
+    })
+    monkeypatch.setattr(updater, 'check_components', lambda sys_dir: {})
+    monkeypatch.setattr(version_resolver, 'resolve_latest', lambda *args, **kwargs: {
+        'status': 'ok', 'latest_version': '2.0.0', 'url': 'http://fake/v2.zip',
+        'checksum_algo': 'sha256', 'checksum_value': zip_hash
+    })
+    monkeypatch.setattr('builtins.input', lambda prompt: 'y')
+    monkeypatch.setattr(updater.check_tool_updates, 'apply_proposal', lambda *args, **kwargs: (0, {'applied': True}))
+
+    import core.provisioner as provisioner
+    monkeypatch.setattr(provisioner, 'deploy', lambda ctx: {'status': 'success', 'installed': [], 'failed': [], 'deferred': []})
+    monkeypatch.setattr(provisioner, '_secure_download', lambda url, dest_path: shutil.copyfile(prebuilt_zip, dest_path))
+    monkeypatch.setattr(updater.check_tool_updates, '_atomic_write_json', lambda *args: None)
+
+    popen_args = []
+    class DummyPopen:
+        def __init__(self, args, **kwargs):
+            popen_args.append((args, kwargs))
+    monkeypatch.setattr(subprocess, 'Popen', DummyPopen)
+
+    import core.layout
+    monkeypatch.setattr(core.layout, 'INSTALL_ROOT_ENTRIES', ['_sys', 'Engram.exe', 'my_runtime'])
+
+    res = updater.run({'args': []})
+    assert res['status'] == 'success'
+    assert len(popen_args) == 1
+
+    # Verify plan.json contains the custom sys_dir_name
+    plan_file = renamed_sys / "data" / "temp" / "core-update" / "2.0.0" / "plan.json"
+    assert plan_file.exists()
+    plan_data = json.loads(plan_file.read_text(encoding="utf-8"))
+    assert plan_data["sys_dir_name"] == "my_runtime"
+    assert plan_data["target_dir"] == str(special_root)
+
+
+def test_updater_core_staging_renamed_sys_dir_protected_guard(monkeypatch, capsys, tmp_path):
+    """Core update staging rejects archives attempting to overwrite protected paths under either _sys or renamed sys."""
+    import core.updater as updater
+    import core.version_resolver as version_resolver
+    import zipfile
+    import shutil
+
+    special_root = tmp_path / "custom_install2"
+    special_root.mkdir()
+    renamed_sys = special_root / "my_runtime"
+
+    monkeypatch.setattr(updater, '_PORTABLE_ROOT', special_root)
+    monkeypatch.setattr(updater, '_SYS_DIR', renamed_sys)
+    (renamed_sys / 'core').mkdir(parents=True)
+    (renamed_sys / 'core' / 'version.json').write_text('{"version": "1.0.0"}')
+
+    # Malicious archive containing a file under my_runtime/env
+    malicious_zip = tmp_path / "malicious.zip"
+    with zipfile.ZipFile(malicious_zip, 'w') as zf:
+        zf.writestr('_sys/core/version.json', '{"version": "2.0.0"}')
+        zf.writestr('my_runtime/env/evil.txt', 'evil')
+        zf.writestr('Engram.exe', 'dummy exe')
+
+    import hashlib
+    h = hashlib.sha256()
+    with open(malicious_zip, 'rb') as f:
+        for chunk in iter(lambda: f.read(65536), b''):
+            h.update(chunk)
+    zip_hash = h.hexdigest()
+
+    monkeypatch.setattr(updater.check_tool_updates, 'run', lambda propose_diff=False: {
+        'artifact_dir': 'mock_dir', 'updates_discovered': [], 'not_checked': [], 'could_not_check': []
+    })
+    monkeypatch.setattr(updater, 'check_components', lambda sys_dir: {})
+    monkeypatch.setattr(version_resolver, 'resolve_latest', lambda *args, **kwargs: {
+        'status': 'ok', 'latest_version': '2.0.0', 'url': 'http://fake/malicious.zip',
+        'checksum_algo': 'sha256', 'checksum_value': zip_hash
+    })
+    monkeypatch.setattr('builtins.input', lambda prompt: 'y')
+    monkeypatch.setattr(updater.check_tool_updates, 'apply_proposal', lambda *args, **kwargs: (0, {'applied': True}))
+
+    import core.provisioner as provisioner
+    monkeypatch.setattr(provisioner, 'deploy', lambda ctx: {'status': 'success', 'installed': [], 'failed': [], 'deferred': []})
+    monkeypatch.setattr(provisioner, '_secure_download', lambda url, dest_path: shutil.copyfile(malicious_zip, dest_path))
+    monkeypatch.setattr(updater.check_tool_updates, '_atomic_write_json', lambda *args: None)
+
+    import core.layout
+    monkeypatch.setattr(core.layout, 'INSTALL_ROOT_ENTRIES', ['_sys', 'Engram.exe', 'my_runtime'])
+
+    with pytest.raises(SystemExit) as exc:
+        updater.run({'args': []})
+
+    assert exc.value.code == 1
+    out = capsys.readouterr().out
+    assert "falls under protected area" in out
