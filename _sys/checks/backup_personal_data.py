@@ -56,6 +56,10 @@ from pathlib import Path
 _SYS_DIR = Path(__file__).resolve().parent.parent
 if str(_SYS_DIR) not in sys.path:
     sys.path.insert(0, str(_SYS_DIR))
+sys.path.insert(0, str(_SYS_DIR / "core"))
+from root import bootstrap_root_package  # noqa: E402
+
+bootstrap_root_package(_SYS_DIR)
 
 # Filenames that look like vendor credentials. This is a defensive
 # assertion on the allowlist itself (see _assert_no_credential_shaped_items)
@@ -216,7 +220,7 @@ def do_backup(
     if base_dir is None:
         base_dir = engram_dir.parent
     if sys_dir is None:
-        sys_dir = base_dir / "_sys"
+        sys_dir = (base_dir / _SYS_DIR.name) if base_dir else _SYS_DIR
 
     # Process liveness warning (does not refuse)
     running = check_running_processes(sys_dir)
@@ -235,7 +239,7 @@ def do_backup(
 
     if as_zip:
         if out_path is None:
-            backups_dir = base_dir / "_sys" / "data" / "backups"
+            backups_dir = sys_dir / "data" / "backups"
             backups_dir.mkdir(parents=True, exist_ok=True)
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             target_zip = backups_dir / f"engram_backup_{stamp}.zip"
@@ -354,7 +358,7 @@ def do_restore(
     if base_dir is None:
         base_dir = engram_dir.parent
     if sys_dir is None:
-        sys_dir = base_dir / "_sys"
+        sys_dir = (base_dir / _SYS_DIR.name) if base_dir else _SYS_DIR
 
     # Process liveness check on restore
     running = check_running_processes(sys_dir)
@@ -366,7 +370,7 @@ def do_restore(
     # Pre-restore safety snapshot (unless --force)
     if not force:
         if engram_dir.is_dir() and any(engram_dir.iterdir()):
-            backups_dir = base_dir / "_sys" / "data" / "backups"
+            backups_dir = sys_dir / "data" / "backups"
             backups_dir.mkdir(parents=True, exist_ok=True)
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             snap_path = backups_dir / f"pre_restore_{stamp}.zip"
@@ -419,7 +423,7 @@ def do_reset(
     sys_dir: Path | None = None,
 ) -> None:
     if sys_dir is None:
-        sys_dir = base_dir / "_sys"
+        sys_dir = (base_dir / _SYS_DIR.name) if base_dir else _SYS_DIR
 
     # Process liveness check on reset
     running = check_running_processes(sys_dir)
@@ -478,7 +482,7 @@ def do_reset(
 def run_backup(ctx: dict) -> None:
     """Entry point for 'backup' pipeline in dispatch.json."""
     base_dir = ctx["base_dir"]
-    sys_dir = ctx.get("sys_dir", base_dir / "_sys")
+    sys_dir = ctx.get("sys_dir", (base_dir / _SYS_DIR.name) if base_dir else _SYS_DIR)
     engram_dir = base_dir / ".engram"
     args = ctx.get("args", [])
 
@@ -504,7 +508,7 @@ def run_backup(ctx: dict) -> None:
 def run_restore(ctx: dict) -> None:
     """Entry point for 'restore' pipeline in dispatch.json."""
     base_dir = ctx["base_dir"]
-    sys_dir = ctx.get("sys_dir", base_dir / "_sys")
+    sys_dir = ctx.get("sys_dir", (base_dir / _SYS_DIR.name) if base_dir else _SYS_DIR)
     engram_dir = base_dir / ".engram"
     args = ctx.get("args", [])
     force = ("--force" in args) or ("-f" in args)
@@ -530,7 +534,7 @@ def run_restore(ctx: dict) -> None:
 def run_reset(ctx: dict) -> None:
     """Entry point for 'reset' pipeline in dispatch.json."""
     base_dir = ctx["base_dir"]
-    sys_dir = ctx.get("sys_dir", base_dir / "_sys")
+    sys_dir = ctx.get("sys_dir", (base_dir / _SYS_DIR.name) if base_dir else _SYS_DIR)
     args = ctx.get("args", [])
     yes = ("--yes" in args) or ("-y" in args)
     all_data = "--all" in args
@@ -544,13 +548,14 @@ def run_reset(ctx: dict) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
-    parser.add_argument("--base-dir", help="Portable root (contains .engram/, _sys/); required with --backup/--restore/--reset")
+    parser.add_argument("--base-dir", help="Portable root (contains .engram/); required with --backup/--restore/--reset")
+    parser.add_argument("--sys-dir", help="Runtime sys directory (defaults to _SYS_DIR)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--backup", action="store_true", help="Back up .engram/'s durable subset to --out")
     group.add_argument("--restore", metavar="PATH", help="Restore a bundle back into .engram/")
     group.add_argument("--reset", action="store_true", help="Reset personal AI state (.engram/ by default; --all includes workspace/)")
     group.add_argument("--list", metavar="PATH", help="Show what a bundle contains (does not need --base-dir)")
-    parser.add_argument("--out", metavar="PATH", help="Target path for --backup (defaults to _sys/data/backups/engram_backup_<timestamp>.zip)")
+    parser.add_argument("--out", metavar="PATH", help="Target path for --backup (defaults to sys_dir/data/backups/engram_backup_<timestamp>.zip)")
     parser.add_argument("--force", action="store_true", help="With --restore, overwrite existing live session/project data")
     parser.add_argument("--yes", "-y", action="store_true", help="Skip [y/N] confirmation for --reset")
     parser.add_argument("--all", action="store_true", dest="all_data", help="With --reset, also delete workspace/")
@@ -564,7 +569,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--backup/--restore/--reset require --base-dir PATH")
     base_dir = Path(args.base_dir).resolve()
     engram_dir = base_dir / ".engram"
-    sys_dir = base_dir / "_sys"
+    sys_dir = Path(args.sys_dir).resolve() if getattr(args, "sys_dir", None) else (base_dir / _SYS_DIR.name)
 
     if args.backup:
         if not args.out:

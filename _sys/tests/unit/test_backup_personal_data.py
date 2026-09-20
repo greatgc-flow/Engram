@@ -726,3 +726,31 @@ def test_main_reset_and_zip_restore_round_trip(tmp_path: Path) -> None:
     assert main(["--base-dir", str(other_base), "--reset", "--yes"]) == 0
     assert not (other_base / ".engram").exists()
 
+
+def test_backup_and_restore_renamed_sys_dir_safe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    inst = tmp_path / "inst"
+    sys_dir = inst / "my_runtime"
+    sys_dir.mkdir(parents=True)
+    engram_dir = inst / ".engram"
+    _seed_engram(engram_dir)
+
+    monkeypatch.setattr(
+        "backup_personal_data.check_running_processes",
+        lambda sys_dir=None: [],
+    )
+
+    zip_path = do_backup(engram_dir, None, as_zip=True, base_dir=inst, sys_dir=sys_dir)
+    assert zip_path.is_file()
+    assert zip_path.parent == sys_dir / "data" / "backups"
+    assert not (inst / "_sys").exists()
+
+    # Pre-restore safety snapshot landed in renamed sys_dir
+    do_restore(engram_dir, zip_path, force=False, base_dir=inst, sys_dir=sys_dir)
+    snapshots = list((sys_dir / "data" / "backups").glob("pre_restore_*.zip"))
+    assert len(snapshots) == 1
+    assert snapshots[0].is_file()
+    assert not (inst / "_sys").exists()
+
+
