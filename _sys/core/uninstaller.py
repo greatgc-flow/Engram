@@ -19,6 +19,15 @@ import shutil
 import sys
 from typing import List, Tuple
 import uuid
+
+_CORE_DIR = Path(__file__).resolve().parent
+_SYS_DIR = _CORE_DIR.parent
+if str(_CORE_DIR) not in sys.path:
+    sys.path.insert(0, str(_CORE_DIR))
+
+from root import bootstrap_root_package, find_root  # noqa: E402
+bootstrap_root_package(_SYS_DIR)
+
 from core.layout import INSTALL_ROOT_ENTRIES
 from core import provisioner, state_paths
 
@@ -43,7 +52,6 @@ V326_SYS_PROGRAM_ENTRIES = {
     "tool-catalog.v1.json",
     "tools",
 }
-
 
 
 @dataclass
@@ -102,8 +110,8 @@ def plan_uninstall(base_dir: Path, sys_dir: Path, purge_data: bool = False) -> U
             entry_path = Path(entry.path)
             name_lower = entry.name.lower()
 
-            if name_lower == "_sys":
-                continue  # Handled in detail under _sys
+            if name_lower == sys_dir.name.lower():
+                continue  # Handled in detail under sys_dir
             elif name_lower == ".engram":
                 if purge_data:
                     plan.targets.append(entry_path)
@@ -120,7 +128,7 @@ def plan_uninstall(base_dir: Path, sys_dir: Path, purge_data: bool = False) -> U
                 # Unknown root entry
                 plan.items_to_keep.append((entry_path, "user-authored or external item"))
 
-    # 2. Scan entries under _sys
+    # 2. Scan entries under sys_dir
     if sys_dir.exists() and sys_dir.is_dir():
         for entry in os.scandir(sys_dir):
             entry_path = Path(entry.path)
@@ -176,7 +184,7 @@ def check_links_under_targets(targets: List[Path]) -> List[Path]:
 def run(ctx: dict) -> None:
     """Main uninstaller execution entry point invoked via dispatch pipeline."""
     base_dir = ctx["base_dir"]
-    sys_dir = ctx.get("sys_dir", base_dir / "_sys")
+    sys_dir = ctx.get("sys_dir") or find_root(base_dir)
 
     # Parse arguments from ctx["args"]
     args = ctx.get("args", [])
