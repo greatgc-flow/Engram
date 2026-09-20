@@ -33,11 +33,9 @@ from root import bootstrap_root_package  # noqa: E402
 bootstrap_root_package(_SYS_DIR)
 
 # ── root tmp/: leftover test-probe files ────────────────────────────────
-ROOT_TMP_DIR = ROOT / "tmp"
 ROOT_TMP_MIN_AGE_DAYS = 7
 
 # ── _sys/data/temp: pytest/probe fixture debris ─────────────────────────
-DATA_TEMP_DIR = ROOT / "_sys" / "data" / "temp"
 DATA_TEMP_MIN_AGE_DAYS = 5
 
 # Allowlist of directory-name patterns confirmed as disposable test/probe
@@ -75,21 +73,12 @@ DATA_TEMP_NEVER_TOUCH_PATTERNS = ["pyright-*", "vscode-stable-*", "ag_*"]
 
 # ── pytest's own tmp_path rotation dir (accumulates pytest-NNNN subdirs
 # across every test run system-wide, not just peerhub's) ────────────────────
-PYTEST_OF_GREAT_DIR = DATA_TEMP_DIR / "pytest-of-GREAT"
 PYTEST_OF_GREAT_MIN_AGE_DAYS = 5
-
-# ── WinGet's own download/install cache (fully regenerable) ─────────────
-WINGET_CACHE_DIR = DATA_TEMP_DIR / "WinGet"
-
-# ── npm / pip package-manager download caches (fully regenerable) ───────
-NPM_CACHE_DIR = ROOT / "_sys" / "env" / "nodejs" / "npm-cache"
-PIP_CACHE_DIR = ROOT / "_sys" / "env" / "python" / "pip-cache"
 
 # ── VSCode renderer/extension-download caches (regenerate on next launch;
 # workspaceStorage is deliberately excluded -- it's per-workspace recent-
 # file/extension state, not a pure cache, and was small enough (~1.6MB
 # measured 2026-08-09) not to be worth the extra risk) ───────────────────
-VSCODE_USER_DATA_DIR = ROOT / "_sys" / "env" / "vscode" / "data" / "user-data"
 VSCODE_CACHE_SUBDIRS = ["CachedData", "CachedExtensionVSIXs", "Cache", "GPUCache"]
 
 # Loose 8-char temp files verified (cx audit) to contain exactly "blat"
@@ -97,12 +86,56 @@ VSCODE_CACHE_SUBDIRS = ["CachedData", "CachedExtensionVSIXs", "Cache", "GPUCache
 BLAT_NAME_LEN = 8
 
 # ── ag (antigravity) internal task logs ─────────────────────────────────
-BRAIN_DIR = ROOT / "_sys" / "antigravity" / "config" / "brain"
 BRAIN_LOG_MAX_AGE_DAYS = 14
 
 # ── VSCode dated session log dirs ───────────────────────────────────────
-VSCODE_LOGS_DIR = ROOT / "_sys" / "env" / "vscode" / "data" / "user-data" / "logs"
 VSCODE_LOGS_KEEP = 2
+
+
+def configure_paths(root: Path | None = None, sys_dir: Path | None = None) -> dict[str, Path]:
+    """Configure and return all derived path constants for the given root and sys_dir.
+
+    Updates module-level path constants (ROOT, _SYS_DIR, DATA_TEMP_DIR, etc.)
+    and returns a dictionary of the derived paths for testing or programmatic inspection.
+    """
+    global ROOT, _SYS_DIR
+    global ROOT_TMP_DIR, DATA_TEMP_DIR, PYTEST_OF_GREAT_DIR, WINGET_CACHE_DIR
+    global NPM_CACHE_DIR, PIP_CACHE_DIR, VSCODE_USER_DATA_DIR, VSCODE_LOGS_DIR, BRAIN_DIR
+
+    if root is not None:
+        ROOT = Path(root).resolve()
+    if sys_dir is not None:
+        _SYS_DIR = Path(sys_dir).resolve()
+    elif root is not None:
+        _SYS_DIR = ROOT / _SYS_DIR.name
+
+    ROOT_TMP_DIR = ROOT / "tmp"
+    DATA_TEMP_DIR = _SYS_DIR / "data" / "temp"
+    PYTEST_OF_GREAT_DIR = DATA_TEMP_DIR / "pytest-of-GREAT"
+    WINGET_CACHE_DIR = DATA_TEMP_DIR / "WinGet"
+    NPM_CACHE_DIR = _SYS_DIR / "env" / "nodejs" / "npm-cache"
+    PIP_CACHE_DIR = _SYS_DIR / "env" / "python" / "pip-cache"
+    VSCODE_USER_DATA_DIR = _SYS_DIR / "env" / "vscode" / "data" / "user-data"
+    VSCODE_LOGS_DIR = _SYS_DIR / "env" / "vscode" / "data" / "user-data" / "logs"
+    BRAIN_DIR = _SYS_DIR / "antigravity" / "config" / "brain"
+
+    return {
+        "root": ROOT,
+        "sys_dir": _SYS_DIR,
+        "root_tmp": ROOT_TMP_DIR,
+        "data_temp": DATA_TEMP_DIR,
+        "pytest_of_great": PYTEST_OF_GREAT_DIR,
+        "winget_cache": WINGET_CACHE_DIR,
+        "npm_cache": NPM_CACHE_DIR,
+        "pip_cache": PIP_CACHE_DIR,
+        "vscode_user_data": VSCODE_USER_DATA_DIR,
+        "vscode_logs": VSCODE_LOGS_DIR,
+        "brain": BRAIN_DIR,
+    }
+
+
+# Initialize path constants with defaults derived from _SYS_DIR
+configure_paths(ROOT, _SYS_DIR)
 
 
 def _age_days(p: Path, now: float) -> float:
@@ -208,16 +241,16 @@ def plan_pip_cache() -> list[Path]:
 
 
 def plan_pycache() -> list[Path]:
-    return [p for p in (ROOT / "_sys").rglob("__pycache__") if p.is_dir()]
+    return [p for p in _SYS_DIR.rglob("__pycache__") if p.is_dir()]
 
 def plan_pytest_cache_default() -> list[Path]:
-    p = ROOT / "_sys" / "tests" / ".pytest_cache"
+    p = _SYS_DIR / "tests" / ".pytest_cache"
     return [p] if p.exists() else []
 
 def plan_launcher_logs(deep: bool) -> list[Path]:
     if not deep:
         return []
-    log_dir = ROOT / "_sys" / "data" / "logs"
+    log_dir = _SYS_DIR / "data" / "logs"
     if not log_dir.exists():
         return []
     logs = sorted(
@@ -268,11 +301,11 @@ def _rm(path: Path, apply: bool) -> int:
         ROOT / "workspace",
         ROOT / ".engram",
         ROOT / "_archive",  # legacy-source: migration only
-        ROOT / "_sys" / "env" / "python",
-        ROOT / "_sys" / "tools" / "rg",
-        ROOT / "_sys" / "data" / "state",
-        ROOT / "_sys" / "runtimes.json",
-        ROOT / "_sys" / "tool-catalog.v1.json",
+        _SYS_DIR / "env" / "python",
+        _SYS_DIR / "tools" / "rg",
+        _SYS_DIR / "data" / "state",
+        _SYS_DIR / "runtimes.json",
+        _SYS_DIR / "tool-catalog.v1.json",
     ]
     
     # Also protect root files like .vscode, _state, WORKLOG.md, and all *.md
@@ -306,8 +339,34 @@ def _rm(path: Path, apply: bool) -> int:
     return size
 
 
+def build_plan(now: float | None = None, deep: bool = False) -> list[tuple[str, str, list[Path]]]:
+    """Return categorized cleanup items: list of (label, key, items)."""
+    if ROOT != _SYS_DIR.parent and _SYS_DIR.name:
+        configure_paths(root=ROOT, sys_dir=ROOT / _SYS_DIR.name)
+    if now is None:
+        now = datetime.datetime.now().timestamp()
+    dirs, blat = plan_data_temp(now)
+    return [
+        ("root_tmp", "tmp", plan_root_tmp(now)),
+        ("data_temp_dirs", "data_temp", dirs),
+        ("data_temp_blat_files", "data_temp", blat),
+        ("ag_brain_logs", "brain", plan_brain_logs(now)),
+        ("vscode_logs", "vscode", plan_vscode_logs()),
+        ("pytest_of_great", "pytest_cache", plan_pytest_of_great(now)),
+        ("winget_cache", "winget_cache", plan_winget_cache()),
+        ("npm_cache", "npm_cache", plan_npm_cache()),
+        ("pip_cache", "pip_cache", plan_pip_cache()),
+        ("pycache", "pycache", plan_pycache()),
+        ("pytest_cache_default", "pytest_cache_default", plan_pytest_cache_default()),
+        ("launcher_logs", "launcher_logs", plan_launcher_logs(deep)),
+        ("vscode_cache", "vscode_cache", plan_vscode_caches()),
+    ]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--base-dir", default=None, help="Root directory (default: ROOT)")
+    ap.add_argument("--sys-dir", default=None, help="Sys directory (default: _SYS_DIR)")
     ap.add_argument("--apply", action="store_true", help="actually delete (default: dry-run)")
     ap.add_argument("--deep", action="store_true", help="include deeper cleans (e.g., launcher logs)")
     ap.add_argument(
@@ -319,6 +378,9 @@ def main() -> int:
     )
     args = ap.parse_args()
 
+    if args.base_dir or args.sys_dir:
+        configure_paths(root=args.base_dir, sys_dir=args.sys_dir)
+
     default_targets = (
         "tmp,data_temp,brain,vscode,"
         "pytest_cache,winget_cache,npm_cache,pip_cache,vscode_cache,pycache,pytest_cache_default,launcher_logs"
@@ -328,7 +390,7 @@ def main() -> int:
     total_bytes = 0
     total_count = 0
 
-    def run(label: str, key: str, items: list[Path]):
+    def run_item(label: str, key: str, items: list[Path]):
         nonlocal total_bytes, total_count
         if key not in targets:
             return
@@ -343,22 +405,11 @@ def main() -> int:
             if len(items) > 10:
                 print(f"    ... and {len(items) - 10} more")
 
-    run("root_tmp", "tmp", plan_root_tmp(now))
-    dirs, blat = plan_data_temp(now)
-    run("data_temp_dirs", "data_temp", dirs)
-    run("data_temp_blat_files", "data_temp", blat)
-    run("ag_brain_logs", "brain", plan_brain_logs(now))
-    run("vscode_logs", "vscode", plan_vscode_logs())
-    run("pytest_of_great", "pytest_cache", plan_pytest_of_great(now))
-    run("winget_cache", "winget_cache", plan_winget_cache())
-    run("npm_cache", "npm_cache", plan_npm_cache())
-    run("pip_cache", "pip_cache", plan_pip_cache())
-    run("pycache", "pycache", plan_pycache())
-    run("pytest_cache_default", "pytest_cache_default", plan_pytest_cache_default())
-    run("launcher_logs", "launcher_logs", plan_launcher_logs(args.deep))
+    plan = build_plan(now=now, deep=args.deep)
     if "vscode_cache" in targets and VSCODE_USER_DATA_DIR.exists() and _vscode_is_running():
         print("[vscode_cache] skipped: VSCode (Code.exe) is currently running")
-    run("vscode_cache", "vscode_cache", plan_vscode_caches())
+    for label, key, items in plan:
+        run_item(label, key, items)
 
     print(f"\nTOTAL: {total_count} item(s), {total_bytes / 1048576:.1f} MiB "
           f"({'applied' if args.apply else 'dry-run, pass --apply to execute'})")
@@ -367,6 +418,8 @@ def main() -> int:
 
 def run(ctx: dict) -> dict:
     """Entry point for dispatch.bat (engram tidy pipeline)."""
+    if "base_dir" in ctx or "sys_dir" in ctx:
+        configure_paths(root=ctx.get("base_dir"), sys_dir=ctx.get("sys_dir"))
     # Convert ctx["args"] to sys.argv for argparse inside main()
     # (or we could just call main() and let it read sys.argv, but ctx["args"] 
     # is the canonical way dispatch args are passed).

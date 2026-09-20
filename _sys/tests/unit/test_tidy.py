@@ -10,6 +10,30 @@ from _sys.core.root import find_root
 sys.path.insert(0, str(find_root(__file__)))
 from core import tidy_temp
 
+REAL_WORKTREE = find_root(__file__).parent.resolve()
+
+
+@pytest.fixture(autouse=True)
+def guard_real_worktree(monkeypatch):
+    """Guard ensuring no test ever targets or deletes anything in the real worktree."""
+    orig_rm = tidy_temp._rm
+
+    def guarded_rm(path: Path, apply: bool) -> int:
+        resolved = Path(path).resolve()
+        if resolved == REAL_WORKTREE or REAL_WORKTREE in resolved.parents:
+            raise AssertionError(f"SAFETY VIOLATION: tidy attempted to touch real worktree path: {resolved}")
+        return orig_rm(path, apply)
+
+    monkeypatch.setattr(tidy_temp, "_rm", guarded_rm)
+
+    orig_paths = {
+        "ROOT": tidy_temp.ROOT,
+        "_SYS_DIR": tidy_temp._SYS_DIR,
+    }
+    yield
+    tidy_temp.configure_paths(root=orig_paths["ROOT"], sys_dir=orig_paths["_SYS_DIR"])
+
+
 @pytest.fixture
 def mock_env(tmp_path):
     """Fixture holding both allowlisted debris and populated never-touch set."""
@@ -63,6 +87,17 @@ def mock_env(tmp_path):
         # Let's adjust mtime so 0 is oldest, 6 is newest.
         os.utime(log_file, (1000 + i, 1000 + i))
         
+    # Configure tidy_temp paths to point entirely within mock_env (fixes finding M-5)
+    tidy_temp.configure_paths(root=base_dir, sys_dir=sys_dir)
+
+    # Guard assertion: every planned target must resolve strictly inside mock_env
+    for p in _collect_plan(deep=True):
+        resolved = p.resolve()
+        assert resolved != REAL_WORKTREE and REAL_WORKTREE not in resolved.parents, (
+            f"SAFETY VIOLATION: Planned target resolves under real worktree: {resolved}"
+        )
+        assert resolved.is_relative_to(base_dir), f"Planned target outside mock_env: {resolved}"
+
     return base_dir
 
 def get_snapshot(base_dir: Path):
@@ -146,3 +181,72 @@ class TestTidy:
 
             with pytest.raises(AssertionError, match="Defense in depth: tidy attempted to delete protected path"):
                 tidy_temp._rm(mock_env / "_sys" / "tool-catalog.v1.json", True)
+
+    def test_tidy_renamed_sys_dir_safe(self, tmp_path: Path):
+        """Audit finding H-1: tidy targets resolve correctly under a renamed sys directory."""
+        inst = tmp_path / "inst"
+        sys_dir = inst / "my_runtime"
+
+        # 1. data/temp debris (older than 5 days)
+        data_temp = sys_dir / "data" / "temp" / "pytest_c1_probe"
+        data_temp.mkdir(parents=True)
+        (data_temp / "debris.txt").write_text("debris")
+        old_time = 1000  # long ago
+        os.utime(data_temp, (old_time, old_time))
+
+        # 2. __pycache__
+        pycache = sys_dir / "core" / "__pycache__"
+        pycache.mkdir(parents=True)
+        (pycache / "compiled.pyc").write_text("pyc")
+
+        # 3. .pytest_cache
+        pytest_cache = sys_dir / "tests" / ".pytest_cache"
+        pytest_cache.mkdir(parents=True)
+        (pytest_cache / "cache.json").write_text("{}")
+
+        # 4. launcher logs (older than 5 most recent)
+        logs_dir = sys_dir / "data" / "logs"
+        logs_dir.mkdir(parents=True)
+        for i in range(7):
+            lf = logs_dir / f"launcher_{i}.log"
+            lf.write_text("log")
+            os.utime(lf, (old_time + i, old_time + i))
+
+        # 5. package manager caches
+        npm_cache = sys_dir / "env" / "nodejs" / "npm-cache"
+        npm_cache.mkdir(parents=True)
+        (npm_cache / "cache.bin").write_text("cache")
+
+        # Configure paths for renamed sys folder
+        tidy_temp.configure_paths(root=inst, sys_dir=sys_dir)
+
+        # Compute the plan
+        plan = _collect_plan(deep=True)
+        assert len(plan) > 0, "Plan should contain seeded targets"
+
+        # Assert every target path is under inst/my_runtime and none under inst/_sys
+        for p in plan:
+            resolved = p.resolve()
+            assert resolved != REAL_WORKTREE and REAL_WORKTREE not in resolved.parents, (
+                f"SAFETY VIOLATION: Planned target resolves under real worktree: {resolved}"
+            )
+            assert resolved.is_relative_to(sys_dir), f"Target {p} is not under {sys_dir}"
+            assert not str(resolved).startswith(str(inst / "_sys")), f"Target {p} under _sys"
+
+        assert not (inst / "_sys").exists()
+
+        # Run dry-run via run(ctx) and verify nothing real is deleted
+        before = get_snapshot(inst)
+        res = tidy_temp.run({"base_dir": inst, "sys_dir": sys_dir, "args": ["--deep"]})
+        assert res["status"] == "success"
+        after = get_snapshot(inst)
+        assert before == after
+
+
+def _collect_plan(now=None, deep=False, targets=None):
+    """Flat list of planned target Paths (test helper over tidy_temp.build_plan)."""
+    items = []
+    for _label, key, paths in tidy_temp.build_plan(now=now, deep=deep):
+        if targets is None or key in targets:
+            items.extend(paths)
+    return items
