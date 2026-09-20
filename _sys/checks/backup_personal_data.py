@@ -138,6 +138,8 @@ def check_running_processes(sys_dir: Path | None = None) -> list[str]:
     """Check if any of claude.exe, codex.exe, agy.exe are running against this install.
 
     Reuses provisioner._is_peer_leased for process-liveness inspection.
+    When node.exe is detected under sys_dir for codex, reports 'codex (node.exe)'
+    to reflect the actual process image while preserving safe refusal semantics.
     """
     if sys_dir is None:
         sys_dir = _SYS_DIR
@@ -149,7 +151,32 @@ def check_running_processes(sys_dir: Path | None = None) -> list[str]:
         except ImportError:
             continue
         if _is_peer_leased(sys_dir, tool):
-            running.append(display_name)
+            if tool == "codex":
+                # Disambiguate whether codex.exe or node.exe is actually running
+                try:
+                    import psutil
+                    root = str(sys_dir.resolve()).lower()
+                    found_names = set()
+                    for proc in psutil.process_iter(["name", "exe"]):
+                        try:
+                            pname = (proc.info.get("name") or "").lower()
+                            if pname in ("codex.exe", "node.exe"):
+                                pexe = proc.info.get("exe")
+                                if pexe and str(pexe).lower().startswith(root):
+                                    found_names.add(pname)
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            continue
+                    if "node.exe" in found_names and "codex.exe" not in found_names:
+                        running.append("codex (node.exe)")
+                    elif "codex.exe" in found_names and "node.exe" in found_names:
+                        running.append("codex.exe")
+                        running.append("codex (node.exe)")
+                    else:
+                        running.append(display_name)
+                except Exception:
+                    running.append(display_name)
+            else:
+                running.append(display_name)
     return running
 
 
@@ -226,6 +253,8 @@ def do_backup(
     running = check_running_processes(sys_dir)
     if running:
         print(f"[WARNING] Managed AI process(es) currently running: {', '.join(running)}")
+        if any("node.exe" in r for r in running):
+            print("  Note: node.exe may be a Node-based AI CLI (e.g. Codex).")
         print("File copies taken during active sessions may produce partial reads.\n")
 
     # Determine archive vs plain-folder mode
@@ -364,6 +393,8 @@ def do_restore(
     running = check_running_processes(sys_dir)
     if running:
         print(f"[Error] Cannot restore: managed AI CLI process(es) currently running: {', '.join(running)}")
+        if any("node.exe" in r for r in running):
+            print("Note: node.exe may be a Node-based AI CLI (e.g. Codex).")
         print("Please close all running AI CLIs and try again.")
         sys.exit(1)
 
@@ -429,6 +460,8 @@ def do_reset(
     running = check_running_processes(sys_dir)
     if running:
         print(f"[Error] Cannot reset: managed AI CLI process(es) currently running: {', '.join(running)}")
+        if any("node.exe" in r for r in running):
+            print("Note: node.exe may be a Node-based AI CLI (e.g. Codex).")
         print("Please close all running AI CLIs and try again.")
         sys.exit(1)
 
@@ -487,10 +520,19 @@ def run_backup(ctx: dict) -> None:
     args = ctx.get("args", [])
 
     out_path = None
-    if "--out" in args:
-        idx = args.index("--out")
-        if idx + 1 < len(args):
-            raw_out = args[idx + 1]
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--out":
+            if out_path is not None:
+                print("[Error] --out specified more than once.")
+                print("Usage: engram backup [--out PATH]")
+                sys.exit(2)
+            if i + 1 >= len(args):
+                print("[Error] --out requires a PATH argument.")
+                print("Usage: engram backup [--out PATH]")
+                sys.exit(2)
+            raw_out = args[i + 1]
             caller_cwd = os.environ.get("ENGRAM_CALLER_CWD")
             if caller_cwd and not Path(raw_out).is_absolute():
                 out_path = Path(caller_cwd) / raw_out
@@ -498,8 +540,14 @@ def run_backup(ctx: dict) -> None:
                 out_path = Path(raw_out)
             if raw_out.endswith(("/", "\\")):
                 out_path.mkdir(parents=True, exist_ok=True)
+            i += 2
+        elif arg.startswith("-"):
+            print(f"[Error] Unknown flag for backup: {arg}")
+            print("Usage: engram backup [--out PATH]")
+            sys.exit(2)
         else:
-            print("[Error] --out requires a PATH argument.")
+            print(f"[Error] Unexpected positional argument for backup: {arg}")
+            print("Usage: engram backup [--out PATH]")
             sys.exit(2)
 
     do_backup(engram_dir, out_path, as_zip=True, base_dir=base_dir, sys_dir=sys_dir)
@@ -511,17 +559,26 @@ def run_restore(ctx: dict) -> None:
     sys_dir = ctx.get("sys_dir", (base_dir / _SYS_DIR.name) if base_dir else _SYS_DIR)
     engram_dir = base_dir / ".engram"
     args = ctx.get("args", [])
-    force = ("--force" in args) or ("-f" in args)
+    force = False
 
     target_path = None
     for a in args:
-        if not a.startswith("-"):
+        if a in ("--force", "-f"):
+            force = True
+        elif a.startswith("-"):
+            print(f"[Error] Unknown flag for restore: {a}")
+            print("Usage: engram restore PATH [--force]")
+            sys.exit(2)
+        else:
+            if target_path is not None:
+                print(f"[Error] Unexpected extra positional argument for restore: {a}")
+                print("Usage: engram restore PATH [--force]")
+                sys.exit(2)
             caller_cwd = os.environ.get("ENGRAM_CALLER_CWD")
             if caller_cwd and not Path(a).is_absolute():
                 target_path = Path(caller_cwd) / a
             else:
                 target_path = Path(a)
-            break
 
     if target_path is None:
         print("[Error] engram restore requires a PATH to a backup .zip or bundle directory.")
@@ -536,8 +593,22 @@ def run_reset(ctx: dict) -> None:
     base_dir = ctx["base_dir"]
     sys_dir = ctx.get("sys_dir", (base_dir / _SYS_DIR.name) if base_dir else _SYS_DIR)
     args = ctx.get("args", [])
-    yes = ("--yes" in args) or ("-y" in args)
-    all_data = "--all" in args
+    yes = False
+    all_data = False
+
+    for a in args:
+        if a in ("--yes", "-y"):
+            yes = True
+        elif a == "--all":
+            all_data = True
+        elif a.startswith("-"):
+            print(f"[Error] Unknown flag for reset: {a}")
+            print("Usage: engram reset [--yes|-y] [--all]")
+            sys.exit(2)
+        else:
+            print(f"[Error] Unexpected positional argument for reset: {a}")
+            print("Usage: engram reset [--yes|-y] [--all]")
+            sys.exit(2)
 
     do_reset(base_dir, yes=yes, all_data=all_data, sys_dir=sys_dir)
 
@@ -572,9 +643,7 @@ def main(argv: list[str] | None = None) -> int:
     sys_dir = Path(args.sys_dir).resolve() if getattr(args, "sys_dir", None) else (base_dir / _SYS_DIR.name)
 
     if args.backup:
-        if not args.out:
-            parser.error("--backup requires --out PATH")
-        out_target = Path(args.out).resolve()
+        out_target = Path(args.out).resolve() if args.out else None
         do_backup(engram_dir, out_target, base_dir=base_dir, sys_dir=sys_dir)
     elif args.restore:
         do_restore(engram_dir, Path(args.restore).resolve(), force=args.force, base_dir=base_dir, sys_dir=sys_dir)

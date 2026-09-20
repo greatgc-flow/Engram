@@ -198,9 +198,15 @@ def test_main_backup_then_restore_round_trip(
     assert (other_base / ".engram" / "claude" / "CLAUDE.md").is_file()
 
 
-def test_main_backup_without_out_errors(tmp_path: Path) -> None:
-    with pytest.raises(SystemExit):
-        main(["--base-dir", str(tmp_path), "--backup"])
+def test_main_backup_without_out_uses_default_location(tmp_path: Path) -> None:
+    base_dir = tmp_path / "base"
+    _seed_engram(base_dir / ".engram")
+    assert main(["--base-dir", str(base_dir), "--backup"]) == 0
+    backups_dir = base_dir / "_sys" / "data" / "backups"
+    assert backups_dir.is_dir()
+    backups = list(backups_dir.glob("engram_backup_*.zip"))
+    assert len(backups) == 1
+    assert zipfile.is_zipfile(backups[0])
 
 
 def test_main_list_does_not_require_base_dir(
@@ -647,6 +653,18 @@ def test_run_backup_dispatcher_adapter(
         run_backup(ctx4)
     assert exc.value.code == 2
 
+    # 5. Error if unknown flag
+    ctx5 = {"base_dir": base_dir, "sys_dir": sys_dir, "args": ["--bogus"]}
+    with pytest.raises(SystemExit) as exc5:
+        run_backup(ctx5)
+    assert exc5.value.code == 2
+
+    # 6. Error if extra positional
+    ctx6 = {"base_dir": base_dir, "sys_dir": sys_dir, "args": ["extra_arg"]}
+    with pytest.raises(SystemExit) as exc6:
+        run_backup(ctx6)
+    assert exc6.value.code == 2
+
 
 def test_run_restore_dispatcher_adapter(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -680,7 +698,7 @@ def test_run_restore_dispatcher_adapter(
     run_restore(ctx2)
     assert (target_base2 / ".engram" / "claude" / "CLAUDE.md").is_file()
 
-    # 3. Missing path argument
+    # 3. Missing path argument (--force only)
     ctx3 = {
         "base_dir": target_base,
         "sys_dir": target_base / "_sys",
@@ -689,6 +707,36 @@ def test_run_restore_dispatcher_adapter(
     with pytest.raises(SystemExit) as exc:
         run_restore(ctx3)
     assert exc.value.code == 2
+
+    # 4. Missing path argument (empty args)
+    ctx4 = {
+        "base_dir": target_base,
+        "sys_dir": target_base / "_sys",
+        "args": [],
+    }
+    with pytest.raises(SystemExit) as exc4:
+        run_restore(ctx4)
+    assert exc4.value.code == 2
+
+    # 5. Unknown flag
+    ctx5 = {
+        "base_dir": target_base,
+        "sys_dir": target_base / "_sys",
+        "args": [str(backup_zip), "--bogus"],
+    }
+    with pytest.raises(SystemExit) as exc5:
+        run_restore(ctx5)
+    assert exc5.value.code == 2
+
+    # 6. Extra positional
+    ctx6 = {
+        "base_dir": target_base,
+        "sys_dir": target_base / "_sys",
+        "args": [str(backup_zip), "extra.zip"],
+    }
+    with pytest.raises(SystemExit) as exc6:
+        run_restore(ctx6)
+    assert exc6.value.code == 2
 
 
 def test_run_reset_dispatcher_adapter(tmp_path: Path) -> None:
@@ -706,6 +754,58 @@ def test_run_reset_dispatcher_adapter(tmp_path: Path) -> None:
     run_reset(ctx)
     assert not (base_dir / ".engram").exists()
     assert workspace.exists()
+
+    # Unknown flag exits 2
+    with pytest.raises(SystemExit) as exc1:
+        run_reset({"base_dir": base_dir, "sys_dir": base_dir / "_sys", "args": ["--bogus"]})
+    assert exc1.value.code == 2
+
+    # Extra positional exits 2
+    with pytest.raises(SystemExit) as exc2:
+        run_reset({"base_dir": base_dir, "sys_dir": base_dir / "_sys", "args": ["unexpected"]})
+    assert exc2.value.code == 2
+
+
+def test_restore_refuses_when_node_process_is_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    base_dir = tmp_path / "base"
+    engram_dir = base_dir / ".engram"
+    _seed_engram(engram_dir)
+    sys_dir = base_dir / "_sys"
+    sys_dir.mkdir(parents=True)
+
+    fake_proc = type("Proc", (), {
+        "info": {
+            "name": "node.exe",
+            "exe": str(sys_dir / "env" / "nodejs" / "node.exe"),
+        }
+    })()
+    fake_psutil = type("FakePsutil", (), {
+        "process_iter": staticmethod(lambda attrs=None: [fake_proc]),
+        "NoSuchProcess": Exception,
+        "AccessDenied": Exception,
+    })()
+
+    monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+    import core.provisioner
+    monkeypatch.setattr(core.provisioner, "psutil", fake_psutil, raising=False)
+
+    source_zip = tmp_path / "backup.zip"
+    do_backup(engram_dir, source_zip, as_zip=True)
+    capsys.readouterr()
+
+    running = check_running_processes(sys_dir)
+    assert running == ["codex (node.exe)"]
+
+    with pytest.raises(SystemExit) as exc:
+        do_restore(engram_dir, source_zip, base_dir=base_dir, sys_dir=sys_dir)
+
+    assert exc.value.code == 1
+    stdout = capsys.readouterr().out
+    assert "[Error] Cannot restore: managed AI CLI process(es) currently running: codex (node.exe)" in stdout
+    assert "Note: node.exe may be a Node-based AI CLI" in stdout
+    assert "Please close all running AI CLIs and try again." in stdout
 
 
 def test_main_reset_and_zip_restore_round_trip(tmp_path: Path) -> None:

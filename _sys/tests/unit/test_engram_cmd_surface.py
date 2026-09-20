@@ -339,3 +339,24 @@ def test_renamed_sys_dir_env_var_override(tmp_path: Path, monkeypatch):
     assert "DISPATCH_PIPELINE=doctor" in proc.stdout
     assert "TARGET_B" in proc.stdout
 
+
+# ----------------------------------------------------------------------------
+# 8. Root entrypoint forwarding for backup, restore, reset (L-5)
+# ----------------------------------------------------------------------------
+
+@pytest.mark.parametrize("verb_args,expected_pipeline,expected_args", [
+    (["backup"], "backup", "backup"),
+    (["backup", "--out", "x.zip"], "backup", "backup --out x.zip"),
+    (["restore", "x.zip"], "restore", "restore x.zip"),
+    (["restore", "x.zip", "--force"], "restore", "restore x.zip --force"),
+    (["reset"], "reset", "reset"),
+    (["reset", "--yes"], "reset", "reset --yes"),
+])
+def test_backup_restore_reset_forwarding(surface_root, verb_args, expected_pipeline, expected_args):
+    """engram.cmd backup, restore, reset forward args to matching dispatch pipelines (audit finding L-5)."""
+    proc = run_engram(surface_root, *verb_args)
+    assert proc.returncode == 0, f"Failed for {verb_args}: rc={proc.returncode}, out={proc.stdout}"
+    assert f"DISPATCH_PIPELINE={expected_pipeline}" in proc.stdout
+    assert f"DISPATCH_ARGS={expected_args}" in proc.stdout
+
+
