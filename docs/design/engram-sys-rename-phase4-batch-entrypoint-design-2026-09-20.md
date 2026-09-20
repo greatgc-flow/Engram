@@ -1,9 +1,14 @@
 # Engram `_sys` Folder Renameability: Batch-Entrypoint Discovery & Phase 4 Design
 
-- **Status**: DESIGN ONLY (Precondition 2 gating Phase 4 per Addendum 4 §4)
+- **Status**: **IMPLEMENTED** (2026-09-20). This document's own §5.3 recommendation was "DO NOT IMPLEMENT PHASE 4" -- the user explicitly reviewed that risk assessment and asked to proceed anyway. All 5 steps below were implemented, independently verified (diff review + full test suite after each step, never a live invocation against a real install), and shipped:
+  - Step 1+2 (`setup.py`, `provisioner.py`): commit `f199ebb`.
+  - Step 3 (`uninstaller.py`, `layout.py`): commit `263c559`.
+  - Step 4, CRITICAL (`updater.py`, `core_update_helper.ps1`): commit `5e80b3d`.
+  - Step 5, final (`engram.cmd`, `bootstrap.bat`, `dispatcher.py`): commit `48b82fa`.
+  - Full suite at completion: 403 passed, 3 skipped, 0 failed. The §5 risk analysis below is kept as real history explaining what was weighed before the user's override -- it is no longer this project's operative recommendation.
 - **Author**: `ag.effort`
 - **Date**: 2026-09-20
-- **Target Repo**: `D:\Engram&Peerhub\engram-main-worktree` (commit `65308a9`)
+- **Target Repo**: `D:\Engram&Peerhub\engram-main-worktree` (commit `65308a9` at design time; `48b82fa` at implementation completion)
 - **Reference Doc**: `P:\workspace\peerhub\docs\design\engram-sys-folder-rename-feasibility-2026-09-17.md` (Addenda 1–4)
 - **Preconditions**:
   1. Full green pytest suite across Phases 1–3: **SATISFIED** (405 passed, 3 skipped, 0 failed at commit `65308a9`).
