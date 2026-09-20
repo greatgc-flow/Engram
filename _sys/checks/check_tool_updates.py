@@ -31,8 +31,8 @@ import version_resolver  # noqa: E402
 
 RUNTIMES_PATH = _SYS_DIR / "runtimes.json"
 from _sys.core import provisioner, state_paths
-ARCHIVE_ROOT = state_paths.proposals_dir(_PORTABLE_ROOT / "_sys")
-DISCOVERY_CACHE_PATH = state_paths.discovery_cache(_PORTABLE_ROOT / "_sys")
+ARCHIVE_ROOT = state_paths.proposals_dir(_SYS_DIR)
+DISCOVERY_CACHE_PATH = state_paths.discovery_cache(_SYS_DIR)
 RETENTION_KEEP = 20
 
 EXIT_OK = 0
@@ -355,7 +355,7 @@ def _planned_changes(proposal: dict[str, Any]) -> list[str]:
 
 def _run_install_step() -> subprocess.CompletedProcess:
     return subprocess.run(
-        [r".\_sys\core\bootstrap.bat", "--skip-update"],
+        [rf".\{_SYS_DIR.name}\core\bootstrap.bat", "--skip-update"],
         cwd=str(_PORTABLE_ROOT),
         capture_output=True,
         text=True,

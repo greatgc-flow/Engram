@@ -366,3 +366,50 @@ def test_apply_install_failure_returns_4_after_successful_apply(monkeypatch, tmp
     assert apply_payload["install_succeeded"] is False
     assert apply_payload["install_returncode"] == 9
     assert json.loads(runtimes_path.read_text(encoding="utf-8")) == proposed
+
+
+def test_check_tool_updates_renamed_sys_dir_safe(monkeypatch, tmp_path):
+    """Verify that state and cache paths are rooted under renamed sys_dir, not literal _sys."""
+    inst = tmp_path / "inst"
+    sys_dir = inst / "my_runtime"
+    sys_dir.mkdir(parents=True)
+
+    from _sys.core import state_paths
+
+    archive_root = state_paths.proposals_dir(sys_dir)
+    cache_path = state_paths.discovery_cache(sys_dir)
+
+    assert archive_root == sys_dir / "data" / "state" / "update" / "proposals"
+    assert cache_path == sys_dir / "data" / "state" / "update" / "tool_discovery_cache.json"
+    assert not (inst / "_sys").exists()
+    assert str(archive_root).startswith(str(sys_dir))
+    assert str(cache_path).startswith(str(sys_dir))
+
+    monkeypatch.setattr(ctu, "_SYS_DIR", sys_dir)
+    monkeypatch.setattr(ctu, "ARCHIVE_ROOT", state_paths.proposals_dir(sys_dir))
+    monkeypatch.setattr(ctu, "DISCOVERY_CACHE_PATH", state_paths.discovery_cache(sys_dir))
+
+    assert ctu.ARCHIVE_ROOT == sys_dir / "data" / "state" / "update" / "proposals"
+    assert ctu.DISCOVERY_CACHE_PATH == sys_dir / "data" / "state" / "update" / "tool_discovery_cache.json"
+    assert not str(ctu.ARCHIVE_ROOT).startswith(str(inst / "_sys"))
+    assert not str(ctu.DISCOVERY_CACHE_PATH).startswith(str(inst / "_sys"))
+
+    # Test bootstrap invocation uses renamed sys folder name
+    monkeypatch.setattr(ctu, "_PORTABLE_ROOT", inst)
+    calls = []
+    monkeypatch.setattr(
+        ctu.subprocess,
+        "run",
+        lambda args, cwd=None, capture_output=None, text=None: (
+            calls.append((args, cwd)),
+            ctu.subprocess.CompletedProcess(args=args, returncode=0, stdout="ok", stderr=""),
+        )[1],
+    )
+    ctu._run_install_step()
+    assert len(calls) == 1
+    cmd_args, cwd = calls[0]
+    assert cmd_args[0] == rf".\{sys_dir.name}\core\bootstrap.bat"
+    assert cmd_args[0] == r".\my_runtime\core\bootstrap.bat"
+    assert cwd == str(inst)
+    assert not (inst / "_sys").exists()
+

@@ -143,11 +143,12 @@ def main(argv: list[str] | None = None) -> int:
         description=(__doc__ or "").splitlines()[0]
     )
     parser.add_argument("--base-dir", required=True, help="Portable root (contains .ais/, .engram/, _sys/)")
+    parser.add_argument("--sys-dir", default=None, help="Runtime sys directory (default: base-dir / _SYS_DIR.name)")
     parser.add_argument("--apply", action="store_true", help="Actually perform the move (default: dry-run report only)")
     args = parser.parse_args(argv)
 
     base_dir = Path(args.base_dir).resolve()
-    sys_dir = base_dir / "_sys"
+    sys_dir = Path(args.sys_dir).resolve() if args.sys_dir else (base_dir / _SYS_DIR.name)
 
     try:
         plan = plan_migration(base_dir, sys_dir)
