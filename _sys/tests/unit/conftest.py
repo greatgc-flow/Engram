@@ -9,10 +9,13 @@ import psutil
 import pytest
 from pathlib import Path
 
-# Add the directory containing _sys to sys.path so 'from _sys.core import ...' works
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+# Register _sys via bootstrap_root_package so 'from _sys.core import ...' works
+_SYS_DIR = Path(__file__).resolve().parent.parent.parent
 # Also keep core in path for tests doing 'import hub' directly
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "core"))
+sys.path.insert(0, str(_SYS_DIR / "core"))
+
+from root import bootstrap_root_package
+bootstrap_root_package(_SYS_DIR)
 
 # --- OOM / Hang Protection ---
 

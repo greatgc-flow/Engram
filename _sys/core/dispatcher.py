@@ -14,6 +14,9 @@ base_dir = sys_dir.parent
 if str(sys_dir) not in sys.path:
     sys.path.insert(0, str(sys_dir))
 
+from core.root import bootstrap_root_package
+bootstrap_root_package(sys_dir)
+
 from core import provisioner, state_paths
 
 

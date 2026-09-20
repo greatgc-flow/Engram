@@ -37,6 +37,10 @@ _SYS_DIR = _CHECKS_DIR.parent
 _ROOT = _SYS_DIR.parent
 _GOVERNANCE_PATH = _SYS_DIR / "ai" / "governance_params.json"
 
+sys.path.insert(0, str(_SYS_DIR / "core"))
+from root import bootstrap_root_package  # noqa: E402
+bootstrap_root_package(_SYS_DIR)
+
 sys.path.insert(0, str(_ROOT))
 from _sys.core import provisioner
 
