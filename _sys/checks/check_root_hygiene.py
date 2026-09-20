@@ -17,6 +17,10 @@ from pathlib import Path
 SYS_DIR = Path(__file__).resolve().parent.parent
 PORTABLE_ROOT = SYS_DIR.parent
 
+sys.path.insert(0, str(SYS_DIR / "core"))
+from root import bootstrap_root_package  # noqa: E402
+bootstrap_root_package(SYS_DIR)
+
 _CHECKS_DIR = SYS_DIR / "checks"
 if str(_CHECKS_DIR) not in sys.path:
     sys.path.insert(0, str(_CHECKS_DIR))

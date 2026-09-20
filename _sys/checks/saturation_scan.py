@@ -22,6 +22,12 @@ from pathlib import Path
 from typing import NamedTuple
 
 _CHECKS_DIR = Path(__file__).resolve().parent
+_SYS_DIR = _CHECKS_DIR.parent
+
+sys.path.insert(0, str(_SYS_DIR / "core"))
+from root import bootstrap_root_package  # noqa: E402
+bootstrap_root_package(_SYS_DIR)
+
 if str(_CHECKS_DIR) not in sys.path:
     sys.path.insert(0, str(_CHECKS_DIR))
 from _common import VENDOR_CACHE_DIRS
@@ -273,7 +279,7 @@ def _write_report(findings: list[Finding], sys_root: Path) -> None:
 # ─── Main ─────────────────────────────────────────────────────────────────────
 def main() -> None:
     p = argparse.ArgumentParser(description="Saturation scan for _sys")
-    p.add_argument("--sys-root", default=str(Path(__file__).resolve().parent.parent),
+    p.add_argument("--sys-root", default=str(_SYS_DIR),
                    help="Path to _sys root")
     p.add_argument("--force", action="store_true",
                    help="Run even when commit_count %% 10 != 0")

@@ -21,6 +21,10 @@ from pathlib import Path
 
 SYS_DIR = Path(__file__).resolve().parent.parent
 PORTABLE_ROOT = SYS_DIR.parent
+
+sys.path.insert(0, str(SYS_DIR / "core"))
+from root import bootstrap_root_package  # noqa: E402
+bootstrap_root_package(SYS_DIR)
 BACKLOG_PATH = SYS_DIR / "data" / "backlog.json"
 
 VALID_STATUSES = {"proposed", "active", "blocked", "deferred", "done", "dropped", "superseded"}

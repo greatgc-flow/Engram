@@ -12,9 +12,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Any
 
-_CHECKS_DIR = Path(__file__).parent
+_CHECKS_DIR = Path(__file__).resolve().parent
 _SYS_DIR = _CHECKS_DIR.parent
 _PORTABLE_ROOT = _SYS_DIR.parent
+
+sys.path.insert(0, str(_SYS_DIR / "core"))
+from root import bootstrap_root_package  # noqa: E402
+bootstrap_root_package(_SYS_DIR)
 
 # Shared vocabulary of vendor, cache, and peer-tool directories across checkers & packaging.
 # Empirically verified across live/portable-dev and runtime layouts:
