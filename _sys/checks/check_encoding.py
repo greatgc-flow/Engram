@@ -55,7 +55,6 @@ _DEFAULT_GOVERNED = [
 # Never scanned: archives / history / scratch / build junk. Extend via governance.
 _DEFAULT_EXEMPT = [
     "_" + "archive/",
-    "_sys/docs/history/",
     "Garbage/",
     "scratch/",
     "__pycache__/",

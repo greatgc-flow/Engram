@@ -244,7 +244,7 @@ Provides host-specific overrides (e.g. custom workspace directory, proxy setting
 ### 6.2 Loading Rule
 **Implemented 2026-09-04** (`_sys/core/launcher.py:_load_local_config_overrides`). `local.config.bat` is read as **data, not executed** — `launcher.py` parses its `set "KEY=VALUE"` lines directly with a regex, never `call`s or sources the file into a real shell environment. This is deliberate: sourcing it as a script would pollute the process environment with anything the file sets and couldn't distinguish "this key came from local.config.bat" from "this key happened to already exist in the parent shell" — a real collision risk (e.g. a host-wide npm install silently shadowing the portable one). Only the 2 documented keys are ever recognized (an explicit allowlist, not "whatever the file sets"):
 - `NPM_CONFIG_PREFIX` — checked in `build_env()`; overrides the computed portable path for this one key only.
-- `BASE_DIR_WORKSPACE` — checked in `_resolve_default_target()`; used as the default `engram launch`/`engram start` target (ahead of `base_dir/workspace` if that folder exists, ahead of the portable root itself as the final fallback).
+- `BASE_DIR_WORKSPACE` — checked in `_resolve_default_target()`; used as the default `engram`/`engram open` target (ahead of `base_dir/workspace` if that folder exists, ahead of the portable root itself as the final fallback).
 
 `%VAR%`-style references in a value (e.g. the template's own `%APPDATA%\npm` example) are expanded against the real process environment. See `_sys/tests/unit/test_local_config_overrides.py` for the real test coverage (parsing, precedence, and a dedicated test that reading the file never leaks into `os.environ`).
 

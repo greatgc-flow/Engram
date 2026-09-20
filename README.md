@@ -5,7 +5,7 @@
 
   [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078d4.svg)](https://www.microsoft.com/windows)
   [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-  [![Tests: 330 green](https://img.shields.io/badge/tests-330%20green-brightgreen.svg)](_sys/tests/unit)
+  [![Tests: passing](https://img.shields.io/badge/tests-passing-brightgreen.svg)](_sys/tests/unit)
   [![AI collaboration: peerhub](https://img.shields.io/badge/AI%20collaboration-peerhub-8a2be2.svg)](https://github.com/greatgc-flow/peerhub)
 </div>
 
@@ -13,7 +13,7 @@
 
 Engram bootstraps a self-contained Windows dev environment — Python, Node.js, Git, VS Code, and a handful of CLI tools — into one portable folder, with no host-machine installs and no registry residue. `register` sets up the right-click context menu; `unregister`/`uninstall` remove every trace, including a background helper that finishes cleanup after the process holding the folder open has exited.
 
-> **Note on scope:** Engram used to also orchestrate AI-to-AI peer collaboration directly. That entire layer has moved to the standalone [**peerhub**](https://github.com/greatgc-flow/peerhub) package — Engram itself no longer knows what a "peer debate" or "consensus round" is. What Engram *does* still do on the AI-tooling side is install, update, and status-check third-party AI CLIs (Claude Code, Codex, etc.) as ordinary managed tools, exactly like it manages ripgrep or Node.js. If you want AI-to-AI collaboration, install peerhub separately on top of an Engram environment.
+> **Note on scope:** Engram used to also orchestrate AI-to-AI peer collaboration directly. That entire layer has moved to the standalone [**peerhub**](https://github.com/greatgc-flow/peerhub) package — Engram itself no longer knows what a "peer debate" or "consensus round" is. What Engram *does* still do on the AI-tooling side is install, update, and status-check third-party AI CLIs (Claude Code, Codex, etc.) as ordinary managed tools, exactly like it manages ripgrep or Node.js. If you want AI-to-AI collaboration, install peerhub separately on top of an Engram environment (Engram provides an intentional external-tool compatibility bridge via `PEERHUB_CONFIG_HOME` so PeerHub's global config is isolated to `.engram/peerhub/config/`).
 
 ## What it does
 
@@ -76,7 +76,7 @@ engram update --only agy
 
 ## AI-to-AI collaboration → peerhub
 
-Engram's job ends at "the AI CLI binary is installed, current, and reachable." Everything past that — inter-peer messaging, consensus rounds, quota-aware routing, governance directives — lives in the separate [**peerhub**](https://github.com/greatgc-flow/peerhub) package. Engram never installs it, pins its version, or invokes it — that would reintroduce exactly the coupling this separation removed. Install it yourself, whenever you want it, entirely independently:
+Engram's job ends at "the AI CLI binary is installed, current, and reachable." Everything past that — inter-peer messaging, consensus rounds, quota-aware routing, governance directives — lives in the separate [**peerhub**](https://github.com/greatgc-flow/peerhub) package. Engram never installs it, pins its version, or invokes it — that would reintroduce exactly the coupling this separation removed. (For environment isolation, Engram's `_sys/env.json` declares an intentional external-tool compatibility bridge `PEERHUB_CONFIG_HOME`, ensuring that when peerhub runs in an Engram session, its global configuration resides under `.engram/peerhub/config/` rather than the host `%USERPROFILE%`.) Install it yourself, whenever you want it, entirely independently:
 
 ```bash
 pip install peerhub
@@ -87,7 +87,7 @@ See [peerhub's own README](https://github.com/greatgc-flow/peerhub#readme) for t
 
 ## AI CLI personal config: `.engram/`
 
-Every AI CLI Engram manages reads and writes its personal, durable data (memory, settings, session history) from one consolidated, automatic root — `.engram/{claude,codex,agy}/`, plus peerhub's own global config at `.engram/peerhub/config/`. No `subst` drive, no directory junction, and nothing to run by hand: it's pure environment-variable redirection, applied at every launch. `.engram/` is a **live** root — it accumulates real credentials and caches over time, so it's gitignored and never copied wholesale; [`_sys/checks/backup_personal_data.py`](_sys/checks/backup_personal_data.py) extracts just the safe, durable subset for backup instead. Full detail: [`docs/engram-dotdir.md`](docs/engram-dotdir.md).
+Every AI CLI Engram manages reads and writes its personal, durable data (memory, settings, session history) from one consolidated, automatic root — `.engram/{claude,codex,agy}/`, plus peerhub's own global config at `.engram/peerhub/config/` via the `PEERHUB_CONFIG_HOME` environment compatibility bridge. No `subst` drive, no directory junction, and nothing to run by hand: it's pure environment-variable redirection, applied at every launch. `.engram/` is a **live** root — it accumulates real credentials and caches over time, so it's gitignored and never copied wholesale; [`_sys/checks/backup_personal_data.py`](_sys/checks/backup_personal_data.py) extracts just the safe, durable subset for backup instead. Full detail: [`docs/engram-dotdir.md`](docs/engram-dotdir.md).
 
 ## What's next
 
