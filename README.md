@@ -59,6 +59,9 @@ The first run will prompt to bootstrap the portable environment (Python, Node, G
 | `menu clean` | Clean up orphaned context menu entries. | 0 / 1 |
 | `tidy [--apply] [--deep]` | Default is a dry run (print plan). `--apply` deletes planned items (pytest/VS Code/npm caches). `--deep` also cleans setup files, old rollback dirs, and `__pycache__`. | 0 |
 | `uninstall [--yes] [--purge-data]` | Deletes Engram's program files by allowlist. Leaves `.engram/` (settings/credentials) and `workspace/` untouched by default. `--purge-data` adds `.engram/` and `workspace/` to the deletion plan, requiring un-bypassable typed confirmation. Hands off to a background helper that waits for Engram to exit before deletion. | 0 handed off; 1 failed before hand-off; 3 declined |
+| `backup [--out PATH]` | Back up personal AI-CLI data (memory, settings, rules, skills, session transcripts — never credentials, by construction) to a single `.zip` (default: `_sys/data/backups/engram_backup_<timestamp>.zip`). Warns, doesn't refuse, if a managed AI CLI is currently running. | 0 |
+| `restore PATH [--force]` | Restore personal AI-CLI data from a `.zip` or legacy folder-shaped bundle. Refuses if a managed AI CLI is running. Takes an automatic pre-restore snapshot unless `--force`. `--force` also allows overwriting existing live session/project data. | 0 success; 1 refused (process running) or invalid path; 2 usage error |
+| `reset [--yes] [--all]` | Deletes personal AI-CLI state. Default scope is `.engram/` only, after `[y/N]` confirmation (skippable with `--yes`). `--all` also deletes `workspace/`, gated behind the same typed-folder-name confirmation `uninstall --purge-data` uses. Refuses if a managed AI CLI is running. | 0 success; 1 refused (process running); 3 declined |
 | `version` / `--version` / `-v` | Print the current version (e.g. `Engram <version> (Portable Dev Runtime)`). | 0 |
 | `help` / `--help` / `-h` / `/?` | List the available commands. | 0 |
 
