@@ -163,7 +163,7 @@ def test_install_python_update_cannot_rewrite_pin_while_interpreter_exists():
     root_dir = ROOT_DIR
     content = (root_dir / "_sys/core/bootstrap.bat").read_text(encoding="utf-8")
 
-    assert content.index('set "PY_EXE=%PY_DIR%\\python.exe"') < content.index(
+    assert content.index('set "PY_EXE=!PY_DIR!\\python.exe"') < content.index(
         "Checking for latest stable Python"
     )
     assert "Python consistency check failed" in content

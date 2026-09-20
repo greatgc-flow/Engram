@@ -4,6 +4,54 @@ cd /d "%~dp0"
 setlocal DisableDelayedExpansion
 
 :: ============================================================================
+:: Discovery Hierarchy for Engram System Directory
+:: ============================================================================
+set "ENGRAM_SYS_DIR_NAME="
+
+:: Tier 1: Explicit caller override via environment variable
+if defined ENGRAM_SYS_DIR (
+    if exist "%~dp0%ENGRAM_SYS_DIR%\core\dispatch.bat" (
+        set "ENGRAM_SYS_DIR_NAME=%ENGRAM_SYS_DIR%"
+        goto :sys_dir_resolved
+    )
+    if exist "%ENGRAM_SYS_DIR%\core\dispatch.bat" (
+        set "ENGRAM_SYS_DIR_NAME=%ENGRAM_SYS_DIR%"
+        goto :sys_dir_resolved
+    )
+    if exist "%~dp0%ENGRAM_SYS_DIR%\" (
+        set "ENGRAM_SYS_DIR_NAME=%ENGRAM_SYS_DIR%"
+        goto :sys_dir_resolved
+    )
+)
+
+:: Tier 2: Zero-cost fast path for standard installations
+if exist "%~dp0_sys\core\dispatch.bat" (
+    set "ENGRAM_SYS_DIR_NAME=_sys"
+    goto :sys_dir_resolved
+)
+if exist "%~dp0_sys\" (
+    set "ENGRAM_SYS_DIR_NAME=_sys"
+    goto :sys_dir_resolved
+)
+
+:: Tier 3: Probe immediate subdirectories for the core dispatch anchor
+for /d %%D in ("%~dp0*") do (
+    if exist "%%D\core\dispatch.bat" (
+        set "ENGRAM_SYS_DIR_NAME=%%~nxD"
+        goto :sys_dir_resolved
+    )
+)
+
+:: Failure fallback: Anchor missing
+echo [Error] Engram system directory not found under "%~dp0".
+echo         Expected a directory containing core\dispatch.bat.
+exit /b 1
+
+:sys_dir_resolved
+set "ENGRAM_SYS_DIR=%ENGRAM_SYS_DIR_NAME%"
+set "SYS_PATH=%~dp0%ENGRAM_SYS_DIR%"
+
+:: ============================================================================
 :: Engram Portable CLI Entrypoint
 :: https://github.com/greatgc-flow/Engram
 ::
@@ -27,17 +75,17 @@ if /i "%SUBCMD%"=="-v" goto :show_version
 
 :: --- Layout Migration Auto-Trigger ---
 set "_MIGRATE_LAYOUT=0"
-if exist ".\_sys\env\python\python.exe" (
-    if not exist ".\_sys\data\state\layout.json" (
+if exist "%SYS_PATH%\env\python\python.exe" (
+    if not exist "%SYS_PATH%\data\state\layout.json" (
         set "_MIGRATE_LAYOUT=1"
     ) else (
-        ".\_sys\env\python\python.exe" -c "import json, sys; l=json.load(open(r'.\_sys\data\state\layout.json', encoding='utf-8')); v=json.load(open(r'.\_sys\core\version.json', encoding='utf-8')).get('version', 'unknown'); sys.exit(0 if l.get('layout_version', 0) < 2 or l.get('engram_version', 'unknown') != v else 1)" 2>nul
+        "%SYS_PATH%\env\python\python.exe" -c "import json, sys; l=json.load(open(r'%SYS_PATH%\data\state\layout.json', encoding='utf-8')); v=json.load(open(r'%SYS_PATH%\core\version.json', encoding='utf-8')).get('version', 'unknown'); sys.exit(0 if l.get('layout_version', 0) < 2 or l.get('engram_version', 'unknown') != v else 1)" 2>nul
         if not errorlevel 1 set "_MIGRATE_LAYOUT=1"
     )
 )
 if "%_MIGRATE_LAYOUT%"=="1" (
-    call ".\_sys\core\dispatch.bat" migrate-layout
-    if not exist ".\_sys\data\state\layout.json" exit /b 1
+    call "%SYS_PATH%\core\dispatch.bat" migrate-layout
+    if not exist "%SYS_PATH%\data\state\layout.json" exit /b 1
 )
 :: -------------------------------------
 
@@ -83,19 +131,19 @@ exit /b 2
 :: ----------------------------------------------------------------------------
 
 :cmd_open
-if not exist ".\_sys\env\python\python.exe" (
+if not exist "%SYS_PATH%\env\python\python.exe" (
     call :do_first_run
     if errorlevel 1 exit /b 1
 )
-call "_sys\core\dispatch.bat" start %1 %2 %3 %4 %5 %6 %7 %8 %9
+call "%SYS_PATH%\core\dispatch.bat" start %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :cmd_open_implicit
-if not exist ".\_sys\env\python\python.exe" (
+if not exist "%SYS_PATH%\env\python\python.exe" (
     call :do_first_run
     if errorlevel 1 exit /b 1
 )
-call "_sys\core\dispatch.bat" start "%SUBCMD%" %1 %2 %3 %4 %5 %6 %7 %8 %9
+call "%SYS_PATH%\core\dispatch.bat" start "%SUBCMD%" %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :do_first_run
@@ -103,17 +151,17 @@ echo This will set up Engram's portable Python, tools, and runtimes in "%CD%"
 set "SETUP_CHOICE="
 set /p "SETUP_CHOICE=Set up Engram here now? [Y/n] "
 if /i "%SETUP_CHOICE%"=="n" exit /b 1
-call "_sys\core\bootstrap.bat"
+call "%SYS_PATH%\core\bootstrap.bat"
 if errorlevel 1 exit /b 1
 if not exist "workspace\" mkdir "workspace"
-if exist "_sys\data\state\register.state.json" exit /b 0
+if exist "%SYS_PATH%\data\state\register.state.json" exit /b 0
 set "MENU_CHOICE="
 set /p MENU_CHOICE=Add "Open in Engram" to the Explorer right-click menu? [y/N] 
-if /i "%MENU_CHOICE%"=="y" call "_sys\core\dispatch.bat" menu-enable
+if /i "%MENU_CHOICE%"=="y" call "%SYS_PATH%\core\dispatch.bat" menu-enable
 exit /b 0
 
 :check_setup
-if not exist ".\_sys\env\python\python.exe" (
+if not exist "%SYS_PATH%\env\python\python.exe" (
     echo Engram is not set up.
     echo Run 'engram' to initialize the environment.
     exit /b 1
@@ -123,7 +171,7 @@ exit /b 0
 :cmd_doctor
 call :check_setup
 if errorlevel 1 exit /b 1
-call "_sys\core\dispatch.bat" doctor %1 %2 %3 %4 %5 %6 %7 %8 %9
+call "%SYS_PATH%\core\dispatch.bat" doctor %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :cmd_menu
@@ -131,23 +179,23 @@ call :check_setup
 if errorlevel 1 exit /b 1
 :: if no args, default to status
 if "%~1"=="" (
-    call "_sys\core\dispatch.bat" menu-status
+    call "%SYS_PATH%\core\dispatch.bat" menu-status
     exit /b %ERRORLEVEL%
 )
 if /i "%~1"=="status" (
-    call "_sys\core\dispatch.bat" menu-status %2 %3 %4 %5 %6 %7 %8 %9
+    call "%SYS_PATH%\core\dispatch.bat" menu-status %2 %3 %4 %5 %6 %7 %8 %9
     exit /b %ERRORLEVEL%
 )
 if /i "%~1"=="enable" (
-    call "_sys\core\dispatch.bat" menu-enable %2 %3 %4 %5 %6 %7 %8 %9
+    call "%SYS_PATH%\core\dispatch.bat" menu-enable %2 %3 %4 %5 %6 %7 %8 %9
     exit /b %ERRORLEVEL%
 )
 if /i "%~1"=="disable" (
-    call "_sys\core\dispatch.bat" menu-disable %2 %3 %4 %5 %6 %7 %8 %9
+    call "%SYS_PATH%\core\dispatch.bat" menu-disable %2 %3 %4 %5 %6 %7 %8 %9
     exit /b %ERRORLEVEL%
 )
 if /i "%~1"=="clean" (
-    call "_sys\core\dispatch.bat" menu-clean %2 %3 %4 %5 %6 %7 %8 %9
+    call "%SYS_PATH%\core\dispatch.bat" menu-clean %2 %3 %4 %5 %6 %7 %8 %9
     exit /b %ERRORLEVEL%
 )
 echo [Error] Unknown menu command: %1
@@ -157,35 +205,35 @@ exit /b 2
 :cmd_tidy
 call :check_setup
 if errorlevel 1 exit /b 1
-call "_sys\core\dispatch.bat" tidy %1 %2 %3 %4 %5 %6 %7 %8 %9
+call "%SYS_PATH%\core\dispatch.bat" tidy %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :cmd_update
-call "_sys\core\dispatch.bat" update %1 %2 %3 %4 %5 %6 %7 %8 %9
+call "%SYS_PATH%\core\dispatch.bat" update %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :cmd_uninstall
 call :check_setup
 if errorlevel 1 exit /b 1
-call "_sys\core\dispatch.bat" uninstall %1 %2 %3 %4 %5 %6 %7 %8 %9
+call "%SYS_PATH%\core\dispatch.bat" uninstall %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :cmd_backup
 call :check_setup
 if errorlevel 1 exit /b 1
-call "_sys\core\dispatch.bat" backup %1 %2 %3 %4 %5 %6 %7 %8 %9
+call "%SYS_PATH%\core\dispatch.bat" backup %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :cmd_restore
 call :check_setup
 if errorlevel 1 exit /b 1
-call "_sys\core\dispatch.bat" restore %1 %2 %3 %4 %5 %6 %7 %8 %9
+call "%SYS_PATH%\core\dispatch.bat" restore %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :cmd_reset
 call :check_setup
 if errorlevel 1 exit /b 1
-call "_sys\core\dispatch.bat" reset %1 %2 %3 %4 %5 %6 %7 %8 %9
+call "%SYS_PATH%\core\dispatch.bat" reset %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :: ----------------------------------------------------------------------------
@@ -225,14 +273,14 @@ exit /b 2
 
 :get_version
 set "_ENGRAM_VER=unknown"
-if exist "_sys\core\version.json" (
-    if exist ".\_sys\env\python\python.exe" (
-        for /f "usebackq delims=" %%v in (`.\_sys\env\python\python.exe -c "import json, sys; sys.stdout.write(json.load(open(r'_sys\core\version.json', encoding='utf-8')).get('version', 'unknown'))" 2^>nul`) do (
+if exist "%SYS_PATH%\core\version.json" (
+    if exist "%SYS_PATH%\env\python\python.exe" (
+        for /f "usebackq delims=" %%v in (`"%SYS_PATH%\env\python\python.exe" -c "import json, sys; sys.stdout.write(json.load(open(r'%SYS_PATH%\core\version.json', encoding='utf-8')).get('version', 'unknown'))" 2^>nul`) do (
             set "_ENGRAM_VER=%%v"
         )
     )
     if "%_ENGRAM_VER%"=="unknown" (
-        for /f "usebackq delims=" %%v in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "try { (Get-Content '_sys\core\version.json' -Raw | ConvertFrom-Json).version } catch { 'unknown' }" 2^>nul`) do (
+        for /f "usebackq delims=" %%v in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "try { (Get-Content '%SYS_PATH%\core\version.json' -Raw | ConvertFrom-Json).version } catch { 'unknown' }" 2^>nul`) do (
             set "_ENGRAM_VER=%%v"
         )
     )

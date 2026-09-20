@@ -245,3 +245,97 @@ def test_literal_exclamation_preserved_in_open(surface_root):
     proc = run_engram(surface_root, "open", "file!name.txt")
     assert proc.returncode == 0
     assert "file!name.txt" in proc.stdout
+
+
+# ----------------------------------------------------------------------------
+# 7. Renamed system directory discovery (§2)
+# ----------------------------------------------------------------------------
+
+def test_renamed_sys_dir_routes_commands_correctly(tmp_path: Path):
+    """When _sys is renamed (e.g. 'my_runtime'), engram.cmd discovers it via Tier 3 and routes commands."""
+    root = tmp_path / "renamed_inst"
+    root.mkdir(parents=True, exist_ok=True)
+
+    # Copy real engram.cmd
+    (root / "engram.cmd").write_text(ENGRAM_CMD.read_text(encoding="utf-8"), encoding="utf-8")
+
+    # Create renamed system folder (NO _sys folder at all)
+    sys_dir = root / "my_runtime"
+    core_dir = sys_dir / "core"
+    core_dir.mkdir(parents=True, exist_ok=True)
+    (core_dir / "version.json").write_text('{"version": "4.1.0"}', encoding="utf-8")
+    stub_dispatch = core_dir / "dispatch.bat"
+    stub_dispatch.write_text(
+        "@echo off\r\n"
+        "echo DISPATCH_PIPELINE=%1\r\n"
+        "echo DISPATCH_ARGS=%*\r\n"
+        "exit /b 0\r\n",
+        encoding="utf-8",
+    )
+
+    py_dir = sys_dir / "env" / "python"
+    py_dir.mkdir(parents=True, exist_ok=True)
+    import sys as _sys_mod, shutil
+    shutil.copy(_sys_mod.executable, py_dir / "python.exe")
+
+    state_dir = sys_dir / "data" / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "layout.json").write_text('{"layout_version": 2}', encoding="utf-8")
+
+    # 1. Test version query discovers my_runtime/core/version.json
+    proc = run_engram(root, "version")
+    assert proc.returncode == 0
+    assert "4.1.0" in proc.stdout
+
+    # 2. Test doctor routing
+    proc = run_engram(root, "doctor")
+    assert proc.returncode == 0
+    assert "DISPATCH_PIPELINE=doctor" in proc.stdout
+
+    # 3. Test open routing
+    proc = run_engram(root)
+    assert proc.returncode == 0
+    assert "DISPATCH_PIPELINE=start" in proc.stdout
+
+
+def test_renamed_sys_dir_env_var_override(tmp_path: Path, monkeypatch):
+    """When ENGRAM_SYS_DIR is set (Tier 1), engram.cmd routes to the specified sys directory."""
+    root = tmp_path / "override_inst"
+    root.mkdir(parents=True, exist_ok=True)
+
+    (root / "engram.cmd").write_text(ENGRAM_CMD.read_text(encoding="utf-8"), encoding="utf-8")
+
+    for name, marker in [("runtime_a", "TARGET_A"), ("runtime_b", "TARGET_B")]:
+        core_dir = root / name / "core"
+        core_dir.mkdir(parents=True, exist_ok=True)
+        (core_dir / "dispatch.bat").write_text(
+            f"@echo off\r\necho DISPATCH_PIPELINE=%1\r\necho {marker}\r\nexit /b 0\r\n",
+            encoding="utf-8",
+        )
+        py_dir = root / name / "env" / "python"
+        py_dir.mkdir(parents=True, exist_ok=True)
+        import sys as _sys_mod, shutil
+        shutil.copy(_sys_mod.executable, py_dir / "python.exe")
+        state_dir = root / name / "data" / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        (state_dir / "layout.json").write_text('{"layout_version": 2}', encoding="utf-8")
+
+    # Explicitly select runtime_b via environment variable
+    cmd_file = root / "engram.cmd"
+    cmd_line = f'cmd.exe /c ""{cmd_file}" doctor"'
+    env = os.environ.copy()
+    env["ENGRAM_SYS_DIR"] = "runtime_b"
+
+    proc = subprocess.run(
+        cmd_line,
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+        encoding="mbcs",
+        errors="replace",
+        env=env,
+    )
+    assert proc.returncode == 0
+    assert "DISPATCH_PIPELINE=doctor" in proc.stdout
+    assert "TARGET_B" in proc.stdout
+

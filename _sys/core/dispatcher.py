@@ -26,10 +26,11 @@ def _load_json(path: Path) -> dict:
     return provisioner.load_json_with_fallback(path, warn_label=path.name)
 
 
-def _resolve_paths(base_dir: Path) -> dict:
+def _resolve_paths(base_dir: Path, target_sys_dir: Path | None = None) -> dict:
     """Load environment.json and resolve all aliases to absolute Paths."""
     from core.env_loader import EnvironmentLoader
-    config_path = base_dir / "_sys" / "config" / "environment.json"
+    effective_sys = target_sys_dir if target_sys_dir is not None else sys_dir
+    config_path = effective_sys / "config" / "environment.json"
     loader = EnvironmentLoader(str(config_path), str(base_dir))
     loader.apply_to_os()
     paths = loader.get_paths()
@@ -38,12 +39,21 @@ def _resolve_paths(base_dir: Path) -> dict:
         resolved[k] = Path(v)
     # Also inject root and sys for legacy compat
     resolved["root"] = base_dir
-    resolved["sys"] = base_dir / "_sys"
+    resolved["sys"] = effective_sys
+    # If sys_dir was renamed, ensure all sys-relative paths map to effective_sys
+    if effective_sys.name != "_sys":
+        sys_str = str(base_dir / "_sys")
+        target_str = str(effective_sys)
+        for k, v in list(resolved.items()):
+            if k not in ("root", "localappdata") and isinstance(v, Path):
+                v_str = str(v)
+                if v_str == sys_str or v_str.startswith(sys_str + "\\") or v_str.startswith(sys_str + "/"):
+                    resolved[k] = Path(target_str + v_str[len(sys_str):])
     return resolved
 
 
 def _build_ctx(cmd: str, extra_args: list) -> dict:
-    paths = _resolve_paths(base_dir)
+    paths = _resolve_paths(base_dir, sys_dir)
     ctx = {
         "base_dir": base_dir,
         "sys_dir":  sys_dir,
@@ -75,7 +85,8 @@ def _write_state(ctx: dict) -> None:
     }
     state_file = state_dir / f"{ctx['command']}.state.json"
     state_file.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"  [OK] State saved → _sys/data/state/{state_file.name}")
+    sys_name = ctx.get("sys_dir", sys_dir).name
+    print(f"  [OK] State saved → {sys_name}/data/state/{state_file.name}")
     # install pipeline also performs registration ops → keep register.state.json in sync
     if ctx["command"] != "register" and _REGISTER_STATE_KEYS & ctx.get("state", {}).keys():
         reg_file = state_dir / state_paths.REGISTER_STATE_FILENAME
