@@ -83,6 +83,7 @@ peerhub/
 /output/
 _sys/runtimes.json
 _sys/tool-catalog.v1.json
+_sys/core/release-manifest.json
 
 # Runtime-generated data, mutable telemetry, and personal backups (Finding H-2)
 _sys/data/backups/
