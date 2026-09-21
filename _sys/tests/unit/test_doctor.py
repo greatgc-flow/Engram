@@ -174,3 +174,30 @@ def test_check_root_path_warning_on_ampersand(tmp_path):
     assert "contains '&'" in res["detail"]
     assert "subst" in res["detail"].lower()
 
+
+def test_check_root_path_percent():
+    bad_path = Path("C:/Users/Test%20User/Engram")
+    res = doctor.check_root_path(bad_path)
+    assert res["ok"] is True
+    assert res["level"] == "warning"
+    assert "contains '%'" in res["detail"]
+
+
+def test_check_root_path_caret():
+    bad_path = Path("C:/Engram^Folder/PortableDev")
+    res = doctor.check_root_path(bad_path)
+    assert res["ok"] is True
+    assert res["level"] == "warning"
+    assert "contains '^'" in res["detail"]
+
+
+def test_check_root_path_multiple_special_chars():
+    bad_path = Path("C:/Engram&^%Stuff/PortableDev")
+    res = doctor.check_root_path(bad_path)
+    assert res["ok"] is True
+    assert res["level"] == "warning"
+    assert "&" in res["detail"]
+    assert "%" in res["detail"]
+    assert "^" in res["detail"]
+
+

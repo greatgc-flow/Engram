@@ -730,6 +730,33 @@ class TestInUseGate:
         # An open lease file must NOT by itself gate the install anymore.
         assert pv._is_peer_leased(sys_dir, "cx") is False
 
+    def test_in_use_agy_process(self, monkeypatch, tmp_path):
+        sys_dir = tmp_path / "_sys"
+        sys_dir.mkdir()
+        running = self._fake_proc("agy.exe", str(sys_dir / "tools" / "agy" / "agy.exe"))
+        fake = type("m", (), {"process_iter": staticmethod(lambda attrs=None: [running]),
+                              "NoSuchProcess": Exception, "AccessDenied": Exception})()
+        import sys as _sys
+        monkeypatch.setitem(_sys.modules, "psutil", fake)
+        assert pv._is_peer_leased(sys_dir, "agy") is True
+        assert pv._is_peer_leased(sys_dir, "ag") is True
+        assert pv._is_peer_leased(sys_dir, "antigravity") is True
+
+    def test_in_use_false_for_sibling_dir_sharing_prefix(self, monkeypatch, tmp_path):
+        base_dir = tmp_path / "engram"
+        sys_dir = base_dir / "_sys"
+        sys_dir.mkdir(parents=True)
+        sibling_dir = tmp_path / "engram-other" / "_sys"
+        running = self._fake_proc("agy.exe", str(sibling_dir / "tools" / "agy" / "agy.exe"))
+        fake = type("m", (), {"process_iter": staticmethod(lambda attrs=None: [running]),
+                              "NoSuchProcess": Exception, "AccessDenied": Exception})()
+        import sys as _sys
+        monkeypatch.setitem(_sys.modules, "psutil", fake)
+        # Because sibling_dir shares the prefix 'engram', a naive startswith would match.
+        # Boundary matching with trailing separator must return False!
+        assert pv._is_peer_leased(sys_dir, "agy") is False
+
+
 
 class TestNpmPeerCanaryAndRetry:
     def _base_setup(self, tmp_path, declared_version="2.1.206", canary=None):
@@ -1077,3 +1104,38 @@ class TestNpmPeerCanaryAndRetry:
         target_other = tmp_path / "other.cmd"
         target_other.write_text("@echo off\n", encoding="utf-8")
         assert pv._resolve_canary_direct_binary(target_other, ["other.cmd", "--version"]) is None
+
+
+def test_deploy_respects_only_filter(monkeypatch, tmp_path):
+    base_dir = tmp_path / "install"
+    sys_dir = base_dir / "_sys"
+    sys_dir.mkdir(parents=True)
+    runtimes_file = sys_dir / "runtimes.json"
+    runtimes_file.write_text(json.dumps({
+        "runtimes": {"nodejs": {"version": "22.0.0"}},
+        "tools": {
+            "ripgrep": {"version": "14.0.0", "install_mechanism": "exe_tool"},
+            "bat": {"version": "0.24.0", "install_mechanism": "exe_tool"},
+        }
+    }), encoding="utf-8")
+    (sys_dir / "tool-catalog.v1.json").write_text(json.dumps({"tools": []}), encoding="utf-8")
+
+    called_runtimes = []
+    called_tools = []
+    monkeypatch.setattr(pv, "ensure_runtime", lambda name, **kw: called_runtimes.append(name) or {"status": "success"})
+    monkeypatch.setattr(pv, "ensure_tool", lambda name, **kw: called_tools.append(name) or {"status": "success"})
+    monkeypatch.setattr(pv, "_runtime_postcondition", lambda *a: lambda: True)
+    monkeypatch.setattr(pv, "_tool_postcondition", lambda *a: lambda: True)
+    monkeypatch.setattr(pv, "_check_python_version", lambda *a: None)
+
+    ctx = {
+        "base_dir": base_dir,
+        "sys_dir": sys_dir,
+        "args": [],
+        "state": {},
+        "only": {"ripgrep"},
+    }
+    pv.deploy(ctx)
+    assert called_tools == ["ripgrep"]
+    assert "nodejs" not in called_runtimes
+

@@ -98,6 +98,7 @@ def test_propose_diff_never_touches_real_runtimes_and_writes_artifacts(monkeypat
     assert runtimes_path.read_text(encoding="utf-8") == original_text
     assert payload["updates_discovered"] == [{
         "tool": "ripgrep",
+        "section": "tools",
         "current_version": "1.0.0",
         "latest_version": "1.1.0",
         "url": "https://example/rg-new.zip",
@@ -438,5 +439,104 @@ def test_run_with_only_filters_tools(monkeypatch, tmp_path):
 
     ctu.run(propose_diff=False, only=["ripgrep"])
     assert resolved_tools == ["ripgrep"]
+
+
+def test_discover_updates_normalizes_comma_separated_only(monkeypatch, tmp_path):
+    runtimes_path = tmp_path / "runtimes.json"
+    _write_runtimes(runtimes_path)
+    monkeypatch.setattr(ctu, "RUNTIMES_PATH", runtimes_path)
+    monkeypatch.setattr(ctu, "ARCHIVE_ROOT", tmp_path / "proposals")
+    monkeypatch.setattr(ctu, "DISCOVERY_CACHE_PATH", tmp_path / "cache.json")
+
+    resolved_tools = []
+    monkeypatch.setattr(
+        ctu.version_resolver,
+        "resolve_latest",
+        lambda tool_name, provider, current_version, discovery_id, cache_path=None: (
+            resolved_tools.append(tool_name),
+            {
+                "status": "ok",
+                "tool": tool_name,
+                "provider": provider,
+                "discovery_id": discovery_id,
+                "latest_version": current_version,
+            }
+        )[1],
+    )
+
+    ctu.discover_updates(only=["ripgrep,bat", "gh"])
+    assert "ripgrep" in resolved_tools
+    assert "bat" in resolved_tools
+    assert "gh" in resolved_tools
+
+
+def test_discover_updates_includes_section_in_discovered_updates(monkeypatch, tmp_path):
+    runtimes_path = tmp_path / "runtimes.json"
+    _write_runtimes(runtimes_path)
+    monkeypatch.setattr(ctu, "RUNTIMES_PATH", runtimes_path)
+    monkeypatch.setattr(ctu, "ARCHIVE_ROOT", tmp_path / "proposals")
+    monkeypatch.setattr(ctu, "DISCOVERY_CACHE_PATH", tmp_path / "cache.json")
+
+    monkeypatch.setattr(
+        ctu.version_resolver,
+        "resolve_latest",
+        lambda tool_name, provider, current_version, discovery_id, cache_path=None: {
+            "status": "ok",
+            "tool": tool_name,
+            "provider": provider,
+            "discovery_id": discovery_id,
+            "latest_version": "99.99.99",
+        },
+    )
+
+    payload, *_ = ctu.discover_updates(only=["ripgrep"])
+    assert len(payload["updates_discovered"]) == 1
+    assert payload["updates_discovered"][0]["section"] == "tools"
+    assert payload["updates_discovered"][0]["tool"] == "ripgrep"
+
+
+def test_unknown_only_name_validation_exits_before_network(monkeypatch, tmp_path):
+    runtimes_path = tmp_path / "runtimes.json"
+    _write_runtimes(runtimes_path)
+    monkeypatch.setattr(ctu, "RUNTIMES_PATH", runtimes_path)
+
+    resolver_called = False
+    def mock_resolve(*args, **kwargs):
+        nonlocal resolver_called
+        resolver_called = True
+        return {"status": "ok", "latest_version": "1.0"}
+
+    monkeypatch.setattr(ctu.version_resolver, "resolve_latest", mock_resolve)
+
+    payload, *_ = ctu.discover_updates(only=["completely_bogus_tool_xyz"])
+    assert resolver_called is False
+    assert len(payload["errors"]) == 1
+    assert "Unknown component in --only" in payload["errors"][0]["error"]
+
+    # Test main() exit code 2
+    monkeypatch.setattr(ctu, "run", lambda **kwargs: payload)
+    exit_code = ctu.main(["--only", "completely_bogus_tool_xyz"])
+    assert exit_code == ctu.EXIT_INVALID_PROPOSAL  # 2
+
+
+def test_main_forwards_only_flag(monkeypatch):
+    captured_only = None
+    def mock_run(*, propose_diff=False, only=None):
+        nonlocal captured_only
+        captured_only = only
+        return {
+            "artifact_dir": None,
+            "base_sha256": None,
+            "updates_discovered": [],
+            "up_to_date": [],
+            "rate_limited": [],
+            "errors": [],
+            "not_checked": [],
+        }
+    monkeypatch.setattr(ctu, "run", mock_run)
+    exit_code = ctu.main(["--only", "ripgrep", "bat"])
+    assert exit_code == ctu.EXIT_OK
+    assert captured_only == ["ripgrep", "bat"]
+
 
 

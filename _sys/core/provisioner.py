@@ -935,7 +935,7 @@ def _is_peer_leased(sys_dir: Path, peer_or_tool: str) -> bool:
     except ImportError:
         return False
 
-    root = str(sys_dir.resolve()).lower()
+    root = str(sys_dir.resolve()).lower().rstrip("\\/") + os.sep
     try:
         for proc in psutil.process_iter(["name", "exe"]):
             try:
@@ -945,8 +945,10 @@ def _is_peer_leased(sys_dir: Path, peer_or_tool: str) -> bool:
                 exe = proc.info.get("exe")
                 # Only count processes belonging to THIS portable install;
                 # a host-wide node.exe is unrelated to these files.
-                if exe and str(exe).lower().startswith(root):
-                    return True
+                if exe:
+                    exe_str = str(Path(exe).resolve()).lower()
+                    if exe_str.startswith(root):
+                        return True
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
     except Exception:
@@ -1238,6 +1240,10 @@ def deploy(ctx: dict) -> dict:
         d.mkdir(parents=True, exist_ok=True)
     print("  [OK] Folder structure ready")
 
+    only_filter = ctx.get("only")
+    if only_filter is not None:
+        only_filter = {str(x).lower() for x in only_filter}
+
     installed = []
     deferred = []
     failed = []
@@ -1249,6 +1255,8 @@ def deploy(ctx: dict) -> dict:
     except json.JSONDecodeError as exc:
         raise ValueError(f"[Error] runtimes.json is not valid JSON: {exc}") from exc
     for rt_name in raw.get("runtimes", {}).keys():
+        if only_filter is not None and rt_name.lower() not in only_filter:
+            continue
         if skip_vsc and rt_name == "vscode":
             continue
         res = ensure_runtime(rt_name, sys_dir=sys_dir, force=force)
@@ -1262,51 +1270,55 @@ def deploy(ctx: dict) -> dict:
         )
 
     # ── Python venv (not an immutable vendor binary - stays procedural) ──
-    print("\n>>> Python venv")
-    venv_py = venv_python_exe(sys_dir)
-    venv_creation_failed = False
-    if force or not venv_py.exists():
-        try:
-            subprocess.run([sys.executable, "-m", "pip", "install", "virtualenv", "--quiet"], check=True)
-            subprocess.run([sys.executable, "-m", "virtualenv", str(env_dir / "venv")], check=True)
-            print("  [OK] venv created")
-        except (subprocess.CalledProcessError, OSError) as exc:
-            venv_creation_failed = True
-            print(f"  [Fail] venv creation failed: {exc}")
+    want_venv = only_filter is None or bool(only_filter & {"python", "venv"})
+    if want_venv:
+        print("\n>>> Python venv")
+        venv_py = venv_python_exe(sys_dir)
+        venv_creation_failed = False
+        if force or not venv_py.exists():
+            try:
+                subprocess.run([sys.executable, "-m", "pip", "install", "virtualenv", "--quiet"], check=True)
+                subprocess.run([sys.executable, "-m", "virtualenv", str(env_dir / "venv")], check=True)
+                print("  [OK] venv created")
+            except (subprocess.CalledProcessError, OSError) as exc:
+                venv_creation_failed = True
+                print(f"  [Fail] venv creation failed: {exc}")
+                failed.append({
+                    "component": "venv",
+                    "status": "error",
+                    "detail": f"venv creation failed: {exc}",
+                })
+        else:
+            print("  [--] venv (already exists)")
+        # Re-check on disk rather than trusting the exit code above: creation can
+        # report success without actually leaving a working interpreter behind.
+        if venv_py.exists():
+            for pkg in ["filelock", "pywinpty", "psutil", "pydantic"]:
+                try:
+                    subprocess.run([str(venv_py), "-m", "pip", "install", pkg, "--quiet"], check=True)
+                    print(f"  [OK] {pkg} installed")
+                except (subprocess.CalledProcessError, OSError) as exc:
+                    print(f"  [Fail] {pkg} install failed: {exc}")
+                    failed.append({
+                        "component": pkg,
+                        "status": "error",
+                        "detail": f"pip install {pkg} failed: {exc}",
+                    })
+        if venv_py.exists():
+            installed.append("venv")
+        elif not venv_creation_failed:
             failed.append({
                 "component": "venv",
-                "status": "error",
-                "detail": f"venv creation failed: {exc}",
+                "status": "postcondition_failed",
+                "detail": "virtualenv command completed but the venv interpreter is absent",
             })
-    else:
-        print("  [--] venv (already exists)")
-    # Re-check on disk rather than trusting the exit code above: creation can
-    # report success without actually leaving a working interpreter behind.
-    if venv_py.exists():
-        for pkg in ["filelock", "pywinpty", "psutil", "pydantic"]:
-            try:
-                subprocess.run([str(venv_py), "-m", "pip", "install", pkg, "--quiet"], check=True)
-                print(f"  [OK] {pkg} installed")
-            except (subprocess.CalledProcessError, OSError) as exc:
-                print(f"  [Fail] {pkg} install failed: {exc}")
-                failed.append({
-                    "component": pkg,
-                    "status": "error",
-                    "detail": f"pip install {pkg} failed: {exc}",
-                })
-    if venv_py.exists():
-        installed.append("venv")
-    elif not venv_creation_failed:
-        failed.append({
-            "component": "venv",
-            "status": "postcondition_failed",
-            "detail": "virtualenv command completed but the venv interpreter is absent",
-        })
 
     # ── CLI Tools ────────────────────────────────────────────────
     print("\n>>> CLI Tools")
     for tool_name, tool_cfg in TOOLS.items():
         if tool_cfg.get("install_mechanism") == "npm_peer":
+            continue
+        if only_filter is not None and tool_name.lower() not in only_filter:
             continue
         res = ensure_tool(tool_name, sys_dir=sys_dir, force=force)
         _record_deploy_outcome(
@@ -1325,6 +1337,10 @@ def deploy(ctx: dict) -> dict:
             if not tool.get("enabled", True):
                 continue
             tool_id = tool.get("tool_id")
+            if only_filter is not None:
+                aliases = [a.lower() for a in tool.get("aliases", [])]
+                if tool_id.lower() not in only_filter and not any(a in only_filter for a in aliases):
+                    continue
             res = ensure_peer_cli(tool_id, sys_dir=sys_dir, force=force)
             _record_deploy_outcome(
                 tool_id,

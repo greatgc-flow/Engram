@@ -17,7 +17,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 _CHECKS_DIR = Path(__file__).parent
 _SYS_DIR = _CHECKS_DIR.parent
@@ -87,6 +87,18 @@ def _versions_equal(a: str, b: str) -> bool:
 CATALOG_PATH = _SYS_DIR / provisioner.TOOL_CATALOG_FILENAME
 
 
+def normalize_only_list(only: Sequence[str] | None) -> list[str] | None:
+    if only is None:
+        return None
+    result: list[str] = []
+    for item in only:
+        for part in item.split(","):
+            part = part.strip()
+            if part and part not in result:
+                result.append(part)
+    return result
+
+
 def _iter_discoverable_entries(runtimes: dict[str, Any], only: list[str] | None = None):
     for section in ("tools", "runtimes"):
         entries = runtimes.get(section, {})
@@ -114,7 +126,8 @@ def _iter_discoverable_entries(runtimes: dict[str, Any], only: list[str] | None 
         name = tool.get("tool_id")
         if not name or name in runtimes.get("tools", {}):
             continue
-        if only is not None and name not in only:
+        aliases = tool.get("aliases", [])
+        if only is not None and name not in only and not any(a in only for a in aliases):
             continue
         source = tool.get("source", {})
         provider = source.get("discovery_provider")
@@ -148,7 +161,7 @@ def _update_entry_from_discovery(entry: dict[str, Any], discovery: dict[str, Any
         entry[algo] = value
 
 
-def discover_updates(only: list[str] | None = None) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
+def discover_updates(only: Sequence[str] | None = None) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     base_sha = _sha256_file(RUNTIMES_PATH)
     runtimes = _read_json(RUNTIMES_PATH)
     proposed = copy.deepcopy(runtimes)
@@ -168,7 +181,27 @@ def discover_updates(only: list[str] | None = None) -> tuple[dict[str, Any], dic
         "not_checked": [],
     }
 
-    for section, name, cfg, provider, config_error, not_checked_reason in _iter_discoverable_entries(runtimes, only):
+    normalized_only = normalize_only_list(only)
+    if normalized_only is not None:
+        valid_names: set[str] = {"engram", "core"}
+        for s in ("runtimes", "tools"):
+            valid_names.update(runtimes.get(s, {}).keys())
+        for tool in catalog.get("tools", []):
+            if isinstance(tool, dict):
+                tid = tool.get("tool_id")
+                if tid:
+                    valid_names.add(tid)
+                for alias in tool.get("aliases", []):
+                    valid_names.add(alias)
+        unknown = [n for n in normalized_only if n not in valid_names]
+        if unknown:
+            payload["errors"].append({
+                "error": f"Unknown component in --only: {', '.join(unknown)}",
+                "unknown_components": unknown,
+            })
+            return payload, runtimes, proposed, catalog, proposed_catalog
+
+    for section, name, cfg, provider, config_error, not_checked_reason in _iter_discoverable_entries(runtimes, normalized_only):
         if not_checked_reason:
             payload["not_checked"].append({
                 "component": name,
@@ -214,6 +247,7 @@ def discover_updates(only: list[str] | None = None) -> tuple[dict[str, Any], dic
 
         update = {
             "tool": name,
+            "section": section,
             "current_version": current_version,
             "latest_version": latest_version,
             "url": discovery.get("url"),
@@ -463,7 +497,7 @@ def apply_proposal(
     return EXIT_OK, result
 
 
-def run(*, propose_diff: bool = False, only: list[str] | None = None) -> dict[str, Any]:
+def run(*, propose_diff: bool = False, only: Sequence[str] | None = None) -> dict[str, Any]:
     payload, runtimes, proposed, catalog, proposed_catalog = discover_updates(only=only)
     if propose_diff:
         write_proposal_artifacts(payload, runtimes, proposed, catalog, proposed_catalog)
@@ -496,7 +530,7 @@ def main(argv: list[str] | None = None) -> int:
         return code
 
     try:
-        payload = run(propose_diff=args.propose_diff)
+        payload = run(propose_diff=args.propose_diff, only=args.only)
     except Exception as exc:
         payload = {
             "artifact_dir": None,
@@ -519,7 +553,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[tool-updates] not-checked: {len(payload['not_checked'])}")
         print(f"[tool-updates] errors: {len(payload['errors'])}")
 
-    return EXIT_ERROR if payload["errors"] else EXIT_OK
+    if payload["errors"]:
+        if any("unknown_components" in err for err in payload["errors"]):
+            return EXIT_INVALID_PROPOSAL
+        return EXIT_ERROR
+    return EXIT_OK
 
 
 if __name__ == "__main__":

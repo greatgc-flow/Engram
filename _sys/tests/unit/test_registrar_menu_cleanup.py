@@ -266,3 +266,35 @@ class TestRegistrarMenuCleanup:
 
         assert result["status"] == "success"
         assert result["removed"] == []
+
+
+class TestLegacyMenuMigration:
+    def test_apply_cleans_up_legacy_sandbox_open(self, tmp_path):
+        base_dir = tmp_path / "install"
+        sys_dir = base_dir / "_sys"
+        _write_ctx_menu(sys_dir, cfg={
+            "win11_classic_menu": False,
+            "registry": {"targets": {"Directory": {"path": r"Software\Classes\Directory\shell", "arg": "%V"}}},
+            "entries": [{"id": "engram_open", "enabled": True, "label": "Open in Engram ({FOLDER})", "targets": ["Directory"]}],
+        })
+
+        unregistered_keys = []
+        with patch.object(registrar, "_unregister_entry", lambda key_name, *args: unregistered_keys.append(key_name) or []):
+            with patch.object(registrar, "_clean_orphans", lambda *args: []):
+                with patch.object(registrar, "_register_entry", lambda *args: {"key_name": "k"}):
+                    with patch("core.registrar._hkcu_key_state", lambda *args: "present"):
+                        res = registrar.apply(_make_ctx(base_dir))
+
+        assert res["status"] == "success"
+        base_key = registrar._registry_key_name(base_dir)
+        assert f"{base_key}_sandbox_open" in unregistered_keys
+
+    def test_relay_template_contains_modern_entrypoints(self):
+        real_json = Path(_sys_path) / "context_menu.json"
+        assert real_json.exists()
+        cfg = json.loads(real_json.read_text(encoding="utf-8"))
+        template = cfg.get("relay", {}).get("content_template", "")
+        assert "Engram.exe" in template
+        assert "engram.cmd" in template
+        assert "start.bat" in template
+

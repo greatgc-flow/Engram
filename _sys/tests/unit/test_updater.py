@@ -594,3 +594,88 @@ def test_updater_accepts_only_flag(monkeypatch):
     assert res.get("status") == "success"
     assert captured_only == ["ripgrep", "bat"]
 
+
+def test_updater_only_comma_separated_normalization(monkeypatch):
+    """updater normalizes comma-separated --only arguments."""
+    captured_only = None
+    def mock_run(propose_diff=False, only=None):
+        nonlocal captured_only
+        captured_only = only
+        return {"artifact_dir": "mock_dir", "updates_discovered": []}
+    monkeypatch.setattr(check_tool_updates, "run", mock_run)
+    monkeypatch.setattr("core.updater.check_components", lambda sys_dir: {})
+
+    res = updater.run({"args": ["--only", "ripgrep,bat", "fd"]})
+    assert res.get("status") == "success"
+    assert captured_only == ["ripgrep", "bat", "fd"]
+
+
+def test_updater_only_unknown_name_exits_2(capsys):
+    """An unknown component name in --only fails with exit_code 2 before any network calls."""
+    res = updater.run({"args": ["--only", "completely_unknown_xyz"]})
+    assert res.get("status") == "failed"
+    assert res.get("exit_code") == 2
+    assert "Unknown component in --only" in res.get("detail", "")
+    out = capsys.readouterr().out
+    assert "[Error] Unknown component: completely_unknown_xyz" in out
+
+
+def test_updater_only_excludes_core_when_not_requested(monkeypatch, capsys):
+    """When --only is passed and does NOT contain engram/core, core discovery is skipped."""
+    mock_run = lambda propose_diff=False, only=None: {
+        "artifact_dir": "mock_dir",
+        "updates_discovered": [{"tool": "ripgrep", "section": "tools", "current_version": "1.0", "latest_version": "2.0"}],
+    }
+    monkeypatch.setattr(check_tool_updates, "run", mock_run)
+    monkeypatch.setattr("core.updater.check_components", lambda sys_dir: {})
+
+    core_resolved = False
+    import core.version_resolver as vr
+    def mock_resolve(tool_name, **kwargs):
+        nonlocal core_resolved
+        if tool_name == "Engram core":
+            core_resolved = True
+        return {"status": "ok", "latest_version": "99.0"}
+    monkeypatch.setattr(vr, "resolve_latest", mock_resolve)
+
+    res = updater.run({"args": ["--only", "ripgrep", "--dry-run"]})
+    assert res.get("status") == "success"
+    assert core_resolved is False
+    out = capsys.readouterr().out
+    assert "Engram core" not in out
+
+
+def test_updater_only_filters_repairs_needed(monkeypatch, capsys):
+    """When --only is passed, repairs_needed only keeps components that were requested."""
+    mock_run = lambda propose_diff=False, only=None: {
+        "artifact_dir": "mock_dir",
+        "updates_discovered": [],
+    }
+    monkeypatch.setattr(check_tool_updates, "run", mock_run)
+    # Simulate missing components
+    monkeypatch.setattr("core.updater.check_components", lambda sys_dir: {"missing": ["tool/ripgrep", "tool/bat", "runtime/python"]})
+
+    res = updater.run({"args": ["--only", "ripgrep", "--dry-run"]})
+    assert res.get("status") == "success"
+    out = capsys.readouterr().out
+    assert "Repairs" in out
+    assert "tool/ripgrep" in out
+    assert "tool/bat" not in out
+    assert "runtime/python" not in out
+
+
+def test_updater_unknown_category_fallback_skipped(monkeypatch, capsys):
+    """Updates with missing section and unknown name are warned and skipped."""
+    mock_run = lambda propose_diff=False, only=None: {
+        "artifact_dir": "mock_dir",
+        "updates_discovered": [{"tool": "mysterious_mystery_tool", "current_version": "1.0", "latest_version": "2.0"}],
+    }
+    monkeypatch.setattr(check_tool_updates, "run", mock_run)
+    monkeypatch.setattr("core.updater.check_components", lambda sys_dir: {})
+
+    res = updater.run({"args": ["--dry-run"]})
+    assert res.get("status") == "success"
+    out = capsys.readouterr().out
+    assert "Unknown component section for update 'mysterious_mystery_tool'" in out
+
+

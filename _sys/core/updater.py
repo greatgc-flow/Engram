@@ -66,14 +66,36 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     try:
         args = _parse_args(args_list)
     except SystemExit as e:
-        return {"status": "failed", "detail": f"Argument parsing failed with code {e.code}"}
+        return {"status": "failed", "detail": f"Argument parsing failed with code {e.code}", "exit_code": 2}
+
+    normalized_only = check_tool_updates.normalize_only_list(getattr(args, "only", None))
+    only_set = set(normalized_only) if normalized_only is not None else None
+
+    live_runtimes = provisioner.load_json_with_fallback(_SYS_DIR / "runtimes.json")
+    catalog = provisioner.load_json_with_fallback(_SYS_DIR / provisioner.TOOL_CATALOG_FILENAME)
+
+    if only_set is not None:
+        valid_names: set[str] = {"engram", "core"}
+        for s in ("runtimes", "tools"):
+            valid_names.update(live_runtimes.get(s, {}).keys())
+        for tool in catalog.get("tools", []):
+            if isinstance(tool, dict):
+                tid = tool.get("tool_id")
+                if tid:
+                    valid_names.add(tid)
+                for alias in tool.get("aliases", []):
+                    valid_names.add(alias)
+        unknown = [n for n in normalized_only if n not in valid_names]
+        if unknown:
+            print(f"[Error] Unknown component: {', '.join(unknown)}")
+            return {"status": "failed", "detail": f"Unknown component in --only: {', '.join(unknown)}", "exit_code": 2}
 
     print(">>> Discovering updates...")
     sys_dir = _SYS_DIR
     
     try:
-        if getattr(args, "only", None):
-            payload = check_tool_updates.run(propose_diff=True, only=args.only)
+        if normalized_only is not None:
+            payload = check_tool_updates.run(propose_diff=True, only=normalized_only)
         else:
             payload = check_tool_updates.run(propose_diff=True)
     except Exception as e:
@@ -90,7 +112,6 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     tools_updates = []
     ai_clis_updates = []
     
-    live_runtimes = provisioner.load_json_with_fallback(_SYS_DIR / "runtimes.json")
     for update in payload.get("updates_discovered", []):
         section = update.get("section")
         if not section:
@@ -99,8 +120,11 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                 section = "runtimes"
             elif tool in live_runtimes.get("tools", {}):
                 section = "tools"
-            else:
+            elif any(isinstance(t, dict) and (t.get("tool_id") == tool or tool in t.get("aliases", [])) for t in catalog.get("tools", [])):
                 section = "catalog"
+            else:
+                print(f"  [Warning] Unknown component section for update '{tool}' — skipped")
+                continue
             update["section"] = section
         if section == "runtimes":
             runtimes_updates.append(update)
@@ -110,6 +134,14 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
             ai_clis_updates.append(update)
             
     repairs_needed = check_components(sys_dir).get("missing", [])
+    if only_set is not None:
+        filtered_repairs = []
+        for rep in repairs_needed:
+            clean_rep = rep.split("/", 1)[-1]
+            if clean_rep in only_set:
+                filtered_repairs.append(rep)
+        repairs_needed = filtered_repairs
+
     not_checked = payload.get("not_checked", [])
     could_not_check = payload.get("could_not_check", [])
     
@@ -123,53 +155,57 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     core_not_checked = None
     core_error = None
     
-    try:
-        from core.version import load_version_info
-        current_version_info = load_version_info(_SYS_DIR / "core" / "version.json")
-    except ImportError:
-        current_version_info = provisioner.load_json_with_fallback(_SYS_DIR / "core" / "version.json")
+    want_core = only_set is None or bool(only_set & {"engram", "core"})
+    if want_core:
+        try:
+            from core.version import load_version_info
+            current_version_info = load_version_info(_SYS_DIR / "core" / "version.json")
+        except ImportError:
+            current_version_info = provisioner.load_json_with_fallback(_SYS_DIR / "core" / "version.json")
 
-    current_engram_version = current_version_info.get("version", "unknown")
-    
-    if (_PORTABLE_ROOT / ".git").exists():
-        core_not_checked = {"component": "Engram core", "reason": "git checkout — use git pull"}
-    else:
-        local_appdata = os.environ.get("LOCALAPPDATA", "")
-        if local_appdata:
-            winget_path = Path(local_appdata) / "Microsoft" / "WinGet" / "Packages"
-            try:
-                if _PORTABLE_ROOT.is_relative_to(winget_path):
-                    core_not_checked = {"component": "Engram core", "reason": "managed by WinGet — run winget upgrade greatgc-flow.Engram"}
-            except ValueError:
-                pass
-                
-    if not core_not_checked:
-        core_discovery = version_resolver.resolve_latest(
-            tool_name="Engram core",
-            provider="engram_release",
-            current_version=current_engram_version,
-            discovery_id="greatgc-flow/Engram",
-            cache_path=DISCOVERY_CACHE_PATH,
-        )
+        current_engram_version = current_version_info.get("version", "unknown")
         
-        status = core_discovery.get("status")
-        if status != "ok":
-            core_error = {
-                "component": "Engram core",
-                "error_type": core_discovery.get("error_type", "unknown"),
-                "detail": core_discovery.get("detail", "unknown error")
-            }
+        if (_PORTABLE_ROOT / ".git").exists():
+            core_not_checked = {"component": "Engram core", "reason": "git checkout — use git pull"}
         else:
-            latest = core_discovery.get("latest_version")
-            if latest and current_engram_version != latest:
-                core_update = {
-                    "tool": "Engram core",
-                    "current_version": current_engram_version,
-                    "latest_version": latest,
-                    "url": core_discovery.get("url"),
-                    "checksum_algo": core_discovery.get("checksum_algo"),
-                    "checksum_value": core_discovery.get("checksum_value"),
-                }
+            local_appdata = os.environ.get("LOCALAPPDATA", "")
+            if local_appdata:
+                winget_path = Path(local_appdata) / "Microsoft" / "WinGet" / "Packages"
+                try:
+                    if _PORTABLE_ROOT.is_relative_to(winget_path):
+                        core_not_checked = {"component": "Engram core", "reason": "managed by WinGet — run winget upgrade greatgc-flow.Engram"}
+                except ValueError:
+                    pass
+                    
+        if not core_not_checked:
+            core_discovery = version_resolver.resolve_latest(
+                tool_name="Engram core",
+                provider="engram_release",
+                current_version=current_engram_version,
+                discovery_id="greatgc-flow/Engram",
+                cache_path=DISCOVERY_CACHE_PATH,
+            )
+            status = core_discovery.get("status")
+            if status != "ok":
+                if status == "discovery_unavailable":
+                    core_not_checked = {"component": "Engram core", "reason": "rate limited"}
+                else:
+                    core_error = {
+                        "component": "Engram core",
+                        "error_type": core_discovery.get("error_type", "unknown"),
+                        "detail": core_discovery.get("detail", "unknown error")
+                    }
+            else:
+                latest = core_discovery.get("latest_version")
+                if latest and current_engram_version != latest:
+                    core_update = {
+                        "component": "Engram core",
+                        "current_version": current_engram_version,
+                        "latest_version": latest,
+                        "url": core_discovery.get("url"),
+                        "checksum_algo": core_discovery.get("checksum_algo"),
+                        "checksum_value": core_discovery.get("checksum_value"),
+                    }
                 
     if core_not_checked:
         not_checked.append(core_not_checked)
@@ -259,7 +295,10 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
 
     print("\nReconciling via provisioner (in-process)...")
     try:
-        deploy_result = provisioner.deploy(ctx)
+        deploy_ctx = dict(ctx)
+        if only_set is not None:
+            deploy_ctx["only"] = only_set
+        deploy_result = provisioner.deploy(deploy_ctx)
         if deploy_result.get("status") == "error":
             print(f"Provisioner deploy error: {deploy_result.get('detail')}")
             return {"status": "incomplete", "detail": "applied but deploy failed"}
