@@ -157,3 +157,20 @@ def test_run_healthy_when_python_ok(tmp_path, monkeypatch):
     monkeypatch.setattr(doctor, "check_sessions", lambda b: {"name": "sessions", "ok": True, "level": "ok", "detail": "x"})
     res = doctor.run({"base_dir": tmp_path, "sys_dir": sys_dir, "args": []})
     assert res["status"] == "success"
+
+
+def test_check_root_path_clean():
+    clean_path = Path("C:/Engram/PortableDev")
+    res = doctor.check_root_path(clean_path)
+    assert res["ok"] is True
+    assert res["level"] == "ok"
+
+
+def test_check_root_path_warning_on_ampersand(tmp_path):
+    bad_path = Path("D:/Engram&Peerhub/PortableDev")
+    res = doctor.check_root_path(bad_path)
+    assert res["ok"] is True
+    assert res["level"] == "warning"
+    assert "contains '&'" in res["detail"]
+    assert "subst" in res["detail"].lower()
+

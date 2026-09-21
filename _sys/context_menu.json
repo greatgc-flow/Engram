@@ -6,7 +6,7 @@
 
   "relay": {
     "dir": "{localappdata}",
-    "content_template": "@echo off\r\nsetlocal DisableDelayedExpansion\r\nset /p SANDBOX_ROOT=<\"%~dp0{root_file}\"\r\nif exist \"%SANDBOX_ROOT%\\_sys\\start.bat\" goto :launch\r\nset /p SANDBOX_ROOT=<\"%~dp0{physroot_file}\"\r\n:launch\r\ncd /d \"%SANDBOX_ROOT%\" || goto :fail\r\ncall \".\\_sys\\start.bat\" \"%~1\"\r\nexit /b %ERRORLEVEL%\r\n:fail\r\necho [Error] Sandbox root not found: %SANDBOX_ROOT%\r\nexit /b 1\r\n"
+    "content_template": "@echo off\r\nsetlocal DisableDelayedExpansion\r\nset /p ENGRAM_ROOT=<\"%~dp0{root_file}\"\r\nif exist \"%ENGRAM_ROOT%\\engram.cmd\" goto :launch\r\nif exist \"%ENGRAM_ROOT%\\Engram.exe\" goto :launch\r\nset /p ENGRAM_ROOT=<\"%~dp0{physroot_file}\"\r\n:launch\r\ncd /d \"%ENGRAM_ROOT%\" || goto :fail\r\nif exist \".\\Engram.exe\" (\r\n    \".\\Engram.exe\" open \"%~1\"\r\n    exit /b %ERRORLEVEL%\r\n)\r\nif exist \".\\engram.cmd\" (\r\n    call \".\\engram.cmd\" open \"%~1\"\r\n    exit /b %ERRORLEVEL%\r\n)\r\nif exist \".\\_sys\\start.bat\" (\r\n    call \".\\_sys\\start.bat\" \"%~1\"\r\n    exit /b %ERRORLEVEL%\r\n)\r\n:fail\r\necho [Error] Engram root not found: %ENGRAM_ROOT%\r\nexit /b 1\r\n"
   },
 
   "registry": {
@@ -23,9 +23,9 @@
 
   "entries": [
     {
-      "id": "sandbox_open",
+      "id": "engram_open",
       "enabled": true,
-      "label": "Open in Sandbox ({FOLDER})",
+      "label": "Open in Engram ({FOLDER})",
       "icon": "{env}/vscode/Code.exe",
       "targets": ["Directory/Background", "Directory", "Drive", "*", "lnkfile"]
     }

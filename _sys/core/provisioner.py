@@ -925,6 +925,7 @@ def _is_peer_leased(sys_dir: Path, peer_or_tool: str) -> bool:
         "cx": ("codex.exe", "node.exe"),
         "antigravity": ("agy.exe",),
         "ag": ("agy.exe",),
+        "agy": ("agy.exe",),
     }.get(peer_or_tool)
     if not process_names:
         return False

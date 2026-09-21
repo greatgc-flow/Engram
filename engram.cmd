@@ -155,9 +155,9 @@ call "%SYS_PATH%\core\bootstrap.bat"
 if errorlevel 1 exit /b 1
 if not exist "workspace\" mkdir "workspace"
 if exist "%SYS_PATH%\data\state\register.state.json" exit /b 0
-set "MENU_CHOICE="
-set /p MENU_CHOICE=Add "Open in Engram" to the Explorer right-click menu? [y/N] 
-if /i "%MENU_CHOICE%"=="y" call "%SYS_PATH%\core\dispatch.bat" menu-enable
+set "MENU_CHOICE=y"
+set /p MENU_CHOICE=Add "Open in Engram" to the Explorer right-click menu? [Y/n] 
+if /i not "%MENU_CHOICE%"=="n" call "%SYS_PATH%\core\dispatch.bat" menu-enable
 exit /b 0
 
 :check_setup

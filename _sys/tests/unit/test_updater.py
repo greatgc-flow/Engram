@@ -551,3 +551,46 @@ def test_updater_core_staging_renamed_sys_dir_protected_guard(monkeypatch, capsy
     assert exc.value.code == 1
     out = capsys.readouterr().out
     assert "falls under protected area" in out
+
+
+def test_updater_fallback_when_section_missing(monkeypatch, capsys):
+    """When updates_discovered entries lack 'section', updater falls back to runtimes.json inspection."""
+    def mock_run(propose_diff=False, only=None):
+        return {
+            "artifact_dir": "mock_dir",
+            "updates_discovered": [
+                {"tool": "ripgrep", "current_version": "1.0", "latest_version": "2.0"}  # NO section key!
+            ],
+            "not_checked": [],
+            "could_not_check": []
+        }
+    monkeypatch.setattr(check_tool_updates, "run", mock_run)
+    monkeypatch.setattr("core.updater.check_components", lambda sys_dir: {})
+
+    res = updater.run({"args": ["--dry-run"]})
+    # Must NOT report "Everything Engram can check is up to date."
+    assert res.get("status") == "success"
+    out = capsys.readouterr().out
+    assert "Tools:" in out
+    assert "ripgrep" in out
+
+
+def test_updater_accepts_only_flag(monkeypatch):
+    """updater parses --only and passes it down to check_tool_updates.run."""
+    captured_only = None
+    def mock_run(propose_diff=False, only=None):
+        nonlocal captured_only
+        captured_only = only
+        return {
+            "artifact_dir": "mock_dir",
+            "updates_discovered": [],
+            "not_checked": [],
+            "could_not_check": []
+        }
+    monkeypatch.setattr(check_tool_updates, "run", mock_run)
+    monkeypatch.setattr("core.updater.check_components", lambda sys_dir: {})
+
+    res = updater.run({"args": ["--only", "ripgrep", "bat"]})
+    assert res.get("status") == "success"
+    assert captured_only == ["ripgrep", "bat"]
+

@@ -409,7 +409,34 @@ def test_check_tool_updates_renamed_sys_dir_safe(monkeypatch, tmp_path):
     assert len(calls) == 1
     cmd_args, cwd = calls[0]
     assert cmd_args[0] == rf".\{sys_dir.name}\core\bootstrap.bat"
-    assert cmd_args[0] == r".\my_runtime\core\bootstrap.bat"
     assert cwd == str(inst)
     assert not (inst / "_sys").exists()
+
+
+def test_run_with_only_filters_tools(monkeypatch, tmp_path):
+    runtimes_path = tmp_path / "runtimes.json"
+    _write_runtimes(runtimes_path)
+    monkeypatch.setattr(ctu, "RUNTIMES_PATH", runtimes_path)
+    monkeypatch.setattr(ctu, "ARCHIVE_ROOT", tmp_path / "proposals")
+    monkeypatch.setattr(ctu, "DISCOVERY_CACHE_PATH", tmp_path / "cache.json")
+
+    resolved_tools = []
+    monkeypatch.setattr(
+        ctu.version_resolver,
+        "resolve_latest",
+        lambda tool_name, provider, current_version, discovery_id, cache_path=None: (
+            resolved_tools.append(tool_name),
+            {
+                "status": "ok",
+                "tool": tool_name,
+                "provider": provider,
+                "discovery_id": discovery_id,
+                "latest_version": current_version,
+            }
+        )[1],
+    )
+
+    ctu.run(propose_diff=False, only=["ripgrep"])
+    assert resolved_tools == ["ripgrep"]
+
 

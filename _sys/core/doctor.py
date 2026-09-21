@@ -219,6 +219,37 @@ def check_sessions(base_dir: Path) -> dict:
 
 
 
+def check_root_path(base_dir: Path) -> dict:
+    """Validate that base_dir does not contain problematic characters for Windows CLI/Node."""
+    path_str = str(base_dir)
+    issues = []
+    if "&" in path_str:
+        issues.append("contains '&' (breaks cmd.exe argument parsing and Node.js npm-global wrappers)")
+    if "%" in path_str:
+        issues.append("contains '%' (interferes with batch variable expansion)")
+    if "^" in path_str:
+        issues.append("contains '^' (cmd.exe escape character)")
+    
+    if issues:
+        detail = (
+            f"root path '{path_str}' has issues: {'; '.join(issues)}. "
+            f"Action: move Engram to a clean path (e.g. C:\\Engram) or mount via SUBST (e.g. subst P: \"{path_str}\")"
+        )
+        return {
+            "name": "root_path",
+            "ok": True,
+            "level": "warning",
+            "detail": detail,
+            "issues": issues,
+        }
+    return {
+        "name": "root_path",
+        "ok": True,
+        "level": "ok",
+        "detail": f"clean path ({path_str})",
+    }
+
+
 def check_elevation() -> dict:
     is_admin = False
     try:
@@ -247,6 +278,7 @@ def run(ctx: dict) -> dict[str, Any]:
     want_json = "--json" in args
 
     checks = [
+        check_root_path(base_dir),
         check_python(sys_dir),
         check_components(sys_dir),
         check_legacy_host_integration(base_dir, sys_dir),

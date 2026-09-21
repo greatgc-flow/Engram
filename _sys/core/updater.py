@@ -57,6 +57,7 @@ def _parse_args(args: list[str]) -> argparse.Namespace:
     parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
     parser.add_argument("--check", action="store_true", help="Stop after printing plan. Exit 1 if Could not check is non-empty")
     parser.add_argument("--dry-run", action="store_true", help="Discover and show proposal, apply nothing")
+    parser.add_argument("--only", nargs="+", help="Update only specified components")
     return parser.parse_args(args)
 
 
@@ -71,7 +72,10 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     sys_dir = _SYS_DIR
     
     try:
-        payload = check_tool_updates.run(propose_diff=True)
+        if getattr(args, "only", None):
+            payload = check_tool_updates.run(propose_diff=True, only=args.only)
+        else:
+            payload = check_tool_updates.run(propose_diff=True)
     except Exception as e:
         return {"status": "failed", "detail": f"Update discovery failed: {e}"}
 
@@ -86,8 +90,18 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     tools_updates = []
     ai_clis_updates = []
     
+    live_runtimes = provisioner.load_json_with_fallback(_SYS_DIR / "runtimes.json")
     for update in payload.get("updates_discovered", []):
         section = update.get("section")
+        if not section:
+            tool = update.get("tool")
+            if tool in live_runtimes.get("runtimes", {}):
+                section = "runtimes"
+            elif tool in live_runtimes.get("tools", {}):
+                section = "tools"
+            else:
+                section = "catalog"
+            update["section"] = section
         if section == "runtimes":
             runtimes_updates.append(update)
         elif section == "tools":

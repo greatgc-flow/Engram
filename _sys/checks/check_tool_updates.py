@@ -463,8 +463,8 @@ def apply_proposal(
     return EXIT_OK, result
 
 
-def run(*, propose_diff: bool = False) -> dict[str, Any]:
-    payload, runtimes, proposed, catalog, proposed_catalog = discover_updates()
+def run(*, propose_diff: bool = False, only: list[str] | None = None) -> dict[str, Any]:
+    payload, runtimes, proposed, catalog, proposed_catalog = discover_updates(only=only)
     if propose_diff:
         write_proposal_artifacts(payload, runtimes, proposed, catalog, proposed_catalog)
     return payload
@@ -477,6 +477,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--apply", metavar="ARTIFACT_DIR", help="apply a previously generated proposal")
     parser.add_argument("--yes", action="store_true", help="confirm --apply mutation")
     parser.add_argument("--install", action="store_true", help="run _sys/core/bootstrap.bat --skip-update after successful --apply --yes")
+    parser.add_argument("--only", nargs="+", help="filter discovery to specific tools")
     args = parser.parse_args(argv)
 
     if args.install and not args.apply:

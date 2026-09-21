@@ -357,6 +357,7 @@ def apply(ctx: dict) -> dict:
             winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "")
             winreg.CloseKey(k)
             print(f"  [OK] Windows 11 classic menu enabled")
+            print(f"  [Note] Windows 11 Explorer caches context menus; restart Explorer (or press Shift+F10 'Show more options') if not visible immediately.")
         except Exception as e:
             errors.append(f"Windows 11 classic-menu registration failed: {e}")
             print(f"  [Warning] Win11 classic menu: {e}")
