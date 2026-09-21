@@ -129,3 +129,38 @@ def test_main_still_skips_non_multiple_when_count_present(tmp_path, capsys):
             assert e.code == 0
     out = capsys.readouterr().out
     assert "[SKIP] commit_count=7" in out
+
+
+def test_scan_imports_skips_backup_personal_data_but_catches_others(tmp_path):
+    sys_root = tmp_path / "_sys"
+    sys_root.mkdir()
+    checks_dir = sys_root / "checks"
+    checks_dir.mkdir()
+
+    # backup_personal_data.py containing intentional allowlist paths
+    backup_file = checks_dir / "backup_personal_data.py"
+    backup_file.write_text(
+        'SYNC_ITEMS = ["claude/CLAUDE.md", "codex/CODEX.md"]\n',
+        encoding="utf-8",
+    )
+
+    # other_module.py containing stale old-layout paths
+    other_file = checks_dir / "other_module.py"
+    other_file.write_text(
+        'OLD_PATH = "claude/CLAUDE.md"\n',
+        encoding="utf-8",
+    )
+
+    # backup_personal_data.py is exempt
+    assert sat._stale_literals_in_file(backup_file, sys_root) == []
+
+    # other_file is flagged
+    other_findings = sat._stale_literals_in_file(other_file, sys_root)
+    assert len(other_findings) == 1
+    assert "claude/CLAUDE.md" in other_findings[0].detail
+
+    # scan_imports overall also ignores backup_personal_data.py and flags other_file
+    all_findings = sat.scan_imports(sys_root)
+    assert len(all_findings) == 1
+    assert all_findings[0].path == str(other_file.relative_to(sys_root))
+

@@ -91,14 +91,20 @@ BRAIN_LOG_MAX_AGE_DAYS = 14
 # ── VSCode dated session log dirs ───────────────────────────────────────
 VSCODE_LOGS_KEEP = 2
 
+_SYS_DIR_EXPLICIT = False
 
-def configure_paths(root: Path | None = None, sys_dir: Path | None = None) -> dict[str, Path]:
+
+def configure_paths(
+    root: Path | None = None,
+    sys_dir: Path | None = None,
+    explicit_sys_dir: bool | None = None,
+) -> dict[str, Path]:
     """Configure and return all derived path constants for the given root and sys_dir.
 
     Updates module-level path constants (ROOT, _SYS_DIR, DATA_TEMP_DIR, etc.)
     and returns a dictionary of the derived paths for testing or programmatic inspection.
     """
-    global ROOT, _SYS_DIR
+    global ROOT, _SYS_DIR, _SYS_DIR_EXPLICIT
     global ROOT_TMP_DIR, DATA_TEMP_DIR, PYTEST_OF_GREAT_DIR, WINGET_CACHE_DIR
     global NPM_CACHE_DIR, PIP_CACHE_DIR, VSCODE_USER_DATA_DIR, VSCODE_LOGS_DIR, BRAIN_DIR
 
@@ -106,8 +112,12 @@ def configure_paths(root: Path | None = None, sys_dir: Path | None = None) -> di
         ROOT = Path(root).resolve()
     if sys_dir is not None:
         _SYS_DIR = Path(sys_dir).resolve()
+        _SYS_DIR_EXPLICIT = True if explicit_sys_dir is None else explicit_sys_dir
     elif root is not None:
         _SYS_DIR = ROOT / _SYS_DIR.name
+        _SYS_DIR_EXPLICIT = False if explicit_sys_dir is None else explicit_sys_dir
+    elif explicit_sys_dir is not None:
+        _SYS_DIR_EXPLICIT = explicit_sys_dir
 
     ROOT_TMP_DIR = ROOT / "tmp"
     DATA_TEMP_DIR = _SYS_DIR / "data" / "temp"
@@ -135,7 +145,7 @@ def configure_paths(root: Path | None = None, sys_dir: Path | None = None) -> di
 
 
 # Initialize path constants with defaults derived from _SYS_DIR
-configure_paths(ROOT, _SYS_DIR)
+configure_paths(ROOT, _SYS_DIR, explicit_sys_dir=False)
 
 
 def _age_days(p: Path, now: float) -> float:
@@ -341,7 +351,7 @@ def _rm(path: Path, apply: bool) -> int:
 
 def build_plan(now: float | None = None, deep: bool = False) -> list[tuple[str, str, list[Path]]]:
     """Return categorized cleanup items: list of (label, key, items)."""
-    if ROOT != _SYS_DIR.parent and _SYS_DIR.name:
+    if not _SYS_DIR_EXPLICIT and ROOT != _SYS_DIR.parent and _SYS_DIR.name:
         configure_paths(root=ROOT, sys_dir=ROOT / _SYS_DIR.name)
     if now is None:
         now = datetime.datetime.now().timestamp()

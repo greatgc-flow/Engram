@@ -633,13 +633,25 @@ def test_run_backup_dispatcher_adapter(
     assert custom_zip.is_file()
     assert zipfile.is_zipfile(custom_zip)
 
+    # 1b. Explicit out path with --out=PATH
+    equals_zip = tmp_path / "out" / "backup_equals.zip"
+    ctx1b = {"base_dir": base_dir, "sys_dir": sys_dir, "args": [f"--out={equals_zip}"]}
+    run_backup(ctx1b)
+    assert equals_zip.is_file()
+    assert zipfile.is_zipfile(equals_zip)
+
     # 2. Relative out path with ENGRAM_CALLER_CWD
     caller_dir = tmp_path / "caller_cwd"
-    caller_dir.mkdir()
+    caller_dir.mkdir(exist_ok=True)
     monkeypatch.setenv("ENGRAM_CALLER_CWD", str(caller_dir))
     ctx2 = {"base_dir": base_dir, "sys_dir": sys_dir, "args": ["--out", "rel_backup.zip"]}
     run_backup(ctx2)
     assert (caller_dir / "rel_backup.zip").is_file()
+
+    # 2b. Relative out path with --out=PATH and ENGRAM_CALLER_CWD
+    ctx2b = {"base_dir": base_dir, "sys_dir": sys_dir, "args": ["--out=rel_equals.zip"]}
+    run_backup(ctx2b)
+    assert (caller_dir / "rel_equals.zip").is_file()
 
     # 3. Default path (no args)
     ctx3 = {"base_dir": base_dir, "sys_dir": sys_dir, "args": []}
@@ -653,11 +665,29 @@ def test_run_backup_dispatcher_adapter(
         run_backup(ctx4)
     assert exc.value.code == 2
 
+    # 4b. Error if --out= given without PATH
+    ctx4b = {"base_dir": base_dir, "sys_dir": sys_dir, "args": ["--out="]}
+    with pytest.raises(SystemExit) as exc4b:
+        run_backup(ctx4b)
+    assert exc4b.value.code == 2
+
+    # 4c. Error if --out specified more than once (equals form and space form)
+    ctx4c = {"base_dir": base_dir, "sys_dir": sys_dir, "args": ["--out=a.zip", "--out=b.zip"]}
+    with pytest.raises(SystemExit) as exc4c:
+        run_backup(ctx4c)
+    assert exc4c.value.code == 2
+
     # 5. Error if unknown flag
     ctx5 = {"base_dir": base_dir, "sys_dir": sys_dir, "args": ["--bogus"]}
     with pytest.raises(SystemExit) as exc5:
         run_backup(ctx5)
     assert exc5.value.code == 2
+
+    # 5b. Error if unknown flag with equals
+    ctx5b = {"base_dir": base_dir, "sys_dir": sys_dir, "args": ["--bogus=val"]}
+    with pytest.raises(SystemExit) as exc5b:
+        run_backup(ctx5b)
+    assert exc5b.value.code == 2
 
     # 6. Error if extra positional
     ctx6 = {"base_dir": base_dir, "sys_dir": sys_dir, "args": ["extra_arg"]}

@@ -31,7 +31,7 @@ def guard_real_worktree(monkeypatch):
         "_SYS_DIR": tidy_temp._SYS_DIR,
     }
     yield
-    tidy_temp.configure_paths(root=orig_paths["ROOT"], sys_dir=orig_paths["_SYS_DIR"])
+    tidy_temp.configure_paths(root=orig_paths["ROOT"], sys_dir=orig_paths["_SYS_DIR"], explicit_sys_dir=False)
 
 
 @pytest.fixture
@@ -241,6 +241,32 @@ class TestTidy:
         assert res["status"] == "success"
         after = get_snapshot(inst)
         assert before == after
+
+    def test_configured_external_sys_dir_survives_planning(self, tmp_path: Path):
+        base_dir = tmp_path / "Engram"
+        base_dir.mkdir()
+        external_sys = tmp_path / "ExternalRuntime"
+        external_sys.mkdir()
+
+        # Seed debris in external sys_dir
+        pycache = external_sys / "core" / "__pycache__"
+        pycache.mkdir(parents=True)
+        (pycache / "foo.pyc").write_text("pyc")
+
+        # Explicitly configure an external sys_dir (not a child of base_dir)
+        tidy_temp.configure_paths(root=base_dir, sys_dir=external_sys)
+        assert tidy_temp.ROOT == base_dir
+        assert tidy_temp._SYS_DIR == external_sys
+
+        # build_plan must NOT overwrite _SYS_DIR with base_dir / "_sys"
+        plan = _collect_plan(deep=True)
+        assert tidy_temp._SYS_DIR == external_sys, "Explicit sys_dir was overwritten during planning"
+        assert len(plan) > 0
+        for p in plan:
+            resolved = p.resolve()
+            assert resolved != REAL_WORKTREE and REAL_WORKTREE not in resolved.parents
+            assert resolved.is_relative_to(external_sys), f"Target {p} is not under {external_sys}"
+            assert not str(resolved).startswith(str(base_dir / "_sys")), f"Target {p} fell back to base_dir/_sys"
 
 
 def _collect_plan(now=None, deep=False, targets=None):

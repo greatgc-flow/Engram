@@ -155,26 +155,36 @@ def check_running_processes(sys_dir: Path | None = None) -> list[str]:
                 # Disambiguate whether codex.exe or node.exe is actually running
                 try:
                     import psutil
-                    root = str(sys_dir.resolve()).lower()
-                    found_names = set()
-                    for proc in psutil.process_iter(["name", "exe"]):
-                        try:
-                            pname = (proc.info.get("name") or "").lower()
-                            if pname in ("codex.exe", "node.exe"):
-                                pexe = proc.info.get("exe")
-                                if pexe and str(pexe).lower().startswith(root):
-                                    found_names.add(pname)
-                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                            continue
-                    if "node.exe" in found_names and "codex.exe" not in found_names:
-                        running.append("codex (node.exe)")
-                    elif "codex.exe" in found_names and "node.exe" in found_names:
-                        running.append("codex.exe")
-                        running.append("codex (node.exe)")
-                    else:
-                        running.append(display_name)
-                except Exception:
+                except ImportError:
                     running.append(display_name)
+                else:
+                    psutil_err = getattr(psutil, "Error", None)
+                    psutil_exceptions = (
+                        (psutil_err, OSError, AttributeError)
+                        if isinstance(psutil_err, type) and issubclass(psutil_err, BaseException)
+                        else (OSError, AttributeError)
+                    )
+                    try:
+                        root = str(sys_dir.resolve()).lower()
+                        found_names = set()
+                        for proc in psutil.process_iter(["name", "exe"]):
+                            try:
+                                pname = (proc.info.get("name") or "").lower()
+                                if pname in ("codex.exe", "node.exe"):
+                                    pexe = proc.info.get("exe")
+                                    if pexe and str(pexe).lower().startswith(root):
+                                        found_names.add(pname)
+                            except (getattr(psutil, "NoSuchProcess", ()), getattr(psutil, "AccessDenied", ())):
+                                continue
+                        if "node.exe" in found_names and "codex.exe" not in found_names:
+                            running.append("codex (node.exe)")
+                        elif "codex.exe" in found_names and "node.exe" in found_names:
+                            running.append("codex.exe")
+                            running.append("codex (node.exe)")
+                        else:
+                            running.append(display_name)
+                    except psutil_exceptions:
+                        running.append(display_name)
             else:
                 running.append(display_name)
     return running
@@ -523,16 +533,25 @@ def run_backup(ctx: dict) -> None:
     i = 0
     while i < len(args):
         arg = args[i]
-        if arg == "--out":
+        if arg == "--out" or arg.startswith("--out="):
             if out_path is not None:
                 print("[Error] --out specified more than once.")
                 print("Usage: engram backup [--out PATH]")
                 sys.exit(2)
-            if i + 1 >= len(args):
-                print("[Error] --out requires a PATH argument.")
-                print("Usage: engram backup [--out PATH]")
-                sys.exit(2)
-            raw_out = args[i + 1]
+            if arg == "--out":
+                if i + 1 >= len(args):
+                    print("[Error] --out requires a PATH argument.")
+                    print("Usage: engram backup [--out PATH]")
+                    sys.exit(2)
+                raw_out = args[i + 1]
+                i += 2
+            else:
+                raw_out = arg.split("=", 1)[1]
+                if not raw_out:
+                    print("[Error] --out requires a PATH argument.")
+                    print("Usage: engram backup [--out PATH]")
+                    sys.exit(2)
+                i += 1
             caller_cwd = os.environ.get("ENGRAM_CALLER_CWD")
             if caller_cwd and not Path(raw_out).is_absolute():
                 out_path = Path(caller_cwd) / raw_out
@@ -540,7 +559,6 @@ def run_backup(ctx: dict) -> None:
                 out_path = Path(raw_out)
             if raw_out.endswith(("/", "\\")):
                 out_path.mkdir(parents=True, exist_ok=True)
-            i += 2
         elif arg.startswith("-"):
             print(f"[Error] Unknown flag for backup: {arg}")
             print("Usage: engram backup [--out PATH]")

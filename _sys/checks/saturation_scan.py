@@ -189,7 +189,17 @@ _OLD_PREFIXES = (
 )
 
 
+# Files exempt from stale old-layout path literal checks (intentional
+# backup bundle relative paths that mirror peer directory names).
+IMPORT_SCAN_EXCLUDE_FILES: frozenset[str] = frozenset({
+    "backup_personal_data.py",
+    "test_backup_personal_data.py",
+})
+
+
 def _stale_literals_in_file(fp: Path, sys_root: Path) -> list[Finding]:
+    if fp.name in IMPORT_SCAN_EXCLUDE_FILES:
+        return []
     findings: list[Finding] = []
     try:
         src = fp.read_text("utf-8", errors="replace")
@@ -217,7 +227,7 @@ def _stale_literals_in_file(fp: Path, sys_root: Path) -> list[Finding]:
 def scan_imports(sys_root: Path) -> list[Finding]:
     findings: list[Finding] = []
     for fp in sys_root.rglob("*.py"):
-        if _is_excluded(fp, sys_root):
+        if _is_excluded(fp, sys_root) or fp.name in IMPORT_SCAN_EXCLUDE_FILES:
             continue
         findings.extend(_stale_literals_in_file(fp, sys_root))
     return findings
