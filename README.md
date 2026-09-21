@@ -31,9 +31,15 @@ Engram bootstraps a self-contained Windows dev environment — Python, Node.js, 
 
 ## Quick Start
 
+**Option A (Portable Zip):**
 1. Download the latest `Engram-vX.Y.Z-portable-x64.zip` release.
-2. Extract the zip to a folder on your drive.
+2. Extract the zip to a folder on your drive (recommended: a clean path without `&`, `%`, or `^` characters, e.g. `C:\Engram`).
 3. Double-click `Engram.exe` or run `engram` from a terminal. 
+
+**Option B (WinGet):**
+```powershell
+winget install greatgc-flow.Engram
+```
 
 The first run will prompt to bootstrap the portable environment (Python, Node, Git, VS Code, tools) and optionally register the Explorer right-click context menu.
 
@@ -51,8 +57,8 @@ The first run will prompt to bootstrap the portable environment (Python, Node, G
 | Verb | Behavior | Exit codes |
 |---|---|---|
 | `engram` / `open [PATH]` | Open a workspace (default action). On first run (no Python), prints plan and prompts to set up here. If missing, prompts to add right-click menu entry. Otherwise dispatches the `start` pipeline. | 0 ok; 1 not set up / declined / bootstrap failed; launcher errors propagated |
-| `update [--check] [--yes] [--only NAME[,NAME...]]` | Discover and apply updates across the catalog. `--check` prints the plan without writing. `--yes` skips confirmation. `--only` restricts to specific components. | 0 success or nothing to do; 1 one or more components failed; 2 usage error; 3 declined |
-| `doctor [--json]` | Unchanged zero-network contract reporting environment health. | 0 healthy; 1 broken |
+| `update [--check] [--yes] [--only NAME[,NAME...]]` | Discover and apply updates across the catalog. `--check` prints the plan without writing. `--yes` skips confirmation. `--only` restricts to specific components (supports comma-separated names and aliases: `cc`, `cx`, `ag`). | 0 success or nothing to do; 1 one or more components failed; 2 usage error; 3 declined |
+| `doctor [--json]` | Zero-network health check: verifies Python consistency, components, context menu registration, and root path hygiene (warns if path contains `&`, `%`, or `^`). | 0 healthy; 1 broken |
 | `menu` / `menu status` | Read-only: check whether context menu entries are present. | 0 |
 | `menu enable` | Apply registry entries to add right-click context menu. Idempotent. | 0 / 1 |
 | `menu disable` | Remove right-click context menu registry entries. Idempotent. | 0 / 1 |
@@ -67,11 +73,16 @@ The first run will prompt to bootstrap the portable environment (Python, Node, G
 
 `install`, `setup`, `status`, `register`, `unregister`, `menu-cleanup`, `cleanup`, `launch`, and `start` are retired verbs — each prints its replacement and exits 2 rather than silently aliasing.
 
-To install or update an individual AI CLI tool directly, you can use:
+To install or update individual tools or runtimes directly:
 ```bat
+# Single component:
 engram update --only claude
 engram update --only codex
 engram update --only agy
+
+# Multiple components using comma-separated names or aliases:
+engram update --only cc,cx,ag
+engram update --only nodejs,vscode
 ```
 
 ## AI-to-AI collaboration → peerhub

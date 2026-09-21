@@ -53,7 +53,7 @@ def check_python(sys_dir: Path) -> dict:
                 "detail": f"portable python.exe missing (declared {declared})"}
     if declared and installed != declared:
         return {"name": "python", "ok": False, "level": "error",
-                "detail": f"declared {declared} != installed {installed} (run _sys/core/bootstrap.bat)"}
+                "detail": f"declared {declared} != installed {installed} (run 'engram' or 'engram update')"}
     return {"name": "python", "ok": True, "level": "ok",
             "detail": f"{installed} (matches declared)"}
 
@@ -207,7 +207,7 @@ def check_components(sys_dir: Path) -> dict:
     if missing:
         return {"name": "components", "ok": True, "level": "warning",
                 "detail": f"{len(missing)}/{checked} declared components not found: "
-                          f"{', '.join(missing)} (run _sys/core/bootstrap.bat to provision)",
+                          f"{', '.join(missing)} (run 'engram update' to provision)",
                 "missing": missing}
     return {"name": "components", "ok": True, "level": "ok",
             "detail": f"all {checked} declared components present", "missing": []}

@@ -201,3 +201,27 @@ def test_check_root_path_multiple_special_chars():
     assert "^" in res["detail"]
 
 
+def test_doctor_hints_use_canonical_verbs(tmp_path, monkeypatch):
+    """Doctor remediation hints must strictly direct to canonical engram verbs, never internal .bat scripts."""
+    sys_dir = tmp_path / "_sys"
+    _write_runtimes(sys_dir, "3.14.5")
+
+    # 1. Python mismatch
+    monkeypatch.setattr(doctor, "_installed_python_version", lambda sd: "3.13.0")
+    py_res = doctor.check_python(sys_dir)
+    assert "engram" in py_res["detail"].lower()
+    assert ".bat" not in py_res["detail"].lower()
+
+    # 2. Missing components
+    comp_res = doctor.check_components(sys_dir)
+    assert "engram update" in comp_res["detail"].lower()
+    assert ".bat" not in comp_res["detail"].lower()
+
+    # 3. Context menu
+    reg_res = doctor.check_registration(tmp_path, sys_dir)
+    if "detail" in reg_res and "enable" in reg_res["detail"].lower():
+        assert "engram menu enable" in reg_res["detail"].lower()
+        assert ".bat" not in reg_res["detail"].lower()
+
+
+
