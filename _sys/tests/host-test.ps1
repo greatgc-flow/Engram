@@ -122,8 +122,8 @@ log "[GROUP H5] Portable Env Structure"
 T-File "CONVENTION.md at root"           "$BaseDir\CONVENTION.md"
 T-File "_archive dir exists"             "$BaseDir\_archive"
 T-File "_sys/start.bat"                  "$SysDir\start.bat"
-T-File "_sys/test/launch-wsbtest.ps1"    "$SysDir\test\launch-wsbtest.ps1"
-T-File "_sys/test/host-test.ps1"         "$SysDir\test\host-test.ps1"
+T-File "_sys/tests/launch-wsbtest.ps1"   "$SysDir\tests\launch-wsbtest.ps1"
+T-File "_sys/tests/host-test.ps1"        "$SysDir\tests\host-test.ps1"
 
 # CONVENTION.md has §9
 T-Content "CONVENTION.md: §9 WSB policy"      "$BaseDir\CONVENTION.md" "§9"

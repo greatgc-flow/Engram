@@ -51,7 +51,7 @@ RESOLVABLE_REFERENCES = [
         "_archive",
         marks=pytest.mark.xfail(
             strict=True,
-            reason="host-test.ps1 line 123 expects '_archive' directory at repo root, but _archive is not committed to git repo",
+            reason="host-test.ps1 line 123 expects '_archive' directory at repo root, but _archive is a runtime output location not committed to git (cannot create empty dir per repo rules)",
         ),
         id="host_test_ps1->_archive",
     ),
@@ -60,24 +60,16 @@ RESOLVABLE_REFERENCES = [
         "_sys/start.bat",
         id="host_test_ps1->start_bat",
     ),
-    # Broken reference: host-test.ps1 lines 125-126 reference _sys/test/... instead of _sys/tests/...
+    # Fixed references: host-test.ps1 lines 125-126 updated _sys/test/... to _sys/tests/...
     pytest.param(
         "_sys/tests/host-test.ps1",
-        "_sys/test/launch-wsbtest.ps1",
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason="host-test.ps1 references '_sys/test/launch-wsbtest.ps1' but folder was renamed to '_sys/tests/'",
-        ),
-        id="host_test_ps1->_sys_test_launch_wsbtest_ps1",
+        "_sys/tests/launch-wsbtest.ps1",
+        id="host_test_ps1->_sys_tests_launch_wsbtest_ps1",
     ),
     pytest.param(
         "_sys/tests/host-test.ps1",
-        "_sys/test/host-test.ps1",
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason="host-test.ps1 references '_sys/test/host-test.ps1' but folder was renamed to '_sys/tests/'",
-        ),
-        id="host_test_ps1->_sys_test_host_test_ps1",
+        "_sys/tests/host-test.ps1",
+        id="host_test_ps1->_sys_tests_host_test_ps1",
     ),
     # integration-test.ps1
     # Runtime skip: $ENV\..., $TOOLS\..., $SYS\data\..., _archive\test-results (runtime env/state/results)
@@ -105,13 +97,13 @@ RESOLVABLE_REFERENCES = [
         "_sys/tests/launch-wsbtest.ps1",
         id="test_runner_ps1->launch_wsbtest_ps1",
     ),
-    # Broken reference: test-runner.ps1 line 89 references sandbox-test.bat which does not exist
+    # Broken reference: test-runner.ps1 line 89 references sandbox-test.bat which was deleted
     pytest.param(
         "_sys/tests/test-runner.ps1",
         "_sys/tests/sandbox-test.bat",
         marks=pytest.mark.xfail(
             strict=True,
-            reason="test-runner.ps1 references 'sandbox-test.bat' which does not exist in repo",
+            reason="test-runner.ps1 references 'sandbox-test.bat' which was deleted in 67fe148; run-sandbox-test.bat launches WSB and cannot substitute for local execution in test-runner.ps1's local fallback path",
         ),
         id="test_runner_ps1->sandbox_test_bat",
     ),
@@ -127,37 +119,29 @@ RESOLVABLE_REFERENCES = [
         "_sys/context",
         marks=pytest.mark.xfail(
             strict=True,
-            reason="local-test.bat line 29 references '_sys/context/*.bat' but _sys/context directory does not exist",
+            reason="local-test.bat line 29 references '_sys/context/*.bat' but _sys/context directory was deleted in Increment A (commit 20a23f4); directory does not exist and empty dirs cannot be committed",
         ),
         id="local_test_bat->_sys_context",
     ),
-    # Broken references in local-test.bat: references _sys\test\... instead of _sys\tests\...
     pytest.param(
         "_sys/tests/local-test.bat",
         "_sys/test/sandbox-test.bat",
         marks=pytest.mark.xfail(
             strict=True,
-            reason="local-test.bat references '_sys/test/sandbox-test.bat' which does not exist in repo",
+            reason="local-test.bat references '_sys/test/sandbox-test.bat' which was deleted in 67fe148; line 54 already covers run-sandbox-test.bat so repointing is redundant and target does not exist",
         ),
         id="local_test_bat->_sys_test_sandbox_test_bat",
     ),
+    # Fixed references in local-test.bat: updated _sys\test\... to _sys\tests\...
     pytest.param(
         "_sys/tests/local-test.bat",
-        "_sys/test/run-sandbox-test.bat",
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason="local-test.bat references '_sys/test/run-sandbox-test.bat' but folder is '_sys/tests/'",
-        ),
-        id="local_test_bat->_sys_test_run_sandbox_test_bat",
+        "_sys/tests/run-sandbox-test.bat",
+        id="local_test_bat->_sys_tests_run_sandbox_test_bat",
     ),
     pytest.param(
         "_sys/tests/local-test.bat",
-        "_sys/test/sandbox-unit-test.wsb",
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason="local-test.bat references '_sys/test/sandbox-unit-test.wsb' but folder is '_sys/tests/'",
-        ),
-        id="local_test_bat->_sys_test_sandbox_unit_test_wsb",
+        "_sys/tests/sandbox-unit-test.wsb",
+        id="local_test_bat->_sys_tests_sandbox_unit_test_wsb",
     ),
     # run-sandbox-test.bat
     # Runtime skip: %SystemRoot%\Temp\porta_sandbox_test_*.wsb, %RESULTS_DIR% (runtime wsb/results)
@@ -227,7 +211,7 @@ BAT_SYS_TOKENS = [
         "_sys/context",
         marks=pytest.mark.xfail(
             strict=True,
-            reason="local-test.bat line 29 references '_sys/context/*.bat' but _sys/context directory does not exist",
+            reason="local-test.bat line 29 references '_sys/context/*.bat' but _sys/context directory was deleted in Increment A (commit 20a23f4); directory does not exist and empty dirs cannot be committed",
         ),
         id="local_test_bat->_sys_context",
     ),
@@ -236,27 +220,19 @@ BAT_SYS_TOKENS = [
         "_sys/test/sandbox-test.bat",
         marks=pytest.mark.xfail(
             strict=True,
-            reason="local-test.bat line 53 references '_sys/test/sandbox-test.bat' which does not exist in repo",
+            reason="local-test.bat line 53 references '_sys/test/sandbox-test.bat' which was deleted in 67fe148; line 54 already covers run-sandbox-test.bat so repointing is redundant and target does not exist",
         ),
         id="local_test_bat->_sys_test_sandbox_test_bat",
     ),
     pytest.param(
         "_sys/tests/local-test.bat",
-        "_sys/test/run-sandbox-test.bat",
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason="local-test.bat line 54 references '_sys/test/run-sandbox-test.bat' but folder is '_sys/tests/'",
-        ),
-        id="local_test_bat->_sys_test_run_sandbox_test_bat",
+        "_sys/tests/run-sandbox-test.bat",
+        id="local_test_bat->_sys_tests_run_sandbox_test_bat",
     ),
     pytest.param(
         "_sys/tests/local-test.bat",
-        "_sys/test/sandbox-unit-test.wsb",
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason="local-test.bat line 55 references '_sys/test/sandbox-unit-test.wsb' but folder is '_sys/tests/'",
-        ),
-        id="local_test_bat->_sys_test_sandbox_unit_test_wsb",
+        "_sys/tests/sandbox-unit-test.wsb",
+        id="local_test_bat->_sys_tests_sandbox_unit_test_wsb",
     ),
 
     # _sys/tests/run-sandbox-test.bat:
@@ -359,12 +335,12 @@ def test_no_unaccounted_bat_sys_tokens():
         "_sys/tests/unit/test_path_scenarios.py",
         "_sys/core/bootstrap.bat",
         "_sys/tests/lifecycle_tester.py",
+        "_sys/tests/run-sandbox-test.bat",
+        "_sys/tests/sandbox-unit-test.wsb",
         # Known breakages
         "_sys/context",
         "_sys/context/*.bat",
         "_sys/test/sandbox-test.bat",
-        "_sys/test/run-sandbox-test.bat",
-        "_sys/test/sandbox-unit-test.wsb",
     }
 
     for bat_rel in BAT_FILES:
