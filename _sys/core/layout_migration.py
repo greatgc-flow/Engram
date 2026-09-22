@@ -5,8 +5,12 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-from _sys.checks.check_tool_updates import _atomic_write_json
-from _sys.core import provisioner
+try:
+    from _sys.checks.check_tool_updates import _atomic_write_json
+    from _sys.core import provisioner
+except ModuleNotFoundError:
+    from checks.check_tool_updates import _atomic_write_json
+    from core import provisioner
 
 logger = logging.getLogger(__name__)
 
@@ -73,13 +77,14 @@ def _merge_component_maps(
     return ordered_merged
 
 # WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="Called dynamically by P1-6 layout migration."
-def merge_declarations(dry_run: bool = False) -> List[str]:
+def merge_declarations(dry_run: bool = False, sys_dir: Path | None = None) -> List[str]:
     files = ["runtimes.json", "tool-catalog.v1.json"]
     
-    defaults_dir = Path("_sys/defaults")
-    live_dir = Path("_sys")
-    base_state_dir = Path("_sys/data/state/defaults-base")
-    manifest_base_dir = Path("_sys/core/release-manifests/3.2.6-defaults")
+    effective_sys = sys_dir if sys_dir is not None else Path("_sys")
+    defaults_dir = effective_sys / "defaults"
+    live_dir = effective_sys
+    base_state_dir = effective_sys / "data" / "state" / "defaults-base"
+    manifest_base_dir = effective_sys / "core" / "release-manifests" / "3.2.6-defaults"
     
     return merge_declarations_impl(defaults_dir, live_dir, base_state_dir, manifest_base_dir, files, dry_run=dry_run)
 
@@ -181,7 +186,10 @@ def merge_declarations_impl(defaults_dir: Path, live_dir: Path, base_state_dir: 
 
 # WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 orchestration wiring happens in a follow-up dispatch."
 def m0_preflight(base_dir: Path, sys_dir: Path) -> bool:
-    from _sys.core.doctor import check_legacy_host_integration
+    try:
+        from _sys.core.doctor import check_legacy_host_integration
+    except ModuleNotFoundError:
+        from core.doctor import check_legacy_host_integration
     result = check_legacy_host_integration(base_dir, sys_dir)
     if result.get("level") == "warning":
         # Reuse the already-correct instructions from the doctor check itself
@@ -449,7 +457,10 @@ def m2_move_engram_state(base_dir: Path, sys_dir: Path, dry_run: bool = False) -
 # WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 orchestration wiring happens in a follow-up dispatch"
 def migrate_layout(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> int:
     import datetime
-    from _sys.core.version import load_version_info
+    try:
+        from _sys.core.version import load_version_info
+    except ModuleNotFoundError:
+        from core.version import load_version_info
     
     if not m0_preflight(base_dir, sys_dir):
         return 1
@@ -457,7 +468,7 @@ def migrate_layout(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> int:
     m1_ok, m1_report = m1_retire_shipped_files(base_dir, sys_dir, dry_run=dry_run)
     m2_ok, m2_report = m2_move_engram_state(base_dir, sys_dir, dry_run=dry_run)
     
-    m3_report = merge_declarations(dry_run=dry_run)
+    m3_report = merge_declarations(dry_run=dry_run, sys_dir=sys_dir)
     
     version_file = sys_dir / "data" / "state" / "version.json"
     if not version_file.exists():

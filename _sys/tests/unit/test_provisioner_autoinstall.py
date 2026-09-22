@@ -1186,3 +1186,86 @@ def test_ensure_runtime_python_mismatch_uses_canonical_verbs(tmp_path, monkeypat
     assert ".bat" not in detail
 
 
+def test_safe_rename_retries_transient_error(tmp_path, monkeypatch):
+    """_safe_rename retries on transient OSError and succeeds once lock clears."""
+    src = tmp_path / "src_dir"
+    dst = tmp_path / "dst_dir"
+    src.mkdir()
+
+    attempts = 0
+    orig_rename = Path.rename
+
+    def flaky_rename(self, target):
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise OSError(5, "Access is denied (transient mock lock)")
+        return orig_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", flaky_rename)
+    pv._safe_rename(src, dst, max_retries=5, initial_delay=0.001)
+
+    assert dst.exists()
+    assert not src.exists()
+    assert attempts == 3
+
+
+def test_safe_rename_raises_after_max_retries(tmp_path, monkeypatch):
+    """_safe_rename raises OSError if all retries are exhausted."""
+    src = tmp_path / "src_dir"
+    dst = tmp_path / "dst_dir"
+    src.mkdir()
+
+    def always_fail(self, target):
+        raise OSError(5, "Persistent access denied")
+
+    monkeypatch.setattr(Path, "rename", always_fail)
+    import pytest
+    with pytest.raises(OSError) as exc:
+        pv._safe_rename(src, dst, max_retries=3, initial_delay=0.001)
+    assert "Persistent access denied" in str(exc.value)
+
+
+def test_install_atomic_swap_locked_defers_and_rolls_back(tmp_path, monkeypatch):
+    """When swap to active is locked, _install_atomic restores old_dir and returns in_use_retry_at_session_boundary."""
+    sys_dir = tmp_path / "_sys"
+    target_root = sys_dir / "tools"
+    target_root.mkdir(parents=True)
+
+    tool_dir = target_root / "test_tool"
+    tool_dir.mkdir()
+    (tool_dir / "bin.exe").write_text("old_content")
+
+    monkeypatch.setattr(pv, "_secure_download", lambda url, dest: dest.write_text("dummy"))
+    monkeypatch.setattr(pv, "_hash_file", lambda path, algo: "hash123")
+    monkeypatch.setattr(pv, "_run_canary", lambda tmp_dir, canary: (True, "v1.0"))
+
+    # Mock _safe_rename so that renaming tmp_dir to active_dir raises OSError
+    orig_safe_rename = pv._safe_rename
+    def mock_safe_rename(src, dst, *args, **kwargs):
+        if "tmp" in src.name and dst == tool_dir:
+            raise OSError(5, "Mock Windows lock on swap")
+        return orig_safe_rename(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(pv, "_safe_rename", mock_safe_rename)
+
+    cfg = {
+        "url": "https://example.com/tool.zip",
+        "version": "2.0.0",
+        "install_mechanism": "exe_tool",
+        "bin": "bin.exe",
+    }
+    manifest_path = target_root / "test_tool" / ".install_manifest.json"
+
+    res = pv._install_atomic("test_tool", cfg, manifest_path, target_root, sys_dir)
+
+    assert res["status"] == "in_use_retry_at_session_boundary"
+    assert "Swap to active locked" in res["detail"]
+
+    # Active dir must have been safely restored from old_dir
+    assert tool_dir.exists()
+    assert (tool_dir / "bin.exe").read_text() == "old_content"
+
+    # Component must have been added to deferred retries
+    deferred = pv._load_deferred(sys_dir)
+    assert "tool:test_tool" in deferred

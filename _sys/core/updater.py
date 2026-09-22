@@ -326,7 +326,13 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     
     if failed or deferred:
         # We need to revert the specific components in runtimes.json and tool-catalog.v1.json
-        print(f"\nReverting {len(failed) + len(deferred)} failed/deferred components...")
+        comp_names = []
+        for item in failed + deferred:
+            c = item.get("component") if isinstance(item, dict) else str(item)
+            if c and c not in comp_names:
+                comp_names.append(c)
+
+        print(f"\nReverting {len(comp_names)} failed/deferred component(s)...")
         
         backup_path = apply_result.get("backup_path")
         catalog_backup_path = apply_result.get("catalog_backup_path")
@@ -338,7 +344,7 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                 live_runtimes = json.loads(live_runtimes_path.read_text(encoding="utf-8"))
                 
                 changed = False
-                for comp in failed + deferred:
+                for comp in comp_names:
                     for section in ["runtimes", "tools"]:
                         if section in live_runtimes and section in old_runtimes and comp in live_runtimes[section]:
                             if comp in old_runtimes[section]:
@@ -346,7 +352,8 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                             else:
                                 del live_runtimes[section][comp]
                             changed = True
-                            reverted_components.append(comp)
+                            if comp not in reverted_components:
+                                reverted_components.append(comp)
                             
                 if changed:
                     check_tool_updates._atomic_write_json(live_runtimes_path, live_runtimes)
@@ -360,7 +367,7 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                 live_catalog = json.loads(live_catalog_path.read_text(encoding="utf-8"))
                 
                 changed = False
-                for comp in failed + deferred:
+                for comp in comp_names:
                     if "tools" in live_catalog and "tools" in old_catalog:
                         # Find index in live
                         for i, tool in enumerate(live_catalog["tools"]):
@@ -372,7 +379,8 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                                 else:
                                     del live_catalog["tools"][i]
                                 changed = True
-                                reverted_components.append(comp)
+                                if comp not in reverted_components:
+                                    reverted_components.append(comp)
                                 break
                                 
                 if changed:

@@ -767,7 +767,7 @@ def test_run_pipeline(tmp_path, monkeypatch):
 
 
 def test_layout_migration_core_update_cleanup(tmp_path):
-    import core.layout_migration as lm
+    from _sys.core import layout_migration as lm
     
     base_dir = tmp_path / "base"
     sys_dir = base_dir / "_sys"

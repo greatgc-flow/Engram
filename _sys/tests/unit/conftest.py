@@ -11,8 +11,10 @@ from pathlib import Path
 
 # Register _sys via bootstrap_root_package so 'from _sys.core import ...' works
 _SYS_DIR = Path(__file__).resolve().parent.parent.parent
-# Also keep core in path for tests doing 'import hub' directly
+# Also keep core and _sys in path for tests doing 'import hub' or 'from core import ...' directly
 sys.path.insert(0, str(_SYS_DIR / "core"))
+if str(_SYS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SYS_DIR))
 
 from root import bootstrap_root_package
 bootstrap_root_package(_SYS_DIR)

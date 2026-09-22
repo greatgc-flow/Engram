@@ -11,6 +11,7 @@ import json
 import shutil
 import subprocess
 import tarfile
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -597,9 +598,10 @@ def _run_canary(tmp_dir: Path, canary: dict | None, env: dict | None = None) -> 
         use_shell = False
 
     try:
+        canary_cwd = str(tmp_dir) if use_shell else str(tmp_dir.parent)
         res = subprocess.run(
             run_args,
-            cwd=str(tmp_dir),
+            cwd=canary_cwd,
             capture_output=True,
             timeout=timeout,
             env=run_env,
@@ -644,6 +646,20 @@ def _migrate_preserve_paths(old_dir: Path, tmp_dir: Path, preserve_paths: list) 
         if dest.exists():
             shutil.rmtree(dest, ignore_errors=True) if dest.is_dir() else dest.unlink()
         shutil.move(str(src), str(dest))
+
+
+def _safe_rename(src: Path, dst: Path, max_retries: int = 5, initial_delay: float = 0.1) -> None:
+    """Robust directory/file rename on Windows with exponential backoff to handle
+    transient file locks from antivirus (Defender), search indexers, or recently
+    terminated child processes."""
+    for attempt in range(max_retries):
+        try:
+            src.rename(dst)
+            return
+        except OSError:
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(initial_delay * (2 ** attempt))
 
 
 def _install_atomic(name: str, cfg: dict, manifest_path: Path, target_root: Path, sys_dir: Path, force: bool = False) -> dict:
@@ -743,7 +759,7 @@ def _install_atomic(name: str, cfg: dict, manifest_path: Path, target_root: Path
             if old_dir.exists():
                 shutil.rmtree(old_dir, ignore_errors=True)
             try:
-                active_dir.rename(old_dir)
+                _safe_rename(active_dir, old_dir)
             except OSError as e:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
                 _add_deferred(sys_dir, name, kind)
@@ -754,11 +770,16 @@ def _install_atomic(name: str, cfg: dict, manifest_path: Path, target_root: Path
                 _migrate_preserve_paths(old_dir, tmp_dir, preserve_paths)
 
         try:
-            tmp_dir.rename(active_dir)
+            _safe_rename(tmp_dir, active_dir)
         except OSError as e:
             if old_dir.exists() and not active_dir.exists():
-                old_dir.rename(active_dir)
-            return {"status": "error", "detail": f"Swap to active failed: {e}"}
+                try:
+                    _safe_rename(old_dir, active_dir)
+                except OSError:
+                    pass
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            _add_deferred(sys_dir, name, kind)
+            return {"status": "in_use_retry_at_session_boundary", "detail": f"Swap to active locked: {e}"}
 
         manifest = {
             "tool" if kind == "tool" else "runtime": name,

@@ -175,6 +175,10 @@ call "%SYS_PATH%\core\dispatch.bat" doctor %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :cmd_menu
+if "%~1"=="/?" goto :show_menu_help
+if "%~1"=="-h" goto :show_menu_help
+if "%~1"=="--help" goto :show_menu_help
+if /i "%~1"=="help" goto :show_menu_help
 call :check_setup
 if errorlevel 1 exit /b 1
 :: if no args, default to status
@@ -199,8 +203,25 @@ if /i "%~1"=="clean" (
     exit /b %ERRORLEVEL%
 )
 echo [Error] Unknown menu command: %1
-echo Run 'engram help' for available commands.
+echo Run 'engram menu --help' for available commands.
 exit /b 2
+
+:show_menu_help
+echo Engram Right-Click Context Menu Management
+echo.
+echo Usage:
+echo   engram menu ^<subcommand^>
+echo.
+echo Subcommands:
+echo   status     Display current registration status in Windows Explorer
+echo   enable     Add "Open in Engram" to Explorer right-click context menu
+echo   disable    Remove "Open in Engram" from Explorer context menu
+echo   clean      Clean orphaned registry entries from previous installations
+echo.
+echo Options:
+echo   -h, --help, /?  Display this help message
+echo.
+exit /b 0
 
 :cmd_tidy
 call :check_setup

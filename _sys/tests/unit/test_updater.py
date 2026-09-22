@@ -751,4 +751,60 @@ def test_updater_invalid_section_and_non_dict_update_handling(monkeypatch, capsy
     assert "ripgrep: 1.0 -> 2.0" in out
 
 
+def test_updater_reverts_failed_and_deferred_dict_components(tmp_path, monkeypatch, capsys):
+    """When deploy returns failed/deferred items as dicts, updater safely parses component names
+    and reverts runtimes.json without raising TypeError (unhashable type: 'dict')."""
+    sys_dir = tmp_path / "_sys"
+    sys_dir.mkdir(parents=True)
+    monkeypatch.setattr(updater, "_SYS_DIR", sys_dir)
+
+    backup_runtimes = {
+        "tools": {"gh": {"version": "2.96.0"}}
+    }
+    backup_file = tmp_path / "runtimes.json.bak"
+    backup_file.write_text(json.dumps(backup_runtimes), encoding="utf-8")
+
+    live_runtimes = {
+        "tools": {"gh": {"version": "2.101.0"}, "ripgrep": {"version": "14.1.0"}}
+    }
+    live_file = sys_dir / "runtimes.json"
+    live_file.write_text(json.dumps(live_runtimes), encoding="utf-8")
+
+    mock_run = lambda propose_diff=False, only=None: {
+        "artifact_dir": str(tmp_path / "proposal"),
+        "updates_discovered": [{"tool": "gh", "section": "tools", "current_version": "2.96.0", "latest_version": "2.101.0"}],
+        "not_checked": [],
+    }
+    monkeypatch.setattr(check_tool_updates, "run", mock_run)
+    monkeypatch.setattr("core.updater.check_components", lambda s: {})
+
+    apply_result = {
+        "applied": True,
+        "backup_path": str(backup_file),
+    }
+    monkeypatch.setattr(check_tool_updates, "apply_proposal", lambda *a, **kw: (0, apply_result))
+
+    import core.provisioner as provisioner
+    deploy_result = {
+        "status": "incomplete",
+        "installed": [],
+        "failed": [{"component": "gh", "status": "error", "detail": "Swap to active failed"}],
+        "deferred": [],
+    }
+    monkeypatch.setattr(provisioner, "deploy", lambda ctx: deploy_result)
+
+    with pytest.raises(SystemExit) as exc:
+        updater.run({"args": ["--yes"]})
+    assert exc.value.code == 1
+
+    # Verify runtimes.json was reverted back to 2.96.0 for gh
+    reverted_runtimes = json.loads(live_file.read_text(encoding="utf-8"))
+    assert reverted_runtimes["tools"]["gh"]["version"] == "2.96.0"
+    assert reverted_runtimes["tools"]["ripgrep"]["version"] == "14.1.0"
+
+    out = capsys.readouterr().out
+    assert "Reverting 1 failed/deferred component(s)..." in out
+    assert "Failed to revert runtimes.json: cannot use 'dict'" not in out
+
+
 
