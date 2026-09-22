@@ -1139,3 +1139,50 @@ def test_deploy_respects_only_filter(monkeypatch, tmp_path):
     assert called_tools == ["ripgrep"]
     assert "nodejs" not in called_runtimes
 
+
+def test_drain_deferred_lazy_respects_active_only_filter(tmp_path, monkeypatch):
+    """When _ACTIVE_ONLY_FILTER is active, unrelated deferred items remain in queue and are not retried."""
+    sys_dir = tmp_path / "_sys"
+    def_file = pv._get_deferred_path(sys_dir)
+    def_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Pre-populate deferred items: ripgrep and sqlite
+    deferred_initial = {
+        "tool:ripgrep": {"kind": "tool", "name": "ripgrep", "attempts": 1},
+        "tool:sqlite": {"kind": "tool", "name": "sqlite", "attempts": 1},
+    }
+    def_file.write_text(json.dumps(deferred_initial), encoding="utf-8")
+
+    called_tools = []
+    monkeypatch.setattr(pv, "ensure_tool", lambda name, *a, **kw: called_tools.append(name) or {"status": "success"})
+
+    # Set active filter to only sqlite
+    monkeypatch.setattr(pv, "_ACTIVE_ONLY_FILTER", {"sqlite"})
+    monkeypatch.setattr(pv, "_LAZY_DRAINING", False)
+
+    pv._drain_deferred_lazy(None, sys_dir)
+
+    # Only sqlite should be drained/called
+    assert called_tools == ["sqlite"]
+
+    # ripgrep must remain in deferred queue
+    remaining = json.loads(def_file.read_text(encoding="utf-8"))
+    assert "tool:ripgrep" in remaining
+    assert "tool:sqlite" not in remaining
+
+
+def test_ensure_runtime_python_mismatch_uses_canonical_verbs(tmp_path, monkeypatch):
+    """ensure_runtime('python') mismatch must recommend canonical engram verbs, never internal batch scripts."""
+    sys_dir = tmp_path / "_sys"
+    sys_dir.mkdir(parents=True)
+    (sys_dir / "runtimes.json").write_text(json.dumps({
+        "runtimes": {"python": {"version": "99.99.99"}}
+    }), encoding="utf-8")
+
+    res = pv.ensure_runtime("python", sys_dir=sys_dir)
+    assert res.get("status") == "error"
+    detail = res.get("detail", "").lower()
+    assert "engram" in detail
+    assert ".bat" not in detail
+
+

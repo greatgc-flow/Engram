@@ -25,10 +25,11 @@ from core import registrar  # noqa: E402
 
 
 def _make_ctx(base_dir: Path) -> dict:
+    sys_dir = base_dir / "_sys"
     return {
         "base_dir": base_dir,
-        "sys_dir":  base_dir / "_sys",
-        "paths":    {},
+        "sys_dir":  sys_dir,
+        "paths":    {"state": sys_dir / "data" / "state"},
         "args":     [],
         "state":    {},
     }
@@ -297,4 +298,40 @@ class TestLegacyMenuMigration:
         assert "Engram.exe" in template
         assert "engram.cmd" in template
         assert "start.bat" in template
+
+    def test_apply_propagates_legacy_sandbox_open_errors(self, tmp_path):
+        base_dir = tmp_path / "install"
+        sys_dir = base_dir / "_sys"
+        _write_ctx_menu(sys_dir, cfg={
+            "win11_classic_menu": False,
+            "registry": {"targets": {"Directory": {"path": r"Software\Classes\Directory\shell", "arg": "%V"}}},
+            "entries": [{"id": "engram_open", "enabled": True, "label": "Open in Engram ({FOLDER})", "targets": ["Directory"]}],
+        })
+
+        with patch.object(registrar, "_unregister_entry", lambda key_name, *args: ["mock unregister failure"]):
+            with patch.object(registrar, "_clean_orphans", lambda *args: []):
+                with patch.object(registrar, "_register_entry", lambda *args: {"key_name": "k"}):
+                    res = registrar.apply(_make_ctx(base_dir))
+
+        assert res["status"] == "failed"
+        assert "mock unregister failure" in res.get("errors", [])
+
+    def test_remove_propagates_legacy_sandbox_open_errors(self, tmp_path):
+        base_dir = tmp_path / "install"
+        sys_dir = base_dir / "_sys"
+        _write_ctx_menu(sys_dir, cfg={
+            "win11_classic_menu": False,
+            "registry": {"targets": {}},
+            "entries": [],
+        })
+        ctx = _make_ctx(base_dir)
+        ctx["prior_state"] = {"saved_entries": []}
+
+        with patch.object(registrar, "_unregister_entry", lambda key_name, *args: ["mock unregister failure"]):
+            with patch.object(registrar, "_clean_orphans", lambda *args: []):
+                res = registrar.remove(ctx)
+
+        assert res["status"] == "failed"
+        assert "mock unregister failure" in res.get("errors", [])
+
 

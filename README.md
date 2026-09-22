@@ -57,7 +57,7 @@ The first run will prompt to bootstrap the portable environment (Python, Node, G
 | Verb | Behavior | Exit codes |
 |---|---|---|
 | `engram` / `open [PATH]` | Open a workspace (default action). On first run (no Python), prints plan and prompts to set up here. If missing, prompts to add right-click menu entry. Otherwise dispatches the `start` pipeline. | 0 ok; 1 not set up / declined / bootstrap failed; launcher errors propagated |
-| `update [--check] [--yes] [--only NAME[,NAME...]]` | Discover and apply updates across the catalog. `--check` prints the plan without writing. `--yes` skips confirmation. `--only` restricts to specific components (supports comma-separated names and aliases: `cc`, `cx`, `ag`). | 0 success or nothing to do; 1 one or more components failed; 2 usage error; 3 declined |
+| `update [--check] [--yes] [--only NAME[,NAME...]]` | Discover and apply updates across the catalog. `--check` prints the plan without modifying runtimes/tools (saves proposal artifacts under `_sys/data/state/update/proposals/`). `--yes` skips confirmation. `--only` restricts to specific components (supports comma-separated names and aliases: `cc`, `cx`, `ag`). | 0 success or nothing to do; 1 one or more components failed; 2 usage error; 3 declined |
 | `doctor [--json]` | Zero-network health check: verifies Python consistency, components, context menu registration, and root path hygiene (warns if path contains `&`, `%`, or `^`). | 0 healthy; 1 broken |
 | `menu` / `menu status` | Read-only: check whether context menu entries are present. | 0 |
 | `menu enable` | Apply registry entries to add right-click context menu. Idempotent. | 0 / 1 |

@@ -113,8 +113,11 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     ai_clis_updates = []
     
     for update in payload.get("updates_discovered", []):
+        if not isinstance(update, dict):
+            print(f"  [Warning] Malformed update item in payload: {update} — skipped")
+            continue
         section = update.get("section")
-        if not section:
+        if section not in ("runtimes", "tools", "catalog"):
             tool = update.get("tool")
             if tool in live_runtimes.get("runtimes", {}):
                 section = "runtimes"
@@ -123,7 +126,7 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
             elif any(isinstance(t, dict) and (t.get("tool_id") == tool or tool in t.get("aliases", [])) for t in catalog.get("tools", [])):
                 section = "catalog"
             else:
-                print(f"  [Warning] Unknown component section for update '{tool}' — skipped")
+                print(f"  [Warning] Unknown component section '{section}' for update '{tool}' — skipped")
                 continue
             update["section"] = section
         if section == "runtimes":
@@ -135,10 +138,19 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
             
     repairs_needed = check_components(sys_dir).get("missing", [])
     if only_set is not None:
+        alias_map = {}
+        for tool in catalog.get("tools", []):
+            if isinstance(tool, dict):
+                tid = tool.get("tool_id")
+                if tid:
+                    alias_map[tid.lower()] = tid
+                    for a in tool.get("aliases", []):
+                        alias_map[a.lower()] = tid
+        canonical_only = {alias_map.get(n.lower(), n) for n in only_set}
         filtered_repairs = []
         for rep in repairs_needed:
             clean_rep = rep.split("/", 1)[-1]
-            if clean_rep in only_set:
+            if clean_rep in only_set or clean_rep in canonical_only:
                 filtered_repairs.append(rep)
         repairs_needed = filtered_repairs
 
@@ -199,6 +211,7 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                 latest = core_discovery.get("latest_version")
                 if latest and current_engram_version != latest:
                     core_update = {
+                        "tool": "engram",
                         "component": "Engram core",
                         "current_version": current_engram_version,
                         "latest_version": latest,
@@ -232,7 +245,8 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     if core_updates:
         print("\nEngram core:")
         for update in core_updates:
-            print(f"  {update.get('tool')}: {update.get('current_version')} -> {update.get('latest_version')}")
+            display_name = update.get("component") or update.get("tool") or "Engram core"
+            print(f"  {display_name}: {update.get('current_version')} -> {update.get('latest_version')}")
             
     if runtimes_updates:
         print("\nRuntimes:")

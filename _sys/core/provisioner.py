@@ -288,6 +288,9 @@ def _remove_deferred(sys_dir: Path, name: str, kind: str) -> None:
         _save_deferred(sys_dir, data)
 
 
+_ACTIVE_ONLY_FILTER: set[str] | None = None
+
+
 def _drain_deferred_lazy(orch: dict | None, sys_dir: Path, skip_kind: str | None = None, skip_name: str | None = None) -> None:
     """Opportunistically retry deferred (file-locked) installs. Primary
     mechanism is `ensure-tool --retry-deferred`; this is the lazy fallback
@@ -306,10 +309,29 @@ def _drain_deferred_lazy(orch: dict | None, sys_dir: Path, skip_kind: str | None
             return
         remaining = {}
         to_process = []
+        catalog = None
         for key, val in data.items():
-            if val.get("kind") == skip_kind and val.get("name") == skip_name:
+            kind = val.get("kind")
+            name = val.get("name")
+            if kind == skip_kind and name == skip_name:
                 remaining[key] = val
                 continue
+            if _ACTIVE_ONLY_FILTER is not None:
+                matched = False
+                if name and name.lower() in _ACTIVE_ONLY_FILTER:
+                    matched = True
+                else:
+                    if catalog is None:
+                        catalog = load_json_with_fallback(sys_dir / TOOL_CATALOG_FILENAME)
+                    for tool in catalog.get("tools", []):
+                        if isinstance(tool, dict) and tool.get("tool_id") == name:
+                            aliases = [a.lower() for a in tool.get("aliases", [])]
+                            if any(a in _ACTIVE_ONLY_FILTER for a in aliases):
+                                matched = True
+                                break
+                if not matched:
+                    remaining[key] = val
+                    continue
             to_process.append(val)
         _save_deferred(sys_dir, remaining)
         for val in to_process:
@@ -856,7 +878,7 @@ def ensure_runtime(name: str, orch: dict | None = None, sys_dir: Path | None = N
         return {
             "status": "error",
             "detail": f"Python version mismatch (running={running_version}, declared={declared_version}). "
-                      f"Python must be updated via _sys/core/bootstrap.bat's own bootstrap mechanism, not ensure_runtime.",
+                      f"Python must be updated via 'engram' or 'engram update' bootstrap mechanism, not ensure_runtime.",
         }
 
     cfg = dict(cfg)
@@ -1240,9 +1262,11 @@ def deploy(ctx: dict) -> dict:
         d.mkdir(parents=True, exist_ok=True)
     print("  [OK] Folder structure ready")
 
+    global _ACTIVE_ONLY_FILTER
     only_filter = ctx.get("only")
     if only_filter is not None:
         only_filter = {str(x).lower() for x in only_filter}
+    _ACTIVE_ONLY_FILTER = only_filter
 
     installed = []
     deferred = []
@@ -1363,6 +1387,7 @@ def deploy(ctx: dict) -> dict:
     else:
         print("  Provisioner complete.")
     print("======================================================")
+    _ACTIVE_ONLY_FILTER = None
     return {
         "status": "failed" if failed else ("deferred" if deferred else "success"),
         "installed": installed,

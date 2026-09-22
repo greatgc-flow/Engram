@@ -676,6 +676,79 @@ def test_updater_unknown_category_fallback_skipped(monkeypatch, capsys):
     res = updater.run({"args": ["--dry-run"]})
     assert res.get("status") == "success"
     out = capsys.readouterr().out
-    assert "Unknown component section for update 'mysterious_mystery_tool'" in out
+    assert "Unknown component section" in out
+    assert "mysterious_mystery_tool" in out
+
+
+def test_updater_only_alias_repair_codex(monkeypatch, capsys):
+    """When --only cx is passed, missing tool/codex is recognized and retained as a repair target."""
+    mock_run = lambda propose_diff=False, only=None: {
+        "artifact_dir": "mock_dir",
+        "updates_discovered": [],
+    }
+    monkeypatch.setattr(check_tool_updates, "run", mock_run)
+    monkeypatch.setattr("core.updater.check_components", lambda sys_dir: {"missing": ["tool/codex", "tool/bat"]})
+
+    res = updater.run({"args": ["--only", "cx", "--dry-run"]})
+    assert res.get("status") == "success"
+    out = capsys.readouterr().out
+    assert "Repairs" in out
+    assert "tool/codex" in out
+    assert "tool/bat" not in out
+
+
+def test_updater_core_update_display_renders_engram_core_not_none(tmp_path, monkeypatch, capsys):
+    """Core update display rendering must show 'Engram core:' and never 'None:'."""
+    mock_run = lambda propose_diff=False, only=None: {
+        "artifact_dir": "mock_dir",
+        "updates_discovered": [],
+    }
+    monkeypatch.setattr(check_tool_updates, "run", mock_run)
+    monkeypatch.setattr("core.updater.check_components", lambda sys_dir: {})
+
+    # Mock core discovery returning a newer version in a non-git installation
+    from core import version_resolver
+    monkeypatch.setattr("core.updater._PORTABLE_ROOT", tmp_path / "mock_install")
+    monkeypatch.setattr(
+        version_resolver,
+        "resolve_latest",
+        lambda **kwargs: {
+            "status": "ok",
+            "latest_version": "99.0.0",
+            "url": "https://example.com/Engram.zip",
+            "checksum_algo": "sha256",
+            "checksum_value": "abc"
+        }
+    )
+
+    res = updater.run({"args": ["--dry-run"]})
+    assert res.get("status") == "success"
+    out = capsys.readouterr().out
+    assert "Engram core:" in out
+    assert "Engram core: 3." in out or "Engram core:" in out
+    assert "None:" not in out
+
+
+def test_updater_invalid_section_and_non_dict_update_handling(monkeypatch, capsys):
+    """Updates with explicit invalid section or non-dict items are cleanly handled without crashing."""
+    mock_run = lambda propose_diff=False, only=None: {
+        "artifact_dir": "mock_dir",
+        "updates_discovered": [
+            "not-a-dict-string",
+            {"tool": "ripgrep", "section": "invalid_section_foo", "current_version": "1.0", "latest_version": "2.0"},
+            {"tool": "completely_bogus", "section": "invalid_section_bar", "current_version": "1.0", "latest_version": "2.0"},
+        ],
+    }
+    monkeypatch.setattr(check_tool_updates, "run", mock_run)
+    monkeypatch.setattr("core.updater.check_components", lambda sys_dir: {})
+
+    res = updater.run({"args": ["--dry-run"]})
+    assert res.get("status") == "success"
+    out = capsys.readouterr().out
+    assert "Malformed update item in payload" in out
+    assert "Unknown component section 'invalid_section_bar'" in out
+    # ripgrep was recognized via tools fallback despite invalid section
+    assert "ripgrep: 1.0 -> 2.0" in out
+
 
 

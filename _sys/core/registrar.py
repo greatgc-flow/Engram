@@ -332,12 +332,14 @@ def apply(ctx: dict) -> dict:
     # Orphan cleanup
     _clean_orphans(base_key, targets_cfg, relay_root)
 
-    # Clean up legacy same-install ID (sandbox_open) so upgrade from v3.3.1 leaves no ghost menus
-    _unregister_entry(f"{base_key}_sandbox_open", targets_cfg, relay_root)
-
     entries = cfg.get("entries", [])
     written = []
     errors = []
+
+    # Clean up legacy same-install ID (sandbox_open) so upgrade from v3.3.1 leaves no ghost menus
+    legacy_errs = _unregister_entry(f"{base_key}_sandbox_open", targets_cfg, relay_root)
+    if legacy_errs:
+        errors.extend(legacy_errs)
     if not entries:
         # No entries configured is a valid state, not a pipeline failure.
         print("  [Warning] No entries in context_menu.json — nothing to register")
@@ -446,7 +448,9 @@ def remove(ctx: dict) -> dict:
     # Orphan cleanup sweep
     base_key = prior.get("base_key") or _registry_key_name(base_dir)
     _clean_orphans(base_key, targets_cfg, relay_root)
-    _unregister_entry(f"{base_key}_sandbox_open", targets_cfg, relay_root)
+    legacy_errs = _unregister_entry(f"{base_key}_sandbox_open", targets_cfg, relay_root)
+    if legacy_errs:
+        errors.extend(legacy_errs)
 
     if errors:
         print(f"\n  Remove incomplete: {'; '.join(errors)}")
