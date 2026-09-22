@@ -954,6 +954,8 @@ def ensure_runtime(name: str, orch: dict | None = None, sys_dir: Path | None = N
     mechanism = cfg.get("install_mechanism", "zip_tool")
     if mechanism in ("zip_tool", "exe_tool", "sfx_exe"):
         res = _install_atomic(name, cfg, manifest_path, env_dir, sys_dir, force=force)
+        if name == "vscode" and res.get("status") == "success":
+            (dest_dir / "data").mkdir(parents=True, exist_ok=True)
         if name == "nodejs" and res.get("status") == "success":
             catalog = load_json_with_fallback(sys_dir / TOOL_CATALOG_FILENAME)
             for peer in ("claude", "codex"):
