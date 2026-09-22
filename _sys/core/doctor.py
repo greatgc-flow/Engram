@@ -254,7 +254,7 @@ def check_root_path(base_dir: Path) -> dict:
     if issues:
         detail = (
             f"root path '{path_str}' has issues: {'; '.join(issues)}. "
-            f"Action: move Engram to a clean path (e.g. C:\\Engram) or mount via SUBST (e.g. subst P: \"{path_str}\")"
+            f"Action: move Engram to a clean path without special characters (e.g. C:\\Engram or D:\\PortableDev)"
         )
         return {
             "name": "root_path",

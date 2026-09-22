@@ -172,7 +172,7 @@ def test_check_root_path_warning_on_ampersand(tmp_path):
     assert res["ok"] is True
     assert res["level"] == "warning"
     assert "contains '&'" in res["detail"]
-    assert "subst" in res["detail"].lower()
+    assert "clean path" in res["detail"].lower()
 
 
 def test_check_root_path_percent():

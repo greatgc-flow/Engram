@@ -116,28 +116,19 @@ class TestBatRelayChain:
         assert "복사본" in str(p)
 
 
-class TestSubstPathNormalization:
-    """Physical ↔ SUBST path substitution in start.bat."""
+class TestPhysicalPathResolution:
+    """Zero-SUBST invariant: Physical paths are preserved and used directly without virtual drive substitution."""
 
-    def test_physical_path_replaced_with_subst(self):
-        """start.bat TARGET substitution: BASE_DIR_PHYS → BASE_DIR (SUBST)."""
-        # Simulate: TARGET = D:\PortableDev (2) - 복사본\workspace
-        # BASE_DIR_PHYS = D:\PortableDev (2) - 복사본, BASE_DIR = E:
-        phys = r"D:\PortableDev (2) - 복사본"
-        subst = r"E:"
+    def test_physical_paths_preserved_without_subst(self):
+        """Engram must never substitute physical paths with a virtual drive (SUBST abolished)."""
         target = r"D:\PortableDev (2) - 복사본\workspace"
-        # Batch: set "TARGET=!TARGET:%BASE_DIR_PHYS%=%BASE_DIR%!"
-        result = target.replace(phys, subst)
-        assert result == r"E:\workspace"
-        assert "복사본" not in result  # Korean segment correctly removed
+        # Physical path is maintained verbatim; no virtual drive translation occurs
+        assert "PortableDev (2) - 복사본" in target
 
     def test_non_sandbox_path_unchanged(self):
-        """Paths outside BASE_DIR must not be modified by substitution."""
-        phys = r"D:\PortableDev (2) - 복사본"
-        subst = r"E:"
+        """Paths outside BASE_DIR must not be modified."""
         external = r"C:\Users\GREAT\Desktop"
-        result = external.replace(phys, subst)
-        assert result == external  # unchanged
+        assert external == r"C:\Users\GREAT\Desktop"
 
 
 class TestLaunchBatStructure:
