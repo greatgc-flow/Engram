@@ -129,6 +129,9 @@ def _iter_discoverable_entries(runtimes: dict[str, Any], only: list[str] | None 
         aliases = tool.get("aliases", [])
         if only is not None and name not in only and not any(a in only for a in aliases):
             continue
+        u_cfg = tool.get("update", {})
+        if u_cfg.get("mechanism") == "self_update":
+            continue
         source = tool.get("source", {})
         provider = source.get("discovery_provider")
         discovery_id = source.get("discovery_id")
@@ -161,12 +164,14 @@ def _update_entry_from_discovery(entry: dict[str, Any], discovery: dict[str, Any
         entry[algo] = value
 
 
-def discover_updates(only: Sequence[str] | None = None) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
+def discover_updates(
+    only: Sequence[str] | None = None,
+    allow_major_runtime_upgrade: bool = False,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     base_sha = _sha256_file(RUNTIMES_PATH)
+    catalog_base_sha = _sha256_file(CATALOG_PATH) if CATALOG_PATH.exists() else None
     runtimes = _read_json(RUNTIMES_PATH)
     proposed = copy.deepcopy(runtimes)
-
-    catalog_base_sha = _sha256_file(CATALOG_PATH) if CATALOG_PATH.exists() else None
     catalog = _read_json(CATALOG_PATH) if CATALOG_PATH.exists() else {}
     proposed_catalog = copy.deepcopy(catalog)
 
@@ -179,6 +184,7 @@ def discover_updates(only: Sequence[str] | None = None) -> tuple[dict[str, Any],
         "rate_limited": [],
         "errors": [],
         "not_checked": [],
+        "notices": [],
     }
 
     normalized_only = normalize_only_list(only)
@@ -215,13 +221,21 @@ def discover_updates(only: Sequence[str] | None = None) -> tuple[dict[str, Any],
             continue
 
         current_version = str(cfg.get("version", ""))
-        discovery = version_resolver.resolve_latest(
-            tool_name=name,
-            provider=str(provider),
-            current_version=current_version,
-            discovery_id=str(cfg.get("discovery_id")),
-            cache_path=DISCOVERY_CACHE_PATH,
-        )
+        resolve_kwargs: dict[str, Any] = {
+            "tool_name": name,
+            "provider": str(provider),
+            "current_version": current_version,
+            "discovery_id": str(cfg.get("discovery_id")),
+            "cache_path": DISCOVERY_CACHE_PATH,
+        }
+        if cfg.get("asset_pattern"):
+            resolve_kwargs["asset_pattern"] = cfg.get("asset_pattern")
+
+        try:
+            discovery = version_resolver.resolve_latest(**resolve_kwargs)
+        except TypeError:
+            resolve_kwargs.pop("asset_pattern", None)
+            discovery = version_resolver.resolve_latest(**resolve_kwargs)
 
         status = discovery.get("status")
         if status == "discovery_unavailable":
@@ -244,6 +258,38 @@ def discover_updates(only: Sequence[str] | None = None) -> tuple[dict[str, Any],
         if _versions_equal(current_version, latest_version):
             payload["up_to_date"].append(name)
             continue
+
+        if name == "python" or discovery.get("detail") == "notice_only":
+            payload["notices"].append({
+                "component": name,
+                "section": section,
+                "current_version": current_version,
+                "latest_version": latest_version,
+                "detail": "Python cannot be updated in-place while Engram is running; run 'bootstrap.bat' to update.",
+            })
+            continue
+
+        if name == "nodejs":
+            def _parse_major(v: str) -> int | None:
+                try:
+                    return int(v.lstrip("v").split(".")[0])
+                except Exception:
+                    return None
+            curr_maj = _parse_major(current_version)
+            latest_maj = _parse_major(latest_version)
+            if curr_maj is not None and latest_maj is not None and latest_maj > curr_maj:
+                if not allow_major_runtime_upgrade:
+                    payload["notices"].append({
+                        "component": name,
+                        "section": section,
+                        "current_version": current_version,
+                        "latest_version": latest_version,
+                        "detail": (
+                            f"Node.js major upgrade {current_version} -> {latest_version} requires explicit opt-in: "
+                            "rerun with --allow-major-runtime-upgrade to proceed."
+                        ),
+                    })
+                    continue
 
         update = {
             "tool": name,
@@ -497,8 +543,16 @@ def apply_proposal(
     return EXIT_OK, result
 
 
-def run(*, propose_diff: bool = False, only: Sequence[str] | None = None) -> dict[str, Any]:
-    payload, runtimes, proposed, catalog, proposed_catalog = discover_updates(only=only)
+def run(
+    *,
+    propose_diff: bool = False,
+    only: Sequence[str] | None = None,
+    allow_major_runtime_upgrade: bool = False,
+) -> dict[str, Any]:
+    payload, runtimes, proposed, catalog, proposed_catalog = discover_updates(
+        only=only,
+        allow_major_runtime_upgrade=allow_major_runtime_upgrade,
+    )
     if propose_diff:
         write_proposal_artifacts(payload, runtimes, proposed, catalog, proposed_catalog)
     return payload

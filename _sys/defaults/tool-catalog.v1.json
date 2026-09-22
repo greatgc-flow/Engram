@@ -85,6 +85,18 @@
         "bin": "agy.exe",
         "install_subdir": "tools/agy"
       },
+      "update": {
+        "mechanism": "self_update",
+        "bin": "agy.exe",
+        "argv": [
+          "update"
+        ],
+        "version_argv": [
+          "--version"
+        ],
+        "timeout_sec": 60,
+        "failure_policy": "warn"
+      },
       "canary": {
         "argv": [
           "agy.exe",

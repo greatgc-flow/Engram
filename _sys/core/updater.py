@@ -58,6 +58,11 @@ def _parse_args(args: list[str]) -> argparse.Namespace:
     parser.add_argument("--check", action="store_true", help="Stop after printing plan. Exit 1 if Could not check is non-empty")
     parser.add_argument("--dry-run", action="store_true", help="Discover and show proposal, apply nothing")
     parser.add_argument("--only", nargs="+", help="Update only specified components")
+    parser.add_argument(
+        "--allow-major-runtime-upgrade",
+        action="store_true",
+        help="Allow major version upgrade for base runtimes (e.g. Node.js 22 -> 24)",
+    )
     return parser.parse_args(args)
 
 
@@ -92,12 +97,20 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
 
     print(">>> Discovering updates...")
     sys_dir = _SYS_DIR
+    allow_major = getattr(args, "allow_major_runtime_upgrade", False)
     
+    run_kwargs: dict[str, Any] = {"propose_diff": True}
+    if normalized_only is not None:
+        run_kwargs["only"] = normalized_only
+    if allow_major:
+        run_kwargs["allow_major_runtime_upgrade"] = True
+
     try:
-        if normalized_only is not None:
-            payload = check_tool_updates.run(propose_diff=True, only=normalized_only)
-        else:
-            payload = check_tool_updates.run(propose_diff=True)
+        try:
+            payload = check_tool_updates.run(**run_kwargs)
+        except TypeError:
+            run_kwargs.pop("allow_major_runtime_upgrade", None)
+            payload = check_tool_updates.run(**run_kwargs)
     except Exception as e:
         return {"status": "failed", "detail": f"Update discovery failed: {e}"}
 
@@ -228,10 +241,50 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     core_updates = [core_update] if core_update else []
     # ---------------------------------------------------------
 
+    self_update_tools = []
+    for tool in catalog.get("tools", []):
+        if not isinstance(tool, dict):
+            continue
+        tid = tool.get("tool_id")
+        if not tid:
+            continue
+        u_cfg = tool.get("update", {})
+        if u_cfg.get("mechanism") == "self_update":
+            if only_set is not None:
+                aliases = tool.get("aliases", [])
+                if tid not in only_set and not any(a in only_set for a in aliases):
+                    continue
+            bin_name = u_cfg.get("bin", tool.get("install", {}).get("bin", f"{tid}.exe"))
+            exe_path = sys_dir / "tools" / tid / bin_name
+            npm_cmd = provisioner.npm_global_dir(sys_dir) / f"{tid}.cmd"
+            if exe_path.exists() or npm_cmd.exists():
+                manifest_path = sys_dir / "tools" / tid / ".install_manifest.json"
+                cur_ver = tool.get("version", "unknown")
+                if manifest_path.exists():
+                    try:
+                        m_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+                        if m_data.get("observed_version"):
+                            cur_ver = m_data.get("observed_version")
+                    except Exception:
+                        pass
+                self_update_tools.append({
+                    "tool": tid,
+                    "name": tool.get("name", tid),
+                    "current_version": cur_ver,
+                    "mechanism": "self_update",
+                })
+
+    notices = payload.get("notices", [])
+    has_actionable = bool(
+        core_updates
+        or runtimes_updates
+        or tools_updates
+        or ai_clis_updates
+        or repairs_needed
+        or self_update_tools
+    )
     
-    has_actionable = bool(core_updates or runtimes_updates or tools_updates or ai_clis_updates or repairs_needed)
-    
-    if not has_actionable and not could_not_check and not not_checked:
+    if not has_actionable and not could_not_check and not not_checked and not notices:
         print("Everything Engram can check is up to date.")
         if args.check:
             sys.exit(0)
@@ -262,11 +315,21 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
         print("\nAI CLIs:")
         for update in ai_clis_updates:
             print(f"  {update.get('tool')}: {update.get('current_version')} -> {update.get('latest_version')}")
+
+    if self_update_tools:
+        print("\nSelf-updating tools (delegated in-place update):")
+        for su in self_update_tools:
+            print(f"  {su.get('tool')}: active version {su.get('current_version')} (runs '{su.get('tool')} update')")
             
     if repairs_needed:
         print("\nRepairs (missing components planned for reinstall):")
         for r in repairs_needed:
             print(f"  - {r}")
+
+    if notices:
+        print("\nNotices / Manual update advisories:")
+        for n in notices:
+            print(f"  - {n.get('component')}: {n.get('detail')}")
 
     if not_checked:
         print("\nNot checked:")
@@ -282,7 +345,14 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
         print("\nEverything Engram can check is up to date.")
         return {"status": "success", "detail": "No updates discovered"}
 
-    total_changes = len(core_updates) + len(runtimes_updates) + len(tools_updates) + len(ai_clis_updates) + len(repairs_needed)
+    total_changes = (
+        len(core_updates)
+        + len(runtimes_updates)
+        + len(tools_updates)
+        + len(ai_clis_updates)
+        + len(repairs_needed)
+        + len(self_update_tools)
+    )
 
     if args.dry_run:
         print(f"\nDry run complete. Proposal written to {artifact_dir}")
@@ -291,7 +361,7 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     if not args.yes:
         try:
             choice = input(f"\nApply {total_changes} changes? [y/N] ")
-        except EOFError:
+        except (EOFError, OSError):
             choice = "n"
         if choice.strip().lower() != "y":
             print(f"\nUpdate declined.")
@@ -323,6 +393,25 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     failed = deploy_result.get("failed", [])
     deferred = deploy_result.get("deferred", [])
     reverted_components = []
+
+    if self_update_tools:
+        print("\nRunning self-updates for self-managed tools...")
+        for su in self_update_tools:
+            tool_id = su.get("tool")
+            print(f"  >>> Updating {tool_id} (in-place)...")
+            res = provisioner.self_update_peer(tool_id, sys_dir)
+            st = res.get("status")
+            det = res.get("detail", "")
+            if st == "success":
+                print(f"  [OK] {tool_id} updated: {det}")
+                deploy_result.setdefault("installed", []).append(tool_id)
+            elif st == "already_current":
+                print(f"  [OK] {tool_id} (already_current: {det})")
+            elif st == "in_use_deferred":
+                print(f"  [!] {tool_id} deferred: {det}")
+                deferred.append(tool_id)
+            else:
+                print(f"  [!] {tool_id} update warning: {det}")
     
     if failed or deferred:
         # We need to revert the specific components in runtimes.json and tool-catalog.v1.json

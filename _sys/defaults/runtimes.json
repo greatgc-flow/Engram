@@ -4,7 +4,9 @@
         "python": {
             "version": "3.14.5",
             "url": "https://www.python.org/ftp/python/3.14.5/python-3.14.5-embed-amd64.zip",
-            "get_pip_url": "https://bootstrap.pypa.io/get-pip.py"
+            "get_pip_url": "https://bootstrap.pypa.io/get-pip.py",
+            "discovery_provider": "endoflife_python",
+            "discovery_id": "python"
         },
         "nodejs": {
             "version": "22.22.3",
@@ -14,26 +16,39 @@
             "strip_components": 1,
             "preserve_paths": [
                 "npm-global"
-            ]
+            ],
+            "discovery_provider": "nodejs_lts",
+            "discovery_id": "lts"
         },
         "git": {
             "version": "2.49.0",
             "url": "https://github.com/git-for-windows/git/releases/download/v2.49.0.windows.1/PortableGit-2.49.0-64-bit.7z.exe",
-            "install_mechanism": "sfx_exe"
+            "install_mechanism": "sfx_exe",
+            "discovery_provider": "github_releases_exact",
+            "discovery_id": "git-for-windows/git",
+            "asset_pattern": "^PortableGit-[0-9.]+.*-64-bit\\.7z\\.exe$"
         },
         "vscode": {
             "version": "1.100.2",
             "url": "https://update.code.visualstudio.com/1.100.2/win32-x64-archive/stable",
             "install_mechanism": "zip_tool",
             "archive_layout": "preserve_tree",
-            "strip_components": 0
+            "strip_components": 0,
+            "preserve_paths": [
+                "data"
+            ],
+            "discovery_provider": "vscode_official",
+            "discovery_id": "win32-x64-archive"
         },
         "pwsh": {
             "version": "7.6.2",
             "url": "https://github.com/PowerShell/PowerShell/releases/download/v7.6.2/PowerShell-7.6.2-win-x64.zip",
             "install_mechanism": "zip_tool",
             "archive_layout": "preserve_tree",
-            "strip_components": 0
+            "strip_components": 0,
+            "discovery_provider": "github_releases_exact",
+            "discovery_id": "PowerShell/PowerShell",
+            "asset_pattern": "^PowerShell-[0-9.]+-win-x64\\.zip$"
         }
     },
     "tools": {

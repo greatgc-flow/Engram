@@ -772,6 +772,17 @@ def _install_atomic(name: str, cfg: dict, manifest_path: Path, target_root: Path
         try:
             _safe_rename(tmp_dir, active_dir)
         except OSError as e:
+            preserve_paths = cfg.get("preserve_paths") or []
+            if preserve_paths and old_dir.exists():
+                for rel in preserve_paths:
+                    moved_dest = tmp_dir / rel
+                    orig_src = old_dir / rel
+                    if moved_dest.exists() and not orig_src.exists():
+                        try:
+                            orig_src.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.move(str(moved_dest), str(orig_src))
+                        except Exception:
+                            pass
             if old_dir.exists() and not active_dir.exists():
                 try:
                     _safe_rename(old_dir, active_dir)
@@ -859,9 +870,9 @@ def ensure_runtime(name: str, orch: dict | None = None, sys_dir: Path | None = N
     it cannot swap the interpreter it's currently running under."""
     sys_dir = sys_dir or _default_sys_dir()
 
-    if name == "nodejs" and not force and _is_peer_leased(sys_dir, "nodejs"):
+    if not force and _is_component_in_use(sys_dir, name):
         _add_deferred(sys_dir, name, "runtime")
-        return {"status": "in_use_deferred", "detail": "Node.js is currently leased by an active peer session."}
+        return {"status": "in_use_deferred", "detail": f"Runtime {name} is currently in use by an active process."}
 
     _drain_deferred_lazy(orch, sys_dir, skip_kind="runtime", skip_name=name)
 
@@ -916,6 +927,7 @@ def ensure_runtime(name: str, orch: dict | None = None, sys_dir: Path | None = N
         cfg.setdefault("install_mechanism", "zip_tool")
         cfg.setdefault("archive_layout", "preserve_tree")
         cfg.setdefault("strip_components", 0)
+        cfg.setdefault("preserve_paths", ["data"])
         bin_name = "Code.exe"
     elif name == "pwsh":
         cfg.setdefault("install_mechanism", "zip_tool")
@@ -941,11 +953,24 @@ def ensure_runtime(name: str, orch: dict | None = None, sys_dir: Path | None = N
 
     mechanism = cfg.get("install_mechanism", "zip_tool")
     if mechanism in ("zip_tool", "exe_tool", "sfx_exe"):
-        return _install_atomic(name, cfg, manifest_path, env_dir, sys_dir, force=force)
+        res = _install_atomic(name, cfg, manifest_path, env_dir, sys_dir, force=force)
+        if name == "nodejs" and res.get("status") == "success":
+            catalog = load_json_with_fallback(sys_dir / TOOL_CATALOG_FILENAME)
+            for peer in ("claude", "codex"):
+                peer_entry = _resolve_tool_from_catalog(catalog, peer)
+                peer_manifest = sys_dir / "tools" / peer / ".install_manifest.json"
+                if peer_entry and peer_manifest.exists():
+                    canary = peer_entry.get("canary")
+                    if canary:
+                        ok, out = _run_canary(npm_global_dir(sys_dir), canary)
+                        if not ok:
+                            print(f"  [!] Warning: Node.js update broke {peer} canary: {out}")
+                            print(f"      Run 'engram update --only {peer}' to reinstall.")
+        return res
     return {"status": "error", "detail": f"Unknown install_mechanism {mechanism!r} for runtime {name!r}"}
 
 
-def _is_peer_leased(sys_dir: Path, peer_or_tool: str) -> bool:
+def _is_component_in_use(sys_dir: Path, peer_or_tool: str) -> bool:
     """True if the peer/tool's executable currently has a running process.
 
     Replacing a binary that is still executing is unsafe (on Windows the
@@ -969,6 +994,10 @@ def _is_peer_leased(sys_dir: Path, peer_or_tool: str) -> bool:
         "antigravity": ("agy.exe",),
         "ag": ("agy.exe",),
         "agy": ("agy.exe",),
+        "git": ("git.exe", "git-remote-https.exe", "sh.exe", "bash.exe"),
+        "pwsh": ("pwsh.exe", "powershell.exe"),
+        "vscode": ("code.exe",),
+        "python": ("python.exe", "pythonw.exe"),
     }.get(peer_or_tool)
     if not process_names:
         return False
@@ -986,8 +1015,6 @@ def _is_peer_leased(sys_dir: Path, peer_or_tool: str) -> bool:
                 if name not in process_names:
                     continue
                 exe = proc.info.get("exe")
-                # Only count processes belonging to THIS portable install;
-                # a host-wide node.exe is unrelated to these files.
                 if exe:
                     exe_str = str(Path(exe).resolve()).lower()
                     if exe_str.startswith(root):
@@ -997,6 +1024,9 @@ def _is_peer_leased(sys_dir: Path, peer_or_tool: str) -> bool:
     except Exception:
         return False
     return False
+
+
+_is_peer_leased = _is_component_in_use
 
 
 def _resolve_tool_from_catalog(catalog: dict, tool_or_alias: str) -> dict | None:
@@ -1173,6 +1203,97 @@ def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = 
         return {"status": "success", "detail": "Installed successfully"}
 
     return {"status": "error", "detail": f"Unknown install mechanism {mechanism!r} for {tool_id}"}
+
+
+def self_update_peer(tool_id: str, sys_dir: Path | None = None) -> dict:
+    """Run declarative self-update command for a tool (e.g. 'agy update') without
+    mutating tool-catalog.v1.json. Records observed version in .install_manifest.json."""
+    sys_dir = sys_dir or _default_sys_dir()
+    catalog = load_json_with_fallback(sys_dir / TOOL_CATALOG_FILENAME)
+    tool_entry = _resolve_tool_from_catalog(catalog, tool_id)
+    if not tool_entry:
+        return {"status": "error", "detail": f"Tool {tool_id!r} not found in catalog"}
+
+    update_cfg = tool_entry.get("update", {})
+    if update_cfg.get("mechanism") != "self_update":
+        return {"status": "skipped", "detail": f"{tool_id} does not use self_update mechanism"}
+
+    if _is_component_in_use(sys_dir, tool_id):
+        _add_deferred(sys_dir, tool_id, "tool")
+        return {"status": "in_use_deferred", "detail": f"{tool_id} is currently running in this Engram environment"}
+
+    tools_dir = sys_dir / "tools"
+    dest_dir = tools_dir / tool_id
+    manifest_path = dest_dir / ".install_manifest.json"
+    bin_name = update_cfg.get("bin", tool_entry.get("install", {}).get("bin", f"{tool_id}.exe"))
+    exe_path = dest_dir / bin_name
+    if not exe_path.exists():
+        npm_cmd = npm_global_dir(sys_dir) / f"{tool_id}.cmd"
+        if npm_cmd.exists():
+            exe_path = npm_cmd
+        else:
+            return {"status": "error", "detail": f"Executable not found: {dest_dir / bin_name}"}
+
+    # Query before-version
+    version_argv = update_cfg.get("version_argv", ["--version"])
+    v_args = version_argv[1:] if len(version_argv) > 0 and version_argv[0] in (bin_name, tool_id) else version_argv
+    try:
+        res_v0 = subprocess.run([str(exe_path)] + list(v_args), capture_output=True, text=True, timeout=5)
+        v0_text = (res_v0.stdout or res_v0.stderr or "").strip()
+        before_version = v0_text.splitlines()[0] if v0_text else "unknown"
+    except Exception:
+        before_version = "unknown"
+
+    # Run self-update
+    update_argv = update_cfg.get("argv", ["update"])
+    u_args = update_argv[1:] if len(update_argv) > 0 and update_argv[0] in (bin_name, tool_id) else update_argv
+    timeout_sec = update_cfg.get("timeout_sec", 60)
+    try:
+        res = subprocess.run(
+            [str(exe_path)] + list(u_args),
+            cwd=str(exe_path.parent),
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+            shell=False,
+        )
+        update_out = (res.stdout + "\n" + res.stderr).strip()
+    except subprocess.TimeoutExpired:
+        return {"status": "warn", "detail": f"{tool_id} update timed out after {timeout_sec}s"}
+    except Exception as e:
+        return {"status": "warn", "detail": f"{tool_id} update execution error: {e}"}
+
+    # Query after-version
+    try:
+        res_v1 = subprocess.run([str(exe_path)] + list(v_args), capture_output=True, text=True, timeout=5)
+        v1_text = (res_v1.stdout or res_v1.stderr or "").strip()
+        after_version = v1_text.splitlines()[0] if v1_text else before_version
+    except Exception:
+        after_version = before_version
+
+    # Record observed version in manifest without mutating catalog
+    manifest = {}
+    if manifest_path.exists():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    manifest["observed_version"] = after_version
+    manifest["last_self_update"] = {
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "before": before_version,
+        "after": after_version,
+        "exit_code": res.returncode,
+    }
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    if res.returncode != 0:
+        return {"status": "warn", "detail": f"update exited with code {res.returncode}: {update_out}"}
+
+    if before_version and after_version and before_version != after_version:
+        return {"status": "success", "detail": f"{before_version} -> {after_version}"}
+    return {"status": "already_current", "detail": f"version {after_version or before_version}"}
 
 
 

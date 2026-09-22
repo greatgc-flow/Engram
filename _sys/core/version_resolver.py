@@ -248,6 +248,7 @@ def _github_from_http_result(
     cached: dict[str, Any],
     cache: dict[str, Any],
     cache_path: Path,
+    asset_pattern: str | None = None,
 ) -> dict[str, Any]:
     provider = "github_releases"
 
@@ -313,11 +314,44 @@ def _github_from_http_result(
         )
 
     latest_version = _normalize_version(str(tag))
-    url = _pick_windows_asset(release) or release.get("html_url")
+    checksum_algo = None
+    checksum_value = None
+    checksum_source = None
+
+    if asset_pattern:
+        pat = re.compile(asset_pattern, re.IGNORECASE)
+        target_asset = None
+        for a in release.get("assets", []):
+            m = pat.search(a.get("name", ""))
+            if m:
+                target_asset = a
+                if m.groups():
+                    latest_version = _normalize_version(m.group(1))
+                break
+        if not target_asset:
+            return _result(
+                status="error",
+                provider=provider,
+                discovery_id=discovery_id,
+                detail=f"no asset matching {asset_pattern}",
+                error_type="missing_asset",
+            )
+        url = target_asset.get("browser_download_url")
+        digest = target_asset.get("digest")
+        if digest and str(digest).startswith("sha256:"):
+            checksum_algo = "sha256"
+            checksum_value = str(digest)[7:]
+            checksum_source = "github_api_digest"
+    else:
+        url = _pick_windows_asset(release) or release.get("html_url")
+
     etag = _header_get(headers, "ETag")
     cache_values = {
         "cached_latest_version": latest_version,
         "cached_url": url,
+        "checksum_algo": checksum_algo,
+        "checksum_value": checksum_value,
+        "checksum_source": checksum_source,
     }
     if etag:
         cache_values["etag"] = etag
@@ -329,11 +363,18 @@ def _github_from_http_result(
         discovery_id=discovery_id,
         latest_version=latest_version,
         url=url,
+        checksum_algo=checksum_algo,
+        checksum_value=checksum_value,
+        checksum_source=checksum_source,
         source="github_api",
     )
 
 
-def _resolve_github(discovery_id: str, cache_path: Path | None = None) -> dict[str, Any]:
+def _resolve_github(
+    discovery_id: str,
+    cache_path: Path | None = None,
+    asset_pattern: str | None = None,
+) -> dict[str, Any]:
     cache_path = cache_path or _DEFAULT_CACHE
     provider = "github_releases"
     cache = _load_cache(cache_path)
@@ -351,6 +392,7 @@ def _resolve_github(discovery_id: str, cache_path: Path | None = None) -> dict[s
             cached=cached,
             cache=cache,
             cache_path=cache_path,
+            asset_pattern=asset_pattern,
         )
 
     url = f"https://api.github.com/repos/{discovery_id}/releases/latest"
@@ -370,6 +412,7 @@ def _resolve_github(discovery_id: str, cache_path: Path | None = None) -> dict[s
                 cached=cached,
                 cache=cache,
                 cache_path=cache_path,
+                asset_pattern=asset_pattern,
             )
     except urllib.error.HTTPError as exc:
         body_bytes = exc.read() if hasattr(exc, "read") else b""
@@ -382,6 +425,7 @@ def _resolve_github(discovery_id: str, cache_path: Path | None = None) -> dict[s
             cached=cached,
             cache=cache,
             cache_path=cache_path,
+            asset_pattern=asset_pattern,
         )
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         return _result(
@@ -605,6 +649,105 @@ def _resolve_python() -> dict[str, Any]:
         discovery_id="python",
         latest_version=latest,
         source="endoflife.date",
+        detail="notice_only",
+    )
+
+
+def _resolve_vscode(discovery_id: str, cache_path: Path | None = None) -> dict[str, Any]:
+    provider = "vscode_official"
+    target = discovery_id or "win32-x64-archive"
+    url = f"https://update.code.visualstudio.com/api/update/{target}/stable/latest"
+    req = urllib.request.Request(url, headers={"User-Agent": "portable-dev-version-resolver"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            code = int(resp.getcode())
+            if code == 204:
+                return _result(status="ok", provider=provider, discovery_id=discovery_id, detail="already current")
+            if code != 200:
+                return _result(status="error", provider=provider, discovery_id=discovery_id, detail=f"HTTP {code}", error_type="http_error")
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except urllib.error.HTTPError as exc:
+        return _result(status="error", provider=provider, discovery_id=discovery_id, detail=f"HTTP {exc.code}", error_type="http_error")
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return _result(status="error", provider=provider, discovery_id=discovery_id, detail=str(exc), error_type="network_error")
+    except json.JSONDecodeError as exc:
+        return _result(status="error", provider=provider, discovery_id=discovery_id, detail=f"invalid JSON: {exc.msg}", error_type="parse_error")
+
+    latest_version = data.get("name") or data.get("productVersion")
+    download_url = data.get("url")
+    sha256 = data.get("sha256hash")
+    if not latest_version or not download_url:
+        return _result(status="error", provider=provider, discovery_id=discovery_id, detail="missing name or url in update payload", error_type="missing_fields")
+
+    return _result(
+        status="ok",
+        provider=provider,
+        discovery_id=discovery_id,
+        latest_version=_normalize_version(str(latest_version)),
+        url=str(download_url),
+        checksum_algo="sha256" if sha256 else None,
+        checksum_value=str(sha256) if sha256 else None,
+        checksum_source="vscode_update_api",
+        source="vscode_official",
+    )
+
+
+def _resolve_nodejs_lts(discovery_id: str, cache_path: Path | None = None) -> dict[str, Any]:
+    provider = "nodejs_lts"
+    url = "https://nodejs.org/dist/index.json"
+    req = urllib.request.Request(url, headers={"User-Agent": "portable-dev-version-resolver"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            if int(resp.getcode()) != 200:
+                return _result(status="error", provider=provider, discovery_id=discovery_id, detail=f"HTTP {resp.getcode()}", error_type="http_error")
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except urllib.error.HTTPError as exc:
+        return _result(status="error", provider=provider, discovery_id=discovery_id, detail=f"HTTP {exc.code}", error_type="http_error")
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return _result(status="error", provider=provider, discovery_id=discovery_id, detail=str(exc), error_type="network_error")
+    except json.JSONDecodeError as exc:
+        return _result(status="error", provider=provider, discovery_id=discovery_id, detail=f"invalid JSON: {exc.msg}", error_type="parse_error")
+
+    selected = None
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict) and item.get("lts") and "win-x64-zip" in item.get("files", []):
+                selected = item
+                break
+
+    if not selected:
+        return _result(status="error", provider=provider, discovery_id=discovery_id, detail="no active Node.js LTS found with win-x64-zip", error_type="missing_version")
+
+    raw_ver = selected.get("version", "")
+    latest_version = _normalize_version(raw_ver)
+    dl_url = f"https://nodejs.org/dist/{raw_ver}/node-{raw_ver}-win-x64.zip"
+
+    checksum_value = None
+    try:
+        shasums_url = f"https://nodejs.org/dist/{raw_ver}/SHASUMS256.txt"
+        shasums_req = urllib.request.Request(shasums_url, headers={"User-Agent": "portable-dev-version-resolver"})
+        with urllib.request.urlopen(shasums_req, timeout=15) as s_resp:
+            text = s_resp.read().decode("utf-8", errors="replace")
+            zip_name = f"node-{raw_ver}-win-x64.zip"
+            for line in text.splitlines():
+                if zip_name in line:
+                    parts = line.split()
+                    if parts:
+                        checksum_value = parts[0].strip()
+                    break
+    except Exception:
+        pass
+
+    return _result(
+        status="ok",
+        provider=provider,
+        discovery_id=discovery_id,
+        latest_version=latest_version,
+        url=dl_url,
+        checksum_algo="sha256" if checksum_value else None,
+        checksum_value=checksum_value,
+        checksum_source="nodejs_shasums256",
+        source="nodejs_org",
     )
 
 
@@ -778,9 +921,14 @@ def resolve_latest(
     current_version: str,
     discovery_id: str,
     cache_path: Path | None = None,
+    asset_pattern: str | None = None,
 ) -> dict[str, Any]:
-    if provider == "github_releases":
-        result = _resolve_github(discovery_id, cache_path)
+    if provider in ("github_releases", "github_releases_exact"):
+        result = _resolve_github(discovery_id, cache_path, asset_pattern=asset_pattern)
+    elif provider == "vscode_official":
+        result = _resolve_vscode(discovery_id, cache_path)
+    elif provider == "nodejs_lts":
+        result = _resolve_nodejs_lts(discovery_id, cache_path)
     elif provider == "npm":
         result = _resolve_npm(discovery_id)
     elif provider == "sqlite_org_page":

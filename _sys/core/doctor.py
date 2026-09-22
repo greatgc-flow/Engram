@@ -185,6 +185,7 @@ def check_components(sys_dir: Path) -> dict:
         if not _tool_present(sys_dir, name, cfg):
             missing.append(f"tool/{name}")
 
+    observed_versions: dict[str, str] = {}
     catalog = _load_tool_catalog(sys_dir)
     for tool in catalog.get("tools", []):
         if not isinstance(tool, dict):
@@ -195,6 +196,15 @@ def check_components(sys_dir: Path) -> dict:
         checked += 1
         bin_name = tool.get("install", {}).get("bin", f"{tool_id}.exe")
         npm_global = provisioner.npm_global_dir(sys_dir) if provisioner else sys_dir / "env" / "nodejs" / "npm-global"
+        manifest_path = sys_dir / "tools" / tool_id / ".install_manifest.json"
+        if manifest_path.exists():
+            try:
+                m = json.loads(manifest_path.read_text(encoding="utf-8"))
+                obs = m.get("observed_version")
+                if obs:
+                    observed_versions[tool_id] = obs
+            except Exception:
+                pass
         present = (
             (sys_dir / "tools" / tool_id / bin_name).exists()
             or (npm_global / f"{tool_id}.cmd").exists()
@@ -202,15 +212,26 @@ def check_components(sys_dir: Path) -> dict:
         if not present:
             missing.append(f"tool/{tool_id}")
 
+    obs_notes = []
+    for tid, obs_ver in observed_versions.items():
+        tool_entry = next((t for t in catalog.get("tools", []) if isinstance(t, dict) and t.get("tool_id") == tid), None)
+        decl_ver = tool_entry.get("version") if tool_entry else None
+        if decl_ver and obs_ver != decl_ver:
+            obs_notes.append(f"{tid}: active {obs_ver}")
+
     # Missing components are advisory (many runtimes/tools are optional); only
     # python (checked separately) is a hard gate. Report but do not fail here.
+    note_str = f" ({', '.join(obs_notes)})" if obs_notes else ""
     if missing:
         return {"name": "components", "ok": True, "level": "warning",
                 "detail": f"{len(missing)}/{checked} declared components not found: "
-                          f"{', '.join(missing)} (run 'engram update' to provision)",
-                "missing": missing}
+                          f"{', '.join(missing)}{note_str} (run 'engram update' to provision)",
+                "missing": missing,
+                "observed_versions": observed_versions}
     return {"name": "components", "ok": True, "level": "ok",
-            "detail": f"all {checked} declared components present", "missing": []}
+            "detail": f"all {checked} declared components present{note_str}",
+            "missing": [],
+            "observed_versions": observed_versions}
 
 
 def check_sessions(base_dir: Path) -> dict:
