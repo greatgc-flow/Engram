@@ -121,3 +121,107 @@ class TestSystemLifecycle:
              patch("subprocess.run", return_value=MagicMock(returncode=0)):
             result = registrar.remove(ctx)
         assert result["status"] == "success"
+
+
+class TestFullLifecycleMECETransitions:
+    """End-to-End MECE Lifecycle State Machine & Zero-Host Residual Tests."""
+
+    def test_full_mece_lifecycle_round_trip(self, tmp_path, monkeypatch):
+        """State 1 (Initialized) -> State 2 (Registered) -> State 3 (Diagnostic Healthy)
+        -> State 4 (Backup) -> State 5 (Reset) -> State 6 (Restore) -> State 7 (Tidy)
+        -> State 8 (Unregistered)."""
+        from core import doctor, registrar, tidy_temp
+        from checks import backup_personal_data
+
+        base_dir = tmp_path / "EngramLive"
+        sys_dir = base_dir / "_sys"
+        sys_dir.mkdir(parents=True)
+        (base_dir / "workspace").mkdir()
+        (sys_dir / "env" / "python").mkdir(parents=True)
+        (sys_dir / "env" / "python" / "python.exe").write_bytes(b"MZfake")
+        (sys_dir / "runtimes.json").write_text(json.dumps({
+            "runtimes": {"python": {"version": "3.14.5"}},
+            "tools": {},
+        }), encoding="utf-8")
+
+        # Create personal AI data under .engram/
+        engram_dir = base_dir / ".engram"
+        claude_dir = engram_dir / "claude"
+        claude_dir.mkdir(parents=True)
+        (claude_dir / "settings.json").write_text('{"theme":"dark"}', encoding="utf-8")
+
+        # Context menu config
+        ctx_menu = {
+            "win11_classic_menu": False,
+            "registry": {
+                "targets": {
+                    "Directory": {
+                        "path": r"Software\Classes\Directory\shell",
+                        "arg": "%V",
+                    }
+                }
+            },
+            "entries": [{"id": "open", "label": "Open Engram", "targets": ["Directory"], "enabled": True}],
+        }
+        (sys_dir / "context_menu.json").write_text(json.dumps(ctx_menu), encoding="utf-8")
+
+        ctx = _make_ctx(base_dir, tmp_path)
+
+        # 1. Registration
+        with patch.object(registrar, "_write_relay"), \
+             patch.object(registrar, "_write_sidecar"), \
+             patch("winreg.CreateKey", return_value=MagicMock()), \
+             patch("winreg.SetValueEx"), \
+             patch("winreg.CloseKey"), \
+             patch("subprocess.run", return_value=MagicMock(returncode=0)), \
+             patch.object(registrar, "_clean_orphans"):
+            reg_res = registrar.apply(ctx)
+            assert reg_res["status"] == "success"
+
+        # 2. Doctor Health Check
+        monkeypatch.setattr(doctor, "_installed_python_version", lambda sd: "3.14.5")
+        doc_res = doctor.run({"base_dir": base_dir, "sys_dir": sys_dir, "args": ["--json"]})
+        assert doc_res["status"] == "success"
+
+        # 3. Backup Personal AI State
+        backup_zip = sys_dir / "data" / "backups" / "test_backup.zip"
+        backup_ctx = {
+            "base_dir": base_dir,
+            "sys_dir": sys_dir,
+            "args": ["--out", str(backup_zip)],
+        }
+        backup_personal_data.run_backup(backup_ctx)
+        assert backup_zip.is_file(), "Backup archive must be created"
+
+        # 4. Reset Personal State
+        reset_ctx = {
+            "base_dir": base_dir,
+            "sys_dir": sys_dir,
+            "args": ["--yes"],
+        }
+        backup_personal_data.run_reset(reset_ctx)
+        assert not (claude_dir / "settings.json").exists(), "Live settings must be wiped on reset"
+
+        # 5. Restore Personal State from Backup
+        restore_ctx = {
+            "base_dir": base_dir,
+            "sys_dir": sys_dir,
+            "args": [str(backup_zip), "--force"],
+        }
+        backup_personal_data.run_restore(restore_ctx)
+        assert (claude_dir / "settings.json").is_file(), "Personal settings must be recovered after restore"
+        assert json.loads((claude_dir / "settings.json").read_text(encoding="utf-8")) == {"theme": "dark"}
+
+        # 6. Tidy Temp
+        tidy_res = tidy_temp.run({"base_dir": base_dir, "sys_dir": sys_dir, "args": ["--apply"]})
+        assert tidy_res.get("status") in ("success", "ok")
+        # Ensure user data is 100% protected and never deleted by tidy
+        assert (claude_dir / "settings.json").is_file(), "User personal data must never be touched by tidy"
+        assert (base_dir / "workspace").is_dir(), "Workspace must never be touched by tidy"
+
+        # 7. Unregistration
+        with patch.object(registrar, "_load_context_menu", return_value=ctx_menu), \
+             patch.object(registrar, "_clean_orphans", return_value=None), \
+             patch("subprocess.run", return_value=MagicMock(returncode=0)):
+            unreg_res = registrar.remove(ctx)
+            assert unreg_res["status"] == "success"
