@@ -74,36 +74,45 @@ class TestSweepStaleAskTempDirs:
         hub._sweep_stale_ask_temp_dirs(tmp_path, max_age_sec=3600)  # must not raise
 
 
-class TestAskTempDirFollowsProjectDirOverride:
-    """2026-09-23: a real `--project-dir` dispatch failed when the target
-    peer's sandbox (Codex) scoped its trusted writable root to project_dir,
-    but $TEMP still pointed at the *default* project's _sys/data/temp tree
-    -- a child process the peer spawned (pytest) then hit PermissionError
-    creating its own pytest-of-<user> cache dir there, entirely outside the
-    trusted root. This is a source-level guard (see
-    test_codex_dispatch_fixes.py for why _action_ask_inner isn't mocked
-    end-to-end): both the temp-root selection and its two downstream
-    consumers must honor project_dir.
+class TestAskTempDirSkipsOverrideUnderProjectDir:
+    """2026-09-23: two different custom temp-dir placements under
+    project_dir (dot-prefixed, then plain-named) BOTH failed for a real
+    cx dispatch with PermissionError -- and Get-Acl on the directory
+    raised UnauthorizedAccessException even for a bare read, pointing at
+    a genuine Windows mandatory-integrity mismatch (hub.py's own
+    medium-integrity process creates the dir; Codex's spawned children,
+    e.g. pytest, run at low integrity and can't access an object created
+    by a higher-integrity process without an explicit low-IL ACE). The
+    fix is to not fight that: skip the T5 custom-TEMP override entirely
+    when project_dir is set, leaving TEMP/TMP/TMPDIR at whatever this
+    process's own ambient environment already provides (every integrity
+    level already has access to the standard per-user system temp dir).
+    This is a source-level guard (see test_codex_dispatch_fixes.py for why
+    _action_ask_inner isn't mocked end-to-end).
     """
 
-    def test_temp_root_selection_is_project_dir_aware(self):
-        import re
-
+    def test_project_dir_branch_does_not_override_temp_env_vars(self):
         hub_source = Path(hub.__file__).read_text(encoding="utf-8")
-        block_start = hub_source.index("# ── Per-ask scratch TEMP dir (T5) ")
-        block_end = hub_source.index("ask_temp_dir.mkdir", block_start)
-        block = hub_source[block_start:block_end]
+        if_start = hub_source.index("if project_dir:")
+        else_start = hub_source.index("\n    else:", if_start)
+        if_block = hub_source[if_start:else_start]
 
-        assert "if project_dir:" in block
-        assert re.search(
-            r'_ask_temp_root\s*=\s*Path\(project_dir\)\.resolve\(\)\s*/\s*"hub_ask_temp"',
-            block,
-        ), "project_dir branch must root the ask-temp dir inside project_dir itself"
-        assert '/ ".hub_ask_temp"' not in block, (
-            "must not be dot-prefixed -- Codex's sandbox treats dot-prefixed "
-            "top-level entries as protected/read-only, same as .git"
+        assert "hub_ask_temp" not in if_block, (
+            "no custom temp-dir placement under project_dir -- both a dot- "
+            "and non-dot-prefixed one failed with a real integrity-level "
+            "mismatch; don't reintroduce one without solving that first"
         )
-        assert re.search(
-            r'_ask_temp_root\s*=\s*Path\(__file__\)\.resolve\(\)\.parent\.parent\s*/\s*"data"\s*/\s*"temp"',
-            block,
-        ), "the no-override default path must be unchanged"
+        for var in ("TEMP", "TMP", "TMPDIR"):
+            assert f'process_env["{var}"]' not in if_block, (
+                f"project_dir branch must not set {var} -- let it inherit "
+                "this process's own ambient environment"
+            )
+
+    def test_default_branch_still_uses_the_isolated_ask_temp_dir(self):
+        hub_source = Path(hub.__file__).read_text(encoding="utf-8")
+        else_start = hub_source.index("\n    else:", hub_source.index("if project_dir:"))
+        block_end = hub_source.index("process_env[\"TMPDIR\"]", else_start)
+        else_block = hub_source[else_start:block_end]
+
+        assert '_ask_temp_root = Path(__file__).resolve().parent.parent / "data" / "temp"' in else_block
+        assert 'process_env["TEMP"] = str(ask_temp_dir)' in else_block

@@ -6935,21 +6935,42 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     # via a real pytest run under --project-dir failing with WinError 5 on
     # the default _sys/data/temp path, entirely outside project_dir's trust.
     if project_dir:
-        # NOT dot-prefixed: confirmed 2026-09-23 that Codex's workspace-write
-        # sandbox treats dot-prefixed top-level entries as protected/
-        # read-only the same way it treats .git (a real cx dispatch under
-        # --project-dir got PermissionError scanning .hub_ask_temp/... even
-        # though project_dir itself was trusted) -- a plain name avoids that
-        # class entirely.
-        _ask_temp_root = Path(project_dir).resolve() / "hub_ask_temp"
+        # T5 per-ask TEMP isolation is intentionally SKIPPED for project_dir
+        # dispatches. Both a dot-prefixed and a plain-named directory under
+        # project_dir still failed (2026-09-23, real cx dispatches): a
+        # PermissionError -- and Get-Acl on the directory raised
+        # UnauthorizedAccessException even for a simple read of the ACL --
+        # pointing at a genuine Windows mandatory-integrity mismatch, not a
+        # sandbox trust-list gate: hub.py's own (medium-integrity) process
+        # creates the directory, but Codex's spawned child processes (e.g.
+        # pytest) run at low integrity and cannot access an object created
+        # by a higher-integrity process without an explicit low-IL ACE.
+        # Rather than hand-crafting that ACL, leave TEMP/TMP/TMPDIR at
+        # whatever this process's own ambient environment already has
+        # (inherited into process_env via `{**os.environ, ...}` above) --
+        # the standard per-user system temp dir is the one location every
+        # integrity level is already set up to use. This sacrifices T5's
+        # litter-isolation/reaping for project_dir dispatches only; the
+        # default (no project_dir) path is completely unaffected.
+        pass
     else:
+        # ── Per-ask scratch TEMP dir (T5) ────────────────────────────
+        # Isolates peer-subprocess temp litter (e.g. cx's small lock/ping
+        # files) so it can be deterministically reaped, instead of dumping
+        # into the shared _sys/data/temp/ where it accumulates forever.
+        # Does NOT address host-level PowerShell execution-policy-check
+        # litter (__PSScriptPolicyTest_* - a separate, unrelated leak, see
+        # backlog): those files are created by whatever process's own
+        # ambient TEMP resolves to (e.g. INSTALL.bat's or this terminal's
+        # own PowerShell calls), independent of any peer subprocess's env
+        # vars.
         _ask_temp_root = Path(__file__).resolve().parent.parent / "data" / "temp"
-    _sweep_stale_ask_temp_dirs(_ask_temp_root)
-    ask_temp_dir = _ask_temp_root / f"ask_{ask_id}"
-    ask_temp_dir.mkdir(parents=True, exist_ok=True)
-    process_env["TEMP"] = str(ask_temp_dir)
-    process_env["TMP"] = str(ask_temp_dir)
-    process_env["TMPDIR"] = str(ask_temp_dir)
+        _sweep_stale_ask_temp_dirs(_ask_temp_root)
+        ask_temp_dir = _ask_temp_root / f"ask_{ask_id}"
+        ask_temp_dir.mkdir(parents=True, exist_ok=True)
+        process_env["TEMP"] = str(ask_temp_dir)
+        process_env["TMP"] = str(ask_temp_dir)
+        process_env["TMPDIR"] = str(ask_temp_dir)
 
     tier = "standard"
     if profile_decision:
