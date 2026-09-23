@@ -1269,3 +1269,26 @@ def test_install_atomic_swap_locked_defers_and_rolls_back(tmp_path, monkeypatch)
     # Component must have been added to deferred retries
     deferred = pv._load_deferred(sys_dir)
     assert "tool:test_tool" in deferred
+
+
+def test_seed_vscode_default_settings_disables_update_mode(tmp_path):
+    vscode_dir = tmp_path / "env" / "vscode"
+    pv.seed_vscode_default_settings(vscode_dir)
+
+    settings_path = vscode_dir / "data" / "user-data" / "User" / "settings.json"
+    assert settings_path.exists()
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert settings["update.mode"] == "none"
+
+
+def test_seed_vscode_default_settings_never_overwrites_existing(tmp_path):
+    vscode_dir = tmp_path / "env" / "vscode"
+    settings_path = vscode_dir / "data" / "user-data" / "User" / "settings.json"
+    settings_path.parent.mkdir(parents=True)
+    settings_path.write_text('{"editor.fontSize": 16}', encoding="utf-8")
+
+    pv.seed_vscode_default_settings(vscode_dir)
+
+    # User's own customization must survive untouched -- no update.mode injected.
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert settings == {"editor.fontSize": 16}

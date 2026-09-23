@@ -227,6 +227,7 @@ def main(ctx: dict) -> None:
         vscode_exe = provisioner.vscode_exe(sys_dir)
         if vscode_exe.exists():
             (vscode_exe.parent / "data").mkdir(parents=True, exist_ok=True)
+            provisioner.seed_vscode_default_settings(vscode_exe.parent)
             log(f"[OK] VS Code: {target_dir}")
             subprocess.Popen([str(vscode_exe), "."], env=env)
         else:
