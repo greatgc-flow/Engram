@@ -96,4 +96,4 @@ _sys/data/temp/
 
 # hub.py --project-dir ask-temp scratch (peer-subprocess TEMP/TMP when this
 # repo is used as an ask target outside hub.py's own default project root)
-.hub_ask_temp/
+hub_ask_temp/
