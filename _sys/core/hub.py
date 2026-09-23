@@ -6935,7 +6935,13 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     # via a real pytest run under --project-dir failing with WinError 5 on
     # the default _sys/data/temp path, entirely outside project_dir's trust.
     if project_dir:
-        _ask_temp_root = Path(project_dir).resolve() / ".hub_ask_temp"
+        # NOT dot-prefixed: confirmed 2026-09-23 that Codex's workspace-write
+        # sandbox treats dot-prefixed top-level entries as protected/
+        # read-only the same way it treats .git (a real cx dispatch under
+        # --project-dir got PermissionError scanning .hub_ask_temp/... even
+        # though project_dir itself was trusted) -- a plain name avoids that
+        # class entirely.
+        _ask_temp_root = Path(project_dir).resolve() / "hub_ask_temp"
     else:
         _ask_temp_root = Path(__file__).resolve().parent.parent / "data" / "temp"
     _sweep_stale_ask_temp_dirs(_ask_temp_root)

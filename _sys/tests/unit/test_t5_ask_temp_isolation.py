@@ -96,9 +96,13 @@ class TestAskTempDirFollowsProjectDirOverride:
 
         assert "if project_dir:" in block
         assert re.search(
-            r'_ask_temp_root\s*=\s*Path\(project_dir\)\.resolve\(\)\s*/\s*"\.hub_ask_temp"',
+            r'_ask_temp_root\s*=\s*Path\(project_dir\)\.resolve\(\)\s*/\s*"hub_ask_temp"',
             block,
         ), "project_dir branch must root the ask-temp dir inside project_dir itself"
+        assert '/ ".hub_ask_temp"' not in block, (
+            "must not be dot-prefixed -- Codex's sandbox treats dot-prefixed "
+            "top-level entries as protected/read-only, same as .git"
+        )
         assert re.search(
             r'_ask_temp_root\s*=\s*Path\(__file__\)\.resolve\(\)\.parent\.parent\s*/\s*"data"\s*/\s*"temp"',
             block,
