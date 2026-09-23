@@ -14,6 +14,13 @@ def test_writers_land_at_new_paths(tmp_path):
     assert state_paths.receipts_dir(sys_dir) == sys_dir / "data" / "state" / "update" / "receipts"
     assert state_paths.launcher_log_dir(sys_dir) == sys_dir / "data" / "logs" / "launcher"
 
+def test_credential_shaped_names():
+    assert isinstance(state_paths.CREDENTIAL_SHAPED_NAMES, frozenset)
+    assert state_paths.CREDENTIAL_SHAPED_NAMES == frozenset({
+        "auth.json", ".credentials.json", "credentials.json", "token.json",
+        "hosts.yml",
+    })
+
 def test_hygiene_error_info_behavior(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.exists", lambda self: True if self.name == ".ai" or self == tmp_path else False)
 
