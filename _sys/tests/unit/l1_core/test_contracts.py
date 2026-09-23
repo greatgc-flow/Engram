@@ -109,6 +109,7 @@ class TestActionAskContract:
         assert p["allow_terminal_spend"].default is False
         # Private CLI-to-wrapper marker locks an AUTO-selected profile end-to-end.
         assert p["_load_balanced"].default is False
+        assert p["project_dir"].default is None
         params = list(p.keys())
         assert params.index("_escalation_depth") == params.index("_depth") + 1
         assert params.index("origin") == params.index("_escalation_depth") + 1
