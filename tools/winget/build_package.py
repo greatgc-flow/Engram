@@ -36,8 +36,6 @@ LICENSE = "MIT"
 LICENSE_URL = "https://github.com/greatgc-flow/Engram/blob/main/LICENSE"
 COPYRIGHT = "Copyright (c) 2026 greatgc-flow"
 DEFAULT_LOCALE = "en-US"
-SCHEMA_VERSION = "1.12.0"
-DEFAULT_VERSION = "2.1.0"
 
 
 def release_zip_name(version: str) -> str:
@@ -56,8 +54,9 @@ sys.path.insert(0, str(_SYS_DIR / "core"))
 from root import bootstrap_root_package  # noqa: E402
 bootstrap_root_package(_SYS_DIR)
 
+from _sys.core.version import VERSION as DEFAULT_VERSION, WINGET_SCHEMA_VERSION as SCHEMA_VERSION
+
 try:
-    from _sys.core.version import VERSION as DEFAULT_VERSION, WINGET_SCHEMA_VERSION as SCHEMA_VERSION
     from _sys.checks._common import VENDOR_CACHE_DIRS
 except ImportError:
     VENDOR_CACHE_DIRS = frozenset({
