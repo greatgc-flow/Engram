@@ -11,7 +11,7 @@
 
 <br/>
 
-Engram bootstraps a self-contained Windows dev environment — Python, Node.js, Git, VS Code, and a handful of CLI tools — into one portable folder, with no host-machine installs and no registry residue. `register` sets up the right-click context menu; `unregister`/`uninstall` remove every trace, including a background helper that finishes cleanup after the process holding the folder open has exited.
+Engram bootstraps a self-contained Windows dev environment — Python, Node.js, Git, VS Code, and a handful of CLI tools — into one portable folder, with no host-machine installs and no registry residue. `menu enable`/`menu disable` add/remove the right-click context menu; `uninstall` removes every trace, including a background helper that finishes cleanup after the process holding the folder open has exited.
 
 > **Note on scope:** Engram used to also orchestrate AI-to-AI peer collaboration directly. That entire layer has moved to the standalone [**peerhub**](https://github.com/greatgc-flow/peerhub) package — Engram itself no longer knows what a "peer debate" or "consensus round" is. What Engram *does* still do on the AI-tooling side is install, update, and status-check third-party AI CLIs (Claude Code, Codex, etc.) as ordinary managed tools, exactly like it manages ripgrep or Node.js. If you want AI-to-AI collaboration, install peerhub separately on top of an Engram environment (Engram provides an intentional external-tool compatibility bridge via `PEERHUB_CONFIG_HOME` so PeerHub's global config is isolated to `.engram/peerhub/config/`).
 
@@ -63,7 +63,7 @@ The first run will prompt to bootstrap the portable environment (Python, Node, G
 | `menu enable` | Apply registry entries to add right-click context menu. Idempotent. | 0 / 1 |
 | `menu disable` | Remove right-click context menu registry entries. Idempotent. | 0 / 1 |
 | `menu clean` | Clean up orphaned context menu entries. | 0 / 1 |
-| `tidy [--apply] [--deep]` | Default is a dry run (print plan). `--apply` deletes planned items (pytest/VS Code/npm caches). `--deep` also cleans setup files, old rollback dirs, and `__pycache__`. | 0 |
+| `tidy [--apply] [--deep]` | Default is a dry run (print plan). `--apply` deletes planned items: temp dirs, `__pycache__`, pytest/npm/pip/winget/VS Code caches, and AG brain logs. `--deep` additionally cleans old launcher logs. | 0 |
 | `uninstall [--yes] [--purge-data]` | Deletes Engram's program files by allowlist. Leaves `.engram/` (settings/credentials) and `workspace/` untouched by default. `--purge-data` adds `.engram/` and `workspace/` to the deletion plan, requiring un-bypassable typed confirmation. Hands off to a background helper that waits for Engram to exit before deletion. | 0 handed off; 1 failed before hand-off; 3 declined |
 | `backup [--out PATH]` | Back up personal AI-CLI data (memory, settings, rules, skills, session transcripts — never credentials, by construction) to a single `.zip` (default: `_sys/data/backups/engram_backup_<timestamp>.zip`). Warns, doesn't refuse, if a managed AI CLI is currently running. | 0 |
 | `restore PATH [--force]` | Restore personal AI-CLI data from a `.zip` or legacy folder-shaped bundle. Refuses if a managed AI CLI is running. Takes an automatic pre-restore snapshot unless `--force`. `--force` also allows overwriting existing live session/project data. | 0 success; 1 refused (process running) or invalid path; 2 usage error |

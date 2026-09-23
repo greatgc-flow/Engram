@@ -234,11 +234,6 @@ def check_components(sys_dir: Path) -> dict:
             "observed_versions": observed_versions}
 
 
-def check_sessions(base_dir: Path) -> dict:
-    return {"name": "sessions", "ok": True, "level": "ok",
-            "detail": "no active peer sessions"}
-
-
 
 def check_root_path(base_dir: Path) -> dict:
     """Validate that base_dir does not contain problematic characters for Windows CLI/Node."""
@@ -250,7 +245,13 @@ def check_root_path(base_dir: Path) -> dict:
         issues.append("contains '%' (interferes with batch variable expansion)")
     if "^" in path_str:
         issues.append("contains '^' (cmd.exe escape character)")
-    
+    if "!" in path_str:
+        issues.append(
+            "contains '!' (silently stripped under delayed expansion -- "
+            "cd/pushd fails with NO error and the script keeps running in "
+            "the wrong directory; see CONVENTION.md section 2.6)"
+        )
+
     if issues:
         detail = (
             f"root path '{path_str}' has issues: {'; '.join(issues)}. "
@@ -313,7 +314,6 @@ def run(ctx: dict) -> dict[str, Any]:
         check_components(sys_dir),
         check_legacy_host_integration(base_dir, sys_dir),
         check_registration(base_dir, sys_dir),
-        check_sessions(base_dir),
         check_elevation(),
     ]
     broken = [c for c in checks if not c.get("ok")]

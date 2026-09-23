@@ -145,7 +145,6 @@ def test_run_overall_failed_only_when_python_broken(tmp_path, monkeypatch):
     monkeypatch.setattr(doctor, "_installed_python_version", lambda sd: None)  # python broken
     monkeypatch.setattr(doctor, "check_legacy_host_integration", lambda b, s: {"name": "legacy_host_integration", "ok": True, "level": "ok", "detail": "x"})
     monkeypatch.setattr(doctor, "check_registration", lambda b, s: {"name": "context_menu", "ok": True, "level": "info", "detail": "x"})
-    monkeypatch.setattr(doctor, "check_sessions", lambda b: {"name": "sessions", "ok": True, "level": "ok", "detail": "x"})
     res = doctor.run({"base_dir": tmp_path, "sys_dir": sys_dir, "args": ["--json"]})
     assert res["status"] == "failed"  # python missing is the hard gate
 
@@ -156,7 +155,6 @@ def test_run_healthy_when_python_ok(tmp_path, monkeypatch):
     monkeypatch.setattr(doctor, "_installed_python_version", lambda sd: "3.14.5")
     monkeypatch.setattr(doctor, "check_legacy_host_integration", lambda b, s: {"name": "legacy_host_integration", "ok": True, "level": "ok", "detail": "x"})
     monkeypatch.setattr(doctor, "check_registration", lambda b, s: {"name": "context_menu", "ok": True, "level": "ok", "detail": "x"})
-    monkeypatch.setattr(doctor, "check_sessions", lambda b: {"name": "sessions", "ok": True, "level": "ok", "detail": "x"})
     res = doctor.run({"base_dir": tmp_path, "sys_dir": sys_dir, "args": []})
     assert res["status"] == "success"
 
@@ -193,14 +191,25 @@ def test_check_root_path_caret():
     assert "contains '^'" in res["detail"]
 
 
+def test_check_root_path_exclamation():
+    """'!' is the most dangerous case: silently stripped under delayed
+    expansion, no cmd.exe error at all -- see CONVENTION.md section 2.6."""
+    bad_path = Path("C:/Engram!Folder/PortableDev")
+    res = doctor.check_root_path(bad_path)
+    assert res["ok"] is True
+    assert res["level"] == "warning"
+    assert "contains '!'" in res["detail"]
+
+
 def test_check_root_path_multiple_special_chars():
-    bad_path = Path("C:/Engram&^%Stuff/PortableDev")
+    bad_path = Path("C:/Engram&^%!Stuff/PortableDev")
     res = doctor.check_root_path(bad_path)
     assert res["ok"] is True
     assert res["level"] == "warning"
     assert "&" in res["detail"]
     assert "%" in res["detail"]
     assert "^" in res["detail"]
+    assert "!" in res["detail"]
 
 
 def test_doctor_hints_use_canonical_verbs(tmp_path, monkeypatch):
