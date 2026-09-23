@@ -1,16 +1,16 @@
 {
   "tool": "sqlite",
-  "declared_version": "3.53.3",
-  "url": "https://www.sqlite.org/2026/sqlite-tools-win-x64-3530300.zip",
+  "declared_version": "3.53.4",
+  "url": "https://www.sqlite.org/2026/sqlite-tools-win-x64-3530400.zip",
   "checksum_algo": "sha3_256",
-  "checksum_value": "b943f8ec7ab77433df44520a27ea65744a792e68a25c05b48823168496b3ccdb",
+  "checksum_value": "88b4659fe747896b853af10157316b4ade143553efb89c1c8ca7423a278dcc8b",
   "checksum_source": "declared",
   "checksum_verified": true,
   "canary_command": [
     "sqlite3.exe",
     "--version"
   ],
-  "canary_output": "3.53.3 2026-06-26 20:14:12 d4c0e51e4aeb96955b99185ab9cde75c339e2c29c3f3f12428d364a10d782c62 (64-bit)\n",
-  "installed_at": "2026-07-21T09:36:14.393457+00:00",
-  "source_config_hash": "66e017fabe6ed6dd6e2c5d7377912130311fe2692db3a8039b34226f55977af5"
+  "canary_output": "3.53.4 2026-07-24 19:02:57 bf7c7f30031888f4e796e429ab3978879485813aaca6f641c7b33e4e09459bcc (64-bit)\r\n",
+  "installed_at": "2026-09-23T10:36:18.715031+00:00",
+  "source_config_hash": "bd82f10b702de0d2360c7dbc6137956b80f61eb158e18974c95d32eb7be1bde9"
 }

@@ -1,0 +1,16 @@
+{
+  "tool": "fd",
+  "declared_version": "10.5.0",
+  "url": "https://github.com/sharkdp/fd/releases/download/v10.5.0/fd-v10.5.0-x86_64-pc-windows-gnu.zip",
+  "checksum_algo": "sha256",
+  "checksum_value": "1720ed5b2f5b09870ea9580eb0653d87972e8e7039d5d2f39ea2f54fbfda9f42",
+  "checksum_source": "computed_tls_trust",
+  "checksum_verified": false,
+  "canary_command": [
+    "fd.exe",
+    "--version"
+  ],
+  "canary_output": "fd 10.5.0\n",
+  "installed_at": "2026-09-23T10:36:10.422805+00:00",
+  "source_config_hash": "29acad89c14a929c393ec6276df4b57154141f2443bd733d5801555c95fffa4d"
+}
