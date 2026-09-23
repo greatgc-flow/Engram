@@ -16,7 +16,6 @@ if not exist "%PY%" (
     )
     echo [Error] Portable environment not initialized.
     echo Please run _sys/core/bootstrap.bat first.
-    pause
     exit /b 1
 )
 

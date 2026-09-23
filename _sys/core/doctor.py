@@ -27,7 +27,7 @@ from core import provisioner, state_paths
 
 
 def _load_runtimes(sys_dir: Path) -> dict:
-    return provisioner.load_json_with_fallback(sys_dir / "runtimes.json")
+    return provisioner.load_json_with_fallback(provisioner.resolve_declared_config(sys_dir, "runtimes.json"))
 
 
 def _installed_python_version(sys_dir: Path) -> str | None:
@@ -154,7 +154,7 @@ def _tool_present(sys_dir: Path, name: str, cfg: dict) -> bool:
 
 
 def _load_tool_catalog(sys_dir: Path) -> dict:
-    return provisioner.load_json_with_fallback(sys_dir / provisioner.TOOL_CATALOG_FILENAME)
+    return provisioner.load_json_with_fallback(provisioner.resolve_declared_config(sys_dir, provisioner.TOOL_CATALOG_FILENAME))
 
 
 def check_components(sys_dir: Path) -> dict:

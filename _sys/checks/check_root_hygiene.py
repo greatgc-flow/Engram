@@ -51,7 +51,6 @@ ALLOWLIST = {
     "README.md",
     "requirements-dev.txt",
     "workspace",
-    "wrapper.cs",
 } | (VENDOR_CACHE_DIRS & {
     ".agy", ".ai", ".claude", ".codex", ".engram", ".git", ".peerhub", ".vscode", "tools", "tmp",  # legacy-source: migration only
 })

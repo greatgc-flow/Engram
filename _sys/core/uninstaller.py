@@ -39,6 +39,7 @@ V326_SYS_PROGRAM_ENTRIES = {
     "context_menu.json",
     "core",
     "data",
+    "defaults",
     "dispatch.json",
     "docs",
     "env",

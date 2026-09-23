@@ -88,8 +88,19 @@ def load_json_with_fallback(
         return default
 
 
+def resolve_declared_config(sys_dir: Path, filename: str) -> Path:
+    """Resolve a configuration file path, falling back to sys_dir/defaults if missing."""
+    live = sys_dir / filename
+    if live.exists():
+        return live
+    fallback = sys_dir / "defaults" / filename
+    if fallback.exists():
+        return fallback
+    return live
+
+
 def _load_runtimes(sys_dir: Path) -> tuple[dict, dict, dict]:
-    path = sys_dir / "runtimes.json"
+    path = resolve_declared_config(sys_dir, "runtimes.json")
     if not path.exists():
         raise FileNotFoundError(f"[Error] runtimes.json not found at {path}")
     try:
@@ -172,7 +183,7 @@ def _extract(zip_path: Path, dest: Path) -> None:
 
 
 def _load_tool_catalog(sys_dir: Path) -> dict:
-    return load_json_with_fallback(sys_dir / TOOL_CATALOG_FILENAME)
+    return load_json_with_fallback(resolve_declared_config(sys_dir, TOOL_CATALOG_FILENAME))
 
 
 def _check_python_version(V: dict) -> None:
@@ -323,7 +334,7 @@ def _drain_deferred_lazy(orch: dict | None, sys_dir: Path, skip_kind: str | None
                     matched = True
                 else:
                     if catalog is None:
-                        catalog = load_json_with_fallback(sys_dir / TOOL_CATALOG_FILENAME)
+                        catalog = _load_tool_catalog(sys_dir)
                     for tool in catalog.get("tools", []):
                         if isinstance(tool, dict) and tool.get("tool_id") == name:
                             aliases = [a.lower() for a in tool.get("aliases", [])]
@@ -918,7 +929,7 @@ def ensure_runtime(name: str, orch: dict | None = None, sys_dir: Path | None = N
 
     _drain_deferred_lazy(orch, sys_dir, skip_kind="runtime", skip_name=name)
 
-    path = sys_dir / "runtimes.json"
+    path = resolve_declared_config(sys_dir, "runtimes.json")
     if not path.exists():
         return {"status": "error", "detail": f"runtimes.json not found at {path}"}
     try:
@@ -1000,7 +1011,7 @@ def ensure_runtime(name: str, orch: dict | None = None, sys_dir: Path | None = N
             (dest_dir / "data").mkdir(parents=True, exist_ok=True)
             seed_vscode_default_settings(dest_dir)
         if name == "nodejs" and res.get("status") == "success":
-            catalog = load_json_with_fallback(sys_dir / TOOL_CATALOG_FILENAME)
+            catalog = _load_tool_catalog(sys_dir)
             for peer in ("claude", "codex"):
                 peer_entry = _resolve_tool_from_catalog(catalog, peer)
                 peer_manifest = sys_dir / "tools" / peer / ".install_manifest.json"
@@ -1254,7 +1265,7 @@ def self_update_peer(tool_id: str, sys_dir: Path | None = None) -> dict:
     """Run declarative self-update command for a tool (e.g. 'agy update') without
     mutating tool-catalog.v1.json. Records observed version in .install_manifest.json."""
     sys_dir = sys_dir or _default_sys_dir()
-    catalog = load_json_with_fallback(sys_dir / TOOL_CATALOG_FILENAME)
+    catalog = _load_tool_catalog(sys_dir)
     tool_entry = _resolve_tool_from_catalog(catalog, tool_id)
     if not tool_entry:
         return {"status": "error", "detail": f"Tool {tool_id!r} not found in catalog"}
@@ -1462,7 +1473,7 @@ def deploy(ctx: dict) -> dict:
     # ── Base runtimes (python/nodejs/git/vscode/pwsh) ─────────────
     print("\n>>> Base runtimes")
     try:
-        raw = json.loads((sys_dir / "runtimes.json").read_text(encoding="utf-8"))
+        raw = json.loads(resolve_declared_config(sys_dir, "runtimes.json").read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ValueError(f"[Error] runtimes.json is not valid JSON: {exc}") from exc
     for rt_name in raw.get("runtimes", {}).keys():

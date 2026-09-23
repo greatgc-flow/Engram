@@ -1316,3 +1316,50 @@ def test_seed_vscode_default_settings_preserves_malformed_existing_file(tmp_path
 
     assert settings_path.read_text(encoding="utf-8") == original
     assert "[WARNING] Could not parse existing VS Code settings" in capsys.readouterr().out
+
+
+def test_resolve_declared_config_live_priority(tmp_path):
+    sys_dir = tmp_path / "_sys"
+    defaults_dir = sys_dir / "defaults"
+    defaults_dir.mkdir(parents=True)
+    live_file = sys_dir / "runtimes.json"
+    default_file = defaults_dir / "runtimes.json"
+    live_file.write_text('{"source": "live"}', encoding="utf-8")
+    default_file.write_text('{"source": "default"}', encoding="utf-8")
+
+    assert pv.resolve_declared_config(sys_dir, "runtimes.json") == live_file
+
+
+def test_resolve_declared_config_defaults_fallback(tmp_path):
+    sys_dir = tmp_path / "_sys"
+    defaults_dir = sys_dir / "defaults"
+    defaults_dir.mkdir(parents=True)
+    default_file = defaults_dir / "runtimes.json"
+    default_file.write_text('{"source": "default"}', encoding="utf-8")
+
+    assert pv.resolve_declared_config(sys_dir, "runtimes.json") == default_file
+
+
+def test_resolve_declared_config_missing(tmp_path):
+    sys_dir = tmp_path / "_sys"
+    sys_dir.mkdir(parents=True)
+
+    assert pv.resolve_declared_config(sys_dir, "nonexistent.json") == sys_dir / "nonexistent.json"
+
+
+def test_load_tool_catalog_and_runtimes_defaults_fallback(tmp_path):
+    sys_dir = tmp_path / "_sys"
+    defaults_dir = sys_dir / "defaults"
+    defaults_dir.mkdir(parents=True)
+    (defaults_dir / "tool-catalog.v1.json").write_text('{"tools": [{"tool_id": "test_tool"}]}', encoding="utf-8")
+    (defaults_dir / "runtimes.json").write_text(json.dumps({
+        "runtimes": {"python": {"version": "3.14.5"}},
+        "tools": {"test_tool": {}},
+    }), encoding="utf-8")
+
+    cat = pv._load_tool_catalog(sys_dir)
+    assert cat.get("tools", [])[0]["tool_id"] == "test_tool"
+
+    V, URLS, tools = pv._load_runtimes(sys_dir)
+    assert V["Python"] == "3.14.5"
+    assert "test_tool" in tools

@@ -34,8 +34,8 @@ if not exist "!SYS_DIR!\tool-catalog.v1.json" copy /y "!SYS_DIR!\defaults\tool-c
 
 :: -- Runtime config from runtimes.json (fallback if missing) --
 set "_RT=!SYS_DIR!\runtimes.json"
-set "PY_VER=3.13.4"
-set "PY_URL=https://www.python.org/ftp/python/3.13.4/python-3.13.4-embed-amd64.zip"
+set "PY_VER=3.14.5"
+set "PY_URL=https://www.python.org/ftp/python/3.14.5/python-3.14.5-embed-amd64.zip"
 set "GET_PIP_URL=https://bootstrap.pypa.io/get-pip.py"
 if exist "!_RT!" (
     for /f "usebackq delims=" %%v in (`powershell -NoProfile -Command "((Get-Content '!_RT!')|ConvertFrom-Json).runtimes.python.version"`) do set "PY_VER=%%v"
@@ -46,7 +46,7 @@ if exist "!_RT!" (
 set "PY_DIR=!SYS_DIR!\env\python"
 set "PY_EXE=!PY_DIR!\python.exe"
 set "_PY_BUMP=0"
-set "_OLD_PY_VER=%PY_VER%"
+set "_OLD_PY_VER=!PY_VER!"
 
 :: An existing interpreter must match the declaration before discovery can run.
 :: Safe in-place Python replacement is not implemented, so never rewrite the pin

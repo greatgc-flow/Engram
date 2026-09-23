@@ -97,8 +97,8 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     normalized_only = check_tool_updates.normalize_only_list(getattr(args, "only", None))
     only_set = set(normalized_only) if normalized_only is not None else None
 
-    live_runtimes = provisioner.load_json_with_fallback(_SYS_DIR / "runtimes.json")
-    catalog = provisioner.load_json_with_fallback(_SYS_DIR / provisioner.TOOL_CATALOG_FILENAME)
+    live_runtimes = provisioner.load_json_with_fallback(provisioner.resolve_declared_config(_SYS_DIR, "runtimes.json"))
+    catalog = provisioner.load_json_with_fallback(provisioner.resolve_declared_config(_SYS_DIR, provisioner.TOOL_CATALOG_FILENAME))
 
     if only_set is not None:
         valid_names: set[str] = {"engram", "core"}

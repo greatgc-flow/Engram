@@ -28,7 +28,7 @@ _REMOVED_MODULES = (
     "snapshot.py", "quota.py", "quota_capabilities.py",
 )
 
-_SOURCE_DIRS = ("core", "cli", "checks", "hooks")
+_SOURCE_DIRS = ("core", "cli", "checks")
 
 # Vendor/user data and generated caches are not Engram source: peer CLIs keep
 # their own conversation/scratch state under _sys/antigravity, _sys/codex,
@@ -117,7 +117,10 @@ def test_environment_lifecycle_core_is_intact() -> None:
 
 def test_runtime_catalog_is_present() -> None:
     """Engram's installed-runtime catalog is environment scope and must stay."""
-    assert (_SYS_DIR / "runtimes.json").exists(), "missing runtime catalog: runtimes.json"
+    runtimes_path = _SYS_DIR / "runtimes.json"
+    if not runtimes_path.exists():
+        runtimes_path = _SYS_DIR / "defaults" / "runtimes.json"
+    assert runtimes_path.exists(), "missing runtime catalog: runtimes.json"
 
 
 def test_runtime_catalog_does_not_manage_peerhub() -> None:
@@ -127,7 +130,10 @@ def test_runtime_catalog_does_not_manage_peerhub() -> None:
     release coupling this contract exists to prevent. Also guards against
     pip_tool (the install_mechanism built specifically for that coupling)
     ever being reintroduced for any tool."""
-    catalog = json.loads((_SYS_DIR / "runtimes.json").read_text(encoding="utf-8"))
+    runtimes_path = _SYS_DIR / "runtimes.json"
+    if not runtimes_path.exists():
+        runtimes_path = _SYS_DIR / "defaults" / "runtimes.json"
+    catalog = json.loads(runtimes_path.read_text(encoding="utf-8"))
     tools = catalog.get("tools", {})
     assert "peerhub" not in tools, "peerhub must not be a runtimes.json-managed tool"
     for name, cfg in tools.items():

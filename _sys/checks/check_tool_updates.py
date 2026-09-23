@@ -119,7 +119,10 @@ def _iter_discoverable_entries(runtimes: dict[str, Any], only: list[str] | None 
                 continue
             yield section, name, cfg, str(provider), None, None
 
-    catalog = provisioner.load_json_with_fallback(RUNTIMES_PATH.parent / provisioner.TOOL_CATALOG_FILENAME)
+    catalog_lookup = RUNTIMES_PATH.parent / provisioner.TOOL_CATALOG_FILENAME
+    if not catalog_lookup.exists() and RUNTIMES_PATH.parent == _SYS_DIR:
+        catalog_lookup = _SYS_DIR / "defaults" / provisioner.TOOL_CATALOG_FILENAME
+    catalog = provisioner.load_json_with_fallback(catalog_lookup)
     for tool in catalog.get("tools", []):
         if not isinstance(tool, dict):
             continue
@@ -168,11 +171,14 @@ def discover_updates(
     only: Sequence[str] | None = None,
     allow_major_runtime_upgrade: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
-    base_sha = _sha256_file(RUNTIMES_PATH)
-    catalog_base_sha = _sha256_file(CATALOG_PATH) if CATALOG_PATH.exists() else None
-    runtimes = _read_json(RUNTIMES_PATH)
+    defaults_dir = _SYS_DIR / "defaults" if RUNTIMES_PATH.parent == _SYS_DIR else RUNTIMES_PATH.parent / "defaults"
+    runtimes_source = RUNTIMES_PATH if RUNTIMES_PATH.exists() else (defaults_dir / "runtimes.json")
+    catalog_source = CATALOG_PATH if CATALOG_PATH.exists() else (defaults_dir / provisioner.TOOL_CATALOG_FILENAME)
+    base_sha = _sha256_file(runtimes_source)
+    catalog_base_sha = _sha256_file(catalog_source) if catalog_source.exists() else None
+    runtimes = _read_json(runtimes_source)
     proposed = copy.deepcopy(runtimes)
-    catalog = _read_json(CATALOG_PATH) if CATALOG_PATH.exists() else {}
+    catalog = _read_json(catalog_source) if catalog_source.exists() else {}
     proposed_catalog = copy.deepcopy(catalog)
 
     payload: dict[str, Any] = {
@@ -385,8 +391,10 @@ def verify_proposal_still_valid(artifact_dir: str | Path) -> bool:
     expected = proposal.get("base_sha256")
     if not isinstance(expected, str) or not expected:
         return False
+    defaults_dir = _SYS_DIR / "defaults" if RUNTIMES_PATH.parent == _SYS_DIR else RUNTIMES_PATH.parent / "defaults"
     try:
-        current = _sha256_file(RUNTIMES_PATH)
+        runtimes_source = RUNTIMES_PATH if RUNTIMES_PATH.exists() else (defaults_dir / "runtimes.json")
+        current = _sha256_file(runtimes_source)
     except OSError:
         return False
     if current != expected:
@@ -395,7 +403,8 @@ def verify_proposal_still_valid(artifact_dir: str | Path) -> bool:
     expected_catalog = proposal.get("catalog_base_sha256")
     if expected_catalog is not None:
         try:
-            current_catalog = _sha256_file(CATALOG_PATH) if CATALOG_PATH.exists() else None
+            catalog_source = CATALOG_PATH if CATALOG_PATH.exists() else (defaults_dir / provisioner.TOOL_CATALOG_FILENAME)
+            current_catalog = _sha256_file(catalog_source) if catalog_source.exists() else None
         except OSError:
             return False
         if current_catalog != expected_catalog:
@@ -504,9 +513,12 @@ def apply_proposal(
         return EXIT_CONFIRMATION_REQUIRED, result
 
     try:
-        shutil.copy2(RUNTIMES_PATH, backup_path)
-        if has_catalog_update and CATALOG_PATH.exists():
-            shutil.copy2(CATALOG_PATH, catalog_backup_path)
+        defaults_dir = _SYS_DIR / "defaults" if RUNTIMES_PATH.parent == _SYS_DIR else RUNTIMES_PATH.parent / "defaults"
+        runtimes_source = RUNTIMES_PATH if RUNTIMES_PATH.exists() else (defaults_dir / "runtimes.json")
+        catalog_source = CATALOG_PATH if CATALOG_PATH.exists() else (defaults_dir / provisioner.TOOL_CATALOG_FILENAME)
+        shutil.copy2(runtimes_source, backup_path)
+        if has_catalog_update and catalog_source.exists():
+            shutil.copy2(catalog_source, catalog_backup_path)
 
         _atomic_write_json(RUNTIMES_PATH, proposed)
         try:
