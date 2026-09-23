@@ -221,6 +221,11 @@ echo.
 echo Options:
 echo   -h, --help, /?  Display this help message
 echo.
+echo Examples:
+echo   engram menu            same as 'engram menu status'
+echo   engram menu enable     first-time setup of the right-click entry
+echo   engram menu clean      after moving/renaming the portable folder, to drop stale registry entries
+echo.
 exit /b 0
 
 :cmd_tidy
@@ -345,5 +350,12 @@ echo   --help, -h            Display this help message
 echo.
 echo Run 'engram ^<command^> --help' for that command's full option list
 echo (e.g. 'engram update --help', 'engram backup --help').
+echo.
+echo Common workflows:
+echo   First time in a new folder:    engram
+echo   Keep everything up to date:    engram update --yes
+echo   Update just the AI CLIs:       engram update --only claude,codex,agy --yes
+echo   Move the folder to a new PC:   engram backup ; (copy folder) ; engram restore PATH
+echo   Something feels broken:        engram doctor
 echo.
 exit /b 0

@@ -539,6 +539,10 @@ def run_backup(ctx: dict) -> None:
         print()
         print("Options:")
         print("  --out PATH   Target path (default: sys_dir/data/backups/engram_backup_<timestamp>.zip)")
+        print()
+        print("Examples:")
+        print("  engram backup                       back up to the default timestamped path")
+        print("  engram backup --out D:\\backups\\my.zip   back up to a specific path")
         sys.exit(0)
 
     out_path = None
@@ -598,6 +602,10 @@ def run_restore(ctx: dict) -> None:
         print("Options:")
         print("  PATH           Path to a backup .zip or bundle directory")
         print("  --force, -f    Overwrite existing live session/project data")
+        print()
+        print("Examples:")
+        print("  engram restore D:\\backups\\my.zip           restore, refusing if it would overwrite live data")
+        print("  engram restore D:\\backups\\my.zip --force   restore, overwriting existing live session/project data")
         sys.exit(0)
 
     force = False
@@ -643,6 +651,11 @@ def run_reset(ctx: dict) -> None:
         print("Options:")
         print("  --yes, -y    Skip the [y/N] confirmation prompt")
         print("  --all        Also delete workspace/ (default: only .engram/)")
+        print()
+        print("Examples:")
+        print("  engram reset                 asks for confirmation, deletes .engram/ only")
+        print("  engram reset --yes           deletes .engram/ without prompting")
+        print("  engram reset --yes --all     also deletes workspace/ (typed folder-name confirmation still required)")
         sys.exit(0)
 
     yes = False

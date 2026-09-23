@@ -120,13 +120,26 @@ class TestTidy:
             after = get_snapshot(mock_env)
             assert before == after
             
+    @pytest.mark.parametrize("flag", ["--help", "-h", "/?"])
+    def test_tidy_help_flag_prints_help_and_touches_nothing(self, flag, mock_env, capsys):
+        with patch.object(tidy_temp, "ROOT", mock_env):
+            before = get_snapshot(mock_env)
+
+            result = tidy_temp.run({"args": [flag]})
+
+            assert result["status"] == "success"
+            assert get_snapshot(mock_env) == before  # help must not delete anything
+            out = capsys.readouterr().out
+            assert "--only" in out
+            assert "Examples:" in out
+
     def test_tidy_apply(self, mock_env):
         with patch.object(tidy_temp, "ROOT", mock_env):
             before = get_snapshot(mock_env)
-            
+
             ctx = {"args": ["--apply"]}
             result = tidy_temp.run(ctx)
-            
+
             assert result["status"] == "success"
             after = get_snapshot(mock_env)
             

@@ -816,6 +816,7 @@ def test_updater_help_flag_prints_help_and_returns_success(flag, capsys):
     out = capsys.readouterr().out
     assert "--allow-major-runtime-upgrade" in out
     assert "--only" in out
+    assert "Examples:" in out
 
 
 

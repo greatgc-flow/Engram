@@ -53,7 +53,20 @@ def _download_and_stage_core_update(
 
 
 def _parse_args(args: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Updater runner")
+    parser = argparse.ArgumentParser(
+        description="Updater runner",
+        epilog=(
+            "Examples:\n"
+            "  engram update                              interactive: show plan, confirm, apply\n"
+            "  engram update --yes                         apply without confirmation\n"
+            "  engram update --check                       show plan only, exit 1 if anything can't be checked (for scripts/CI)\n"
+            "  engram update --dry-run                     discover + show proposal, apply nothing\n"
+            "  engram update --only claude,codex            update just those two AI CLIs\n"
+            "  engram update --only nodejs --allow-major-runtime-upgrade --yes\n"
+            "                                               let Node.js cross a major version (e.g. 22 -> 24)\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
     parser.add_argument("--check", action="store_true", help="Stop after printing plan. Exit 1 if Could not check is non-empty")
     parser.add_argument("--dry-run", action="store_true", help="Discover and show proposal, apply nothing")

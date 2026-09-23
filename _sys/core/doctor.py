@@ -302,6 +302,10 @@ def run(ctx: dict) -> dict[str, Any]:
         print()
         print("Options:")
         print("  --json    Emit machine-readable JSON instead of the formatted report")
+        print()
+        print("Examples:")
+        print("  engram doctor            human-readable health report")
+        print("  engram doctor --json     machine-readable, for scripts/CI")
         return {"status": "success", "detail": "help displayed"}
 
     base_dir = Path(ctx["base_dir"])
