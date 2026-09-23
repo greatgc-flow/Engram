@@ -39,10 +39,19 @@ def test_proc_cwd_uses_resolved_path_in_both_dispatch_branches():
     unrelated-refactor-breaking mock scaffold for a one-token change whose
     correctness is otherwise fully covered by Path.resolve()'s own stdlib
     guarantees.
+
+    2026-09-23: both sites also gained an opt-in `project_dir` override (a
+    peer can be dispatched against an explicit target directory instead of
+    the default ai_root.parent, needed when that target is itself outside
+    the default project -- e.g. a different git repo entirely, which is a
+    stricter case than the SUBST/apparent-path mismatch this test was
+    originally written for). The fallback branch (no project_dir given)
+    must still resolve() ai_root.parent exactly as before.
     """
     hub_source = Path(hub.__file__).read_text(encoding="utf-8")
     occurrences = re.findall(
-        r"proc_cwd\s*=\s*str\(ai_root\.parent(\.resolve\(\))?\)\s+if ai_root else None",
+        r"proc_cwd\s*=\s*str\(Path\(project_dir\)\.resolve\(\)\)\s+if project_dir else "
+        r"\(str\(ai_root\.parent(\.resolve\(\))?\)\s+if ai_root else None\)",
         hub_source,
     )
     assert len(occurrences) == 2, (
@@ -50,5 +59,29 @@ def test_proc_cwd_uses_resolved_path_in_both_dispatch_branches():
         "update this test if a proc_cwd site was added/removed/renamed"
     )
     assert all(resolve_call == ".resolve()" for resolve_call in occurrences), (
-        "every proc_cwd site must call .resolve() -- found an unresolved one"
+        "every proc_cwd site's ai_root.parent fallback must call .resolve() -- found an unresolved one"
     )
+
+
+def test_action_ask_accepts_project_dir_and_threads_it_through_retries():
+    """`project_dir` must be a real parameter on both action_ask and
+    _action_ask_inner, and every recursive self-call of _action_ask_inner
+    (escalation/failover retries) must forward it -- a retry that silently
+    dropped the override would dispatch against the wrong cwd on its second
+    attempt, defeating the whole point of passing --project-dir."""
+    import inspect
+
+    assert "project_dir" in inspect.signature(hub.action_ask).parameters
+    assert "project_dir" in inspect.signature(hub._action_ask_inner).parameters
+
+    hub_source = Path(hub.__file__).read_text(encoding="utf-8")
+    inner_start = hub_source.index("def _action_ask_inner(")
+    inner_body = hub_source[inner_start:]
+    recursive_call_sites = list(re.finditer(r"return _action_ask_inner\(", inner_body))
+    assert len(recursive_call_sites) >= 1, "expected at least one recursive retry call site"
+    for m in recursive_call_sites:
+        call_end = inner_body.index("\n                )", m.start())
+        call_text = inner_body[m.start():call_end]
+        assert "project_dir=project_dir" in call_text, (
+            f"recursive _action_ask_inner call at offset {m.start()} does not forward project_dir"
+        )

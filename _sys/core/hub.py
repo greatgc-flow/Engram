@@ -6119,7 +6119,7 @@ def _maybe_run_arbiter_on_finalize(ai_root, data) -> None:
         print(f"[HUB:WARN] arbiter auto-wire error on finalize: {exc}", file=sys.stderr)
 
 
-def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False, governed_mutation_reason: str | None = None, force_tier0: bool = False, allow_terminal_spend: bool = False, _load_balanced: bool = False, allow_fresh_failover_on_session_reuse: bool = False) -> None:
+def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False, governed_mutation_reason: str | None = None, force_tier0: bool = False, allow_terminal_spend: bool = False, _load_balanced: bool = False, allow_fresh_failover_on_session_reuse: bool = False, project_dir: str | None = None) -> None:
     """Public entry: wraps _action_ask_inner with the LL-20260703-005 governed-
     mutation guard. Governed files are hashed before the peer executes and re-
     hashed in a crash-safe finally that covers BOTH the PTY (_ask_with_pty, ag)
@@ -6171,6 +6171,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             allow_terminal_spend=allow_terminal_spend,
             _load_balanced=_load_balanced,
             ask_id=ask_id,
+            project_dir=project_dir,
         )
     except BaseException as exc:
         inner_exc = exc
@@ -6270,7 +6271,7 @@ def _sweep_stale_ask_temp_dirs(temp_root: Path, max_age_sec: int = 3600) -> None
         pass
 
 
-def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False, force_tier0: bool = False, allow_terminal_spend: bool = False, _load_balanced: bool = False, ask_id: str | None = None, allow_fresh_failover_on_session_reuse: bool = False, _context_failover_visited: frozenset[str] | None = None) -> None:
+def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal", allow_governed_mutation: bool = False, force_tier0: bool = False, allow_terminal_spend: bool = False, _load_balanced: bool = False, ask_id: str | None = None, allow_fresh_failover_on_session_reuse: bool = False, _context_failover_visited: frozenset[str] | None = None, project_dir: str | None = None) -> None:
     if _depth > RUNTIME_ESCALATION_DEPTH_CEILING:
 
         print(f"[ERROR] action_ask: maximum failover depth reached for {to}", file=sys.stderr)
@@ -6747,6 +6748,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     ask_id=ask_id,
                     allow_fresh_failover_on_session_reuse=allow_fresh_failover_on_session_reuse,
                     _context_failover_visited=frozenset(visited),
+                    project_dir=project_dir,
                 )
             else:
                 if explicit_profile:
@@ -6867,7 +6869,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
 
     is_resume_attempt = session_id is not None
     ask_id = ask_id or _short_id("ask-")
-    invocation_cwd = str(ai_root.parent) if ai_root else None
+    invocation_cwd = str(Path(project_dir).resolve()) if project_dir else (str(ai_root.parent) if ai_root else None)
     prepare_input = getattr(adapter, "prepare_input", None)
     if prepare_input is None:
         prepare_input = hub_peer.BaseAdapter().prepare_input
@@ -7014,7 +7016,11 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         # cwd here caused a real apparent-path/real-path mismatch that made
         # Codex reject legitimate writes as "outside the project" (see
         # reference_codex_subst_sandbox_conflict_2026_08_21).
-        proc_cwd = str(ai_root.parent.resolve()) if ai_root else None
+        # project_dir is an explicit opt-in override (e.g. `hub.py ask
+        # --project-dir D:\some\other\repo`) for dispatching work against a
+        # target OUTSIDE the default project root -- resolved the same way,
+        # for the same SUBST/apparent-path-mismatch reason.
+        proc_cwd = str(Path(project_dir).resolve()) if project_dir else (str(ai_root.parent.resolve()) if ai_root else None)
 
         result: "_PtyAskResult | None" = None
         lease_status = "open"
@@ -7221,6 +7227,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     _depth=_depth, _escalation_depth=_escalation_depth + 1, origin=origin,
                     allow_governed_mutation=allow_governed_mutation,
                     force_tier0=force_tier0, ask_id=ask_id,
+                    project_dir=project_dir,
                 )
 
             # ── success: exit 0 + nonempty output + ok output-file ─────
@@ -7296,7 +7303,8 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     # ai_root is typically .ai/ inside the project root; go one level up.
     # Resolved to keep parity with the PTY branch above (A7 CONDITION-1) and
     # to avoid the same SUBST apparent-path/real-path mismatch.
-    proc_cwd = str(ai_root.parent.resolve()) if ai_root else None
+    # project_dir is an explicit opt-in override -- see the PTY branch above.
+    proc_cwd = str(Path(project_dir).resolve()) if project_dir else (str(ai_root.parent.resolve()) if ai_root else None)
 
     logger = _get_logger()
     if logger:
@@ -7578,6 +7586,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
                     _depth=_depth, _escalation_depth=_escalation_depth + 1, origin=origin,
                     allow_governed_mutation=allow_governed_mutation,
                     force_tier0=force_tier0, ask_id=ask_id,
+                    project_dir=project_dir,
                 )
 
             # C1 pass 2: success bookkeeping + REPLY print are deferred to the
@@ -12145,6 +12154,10 @@ def main() -> None:
     parser.add_argument("--allow-terminal-spend", dest="allow_terminal_spend",
                         action="store_true",
                         help="Acknowledge an explicit ask that spends tokens on the human-interface terminal peer")
+    parser.add_argument("--project-dir", dest="project_dir", default=None,
+                        help="ask only: dispatch the peer subprocess with this directory as its cwd/project root "
+                             "instead of the default (ai_root's parent). Opt-in override for a peer whose sandbox "
+                             "(e.g. Codex's workspace-write) otherwise rejects writes outside the default project.")
     parser.add_argument("--rule")
     parser.add_argument("--enforcement-artifact", dest="enforcement_artifact",
                         help="G-bridge artifact path (relative to .ai or knowledge root) whose pass marker gates lesson activation")
@@ -12206,7 +12219,7 @@ def main() -> None:
                 )
                 print(f"[HUB:WARN] auto routing unavailable ({res.get('reason')}); specify an explicit --to", file=sys.stderr)
                 sys.exit(1)
-        action_ask(effective_target, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file, session_policy=args.session_policy, explicit_scope=args.scope, origin=origin, allow_governed_mutation=getattr(args, "allow_governed_mutation", False), governed_mutation_reason=getattr(args, "governed_mutation_reason", None), force_tier0=getattr(args, "force_tier0", False), allow_terminal_spend=getattr(args, "allow_terminal_spend", False), _load_balanced=load_balanced)
+        action_ask(effective_target, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file, session_policy=args.session_policy, explicit_scope=args.scope, origin=origin, allow_governed_mutation=getattr(args, "allow_governed_mutation", False), governed_mutation_reason=getattr(args, "governed_mutation_reason", None), force_tier0=getattr(args, "force_tier0", False), allow_terminal_spend=getattr(args, "allow_terminal_spend", False), _load_balanced=load_balanced, project_dir=getattr(args, "project_dir", None))
         return
     if args.action == "ask-all":
         ai_root_opt = None
