@@ -6929,6 +6929,10 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
 
     # ── Environment Variable Injection ─────────────────────────
     process_env = {**os.environ, "PYTHONUTF8": "1"}
+    # None when project_dir is set (T5 override skipped, see below) -- the
+    # cleanup site (`if ask_temp_dir and ask_temp_dir.exists():`) needs this
+    # bound in both branches.
+    ask_temp_dir: Path | None = None
 
     # ── Per-ask scratch TEMP dir (T5) ────────────────────────────
     # Isolates peer-subprocess temp litter (e.g. cx's small lock/ping files)
