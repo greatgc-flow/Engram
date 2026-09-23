@@ -1,0 +1,16 @@
+{
+  "tool": "delta",
+  "declared_version": "0.19.2",
+  "url": "https://github.com/dandavison/delta/releases/download/0.19.2/delta-0.19.2-x86_64-pc-windows-msvc.zip",
+  "checksum_algo": "sha256",
+  "checksum_value": "ac8ebb4a9f1cbee8b9ea897ba119808a244181adae6f3bed1f3b6b923c50b557",
+  "checksum_source": "computed_tls_trust",
+  "checksum_verified": false,
+  "canary_command": [
+    "delta.exe",
+    "--version"
+  ],
+  "canary_output": "delta 0.19.2\n",
+  "installed_at": "2026-09-23T10:36:12.031845+00:00",
+  "source_config_hash": "6dc43ca98315ff4354a0103279aa69734d3a875f0999f83ad2fb519ab82d438f"
+}

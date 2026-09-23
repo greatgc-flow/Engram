@@ -15,8 +15,26 @@ _state/
 # =================================================================
 # 3. Downloaded Environments, Binaries, and Runtimes
 # =================================================================
-# env/ is bootstrapped via install.bat ??not tracked
-# tools/ are bootstrapped via install.bat / provisioner ??not tracked
+# env/ is bootstrapped via install.bat -- not tracked
+# 2026-09-23: this line documented that intent but never had a matching
+# pattern -- a real dev worktree that ran `engram update` (bootstrapping
+# python/node/git/vscode locally for the first time) would have had it
+# show up as untracked-but-not-ignored, one `git add -A` away from
+# committing hundreds of MB of runtime binaries. Verified via `git
+# ls-files _sys/env/` returning nothing -- this genuinely is never
+# meant to be tracked, unlike _sys/tools/ (see below).
+_sys/env/
+# tools/ are bootstrapped via install.bat / provisioner -- NOT globally
+# ignored: `git ls-files _sys/tools/` shows 145 tracked files (ripgrep,
+# bat, fd, fzf, gh, jq, delta, oh-my-posh, sqlite, ...) -- these small
+# dev-CLI utilities ARE deliberately vendored in git (each with its own
+# .install_manifest.json), confirmed by 117807e's own dependency-update
+# commit modifying several of them. Only ignore the specific AI-peer-CLI
+# subdirs that are NOT part of that vendored set (installed via a
+# different, larger npm/exe mechanism per tool-catalog.v1.json).
+_sys/tools/agy/
+_sys/tools/claude/
+_sys/tools/codex/
 # =================================================================
 # 4. Local Configurations & Device-Specific State
 # =================================================================

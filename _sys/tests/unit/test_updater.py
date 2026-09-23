@@ -53,7 +53,7 @@ def test_updater_not_checked_in_discover_payload(tmp_path, monkeypatch):
     assert "python" in components
     assert "tool1" not in components
 
-def test_updater_run_zero_updates(monkeypatch, capsys):
+def test_updater_run_zero_updates(monkeypatch, capsys, tmp_path):
     """updater run() with zero updates returns success + prints up-to-date."""
     def mock_run(propose_diff=False):
         return {
@@ -63,6 +63,7 @@ def test_updater_run_zero_updates(monkeypatch, capsys):
         }
     monkeypatch.setattr(check_tool_updates, "run", mock_run)
     monkeypatch.setattr("core.updater.check_components", lambda sys_dir: {})
+    monkeypatch.setattr(updater, "_SYS_DIR", tmp_path / "_sys")
     
     res = updater.run({"args": []})
     assert res == {"status": "success", "detail": "No updates discovered"}
@@ -169,6 +170,7 @@ def test_updater_run_declined_prompt(monkeypatch):
 def test_updater_core_channel_git(monkeypatch, capsys, tmp_path):
     import core.updater as updater
     monkeypatch.setattr(updater, '_PORTABLE_ROOT', tmp_path)
+    monkeypatch.setattr(updater, '_SYS_DIR', tmp_path / '_sys')
     (tmp_path / '.git').mkdir()
     def mock_run(propose_diff=False):
         return {'artifact_dir': 'mock_dir', 'updates_discovered': [], 'not_checked': [], 'could_not_check': []}
@@ -182,6 +184,7 @@ def test_updater_core_discovery_error(monkeypatch, capsys, tmp_path):
     import core.updater as updater
     import core.version_resolver as version_resolver
     monkeypatch.setattr(updater, '_PORTABLE_ROOT', tmp_path)
+    monkeypatch.setattr(updater, '_SYS_DIR', tmp_path / '_sys')
     def mock_run(propose_diff=False):
         return {'artifact_dir': 'mock_dir', 'updates_discovered': [], 'not_checked': [], 'could_not_check': []}
     monkeypatch.setattr(updater.check_tool_updates, 'run', mock_run)
@@ -416,6 +419,7 @@ def test_updater_core_channel_winget(monkeypatch, capsys, tmp_path):
     engram_root.mkdir(parents=True)
     
     monkeypatch.setattr(updater, '_PORTABLE_ROOT', engram_root)
+    monkeypatch.setattr(updater, '_SYS_DIR', tmp_path / '_sys')
     monkeypatch.setattr(os, 'environ', {'LOCALAPPDATA': str(local_appdata)})
     
     def mock_run(propose_diff=False):

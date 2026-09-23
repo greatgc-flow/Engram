@@ -1,0 +1,16 @@
+{
+  "tool": "bat",
+  "declared_version": "0.26.1",
+  "url": "https://github.com/sharkdp/bat/releases/download/v0.26.1/bat-v0.26.1-x86_64-pc-windows-msvc.zip",
+  "checksum_algo": "sha256",
+  "checksum_value": "0f729b4b6f5f28d395c641eacc2e9ff68d0096b85aa0eec344aa62425144b69b",
+  "checksum_source": "computed_tls_trust",
+  "checksum_verified": false,
+  "canary_command": [
+    "bat.exe",
+    "--version"
+  ],
+  "canary_output": "bat 0.26.1 (979ba22)\n",
+  "installed_at": "2026-09-23T10:36:09.384450+00:00",
+  "source_config_hash": "262daec14245e7a50c5caf7855f609fa001e2224483454a809d75b22780f03ea"
+}

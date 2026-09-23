@@ -21,16 +21,17 @@
             "discovery_id": "lts"
         },
         "git": {
-            "version": "2.49.0",
-            "url": "https://github.com/git-for-windows/git/releases/download/v2.49.0.windows.1/PortableGit-2.49.0-64-bit.7z.exe",
+            "version": "2.55.0.windows.5",
+            "url": "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/PortableGit-2.55.0.5-64-bit.7z.exe",
             "install_mechanism": "sfx_exe",
             "discovery_provider": "github_releases_exact",
             "discovery_id": "git-for-windows/git",
-            "asset_pattern": "^PortableGit-[0-9.]+.*-64-bit\\.7z\\.exe$"
+            "asset_pattern": "^PortableGit-[0-9.]+.*-64-bit\\.7z\\.exe$",
+            "sha256": "5aa8a20f6e9abb2c755f0e73c91c687701a46b309ad84a0ca6509380fa4ae290"
         },
         "vscode": {
-            "version": "1.100.2",
-            "url": "https://update.code.visualstudio.com/1.100.2/win32-x64-archive/stable",
+            "version": "1.139.0",
+            "url": "https://vscode.download.prss.microsoft.com/dbazure/download/stable/2242ebbb54efeeb0129e08e919e7e8d43033cd83/VSCode-win32-x64-1.139.0.zip",
             "install_mechanism": "zip_tool",
             "archive_layout": "preserve_tree",
             "strip_components": 0,
@@ -38,17 +39,19 @@
                 "data"
             ],
             "discovery_provider": "vscode_official",
-            "discovery_id": "win32-x64-archive"
+            "discovery_id": "win32-x64-archive",
+            "sha256": "5704079f62ac28bb12efa19bcd5c94e30f0fecc615ee69735a8096294e40610b"
         },
         "pwsh": {
-            "version": "7.6.2",
-            "url": "https://github.com/PowerShell/PowerShell/releases/download/v7.6.2/PowerShell-7.6.2-win-x64.zip",
+            "version": "7.6.6",
+            "url": "https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/PowerShell-7.6.6-win-x64.zip",
             "install_mechanism": "zip_tool",
             "archive_layout": "preserve_tree",
             "strip_components": 0,
             "discovery_provider": "github_releases_exact",
             "discovery_id": "PowerShell/PowerShell",
-            "asset_pattern": "^PowerShell-[0-9.]+-win-x64\\.zip$"
+            "asset_pattern": "^PowerShell-[0-9.]+-win-x64\\.zip$",
+            "sha256": "02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c860"
         }
     },
     "tools": {
@@ -87,8 +90,8 @@
             }
         },
         "fd": {
-            "version": "10.4.2",
-            "url": "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-x86_64-pc-windows-msvc.zip",
+            "version": "10.5.0",
+            "url": "https://github.com/sharkdp/fd/releases/download/v10.5.0/fd-v10.5.0-x86_64-pc-windows-gnu.zip",
             "type": "zip",
             "bin": "fd.exe",
             "discovery_provider": "github_releases",
@@ -121,8 +124,8 @@
             }
         },
         "fzf": {
-            "version": "0.74.1",
-            "url": "https://github.com/junegunn/fzf/releases/download/v0.74.1/fzf-0.74.1-windows_amd64.zip",
+            "version": "0.74.4",
+            "url": "https://github.com/junegunn/fzf/releases/download/v0.74.4/fzf-0.74.4-windows_amd64.zip",
             "type": "zip",
             "bin": "fzf.exe",
             "discovery_provider": "github_releases",
@@ -155,8 +158,8 @@
             }
         },
         "gh": {
-            "version": "2.96.0",
-            "url": "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_windows_amd64.zip",
+            "version": "2.101.0",
+            "url": "https://github.com/cli/cli/releases/download/v2.101.0/gh_2.101.0_windows_amd64.zip",
             "type": "zip",
             "bin": "gh.exe",
             "discovery_provider": "github_releases",
@@ -172,8 +175,8 @@
             }
         },
         "sqlite": {
-            "version": "3.53.3",
-            "url": "https://www.sqlite.org/2026/sqlite-tools-win-x64-3530300.zip",
+            "version": "3.53.4",
+            "url": "https://www.sqlite.org/2026/sqlite-tools-win-x64-3530400.zip",
             "type": "zip",
             "bin": "sqlite3.exe",
             "discovery_provider": "sqlite_org_page",
@@ -187,11 +190,11 @@
                 "timeout_sec": 5,
                 "expect_regex": "\\d+\\.\\d+\\.\\d+"
             },
-            "sha3_256": "b943f8ec7ab77433df44520a27ea65744a792e68a25c05b48823168496b3ccdb"
+            "sha3_256": "88b4659fe747896b853af10157316b4ade143553efb89c1c8ca7423a278dcc8b"
         },
         "oh-my-posh": {
-            "version": "29.33.0",
-            "url": "https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v29.33.0/posh-windows-amd64.exe",
+            "version": "31.3.0",
+            "url": "https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v31.3.0/posh-windows-amd64.exe",
             "type": "exe",
             "bin": "oh-my-posh.exe",
             "discovery_provider": "github_releases",
