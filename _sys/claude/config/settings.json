@@ -1,4 +1,7 @@
 {
+  "env": {
+    "CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP": "1"
+  },
   "permissions": {
     "allow": [
       "Bash(codex exec *)",

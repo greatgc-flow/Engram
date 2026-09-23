@@ -23,6 +23,8 @@ _sys/env/
 _sys/tools/apps/
 # tools/agy/ — native binary (150MB+), bootstrapped via setup.py
 _sys/tools/agy/
+# tools/codex/ — bootstrapped install manifest, machine-local
+_sys/tools/codex/
 _sys/data/temp/
 _sys/data/setup-files/
 _sys/data/logs/
@@ -73,6 +75,7 @@ _sys/claude/config/cache/
 _sys/claude/config/daemon.lock
 _sys/claude/config/daemon.status.json
 _sys/claude/config/daemon/
+_sys/claude/config/feedback/
 _sys/claude/config/file-history/
 _sys/claude/config/history.jsonl
 _sys/claude/config/jobs/
@@ -84,6 +87,7 @@ _sys/claude/config/projects/
 _sys/claude/config/sessions/
 _sys/claude/config/session-env/
 _sys/claude/config/shell-snapshots/
+_sys/claude/config/skills/
 _sys/claude/config/stats-cache.json
 _sys/claude/config/tasks/
 _sys/claude/config/telemetry/
@@ -119,7 +123,9 @@ _sys/antigravity/ipc-config/
 _sys/antigravity/config/scratch/
 _sys/antigravity/config/skills/
 _sys/antigravity/config/jetski_state.pbtxt
+_sys/antigravity/config/jetbox_summaries_proto.pb
 _sys/antigravity/config/presence/
+_sys/antigravity/config/annotations/
 # Phantom nested _sys/ that a mis-resolved cwd occasionally recreates here
 # (worker cwd = config/ instead of the true portable root) — never legit.
 _sys/antigravity/config/_sys/
@@ -153,6 +159,13 @@ _sys/gemini/config/policies/auto-saved.toml
 
 # AI runtime state (changes every session — not tracked)
 _sys/data/operational_errors.jsonl
+_sys/ai/ask_history.jsonl
+_sys/ai/leases.json
+_sys/ai/mailbox.json
+_sys/ai/nodes.json
+_sys/ai/routing_metrics.jsonl
+_sys/ai/state.json
+_sys/ai/task_registry.json
 _sys/ai/runtime-directives.jsonl
 _sys/ai/snapshots/*
 !_sys/ai/snapshots/hub_api.json
@@ -182,6 +195,7 @@ _sys/codex/config/history.jsonl
 _sys/codex/config/installation_id
 _sys/codex/config/models_cache.json
 _sys/codex/config/plugins/
+_sys/codex/config/session_index.jsonl
 _sys/codex/config/skills/
 _sys/codex/config/version.json
 

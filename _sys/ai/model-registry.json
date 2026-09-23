@@ -1,7 +1,8 @@
 {
   "_version": "2.0",
-  "_updated": "2026-07-13",
-  "_as_of": "2026-07-13",
+  "_updated": "2026-09-18",
+  "_as_of": "2026-09-18",
+  "_update_note_2026_09_18": "Added claude-fable-5-1 and gpt-6-astra entries -- both were already live in orchestration.json's profile configs (cc.fable, cx.astra) but missing from this vendor-facts registry. No other entries changed; every other model's own validated_at date still reflects when IT was last independently checked, not this pass.",
   "_purpose": "Vendor-documented model facts. Runtime CLI availability is recorded separately in orchestration.json profiles.",
   "_source_policy": "Only official vendor documentation or local CLI observation. Unknown values are omitted, never inferred.",
   "sources": {
@@ -19,7 +20,17 @@
       "pricing_usd_per_1m": {"input": 10.0, "output": 50.0},
       "status": "GA",
       "confidence": "documented",
-      "validated_at": "2026-06-20"
+      "validated_at": "2026-06-20",
+      "_note": "Superseded by claude-fable-5-1 for cc.fable (2026-09-08 model-currency sweep, orchestration.json). Kept as a historical registry entry -- context_limit/output_limit/pricing were validated for this specific id, not confirmed to carry over to 5-1."
+    },
+    "claude-fable-5-1": {
+      "provider": "anthropic",
+      "status": "catalog_present",
+      "confidence": "cli_catalog",
+      "source_tag": "cli_catalog",
+      "validation_method": "cli_extracted_catalog_listing",
+      "validated_at": "2026-09-08",
+      "_note": "cc.fable's current model_id (orchestration.json, 2026-09-08 model-currency sweep, bumped from claude-fable-5). Confirmed present in the CLI's own extracted model catalog (not an 'unrecognized_model' error), but NEVER confirmed via a working self-identifying reply -- the fable family has been credit-exhausted since discovery, both claude-fable-5 and claude-fable-5-1 returning a distinct 'you're out of usage credits' signature. context_limit/output_limit/pricing intentionally omitted per this registry's source policy -- no vendor documentation or live-surfaced figure has been obtained; do not assume identical to claude-fable-5."
     },
     "gpt-5.5": {
       "provider": "openai",
@@ -87,6 +98,18 @@
       "source_tag": "cli_live",
       "validation_method": "codex_debug_models",
       "validated_at": "2026-07-13"
+    },
+    "gpt-6-astra": {
+      "provider": "openai",
+      "context_limit": 272000,
+      "_context_limit_note": "2026-09-12: measured via `codex debug models` (free, local, no API call) -- reports context_window=272000, max_context_window=872000 (extended). Registry records the base 272000 to match cx.standard/cx.effort's convention; the extended 872000 figure is not used for routing.",
+      "reasoning_effort": ["xhigh"],
+      "status": "GA",
+      "confidence": "cli_live",
+      "source_tag": "cli_live",
+      "validation_method": "codex_debug_models_free_local_query",
+      "validated_at": "2026-09-12",
+      "_note": "cx.astra's pinned model (orchestration.json) -- a dedicated opt-in tier for reserved high-stakes use (e.g. final design ratification), kept separate from cx.deepthink's routine default. History: bumped cx.deepthink to gpt-6-astra 2026-09-08 (tied correctness vs gpt-5.6-sol in a bake-off), reverted cx.deepthink back to gpt-5.6-sol 2026-09-09 because gpt-6-astra's quota_families X consumption was judged too high for routine use -- a cost decision, not a quality one. pricing_usd_per_1m intentionally omitted -- not yet documented or observed."
     },
     "o3": {
       "provider": "openai",
