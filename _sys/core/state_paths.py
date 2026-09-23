@@ -3,6 +3,14 @@ from pathlib import Path
 
 REGISTER_STATE_FILENAME = "register.state.json"
 
+# Filenames that look like vendor credentials -- centralized shared constant
+# used by _sys/checks/backup_personal_data.py (defensive check on allowlist)
+# and _sys/core/migrate_ais_to_engram.py (visibility guard during migration).
+CREDENTIAL_SHAPED_NAMES = frozenset({
+    "auth.json", ".credentials.json", "credentials.json", "token.json",
+    "hosts.yml",
+})
+
 def state_dir(sys_dir: Path) -> Path:
     return sys_dir / "data" / "state"
 

@@ -43,6 +43,10 @@ from root import bootstrap_root_package  # noqa: E402
 bootstrap_root_package(_SYS_DIR)
 
 from provisioner import _is_peer_leased  # noqa: E402  (private, deliberate reuse -- see module docstring)
+try:
+    from _sys.core.state_paths import CREDENTIAL_SHAPED_NAMES  # noqa: E402
+except ImportError:
+    from state_paths import CREDENTIAL_SHAPED_NAMES  # noqa: E402
 
 # Filenames that look like vendor credentials -- never silently unremarked
 # during a move. `.ais/` should never have held these (backup_personal_data.py
@@ -50,10 +54,8 @@ from provisioner import _is_peer_leased  # noqa: E402  (private, deliberate reus
 # D:\tttt DOES accumulate real auth state once redirected there for real
 # use, so this is a visibility guard (loudly reported), not a block --
 # blocking would defeat the actual point of moving a live root.
-_CREDENTIAL_SHAPED_NAMES = frozenset({
-    "auth.json", ".credentials.json", "credentials.json", "token.json",
-    "hosts.yml",
-})
+# Centralized in state_paths.py; alias preserved for internal compatibility.
+_CREDENTIAL_SHAPED_NAMES = CREDENTIAL_SHAPED_NAMES
 
 
 class MigrationRefused(RuntimeError):
@@ -63,7 +65,7 @@ class MigrationRefused(RuntimeError):
 def _find_credential_shaped_files(root: Path) -> list[Path]:
     found = []
     for path in root.rglob("*"):
-        if path.is_file() and path.name.lower() in _CREDENTIAL_SHAPED_NAMES:
+        if path.is_file() and path.name.lower() in CREDENTIAL_SHAPED_NAMES:
             found.append(path)
     return found
 

@@ -66,12 +66,12 @@ bootstrap_root_package(_SYS_DIR)
 # and the basis of the behavioral test that a live .engram/ containing
 # these names never produces a bundle containing them -- the actual
 # safeguard is that ITEMS below is an explicit named allowlist, so a
-# credential file simply has no entry that would ever copy it. Matches
-# _sys/core/migrate_ais_to_engram.py's own list.
-CREDENTIAL_SHAPED_NAMES = frozenset({
-    "auth.json", ".credentials.json", "credentials.json", "token.json",
-    "hosts.yml",
-})
+# credential file simply has no entry that would ever copy it. Centralized
+# in _sys/core/state_paths.py, shared with _sys/core/migrate_ais_to_engram.py.
+try:
+    from _sys.core.state_paths import CREDENTIAL_SHAPED_NAMES  # noqa: E402
+except ImportError:
+    from state_paths import CREDENTIAL_SHAPED_NAMES  # noqa: E402
 
 
 @dataclass(frozen=True)
