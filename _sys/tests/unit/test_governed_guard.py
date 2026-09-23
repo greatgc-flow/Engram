@@ -211,6 +211,31 @@ def test_c1_ordinary_ask_clean_ask_guard_record(monkeypatch, tmp_path):
     assert rec["unattributed_files"] == []
 
 
+def test_ask_id_retries_past_a_colliding_guard_record(monkeypatch, tmp_path):
+    """_short_id() is only 4 hex chars (65536 values) -- a real collision was
+    hit in practice (2026-09-23, see [[project_hub_project_dir_feature_2026_09_23]]).
+    action_ask() must pick a fresh, non-colliding ask_id rather than crashing
+    on the first generated one that happens to already have a guard record."""
+    _make_governed(tmp_path, monkeypatch, name="clean.json", body="original")
+    ai_root = tmp_path / ".ai"
+    monkeypatch.setattr(hub, "_phantom_scan", lambda *a, **k: set())
+    monkeypatch.setattr(hub, "_action_ask_inner", lambda *a, **k: None)
+
+    (ai_root / "ask_guards").mkdir(parents=True)
+    (ai_root / "ask_guards" / "ask-dupe.json").write_text("{}", encoding="utf-8")
+
+    ids = iter(["ask-dupe", "ask-dupe", "ask-fresh"])
+    monkeypatch.setattr(hub, "_short_id", lambda prefix="": next(ids))
+
+    hub.action_ask("cc", "q", None, 10, ai_root)
+
+    guards = {p.stem for p in (ai_root / "ask_guards").glob("*.json")}
+    assert guards == {"ask-dupe", "ask-fresh"}, (
+        "must keep the pre-existing record untouched and create a new one "
+        "under a fresh, non-colliding id"
+    )
+
+
 def test_c1_unattributed_change_quarantined_not_reverted(monkeypatch, tmp_path):
     """C1 scenario B: an unattributed change during the ask window is
     quarantined (never reverted), the dispatching peer receives NO health

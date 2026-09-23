@@ -6144,8 +6144,20 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         _log_p2p("AUDIT", f"governed_mutation_bypass_granted: origin={origin} reason={governed_mutation_reason!r}", from_node="GUARD")
     gov_pre: dict[str, str] | None = None
     phantom_pre: set[str] | None = None
-    ask_id = _short_id("ask-")
     effective_ai_root = ai_root or (_REPO_ROOT / ".ai")
+    # _short_id() is only 4 hex chars (65536 values) -- a real collision
+    # risk under the ask volume this system sees over time (already noted
+    # at _lease_open, which sidesteps it with a full uuid4 instead; ask_id
+    # stays short for log/output readability, so retry-on-collision here
+    # instead of widening the format). _create_ask_guard_record() must stay
+    # fail-closed against a genuine reuse/collision (see its own comment) --
+    # this just makes sure a freshly-generated id doesn't collide with an
+    # old one before that guard ever has to fire.
+    ask_id = _short_id("ask-")
+    for _ask_id_retry in range(5):
+        if not (effective_ai_root / "ask_guards" / f"{ask_id}.json").exists():
+            break
+        ask_id = _short_id("ask-")
 
     if not allow_governed_mutation:
         # C1: pre-dispatch snapshot + AskGuardRecord creation is fail-closed
