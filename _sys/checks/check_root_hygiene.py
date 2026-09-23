@@ -43,6 +43,7 @@ ALLOWLIST = {
     "engram.cmd",
     "Engram.exe",
     "GEMINI.md",
+    "hub_ask_temp",
     "LICENSE",
     "manifests",
     "output",

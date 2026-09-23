@@ -36,6 +36,11 @@ def test_allowlist_includes_contributing_and_github():
     assert ".github" in ALLOWLIST
 
 
+def test_allowlist_includes_hub_ask_temp():
+    """hub_ask_temp/ is gitignored scratch dir for hub.py --project-dir targets."""
+    assert "hub_ask_temp" in ALLOWLIST
+
+
 @patch("check_root_hygiene.PORTABLE_ROOT")
 def test_check_root_clean(mock_root):
     # Mock PORTABLE_ROOT.iterdir to return only ALLOWLIST items
