@@ -169,8 +169,13 @@ if not exist "%SYS_PATH%\env\python\python.exe" (
 exit /b 0
 
 :cmd_doctor
+if "%~1"=="/?" goto :dispatch_doctor
+if "%~1"=="-h" goto :dispatch_doctor
+if "%~1"=="--help" goto :dispatch_doctor
+if /i "%~1"=="help" goto :dispatch_doctor
 call :check_setup
 if errorlevel 1 exit /b 1
+:dispatch_doctor
 call "%SYS_PATH%\core\dispatch.bat" doctor %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
@@ -221,41 +226,76 @@ echo.
 echo Options:
 echo   -h, --help, /?  Display this help message
 echo.
+echo Examples:
+echo   engram menu            same as 'engram menu status'
+echo   engram menu enable     first-time setup of the right-click entry
+echo   engram menu clean      after moving/renaming the portable folder, to drop stale registry entries
+echo.
 exit /b 0
 
 :cmd_tidy
+if "%~1"=="/?" goto :dispatch_tidy
+if "%~1"=="-h" goto :dispatch_tidy
+if "%~1"=="--help" goto :dispatch_tidy
+if /i "%~1"=="help" goto :dispatch_tidy
 call :check_setup
 if errorlevel 1 exit /b 1
+:dispatch_tidy
 call "%SYS_PATH%\core\dispatch.bat" tidy %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :cmd_update
+if "%~1"=="/?" goto :dispatch_update
+if "%~1"=="-h" goto :dispatch_update
+if "%~1"=="--help" goto :dispatch_update
+if /i "%~1"=="help" goto :dispatch_update
 call :check_setup
 if errorlevel 1 exit /b 1
+:dispatch_update
 call "%SYS_PATH%\core\dispatch.bat" update %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :cmd_uninstall
+if "%~1"=="/?" goto :dispatch_uninstall
+if "%~1"=="-h" goto :dispatch_uninstall
+if "%~1"=="--help" goto :dispatch_uninstall
+if /i "%~1"=="help" goto :dispatch_uninstall
 call :check_setup
 if errorlevel 1 exit /b 1
+:dispatch_uninstall
 call "%SYS_PATH%\core\dispatch.bat" uninstall %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :cmd_backup
+if "%~1"=="/?" goto :dispatch_backup
+if "%~1"=="-h" goto :dispatch_backup
+if "%~1"=="--help" goto :dispatch_backup
+if /i "%~1"=="help" goto :dispatch_backup
 call :check_setup
 if errorlevel 1 exit /b 1
+:dispatch_backup
 call "%SYS_PATH%\core\dispatch.bat" backup %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :cmd_restore
+if "%~1"=="/?" goto :dispatch_restore
+if "%~1"=="-h" goto :dispatch_restore
+if "%~1"=="--help" goto :dispatch_restore
+if /i "%~1"=="help" goto :dispatch_restore
 call :check_setup
 if errorlevel 1 exit /b 1
+:dispatch_restore
 call "%SYS_PATH%\core\dispatch.bat" restore %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
 :cmd_reset
+if "%~1"=="/?" goto :dispatch_reset
+if "%~1"=="-h" goto :dispatch_reset
+if "%~1"=="--help" goto :dispatch_reset
+if /i "%~1"=="help" goto :dispatch_reset
 call :check_setup
 if errorlevel 1 exit /b 1
+:dispatch_reset
 call "%SYS_PATH%\core\dispatch.bat" reset %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
@@ -342,5 +382,15 @@ echo.
 echo Options:
 echo   --version, -v         Display Engram version information
 echo   --help, -h            Display this help message
+echo.
+echo Run 'engram ^<command^> --help' for that command's full option list
+echo (e.g. 'engram update --help', 'engram backup --help').
+echo.
+echo Common workflows:
+echo   First time in a new folder:    engram
+echo   Keep everything up to date:    engram update --yes
+echo   Update just the AI CLIs:       engram update --only claude,codex,agy --yes
+echo   Move the folder to a new PC:   engram backup ; (copy folder) ; engram restore PATH
+echo   Something feels broken:        engram doctor
 echo.
 exit /b 0

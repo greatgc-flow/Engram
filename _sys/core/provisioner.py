@@ -864,6 +864,48 @@ def ensure_tool(name: str, orch: dict | None = None, sys_dir: Path | None = None
     return {"status": "error", "detail": f"Unknown install_mechanism {mechanism!r}"}
 
 
+def seed_vscode_default_settings(vscode_dir: Path) -> None:
+    """Ensure portable VS Code has a safe built-in update setting.
+
+    Engram's own updater is the manifest-tracked owner of this binary's
+    version (see version_resolver.py's vscode_official discovery provider);
+    VS Code's built-in self-updater checking (and occasionally succeeding
+    at replacing itself) behind Engram's back would silently desync the
+    on-disk binary from what release-manifests/*.json records as installed.
+    Existing settings are preserved: ``update.mode`` is added only when it is
+    absent, and an unreadable or non-object settings file is left untouched.
+    """
+    settings_path = vscode_dir / "data" / "user-data" / "User" / "settings.json"
+    if settings_path.exists():
+        try:
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(
+                f"[WARNING] Could not parse existing VS Code settings at "
+                f"{settings_path}; leaving it unchanged: {exc}"
+            )
+            return
+        if not isinstance(settings, dict):
+            print(
+                f"[WARNING] Existing VS Code settings at {settings_path} is "
+                "not a JSON object; leaving it unchanged."
+            )
+            return
+        if "update.mode" in settings:
+            return
+        settings["update.mode"] = "none"
+        settings_path.write_text(
+            json.dumps(settings, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        return
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(
+        json.dumps({"update.mode": "none"}, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
 def ensure_runtime(name: str, orch: dict | None = None, sys_dir: Path | None = None, force: bool = False) -> dict:
     """Install or update a base runtime (nodejs/git/vscode/pwsh) from
     runtimes.json's `runtimes` dict. Python is a special bootstrap-only case:
@@ -956,6 +998,7 @@ def ensure_runtime(name: str, orch: dict | None = None, sys_dir: Path | None = N
         res = _install_atomic(name, cfg, manifest_path, env_dir, sys_dir, force=force)
         if name == "vscode" and res.get("status") == "success":
             (dest_dir / "data").mkdir(parents=True, exist_ok=True)
+            seed_vscode_default_settings(dest_dir)
         if name == "nodejs" and res.get("status") == "success":
             catalog = load_json_with_fallback(sys_dir / TOOL_CATALOG_FILENAME)
             for peer in ("claude", "codex"):

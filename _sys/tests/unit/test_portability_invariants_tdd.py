@@ -117,8 +117,14 @@ class TestVSCodePortableMode:
 
         # Verify new binary
         assert (vscode_dir / "Code.exe").read_bytes() == b"fake binary v2"
-        # Verify preserved data/
-        assert (user_data / "settings.json").read_text(encoding="utf-8") == '{"editor.fontSize": 14}'
+        # Verify preserved data/ -- settings.json's own content is preserved
+        # and merged (not replaced): seed_vscode_default_settings() adds
+        # update.mode=none to an existing file that lacks it (2026-09-23 fix
+        # for existing installs, not just fresh ones), so the original key
+        # survives alongside the merged one rather than the file staying
+        # byte-identical.
+        settings = json.loads((user_data / "settings.json").read_text(encoding="utf-8"))
+        assert settings == {"editor.fontSize": 14, "update.mode": "none"}
         assert (extensions_dir / "test.ext").read_text(encoding="utf-8") == "ext_payload"
 
     def test_launcher_creates_data_directory_if_missing(self, tmp_path, monkeypatch):

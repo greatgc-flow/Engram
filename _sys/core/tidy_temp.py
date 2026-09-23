@@ -374,7 +374,16 @@ def build_plan(now: float | None = None, deep: bool = False) -> list[tuple[str, 
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(
+        epilog=(
+            "Examples:\n"
+            "  engram tidy                       dry run: show what would be deleted\n"
+            "  engram tidy --apply                actually delete the planned items\n"
+            "  engram tidy --apply --deep         also clean old launcher logs\n"
+            "  engram tidy --apply --only pycache,pip_cache   clean just those two categories\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     ap.add_argument("--base-dir", default=None, help="Root directory (default: ROOT)")
     ap.add_argument("--sys-dir", default=None, help="Sys directory (default: _SYS_DIR)")
     ap.add_argument("--apply", action="store_true", help="actually delete (default: dry-run)")
@@ -386,6 +395,10 @@ def main() -> int:
             "pytest_cache,winget_cache,npm_cache,pip_cache,vscode_cache,pycache,pytest_cache_default,launcher_logs"
         ),
     )
+    if "/?" in sys.argv[1:]:
+        # argparse understands -h/--help natively but not the Windows /? convention.
+        ap.print_help()
+        return 0
     args = ap.parse_args()
 
     if args.base_dir or args.sys_dir:

@@ -222,9 +222,9 @@ def test_verb_name_directory_still_runs_the_verb(surface_root):
 # 5. The 'Not set up' rule (§3.2)
 # ----------------------------------------------------------------------------
 
-@pytest.mark.parametrize("verb", ["doctor", "menu", "tidy", "uninstall"])
+@pytest.mark.parametrize("verb", ["doctor", "menu", "tidy", "update", "uninstall", "backup", "restore", "reset"])
 def test_not_set_up_rule_rejects_with_exit_1(surface_root, verb):
-    """When python.exe is missing, doctor/menu/tidy/uninstall exit 1 with setup message (§3.2)."""
+    """When python.exe is missing, subcommands exit 1 with setup message (§3.2)."""
     # Remove python stub to simulate fresh/not-set-up environment
     py_exe = surface_root / "_sys" / "env" / "python" / "python.exe"
     if py_exe.exists():
@@ -234,6 +234,49 @@ def test_not_set_up_rule_rejects_with_exit_1(surface_root, verb):
     assert proc.returncode == 1
     assert "Engram is not set up" in proc.stdout
     assert "Run 'engram'" in proc.stdout
+
+
+@pytest.mark.parametrize("verb", ["doctor", "tidy", "update", "uninstall", "backup", "restore", "reset"])
+@pytest.mark.parametrize("help_flag", ["--help", "-h", "help"])
+def test_help_bypasses_not_set_up_check(surface_root, verb, help_flag):
+    """Help flags on subcommands bypass :check_setup even when python.exe is missing."""
+    py_exe = surface_root / "_sys" / "env" / "python" / "python.exe"
+    if py_exe.exists():
+        py_exe.unlink()
+
+    proc = run_engram(surface_root, verb, help_flag)
+    assert proc.returncode == 0, f"Failed for {verb} {help_flag}: rc={proc.returncode}, out={proc.stdout}, err={proc.stderr}"
+    assert "Engram is not set up" not in proc.stdout
+    assert f"DISPATCH_PIPELINE={verb}" in proc.stdout
+    assert f"DISPATCH_ARGS={verb} {help_flag}" in proc.stdout
+
+
+@pytest.mark.parametrize("verb", ["doctor", "tidy", "update", "uninstall", "backup", "restore", "reset"])
+def test_slash_question_bypasses_not_set_up_check(surface_root, verb):
+    """'/?' on subcommands bypasses :check_setup even when python.exe is missing.
+    Note: In cmd.exe, 'call' intercepts unquoted '/?' to show CALL help before dispatch.bat
+    executes, but critically :check_setup ('Engram is not set up') is bypassed.
+    """
+    py_exe = surface_root / "_sys" / "env" / "python" / "python.exe"
+    if py_exe.exists():
+        py_exe.unlink()
+
+    proc = run_engram(surface_root, verb, "/?")
+    assert "Engram is not set up" not in proc.stdout
+    assert "Run 'engram'" not in proc.stdout
+
+
+@pytest.mark.parametrize("help_flag", ["--help", "-h", "/?", "help"])
+def test_menu_help_bypasses_not_set_up_check(surface_root, help_flag):
+    """Menu help flags show batch-level menu help even when python.exe is missing."""
+    py_exe = surface_root / "_sys" / "env" / "python" / "python.exe"
+    if py_exe.exists():
+        py_exe.unlink()
+
+    proc = run_engram(surface_root, "menu", help_flag)
+    assert proc.returncode == 0, f"Failed for menu {help_flag}: rc={proc.returncode}, out={proc.stdout}, err={proc.stderr}"
+    assert "Engram is not set up" not in proc.stdout
+    assert "Engram Right-Click Context Menu Management" in proc.stdout
 
 
 # ----------------------------------------------------------------------------

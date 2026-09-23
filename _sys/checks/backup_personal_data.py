@@ -522,12 +522,28 @@ def do_reset(
 # Dispatcher Pipeline Adapters
 # ----------------------------------------------------------------------------
 
+_HELP_FLAGS = ("--help", "-h", "/?")
+
+
 def run_backup(ctx: dict) -> None:
     """Entry point for 'backup' pipeline in dispatch.json."""
     base_dir = ctx["base_dir"]
     sys_dir = ctx.get("sys_dir", (base_dir / _SYS_DIR.name) if base_dir else _SYS_DIR)
     engram_dir = base_dir / ".engram"
     args = ctx.get("args", [])
+
+    if any(a in _HELP_FLAGS for a in args):
+        print("engram backup - Back up personal AI data (.engram/) to a zip archive")
+        print()
+        print("Usage: engram backup [--out PATH]")
+        print()
+        print("Options:")
+        print("  --out PATH   Target path (default: sys_dir/data/backups/engram_backup_<timestamp>.zip)")
+        print()
+        print("Examples:")
+        print("  engram backup                       back up to the default timestamped path")
+        print("  engram backup --out D:\\backups\\my.zip   back up to a specific path")
+        sys.exit(0)
 
     out_path = None
     i = 0
@@ -577,6 +593,21 @@ def run_restore(ctx: dict) -> None:
     sys_dir = ctx.get("sys_dir", (base_dir / _SYS_DIR.name) if base_dir else _SYS_DIR)
     engram_dir = base_dir / ".engram"
     args = ctx.get("args", [])
+
+    if any(a in _HELP_FLAGS for a in args):
+        print("engram restore - Restore personal AI data from a backup archive/bundle")
+        print()
+        print("Usage: engram restore PATH [--force]")
+        print()
+        print("Options:")
+        print("  PATH           Path to a backup .zip or bundle directory")
+        print("  --force, -f    Overwrite existing live session/project data")
+        print()
+        print("Examples:")
+        print("  engram restore D:\\backups\\my.zip           restore, refusing if it would overwrite live data")
+        print("  engram restore D:\\backups\\my.zip --force   restore, overwriting existing live session/project data")
+        sys.exit(0)
+
     force = False
 
     target_path = None
@@ -611,6 +642,22 @@ def run_reset(ctx: dict) -> None:
     base_dir = ctx["base_dir"]
     sys_dir = ctx.get("sys_dir", (base_dir / _SYS_DIR.name) if base_dir else _SYS_DIR)
     args = ctx.get("args", [])
+
+    if any(a in _HELP_FLAGS for a in args):
+        print("engram reset - Reset personal AI data")
+        print()
+        print("Usage: engram reset [--yes|-y] [--all]")
+        print()
+        print("Options:")
+        print("  --yes, -y    Skip the [y/N] confirmation prompt")
+        print("  --all        Also delete workspace/ (default: only .engram/)")
+        print()
+        print("Examples:")
+        print("  engram reset                 asks for confirmation, deletes .engram/ only")
+        print("  engram reset --yes           deletes .engram/ without prompting")
+        print("  engram reset --yes --all     also deletes workspace/ (typed folder-name confirmation still required)")
+        sys.exit(0)
+
     yes = False
     all_data = False
 

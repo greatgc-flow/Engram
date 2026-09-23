@@ -53,7 +53,20 @@ def _download_and_stage_core_update(
 
 
 def _parse_args(args: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Updater runner")
+    parser = argparse.ArgumentParser(
+        description="Updater runner",
+        epilog=(
+            "Examples:\n"
+            "  engram update                              interactive: show plan, confirm, apply\n"
+            "  engram update --yes                         apply without confirmation\n"
+            "  engram update --check                       show plan only, exit 1 if anything can't be checked (for scripts/CI)\n"
+            "  engram update --dry-run                     discover + show proposal, apply nothing\n"
+            "  engram update --only claude,codex            update just those two AI CLIs\n"
+            "  engram update --only nodejs --allow-major-runtime-upgrade --yes\n"
+            "                                               let Node.js cross a major version (e.g. 22 -> 24)\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
     parser.add_argument("--check", action="store_true", help="Stop after printing plan. Exit 1 if Could not check is non-empty")
     parser.add_argument("--dry-run", action="store_true", help="Discover and show proposal, apply nothing")
@@ -63,6 +76,10 @@ def _parse_args(args: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Allow major version upgrade for base runtimes (e.g. Node.js 22 -> 24)",
     )
+    if "/?" in args:
+        # argparse understands -h/--help natively but not the Windows /? convention.
+        parser.print_help()
+        raise SystemExit(0)
     return parser.parse_args(args)
 
 
@@ -71,6 +88,10 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     try:
         args = _parse_args(args_list)
     except SystemExit as e:
+        # argparse's own --help/-h exits 0 after already printing full usage;
+        # only a real parse error (exit code 2) should fail the pipeline.
+        if e.code in (0, None):
+            return {"status": "success", "detail": "help displayed"}
         return {"status": "failed", "detail": f"Argument parsing failed with code {e.code}", "exit_code": 2}
 
     normalized_only = check_tool_updates.normalize_only_list(getattr(args, "only", None))
