@@ -72,3 +72,34 @@ class TestSweepStaleAskTempDirs:
         monkeypatch.setattr(hub.shutil, "rmtree", fake_rmtree)
 
         hub._sweep_stale_ask_temp_dirs(tmp_path, max_age_sec=3600)  # must not raise
+
+
+class TestAskTempDirFollowsProjectDirOverride:
+    """2026-09-23: a real `--project-dir` dispatch failed when the target
+    peer's sandbox (Codex) scoped its trusted writable root to project_dir,
+    but $TEMP still pointed at the *default* project's _sys/data/temp tree
+    -- a child process the peer spawned (pytest) then hit PermissionError
+    creating its own pytest-of-<user> cache dir there, entirely outside the
+    trusted root. This is a source-level guard (see
+    test_codex_dispatch_fixes.py for why _action_ask_inner isn't mocked
+    end-to-end): both the temp-root selection and its two downstream
+    consumers must honor project_dir.
+    """
+
+    def test_temp_root_selection_is_project_dir_aware(self):
+        import re
+
+        hub_source = Path(hub.__file__).read_text(encoding="utf-8")
+        block_start = hub_source.index("# ── Per-ask scratch TEMP dir (T5) ")
+        block_end = hub_source.index("ask_temp_dir.mkdir", block_start)
+        block = hub_source[block_start:block_end]
+
+        assert "if project_dir:" in block
+        assert re.search(
+            r'_ask_temp_root\s*=\s*Path\(project_dir\)\.resolve\(\)\s*/\s*"\.hub_ask_temp"',
+            block,
+        ), "project_dir branch must root the ask-temp dir inside project_dir itself"
+        assert re.search(
+            r'_ask_temp_root\s*=\s*Path\(__file__\)\.resolve\(\)\.parent\.parent\s*/\s*"data"\s*/\s*"temp"',
+            block,
+        ), "the no-override default path must be unchanged"

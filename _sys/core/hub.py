@@ -6927,7 +6927,17 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     # those files are created by whatever process's own ambient TEMP
     # resolves to (e.g. INSTALL.bat's or this terminal's own PowerShell
     # calls), independent of any peer subprocess's env vars.
-    _ask_temp_root = Path(__file__).resolve().parent.parent / "data" / "temp"
+    # When project_dir overrides cwd (see the proc_cwd/invocation_cwd sites
+    # below), the ask-temp dir must move too: a sandboxed peer (e.g. Codex)
+    # whose trusted writable root is now project_dir will reject a child
+    # process (e.g. pytest) that tries to create files under $TEMP if $TEMP
+    # still points into the *default* project's tree -- caught 2026-09-23
+    # via a real pytest run under --project-dir failing with WinError 5 on
+    # the default _sys/data/temp path, entirely outside project_dir's trust.
+    if project_dir:
+        _ask_temp_root = Path(project_dir).resolve() / ".hub_ask_temp"
+    else:
+        _ask_temp_root = Path(__file__).resolve().parent.parent / "data" / "temp"
     _sweep_stale_ask_temp_dirs(_ask_temp_root)
     ask_temp_dir = _ask_temp_root / f"ask_{ask_id}"
     ask_temp_dir.mkdir(parents=True, exist_ok=True)
