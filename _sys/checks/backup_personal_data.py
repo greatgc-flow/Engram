@@ -522,12 +522,24 @@ def do_reset(
 # Dispatcher Pipeline Adapters
 # ----------------------------------------------------------------------------
 
+_HELP_FLAGS = ("--help", "-h", "/?")
+
+
 def run_backup(ctx: dict) -> None:
     """Entry point for 'backup' pipeline in dispatch.json."""
     base_dir = ctx["base_dir"]
     sys_dir = ctx.get("sys_dir", (base_dir / _SYS_DIR.name) if base_dir else _SYS_DIR)
     engram_dir = base_dir / ".engram"
     args = ctx.get("args", [])
+
+    if any(a in _HELP_FLAGS for a in args):
+        print("engram backup - Back up personal AI data (.engram/) to a zip archive")
+        print()
+        print("Usage: engram backup [--out PATH]")
+        print()
+        print("Options:")
+        print("  --out PATH   Target path (default: sys_dir/data/backups/engram_backup_<timestamp>.zip)")
+        sys.exit(0)
 
     out_path = None
     i = 0
@@ -577,6 +589,17 @@ def run_restore(ctx: dict) -> None:
     sys_dir = ctx.get("sys_dir", (base_dir / _SYS_DIR.name) if base_dir else _SYS_DIR)
     engram_dir = base_dir / ".engram"
     args = ctx.get("args", [])
+
+    if any(a in _HELP_FLAGS for a in args):
+        print("engram restore - Restore personal AI data from a backup archive/bundle")
+        print()
+        print("Usage: engram restore PATH [--force]")
+        print()
+        print("Options:")
+        print("  PATH           Path to a backup .zip or bundle directory")
+        print("  --force, -f    Overwrite existing live session/project data")
+        sys.exit(0)
+
     force = False
 
     target_path = None
@@ -611,6 +634,17 @@ def run_reset(ctx: dict) -> None:
     base_dir = ctx["base_dir"]
     sys_dir = ctx.get("sys_dir", (base_dir / _SYS_DIR.name) if base_dir else _SYS_DIR)
     args = ctx.get("args", [])
+
+    if any(a in _HELP_FLAGS for a in args):
+        print("engram reset - Reset personal AI data")
+        print()
+        print("Usage: engram reset [--yes|-y] [--all]")
+        print()
+        print("Options:")
+        print("  --yes, -y    Skip the [y/N] confirmation prompt")
+        print("  --all        Also delete workspace/ (default: only .engram/)")
+        sys.exit(0)
+
     yes = False
     all_data = False
 

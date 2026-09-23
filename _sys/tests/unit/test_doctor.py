@@ -4,6 +4,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from _sys.core.root import find_root
 
 SYS_DIR = find_root(__file__)  # _sys/
@@ -222,6 +224,18 @@ def test_doctor_hints_use_canonical_verbs(tmp_path, monkeypatch):
     if "detail" in reg_res and "enable" in reg_res["detail"].lower():
         assert "engram menu enable" in reg_res["detail"].lower()
         assert ".bat" not in reg_res["detail"].lower()
+
+
+@pytest.mark.parametrize("flag", ["--help", "-h", "/?"])
+def test_doctor_help_flag_prints_help_without_running_checks(flag, tmp_path, monkeypatch, capsys):
+    def _fail(*a, **k):
+        raise AssertionError("doctor checks must not run when --help is requested")
+
+    monkeypatch.setattr(doctor, "_installed_python_version", _fail)
+    res = doctor.run({"base_dir": tmp_path, "sys_dir": tmp_path / "_sys", "args": [flag]})
+    assert res["status"] == "success"
+    out = capsys.readouterr().out
+    assert "--json" in out
 
 
 

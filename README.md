@@ -57,7 +57,7 @@ The first run will prompt to bootstrap the portable environment (Python, Node, G
 | Verb | Behavior | Exit codes |
 |---|---|---|
 | `engram` / `open [PATH]` | Open a workspace (default action). On first run (no Python), prints plan and prompts to set up here. If missing, prompts to add right-click menu entry. Otherwise dispatches the `start` pipeline. | 0 ok; 1 not set up / declined / bootstrap failed; launcher errors propagated |
-| `update [--check] [--yes] [--only NAME[,NAME...]]` | Discover and apply updates across the catalog. `--check` prints the plan without modifying runtimes/tools (saves proposal artifacts under `_sys/data/state/update/proposals/`). `--yes` skips confirmation. `--only` restricts to specific components (supports comma-separated names and aliases: `cc`, `cx`, `ag`). | 0 success or nothing to do; 1 one or more components failed; 2 usage error; 3 declined |
+| `update [--check] [--dry-run] [--yes] [--only NAME[,NAME...]] [--allow-major-runtime-upgrade]` | Discover and apply updates across the catalog. `--check` prints the plan without modifying runtimes/tools (saves proposal artifacts under `_sys/data/state/update/proposals/`) and exits 1 if anything couldn't be checked. `--dry-run` discovers and shows the proposal but applies nothing. `--yes`/`-y` skips confirmation. `--only` restricts to specific components (supports comma-separated names and aliases: `cc`, `cx`, `ag`). `--allow-major-runtime-upgrade` permits a base runtime (e.g. Node.js) to jump a major version; without it, major-version updates are discovered but not auto-applied. Run `engram update --help` for the authoritative, always-current flag list. | 0 success or nothing to do; 1 one or more components failed / `--check` found an issue; 2 usage error; 3 declined |
 | `doctor [--json]` | Zero-network health check: verifies Python consistency, components, context menu registration, and root path hygiene (warns if path contains `&`, `%`, or `^`). | 0 healthy; 1 broken |
 | `menu` / `menu status` | Read-only: check whether context menu entries are present. | 0 |
 | `menu enable` | Apply registry entries to add right-click context menu. Idempotent. | 0 / 1 |
@@ -69,7 +69,7 @@ The first run will prompt to bootstrap the portable environment (Python, Node, G
 | `restore PATH [--force]` | Restore personal AI-CLI data from a `.zip` or legacy folder-shaped bundle. Refuses if a managed AI CLI is running. Takes an automatic pre-restore snapshot unless `--force`. `--force` also allows overwriting existing live session/project data. | 0 success; 1 refused (process running) or invalid path; 2 usage error |
 | `reset [--yes] [--all]` | Deletes personal AI-CLI state. Default scope is `.engram/` only, after `[y/N]` confirmation (skippable with `--yes`). `--all` also deletes `workspace/`, gated behind the same typed-folder-name confirmation `uninstall --purge-data` uses. Refuses if a managed AI CLI is running. | 0 success; 1 refused (process running); 3 declined |
 | `version` / `--version` / `-v` | Print the current version (e.g. `Engram <version> (Portable Dev Runtime)`). | 0 |
-| `help` / `--help` / `-h` / `/?` | List the available commands. | 0 |
+| `help` / `--help` / `-h` / `/?` | List the available commands. Every verb above also accepts its own `--help`/`-h`/`/?` (e.g. `engram update --help`) for that verb's full, authoritative option list. | 0 |
 
 `install`, `setup`, `status`, `register`, `unregister`, `menu-cleanup`, `cleanup`, `launch`, and `start` are retired verbs — each prints its replacement and exits 2 rather than silently aliasing.
 

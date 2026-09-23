@@ -63,6 +63,10 @@ def _parse_args(args: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Allow major version upgrade for base runtimes (e.g. Node.js 22 -> 24)",
     )
+    if "/?" in args:
+        # argparse understands -h/--help natively but not the Windows /? convention.
+        parser.print_help()
+        raise SystemExit(0)
     return parser.parse_args(args)
 
 
@@ -71,6 +75,10 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     try:
         args = _parse_args(args_list)
     except SystemExit as e:
+        # argparse's own --help/-h exits 0 after already printing full usage;
+        # only a real parse error (exit code 2) should fail the pipeline.
+        if e.code in (0, None):
+            return {"status": "success", "detail": "help displayed"}
         return {"status": "failed", "detail": f"Argument parsing failed with code {e.code}", "exit_code": 2}
 
     normalized_only = check_tool_updates.normalize_only_list(getattr(args, "only", None))

@@ -293,9 +293,18 @@ _LEVEL_ICON = {"ok": "[OK]", "info": "[i]", "warning": "[!]", "error": "[X]"}
 
 
 def run(ctx: dict) -> dict[str, Any]:
+    args = ctx.get("args", []) or []
+    if any(a in ("--help", "-h", "/?") for a in args):
+        print("engram doctor - Report environment health, tool status, and configuration")
+        print()
+        print("Usage: engram doctor [--json]")
+        print()
+        print("Options:")
+        print("  --json    Emit machine-readable JSON instead of the formatted report")
+        return {"status": "success", "detail": "help displayed"}
+
     base_dir = Path(ctx["base_dir"])
     sys_dir = Path(ctx["sys_dir"])
-    args = ctx.get("args", []) or []
     want_json = "--json" in args
 
     checks = [

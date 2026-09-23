@@ -343,4 +343,7 @@ echo Options:
 echo   --version, -v         Display Engram version information
 echo   --help, -h            Display this help message
 echo.
+echo Run 'engram ^<command^> --help' for that command's full option list
+echo (e.g. 'engram update --help', 'engram backup --help').
+echo.
 exit /b 0

@@ -884,3 +884,30 @@ def test_backup_and_restore_renamed_sys_dir_safe(
     assert not (inst / "_sys").exists()
 
 
+@pytest.mark.parametrize("flag", ["--help", "-h", "/?"])
+def test_run_backup_help_flag_exits_zero(flag, tmp_path, capsys):
+    with pytest.raises(SystemExit) as exc:
+        run_backup({"base_dir": tmp_path, "sys_dir": tmp_path / "_sys", "args": [flag]})
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "--out" in out
+
+
+@pytest.mark.parametrize("flag", ["--help", "-h", "/?"])
+def test_run_restore_help_flag_exits_zero(flag, tmp_path, capsys):
+    with pytest.raises(SystemExit) as exc:
+        run_restore({"base_dir": tmp_path, "sys_dir": tmp_path / "_sys", "args": [flag]})
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "--force" in out
+
+
+@pytest.mark.parametrize("flag", ["--help", "-h", "/?"])
+def test_run_reset_help_flag_exits_zero(flag, tmp_path, capsys):
+    with pytest.raises(SystemExit) as exc:
+        run_reset({"base_dir": tmp_path, "sys_dir": tmp_path / "_sys", "args": [flag]})
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "--all" in out
+
+

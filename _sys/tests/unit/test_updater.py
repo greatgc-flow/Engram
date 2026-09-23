@@ -807,4 +807,15 @@ def test_updater_reverts_failed_and_deferred_dict_components(tmp_path, monkeypat
     assert "Failed to revert runtimes.json: cannot use 'dict'" not in out
 
 
+@pytest.mark.parametrize("flag", ["--help", "-h", "/?"])
+def test_updater_help_flag_prints_help_and_returns_success(flag, capsys):
+    """--help/-h/-? must show full usage without failing the dispatch pipeline
+    (argparse's own exit(0) was previously swallowed into status='failed')."""
+    res = updater.run({"args": [flag]})
+    assert res.get("status") == "success"
+    out = capsys.readouterr().out
+    assert "--allow-major-runtime-upgrade" in out
+    assert "--only" in out
+
+
 
