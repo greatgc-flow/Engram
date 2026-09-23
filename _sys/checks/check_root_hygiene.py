@@ -29,6 +29,7 @@ from _common import VENDOR_CACHE_DIRS
 ALLOWLIST = {
     ".agents",
     ".gitattributes",
+    ".github",
     ".gitignore",
     ".pytest_cache",
     "_archive",  # legacy-source: migration only
@@ -36,6 +37,7 @@ ALLOWLIST = {
     "AGENTS.md",
     "CLAUDE.md",
     "CONVENTION.md",
+    "CONTRIBUTING.md",
     "dist",
     "docs",
     "engram.cmd",
