@@ -6950,7 +6950,7 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
     # still points into the *default* project's tree -- caught 2026-09-23
     # via a real pytest run under --project-dir failing with WinError 5 on
     # the default _sys/data/temp path, entirely outside project_dir's trust.
-    if project_dir:
+    if project_dir and sys.platform == "win32":
         # T5 per-ask TEMP isolation is intentionally SKIPPED for project_dir
         # dispatches. Both a dot-prefixed and a plain-named directory under
         # project_dir still failed (2026-09-23, real cx dispatches): a
@@ -6961,14 +6961,26 @@ def _action_ask_inner(to: str, query: str, query_file: str | None, timeout_sec: 
         # creates the directory, but Codex's spawned child processes (e.g.
         # pytest) run at low integrity and cannot access an object created
         # by a higher-integrity process without an explicit low-IL ACE.
-        # Rather than hand-crafting that ACL, leave TEMP/TMP/TMPDIR at
-        # whatever this process's own ambient environment already has
-        # (inherited into process_env via `{**os.environ, ...}` above) --
-        # the standard per-user system temp dir is the one location every
-        # integrity level is already set up to use. This sacrifices T5's
-        # litter-isolation/reaping for project_dir dispatches only; the
-        # default (no project_dir) path is completely unaffected.
-        pass
+        #
+        # Leaving TEMP/TMP/TMPDIR simply un-set (inherited from this
+        # process's own os.environ) was NOT enough: this portable dev
+        # environment's own launcher isolation (CONVENTION.md 4.2,
+        # "Dedicated Tool Caches") sets ambient TEMP to a path INSIDE
+        # _sys/data/temp for portability -- the exact same untrusted/
+        # integrity-mismatched tree, just reached via inheritance instead
+        # of an explicit override. Confirmed 2026-09-23 via a real dispatch
+        # still failing with PermissionError under the inherited value.
+        #
+        # Explicitly override to the genuine per-user Windows temp dir
+        # (%LOCALAPPDATA%\Temp) instead -- outside this portable tree
+        # entirely, created by the OS/user profile itself (not by hub.py),
+        # so there is no medium-vs-low-integrity creator mismatch to hit.
+        _local_appdata = os.environ.get("LOCALAPPDATA")
+        if _local_appdata:
+            _system_temp = str(Path(_local_appdata) / "Temp")
+            process_env["TEMP"] = _system_temp
+            process_env["TMP"] = _system_temp
+            process_env["TMPDIR"] = _system_temp
     else:
         # ── Per-ask scratch TEMP dir (T5) ────────────────────────────
         # Isolates peer-subprocess temp litter (e.g. cx's small lock/ping

@@ -74,26 +74,35 @@ class TestSweepStaleAskTempDirs:
         hub._sweep_stale_ask_temp_dirs(tmp_path, max_age_sec=3600)  # must not raise
 
 
-class TestAskTempDirSkipsOverrideUnderProjectDir:
-    """2026-09-23: two different custom temp-dir placements under
-    project_dir (dot-prefixed, then plain-named) BOTH failed for a real
-    cx dispatch with PermissionError -- and Get-Acl on the directory
-    raised UnauthorizedAccessException even for a bare read, pointing at
-    a genuine Windows mandatory-integrity mismatch (hub.py's own
-    medium-integrity process creates the dir; Codex's spawned children,
-    e.g. pytest, run at low integrity and can't access an object created
-    by a higher-integrity process without an explicit low-IL ACE). The
-    fix is to not fight that: skip the T5 custom-TEMP override entirely
-    when project_dir is set, leaving TEMP/TMP/TMPDIR at whatever this
-    process's own ambient environment already provides (every integrity
-    level already has access to the standard per-user system temp dir).
+class TestAskTempDirUnderProjectDir:
+    """2026-09-23 fix chain, each step confirmed against a REAL cx dispatch
+    (never assumed fixed from reasoning alone):
+
+    1. A custom temp dir *inside* project_dir (dot-prefixed, then plain-
+       named) both failed with PermissionError -- Get-Acl on the directory
+       raised UnauthorizedAccessException even for a bare read, pointing
+       at a genuine Windows mandatory-integrity mismatch: hub.py's own
+       medium-integrity process creates the dir, but Codex's spawned
+       children (pytest) run at low integrity and can't access an object
+       created by a higher-integrity process without an explicit low-IL
+       ACE -- no name or location inside project_dir fixes that.
+    2. Simply NOT overriding TEMP (inheriting this process's own ambient
+       environment) also failed: this portable dev environment's own
+       launcher isolation (CONVENTION.md 4.2) sets ambient TEMP to a path
+       inside _sys/data/temp for portability -- the exact same untrusted/
+       integrity-mismatched tree, just reached via inheritance instead of
+       an explicit override.
+    3. Fix: explicitly override to %LOCALAPPDATA%\\Temp -- the genuine
+       per-user Windows temp dir, created by the OS/user profile itself
+       (not by hub.py), so there's no creator-integrity mismatch.
+
     This is a source-level guard (see test_codex_dispatch_fixes.py for why
     _action_ask_inner isn't mocked end-to-end).
     """
 
-    def test_project_dir_branch_does_not_override_temp_env_vars(self):
+    def test_project_dir_branch_uses_localappdata_temp_not_a_custom_dir(self):
         hub_source = Path(hub.__file__).read_text(encoding="utf-8")
-        if_start = hub_source.index("if project_dir:")
+        if_start = hub_source.index('if project_dir and sys.platform == "win32":')
         else_start = hub_source.index("\n    else:", if_start)
         if_block = hub_source[if_start:else_start]
 
@@ -102,15 +111,17 @@ class TestAskTempDirSkipsOverrideUnderProjectDir:
             "and non-dot-prefixed one failed with a real integrity-level "
             "mismatch; don't reintroduce one without solving that first"
         )
+        assert 'os.environ.get("LOCALAPPDATA")' in if_block
+        assert 'Path(_local_appdata) / "Temp"' in if_block
         for var in ("TEMP", "TMP", "TMPDIR"):
-            assert f'process_env["{var}"]' not in if_block, (
-                f"project_dir branch must not set {var} -- let it inherit "
-                "this process's own ambient environment"
-            )
+            assert f'process_env["{var}"] = _system_temp' in if_block
 
     def test_default_branch_still_uses_the_isolated_ask_temp_dir(self):
         hub_source = Path(hub.__file__).read_text(encoding="utf-8")
-        else_start = hub_source.index("\n    else:", hub_source.index("if project_dir:"))
+        else_start = hub_source.index(
+            "\n    else:",
+            hub_source.index('if project_dir and sys.platform == "win32":'),
+        )
         block_end = hub_source.index("process_env[\"TMPDIR\"]", else_start)
         else_block = hub_source[else_start:block_end]
 
