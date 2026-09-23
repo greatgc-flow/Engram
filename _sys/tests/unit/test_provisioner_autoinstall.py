@@ -1281,7 +1281,7 @@ def test_seed_vscode_default_settings_disables_update_mode(tmp_path):
     assert settings["update.mode"] == "none"
 
 
-def test_seed_vscode_default_settings_never_overwrites_existing(tmp_path):
+def test_seed_vscode_default_settings_merges_missing_update_mode(tmp_path):
     vscode_dir = tmp_path / "env" / "vscode"
     settings_path = vscode_dir / "data" / "user-data" / "User" / "settings.json"
     settings_path.parent.mkdir(parents=True)
@@ -1289,6 +1289,30 @@ def test_seed_vscode_default_settings_never_overwrites_existing(tmp_path):
 
     pv.seed_vscode_default_settings(vscode_dir)
 
-    # User's own customization must survive untouched -- no update.mode injected.
     settings = json.loads(settings_path.read_text(encoding="utf-8"))
-    assert settings == {"editor.fontSize": 16}
+    assert settings == {"editor.fontSize": 16, "update.mode": "none"}
+
+
+def test_seed_vscode_default_settings_preserves_explicit_update_mode(tmp_path):
+    vscode_dir = tmp_path / "env" / "vscode"
+    settings_path = vscode_dir / "data" / "user-data" / "User" / "settings.json"
+    settings_path.parent.mkdir(parents=True)
+    original = '{"editor.fontSize": 16, "update.mode": "manual"}'
+    settings_path.write_text(original, encoding="utf-8")
+
+    pv.seed_vscode_default_settings(vscode_dir)
+
+    assert settings_path.read_text(encoding="utf-8") == original
+
+
+def test_seed_vscode_default_settings_preserves_malformed_existing_file(tmp_path, capsys):
+    vscode_dir = tmp_path / "env" / "vscode"
+    settings_path = vscode_dir / "data" / "user-data" / "User" / "settings.json"
+    settings_path.parent.mkdir(parents=True)
+    original = '{"editor.fontSize": 16'
+    settings_path.write_text(original, encoding="utf-8")
+
+    pv.seed_vscode_default_settings(vscode_dir)
+
+    assert settings_path.read_text(encoding="utf-8") == original
+    assert "[WARNING] Could not parse existing VS Code settings" in capsys.readouterr().out

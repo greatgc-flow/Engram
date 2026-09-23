@@ -865,18 +865,39 @@ def ensure_tool(name: str, orch: dict | None = None, sys_dir: Path | None = None
 
 
 def seed_vscode_default_settings(vscode_dir: Path) -> None:
-    """Seed portable VS Code's first-run settings, once, if none exist yet.
+    """Ensure portable VS Code has a safe built-in update setting.
 
     Engram's own updater is the manifest-tracked owner of this binary's
     version (see version_resolver.py's vscode_official discovery provider);
     VS Code's built-in self-updater checking (and occasionally succeeding
     at replacing itself) behind Engram's back would silently desync the
     on-disk binary from what release-manifests/*.json records as installed.
-    Never overwrites a settings.json the user already has -- this only
-    fires the first time the portable data/ directory is created.
+    Existing settings are preserved: ``update.mode`` is added only when it is
+    absent, and an unreadable or non-object settings file is left untouched.
     """
     settings_path = vscode_dir / "data" / "user-data" / "User" / "settings.json"
     if settings_path.exists():
+        try:
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(
+                f"[WARNING] Could not parse existing VS Code settings at "
+                f"{settings_path}; leaving it unchanged: {exc}"
+            )
+            return
+        if not isinstance(settings, dict):
+            print(
+                f"[WARNING] Existing VS Code settings at {settings_path} is "
+                "not a JSON object; leaving it unchanged."
+            )
+            return
+        if "update.mode" in settings:
+            return
+        settings["update.mode"] = "none"
+        settings_path.write_text(
+            json.dumps(settings, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
         return
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(
