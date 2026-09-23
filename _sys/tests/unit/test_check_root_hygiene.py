@@ -30,6 +30,12 @@ def test_allowlist_includes_docs():
     assert "docs" in ALLOWLIST
 
 
+def test_allowlist_includes_contributing_and_github():
+    """CONTRIBUTING.md and .github/ are standard top-level repository entries."""
+    assert "CONTRIBUTING.md" in ALLOWLIST
+    assert ".github" in ALLOWLIST
+
+
 @patch("check_root_hygiene.PORTABLE_ROOT")
 def test_check_root_clean(mock_root):
     # Mock PORTABLE_ROOT.iterdir to return only ALLOWLIST items

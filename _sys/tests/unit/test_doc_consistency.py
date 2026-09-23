@@ -20,10 +20,23 @@ class TestDocConsistency:
         """Ensure all constitutional and core documents exist."""
         mandatory_root = [
             "README.md",
-            "CONVENTION.md"
+            "CONVENTION.md",
+            "CONTRIBUTING.md",
         ]
         for filename in mandatory_root:
             assert (doc_root / filename).exists(), f"Mandatory root doc missing: {filename}"
+
+    def test_issue_templates_presence(self, doc_root):
+        """Ensure GitHub issue templates exist and are populated."""
+        issue_templates = [
+            doc_root / ".github" / "ISSUE_TEMPLATE" / "bug_report.md",
+            doc_root / ".github" / "ISSUE_TEMPLATE" / "feature_request.md",
+        ]
+        for template in issue_templates:
+            assert template.exists(), f"Issue template missing: {template}"
+            content = template.read_text(encoding="utf-8")
+            assert "name:" in content, f"Issue template missing frontmatter name: {template}"
+            assert "about:" in content, f"Issue template missing frontmatter about: {template}"
 
     def test_claude_md_sections(self, doc_root):
         """Ensure project CLAUDE.md acts as a pointer to SSOT."""

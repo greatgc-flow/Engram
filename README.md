@@ -104,9 +104,14 @@ Every AI CLI Engram manages reads and writes its personal, durable data (memory,
 
 See [2026-09-03_separation-completion-backlog.md](https://github.com/greatgc-flow/peerhub/blob/main/docs/history/from-engram-repo/sessions/2026-09-03_separation-completion-backlog.md) for the full remaining-work backlog on both sides of the separation (Engram + peerhub), and what's deliberately deferred and why.
 
+## Contributing / Reporting issues
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for local dev setup, testing, and branch/commit conventions, or report bugs and suggest features on the [GitHub Issues](https://github.com/greatgc-flow/Engram/issues) tracker.
+
 ## Trust Signals
 
 - **Version SSOT:** [`_sys/core/version.json`](_sys/core/version.json)
 - **Tool catalogs:** [`_sys/runtimes.json`](_sys/runtimes.json) (runtimes + generic dev tools), [`_sys/tool-catalog.v1.json`](_sys/tool-catalog.v1.json) (AI CLIs)
 - **Conventions:** [`CONVENTION.md`](CONVENTION.md)
+- **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - **Validation:** the unit-test suite under [`_sys/tests/unit`](_sys/tests/unit) plus pre-commit consistency checks (`check_encoding`, `check_unreferenced_functions`, `check_root_hygiene`, `check_tool_updates`, `saturation_scan`) under [`_sys/checks`](_sys/checks).

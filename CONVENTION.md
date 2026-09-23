@@ -225,7 +225,7 @@ When parsing large or untrusted JSON files from PowerShell, avoid `ConvertFrom-J
 
 ### 5.1 Directory Names
 - Use **lowercase kebab-case**: `setup-files`, `data`, `env`, `tools`.
-- Exceptions (standard repository roots): `README.md`, `CONVENTION.md`, `LICENSE`.
+- Exceptions (standard repository roots): `README.md`, `CONVENTION.md`, `CONTRIBUTING.md`, `LICENSE`.
 
 ### 5.2 Script Files
 - **PowerShell**: PascalCase (`Install_Menu.ps1`, `Remove_Menu.ps1`).
