@@ -17,7 +17,7 @@ import os
 from pathlib import Path
 import shutil
 import sys
-from typing import List, Tuple
+from typing import Any, List, Tuple
 import uuid
 
 _CORE_DIR = Path(__file__).resolve().parent
@@ -181,13 +181,31 @@ def check_links_under_targets(targets: List[Path]) -> List[Path]:
     return links
 
 
-def run(ctx: dict) -> None:
+_HELP_FLAGS = ("--help", "-h", "/?")
+
+
+def run(ctx: dict) -> dict[str, Any] | None:
     """Main uninstaller execution entry point invoked via dispatch pipeline."""
+    args = ctx.get("args", []) or []
+    if any(a in _HELP_FLAGS for a in args):
+        print("engram uninstall - Safe, allowlist-based uninstaller for Engram")
+        print()
+        print("Usage: engram uninstall [--yes|-y] [--purge-data]")
+        print()
+        print("Options:")
+        print("  --yes, -y       Skip the confirmation prompt")
+        print("  --purge-data    Also delete personal data (.engram/) and projects (workspace/)")
+        print()
+        print("Examples:")
+        print("  engram uninstall                 asks for confirmation, preserves .engram/ and workspace/")
+        print("  engram uninstall --yes           removes program files without confirmation prompt")
+        print("  engram uninstall --purge-data    removes program files and prompts to purge personal data")
+        return {"status": "success", "detail": "help displayed"}
+
     base_dir = ctx["base_dir"]
     sys_dir = ctx.get("sys_dir") or find_root(base_dir)
 
     # Parse arguments from ctx["args"]
-    args = ctx.get("args", [])
     yes = ("--yes" in args) or ("-y" in args)
     purge_data = "--purge-data" in args
 

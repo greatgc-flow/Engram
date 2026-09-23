@@ -144,13 +144,14 @@ def check_running_processes(sys_dir: Path | None = None) -> list[str]:
     if sys_dir is None:
         sys_dir = _SYS_DIR
 
+    try:
+        from core import provisioner
+    except ImportError:
+        return []
+
     running = []
     for tool, display_name in (("claude", "claude.exe"), ("codex", "codex.exe"), ("ag", "agy.exe")):
-        try:
-            from core.provisioner import _is_peer_leased
-        except ImportError:
-            continue
-        if _is_peer_leased(sys_dir, tool):
+        if provisioner._is_peer_leased(sys_dir, tool):
             if tool == "codex":
                 # Disambiguate whether codex.exe or node.exe is actually running
                 try:

@@ -158,13 +158,6 @@ def _load_tool_catalog(sys_dir: Path) -> dict:
 
 
 def check_components(sys_dir: Path) -> dict:
-    try:
-        from core import provisioner
-    except Exception:
-        try:
-            import provisioner  # type: ignore
-        except Exception:
-            provisioner = None  # type: ignore
     rt = _load_runtimes(sys_dir)
     missing: list[str] = []
     checked = 0
@@ -173,7 +166,7 @@ def check_components(sys_dir: Path) -> dict:
             continue
         checked += 1
         try:
-            ok = provisioner._runtime_postcondition(sys_dir, name, cfg) if provisioner else True
+            ok = provisioner._runtime_postcondition(sys_dir, name, cfg)
         except Exception:
             ok = True
         if not ok:
@@ -195,7 +188,7 @@ def check_components(sys_dir: Path) -> dict:
             continue
         checked += 1
         bin_name = tool.get("install", {}).get("bin", f"{tool_id}.exe")
-        npm_global = provisioner.npm_global_dir(sys_dir) if provisioner else sys_dir / "env" / "nodejs" / "npm-global"
+        npm_global = provisioner.npm_global_dir(sys_dir)
         manifest_path = sys_dir / "tools" / tool_id / ".install_manifest.json"
         if manifest_path.exists():
             try:
@@ -235,22 +228,23 @@ def check_components(sys_dir: Path) -> dict:
 
 
 
+_PATH_SPECIAL_CHAR_CHECKS: tuple[tuple[str, str], ...] = (
+    ("&", "contains '&' (breaks cmd.exe argument parsing and Node.js npm-global wrappers)"),
+    ("%", "contains '%' (interferes with batch variable expansion)"),
+    ("^", "contains '^' (cmd.exe escape character)"),
+    (
+        "!",
+        "contains '!' (silently stripped under delayed expansion -- "
+        "cd/pushd fails with NO error and the script keeps running in "
+        "the wrong directory; see CONVENTION.md section 2.6)",
+    ),
+)
+
+
 def check_root_path(base_dir: Path) -> dict:
     """Validate that base_dir does not contain problematic characters for Windows CLI/Node."""
     path_str = str(base_dir)
-    issues = []
-    if "&" in path_str:
-        issues.append("contains '&' (breaks cmd.exe argument parsing and Node.js npm-global wrappers)")
-    if "%" in path_str:
-        issues.append("contains '%' (interferes with batch variable expansion)")
-    if "^" in path_str:
-        issues.append("contains '^' (cmd.exe escape character)")
-    if "!" in path_str:
-        issues.append(
-            "contains '!' (silently stripped under delayed expansion -- "
-            "cd/pushd fails with NO error and the script keeps running in "
-            "the wrong directory; see CONVENTION.md section 2.6)"
-        )
+    issues = [desc for char, desc in _PATH_SPECIAL_CHAR_CHECKS if char in path_str]
 
     if issues:
         detail = (
@@ -291,11 +285,12 @@ def check_elevation() -> dict:
 
 
 _LEVEL_ICON = {"ok": "[OK]", "info": "[i]", "warning": "[!]", "error": "[X]"}
+_HELP_FLAGS = ("--help", "-h", "/?")
 
 
 def run(ctx: dict) -> dict[str, Any]:
     args = ctx.get("args", []) or []
-    if any(a in ("--help", "-h", "/?") for a in args):
+    if any(a in _HELP_FLAGS for a in args):
         print("engram doctor - Report environment health, tool status, and configuration")
         print()
         print("Usage: engram doctor [--json]")

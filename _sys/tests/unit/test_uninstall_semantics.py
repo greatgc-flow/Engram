@@ -539,3 +539,26 @@ def test_case_7_engram_cmd_uninstall_forwards_arguments(tmp_path):
     assert "uninstall --yes --purge-data" in proc.stdout, (
         f"Expected arguments to be forwarded.\nstdout: {proc.stdout}"
     )
+
+
+@pytest.mark.parametrize("flag", ["--help", "-h", "/?"])
+def test_uninstaller_help_flag_prints_help_and_returns_success(flag, monkeypatch, capsys):
+    """--help/-h//? must display usage without deletion planning or confirmation prompt."""
+    from core import uninstaller
+
+    def _fail_plan(*args, **kwargs):
+        raise AssertionError("plan_uninstall must not be called when help flag is requested")
+
+    monkeypatch.setattr(uninstaller, "plan_uninstall", _fail_plan)
+
+    res = uninstaller.run({"args": [flag]})
+    assert res.get("status") == "success"
+
+    out = capsys.readouterr().out
+    assert "engram uninstall - Safe, allowlist-based uninstaller for Engram" in out
+    assert "Usage: engram uninstall [--yes|-y] [--purge-data]" in out
+    assert "--yes" in out
+    assert "--purge-data" in out
+    assert "Examples:" in out
+    assert "Uninstall Engram from" not in out
+
