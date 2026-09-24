@@ -5,7 +5,7 @@
 
   [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078d4.svg)](https://www.microsoft.com/windows)
   [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-  [![Tests: passing](https://img.shields.io/badge/tests-passing-brightgreen.svg)](_sys/tests/unit)
+  [![CI](https://github.com/greatgc-flow/Engram/actions/workflows/ci.yml/badge.svg)](https://github.com/greatgc-flow/Engram/actions/workflows/ci.yml)
   [![AI collaboration: peerhub](https://img.shields.io/badge/AI%20collaboration-peerhub-8a2be2.svg)](https://github.com/greatgc-flow/peerhub)
 </div>
 
