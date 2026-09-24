@@ -10,3 +10,4 @@
 pytest
 hypothesis
 pytest-timeout
+psutil
