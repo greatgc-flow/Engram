@@ -135,6 +135,7 @@ SYS_EXCLUDE_DIR_PATTERNS = {
     ".pytest_cache",
     "release-manifests",
     "backups",
+    "data",
 } | {d for d in VENDOR_CACHE_DIRS if not d.startswith(".")}
 
 GLOBAL_EXCLUDE_PATTERNS = set(VENDOR_CACHE_DIRS) | {

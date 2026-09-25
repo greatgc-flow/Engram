@@ -8,6 +8,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -28,6 +29,29 @@ bootstrap_root_package(_SYS_DIR)
 
 from _sys.core import provisioner, state_paths
 _DEFAULT_CACHE = state_paths.discovery_cache(_SYS_DIR)
+
+DEFAULT_CACHE_TTL_SECONDS = int(os.environ.get("ENGRAM_DISCOVERY_TTL_SECONDS", "14400"))
+
+_GH_AUTH_STATUS: bool | None = None
+
+
+# WIRING-EXEMPT: EXPORTED_API reason="Test fixture helper to reset memoized GitHub auth status between test runs."
+def _reset_gh_auth_cache() -> None:
+    global _GH_AUTH_STATUS
+    _GH_AUTH_STATUS = None
+
+
+def _is_cache_fresh(cached_entry: dict[str, Any], ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS) -> bool:
+    if ttl_seconds <= 0:
+        return False
+    ts_str = cached_entry.get("last_checked_at")
+    if not ts_str or not cached_entry.get("cached_latest_version"):
+        return False
+    try:
+        dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        return (datetime.now(timezone.utc) - dt).total_seconds() < ttl_seconds
+    except (ValueError, TypeError):
+        return False
 
 
 def _now_utc() -> str:
@@ -155,18 +179,21 @@ def _split_gh_include(stdout: str) -> tuple[int | None, dict[str, str], str]:
 
 
 def _gh_api_latest(discovery_id: str, etag: str | None) -> tuple[int, dict[str, str], str] | None:
+    global _GH_AUTH_STATUS
     if not shutil.which("gh"):
         return None
-    try:
-        auth = subprocess.run(
-            ["gh", "auth", "status"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if auth.returncode != 0:
+    if _GH_AUTH_STATUS is None:
+        try:
+            auth = subprocess.run(
+                ["gh", "auth", "status"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            _GH_AUTH_STATUS = (auth.returncode == 0)
+        except (OSError, subprocess.TimeoutExpired):
+            _GH_AUTH_STATUS = False
+    if not _GH_AUTH_STATUS:
         return None
 
     args = ["gh", "api", "--include", f"repos/{discovery_id}/releases/latest"]
@@ -255,6 +282,7 @@ def _github_from_http_result(
     if status_code == 304:
         cached_version = cached.get("cached_latest_version")
         if cached_version:
+            _cache_put(cache_path, cache, provider, discovery_id, {})
             return _result(
                 status="ok",
                 provider=provider,
@@ -275,6 +303,21 @@ def _github_from_http_result(
         )
 
     if status_code == 403:
+        cached_version = cached.get("cached_latest_version")
+        if cached_version:
+            print(f"  [Warning] GitHub API rate limited for {discovery_id}; falling back to cached version {cached_version}")
+            return _result(
+                status="ok",
+                provider=provider,
+                discovery_id=discovery_id,
+                latest_version=str(cached_version),
+                url=cached.get("cached_url"),
+                checksum_algo=cached.get("checksum_algo"),
+                checksum_value=cached.get("checksum_value"),
+                checksum_source=cached.get("checksum_source"),
+                source="stale_cache_403",
+                detail="GitHub rate limited; used stale cache",
+            )
         return _result(
             status="discovery_unavailable",
             provider=provider,
@@ -374,11 +417,27 @@ def _resolve_github(
     discovery_id: str,
     cache_path: Path | None = None,
     asset_pattern: str | None = None,
+    force_refresh: bool = False,
+    ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS,
 ) -> dict[str, Any]:
     cache_path = cache_path or _DEFAULT_CACHE
     provider = "github_releases"
     cache = _load_cache(cache_path)
     cached = _cache_get(cache, provider, discovery_id)
+
+    if not force_refresh and _is_cache_fresh(cached, ttl_seconds):
+        return _result(
+            status="ok",
+            provider=provider,
+            discovery_id=discovery_id,
+            latest_version=str(cached.get("cached_latest_version")),
+            url=cached.get("cached_url"),
+            checksum_algo=cached.get("checksum_algo"),
+            checksum_value=cached.get("checksum_value"),
+            checksum_source=cached.get("checksum_source"),
+            source="cache_ttl",
+        )
+
     etag = cached.get("etag")
 
     gh_result = _gh_api_latest(discovery_id, str(etag) if etag else None)
@@ -751,11 +810,30 @@ def _resolve_nodejs_lts(discovery_id: str, cache_path: Path | None = None) -> di
     )
 
 
-def _resolve_engram_release(discovery_id: str, cache_path: Path | None = None) -> dict[str, Any]:
+def _resolve_engram_release(
+    discovery_id: str,
+    cache_path: Path | None = None,
+    force_refresh: bool = False,
+    ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS,
+) -> dict[str, Any]:
     cache_path = cache_path or _DEFAULT_CACHE
     provider = "engram_release"
     cache = _load_cache(cache_path)
     cached = _cache_get(cache, provider, discovery_id)
+
+    if not force_refresh and _is_cache_fresh(cached, ttl_seconds):
+        return _result(
+            status="ok",
+            provider=provider,
+            discovery_id=discovery_id,
+            latest_version=str(cached.get("cached_latest_version")),
+            url=cached.get("cached_url"),
+            checksum_algo=cached.get("checksum_algo"),
+            checksum_value=cached.get("checksum_value"),
+            checksum_source=cached.get("checksum_source"),
+            source="cache_ttl",
+        )
+
     etag = cached.get("etag")
 
     gh_result = _gh_api_latest(discovery_id, str(etag) if etag else None)
@@ -789,6 +867,7 @@ def _resolve_engram_release(discovery_id: str, cache_path: Path | None = None) -
     if status_code == 304:
         cached_version = cached.get("cached_latest_version")
         if cached_version:
+            _cache_put(cache_path, cache, provider, discovery_id, {})
             return _result(
                 status="ok",
                 provider=provider,
@@ -809,6 +888,21 @@ def _resolve_engram_release(discovery_id: str, cache_path: Path | None = None) -
         )
 
     if status_code == 403:
+        cached_version = cached.get("cached_latest_version")
+        if cached_version:
+            print(f"  [Warning] GitHub API rate limited for {discovery_id}; falling back to cached version {cached_version}")
+            return _result(
+                status="ok",
+                provider=provider,
+                discovery_id=discovery_id,
+                latest_version=str(cached_version),
+                url=cached.get("cached_url"),
+                checksum_algo=cached.get("checksum_algo"),
+                checksum_value=cached.get("checksum_value"),
+                checksum_source=cached.get("checksum_source"),
+                source="stale_cache_403",
+                detail="GitHub rate limited; used stale cache",
+            )
         return _result(
             status="discovery_unavailable",
             provider=provider,
@@ -922,9 +1016,17 @@ def resolve_latest(
     discovery_id: str,
     cache_path: Path | None = None,
     asset_pattern: str | None = None,
+    force_refresh: bool = False,
+    ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS,
 ) -> dict[str, Any]:
     if provider in ("github_releases", "github_releases_exact"):
-        result = _resolve_github(discovery_id, cache_path, asset_pattern=asset_pattern)
+        result = _resolve_github(
+            discovery_id,
+            cache_path,
+            asset_pattern=asset_pattern,
+            force_refresh=force_refresh,
+            ttl_seconds=ttl_seconds,
+        )
     elif provider == "vscode_official":
         result = _resolve_vscode(discovery_id, cache_path)
     elif provider == "nodejs_lts":
@@ -936,7 +1038,12 @@ def resolve_latest(
     elif provider == "endoflife_python":
         result = _resolve_python()
     elif provider == "engram_release":
-        result = _resolve_engram_release(discovery_id, cache_path)
+        result = _resolve_engram_release(
+            discovery_id,
+            cache_path,
+            force_refresh=force_refresh,
+            ttl_seconds=ttl_seconds,
+        )
     elif provider == "manual":
         result = _result(status="manual", provider=provider, discovery_id=discovery_id)
     else:

@@ -70,6 +70,7 @@ def _parse_args(args: list[str]) -> argparse.Namespace:
     parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
     parser.add_argument("--check", action="store_true", help="Stop after printing plan. Exit 1 if Could not check is non-empty")
     parser.add_argument("--dry-run", action="store_true", help="Discover and show proposal, apply nothing")
+    parser.add_argument("--refresh", "-r", action="store_true", help="Bypass discovery cache and force fresh network check")
     parser.add_argument("--only", nargs="+", help="Update only specified components")
     parser.add_argument(
         "--allow-major-runtime-upgrade",
@@ -116,11 +117,15 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
             print(f"[Error] Unknown component: {', '.join(unknown)}")
             return {"status": "failed", "detail": f"Unknown component in --only: {', '.join(unknown)}", "exit_code": 2}
 
-    print(">>> Discovering updates...")
+    force_refresh = getattr(args, "refresh", False)
+    if force_refresh:
+        print(">>> Discovering updates (forced refresh)...")
+    else:
+        print(">>> Discovering updates...")
     sys_dir = _SYS_DIR
     allow_major = getattr(args, "allow_major_runtime_upgrade", False)
     
-    run_kwargs: dict[str, Any] = {"propose_diff": True}
+    run_kwargs: dict[str, Any] = {"propose_diff": True, "force_refresh": force_refresh}
     if normalized_only is not None:
         run_kwargs["only"] = normalized_only
     if allow_major:
@@ -131,6 +136,7 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
             payload = check_tool_updates.run(**run_kwargs)
         except TypeError:
             run_kwargs.pop("allow_major_runtime_upgrade", None)
+            run_kwargs.pop("force_refresh", None)
             payload = check_tool_updates.run(**run_kwargs)
     except Exception as e:
         return {"status": "failed", "detail": f"Update discovery failed: {e}"}
@@ -230,6 +236,7 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                 current_version=current_engram_version,
                 discovery_id="greatgc-flow/Engram",
                 cache_path=DISCOVERY_CACHE_PATH,
+                force_refresh=force_refresh,
             )
             status = core_discovery.get("status")
             if status != "ok":
@@ -556,12 +563,18 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
             # Check no staged path falls under protected areas
             protected = [
                 ".engram", "workspace",
-                f"{_SYS_DIR.name}/env", f"{_SYS_DIR.name}/tools", f"{_SYS_DIR.name}/data",
+                f"{_SYS_DIR.name}/env", f"{_SYS_DIR.name}/tools",
+                f"{_SYS_DIR.name}/data/state", f"{_SYS_DIR.name}/data/logs",
+                f"{_SYS_DIR.name}/data/cache", f"{_SYS_DIR.name}/data/temp",
+                f"{_SYS_DIR.name}/data/backups",
                 f"{_SYS_DIR.name}/runtimes.json", f"{_SYS_DIR.name}/tool-catalog.v1.json",
             ]
             if _SYS_DIR.name != "_sys":
                 protected.extend([
-                    "_sys/env", "_sys/tools", "_sys/data",
+                    "_sys/env", "_sys/tools",
+                    "_sys/data/state", "_sys/data/logs",
+                    "_sys/data/cache", "_sys/data/temp",
+                    "_sys/data/backups",
                     "_sys/runtimes.json", "_sys/tool-catalog.v1.json",
                 ])
             for p in staged_dir.rglob("*"):

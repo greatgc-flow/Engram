@@ -251,7 +251,16 @@ def plan_pip_cache() -> list[Path]:
 
 
 def plan_pycache() -> list[Path]:
-    return [p for p in _SYS_DIR.rglob("__pycache__") if p.is_dir()]
+    env_dir = _SYS_DIR / "env"
+    tools_dir = _SYS_DIR / "tools"
+    return [
+        p for p in _SYS_DIR.rglob("__pycache__")
+        if p.is_dir()
+        and env_dir not in p.parents
+        and tools_dir not in p.parents
+        and p != env_dir
+        and p != tools_dir
+    ]
 
 def plan_pytest_cache_default() -> list[Path]:
     p = _SYS_DIR / "tests" / ".pytest_cache"

@@ -539,4 +539,25 @@ def test_main_forwards_only_flag(monkeypatch):
     assert captured_only == ["ripgrep", "bat"]
 
 
+def test_main_forwards_refresh_flag(monkeypatch):
+    captured_refresh = None
+    def mock_run(*, propose_diff=False, only=None, force_refresh=False, **kwargs):
+        nonlocal captured_refresh
+        captured_refresh = force_refresh
+        return {
+            "artifact_dir": None,
+            "base_sha256": None,
+            "updates_discovered": [],
+            "up_to_date": [],
+            "rate_limited": [],
+            "errors": [],
+            "not_checked": [],
+        }
+    monkeypatch.setattr(ctu, "run", mock_run)
+    exit_code = ctu.main(["--refresh"])
+    assert exit_code == ctu.EXIT_OK
+    assert captured_refresh is True
+
+
+
 

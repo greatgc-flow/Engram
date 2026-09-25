@@ -47,8 +47,28 @@ def _resolve_paths(base_dir: Path, target_sys_dir: Path | None = None) -> dict:
         for k, v in list(resolved.items()):
             if k not in ("root", "localappdata") and isinstance(v, Path):
                 v_str = str(v)
-                if v_str == sys_str or v_str.startswith(sys_str + "\\") or v_str.startswith(sys_str + "/"):
-                    resolved[k] = Path(target_str + v_str[len(sys_str):])
+    # Inject portable path_entries from env.json into os.environ["PATH"] so subcommands
+    # have access to bundled tools (gh, git, etc.) even when invoked outside launcher.py
+    env_json_path = effective_sys / "env.json"
+    if env_json_path.exists():
+        try:
+            env_cfg = _load_json(env_json_path)
+            bases = {
+                "sys": effective_sys,
+                "env": effective_sys / "env",
+                "tools": effective_sys / "tools",
+                "engram": base_dir / ".engram",
+            }
+            entries = [
+                bases.get(e.get("base", "sys"), effective_sys) / e.get("sub", "")
+                for e in env_cfg.get("path_entries", [])
+            ]
+            valid_entries = [str(p) for p in entries if p.exists() and str(p) not in os.environ.get("PATH", "")]
+            if valid_entries:
+                os.environ["PATH"] = os.pathsep.join(valid_entries) + os.pathsep + os.environ.get("PATH", "")
+        except Exception:
+            pass
+
     return resolved
 
 
@@ -63,7 +83,7 @@ def _build_ctx(cmd: str, extra_args: list) -> dict:
         "state":    {},
     }
     # Pre-load prior register state for commands that undo it
-    if cmd in ("unregister",):
+    if cmd in ("unregister", "menu-disable"):
         for fname in (state_paths.REGISTER_STATE_FILENAME, "install.state.json"):
             sf = paths["state"] / fname
             if sf.exists():

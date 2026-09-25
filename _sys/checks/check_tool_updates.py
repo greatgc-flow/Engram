@@ -170,6 +170,8 @@ def _update_entry_from_discovery(entry: dict[str, Any], discovery: dict[str, Any
 def discover_updates(
     only: Sequence[str] | None = None,
     allow_major_runtime_upgrade: bool = False,
+    force_refresh: bool = False,
+    ttl_seconds: int = version_resolver.DEFAULT_CACHE_TTL_SECONDS,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     defaults_dir = _SYS_DIR / "defaults" if RUNTIMES_PATH.parent == _SYS_DIR else RUNTIMES_PATH.parent / "defaults"
     runtimes_source = RUNTIMES_PATH if RUNTIMES_PATH.exists() else (defaults_dir / "runtimes.json")
@@ -233,6 +235,8 @@ def discover_updates(
             "current_version": current_version,
             "discovery_id": str(cfg.get("discovery_id")),
             "cache_path": DISCOVERY_CACHE_PATH,
+            "force_refresh": force_refresh,
+            "ttl_seconds": ttl_seconds,
         }
         if cfg.get("asset_pattern"):
             resolve_kwargs["asset_pattern"] = cfg.get("asset_pattern")
@@ -240,8 +244,8 @@ def discover_updates(
         try:
             discovery = version_resolver.resolve_latest(**resolve_kwargs)
         except TypeError:
-            resolve_kwargs.pop("asset_pattern", None)
-            discovery = version_resolver.resolve_latest(**resolve_kwargs)
+            clean_kwargs = {k: v for k, v in resolve_kwargs.items() if k not in ("asset_pattern", "force_refresh", "ttl_seconds")}
+            discovery = version_resolver.resolve_latest(**clean_kwargs)
 
         status = discovery.get("status")
         if status == "discovery_unavailable":
@@ -560,10 +564,14 @@ def run(
     propose_diff: bool = False,
     only: Sequence[str] | None = None,
     allow_major_runtime_upgrade: bool = False,
+    force_refresh: bool = False,
+    ttl_seconds: int = version_resolver.DEFAULT_CACHE_TTL_SECONDS,
 ) -> dict[str, Any]:
     payload, runtimes, proposed, catalog, proposed_catalog = discover_updates(
         only=only,
         allow_major_runtime_upgrade=allow_major_runtime_upgrade,
+        force_refresh=force_refresh,
+        ttl_seconds=ttl_seconds,
     )
     if propose_diff:
         write_proposal_artifacts(payload, runtimes, proposed, catalog, proposed_catalog)
@@ -577,6 +585,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--apply", metavar="ARTIFACT_DIR", help="apply a previously generated proposal")
     parser.add_argument("--yes", action="store_true", help="confirm --apply mutation")
     parser.add_argument("--install", action="store_true", help="run _sys/core/bootstrap.bat --skip-update after successful --apply --yes")
+    parser.add_argument("--refresh", "-r", action="store_true", help="bypass discovery cache and force fresh network check")
     parser.add_argument("--only", nargs="+", help="filter discovery to specific tools")
     args = parser.parse_args(argv)
 
@@ -596,7 +605,14 @@ def main(argv: list[str] | None = None) -> int:
         return code
 
     try:
-        payload = run(propose_diff=args.propose_diff, only=args.only)
+        run_kwargs: dict[str, Any] = {"propose_diff": args.propose_diff, "only": args.only}
+        if args.refresh:
+            run_kwargs["force_refresh"] = True
+        try:
+            payload = run(**run_kwargs)
+        except TypeError:
+            run_kwargs.pop("force_refresh", None)
+            payload = run(**run_kwargs)
     except Exception as exc:
         payload = {
             "artifact_dir": None,

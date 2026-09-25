@@ -137,8 +137,11 @@ def check_registration(base_dir: Path, sys_dir: Path) -> dict:
     if total and present == 0:
         return {"name": "context_menu", "ok": True, "level": "info",
                 "detail": "configured but not registered (run 'engram menu enable')"}
-    return {"name": "context_menu", "ok": True, "level": "ok",
-            "detail": f"{present}/{total} HKCU entries present"}
+    if total and present == total:
+        return {"name": "context_menu", "ok": True, "level": "ok",
+                "detail": f"{present}/{total} HKCU entries present (active — run 'engram menu disable' to remove)"}
+    return {"name": "context_menu", "ok": True, "level": "warning",
+            "detail": f"{present}/{total} HKCU entries present (partial — run 'engram menu enable' to repair or 'engram menu disable' to remove)"}
 
 
 def _tool_present(sys_dir: Path, name: str, cfg: dict) -> bool:

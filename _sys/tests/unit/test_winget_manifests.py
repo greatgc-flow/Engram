@@ -167,8 +167,6 @@ def test_collect_package_files_excludes_backups_and_runtime_data(tmp_path: Path)
     (data_dir / "backups").mkdir(parents=True)
     (data_dir / "backups" / "engram_backup_20260920_120000.zip").write_bytes(b"PK00fakezip")
     (data_dir / "operational_errors.jsonl").write_text('{"error": "ephemeral"}\n', encoding="utf-8")
-    (data_dir / "OPEN-ITEMS-FROM-MIGRATED-BACKLOG.md").write_text("# Doc Note", encoding="utf-8")
-
     (data_dir / "logs").mkdir(parents=True)
     (data_dir / "logs" / "session.log").write_text("log", encoding="utf-8")
     (data_dir / "state").mkdir(parents=True)
@@ -181,11 +179,9 @@ def test_collect_package_files_excludes_backups_and_runtime_data(tmp_path: Path)
     assert "engram.cmd" in arcnames
     assert "README.md" in arcnames
     assert "_sys/core/dispatcher.py" in arcnames
-    assert "_sys/data/OPEN-ITEMS-FROM-MIGRATED-BACKLOG.md" in arcnames
 
     # Assert excluded files/directories are NOT packaged
     assert not any("backups" in a for a in arcnames)
+    assert not any(a.startswith("_sys/data/") for a in arcnames)
     assert "_sys/data/operational_errors.jsonl" not in arcnames
     assert not any(a.endswith(".jsonl") for a in arcnames)
-    assert not any(a.startswith("_sys/data/logs/") for a in arcnames)
-    assert not any(a.startswith("_sys/data/state/") for a in arcnames)

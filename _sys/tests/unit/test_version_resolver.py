@@ -6,6 +6,7 @@ import json
 import sys
 import urllib.error
 from pathlib import Path
+import pytest
 
 from _sys.core.root import find_root
 
@@ -13,6 +14,13 @@ SYS_DIR = find_root(__file__)
 sys.path.insert(0, str(SYS_DIR / "core"))
 
 import version_resolver as vr  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def reset_gh_auth():
+    vr._reset_gh_auth_cache()
+    yield
+    vr._reset_gh_auth_cache()
 
 
 class FakeResponse:
@@ -293,3 +301,116 @@ def test_engram_release_missing_asset(monkeypatch, tmp_path):
     result = vr.resolve_latest("engram", "engram_release", "1.0.0", "owner/engram", tmp_path / "cache.json")
     assert result["status"] == "error"
     assert result["error_type"] == "missing_asset"
+
+
+def test_ttl_cache_hit_returns_cache_ttl_without_network(monkeypatch, tmp_path):
+    cache_path = tmp_path / "cache.json"
+    cache_path.write_text(json.dumps({
+        "github_releases": {
+            "owner/repo": {
+                "etag": '"abc"',
+                "last_checked_at": vr._now_utc(),
+                "cached_latest_version": "2.1.0",
+                "cached_url": "https://example/tool-2.1.0.zip",
+            }
+        }
+    }), encoding="utf-8")
+
+    def _should_not_be_called(*args, **kwargs):
+        raise AssertionError("Network/GH call was made despite fresh TTL cache")
+
+    monkeypatch.setattr(vr.shutil, "which", lambda name: None)
+    monkeypatch.setattr(vr.urllib.request, "urlopen", _should_not_be_called)
+
+    result = vr.resolve_latest("tool", "github_releases", "1.0.0", "owner/repo", cache_path)
+    assert result["status"] == "ok"
+    assert result["latest_version"] == "2.1.0"
+    assert result["source"] == "cache_ttl"
+    assert result["url"] == "https://example/tool-2.1.0.zip"
+
+
+def test_ttl_cache_force_refresh_bypasses_cache(monkeypatch, tmp_path):
+    cache_path = tmp_path / "cache.json"
+    cache_path.write_text(json.dumps({
+        "github_releases": {
+            "owner/repo": {
+                "etag": '"abc"',
+                "last_checked_at": vr._now_utc(),
+                "cached_latest_version": "2.1.0",
+                "cached_url": "https://example/tool-2.1.0.zip",
+            }
+        }
+    }), encoding="utf-8")
+
+    monkeypatch.setattr(vr.shutil, "which", lambda name: None)
+
+    def not_modified(req, timeout=30):
+        raise urllib.error.HTTPError(req.full_url, 304, "not modified", {}, io.BytesIO(b""))
+
+    monkeypatch.setattr(vr.urllib.request, "urlopen", not_modified)
+
+    result = vr.resolve_latest(
+        "tool", "github_releases", "1.0.0", "owner/repo", cache_path, force_refresh=True
+    )
+    assert result["status"] == "ok"
+    assert result["latest_version"] == "2.1.0"
+    assert result["source"] == "cache_304"
+
+
+def test_github_403_falls_back_to_stale_cache(monkeypatch, tmp_path):
+    cache_path = tmp_path / "cache.json"
+    cache_path.write_text(json.dumps({
+        "github_releases": {
+            "owner/repo": {
+                "etag": '"abc"',
+                "last_checked_at": "2020-01-01T00:00:00Z",
+                "cached_latest_version": "1.9.9",
+                "cached_url": "https://example/stale.zip",
+            }
+        }
+    }), encoding="utf-8")
+
+    monkeypatch.setattr(vr.shutil, "which", lambda name: None)
+
+    def rate_limit(req, timeout=30):
+        raise urllib.error.HTTPError(
+            req.full_url, 403, "rate limited", {"X-RateLimit-Remaining": "0"}, io.BytesIO(b"rate limit")
+        )
+
+    monkeypatch.setattr(vr.urllib.request, "urlopen", rate_limit)
+
+    result = vr.resolve_latest("tool", "github_releases", "1.0.0", "owner/repo", cache_path)
+    assert result["status"] == "ok"
+    assert result["latest_version"] == "1.9.9"
+    assert result["source"] == "stale_cache_403"
+    assert result["url"] == "https://example/stale.zip"
+
+
+def test_gh_auth_memoization(monkeypatch):
+    monkeypatch.setattr(vr.shutil, "which", lambda name: "C:\\fake\\gh.exe")
+
+    call_count = 0
+
+    class FakeCompletedProcess:
+        returncode = 0
+        stdout = "HTTP/1.1 200 OK\r\n\r\n{}"
+        stderr = ""
+
+    def fake_subprocess_run(args, **kwargs):
+        nonlocal call_count
+        if args[:2] == ["gh", "auth"]:
+            call_count += 1
+            return FakeCompletedProcess()
+        return FakeCompletedProcess()
+
+    monkeypatch.setattr(vr.subprocess, "run", fake_subprocess_run)
+
+    assert vr._GH_AUTH_STATUS is None
+    res1 = vr._gh_api_latest("owner/repo", None)
+    assert call_count == 1
+    assert vr._GH_AUTH_STATUS is True
+
+    res2 = vr._gh_api_latest("owner/repo", None)
+    # Second call must reuse _GH_AUTH_STATUS without calling 'gh auth status' again
+    assert call_count == 1
+

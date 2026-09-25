@@ -57,3 +57,23 @@ def test_run_pipeline_false_result(monkeypatch):
             run_pipeline("testcmd", [])
         except AttributeError as e:
             pytest.fail(f"AttributeError raised: {e}")
+
+
+def test_build_ctx_menu_disable_preloads_prior_state(tmp_path, monkeypatch):
+    import json
+    from core.dispatcher import _build_ctx
+    state_dir = tmp_path / "_sys" / "data" / "state"
+    state_dir.mkdir(parents=True)
+    reg_state = state_dir / "register.state.json"
+    reg_state.write_text(json.dumps({"test_entry": "present"}), encoding="utf-8")
+
+    monkeypatch.setattr("core.dispatcher._resolve_paths", lambda b, s: {"state": state_dir})
+
+    ctx_disable = _build_ctx("menu-disable", [])
+    assert "prior_state" in ctx_disable
+    assert ctx_disable["prior_state"] == {"test_entry": "present"}
+
+    ctx_unregister = _build_ctx("unregister", [])
+    assert "prior_state" in ctx_unregister
+    assert ctx_unregister["prior_state"] == {"test_entry": "present"}
+
