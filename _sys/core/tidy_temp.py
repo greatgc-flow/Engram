@@ -306,6 +306,7 @@ def plan_vscode_caches() -> list[Path]:
 
 def _rm(path: Path, apply: bool) -> int:
     """Returns bytes freed (best-effort, 0 for dry-run)."""
+    path = Path(path)
     # Defense in depth: NEVER delete from these protected paths
     protected = [
         ROOT / "workspace",
@@ -323,6 +324,18 @@ def _rm(path: Path, apply: bool) -> int:
         raise AssertionError(f"Defense in depth: tidy attempted to delete protected root file {path}")
         
     for prot in protected:
+        # Deliberate carve-out: pip-cache lives under _sys/env/python but has its
+        # own narrower cleanup feature; keep all other contents of python protected.
+        if prot == _SYS_DIR / "env" / "python":
+            if path == PIP_CACHE_DIR or PIP_CACHE_DIR in path.parents:
+                continue
+            try:
+                p_res = path.resolve()
+                pip_res = PIP_CACHE_DIR.resolve()
+                if p_res == pip_res or pip_res in p_res.parents:
+                    continue
+            except (OSError, ValueError):
+                pass
         if path == prot or prot in path.parents:
             raise AssertionError(f"Defense in depth: tidy attempted to delete protected path {path}")
 

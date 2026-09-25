@@ -86,6 +86,11 @@ def mock_env(tmp_path):
         # Ensure older files are sorted properly by mtime (we can set mtime but sorted by name is also fine if we just want count, but tidy uses st_mtime)
         # Let's adjust mtime so 0 is oldest, 6 is newest.
         os.utime(log_file, (1000 + i, 1000 + i))
+
+    # pip-cache debris (real subdirectories with cached wheel/http entries)
+    pip_cache_dir = sys_dir / "env" / "python" / "pip-cache"
+    (pip_cache_dir / "http-v2").mkdir(parents=True)
+    (pip_cache_dir / "http-v2" / "sample.whl").write_bytes(b"dummy-wheel")
         
     # Configure tidy_temp paths to point entirely within mock_env (fixes finding M-5)
     tidy_temp.configure_paths(root=base_dir, sys_dir=sys_dir)
@@ -146,6 +151,7 @@ class TestTidy:
             # Should have deleted __pycache__ and .pytest_cache
             assert "_sys\\tests\\.pytest_cache\\v\\cache\\lastfailed" not in after
             assert "_sys\\core\\__pycache__\\tidy_temp.cpython-314.pyc" not in after
+            assert not any("pip-cache" in k for k in after.keys())
             
             # Should NOT have deleted launcher logs because --deep was not passed
             logs_count = sum(1 for k in after.keys() if "launcher\\start_" in k)
@@ -194,6 +200,77 @@ class TestTidy:
 
             with pytest.raises(AssertionError, match="Defense in depth: tidy attempted to delete protected path"):
                 tidy_temp._rm(mock_env / "_sys" / "tool-catalog.v1.json", True)
+
+            with pytest.raises(AssertionError, match="Defense in depth: tidy attempted to delete protected path"):
+                tidy_temp._rm(mock_env / "_sys" / "env" / "python", True)
+
+            with pytest.raises(AssertionError, match="Defense in depth: tidy attempted to delete protected path"):
+                tidy_temp._rm(mock_env / "_sys" / "env" / "python" / "python.exe", True)
+
+    def test_pip_cache_dry_run_reports_would_delete(self, mock_env, capsys):
+        """1. Confirms engram tidy (dry-run, no --apply) does not crash when PIP_CACHE_DIR
+        has real subdirectories present, and correctly reports them as 'would delete' items."""
+        with patch.object(tidy_temp, "ROOT", mock_env):
+            pip_cache = mock_env / "_sys" / "env" / "python" / "pip-cache"
+            sub = pip_cache / "http-v2"
+            assert sub.is_dir()
+
+            before = get_snapshot(mock_env)
+            result = tidy_temp.run({"args": []})
+            assert result["status"] == "success"
+
+            # Dry-run must not delete anything
+            after = get_snapshot(mock_env)
+            assert before == after
+
+            # Output must report pip_cache items as "would delete"
+            out = capsys.readouterr().out
+            assert "[pip_cache] would delete" in out
+            assert "http-v2" in out
+
+    def test_pip_cache_apply_deletes_cache_items(self, mock_env):
+        """2. Confirms --apply actually deletes pip-cache items successfully while
+        leaving python interpreter and other protected files intact."""
+        with patch.object(tidy_temp, "ROOT", mock_env):
+            pip_cache = mock_env / "_sys" / "env" / "python" / "pip-cache"
+            sub = pip_cache / "http-v2"
+            assert sub.exists()
+
+            python_exe = mock_env / "_sys" / "env" / "python" / "python.exe"
+            assert python_exe.exists()
+
+            result = tidy_temp.run({"args": ["--apply", "--only", "pip_cache"]})
+            assert result["status"] == "success"
+
+            # Cache subdirectory was deleted
+            assert not sub.exists()
+            # Python interpreter in protected parent was untouched
+            assert python_exe.exists()
+
+    def test_defense_in_depth_other_python_paths_still_raise(self, mock_env):
+        """3. Confirms other paths under _sys/env/python (not pip-cache) still trigger
+        the defense-in-depth AssertionError (exception was not over-widened)."""
+        with patch.object(tidy_temp, "ROOT", mock_env):
+            python_dir = mock_env / "_sys" / "env" / "python"
+
+            # Python directory itself
+            with pytest.raises(AssertionError, match="Defense in depth: tidy attempted to delete protected path"):
+                tidy_temp._rm(python_dir, apply=False)
+
+            # Files directly in python directory
+            with pytest.raises(AssertionError, match="Defense in depth: tidy attempted to delete protected path"):
+                tidy_temp._rm(python_dir / "python.exe", apply=False)
+
+            # Non-existent or hypothetical file/dir under python directory
+            with pytest.raises(AssertionError, match="Defense in depth: tidy attempted to delete protected path"):
+                tidy_temp._rm(python_dir / "hypothetical_module.py", apply=False)
+
+            # Sibling directories under python directory that are not pip-cache
+            with pytest.raises(AssertionError, match="Defense in depth: tidy attempted to delete protected path"):
+                tidy_temp._rm(python_dir / "pip-cache-evil", apply=False)
+
+            with pytest.raises(AssertionError, match="Defense in depth: tidy attempted to delete protected path"):
+                tidy_temp._rm(python_dir / "Lib", apply=False)
 
     def test_tidy_renamed_sys_dir_safe(self, tmp_path: Path):
         """Audit finding H-1: tidy targets resolve correctly under a renamed sys directory."""
