@@ -51,6 +51,11 @@ def vscode_exe(sys_dir: Path) -> Path:
     return sys_dir / "env" / "vscode" / "Code.exe"
 
 
+def pwsh_exe(sys_dir: Path) -> Path:
+    """Path to the portable PowerShell 7 executable shipped under env/pwsh/."""
+    return sys_dir / "env" / "pwsh" / "pwsh.exe"
+
+
 def npm_global_dir(sys_dir: Path) -> Path:
     """Path to the shared npm global-install directory under env/nodejs/."""
     return sys_dir / "env" / "nodejs" / "npm-global"
