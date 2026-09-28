@@ -2,15 +2,17 @@
 
 ## Decision
 
-Engram 3.4.3 is release-candidate complete. Its scope remains deliberately
+Engram 3.4.4 is released. Its scope remains deliberately
 narrow: portable Windows developer-environment lifecycle management. Peer
 collaboration, model routing, and token-consuming tests belong to PeerHub.
 
-The planned **v3.4.4 patch follow-up** removes the last runtime configuration
+The **v3.4.4 patch** removes the last runtime configuration
 bridge (`PEERHUB_CONFIG_HOME`) and corrects uninstall's link guard: ordinary
 file reparse points used by Python virtual environments are safe to remove as
 links, while directory junctions/symlinks that escape the allowlisted removal
-roots remain fail-closed. No v3.4.4 tag or release artifact exists yet.
+roots remain fail-closed. Tag, GitHub release, portable archive, and WinGet PR
+now exist; the WinGet validation and CLA checks pass and moderator approval is
+pending.
 
 ## Recursive traceability
 
@@ -36,7 +38,7 @@ new verbs from silently escaping this contract.
 - The canonical source-test entrypoints are now `run-tests.bat`,
   `run-sandbox-test.bat`, `sandbox-unit-test.wsb`, and `wsb-entry.bat`.
 - Development tests, tools, docs, caches, and mutable state are excluded from the
-  release allowlist. The 3.4.3 archive has 47 entries including its generated
+  release allowlist. The 3.4.4 archive has 47 entries including its generated
   release manifest and no test/docs/tool payload.
 - Repository-root and folder-name assumptions were eliminated from canonical
   harnesses. Special characters that Windows batch or a third-party binary may
@@ -54,17 +56,18 @@ verification, materialization, and lifecycle mechanics.
 
 ## Verification
 
-- Deterministic suite: **591 passed, 1 skipped**. The only skip is Windows
-  symlink creation without the host privilege.
+- Deterministic source suite: **595 passed, 3 skipped** on the development host.
+  The skips are host privilege/platform cases.
 - Consistency checks: encoding, root hygiene, and unreferenced functions pass.
 - Real local runtime: `engram doctor --json` passes.
 - Real internet: `engram update --check --refresh` reaches declared providers and
   reports actual available updates without applying them.
-- Package: `Engram-v3.4.3-portable-x64.zip`; SHA-256
-  `283CD22708C0899A3DE4878E26774E152EE6AE4A35BD251DA7272595A672F017`.
+- Package: `Engram-v3.4.4-portable-x64.zip`; SHA-256
+  `D3828A8A09307044D7AE4CBCD3432B16026F0AA7B47EEC9FCEFC89AE882FEAE9`.
   Official WinGet CLI manifest validation and extracted-archive CLI smoke tests
   pass. Rebuild the artifact if an included file changes after this record.
-- Windows Sandbox release gate: **PASS** — fresh bootstrap, 591 tests, `doctor`,
+- Windows Sandbox post-release gate: **PASS** — fresh bootstrap, 597 tests,
+  1 privilege/platform skip, `doctor`,
   and forced online update discovery all passed. The gate exposed and closed two
   release-only defects: embeddable Python now augments verified TLS with the
   Python CA bundle and Windows ROOT/CA stores, and update discovery no longer
@@ -91,6 +94,7 @@ an explicit warning and documented workaround, not product-specific branching.
    Sandbox is now a formal release gate and runs weekly on a dedicated Windows
    self-hosted runner because GitHub-hosted runners cannot provide the required
    nested virtualization.
-3. **Why supersede the pending 3.4.2 WinGet submission?** 3.4.3 contains the
-   audited package/help/test cleanup. Recommendation: publish 3.4.3 first, then
-   submit its manifests and close or supersede the still-pending older PR.
+3. **Why supersede older WinGet submissions?** 3.4.4 contains the audited
+   package/help/test cleanup plus the uninstall and product-independence fixes.
+   PR #442635 is the canonical submission; validation and CLA checks pass, and
+   it is waiting only for community moderator approval.
