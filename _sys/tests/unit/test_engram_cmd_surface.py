@@ -97,7 +97,7 @@ def test_bare_invocation_routes_to_open(surface_root):
     (["update"], "update"),
     (["update", "--check"], "update"),
     (["update", "--yes"], "update"),
-    (["update", "--only", "codex,peerhub"], "update"),
+    (["update", "--only", "codex,agy"], "update"),
     (["doctor"], "doctor"),
     (["doctor", "--json"], "doctor"),
     (["menu"], "menu-status"),

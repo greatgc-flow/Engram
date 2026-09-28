@@ -13,7 +13,7 @@
 
 Engram bootstraps a self-contained Windows dev environment — Python, Node.js, Git, VS Code, and a handful of CLI tools — into one portable folder, with no host-machine installs and no registry residue. `menu enable`/`menu disable` add/remove the right-click context menu; `uninstall` removes every trace, including a background helper that finishes cleanup after the process holding the folder open has exited.
 
-> **Note on scope:** Engram used to also orchestrate AI-to-AI peer collaboration directly. That entire layer has moved to the standalone [**peerhub**](https://github.com/greatgc-flow/peerhub) package — Engram itself no longer knows what a "peer debate" or "consensus round" is. What Engram *does* still do on the AI-tooling side is install, update, and status-check third-party AI CLIs (Claude Code, Codex, etc.) as ordinary managed tools, exactly like it manages ripgrep or Node.js. If you want AI-to-AI collaboration, install peerhub separately on top of an Engram environment (Engram provides an intentional external-tool compatibility bridge via `PEERHUB_CONFIG_HOME` so PeerHub's global config is isolated to `.engram/peerhub/config/`).
+> **Note on scope:** Engram used to also orchestrate AI-to-AI peer collaboration directly. That entire layer has moved to the standalone [**peerhub**](https://github.com/greatgc-flow/peerhub) package — Engram itself no longer knows what a "peer debate" or "consensus round" is. What Engram *does* still do on the AI-tooling side is install, update, and status-check third-party AI CLIs (Claude Code, Codex, etc.) as ordinary managed tools, exactly like it manages ripgrep or Node.js. PeerHub is installed, configured, discovered, and run independently; neither product requires the other.
 
 ## What it does
 
@@ -92,7 +92,7 @@ engram update --only nodejs,vscode
 
 ## AI-to-AI collaboration → peerhub
 
-Engram's job ends at "the AI CLI binary is installed, current, and reachable." Everything past that — inter-peer messaging, consensus rounds, quota-aware routing, governance directives — lives in the separate [**peerhub**](https://github.com/greatgc-flow/peerhub) package. Engram never installs it, pins its version, or invokes it — that would reintroduce exactly the coupling this separation removed. (For environment isolation, Engram's `_sys/env.json` declares an intentional external-tool compatibility bridge `PEERHUB_CONFIG_HOME`, ensuring that when peerhub runs in an Engram session, its global configuration resides under `.engram/peerhub/config/` rather than the host `%USERPROFILE%`.) Install it yourself, whenever you want it, entirely independently:
+Engram's job ends at "the AI CLI binary is installed, current, and reachable." Everything past that — inter-peer messaging, consensus rounds, quota-aware routing, governance directives — lives in the separate [**peerhub**](https://github.com/greatgc-flow/peerhub) package. Engram never installs it, pins its version, invokes it, or injects PeerHub-specific environment variables. PeerHub owns its installation, configuration, CLI discovery, and runtime state, and works without Engram:
 
 ```bash
 pip install peerhub
@@ -103,7 +103,7 @@ See [peerhub's own README](https://github.com/greatgc-flow/peerhub#readme) for t
 
 ## AI CLI personal config: `.engram/`
 
-Every AI CLI Engram manages reads and writes its personal, durable data (memory, settings, session history) from one consolidated, automatic root — `.engram/{claude,codex,agy}/`, plus peerhub's own global config at `.engram/peerhub/config/` via the `PEERHUB_CONFIG_HOME` environment compatibility bridge. No `subst` drive, no directory junction, and nothing to run by hand: it's pure environment-variable redirection, applied at every launch. `.engram/` is a **live** root — it accumulates real credentials and caches over time, so it's gitignored and never copied wholesale; [`_sys/checks/backup_personal_data.py`](_sys/checks/backup_personal_data.py) extracts just the safe, durable subset for backup instead. Full detail: [`docs/engram-dotdir.md`](docs/engram-dotdir.md).
+Every AI CLI Engram manages reads and writes its personal, durable data (memory, settings, session history) from one consolidated, automatic root — `.engram/{claude,codex,agy}/`. PeerHub is never configured or selectively handled by Engram and is absent from Engram's backup/reset schema. Explicit whole-tree operations such as `reset --all` or `uninstall --purge-data` still delete the user-confirmed `workspace/` tree regardless of which external tools wrote files there. No `subst` drive, no directory junction, and nothing to run by hand: AI-CLI redirection uses ordinary environment variables applied at every launch. `.engram/` is a **live** root — it accumulates real credentials and caches over time, so it is gitignored and never copied wholesale; [`_sys/checks/backup_personal_data.py`](_sys/checks/backup_personal_data.py) extracts just the safe, durable subset for backup instead. Full detail: [`docs/engram-dotdir.md`](docs/engram-dotdir.md).
 
 ## What's next
 
@@ -131,9 +131,17 @@ _sys\tests\run-sandbox-test.bat
 
 The first two commands are deterministic source tests. The Sandbox gate performs
 a from-scratch bootstrap, real downloads, `doctor`, and fresh online update
-discovery, so it is intentionally opt-in and required before release. Engram
+discovery, so it is required before release. It also runs every Saturday at
+03:00 Asia/Seoul on a dedicated Windows machine registered with the
+`engram-sandbox` self-hosted-runner label; evidence is retained as a workflow
+artifact for 30 days. Engram
 does not call AI models; therefore no Engram test spends model tokens. Model-call
 and quota tests belong to PeerHub's separate `slow`/`e2e` tiers.
+
+The Sandbox runner must run in a logged-in interactive Windows session via the
+Actions runner's `run.cmd`; a runner installed as a Windows service executes in
+Session 0 and cannot host Windows Sandbox. The workflow checks this before it
+starts the 30-minute Sandbox wait.
 
 ## Trust Signals
 

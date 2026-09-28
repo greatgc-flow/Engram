@@ -5,7 +5,8 @@ Contract (Ratified §6):
 - Deletion is strictly allowlist-based; anything not positively identified
   as Engram program files is kept and reported.
 - Default uninstall preserves .engram/, workspace/, and legacy user items.
-- Link guard refuses deletion if any junction or symlink exists under delete targets.
+- Link guard allows file reparse points (the link itself is deleted) and
+  refuses external or unverifiable directory junctions/symlinks.
 - Two-tier confirmation: prompt 1 bypassed by --yes; prompt 2 (--purge-data)
   requires typing the folder basename and cannot be bypassed.
 - Hand-off to static PowerShell helper (uninstall_helper.ps1) with parent wait.
@@ -148,38 +149,79 @@ def plan_uninstall(base_dir: Path, sys_dir: Path, purge_data: bool = False) -> U
     return plan
 
 
+def _path_is_within(path: Path, roots: List[Path]) -> bool:
+    """Return whether *path* is lexically inside one of *roots*.
+
+    The roots intentionally are not resolved through reparse points: if a
+    planned removal target is itself a junction, resolving both sides would
+    make an external target appear safe by definition.
+    """
+    candidate = os.path.normcase(os.path.abspath(path))
+    for root in roots:
+        boundary = os.path.normcase(os.path.abspath(root))
+        try:
+            if os.path.commonpath((candidate, boundary)) == boundary:
+                return True
+        except ValueError:
+            # Different Windows drives cannot have a common path.
+            continue
+    return False
+
+
 def check_links_under_targets(targets: List[Path]) -> List[Path]:
-    """Scan targets for junctions or symlinks. Returns list of detected links."""
-    links = []
+    """Return unsafe directory links that escape the removal target set.
+
+    Python virtual environments may legitimately contain file symlinks or
+    other file reparse points (DLL/PYD/ZIP/EXE launch shims). Removing such a
+    path removes the link itself; it does not traverse into the linked file,
+    so those entries must not block uninstall. Directory symlinks/junctions
+    are different: an external target could make recursive deletion escape
+    the allowlisted installation tree, so they remain fail-closed.
+    """
+    roots = [Path(os.path.abspath(t)) for t in targets]
+    unsafe_links: List[Path] = []
+
+    def inspect_link(path: Path) -> bool:
+        """Inspect one link and return True when os.walk must not enter it."""
+        try:
+            is_link = path.is_symlink() or (
+                hasattr(path, "is_junction") and path.is_junction()
+            )
+            if not is_link:
+                return False
+            if not path.is_dir():
+                # File links/reparse points are removed as directory entries.
+                return False
+            try:
+                destination = path.resolve(strict=True)
+            except OSError:
+                # An unreadable directory target cannot be proven safe.
+                unsafe_links.append(path)
+                return True
+            if not _path_is_within(destination, roots):
+                unsafe_links.append(path)
+            return True
+        except OSError:
+            # Inspection failure for a candidate directory is fail-closed.
+            unsafe_links.append(path)
+            return True
+
     for t in targets:
-        if not t.exists():
+        if not t.exists() and not t.is_symlink():
             continue
 
         # Check target itself
-        try:
-            if t.is_symlink() or (hasattr(t, "is_junction") and t.is_junction()):
-                links.append(t)
-                continue
-        except OSError:
-            pass
+        if inspect_link(t):
+            continue
 
         if t.is_dir():
-            for root, dirs, files in os.walk(t):
-                for d in dirs:
-                    p = Path(root) / d
-                    try:
-                        if p.is_symlink() or (hasattr(p, "is_junction") and p.is_junction()):
-                            links.append(p)
-                    except OSError:
-                        pass
-                for f in files:
-                    p = Path(root) / f
-                    try:
-                        if p.is_symlink() or (hasattr(p, "is_junction") and p.is_junction()):
-                            links.append(p)
-                    except OSError:
-                        pass
-    return links
+            for root, dirs, _files in os.walk(t, followlinks=False):
+                # Explicitly prune every directory link. Internal links are
+                # safe to delete, but never need to be traversed to do so.
+                for name in list(dirs):
+                    if inspect_link(Path(root) / name):
+                        dirs.remove(name)
+    return unsafe_links
 
 
 _HELP_FLAGS = ("--help", "-h", "/?")
@@ -215,7 +257,7 @@ def run(ctx: dict) -> dict[str, Any] | None:
     # 1. Link guard
     links = check_links_under_targets(plan.targets)
     if links:
-        print("[Error] Refusing to uninstall: symlink or junction found under removal targets:")
+        print("[Error] Refusing to uninstall: external or unverifiable directory link found under removal targets:")
         for link in links:
             print(f"  - {link}")
         sys.exit(1)

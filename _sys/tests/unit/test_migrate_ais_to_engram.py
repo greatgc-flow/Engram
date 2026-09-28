@@ -111,9 +111,8 @@ def test_apply_migration_moves_not_copies(_mock, tmp_path: Path) -> None:
 def test_apply_migration_onto_an_empty_idempotently_created_engram_dir(
     _mock, tmp_path: Path
 ) -> None:
-    """build_env() (item 6) creates .engram/{claude,codex,agy,gh}/ and
-    .engram/peerhub/config/ idempotently on every launch -- an empty
-    .engram/ from that must not block a real move."""
+    """build_env() creates .engram/{claude,codex,agy,gh}/ idempotently on
+    every launch; that empty root must not block a real migration."""
     ais = tmp_path / ".ais"
     (ais / "claude").mkdir(parents=True)
     (ais / "claude" / "CLAUDE.md").write_text("hi", encoding="utf-8")

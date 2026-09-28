@@ -488,6 +488,18 @@ def test_reset_cancelled_by_user(
     assert "Reset cancelled." in capsys.readouterr().out
 
 
+def test_backup_schema_does_not_include_peerhub() -> None:
+    """PeerHub owns its backups; Engram must not acquire its config/state."""
+    from checks.backup_personal_data import ITEMS
+
+    paths = [
+        value.lower()
+        for item in ITEMS
+        for value in (item.live_relpath, item.bundle_relpath)
+    ]
+    assert not any("peerhub" in value for value in paths)
+
+
 def test_reset_default_scope_deletes_engram_leaves_workspace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -1,0 +1,51 @@
+name: Windows Sandbox release and weekly gate
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # Saturday 03:00 Asia/Seoul (Friday 18:00 UTC).
+    - cron: "0 18 * * 5"
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  # Every run writes the same host-mapped evidence filenames. Serialize across
+  # scheduled, manual, and release-tag runs even if multiple matching runners
+  # are registered, otherwise one run can clear another run's completion file.
+  group: engram-sandbox
+  cancel-in-progress: false
+
+jobs:
+  clean-room-sandbox:
+    # Windows Sandbox needs virtualization unavailable on GitHub-hosted
+    # runners. Register a dedicated interactive (run.cmd, not Windows service)
+    # machine with the engram-sandbox label.
+    runs-on: [self-hosted, Windows, X64, engram-sandbox]
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Verify interactive Windows Sandbox runner
+        shell: pwsh
+        run: |
+          $sessionId = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
+          if ($sessionId -eq 0) {
+            throw "Windows Sandbox requires an interactive runner session; start actions-runner with run.cmd instead of installing it as a service."
+          }
+          Get-Command WindowsSandbox.exe -ErrorAction Stop
+      - name: Run clean-room bootstrap, network, doctor, and update checks
+        shell: cmd
+        run: _sys\tests\run-sandbox-test.bat
+      - name: Upload Sandbox evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sandbox-evidence-${{ github.run_id }}
+          path: _archive/test-results/
+          if-no-files-found: warn
+          retention-days: 30

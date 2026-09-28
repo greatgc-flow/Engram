@@ -62,30 +62,84 @@ if ($parentPid) {
 }
 
 # 2. Re-run link guard and remove targets
+#
+# File reparse points are expected in some Python 3.14 virtual environments
+# (DLL/PYD/ZIP/EXE shims). Removing one deletes the directory entry itself and
+# never traverses its target, so only directory links that escape the planned
+# removal roots are unsafe.
+$directoryRoots = @()
+foreach ($plannedTarget in $targets) {
+    if (Test-Path -LiteralPath $plannedTarget -PathType Container) {
+        try {
+            $directoryRoots += [System.IO.Path]::GetFullPath($plannedTarget).TrimEnd('\')
+        } catch { }
+    }
+}
+
+function Test-WithinRemovalRoots {
+    param([string]$Candidate)
+    if (-not $Candidate) { return $false }
+    try { $full = [System.IO.Path]::GetFullPath($Candidate).TrimEnd('\') }
+    catch { return $false }
+    foreach ($root in $directoryRoots) {
+        if ($full.Equals($root, [System.StringComparison]::OrdinalIgnoreCase) -or
+            $full.StartsWith($root + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Get-ReparseDestination {
+    param($Item)
+    $raw = $Item.Target
+    if ($raw -is [System.Array]) { $raw = $raw | Select-Object -First 1 }
+    if ([string]::IsNullOrWhiteSpace([string]$raw)) { return $null }
+    try {
+        if ([System.IO.Path]::IsPathRooted([string]$raw)) {
+            return [System.IO.Path]::GetFullPath([string]$raw)
+        }
+        return [System.IO.Path]::GetFullPath((Join-Path $Item.DirectoryName ([string]$raw)))
+    } catch {
+        return $null
+    }
+}
+
 $skippedTargets = @()
 foreach ($target in $targets) {
     if (-not (Test-Path -LiteralPath $target)) {
         continue
     }
 
-    # Check if target itself or anything under it is a ReparsePoint
-    $hasReparse = $false
+    # Check if target itself or anything under it is an unsafe directory
+    # reparse point. File reparse points are intentionally allowed.
+    $unsafeReparse = $false
     try {
         $item = Get-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
-        if ($item -and ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
-            $hasReparse = $true
+        if ($item -and $item.PSIsContainer -and
+            ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+            $destination = Get-ReparseDestination $item
+            if (-not (Test-WithinRemovalRoots $destination)) {
+                $unsafeReparse = $true
+            }
         } elseif (Test-Path -LiteralPath $target -PathType Container) {
             $reparseItems = Get-ChildItem -LiteralPath $target -Recurse -Force -Attributes ReparsePoint -ErrorAction SilentlyContinue
-            if ($reparseItems) {
-                $hasReparse = $true
+            foreach ($reparseItem in $reparseItems) {
+                if (-not $reparseItem.PSIsContainer) { continue }
+                $destination = Get-ReparseDestination $reparseItem
+                if (-not (Test-WithinRemovalRoots $destination)) {
+                    $unsafeReparse = $true
+                    break
+                }
             }
         }
     } catch {
-        # Ignore access or inspection errors
+        # A directory-link inspection error cannot be proven safe.
+        $unsafeReparse = $true
     }
 
-    if ($hasReparse) {
-        Write-Warning "Skipping target containing reparse point: $target"
+    if ($unsafeReparse) {
+        Write-Warning "Skipping target containing external or unverifiable directory link: $target"
         $skippedTargets += $target
         continue
     }

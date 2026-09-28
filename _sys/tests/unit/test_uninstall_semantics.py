@@ -429,6 +429,54 @@ def test_case_5_junction_under_delete_target_refused(uninstall_fixture, tmp_path
     assert outside_file.read_text(encoding="utf-8") == "critical outside data"
 
 
+def test_file_symlinks_under_delete_target_are_allowed(uninstall_fixture, tmp_path):
+    """Venv file links are safe: uninstall removes links, not their targets."""
+    ctx, _localappdata, _temp_dir = uninstall_fixture
+    target_dir = ctx["base_dir"] / "_sys" / "env" / "venv" / "Scripts"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    outside_dir = tmp_path / "outside_file_targets"
+    outside_dir.mkdir()
+    created = []
+    for extension in (".dll", ".pyd", ".zip", ".exe"):
+        outside = outside_dir / f"runtime{extension}"
+        outside.write_bytes(b"outside data")
+        link = target_dir / f"runtime-link{extension}"
+        try:
+            os.symlink(outside, link, target_is_directory=False)
+        except OSError as exc:
+            pytest.skip(f"File symlinks are unavailable on this host: {exc}")
+        created.append((link, outside))
+
+    from core.uninstaller import check_links_under_targets
+
+    assert check_links_under_targets([ctx["base_dir"] / "_sys" / "env"]) == []
+    for link, outside in created:
+        assert link.is_symlink()
+        assert outside.read_bytes() == b"outside data"
+
+
+def test_file_link_guard_policy_is_deterministic_without_symlink_privilege(
+    tmp_path, monkeypatch
+):
+    """Unit-level regression for hosts where creating symlinks needs elevation."""
+    root = tmp_path / "env"
+    root.mkdir()
+    link = root / "python314.dll"
+    link.write_bytes(b"link placeholder")
+
+    original_is_symlink = Path.is_symlink
+
+    def fake_is_symlink(path: Path) -> bool:
+        return path == link or original_is_symlink(path)
+
+    monkeypatch.setattr(Path, "is_symlink", fake_is_symlink)
+
+    from core.uninstaller import check_links_under_targets
+
+    assert check_links_under_targets([root]) == []
+
+
 def test_case_6_powershell_helper_in_ampersand_and_special_chars_dir(tmp_path):
     """Case 6: Paths tmp_path/'a&b!c%d': helper completes cleanly without batch/cmd parsing errors."""
     special_dir = tmp_path / "a&b!c%d"
@@ -483,6 +531,103 @@ def test_case_6_powershell_helper_in_ampersand_and_special_chars_dir(tmp_path):
 
     journal_data = json.loads(journal_path.read_text(encoding="utf-8-sig"))
     assert journal_data["status"] == "COMPLETED"
+
+
+def test_powershell_helper_removes_file_links_without_touching_targets(tmp_path):
+    """The detached helper must allow venv file reparse points safely."""
+    base_dir = tmp_path / "file_link_install"
+    target_dir = base_dir / "_sys" / "env" / "venv" / "Scripts"
+    target_dir.mkdir(parents=True)
+    outside_dir = tmp_path / "outside_file_link"
+    outside_dir.mkdir()
+    outside_file = outside_dir / "python314.dll"
+    outside_file.write_bytes(b"must survive")
+    link = target_dir / "python314.dll"
+    try:
+        os.symlink(outside_file, link, target_is_directory=False)
+    except OSError as exc:
+        pytest.skip(f"File symlinks are unavailable on this host: {exc}")
+
+    journal_path = tmp_path / "file_link_journal.json"
+    journal_path.write_text(json.dumps({
+        "operation": "uninstall",
+        "status": "IN_PROGRESS",
+        "steps": [],
+        "error_recoverable": False,
+    }), encoding="utf-8")
+    plan_path = tmp_path / "file_link_plan.json"
+    plan_path.write_text(json.dumps({
+        "targets": [str(base_dir / "_sys" / "env")],
+        "base_dir": str(base_dir),
+        "sys_dir": str(base_dir / "_sys"),
+        "journal_path": str(journal_path),
+        "parent_pid": _get_dummy_exited_pid(),
+    }), encoding="utf-8")
+
+    helper = _SYS_DIR / "core" / "uninstall_helper.ps1"
+    proc = subprocess.run([
+        "powershell.exe", "-NoProfile", "-NonInteractive",
+        "-ExecutionPolicy", "Bypass", "-File", str(helper),
+        "-PlanPath", str(plan_path),
+    ], capture_output=True, text=True, encoding="utf-8")
+
+    assert proc.returncode == 0, f"stderr: {proc.stderr}\nstdout: {proc.stdout}"
+    assert not link.exists()
+    assert outside_file.read_bytes() == b"must survive"
+    journal = json.loads(journal_path.read_text(encoding="utf-8-sig"))
+    assert journal["status"] == "COMPLETED"
+
+
+def test_powershell_helper_refuses_external_directory_junction(tmp_path):
+    """The helper's TOCTOU recheck remains fail-closed for escaping dirs."""
+    base_dir = tmp_path / "junction_install"
+    target_dir = base_dir / "_sys" / "env"
+    target_dir.mkdir(parents=True)
+    outside_dir = tmp_path / "junction_outside"
+    outside_dir.mkdir()
+    outside_file = outside_dir / "keep.txt"
+    outside_file.write_text("must survive", encoding="utf-8")
+    junction = target_dir / "escape"
+    try:
+        import _winapi
+        _winapi.CreateJunction(str(outside_dir), str(junction))
+    except Exception:
+        res = subprocess.run(
+            f'cmd.exe /c mklink /J "{junction}" "{outside_dir}"',
+            shell=True,
+            capture_output=True,
+        )
+        if res.returncode != 0:
+            pytest.skip("Could not create junction on this host/filesystem")
+
+    journal_path = tmp_path / "junction_journal.json"
+    journal_path.write_text(json.dumps({
+        "operation": "uninstall",
+        "status": "IN_PROGRESS",
+        "steps": [],
+        "error_recoverable": False,
+    }), encoding="utf-8")
+    plan_path = tmp_path / "junction_plan.json"
+    plan_path.write_text(json.dumps({
+        "targets": [str(target_dir)],
+        "base_dir": str(base_dir),
+        "sys_dir": str(base_dir / "_sys"),
+        "journal_path": str(journal_path),
+        "parent_pid": _get_dummy_exited_pid(),
+    }), encoding="utf-8")
+
+    helper = _SYS_DIR / "core" / "uninstall_helper.ps1"
+    proc = subprocess.run([
+        "powershell.exe", "-NoProfile", "-NonInteractive",
+        "-ExecutionPolicy", "Bypass", "-File", str(helper),
+        "-PlanPath", str(plan_path),
+    ], capture_output=True, text=True, encoding="utf-8")
+
+    assert proc.returncode == 1
+    assert target_dir.exists()
+    assert outside_file.read_text(encoding="utf-8") == "must survive"
+    journal = json.loads(journal_path.read_text(encoding="utf-8-sig"))
+    assert journal["status"] == "FAILED_RECOVERABLE"
 
 
 def test_case_7_engram_cmd_uninstall_forwards_arguments(tmp_path):

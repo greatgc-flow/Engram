@@ -57,7 +57,7 @@ Always verify your changes against the test suite before submitting:
 - **Run pre-commit checks:**
   Static and hygiene checks live in `_sys/checks/` (e.g. `check_encoding.py`, `check_root_hygiene.py`, `check_unreferenced_functions.py`).
 
-- **Run the isolated, real-network release gate (optional but required before a release):**
+- **Run the isolated, real-network release gate (required before a release):**
   ```cmd
   _sys\tests\run-sandbox-test.bat
   ```
@@ -66,6 +66,11 @@ Always verify your changes against the test suite before submitting:
   suite, runs `engram doctor --json`, and forces a live update-discovery refresh.
   It can consume bandwidth and wall-clock time but never invokes an AI model, so
   Engram itself has no token-cost test tier. PeerHub owns model dispatch tests.
+  The same command is scheduled weekly by `sandbox-gate.yml` on a dedicated
+  Windows self-hosted runner labelled `engram-sandbox`. GitHub-hosted runners
+  do not expose the nested virtualization required by Windows Sandbox. Start
+  the dedicated runner interactively with `run.cmd`, not as a Windows service;
+  service-mode runners execute in Session 0, where Windows Sandbox cannot run.
 
 ---
 

@@ -179,7 +179,7 @@ class TestRelocationAndDriveMigration:
         (sys_dir / "env.json").write_text(json.dumps({
             "env_vars": {"ENGRAM_TEST": "1"},
             "tool_env_vars": {
-                "PEERHUB_CONFIG_HOME": {"base": "engram", "sub": "peerhub"},
+                "CUSTOM_CONFIG_HOME":  {"base": "engram", "sub": "custom"},
                 "CLAUDE_CONFIG_DIR":   {"base": "engram", "sub": "claude"},
                 "NPM_CONFIG_PREFIX":   {"base": "env",    "sub": "nodejs/npm-global"},
             },
@@ -193,12 +193,12 @@ class TestRelocationAndDriveMigration:
 
         assert env["BASE_DIR"] == str(base_dir)
         assert env["SYS_DIR"] == str(sys_dir)
-        assert env["PEERHUB_CONFIG_HOME"] == str(base_dir / ".engram" / "peerhub")
+        assert env["CUSTOM_CONFIG_HOME"] == str(base_dir / ".engram" / "custom")
         assert env["CLAUDE_CONFIG_DIR"] == str(base_dir / ".engram" / "claude")
         assert env["NPM_CONFIG_PREFIX"] == str(sys_dir / "env" / "nodejs" / "npm-global")
 
         # Verify .engram subdirectories were automatically created
-        assert (base_dir / ".engram" / "peerhub").is_dir()
+        assert (base_dir / ".engram" / "custom").is_dir()
         assert (base_dir / ".engram" / "claude").is_dir()
 
     def test_relocate_tracks_base_dir_change(self, tmp_path):

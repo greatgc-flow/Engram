@@ -6,6 +6,12 @@ Engram 3.4.3 is release-candidate complete. Its scope remains deliberately
 narrow: portable Windows developer-environment lifecycle management. Peer
 collaboration, model routing, and token-consuming tests belong to PeerHub.
 
+The planned **v3.4.4 patch follow-up** removes the last runtime configuration
+bridge (`PEERHUB_CONFIG_HOME`) and corrects uninstall's link guard: ordinary
+file reparse points used by Python virtual environments are safe to remove as
+links, while directory junctions/symlinks that escape the allowlisted removal
+roots remain fail-closed. No v3.4.4 tag or release artifact exists yet.
+
 ## Recursive traceability
 
 | Capability | Implementation/config | Tests | Documentation |
@@ -72,15 +78,19 @@ credentials. Confirmed failures close through a regression test plus a generic
 implementation or declarative catalog correction. OS/provider limits close with
 an explicit warning and documented workaround, not product-specific branching.
 
-## Five-whys review and decisions reserved for maintainers
+## Five-whys review and maintainer decisions
 
-1. **Why keep `PEERHUB_CONFIG_HOME`?** It isolates an independently installed
-   tool without reinstalling or invoking it. Recommendation: keep the bridge,
-   but never add PeerHub orchestration back into Engram.
+1. **Why remove `PEERHUB_CONFIG_HOME`?** The maintainer clarified after the
+   v3.4.3 audit that Engram and PeerHub must be completely independent, including
+   runtime configuration. The bridge was therefore removed: Engram no longer
+   installs, invokes, configures, or includes PeerHub in its backup/reset schema.
+   Explicit whole-tree operations still delete a user-confirmed `workspace/`
+   regardless of which external tools created files below it.
 2. **Why make Sandbox a release gate but not ordinary CI?** A fresh bootstrap is
-   bandwidth-heavy and network-dependent. Recommendation: keep deterministic CI
-   mandatory and run Sandbox before formal releases; consider a scheduled CI job
-   only if hosted-runner cost is acceptable.
+   bandwidth-heavy and network-dependent. Deterministic CI remains mandatory;
+   Sandbox is now a formal release gate and runs weekly on a dedicated Windows
+   self-hosted runner because GitHub-hosted runners cannot provide the required
+   nested virtualization.
 3. **Why supersede the pending 3.4.2 WinGet submission?** 3.4.3 contains the
    audited package/help/test cleanup. Recommendation: publish 3.4.3 first, then
    submit its manifests and close or supersede the still-pending older PR.

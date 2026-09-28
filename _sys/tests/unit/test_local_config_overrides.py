@@ -120,22 +120,22 @@ def _make_engram_sys_dir(tmp_path: Path) -> Path:
         '"CLAUDE_CONFIG_DIR": {"base": "engram", "sub": "claude"}, '
         '"CODEX_HOME": {"base": "engram", "sub": "codex"}, '
         '"GEMINI_DIR": {"base": "engram", "sub": "agy"}, '
-        '"GH_CONFIG_DIR": {"base": "engram", "sub": "gh"}, '
-        '"PEERHUB_CONFIG_HOME": {"base": "engram", "sub": "peerhub/config"}'
+        '"GH_CONFIG_DIR": {"base": "engram", "sub": "gh"}'
         '}, "path_entries": []}',
         encoding="utf-8",
     )
     return sys_dir
 
 
-def test_build_env_resolves_ai_cli_vars_under_engram_dotdir(tmp_path):
+def test_build_env_resolves_ai_cli_vars_under_engram_dotdir(tmp_path, monkeypatch):
+    monkeypatch.delenv("PEERHUB_CONFIG_HOME", raising=False)
     sys_dir = _make_engram_sys_dir(tmp_path)
     env = build_env(tmp_path, sys_dir)
     assert env["CLAUDE_CONFIG_DIR"] == str(tmp_path / ".engram" / "claude")
     assert env["CODEX_HOME"] == str(tmp_path / ".engram" / "codex")
     assert env["GEMINI_DIR"] == str(tmp_path / ".engram" / "agy")
     assert env["GH_CONFIG_DIR"] == str(tmp_path / ".engram" / "gh")
-    assert env["PEERHUB_CONFIG_HOME"] == str(tmp_path / ".engram" / "peerhub" / "config")
+    assert "PEERHUB_CONFIG_HOME" not in env
 
 
 def test_build_env_creates_engram_subdirs_idempotently(tmp_path):
@@ -144,7 +144,7 @@ def test_build_env_creates_engram_subdirs_idempotently(tmp_path):
     build_env(tmp_path, sys_dir)  # must not raise the second time
     for sub in ("claude", "codex", "agy", "gh"):
         assert (tmp_path / ".engram" / sub).is_dir()
-    assert (tmp_path / ".engram" / "peerhub" / "config").is_dir()
+    assert not (tmp_path / ".engram" / "peerhub").exists()
 
 
 def test_build_env_git_config_global_retargeted_to_engram_when_present(tmp_path, monkeypatch):

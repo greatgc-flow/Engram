@@ -142,3 +142,9 @@ def test_runtime_catalog_does_not_manage_peerhub() -> None:
             "and must not be reintroduced without a fresh design (isolation, integrity, "
             "canary, rollback, dedicated tests)"
         )
+
+
+def test_environment_manifest_does_not_configure_peerhub() -> None:
+    """The products share no install-time or runtime configuration bridge."""
+    manifest = json.loads((_SYS_DIR / "env.json").read_text(encoding="utf-8"))
+    assert "PEERHUB_CONFIG_HOME" not in manifest.get("tool_env_vars", {})
