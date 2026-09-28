@@ -105,18 +105,18 @@ DESC_KO = (
 def get_release_notes_en(version: str) -> str:
     return (
         f"Engram v{version}:\n"
-        f"- Complete separation of Engram core from AI collaboration logic\n"
-        f"- Native Winget portable package packaging support\n"
-        f"- Zero-bloat portable developer runtime with isolated virtual environments"
+        f"- Complete recursive help for root, open, version, and menu commands\n"
+        f"- Consolidated release/Sandbox test harness with real failure propagation\n"
+        f"- Smaller portable archive excluding source-only tests and retired code"
     )
 
 
 def get_release_notes_ko(version: str) -> str:
     return (
         f"Engram v{version} 릴리즈:\n"
-        f"- Engram 코어와 AI 협업 로직의 완전한 분리 완료\n"
-        f"- 공식 Winget 포터블 패키징 인프라 탑재\n"
-        f"- 격리된 가상 환경을 갖춘 무설치 포터블 개발 런타임"
+        f"- 루트·open·version·menu 명령의 재귀적 도움말 완결\n"
+        f"- 릴리스/Sandbox 테스트 진입점 통합 및 실패 코드 전파\n"
+        f"- 소스 전용 테스트와 폐기 코드를 제외한 경량 포터블 아카이브"
     )
 
 
@@ -132,6 +132,7 @@ SYS_EXCLUDE_DIR_PATTERNS = {
     "logs",
     "state",
     "setup-files",
+    "tests",
     ".pytest_cache",
     "release-manifests",
     "backups",

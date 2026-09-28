@@ -1,36 +1,29 @@
+import importlib.util
 import sys
 from pathlib import Path
-
-import pytest
 
 from _sys.core.root import find_root
 
 repo_root = find_root(__file__).parent
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
+if str(repo_root) in sys.path:
+    sys.path.remove(str(repo_root))
+sys.path.insert(0, str(repo_root))
 
-# tools/ is a maintainer-only release-packaging directory, deliberately
-# excluded from the portable zip build (SYS_EXCLUDE_DIR_PATTERNS covers
-# _sys/tools/, and repo-root tools/ is never walked at all) -- see
-# tools/winget/build_package.py's own "zero-bloat portable runtime"
-# contract. A real, from-scratch install of a release zip has this test
-# file (it ships under _sys/tests/) but not the module it imports; skip
-# rather than fail collection when that's the case, instead of shipping
-# dev-only packaging tooling just to keep this one test importable.
-pytest.importorskip(
-    "tools.winget.build_package",
-    reason="tools/ is excluded from the portable release zip by design",
+_BUILD_PACKAGE_PATH = repo_root / "tools" / "winget" / "build_package.py"
+_BUILD_PACKAGE_SPEC = importlib.util.spec_from_file_location(
+    "engram_winget_build_package", _BUILD_PACKAGE_PATH
 )
+assert _BUILD_PACKAGE_SPEC is not None and _BUILD_PACKAGE_SPEC.loader is not None
+_BUILD_PACKAGE = importlib.util.module_from_spec(_BUILD_PACKAGE_SPEC)
+_BUILD_PACKAGE_SPEC.loader.exec_module(_BUILD_PACKAGE)
 
-from tools.winget.build_package import (
-    generate_manifest_version,
-    generate_manifest_installer,
-    generate_manifest_locale_en,
-    generate_manifest_locale_ko,
-    collect_package_files,
-    create_portable_archive,
-    ROOT_FILES_ALLOW,
-)
+generate_manifest_version = _BUILD_PACKAGE.generate_manifest_version
+generate_manifest_installer = _BUILD_PACKAGE.generate_manifest_installer
+generate_manifest_locale_en = _BUILD_PACKAGE.generate_manifest_locale_en
+generate_manifest_locale_ko = _BUILD_PACKAGE.generate_manifest_locale_ko
+collect_package_files = _BUILD_PACKAGE.collect_package_files
+create_portable_archive = _BUILD_PACKAGE.create_portable_archive
+ROOT_FILES_ALLOW = _BUILD_PACKAGE.ROOT_FILES_ALLOW
 
 def test_manifest_generation():
     version = "3.0.0"
@@ -117,6 +110,7 @@ def test_portable_archive_matches_p1_10_contract(tmp_path):
         excluded_dir_prefixes = (
             "_sys/env/",
             "_sys/tools/",
+            "_sys/tests/",
             "_sys/data/state/",
             "_sys/data/logs/",
             "_sys/data/temp/",
@@ -162,6 +156,10 @@ def test_collect_package_files_excludes_backups_and_runtime_data(tmp_path: Path)
     sys_dir = tmp_path / "_sys"
     (sys_dir / "core").mkdir(parents=True)
     (sys_dir / "core" / "dispatcher.py").write_text("# core", encoding="utf-8")
+    (sys_dir / "tests" / "unit").mkdir(parents=True)
+    (sys_dir / "tests" / "unit" / "test_dev_only.py").write_text(
+        "# source-only test", encoding="utf-8"
+    )
 
     data_dir = sys_dir / "data"
     (data_dir / "backups").mkdir(parents=True)
@@ -183,5 +181,6 @@ def test_collect_package_files_excludes_backups_and_runtime_data(tmp_path: Path)
     # Assert excluded files/directories are NOT packaged
     assert not any("backups" in a for a in arcnames)
     assert not any(a.startswith("_sys/data/") for a in arcnames)
+    assert not any(a.startswith("_sys/tests/") for a in arcnames)
     assert "_sys/data/operational_errors.jsonl" not in arcnames
     assert not any(a.endswith(".jsonl") for a in arcnames)

@@ -8,7 +8,7 @@
 :: Usage:
 :: run-tests [--unit]        pytest unit tests (fast, ~5s)
 :: run-tests [--lifecycle]   system lifecycle/portability tests
-:: run-tests [--scenario]    MECE scenario tests (Korean path + SUBST + lifecycle)
+:: run-tests [--scenario]    MECE scenario tests (Korean/special path + lifecycle)
 :: run-tests [--scenarios]   alias of --scenario (kept for backward compatibility)
 :: run-tests [--all]         all tests (unit+lifecycle, ~20s)
 :: run-tests [--full]        alias of --all (kept for backward compatibility)
@@ -64,7 +64,7 @@ if errorlevel 1 set "_FAIL=1"
 goto :done
 
 :run_scenario
-echo [tests] --- MECE Scenario (Korean path + SUBST + Lifecycle) ---
+echo [tests] --- MECE Scenario (Korean/Special Path + Lifecycle) ---
 python -m pytest "%~dp0unit\test_path_scenarios.py" "%~dp0unit\test_system_lifecycle.py" -v --tb=short
 if errorlevel 1 set "_FAIL=1"
 goto :done

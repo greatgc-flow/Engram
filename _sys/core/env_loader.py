@@ -9,8 +9,7 @@ def _interpolate_braces(value: str, resolved: dict) -> str:
     `"sys"` resolving to `"{base}/_sys"`) settles once `base` is already
     resolved. Shared by EnvironmentLoader._interpolate (which also handles
     `{ROOT_DRIVE}` and OS-path normalization on top of this) and
-    load_json_env's own resolution loop -- both used to reimplement this
-    exact loop independently."""
+    the loader's resolution loop."""
 
     for _ in range(5):
         matches = re.findall(r"\{([^}]+)\}", value)
@@ -78,28 +77,3 @@ class EnvironmentLoader:
     def apply_to_os(self):
         for k, v in self.env_vars.items():
             os.environ[k] = str(v)
-
-def load_json_env(config_path: str):
-    """Loads environment configuration directly from JSON and updates os.environ"""
-    with open(config_path, 'r', encoding='utf-8') as f:
-        config = json.load(f)
-        if not isinstance(config, dict):
-            config = {}
-
-    paths = config.get("paths", {})
-    env_vars = config.get("env_vars", {})
-    
-    # Resolve {base} recursively
-    resolved_paths = {}
-    
-    def resolve_val(val: str):
-        return _interpolate_braces(val, resolved_paths)
-
-    for k, v in paths.items():
-        resolved_paths[k] = resolve_val(v)
-        
-    for k, v in env_vars.items():
-        os.environ[k] = str(resolve_val(v))
-        
-    if "sys" in resolved_paths:
-        os.environ["SYS_DIR"] = resolved_paths["sys"]

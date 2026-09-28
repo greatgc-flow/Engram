@@ -14,6 +14,8 @@ manifest_path = repo_root / "_sys" / "core" / "release-manifests" / "3.2.6.json"
 def test_legacy_manifest_engram_cmd_hash():
     if not manifest_path.exists():
         pytest.skip(f"{manifest_path} not present in this checkout")
+    if not (repo_root / ".git").exists():
+        pytest.skip("legacy tag integrity check requires source Git history")
 
     with open(manifest_path, "r", encoding="utf-8") as f:
         manifest = json.loads(f.read())

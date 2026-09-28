@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 import sys
@@ -49,17 +48,6 @@ VENDOR_CACHE_DIRS: frozenset[str] = frozenset({
     "tmp",
     ".tmp",
 })
-
-
-
-def build_env() -> dict:
-    """Return subprocess env with PYTHONUTF8=1 and npm-global prepended to PATH."""
-    e = {**os.environ, "PYTHONUTF8": "1"}
-    npm_global = _SYS_DIR / "env" / "nodejs" / "npm-global"
-    if npm_global.exists():
-        e["PATH"] = str(npm_global) + ";" + e.get("PATH", "")
-    return e
-
 
 class ContractViolationError(ValueError):
     """Raised when an AI-produced JSON object violates a check output contract."""

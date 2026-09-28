@@ -26,6 +26,13 @@ if str(_CORE_DIR) not in sys.path:
 
 from root import find_root  # noqa: E402
 
+try:  # Support both ``core.provisioner`` and ``_sys.core.provisioner`` imports.
+    from .network_tls import install_urllib_platform_trust
+except ImportError:  # pragma: no cover - exercised by the bootstrap import path
+    from network_tls import install_urllib_platform_trust
+
+install_urllib_platform_trust()
+
 TOOL_CATALOG_FILENAME = "tool-catalog.v1.json"
 
 
@@ -122,14 +129,6 @@ def _load_runtimes(sys_dir: Path) -> tuple[dict, dict, dict]:
         "Pwsh":   data.get("pwsh",    {}).get("url", ""),
     }
     return V, URLS, raw.get("tools", {})
-
-
-def _download(url: str, dest: Path, label: str) -> None:
-    print(f"  [i] Downloading {label}...")
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req) as r, open(dest, "wb") as f:
-        shutil.copyfileobj(r, f)
-    print(f"  [OK] {dest.name} ({dest.stat().st_size / 1024**2:.1f} MB)")
 
 
 def _archive_member_target(dest: Path, member_name: str) -> Path:

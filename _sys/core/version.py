@@ -1,4 +1,5 @@
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -21,6 +22,27 @@ def load_version_info(version_file: Path | None = None) -> dict:
             return {}
     except Exception:
         return {}
+
+
+def is_newer_release(candidate: str, current: str) -> bool:
+    """Return whether a stable ``X.Y.Z`` candidate is newer than current.
+
+    Engram publishes numeric stable releases only. Unknown current versions may
+    be repaired by a valid release, while malformed candidates are never offered
+    as updates.
+    """
+
+    def parse(value: str) -> tuple[int, int, int] | None:
+        match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", str(value).strip())
+        if match is None:
+            return None
+        return tuple(int(part) for part in match.groups())
+
+    candidate_parts = parse(candidate)
+    if candidate_parts is None:
+        return False
+    current_parts = parse(current)
+    return current_parts is None or candidate_parts > current_parts
 
 
 VERSION_INFO = load_version_info()

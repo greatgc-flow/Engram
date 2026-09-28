@@ -10,7 +10,7 @@ repo_root = find_root(__file__).parent
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-from _sys.core.version import load_version_info
+from _sys.core.version import is_newer_release, load_version_info
 
 def test_version_json_exists():
     version_file = repo_root / "_sys" / "core" / "version.json"
@@ -26,6 +26,21 @@ def test_version_json_valid():
     assert len(version_parts) == 3
     for p in version_parts:
         assert p.isdigit()
+
+
+@pytest.mark.parametrize(
+    ("candidate", "current", "expected"),
+    [
+        ("3.4.3", "3.4.2", True),
+        ("v3.4.3", "3.4.2", True),
+        ("3.4.3", "3.4.3", False),
+        ("3.4.2", "3.4.3", False),
+        ("3.4.3", "unknown", True),
+        ("latest", "3.4.2", False),
+    ],
+)
+def test_release_version_ordering(candidate, current, expected):
+    assert is_newer_release(candidate, current) is expected
 
 def test_build_package_default_version():
     # tools/ is a maintainer-only release-packaging directory, deliberately

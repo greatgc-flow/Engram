@@ -29,8 +29,5 @@ def deferred_retries(sys_dir: Path) -> Path:
 def proposals_dir(sys_dir: Path) -> Path:
     return update_dir(sys_dir) / "proposals"
 
-def receipts_dir(sys_dir: Path) -> Path:
-    return update_dir(sys_dir) / "receipts"
-
 def launcher_log_dir(sys_dir: Path) -> Path:
     return sys_dir / "data" / "logs" / "launcher"

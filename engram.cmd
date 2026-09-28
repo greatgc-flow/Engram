@@ -69,7 +69,13 @@ if /i "%SUBCMD%"=="--help" goto :show_help
 if /i "%SUBCMD%"=="-h" goto :show_help
 if /i "%SUBCMD%"=="/?" goto :show_help
 
-if /i "%SUBCMD%"=="version" goto :show_version
+if /i "%SUBCMD%"=="version" (
+    if "%~2"=="/?" goto :show_version_help
+    if "%~2"=="-h" goto :show_version_help
+    if "%~2"=="--help" goto :show_version_help
+    if /i "%~2"=="help" goto :show_version_help
+    goto :show_version
+)
 if /i "%SUBCMD%"=="--version" goto :show_version
 if /i "%SUBCMD%"=="-v" goto :show_version
 
@@ -131,6 +137,10 @@ exit /b 2
 :: ----------------------------------------------------------------------------
 
 :cmd_open
+if "%~1"=="/?" goto :show_open_help
+if "%~1"=="-h" goto :show_open_help
+if "%~1"=="--help" goto :show_open_help
+if /i "%~1"=="help" goto :show_open_help
 if not exist "%SYS_PATH%\env\python\python.exe" (
     call :do_first_run
     if errorlevel 1 exit /b 1
@@ -184,6 +194,10 @@ if "%~1"=="/?" goto :show_menu_help
 if "%~1"=="-h" goto :show_menu_help
 if "%~1"=="--help" goto :show_menu_help
 if /i "%~1"=="help" goto :show_menu_help
+if "%~2"=="/?" goto :show_menu_help
+if "%~2"=="-h" goto :show_menu_help
+if "%~2"=="--help" goto :show_menu_help
+if /i "%~2"=="help" goto :show_menu_help
 call :check_setup
 if errorlevel 1 exit /b 1
 :: if no args, default to status
@@ -356,6 +370,28 @@ call :get_version
 echo Engram %_ENGRAM_VER% (Portable Dev Runtime)
 exit /b 0
 
+:show_version_help
+echo Usage: engram version
+echo.
+echo Print the current Engram version and runtime name.
+echo.
+echo Examples:
+echo   engram version
+echo   engram --version
+exit /b 0
+
+:show_open_help
+echo Usage: engram open [PATH]
+echo.
+echo Open PATH as an Engram workspace. Without PATH, opens the default workspace.
+echo The first run may offer to bootstrap the portable runtime and context menu.
+echo.
+echo Examples:
+echo   engram
+echo   engram open .
+echo   engram open C:\work\project
+exit /b 0
+
 :show_help
 call :get_version
 echo ===============================================================================
@@ -381,7 +417,7 @@ echo   engram reset          Reset personal AI data (.engram/ by default; --all 
 echo.
 echo Options:
 echo   --version, -v         Display Engram version information
-echo   --help, -h            Display this help message
+echo   --help, -h, /?        Display this help message
 echo.
 echo Run 'engram ^<command^> --help' for that command's full option list
 echo (e.g. 'engram update --help', 'engram backup --help').

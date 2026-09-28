@@ -10,6 +10,9 @@ This directory contains architectural specifications, design decision records, a
 | **[`engram-dotdir.md`](engram-dotdir.md)** | **Technical Specifications** | Normative technical specification for `.engram/` dotdir isolation, path resolution, and environment variable redirection for AI CLIs. |
 | **[`history/`](history/)** | **Historical Archives** | Historical records and artifacts preserved from repository separations and backlog migrations (e.g. open items preserved during the PeerHub migration). |
 
+The latest whole-package release review is
+[`history/recursive-mece-release-audit-2026-09-28.md`](history/recursive-mece-release-audit-2026-09-28.md).
+
 ## Guiding Principles
 
 1. **Normative Separation**: User-facing entrypoints are [`README.md`](../README.md), [`CONTRIBUTING.md`](../CONTRIBUTING.md), and [`CONVENTION.md`](../CONVENTION.md) in the repository root. Technical deep-dives and ADRs live under `docs/`.

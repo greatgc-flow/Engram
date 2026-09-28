@@ -39,24 +39,20 @@ class TestDocConsistency:
             assert "about:" in content, f"Issue template missing frontmatter about: {template}"
 
     def test_claude_md_sections(self, doc_root):
-        """Ensure project CLAUDE.md acts as a pointer to SSOT."""
+        """A retired vendor-specific pointer must not reappear at the root."""
         claude_md = doc_root / "CLAUDE.md"
-        if not claude_md.exists():
-            pytest.skip("CLAUDE.md not found in root")
-            
-        content = claude_md.read_text(encoding="utf-8")
-        assert "This file is a **pointer only**" in content, "CLAUDE.md must be a pointer"
-        assert "_sys/docs-v2/MOC.md" in content, "CLAUDE.md must link to MOC.md"
+        assert not claude_md.exists(), (
+            "CLAUDE.md is obsolete: package guidance belongs in README.md, "
+            "CONTRIBUTING.md, and CONVENTION.md"
+        )
 
     def test_gemini_md_version_sync(self, doc_root):
-        """Ensure GEMINI.md acts as a pointer to SSOT."""
+        """A retired vendor-specific pointer must not reappear at the root."""
         gemini_md = doc_root / "GEMINI.md"
-        if not gemini_md.exists():
-            pytest.skip("GEMINI.md not found")
-            
-        content = gemini_md.read_text(encoding="utf-8")
-        assert "This file is a **pointer only**" in content, "GEMINI.md must be a pointer"
-        assert "_sys/docs-v2/MOC.md" in content, "GEMINI.md must link to MOC.md"
+        assert not gemini_md.exists(), (
+            "GEMINI.md is obsolete: package guidance belongs in README.md, "
+            "CONTRIBUTING.md, and CONVENTION.md"
+        )
 
     def test_no_korean_in_sys_scripts(self, doc_root):
         """Ensure no Korean characters in _sys batch scripts (except allowed ones)."""

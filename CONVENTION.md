@@ -76,7 +76,7 @@ repo's own real `&`-laden checkout) rather than reasoned about:
   reaches cmd.exe.** Two concrete techniques, both empirically verified:
   1. **`cd`/`cwd` + relative paths.** `cd /d "%~dp0"` once (_sys/core/bootstrap.bat),
      or `cwd=` + a relative filename in `subprocess.run()` (`launcher.py`,
-     `scrubber.py`, `check_tool_updates.py`, `lifecycle_tester.py`) --
+     `scrubber.py`, `check_tool_updates.py`, `updater.py`) --
      never re-embed the resolved absolute path as literal text afterward.
   2. **Bypass the intermediate `.cmd`/`.bat` wrapper entirely and call
      the real underlying binary.** `provisioner.py`'s npm installs call
@@ -93,7 +93,7 @@ repo's own real `&`-laden checkout) rather than reasoned about:
   3. **When an `&`-laden VALUE genuinely must reach a batch script and
      can't be avoided as a command-line argument** (rather than the .bat
      itself): pass it via an **environment variable** instead of a CLI
-     argument (`test-runner.ps1`) -- `%VAR%`/`!VAR!` values delivered
+     argument: pass it through the child process environment -- `%VAR%`/`!VAR!` values delivered
      this way still must be expanded in a QUOTED context by the
      receiving script (an unquoted `echo %VAR%` still splits on `&`
      regardless of how the value arrived; that's cmd.exe's own parsing

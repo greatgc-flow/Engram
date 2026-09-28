@@ -57,6 +57,16 @@ Always verify your changes against the test suite before submitting:
 - **Run pre-commit checks:**
   Static and hygiene checks live in `_sys/checks/` (e.g. `check_encoding.py`, `check_root_hygiene.py`, `check_unreferenced_functions.py`).
 
+- **Run the isolated, real-network release gate (optional but required before a release):**
+  ```cmd
+  _sys\tests\run-sandbox-test.bat
+  ```
+  This creates a fresh Windows Sandbox install, downloads the declared runtimes,
+  installs source-only test dependencies, runs the complete unit/lifecycle/path
+  suite, runs `engram doctor --json`, and forces a live update-discovery refresh.
+  It can consume bandwidth and wall-clock time but never invokes an AI model, so
+  Engram itself has no token-cost test tier. PeerHub owns model dispatch tests.
+
 ---
 
 ## 3. Branching & Commit Conventions
@@ -99,3 +109,9 @@ All code and documentation must strictly adhere to [`CONVENTION.md`](CONVENTION.
 1. Ensure the entire unit test suite passes cleanly with zero failures.
 2. Ensure new files and docs adhere to `CONVENTION.md` and pass consistency checks.
 3. Open a Pull Request targeting the `main` branch with a clear summary of changes and testing evidence.
+
+Operational failures should include `engram doctor --json`, the command and exit
+code, and the relevant file under `_sys/data/logs/` or
+`_sys/data/state/update/`. Never attach `.engram/` wholesale: it may contain
+credentials and session data. Use the bug-report template so a failure becomes a
+reproducible test or a documented limitation instead of an untracked workaround.

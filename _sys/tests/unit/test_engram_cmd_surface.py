@@ -155,6 +155,36 @@ def test_help_surface_clean(surface_root, help_flag):
     assert ".bat" not in proc.stdout.lower()
 
 
+@pytest.mark.parametrize("help_flag", ["--help", "-h", "/?", "help"])
+def test_open_help_is_side_effect_free(surface_root, help_flag):
+    """Explicit open help never enters the start pipeline or first-run flow."""
+    proc = run_engram(surface_root, "open", help_flag)
+    assert proc.returncode == 0
+    assert "Usage: engram open [PATH]" in proc.stdout
+    assert "DISPATCH_PIPELINE=start" not in proc.stdout
+    assert "Set up Engram here now?" not in proc.stdout
+
+
+@pytest.mark.parametrize("menu_action", ["status", "enable", "disable", "clean"])
+@pytest.mark.parametrize("help_flag", ["--help", "-h", "/?", "help"])
+def test_nested_menu_help_never_mutates_registry(
+    surface_root, menu_action, help_flag
+):
+    """Help after a menu leaf stays in help instead of dispatching that leaf."""
+    proc = run_engram(surface_root, "menu", menu_action, help_flag)
+    assert proc.returncode == 0
+    assert "Engram Right-Click Context Menu Management" in proc.stdout
+    assert "DISPATCH_PIPELINE=menu-" not in proc.stdout
+
+
+@pytest.mark.parametrize("help_flag", ["--help", "-h", "/?", "help"])
+def test_version_help_is_descriptive(surface_root, help_flag):
+    proc = run_engram(surface_root, "version", help_flag)
+    assert proc.returncode == 0
+    assert "Usage: engram version" in proc.stdout
+    assert "Examples:" in proc.stdout
+
+
 # ----------------------------------------------------------------------------
 # 2. Retired verbs (§3.4)
 # ----------------------------------------------------------------------------

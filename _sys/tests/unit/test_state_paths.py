@@ -11,7 +11,6 @@ def test_writers_land_at_new_paths(tmp_path):
     assert state_paths.discovery_cache(sys_dir) == sys_dir / "data" / "state" / "update" / "tool_discovery_cache.json"
     assert state_paths.deferred_retries(sys_dir) == sys_dir / "data" / "state" / "update" / "tool_deferred_retries.json"
     assert state_paths.proposals_dir(sys_dir) == sys_dir / "data" / "state" / "update" / "proposals"
-    assert state_paths.receipts_dir(sys_dir) == sys_dir / "data" / "state" / "update" / "receipts"
     assert state_paths.launcher_log_dir(sys_dir) == sys_dir / "data" / "logs" / "launcher"
 
 def test_credential_shaped_names():

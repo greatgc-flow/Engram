@@ -23,7 +23,7 @@ Engram bootstraps a self-contained Windows dev environment — Python, Node.js, 
 - **No junctions or SUBST drive** — Engram uses no directory junctions and mounts no virtual drive: AI-CLI personal config is redirected via plain environment variables instead (see `docs/engram-dotdir.md`), and paths are always resolved physical.
 - **Real uninstall** — `engram uninstall` computes an installation-scoped ID, writes a journal outside the install directory (survives the directory's own deletion), and hands off to an external helper that waits for the running process to exit before purging the folder — so a running instance never tries to delete the directory it's executing from.
 - **On-demand tool updates** — `engram update` discovers newer versions of every catalog entry and applies them through the same pinned, hash-verified install path used for first-time setup.
-- **Zero-bloat by construction** — the packaging pipeline (`tools/winget/build_package.py`) only ever bundles an explicit root-file allowlist plus `_sys/`, minus caches/temp/state; nothing accumulates into the distributed archive that wasn't put there on purpose.
+- **Zero-bloat by construction** — the packaging pipeline (`tools/winget/build_package.py`) only bundles an explicit root-file allowlist plus the runtime-owned subset of `_sys/`; source-only tests, maintainer tools, caches, temporary files, and mutable state are excluded.
 
 ## Prerequisites
 - Windows 10 or 11
@@ -40,6 +40,11 @@ Engram bootstraps a self-contained Windows dev environment — Python, Node.js, 
 ```powershell
 winget install greatgc-flow.Engram
 ```
+
+WinGet publication can lag a GitHub release while Microsoft reviews the community
+manifest. Confirm availability with `winget search greatgc-flow.Engram`; if the
+current version is not listed yet, use the portable ZIP above. A manifest in this
+source repository alone does not make the command installable.
 
 The first run will prompt to bootstrap the portable environment (Python, Node, Git, VS Code, tools) and optionally register the Explorer right-click context menu.
 
@@ -107,6 +112,28 @@ See [2026-09-03_separation-completion-backlog.md](https://github.com/greatgc-flo
 ## Contributing / Reporting issues
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for local dev setup, testing, and branch/commit conventions, or report bugs and suggest features on the [GitHub Issues](https://github.com/greatgc-flow/Engram/issues) tracker.
+
+For a useful feedback report, run `engram doctor --json` and include its output,
+the failing command, exit code, and any applicable file under
+`_sys/data/logs/` or `_sys/data/state/update/`. Do **not** upload `.engram/`
+wholesale because it can contain credentials and session history. Maintainers
+close the loop by turning confirmed failures into regression tests, declarative
+catalog/config changes where possible, or an explicit README warning when the
+constraint belongs to Windows or a third-party tool.
+
+## Test tiers
+
+```cmd
+python -m pytest _sys/tests/unit
+_sys\tests\run-tests.bat --all
+_sys\tests\run-sandbox-test.bat
+```
+
+The first two commands are deterministic source tests. The Sandbox gate performs
+a from-scratch bootstrap, real downloads, `doctor`, and fresh online update
+discovery, so it is intentionally opt-in and required before release. Engram
+does not call AI models; therefore no Engram test spends model tokens. Model-call
+and quota tests belong to PeerHub's separate `slow`/`e2e` tiers.
 
 ## Trust Signals
 

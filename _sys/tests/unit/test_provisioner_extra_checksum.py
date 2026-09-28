@@ -28,8 +28,6 @@ def test_install_extra_uses_secure_download_not_bare_download(monkeypatch, tmp_p
         targets.append(dest)
         _make_zip(dest)
     monkeypatch.setattr(pv, "_secure_download", fake_secure)
-    monkeypatch.setattr(pv, "_download", MagicMock(side_effect=AssertionError("must not use unguarded _download")))
-
     dest_dir = tmp_path / "dest"
     setup_dir = tmp_path / "setup"
     setup_dir.mkdir()

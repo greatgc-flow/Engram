@@ -63,7 +63,16 @@ def test_updater_run_zero_updates(monkeypatch, capsys, tmp_path):
         }
     monkeypatch.setattr(check_tool_updates, "run", mock_run)
     monkeypatch.setattr("core.updater.check_components", lambda sys_dir: {})
-    monkeypatch.setattr(updater, "_SYS_DIR", tmp_path / "_sys")
+    monkeypatch.setattr(
+        "core.version_resolver.resolve_latest",
+        lambda **kwargs: {"status": "ok", "latest_version": "3.4.2"},
+    )
+    sys_dir = tmp_path / "_sys"
+    (sys_dir / "core").mkdir(parents=True)
+    (sys_dir / "core" / "version.json").write_text(
+        '{"version": "3.4.3"}', encoding="utf-8"
+    )
+    monkeypatch.setattr(updater, "_SYS_DIR", sys_dir)
     
     res = updater.run({"args": []})
     assert res == {"status": "success", "detail": "No updates discovered"}

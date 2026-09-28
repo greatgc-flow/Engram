@@ -210,7 +210,7 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     want_core = only_set is None or bool(only_set & {"engram", "core"})
     if want_core:
         try:
-            from core.version import load_version_info
+            from core.version import is_newer_release, load_version_info
             current_version_info = load_version_info(_SYS_DIR / "core" / "version.json")
         except ImportError:
             current_version_info = provisioner.load_json_with_fallback(_SYS_DIR / "core" / "version.json")
@@ -250,7 +250,7 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                     }
             else:
                 latest = core_discovery.get("latest_version")
-                if latest and current_engram_version != latest:
+                if latest and is_newer_release(latest, current_engram_version):
                     core_update = {
                         "tool": "engram",
                         "component": "Engram core",
