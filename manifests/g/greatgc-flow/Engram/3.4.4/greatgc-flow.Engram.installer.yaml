@@ -11,6 +11,6 @@ ReleaseDate: 2026-09-28
 Installers:
   - Architecture: x64
     InstallerUrl: https://github.com/greatgc-flow/Engram/releases/download/v3.4.4/Engram-v3.4.4-portable-x64.zip
-    InstallerSha256: 009D019683395A8E5D562601425D3BBA34EC7B4A25F380E0380CE757CCFD843A
+    InstallerSha256: D3828A8A09307044D7AE4CBCD3432B16026F0AA7B47EEC9FCEFC89AE882FEAE9
 ManifestType: installer
 ManifestVersion: 1.12.0
