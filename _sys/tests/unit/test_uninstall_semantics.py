@@ -707,3 +707,44 @@ def test_uninstaller_help_flag_prints_help_and_returns_success(flag, monkeypatch
     assert "Examples:" in out
     assert "Uninstall Engram from" not in out
 
+
+def test_uninstaller_plan_and_run_dry_run(uninstall_fixture, capsys):
+    """--dry-run prints preview and returns status='dry_run' without prompting or deleting."""
+    ctx, _localappdata, _temp_dir = uninstall_fixture
+    ctx["args"] = ["--dry-run"]
+
+    from core import uninstaller
+    res = uninstaller.run(ctx)
+    assert res is not None
+    assert res.get("status") == "dry_run"
+    assert "plan" in res
+
+    out = capsys.readouterr().out
+    assert "Dry-run preview complete: no changes were made" in out
+    assert (ctx["base_dir"] / "Engram.exe").exists()
+
+
+def test_uninstaller_discovers_dotdirs_for_purge(tmp_path):
+    """Custom dotdirs at root (.peerhub) are preserved by default, targeted on purge_data."""
+    from core.uninstaller import plan_uninstall
+
+    base_dir = tmp_path / "inst"
+    base_dir.mkdir()
+    sys_dir = base_dir / "_sys"
+    sys_dir.mkdir()
+
+    peerhub_dir = base_dir / ".peerhub"
+    peerhub_dir.mkdir()
+    (peerhub_dir / "peerhub.sqlite3").write_text("db", encoding="utf-8")
+
+    # 1. Default plan (purge_data=False)
+    plan_keep = plan_uninstall(base_dir=base_dir, sys_dir=sys_dir, purge_data=False)
+    kept_paths = [p for p, _ in plan_keep.items_to_keep]
+    assert peerhub_dir in kept_paths
+    assert peerhub_dir not in plan_keep.targets
+
+    # 2. Purge plan (purge_data=True)
+    plan_purge = plan_uninstall(base_dir=base_dir, sys_dir=sys_dir, purge_data=True)
+    assert peerhub_dir in plan_purge.targets
+
+

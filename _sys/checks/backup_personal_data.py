@@ -29,28 +29,32 @@ rather than needing to be actively filtered out every time -- into a
 separate, portable backup bundle (.zip by default).
 
 Usage:
-    engram backup [--out PATH]
-    engram restore PATH [--force]
-    engram reset [--yes] [--all]
+    engram backup [--out PATH] [--include-uncovered]
+    engram restore PATH [--force] [--apply]
+    engram reset [--yes] [--all] [--apply]
 
 Or standalone script:
-    python _sys/checks/backup_personal_data.py --base-dir PATH --backup [--out PATH]
-    python _sys/checks/backup_personal_data.py --base-dir PATH --restore PATH [--force]
-    python _sys/checks/backup_personal_data.py --base-dir PATH --reset [--yes] [--all]
+    python _sys/checks/backup_personal_data.py --base-dir PATH --backup [--out PATH] [--include-uncovered]
+    python _sys/checks/backup_personal_data.py --base-dir PATH --restore PATH [--force] [--apply]
+    python _sys/checks/backup_personal_data.py --base-dir PATH --reset [--yes] [--all] [--apply]
     python _sys/checks/backup_personal_data.py --list PATH
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import re
 import shutil
+import stat
 import sys
 import tempfile
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Sequence
 
 # Ensure _sys directory is importable when invoked standalone
 _SYS_DIR = Path(__file__).resolve().parent.parent
@@ -115,6 +119,115 @@ _RESTORE_PROTECTED_LABELS = frozenset({"claude/projects"})
 
 class CredentialShapedItemError(RuntimeError):
     """Raised if ITEMS itself ever names a credential-shaped file."""
+
+
+class DiskSpaceError(RuntimeError):
+    """Raised when available disk space is insufficient for backup/snapshot."""
+
+
+SENSITIVE_PATTERNS = [
+    re.compile(r"^\.env(\..+)?$", re.IGNORECASE),
+    re.compile(r".*token.*", re.IGNORECASE),
+    re.compile(r".*secret.*", re.IGNORECASE),
+    re.compile(r".*credential.*", re.IGNORECASE),
+    re.compile(r".*id_rsa.*", re.IGNORECASE),
+    re.compile(r".*\.pem$", re.IGNORECASE),
+    re.compile(r".*\.key$", re.IGNORECASE),
+]
+
+KNOWN_IGNORE_DIRS = frozenset({
+    ".git", ".svn", ".hg", "node_modules", "__pycache__", ".pytest_cache",
+    ".mypy_cache", ".ruff_cache", "venv", ".venv", "env", "_sys",
+})
+
+
+def is_sensitive_path(path: Path) -> bool:
+    """Return True if path matches known sensitive/credential patterns."""
+    name = path.name
+    for pat in SENSITIVE_PATTERNS:
+        if pat.search(name):
+            return True
+    return False
+
+
+def ensure_long_path_prefix(path: Path | str) -> str:
+    """Windows extended-length path prefix (\\\\?\\) support for paths > 260 chars."""
+    p_str = str(path)
+    if os.name == "nt" and len(p_str) > 260 and not p_str.startswith(("\\\\?\\", "\\\\.\\")):
+        abs_path = os.path.abspath(p_str)
+        if abs_path.startswith("\\\\"):
+            return "\\\\?\\UNC\\" + abs_path[2:]
+        return "\\\\?\\" + abs_path
+    return p_str
+
+
+def strip_long_path_prefix(path_str: str) -> str:
+    """Strip \\\\?\\ prefix if present."""
+    if path_str.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + path_str[8:]
+    elif path_str.startswith("\\\\?\\"):
+        return path_str[4:]
+    return path_str
+
+
+def scan_uncovered_items(base_dir: Path) -> list[Path]:
+    """Generic filesystem scanner discovering uncovered user dotdirs, configs, and custom files.
+
+    Safeguards:
+    1. Inode/Device pair tracking (st_ino, st_dev) prevents symlink loops and escapes.
+    2. Sensitive patterns (.env, *token*, *id_rsa*) are strictly excluded.
+    3. KNOWN_IGNORE_DIRS are pruned immediately.
+    4. Base items managed by standard backup (.engram, _sys, workspace) are skipped.
+    """
+    base_dir = Path(base_dir).resolve()
+    if not base_dir.exists():
+        return []
+
+    visited_inodes: set[tuple[int, int]] = set()
+    uncovered: list[Path] = []
+
+    # First record base_dir inode
+    try:
+        st = base_dir.stat()
+        visited_inodes.add((st.st_ino, st.st_dev))
+    except OSError:
+        pass
+
+    try:
+        entries = sorted(list(base_dir.iterdir()), key=lambda p: p.name.lower())
+    except OSError:
+        return []
+
+    for entry in entries:
+        name_lower = entry.name.lower()
+        if name_lower in {".engram", "_sys", "workspace", "$recycle.bin", "system volume information"}:
+            continue
+        if name_lower in KNOWN_IGNORE_DIRS:
+            continue
+        if is_sensitive_path(entry):
+            continue
+
+        # Inode / symlink check
+        try:
+            # Check for symlink / junction escaping base_dir
+            if entry.is_symlink() or (hasattr(entry, "is_junction") and entry.is_junction()):
+                target = entry.resolve()
+                try:
+                    if os.path.commonpath([str(target).lower(), str(base_dir).lower()]) != str(base_dir).lower():
+                        continue  # Escapes base_dir
+                except ValueError:
+                    continue  # Cross-drive symlink
+            stat_info = entry.stat()
+            inode_pair = (stat_info.st_ino, stat_info.st_dev)
+            if inode_pair in visited_inodes:
+                continue
+            visited_inodes.add(inode_pair)
+        except OSError:
+            continue
+
+        uncovered.append(entry)
+
+    return uncovered
 
 
 def _assert_no_credential_shaped_items() -> None:
@@ -254,6 +367,7 @@ def do_backup(
     as_zip: bool | None = None,
     base_dir: Path | None = None,
     sys_dir: Path | None = None,
+    custom_extras: Sequence[Path] | None = None,
 ) -> Path:
     if base_dir is None:
         base_dir = engram_dir.parent
@@ -276,6 +390,43 @@ def do_backup(
             as_zip = True
         else:
             as_zip = False
+
+    # Pre-flight Disk Space Check
+    # Estimate total size of items to back up
+    estimated_bytes = 0
+    if engram_dir.exists():
+        for root_p, _, files_p in os.walk(engram_dir):
+            for f in files_p:
+                try:
+                    estimated_bytes += (Path(root_p) / f).stat().st_size
+                except OSError:
+                    pass
+    if custom_extras:
+        for extra in custom_extras:
+            if extra.is_file():
+                try:
+                    estimated_bytes += extra.stat().st_size
+                except OSError:
+                    pass
+            elif extra.is_dir():
+                for root_p, _, files_p in os.walk(extra):
+                    for f in files_p:
+                        try:
+                            estimated_bytes += (Path(root_p) / f).stat().st_size
+                        except OSError:
+                            pass
+
+    required_bytes = max(int(estimated_bytes * 1.2), 500 * 1024 * 1024)
+    target_check_dir = sys_dir if out_path is None else Path(out_path).parent
+    try:
+        disk_stat = shutil.disk_usage(target_check_dir if target_check_dir.exists() else base_dir)
+        if disk_stat.free < required_bytes:
+            raise DiskSpaceError(
+                f"Insufficient free disk space on target drive: {disk_stat.free // (1024 * 1024)}MB free, "
+                f"required at least {required_bytes // (1024 * 1024)}MB (1.2x size buffer or 500MB)."
+            )
+    except OSError:
+        pass
 
     if as_zip:
         if out_path is None:
@@ -314,6 +465,28 @@ def do_backup(
                     print(f"  [OK]   {item.label:<32} <- {source} ({result} file{'s' if result != 1 else ''})")
                     manifest_lines.append(f"{item.label}: {result} file(s) <- {source}")
 
+            extras_meta: list[dict[str, Any]] = []
+            if custom_extras:
+                extras_bundle_root = bundle_path / "custom_extras"
+                for extra in custom_extras:
+                    extra_p = Path(extra)
+                    if not extra_p.exists():
+                        continue
+                    try:
+                        rel = extra_p.resolve().relative_to(base_dir.resolve())
+                    except ValueError:
+                        rel = Path(extra_p.name)
+                    dest = extras_bundle_root / rel
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    if extra_p.is_dir():
+                        shutil.copytree(extra_p, dest, dirs_exist_ok=True)
+                        extras_meta.append({"relpath": str(rel).replace("\\", "/"), "kind": "dir"})
+                    else:
+                        shutil.copy2(extra_p, dest)
+                        extras_meta.append({"relpath": str(rel).replace("\\", "/"), "kind": "file"})
+                    manifest_lines.append(f"custom_extra:{rel}: 1 item <- {extra_p}")
+                    print(f"  [EXTRA] {str(rel):<31} <- {extra_p}")
+
             manifest = bundle_path / "MANIFEST.txt"
             manifest.write_text(
                 "backup_personal_data.py .engram/ backup bundle\n"
@@ -330,17 +503,33 @@ def do_backup(
                 encoding="utf-8",
             )
 
-            # Atomic creation of the zip archive
+            manifest_json = bundle_path / "MANIFEST.json"
+            manifest_json.write_text(
+                json.dumps(
+                    {
+                        "manifest_version": 2,
+                        "synced_at": datetime.now(timezone.utc).isoformat(),
+                        "source": str(engram_dir),
+                        "custom_extras": extras_meta,
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
+            # Atomic creation of the zip archive with long path support
             temp_zip_dest = target_zip.parent / f".tmp_{target_zip.name}"
-            with zipfile.ZipFile(temp_zip_dest, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            long_temp_dest = ensure_long_path_prefix(temp_zip_dest)
+            with zipfile.ZipFile(long_temp_dest, "w", compression=zipfile.ZIP_DEFLATED) as zf:
                 for root_p, _, files in os.walk(bundle_path):
                     for f in files:
                         fp = Path(root_p) / f
                         arcname = fp.relative_to(bundle_path)
-                        zf.write(fp, arcname)
+                        zf.write(ensure_long_path_prefix(fp), arcname)
+
             if target_zip.exists():
                 target_zip.unlink()
-            temp_zip_dest.replace(target_zip)
+            Path(strip_long_path_prefix(long_temp_dest)).replace(target_zip)
 
         print(f"\nDone. Manifest written inside {target_zip}")
         print("\n[NOTE] Same-drive backup created. This protects against accidental local")
@@ -390,7 +579,8 @@ def do_restore(
     *,
     base_dir: Path | None = None,
     sys_dir: Path | None = None,
-) -> None:
+    apply: bool = True,
+) -> dict[str, Any]:
     src_path = Path(src_path)
     if not src_path.exists():
         raise SystemExit(f"Path does not exist: {src_path}")
@@ -399,6 +589,14 @@ def do_restore(
         base_dir = engram_dir.parent
     if sys_dir is None:
         sys_dir = (base_dir / _SYS_DIR.name) if base_dir else _SYS_DIR
+
+    # Dry-Run mode
+    if not apply:
+        print("[Engram Restore] DRY-RUN MODE (Default: preview only)")
+        print(f"Target bundle: {src_path}")
+        print(f"Target destination: {engram_dir}")
+        print("No files will be modified. Run with '--apply' to execute restore.\n")
+        return {"dry_run": True, "source": src_path, "engram_dir": engram_dir}
 
     # Process liveness check on restore
     running = check_running_processes(sys_dir)
@@ -419,16 +617,39 @@ def do_restore(
             print(f"[SNAPSHOT] Creating automatic pre-restore backup at: {snap_path}")
             do_backup(engram_dir, snap_path, as_zip=True, base_dir=base_dir, sys_dir=sys_dir)
 
+    def _restore_bundle_dir(temp_bundle: Path) -> None:
+        _restore_from_folder(engram_dir, temp_bundle, force)
+        manifest_json_path = temp_bundle / "MANIFEST.json"
+        if manifest_json_path.is_file():
+            try:
+                data = json.loads(manifest_json_path.read_text(encoding="utf-8"))
+                for extra in data.get("custom_extras", []):
+                    rel = Path(extra["relpath"])
+                    src = temp_bundle / "custom_extras" / rel
+                    dst = base_dir / rel
+                    if extra.get("kind") == "dir" and src.is_dir():
+                        dst.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copytree(src, dst, dirs_exist_ok=True)
+                        print(f"  [OK]   custom_extra dir  -> {dst}")
+                    elif src.is_file():
+                        dst.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(src, dst)
+                        print(f"  [OK]   custom_extra file -> {dst}")
+            except Exception as e:
+                print(f"[WARNING] Could not restore custom_extras: {e}")
+
     if zipfile.is_zipfile(src_path):
         with tempfile.TemporaryDirectory() as tmp_dir:
             temp_bundle = Path(tmp_dir)
             with zipfile.ZipFile(src_path, "r") as zf:
                 zf.extractall(temp_bundle)
-            _restore_from_folder(engram_dir, temp_bundle, force)
+            _restore_bundle_dir(temp_bundle)
     elif src_path.is_dir():
-        _restore_from_folder(engram_dir, src_path, force)
+        _restore_bundle_dir(src_path)
     else:
         raise SystemExit(f"Not a valid zip file or directory: {src_path}")
+
+    return {"dry_run": False, "source": src_path, "engram_dir": engram_dir}
 
 
 def do_list(src_path: Path) -> None:
@@ -463,9 +684,39 @@ def do_reset(
     yes: bool = False,
     all_data: bool = False,
     sys_dir: Path | None = None,
-) -> None:
+    apply: bool = True,
+) -> dict[str, Any]:
     if sys_dir is None:
         sys_dir = (base_dir / _SYS_DIR.name) if base_dir else _SYS_DIR
+
+    engram_dir = base_dir / ".engram"
+    workspace_dir = base_dir / "workspace"
+
+    # Scan user dotdirs (like .peerhub, etc.)
+    extra_dotdirs: list[Path] = []
+    if base_dir.exists():
+        for d in scan_uncovered_items(base_dir):
+            if d.is_dir() and d.name.startswith("."):
+                extra_dotdirs.append(d)
+
+    # Dry-Run mode
+    if not apply:
+        print("[Engram Reset] DRY-RUN MODE (Default: preview only)")
+        print("Below is the execution plan for reset. No files were deleted.")
+        print(f"\n[Plan: Pre-reset Safety Snapshot]")
+        print(f"  -> Will create snapshot in: {sys_dir / 'data' / 'backups' / 'safety_pre_reset_<timestamp>.zip'}")
+        print("\n[Plan: Targets to be purged]")
+        if engram_dir.exists():
+            print(f"  - [DIR]  {engram_dir}")
+        for ed in extra_dotdirs:
+            print(f"  - [DIR]  {ed} (discovered dotdir)")
+        if all_data and workspace_dir.exists():
+            print(f"  - [DIR]  {workspace_dir} (--all scope)")
+        print("\nRun with '--apply' to execute this plan.")
+        return {
+            "dry_run": True,
+            "targets": [engram_dir] + extra_dotdirs + ([workspace_dir] if all_data else []),
+        }
 
     # Process liveness check on reset
     running = check_running_processes(sys_dir)
@@ -475,9 +726,6 @@ def do_reset(
             print("Note: node.exe may be a Node-based AI CLI (e.g. Codex).")
         print("Please close all running AI CLIs and try again.")
         sys.exit(1)
-
-    engram_dir = base_dir / ".engram"
-    workspace_dir = base_dir / "workspace"
 
     # Confirmation 1: Default scope ([y/N], skippable with --yes)
     if not yes:
@@ -502,21 +750,65 @@ def do_reset(
             print("Folder name does not match. Aborting.")
             sys.exit(3)
 
-    # Perform deletion
+    # Phase 1: 2PC Mandatory Safety Snapshot
+    backups_dir = sys_dir / "data" / "backups"
+    backups_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safety_snap = backups_dir / f"safety_pre_reset_{stamp}.zip"
+
+    print(f"[Phase 1: 2PC Safety Snapshot] Creating: {safety_snap}")
+    do_backup(
+        engram_dir,
+        safety_snap,
+        as_zip=True,
+        base_dir=base_dir,
+        sys_dir=sys_dir,
+        custom_extras=extra_dotdirs,
+    )
+
+    # Verify snapshot archive integrity (fail-closed)
+    try:
+        with zipfile.ZipFile(safety_snap, "r") as zf:
+            corrupt = zf.testzip()
+            if corrupt is not None:
+                raise RuntimeError(f"Corrupt entry detected: {corrupt}")
+    except Exception as e:
+        if safety_snap.exists():
+            safety_snap.unlink()
+        raise RuntimeError(f"Safety snapshot integrity check failed: {e}. Aborting reset to prevent data loss.")
+
+    # Phase 2: Clean Sweep with Rename-then-Purge pattern
+    def _safe_purge(target_dir: Path) -> None:
+        if not target_dir.exists():
+            return
+        temp_renamed = target_dir.parent / f".purge_{stamp}_{target_dir.name}"
+        try:
+            target_dir.rename(temp_renamed)
+            shutil.rmtree(temp_renamed)
+        except OSError:
+            # Fallback to direct rmtree if rename fails
+            shutil.rmtree(target_dir, ignore_errors=True)
+
     if engram_dir.exists():
-        shutil.rmtree(engram_dir)
+        _safe_purge(engram_dir)
         print(f"  [OK] Removed personal AI state: {engram_dir}")
     else:
         print(f"  [SKIP] .engram/ does not exist: {engram_dir}")
 
+    for ed in extra_dotdirs:
+        if ed.exists():
+            _safe_purge(ed)
+            print(f"  [OK] Removed discovered dotdir: {ed}")
+
     if all_data:
         if workspace_dir.exists():
-            shutil.rmtree(workspace_dir)
+            _safe_purge(workspace_dir)
             print(f"  [OK] Removed workspace projects: {workspace_dir}")
         else:
             print(f"  [SKIP] workspace/ does not exist: {workspace_dir}")
 
     print("\nReset complete.")
+    return {"dry_run": False, "snapshot_path": safety_snap}
 
 
 # ----------------------------------------------------------------------------
@@ -536,29 +828,35 @@ def run_backup(ctx: dict) -> None:
     if any(a in _HELP_FLAGS for a in args):
         print("engram backup - Back up personal AI data (.engram/) to a zip archive")
         print()
-        print("Usage: engram backup [--out PATH]")
+        print("Usage: engram backup [--out PATH] [--include-uncovered]")
         print()
         print("Options:")
-        print("  --out PATH   Target path (default: sys_dir/data/backups/engram_backup_<timestamp>.zip)")
+        print("  --out PATH            Target path (default: sys_dir/data/backups/engram_backup_<timestamp>.zip)")
+        print("  --include-uncovered   Also package discovered uncovered user dotdirs and custom items")
         print()
         print("Examples:")
         print("  engram backup                       back up to the default timestamped path")
         print("  engram backup --out D:\\backups\\my.zip   back up to a specific path")
+        print("  engram backup --include-uncovered   include discovered extra dotdirs/files")
         sys.exit(0)
 
     out_path = None
+    include_uncovered = False
     i = 0
     while i < len(args):
         arg = args[i]
-        if arg == "--out" or arg.startswith("--out="):
+        if arg == "--include-uncovered":
+            include_uncovered = True
+            i += 1
+        elif arg == "--out" or arg.startswith("--out="):
             if out_path is not None:
                 print("[Error] --out specified more than once.")
-                print("Usage: engram backup [--out PATH]")
+                print("Usage: engram backup [--out PATH] [--include-uncovered]")
                 sys.exit(2)
             if arg == "--out":
                 if i + 1 >= len(args):
                     print("[Error] --out requires a PATH argument.")
-                    print("Usage: engram backup [--out PATH]")
+                    print("Usage: engram backup [--out PATH] [--include-uncovered]")
                     sys.exit(2)
                 raw_out = args[i + 1]
                 i += 2
@@ -566,7 +864,7 @@ def run_backup(ctx: dict) -> None:
                 raw_out = arg.split("=", 1)[1]
                 if not raw_out:
                     print("[Error] --out requires a PATH argument.")
-                    print("Usage: engram backup [--out PATH]")
+                    print("Usage: engram backup [--out PATH] [--include-uncovered]")
                     sys.exit(2)
                 i += 1
             caller_cwd = os.environ.get("ENGRAM_CALLER_CWD")
@@ -578,14 +876,15 @@ def run_backup(ctx: dict) -> None:
                 out_path.mkdir(parents=True, exist_ok=True)
         elif arg.startswith("-"):
             print(f"[Error] Unknown flag for backup: {arg}")
-            print("Usage: engram backup [--out PATH]")
+            print("Usage: engram backup [--out PATH] [--include-uncovered]")
             sys.exit(2)
         else:
             print(f"[Error] Unexpected positional argument for backup: {arg}")
-            print("Usage: engram backup [--out PATH]")
+            print("Usage: engram backup [--out PATH] [--include-uncovered]")
             sys.exit(2)
 
-    do_backup(engram_dir, out_path, as_zip=True, base_dir=base_dir, sys_dir=sys_dir)
+    custom_extras = scan_uncovered_items(base_dir) if include_uncovered else None
+    do_backup(engram_dir, out_path, as_zip=True, base_dir=base_dir, sys_dir=sys_dir, custom_extras=custom_extras)
 
 
 def run_restore(ctx: dict) -> None:
@@ -598,31 +897,36 @@ def run_restore(ctx: dict) -> None:
     if any(a in _HELP_FLAGS for a in args):
         print("engram restore - Restore personal AI data from a backup archive/bundle")
         print()
-        print("Usage: engram restore PATH [--force]")
+        print("Usage: engram restore PATH [--apply] [--force]")
         print()
         print("Options:")
         print("  PATH           Path to a backup .zip or bundle directory")
+        print("  --apply        Actually apply restore changes (default: dry-run preview only)")
         print("  --force, -f    Overwrite existing live session/project data")
         print()
         print("Examples:")
-        print("  engram restore D:\\backups\\my.zip           restore, refusing if it would overwrite live data")
-        print("  engram restore D:\\backups\\my.zip --force   restore, overwriting existing live session/project data")
+        print("  engram restore D:\\backups\\my.zip           dry-run preview of restore targets")
+        print("  engram restore D:\\backups\\my.zip --apply   apply restoration safely")
+        print("  engram restore D:\\backups\\my.zip --apply --force   restore and overwrite conflicts")
         sys.exit(0)
 
     force = False
+    apply = False
 
     target_path = None
     for a in args:
-        if a in ("--force", "-f"):
+        if a == "--apply":
+            apply = True
+        elif a in ("--force", "-f"):
             force = True
         elif a.startswith("-"):
             print(f"[Error] Unknown flag for restore: {a}")
-            print("Usage: engram restore PATH [--force]")
+            print("Usage: engram restore PATH [--apply] [--force]")
             sys.exit(2)
         else:
             if target_path is not None:
                 print(f"[Error] Unexpected extra positional argument for restore: {a}")
-                print("Usage: engram restore PATH [--force]")
+                print("Usage: engram restore PATH [--apply] [--force]")
                 sys.exit(2)
             caller_cwd = os.environ.get("ENGRAM_CALLER_CWD")
             if caller_cwd and not Path(a).is_absolute():
@@ -632,10 +936,10 @@ def run_restore(ctx: dict) -> None:
 
     if target_path is None:
         print("[Error] engram restore requires a PATH to a backup .zip or bundle directory.")
-        print("Usage: engram restore PATH [--force]")
+        print("Usage: engram restore PATH [--apply] [--force]")
         sys.exit(2)
 
-    do_restore(engram_dir, target_path, force=force, base_dir=base_dir, sys_dir=sys_dir)
+    do_restore(engram_dir, target_path, force=force, base_dir=base_dir, sys_dir=sys_dir, apply=apply)
 
 
 def run_reset(ctx: dict) -> None:
@@ -647,36 +951,40 @@ def run_reset(ctx: dict) -> None:
     if any(a in _HELP_FLAGS for a in args):
         print("engram reset - Reset personal AI data")
         print()
-        print("Usage: engram reset [--yes|-y] [--all]")
+        print("Usage: engram reset [--apply] [--yes|-y] [--all]")
         print()
         print("Options:")
+        print("  --apply      Actually execute reset (default: dry-run preview only)")
         print("  --yes, -y    Skip the [y/N] confirmation prompt")
         print("  --all        Also delete workspace/ (default: only .engram/)")
         print()
         print("Examples:")
-        print("  engram reset                 asks for confirmation, deletes .engram/ only")
-        print("  engram reset --yes           deletes .engram/ without prompting")
-        print("  engram reset --yes --all     also deletes workspace/ (typed folder-name confirmation still required)")
+        print("  engram reset                 preview reset targets (dry-run)")
+        print("  engram reset --apply         asks for confirmation, then executes reset")
+        print("  engram reset --apply --yes   executes reset without confirmation prompt")
         sys.exit(0)
 
     yes = False
     all_data = False
+    apply = False
 
     for a in args:
-        if a in ("--yes", "-y"):
+        if a == "--apply":
+            apply = True
+        elif a in ("--yes", "-y"):
             yes = True
         elif a == "--all":
             all_data = True
         elif a.startswith("-"):
             print(f"[Error] Unknown flag for reset: {a}")
-            print("Usage: engram reset [--yes|-y] [--all]")
+            print("Usage: engram reset [--apply] [--yes|-y] [--all]")
             sys.exit(2)
         else:
             print(f"[Error] Unexpected positional argument for reset: {a}")
-            print("Usage: engram reset [--yes|-y] [--all]")
+            print("Usage: engram reset [--apply] [--yes|-y] [--all]")
             sys.exit(2)
 
-    do_reset(base_dir, yes=yes, all_data=all_data, sys_dir=sys_dir)
+    do_reset(base_dir, yes=yes, all_data=all_data, sys_dir=sys_dir, apply=apply)
 
 
 # ----------------------------------------------------------------------------
@@ -693,6 +1001,8 @@ def main(argv: list[str] | None = None) -> int:
     group.add_argument("--reset", action="store_true", help="Reset personal AI state (.engram/ by default; --all includes workspace/)")
     group.add_argument("--list", metavar="PATH", help="Show what a bundle contains (does not need --base-dir)")
     parser.add_argument("--out", metavar="PATH", help="Target path for --backup (defaults to sys_dir/data/backups/engram_backup_<timestamp>.zip)")
+    parser.add_argument("--apply", action="store_true", help="Actually execute restore or reset (default: dry-run preview)")
+    parser.add_argument("--include-uncovered", action="store_true", help="With --backup, package discovered extra dotdirs/files")
     parser.add_argument("--force", action="store_true", help="With --restore, overwrite existing live session/project data")
     parser.add_argument("--yes", "-y", action="store_true", help="Skip [y/N] confirmation for --reset")
     parser.add_argument("--all", action="store_true", dest="all_data", help="With --reset, also delete workspace/")
@@ -710,11 +1020,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.backup:
         out_target = Path(args.out).resolve() if args.out else None
-        do_backup(engram_dir, out_target, base_dir=base_dir, sys_dir=sys_dir)
+        custom_extras = scan_uncovered_items(base_dir) if args.include_uncovered else None
+        do_backup(engram_dir, out_target, base_dir=base_dir, sys_dir=sys_dir, custom_extras=custom_extras)
     elif args.restore:
-        do_restore(engram_dir, Path(args.restore).resolve(), force=args.force, base_dir=base_dir, sys_dir=sys_dir)
+        do_restore(engram_dir, Path(args.restore).resolve(), force=args.force, base_dir=base_dir, sys_dir=sys_dir, apply=args.apply)
     elif args.reset:
-        do_reset(base_dir, yes=args.yes, all_data=args.all_data, sys_dir=sys_dir)
+        do_reset(base_dir, yes=args.yes, all_data=args.all_data, sys_dir=sys_dir, apply=args.apply)
     return 0
 
 

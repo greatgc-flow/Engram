@@ -194,7 +194,12 @@ def test_main_backup_then_restore_round_trip(
     assert (out_dir / "MANIFEST.txt").is_file()
 
     other_base = tmp_path / "other-base"
+    # Dry run by default
     assert main(["--base-dir", str(other_base), "--restore", str(out_dir)]) == 0
+    assert not (other_base / ".engram").exists()
+
+    # Apply restore
+    assert main(["--base-dir", str(other_base), "--restore", str(out_dir), "--apply"]) == 0
     assert (other_base / ".engram" / "claude" / "CLAUDE.md").is_file()
 
 
@@ -716,12 +721,20 @@ def test_run_restore_dispatcher_adapter(
     backup_zip = tmp_path / "source.zip"
     do_backup(source_base / ".engram", backup_zip, as_zip=True)
 
-    # 1. Standard restore with absolute path
+    # 1. Standard restore with absolute path (dry run then apply)
     target_base = tmp_path / "dst_base"
-    ctx1 = {
+    ctx_dry = {
         "base_dir": target_base,
         "sys_dir": target_base / "_sys",
         "args": [str(backup_zip), "--force"],
+    }
+    run_restore(ctx_dry)
+    assert not (target_base / ".engram").exists()
+
+    ctx1 = {
+        "base_dir": target_base,
+        "sys_dir": target_base / "_sys",
+        "args": [str(backup_zip), "--force", "--apply"],
     }
     run_restore(ctx1)
     assert (target_base / ".engram" / "claude" / "CLAUDE.md").is_file()
@@ -735,7 +748,7 @@ def test_run_restore_dispatcher_adapter(
     ctx2 = {
         "base_dir": target_base2,
         "sys_dir": target_base2 / "_sys",
-        "args": ["rel.zip", "--force"],
+        "args": ["rel.zip", "--force", "--apply"],
     }
     run_restore(ctx2)
     assert (target_base2 / ".engram" / "claude" / "CLAUDE.md").is_file()
@@ -788,12 +801,22 @@ def test_run_reset_dispatcher_adapter(tmp_path: Path) -> None:
     workspace.mkdir()
     (workspace / "project.py").write_text("code", encoding="utf-8")
 
-    ctx = {
+    # Dry-run by default: .engram is untouched
+    ctx_dry = {
         "base_dir": base_dir,
         "sys_dir": base_dir / "_sys",
         "args": ["--yes"],
     }
-    run_reset(ctx)
+    run_reset(ctx_dry)
+    assert (base_dir / ".engram").exists()
+
+    # Apply executes reset
+    ctx_apply = {
+        "base_dir": base_dir,
+        "sys_dir": base_dir / "_sys",
+        "args": ["--yes", "--apply"],
+    }
+    run_reset(ctx_apply)
     assert not (base_dir / ".engram").exists()
     assert workspace.exists()
 
@@ -859,13 +882,13 @@ def test_main_reset_and_zip_restore_round_trip(tmp_path: Path) -> None:
     assert main(["--base-dir", str(base_dir), "--backup", "--out", str(out_zip)]) == 0
     assert zipfile.is_zipfile(out_zip)
 
-    # Restore from zip via main
+    # Restore from zip via main (with --apply)
     other_base = tmp_path / "other"
-    assert main(["--base-dir", str(other_base), "--restore", str(out_zip)]) == 0
+    assert main(["--base-dir", str(other_base), "--restore", str(out_zip), "--apply"]) == 0
     assert (other_base / ".engram" / "claude" / "CLAUDE.md").is_file()
 
-    # Reset via main
-    assert main(["--base-dir", str(other_base), "--reset", "--yes"]) == 0
+    # Reset via main (with --apply)
+    assert main(["--base-dir", str(other_base), "--reset", "--yes", "--apply"]) == 0
     assert not (other_base / ".engram").exists()
 
 
@@ -921,5 +944,189 @@ def test_run_reset_help_flag_exits_zero(flag, tmp_path, capsys):
     assert exc.value.code == 0
     out = capsys.readouterr().out
     assert "--all" in out
+
+
+# ============================================================================
+# Smart Lifecycle TDD Tests (v3.5.0 Parity & Edge-Case Defense)
+# ============================================================================
+
+def test_preflight_disk_exhaustion_aborts_cleanly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """TC-01: Low disk space (< 1.2x estimated or < 500MB) cleanly aborts backup with RuntimeError."""
+    from backup_personal_data import do_backup, DiskSpaceError
+
+    base_dir = tmp_path / "base"
+    engram_dir = base_dir / ".engram"
+    _seed_engram(engram_dir)
+
+    # Mock disk_usage to report only 10MB free
+    Usage = type("Usage", (), {"free": 10 * 1024 * 1024, "total": 100 * 1024 * 1024, "used": 90 * 1024 * 1024})
+    monkeypatch.setattr(shutil, "disk_usage", lambda path: Usage())
+
+    with pytest.raises(DiskSpaceError) as exc:
+        do_backup(engram_dir, base_dir=base_dir)
+
+    assert "Insufficient free disk space" in str(exc.value)
+
+
+def test_symlink_cycle_and_escape_detection(tmp_path: Path) -> None:
+    """TC-02: Directory scanning skips circular symlinks/junctions and links escaping base_dir using inode/device tracking."""
+    from backup_personal_data import scan_uncovered_items
+
+    base_dir = tmp_path / "base"
+    base_dir.mkdir(parents=True)
+    engram_dir = base_dir / ".engram"
+    engram_dir.mkdir()
+    (base_dir / "workspace").mkdir()
+
+    # Normal user dotdir
+    user_dotdir = base_dir / ".custom_notes"
+    user_dotdir.mkdir()
+    (user_dotdir / "note.txt").write_text("hello", encoding="utf-8")
+
+    # Outside dir to escape to
+    outside_dir = tmp_path / "outside_secret"
+    outside_dir.mkdir()
+    (outside_dir / "leak.txt").write_text("leak", encoding="utf-8")
+
+    # If OS supports symlinks, create an escaping symlink and a cycle
+    symlink_supported = False
+    try:
+        esc_link = base_dir / "escape_link"
+        esc_link.symlink_to(outside_dir, target_is_directory=True)
+        symlink_supported = True
+    except (OSError, NotImplementedError):
+        pass
+
+    uncovered = scan_uncovered_items(base_dir)
+    uncovered_names = [p.name for p in uncovered]
+    assert ".custom_notes" in uncovered_names
+    if symlink_supported:
+        assert "escape_link" not in uncovered_names
+
+
+def test_sensitive_credential_pattern_exclusion(tmp_path: Path) -> None:
+    """TC-03: scan_uncovered_items filters out sensitive credential files (.env, *token*, *id_rsa*)."""
+    from backup_personal_data import scan_uncovered_items, is_sensitive_path
+
+    base_dir = tmp_path / "base"
+    base_dir.mkdir(parents=True)
+    (base_dir / ".engram").mkdir()
+    (base_dir / "workspace").mkdir()
+
+    safe_file = base_dir / "README_USER.md"
+    safe_file.write_text("safe", encoding="utf-8")
+
+    env_file = base_dir / ".env.local"
+    env_file.write_text("SECRET=1", encoding="utf-8")
+
+    id_rsa = base_dir / "id_rsa"
+    id_rsa.write_text("KEY", encoding="utf-8")
+
+    assert is_sensitive_path(env_file) is True
+    assert is_sensitive_path(id_rsa) is True
+    assert is_sensitive_path(safe_file) is False
+
+    uncovered = scan_uncovered_items(base_dir)
+    uncovered_names = [p.name for p in uncovered]
+    assert "README_USER.md" in uncovered_names
+    assert ".env.local" not in uncovered_names
+    assert "id_rsa" not in uncovered_names
+
+
+def test_long_path_extended_length_support(tmp_path: Path) -> None:
+    """TC-04: Paths over 260 characters are handled safely via extended prefix."""
+    from backup_personal_data import ensure_long_path_prefix, strip_long_path_prefix
+
+    short_path = tmp_path / "short.txt"
+    assert ensure_long_path_prefix(short_path) == str(short_path)
+
+    long_str = "C:\\" + ("very_long_directory_name\\" * 15) + "file.txt"
+    assert len(long_str) > 260
+    prefixed = ensure_long_path_prefix(Path(long_str))
+    assert prefixed.startswith("\\\\?\\")
+    assert strip_long_path_prefix(prefixed) == long_str
+
+
+def test_dry_run_default_leaves_filesystem_untouched(tmp_path: Path) -> None:
+    """TC-05: do_reset and do_restore default to dry-run when apply=False, leaving disk untouched."""
+    base_dir = tmp_path / "base"
+    engram_dir = base_dir / ".engram"
+    _seed_engram(engram_dir)
+
+    # Dry-run reset
+    plan = do_reset(base_dir, yes=True, apply=False)
+    assert plan["dry_run"] is True
+    assert engram_dir.exists()
+    assert (engram_dir / "claude" / "CLAUDE.md").is_file()
+
+    # Dry-run restore
+    backup_zip = tmp_path / "bundle.zip"
+    do_backup(engram_dir, backup_zip, as_zip=True, base_dir=base_dir)
+
+    (engram_dir / "claude" / "CLAUDE.md").write_text("modified", encoding="utf-8")
+    restore_plan = do_restore(engram_dir, backup_zip, apply=False, base_dir=base_dir)
+    assert restore_plan["dry_run"] is True
+    assert (engram_dir / "claude" / "CLAUDE.md").read_text(encoding="utf-8") == "modified"
+
+
+def test_reset_2pc_fail_closed_on_corrupt_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """TC-06: 2PC reset aborts and never deletes .engram if pre-reset safety snapshot fails testzip."""
+    base_dir = tmp_path / "base"
+    engram_dir = base_dir / ".engram"
+    _seed_engram(engram_dir)
+
+    # Mock zipfile.ZipFile.testzip to simulate corrupt archive
+    original_init = zipfile.ZipFile.__init__
+    def mock_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        self.testzip = lambda: "corrupt_file_entry"
+
+    monkeypatch.setattr(zipfile.ZipFile, "__init__", mock_init)
+
+    with pytest.raises(RuntimeError) as exc:
+        do_reset(base_dir, yes=True, apply=True)
+
+    assert "Safety snapshot integrity check failed" in str(exc.value)
+    # Fail-closed: engram_dir remains intact
+    assert engram_dir.exists()
+    assert (engram_dir / "claude" / "CLAUDE.md").is_file()
+
+
+def test_reset_rename_then_purge_pattern(tmp_path: Path) -> None:
+    """TC-07: do_reset purges .engram and discovered dotdirs atomically via pre-rename."""
+    base_dir = tmp_path / "base"
+    engram_dir = base_dir / ".engram"
+    _seed_engram(engram_dir)
+    user_dotdir = base_dir / ".peerhub"
+    user_dotdir.mkdir()
+    (user_dotdir / "state.db").write_text("db", encoding="utf-8")
+
+    res = do_reset(base_dir, yes=True, apply=True)
+    assert res["dry_run"] is False
+    assert not engram_dir.exists()
+    assert not user_dotdir.exists()
+    assert res["snapshot_path"].exists()
+
+
+def test_restore_custom_extras_symmetric_reconstruction(tmp_path: Path) -> None:
+    """TC-08: Files bundled via custom_extras are symmetrically reconstructed to original relative locations."""
+    base_dir = tmp_path / "base"
+    engram_dir = base_dir / ".engram"
+    _seed_engram(engram_dir)
+
+    extra_file = base_dir / "my_script.bat"
+    extra_file.write_text("echo test", encoding="utf-8")
+
+    out_zip = tmp_path / "backup_with_extras.zip"
+    do_backup(engram_dir, out_zip, as_zip=True, base_dir=base_dir, custom_extras=[extra_file])
+
+    target_base = tmp_path / "target_base"
+    target_engram = target_base / ".engram"
+
+    do_restore(target_engram, out_zip, apply=True, base_dir=target_base)
+    assert (target_engram / "claude" / "CLAUDE.md").is_file()
+    assert (target_base / "my_script.bat").is_file()
+    assert (target_base / "my_script.bat").read_text(encoding="utf-8") == "echo test"
+
 
 

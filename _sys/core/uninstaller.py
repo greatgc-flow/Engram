@@ -126,6 +126,11 @@ def plan_uninstall(base_dir: Path, sys_dir: Path, purge_data: bool = False) -> U
                     plan.items_to_keep.append((entry_path, "your projects"))
             elif name_lower in {s.lower() for s in INSTALL_ROOT_ENTRIES} or name_lower.endswith(".bat"):
                 plan.targets.append(entry_path)
+            elif entry.name.startswith("."):
+                if purge_data:
+                    plan.targets.append(entry_path)
+                else:
+                    plan.items_to_keep.append((entry_path, "custom configuration or data directory"))
             else:
                 # Unknown root entry
                 plan.items_to_keep.append((entry_path, "user-authored or external item"))
@@ -233,14 +238,17 @@ def run(ctx: dict) -> dict[str, Any] | None:
     if any(a in _HELP_FLAGS for a in args):
         print("engram uninstall - Safe, allowlist-based uninstaller for Engram")
         print()
-        print("Usage: engram uninstall [--yes|-y] [--purge-data]")
+        print("Usage: engram uninstall [--yes|-y] [--purge-data] [--dry-run] [--apply]")
         print()
         print("Options:")
         print("  --yes, -y       Skip the confirmation prompt")
         print("  --purge-data    Also delete personal data (.engram/) and projects (workspace/)")
+        print("  --dry-run       Preview removal plan without deleting anything")
+        print("  --apply         Acknowledge and apply removal")
         print()
         print("Examples:")
         print("  engram uninstall                 asks for confirmation, preserves .engram/ and workspace/")
+        print("  engram uninstall --dry-run       previews removal plan without changes")
         print("  engram uninstall --yes           removes program files without confirmation prompt")
         print("  engram uninstall --purge-data    removes program files and prompts to purge personal data")
         return {"status": "success", "detail": "help displayed"}
@@ -251,6 +259,7 @@ def run(ctx: dict) -> dict[str, Any] | None:
     # Parse arguments from ctx["args"]
     yes = ("--yes" in args) or ("-y" in args)
     purge_data = "--purge-data" in args
+    dry_run = "--dry-run" in args
 
     plan = plan_uninstall(base_dir=base_dir, sys_dir=sys_dir, purge_data=purge_data)
 
@@ -272,6 +281,10 @@ def run(ctx: dict) -> dict[str, Any] | None:
         suffix = "/" if path.is_dir() else ""
         print(f"  - {path.name}{suffix}  {desc}")
     print()
+
+    if dry_run:
+        print("[engram uninstall] Dry-run preview complete: no changes were made.")
+        return {"status": "dry_run", "plan": plan}
 
     if not yes:
         try:
