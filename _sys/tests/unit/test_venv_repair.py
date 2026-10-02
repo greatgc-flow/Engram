@@ -1,0 +1,305 @@
+import os
+import sys
+import ntpath
+import pytest
+import shutil
+from pathlib import Path
+
+# Fallback in case core.env_ops doesn't exist during test discovery
+try:
+    from core.env_ops import Step, OpContext
+except ImportError:
+    class Step:
+        def __init__(self, name, do, undo=None, done=None, group="A"):
+            self.name = name
+            self.do = do
+            self.undo = undo
+            self.done = done
+            self.group = group
+    class OpContext:
+        def __init__(self, sys_dir, op_id, kind, paths=None, data=None):
+            self.sys_dir = Path(sys_dir)
+            self.op_id = op_id
+            self.kind = kind
+            self.paths = paths or {}
+            self.data = data or {}
+
+from core.venv_repair import (
+    rewrite_pyvenv_cfg,
+    regenerate_console_scripts,
+    plan_venv_repair,
+    restore_packages_step_data,
+    rebase_path
+)
+
+class FakeRunner:
+    def __init__(self, rc=0, out=""):
+        self.rc = rc
+        self.out = out
+        self.calls = []
+    def __call__(self, argv, timeout):
+        self.calls.append(argv)
+        return self.rc, self.out
+
+def test_rewrite_pyvenv_cfg(tmp_path):
+    venv_dir = tmp_path / "venv"
+    venv_dir.mkdir()
+    cfg = venv_dir / "pyvenv.cfg"
+    original = b"home = C:\\old\r\nversion = 3.14.7\r\n"
+    cfg.write_bytes(original)
+    
+    managed = tmp_path / "managed"
+    managed.mkdir()
+    
+    changed = rewrite_pyvenv_cfg(venv_dir, managed, python_version="3.14.8")
+    assert changed
+    
+    content = cfg.read_bytes()
+    assert b"home = " + str(managed).encode("utf-8") + b"\r\n" in content
+    assert b"version = 3.14.8\r\n" in content
+    
+    changed2 = rewrite_pyvenv_cfg(venv_dir, managed, python_version="3.14.8")
+    assert not changed2
+
+def test_regenerate_console_scripts(tmp_path):
+    venv_dir = tmp_path / "venv"
+    scripts = venv_dir / "Scripts"
+    site_packages = venv_dir / "Lib" / "site-packages"
+    dist_info = site_packages / "foo-1.0.dist-info"
+    dist_info.mkdir(parents=True)
+    
+    ep = dist_info / "entry_points.txt"
+    ep.write_text("[console_scripts]\nfoo = foo:main\n")
+    
+    def real_runner(argv, timeout):
+        import subprocess
+        res = subprocess.run(argv, capture_output=True, text=True)
+        return res.returncode, res.stdout + res.stderr
+        
+    real_scripts_dir = Path(sys.prefix) / "Scripts"
+    initial_scripts = []
+    if real_scripts_dir.exists():
+        initial_scripts = sorted([(f.name, f.stat().st_mtime) for f in real_scripts_dir.iterdir()])
+
+    res = regenerate_console_scripts(venv_dir, python_exe=Path(sys.executable), runner=real_runner)
+    
+    assert res.get("regenerated", 0) >= 1
+    assert (scripts / "foo.exe").exists()
+    
+    if real_scripts_dir.exists():
+        final_scripts = sorted([(f.name, f.stat().st_mtime) for f in real_scripts_dir.iterdir()])
+        assert initial_scripts == final_scripts
+
+def test_regenerate_script_no_sys_prefix():
+    from core.venv_repair import _REGENERATE_SCRIPT
+    assert "sys.prefix" not in _REGENERATE_SCRIPT
+
+def test_plan_venv_repair_rebuild(tmp_path):
+    findings = [{"name": "venv_interpreter", "level": "error"}]
+    steps = plan_venv_repair(tmp_path, findings)
+    names = [s.name for s in steps]
+    assert names == ["quarantine-venv", "create-venv", "restore-packages", "regenerate-console-scripts"]
+
+def test_plan_venv_repair_patch_skew(tmp_path):
+    findings = [{"name": "venv_interpreter_skew", "level": "warning", "detail": "patch-skew"}]
+    steps = plan_venv_repair(tmp_path, findings)
+    names = [s.name for s in steps]
+    assert names == ["backup-interpreter-files", "refresh-interpreter", "record-interpreter-hashes"]
+
+def test_plan_venv_repair_rewrite(tmp_path):
+    findings = [{"name": "pyvenv_home", "level": "error"}]
+    steps = plan_venv_repair(tmp_path, findings)
+    assert steps[0].name == "rewrite-pyvenv-cfg"
+    
+def test_plan_venv_repair_console(tmp_path):
+    findings = [{"name": "console_scripts", "level": "warning", "detail": "stale-launchers: foo"}]
+    steps = plan_venv_repair(tmp_path, findings)
+    assert steps[0].name == "regenerate-console-scripts"
+
+def test_restore_packages_step_data(tmp_path):
+    pkg_dir = tmp_path / "pkg"
+    pkg_dir.mkdir()
+    import urllib.request
+    url = "file:///" + urllib.request.pathname2url(str(pkg_dir)).lstrip("/")
+    
+    snapshot = {
+        "packages": [
+            {"name": "filelock", "version": "1.0"},
+            {"name": "pytest", "version": "7.0", "requested": True},
+            {"name": "my-pkg", "editable": True, "editable_url": url},
+            {"name": "skipped-pkg", "editable": True, "editable_url": "file:///D:/does/not/exist"}
+        ]
+    }
+    plan = restore_packages_step_data(snapshot)
+    assert plan["t1"] == ["filelock==1.0"]
+    assert plan["t2"] == ["pytest==7.0"]
+    assert str(pkg_dir) in plan["t3"]
+    assert "skipped-pkg" in plan["skipped_editable"]
+    assert "pytest==7.0" in plan["constraints_text"]
+
+def test_restore_packages_credential_scrubbing(tmp_path):
+    snapshot = {
+        "packages": [
+            {"name": "my-pkg", "editable": True, "editable_url": "file:///D:/pkg?token=secret"}
+        ]
+    }
+    plan = restore_packages_step_data(snapshot)
+    assert "token=secret" not in plan["t3"]
+    
+def test_rebase_path_cases():
+    assert rebase_path(r"D:\old\foo", r"d:\old", r"E:\new") == ntpath.normpath(r"E:\new\foo")
+    assert rebase_path(r"D:\other\foo", r"d:\old", r"E:\new") is None
+    assert rebase_path(r"D:\old\foo", r"d:\old\\", r"E:\new") == ntpath.normpath(r"E:\new\foo")
+    assert rebase_path(r"\\server\share\old\foo", r"\\server\share\old", r"E:\new") == ntpath.normpath(r"E:\new\foo")
+
+def test_rebuild_undo_quarantines(tmp_path):
+    sys_dir = tmp_path / "_sys"
+    sys_dir.mkdir()
+    venv_dir = sys_dir / "env" / "venv"
+    venv_dir.mkdir(parents=True)
+    (venv_dir / "test.txt").write_text("old venv")
+    
+    findings = [{"name": "venv_interpreter", "level": "error"}]
+    steps = plan_venv_repair(sys_dir, findings, runner=FakeRunner())
+    ctx = OpContext(sys_dir, "op-1", "repair", {}, {})
+    
+    # quarantine
+    steps[0].do(ctx)
+    assert not venv_dir.exists()
+    
+    # create
+    venv_dir.mkdir(parents=True)
+    (venv_dir / "test2.txt").write_text("new venv")
+    
+    # undo create (moves new venv into a failed-rebuild backup)
+    steps[1].undo(ctx)
+    assert not (venv_dir / "test2.txt").exists()
+    
+    # undo quarantine (restores old venv)
+    steps[0].undo(ctx)
+    assert (venv_dir / "test.txt").exists()
+
+def test_refresh_foreign_files(tmp_path):
+    sys_dir = tmp_path / "_sys"
+    sys_dir.mkdir()
+    venv_dir = sys_dir / "env" / "venv"
+    venv_dir.mkdir(parents=True)
+    scripts = venv_dir / "Scripts"
+    scripts.mkdir(parents=True)
+    
+    old_dll = scripts / "python3.dll"
+    old_dll.write_bytes(b"old")
+    foreign = scripts / "user.dll"
+    foreign.write_bytes(b"foreign")
+    stale_dll = scripts / "stale.dll"
+    stale_dll.write_bytes(b"stale")
+    
+    managed_py = sys_dir / "env" / "python"
+    managed_py.mkdir(parents=True)
+    (managed_py / "python.exe").touch()
+    
+    def fake_runner(argv, timeout):
+        if "virtualenv" in argv and "venv-probe" not in argv[-1]:
+            (scripts / "python3.dll").write_bytes(b"new")
+        elif "virtualenv" in argv and "venv-probe" in argv[-1]:
+            probe_scripts = Path(argv[-1]) / "Scripts"
+            probe_scripts.mkdir(parents=True)
+            (probe_scripts / "python3.dll").write_bytes(b"new")
+            (probe_scripts / "python.exe").touch()
+        return 0, ""
+        
+    findings = [{"name": "venv_interpreter_skew", "level": "warning", "detail": "patch-skew"}]
+    
+    import hashlib
+    manifest = {
+        "venv": {
+            "interpreter_hashes": {
+                "Scripts/python3.dll": hashlib.sha256(b"old").hexdigest(),
+                "Scripts/stale.dll": hashlib.sha256(b"stale").hexdigest()
+            }
+        }
+    }
+    
+    steps = plan_venv_repair(sys_dir, findings, manifest=manifest, runner=fake_runner)
+    ctx = OpContext(sys_dir, "op-1", "repair", {}, {})
+    
+    steps[0].do(ctx) # backup
+    steps[1].do(ctx) # refresh
+    
+    assert (scripts / "python3.dll").read_bytes() == b"new"
+    assert foreign.exists()
+    assert "Scripts/user.dll" in ctx.data["kept_foreign_files"]
+    assert not stale_dll.exists()
+
+    # Case 2: No baseline recorded -> treat NOTHING as removable
+    stale_dll.write_bytes(b"stale")
+    old_dll.write_bytes(b"old")
+    
+    ctx2 = OpContext(sys_dir, "op-2", "repair", {}, {})
+    steps_no_baseline = plan_venv_repair(sys_dir, findings, manifest=None, runner=fake_runner)
+    
+    steps_no_baseline[0].do(ctx2) # backup
+    steps_no_baseline[1].do(ctx2) # refresh
+    
+    assert foreign.exists()
+    assert "Scripts/user.dll" in ctx2.data["kept_foreign_files"]
+    assert stale_dll.exists()
+    assert "Scripts/stale.dll" in ctx2.data["kept_foreign_files"]
+
+def test_lock_probe_abort(tmp_path):
+    sys_dir = tmp_path / "_sys"
+    sys_dir.mkdir()
+    venv_dir = sys_dir / "env" / "venv"
+    scripts = venv_dir / "Scripts"
+    scripts.mkdir(parents=True)
+    python_exe = scripts / "python.exe"
+    python_exe.write_bytes(b"exe")
+    
+    findings = [{"name": "venv_interpreter_skew", "level": "warning", "detail": "patch-skew"}]
+    steps = plan_venv_repair(sys_dir, findings)
+    ctx = OpContext(sys_dir, "op-1", "repair", {}, {})
+    
+    import core.venv_repair
+    original_rename = core.venv_repair.os.rename
+    def failing_rename(src, dst):
+        if "python.exe" in str(src):
+            raise PermissionError("locked")
+        original_rename(src, dst)
+        
+    core.venv_repair.os.rename = failing_rename
+    try:
+        with pytest.raises(PermissionError):
+            steps[0].do(ctx)
+        assert python_exe.exists()
+        assert not (scripts / "python.exe.lockprobe").exists()
+    finally:
+        core.venv_repair.os.rename = original_rename
+
+@pytest.mark.skipif(os.environ.get("ENGRAM_SKIP_REAL_VENV_TESTS") == "1", reason="Skip real venv tests")
+def test_real_venv_refresh_and_regen(tmp_path):
+    repo_root = Path(__file__).parent.parent.parent.parent
+    managed_py = repo_root / "_sys" / "env" / "python" / "python.exe"
+    if not managed_py.exists():
+        pytest.skip(f"Embedded python not found at {managed_py}")
+        
+    venv_dir = tmp_path / "venv"
+    import subprocess
+    subprocess.run([str(managed_py), "-m", "virtualenv", "--no-seed", str(venv_dir)], check=True)
+    
+    venv_py = venv_dir / "Scripts" / "python.exe"
+    assert venv_py.exists()
+    
+    subprocess.run([str(managed_py), "-m", "virtualenv", "--no-seed", str(venv_dir)], check=True)
+    
+    site_packages = venv_dir / "Lib" / "site-packages"
+    dist_info = site_packages / "fake-1.0.dist-info"
+    dist_info.mkdir(parents=True, exist_ok=True)
+    (dist_info / "entry_points.txt").write_text("[console_scripts]\nfake-tool = fake:main\n")
+    
+    def real_runner(argv, timeout):
+        res = subprocess.run(argv, capture_output=True, text=True)
+        return res.returncode, res.stdout + res.stderr
+        
+    res = regenerate_console_scripts(venv_dir, python_exe=venv_py, runner=real_runner)
+    assert "fake-tool" not in res.get("failed", [])
+    assert (venv_dir / "Scripts" / "fake-tool.exe").exists()
