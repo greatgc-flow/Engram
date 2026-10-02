@@ -381,3 +381,44 @@ def test_adopt_legacy_lists_candidates_without_moving_in_dry_run(sys_dir):
 def test_adopt_legacy_ignores_non_old_dirs(sys_dir):
     _legacy(sys_dir, "git", ["cmd/git.exe"])
     assert backups.find_legacy_candidates(sys_dir) == []
+
+
+# ---- deterministic destination (write-ahead paths allocated by the engine) ----------------------------
+
+def test_create_into_a_preallocated_destination(sys_dir, tmp_path):
+    dest = backups.backups_root(sys_dir) / "venv" / "20261010T000000Z-planned"
+    src = _src(tmp_path)
+    ref = backups.create(sys_dir, "venv", src, reason="r", op_id="o", label="planned", now=NOW, dest=dest)
+    assert ref.path == dest and (dest / backups.PAYLOAD / "a.txt").exists()
+    assert json.loads((dest / backups.MARKER).read_text(encoding="utf-8"))["state"] == "pending"
+
+
+def test_preallocated_destination_must_stay_under_the_kind_directory(sys_dir, tmp_path):
+    src = _src(tmp_path)
+    for bad in (tmp_path / "elsewhere", backups.backups_root(sys_dir) / "python" / "x",
+                backups.backups_root(sys_dir) / "venv" / ".." / "venv" / "..", backups.backups_root(sys_dir) / "venv"):
+        with pytest.raises(ValueError):
+            backups.create(sys_dir, "venv", src, reason="r", op_id="o", label="l", now=NOW, dest=bad)
+    assert src.exists()
+
+
+def test_preallocated_destination_is_reused_when_a_crashed_attempt_left_a_marker(sys_dir, tmp_path):
+    dest = backups.backups_root(sys_dir) / "venv" / "20261010T000000Z-planned"
+    src = _src(tmp_path)
+
+    def exploding(a, b):
+        raise PermissionError("locked")
+
+    with pytest.raises(PermissionError):
+        backups.create(sys_dir, "venv", src, reason="r", op_id="o", label="planned", now=NOW, dest=dest,
+                       rename=exploding, sleep=lambda s: None)
+    assert (dest / backups.MARKER).exists() and src.exists()
+    ref = backups.create(sys_dir, "venv", src, reason="r", op_id="o", label="planned", now=NOW, dest=dest)
+    assert ref.path == dest and (dest / backups.PAYLOAD / "a.txt").exists() and not src.exists()
+
+
+def test_preallocated_destination_with_an_existing_payload_is_refused(sys_dir, tmp_path):
+    dest = backups.backups_root(sys_dir) / "venv" / "20261010T000000Z-planned"
+    backups.create(sys_dir, "venv", _src(tmp_path, "a"), reason="r", op_id="o", label="planned", now=NOW, dest=dest)
+    with pytest.raises(FileExistsError):
+        backups.create(sys_dir, "venv", _src(tmp_path, "b"), reason="r", op_id="o", label="planned", now=NOW, dest=dest)

@@ -227,8 +227,14 @@ def create(
     engram_version: Optional[str] = None,
     rename: Rename = os.rename,
     sleep: Callable[[float], None] = time.sleep,
+    dest: Optional[Path] = None,
 ) -> BackupRef:
-    """Preserve ``source`` (a directory) in the registry. State starts as ``pending``."""
+    """Preserve ``source`` (a directory) in the registry. State starts as ``pending``.
+
+    ``dest`` lets an engine use a path it allocated and journaled BEFORE the operation (write-ahead,
+    design 9): it must be a direct child of ``<root>/<kind>/``. A marker left by a crashed attempt is
+    reused; a destination that already holds a payload is refused.
+    """
     if kind not in KIND_POLICY:
         raise ValueError(f"unknown backup kind {kind!r}")
     if not _LABEL_RE.match(label or "") or ".." in label:
@@ -242,12 +248,21 @@ def create(
     min_keep, ttl_days = KIND_POLICY[kind]
 
     root = backups_root(sys_dir)
-    dest = root / kind / f"{_compact(now)}-{label}"
-    n = 1
-    while dest.exists():
-        n += 1
-        dest = root / kind / f"{_compact(now)}-{label}-{n}"
-    dest.mkdir(parents=True)
+    if dest is not None:
+        dest = Path(dest)
+        kind_dir = (root / kind).resolve()
+        if dest.resolve().parent != kind_dir:
+            raise ValueError(f"backup destination must be a direct child of {kind_dir}: {dest}")
+        if (dest / PAYLOAD).exists():
+            raise FileExistsError(f"backup destination already holds a payload: {dest}")
+        dest.mkdir(parents=True, exist_ok=True)
+    else:
+        dest = root / kind / f"{_compact(now)}-{label}"
+        n = 1
+        while dest.exists():
+            n += 1
+            dest = root / kind / f"{_compact(now)}-{label}-{n}"
+        dest.mkdir(parents=True)
 
     meta = {
         "schema_version": SCHEMA_VERSION,
