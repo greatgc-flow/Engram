@@ -9,6 +9,18 @@
             "idempotent": true,
             "failure_policy": "abort"
         },
+        "env.commit_install": {
+            "module": "core.env_manifest",
+            "method": "commit_install",
+            "idempotent": true,
+            "failure_policy": "warn"
+        },
+        "venv.snapshot": {
+            "module": "core.venv_manager",
+            "method": "snapshot_op",
+            "idempotent": true,
+            "failure_policy": "warn"
+        },
         "registry.apply": {
             "module": "core.registrar",
             "method": "apply",
@@ -86,10 +98,7 @@
         }
     },
     "pipelines": {
-        "install": [
-            "provision.deploy",
-            "state.write"
-        ],
+        "install": ["provision.deploy", "env.commit_install", "venv.snapshot", "state.write"],
         "menu-enable": [
             "registry.apply",
             "state.write"
@@ -122,9 +131,7 @@
             "env.launch"
         ],
         "init": [],
-        "update": [
-            "update.run"
-        ],
+        "update": ["update.run", "venv.snapshot"],
         "doctor": [
             "doctor.run"
         ],

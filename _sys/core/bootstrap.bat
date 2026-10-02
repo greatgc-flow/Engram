@@ -37,7 +37,9 @@ set "_RT=!SYS_DIR!\runtimes.json"
 set "PY_VER=3.14.5"
 set "PY_URL=https://www.python.org/ftp/python/3.14.5/python-3.14.5-embed-amd64.zip"
 set "GET_PIP_URL=https://bootstrap.pypa.io/get-pip.py"
+set "PY_SHA256="
 if exist "!_RT!" (
+    for /f "usebackq delims=" %%s in (`powershell -NoProfile -Command "((Get-Content '!_RT!')|ConvertFrom-Json).runtimes.python.sha256"`) do set "PY_SHA256=%%s"
     for /f "usebackq delims=" %%v in (`powershell -NoProfile -Command "((Get-Content '!_RT!')|ConvertFrom-Json).runtimes.python.version"`) do set "PY_VER=%%v"
     for /f "usebackq delims=" %%u in (`powershell -NoProfile -Command "((Get-Content '!_RT!')|ConvertFrom-Json).runtimes.python.url"`) do set "PY_URL=%%u"
     for /f "usebackq delims=" %%p in (`powershell -NoProfile -Command "((Get-Content '!_RT!')|ConvertFrom-Json).runtimes.python.get_pip_url"`) do set "GET_PIP_URL=%%p"
@@ -67,6 +69,16 @@ if exist "!PY_EXE!" (
     )
 )
 
+:: -- Fresh-root gate (docs/design/engram-env-resilience-design-2026-10-02.md, 6.4) --
+:: Auto-bumping Python to "latest stable" is only safe on a root that has no venv
+:: and no state yet. An existing venv carries its own interpreter copy, so silently
+:: installing a different Python underneath it creates an unreported version skew.
+:: Anywhere else the pinned runtimes.json version is installed and upgrades go
+:: through "engram update".
+set "_FRESH_ROOT=1"
+if exist "!SYS_DIR!\env\venv" set "_FRESH_ROOT=0"
+if exist "!SYS_DIR!\data\state" set "_FRESH_ROOT=0"
+
 :: -- Auto-fetch latest stable Python (skip with --skip-update) --
 set "_SKIP_UPDATE=0"
 for %%A in (%*) do if /i "%%A"=="--skip-update" set "_SKIP_UPDATE=1"
@@ -82,8 +94,8 @@ if "!_SKIP_UPDATE!"=="0" (
                 echo [i] Python !PY_VER! is installed; newer !_LATEST_VER! is available.
                 echo [i] Not auto-applied: safe in-place Python replacement is not implemented.
                 echo [i] To upgrade, close portable tools, remove !SYS_DIR!\env\python, then rerun !SYS_DIR!/core/bootstrap.bat.
-            ) else (
-                echo [i] New Python version available for first install: !_LATEST_VER! (pinned: !PY_VER!)
+            ) else if "!_FRESH_ROOT!"=="1" (
+                echo [i] New Python version available for first install: !_LATEST_VER! - pinned is !PY_VER!
                 set "_NEW_URL=https://www.python.org/ftp/python/!_LATEST_VER!/python-!_LATEST_VER!-embed-amd64.zip"
                 if exist "!_RT!" (
                     set "_PY_BUMP=1"
@@ -93,6 +105,10 @@ if "!_SKIP_UPDATE!"=="0" (
                 ) else (
                     echo [Warning] runtimes.json is missing; keeping the built-in Python pin.
                 )
+            ) else (
+                echo [i] Python is missing but this root already has a venv or state.
+                echo [i] Not auto-applied: installing the pinned Python !PY_VER! so the existing venv stays consistent.
+                echo [i] Newer version available: !_LATEST_VER!. Use engram update for a managed upgrade.
             )
         ) else (
             echo [OK] Python !PY_VER! is already latest stable.
@@ -108,14 +124,47 @@ if not exist "!PY_EXE!" (
     echo [i] Python not found. Bootstrapping Python !PY_VER!...
     if not exist "!SYS_DIR!\data\setup-files" mkdir "!SYS_DIR!\data\setup-files"
 
-    set "ZIP_PATH=!SYS_DIR!\data\setup-files\python-bootstrap.zip"
+    :: The hash uses .NET directly (not Get-FileHash): when bootstrap is started from a
+    :: PowerShell 7 session the inherited PSModulePath hides the 5.1 utility module.
+    :: Versioned cache with a recorded sha256 (design P9): a cached zip is reused only
+    :: when its recorded hash still matches, so an offline re-bootstrap works and an
+    :: unverified or tampered file is never trusted.
+    set "ZIP_PATH=!SYS_DIR!\data\setup-files\python-!PY_VER!-embed-amd64.zip"
+    set "SHA_PATH=!ZIP_PATH!.sha256"
+    set "_CACHE_OK=0"
+    set "_CACHED_SHA="
+    set "_ACTUAL_SHA="
+    if exist "!ZIP_PATH!" if exist "!SHA_PATH!" (
+        for /f "usebackq delims=" %%h in ("!SHA_PATH!") do if not defined _CACHED_SHA set "_CACHED_SHA=%%h"
+        for /f "usebackq delims=" %%h in (`powershell -NoProfile -Command "([System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath '!ZIP_PATH!').ProviderPath))) -replace '-','').ToLower()"`) do set "_ACTUAL_SHA=%%h"
+        if defined _ACTUAL_SHA if /i "!_CACHED_SHA!"=="!_ACTUAL_SHA!" set "_CACHE_OK=1"
+    )
 
-    echo [i] Downloading Python embeddable zip...
-    curl -L "!PY_URL!" -o "!ZIP_PATH!"
-    if errorlevel 1 (
-        echo [Error] Failed to download Python.
-        if "%CI%"=="" pause
-        exit /b 1
+    if "!_CACHE_OK!"=="1" (
+        echo [OK] Using the verified cached Python zip.
+    ) else (
+        echo [i] Downloading Python embeddable zip...
+        curl -L "!PY_URL!" -o "!ZIP_PATH!"
+        if errorlevel 1 (
+            echo [Error] Failed to download Python.
+            if "%CI%"=="" pause
+            exit /b 1
+        )
+        set "_ACTUAL_SHA="
+        for /f "usebackq delims=" %%h in (`powershell -NoProfile -Command "([System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath '!ZIP_PATH!').ProviderPath))) -replace '-','').ToLower()"`) do set "_ACTUAL_SHA=%%h"
+        if "!_ACTUAL_SHA!"=="" (
+            echo [Error] Could not compute the sha256 of the downloaded Python zip.
+            del /q "!ZIP_PATH!" >nul 2>&1
+            exit /b 1
+        )
+        if defined PY_SHA256 if /i not "!PY_SHA256!"=="!_ACTUAL_SHA!" (
+            echo [Error] Python zip checksum mismatch.
+            echo         Expected: !PY_SHA256!
+            echo         Actual  : !_ACTUAL_SHA!
+            del /q "!ZIP_PATH!" >nul 2>&1
+            exit /b 1
+        )
+        >"!SHA_PATH!" echo !_ACTUAL_SHA!
     )
 
     echo [i] Extracting Python...
