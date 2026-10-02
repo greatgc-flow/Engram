@@ -169,7 +169,7 @@ def test_integrity_and_console_scripts(tmp_path):
     manifest["venv"]["interpreter_hashes"] = hashes
     
     (venv_dir / "Scripts" / "python311.dll").write_bytes(b"changed")
-    (venv_dir / "Scripts" / "bad.exe").write_bytes(b"no embedded path")
+    (venv_dir / "Scripts" / "native.exe").write_bytes(b"no embedded path")
     
     findings = venv_manager.probe_venv(sys_dir, runner=runner, manifest=manifest)
     names = {f.name: f for f in findings}
@@ -178,8 +178,24 @@ def test_integrity_and_console_scripts(tmp_path):
     assert "Scripts/python311.dll" in names["interpreter_integrity"].detail
     
     assert names["console_scripts"].level == "warning"
-    assert "bad.exe (unreadable launcher)" in names["console_scripts"].detail
+    assert "native.exe" not in names["console_scripts"].detail
     assert "pip.exe" in names["console_scripts"].detail
+
+
+def test_console_scripts_native_exes_are_ok(tmp_path):
+    sys_dir, venv_dir, python_dir = _setup_tree(tmp_path)
+    
+    scripts = venv_dir / "Scripts"
+    (scripts / "pip.exe").unlink()
+    
+    (scripts / "ruff.exe").write_bytes(b"MZ native exe")
+    (scripts / "uv.exe").write_bytes(b"MZ native exe")
+    
+    findings = venv_manager.probe_venv(sys_dir, runner=FakeRunner())
+    names = {f.name: f for f in findings}
+    
+    assert names["console_scripts"].level == "ok"
+    assert names["console_scripts"].detail == "2 native executables ignored"
 
 
 def test_launcher_embedded_path_variants(tmp_path):

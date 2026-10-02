@@ -210,14 +210,27 @@ def plan_relocation(
     registry: RegistryOps | None = None,
     remap_ai_state: bool = False, 
     process_running=None, 
+    runner=None,
     now=None
 ) -> list:
     if registry is None:
         registry = RegistryOps()
-    if process_running is None:
-        import psutil
+    if runner is None:
+        def _default_runner(argv: list[str]) -> tuple[int, str]:
+            try:
+                res = subprocess.run(argv, capture_output=True, text=True, timeout=10)
+                return res.returncode, res.stdout + res.stderr
+            except Exception as e:
+                return -1, str(e)
+        runner = _default_runner
+    if process_running is None and remap_ai_state:
         def _pr(name):
-            return any(p.name() == name for p in psutil.process_iter(['name']))
+            try:
+                import psutil
+                return any(p.name() == name for p in psutil.process_iter(['name']))
+            except ImportError:
+                rc, out = runner(["tasklist", "/FI", f"IMAGENAME eq {name}", "/NH"])
+                return rc == 0 and name.lower() in out.lower()
         process_running = _pr
     if now is None:
         now = env_ops.utc_now
@@ -318,14 +331,35 @@ def plan_relocation(
                             env_manifest._atomic_write_text(target, f.read_bytes().decode("utf-8"))
                             
         def done_regen_state(ctx: env_ops.OpContext) -> bool:
-            install_state = sys_dir / "data" / "state" / "install.state.json"
-            if install_state.exists():
+            state_dir = sys_dir / "data" / "state"
+            files_checked = 0
+            for name in ("install.state.json", "register.state.json", "menu-enable.state.json"):
+                p = state_dir / name
+                if not p.exists():
+                    continue
+                files_checked += 1
                 try:
-                    data = json.loads(install_state.read_text(encoding="utf-8"))
-                    return data.get("base_dir") == str(base_dir)
+                    data = json.loads(p.read_text(encoding="utf-8"))
+                    if name == "install.state.json":
+                        if data.get("base_dir") != str(base_dir):
+                            return False
+                    
+                    def has_old(node):
+                        if isinstance(node, dict):
+                            for k, v in node.items():
+                                if k == "base_dir": continue
+                                if has_old(v): return True
+                        elif isinstance(node, list):
+                            return any(has_old(x) for x in node)
+                        elif isinstance(node, str):
+                            return node != rewrite_if_under(node, old_root, str(base_dir))
+                        return False
+
+                    if has_old(data):
+                        return False
                 except Exception:
-                    pass
-            return False
+                    return False
+            return files_checked > 0
 
         steps.append(env_ops.Step("regenerate-state-files", do=do_regen_state, undo=undo_regen_state, done=done_regen_state, group="A"))
 

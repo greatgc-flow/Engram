@@ -264,20 +264,30 @@ def plan_venv_repair(sys_dir: Path, findings: list, *, manifest: dict | None = N
         def do_quarantine(ctx):
             venv_dir = ctx.sys_dir / "env" / "venv"
             if not venv_dir.exists(): return
+            dest = ctx.paths.get("venv_backup")
+            if not dest:
+                raise RuntimeError("missing venv_backup path allocation")
             from core import backups
-            ref = backups.create(ctx.sys_dir, "venv", venv_dir, reason="quarantine broken venv", op_id=ctx.op_id, label="broken-venv")
-            ctx.data["quarantined_venv_path"] = str(ref.path)
+            backups.create(ctx.sys_dir, "venv", venv_dir, reason="quarantine broken venv", op_id=ctx.op_id, label="broken-venv", dest=Path(dest))
             
         def undo_quarantine(ctx):
-            q_path = ctx.data.get("quarantined_venv_path")
-            if not q_path: return
+            venv_dir = ctx.sys_dir / "env" / "venv"
             from core import backups
-            import json
-            meta_path = Path(q_path) / backups.MARKER
-            if meta_path.exists():
-                meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                ref = backups.BackupRef("venv", Path(q_path), meta)
-                backups.restore(ref)
+            
+            if venv_dir.exists():
+                failed_dest = ctx.paths.get("venv_failed_backup")
+                if not failed_dest:
+                    raise RuntimeError("missing venv_failed_backup path allocation")
+                backups.create(ctx.sys_dir, "venv", venv_dir, reason="rollback of failed rebuild", op_id=ctx.op_id, label="failed-rebuild", dest=Path(failed_dest))
+                
+            # Restore from the write-ahead path allocated for this op (never search by label: markers do not
+            # store labels, and a marker-only dir from an interrupted move must not hide the real payload).
+            dest = ctx.paths.get("venv_backup")
+            if not dest:
+                raise RuntimeError("missing venv_backup path allocation")
+            meta = backups._read_meta(Path(dest))
+            if meta and (Path(dest) / backups.PAYLOAD).exists() and not venv_dir.exists():
+                backups.restore(backups.BackupRef(meta["kind"], Path(dest), meta))
             
         def do_create(ctx):
             venv_dir = ctx.sys_dir / "env" / "venv"
@@ -289,8 +299,11 @@ def plan_venv_repair(sys_dir: Path, findings: list, *, manifest: dict | None = N
         def undo_create(ctx):
             venv_dir = ctx.sys_dir / "env" / "venv"
             if venv_dir.exists():
+                failed_dest = ctx.paths.get("venv_failed_backup")
+                if not failed_dest:
+                    raise RuntimeError("missing venv_failed_backup path allocation")
                 from core import backups
-                backups.create(ctx.sys_dir, "venv", venv_dir, reason="rollback of failed rebuild", op_id=ctx.op_id, label="failed-rebuild")
+                backups.create(ctx.sys_dir, "venv", venv_dir, reason="rollback of failed rebuild", op_id=ctx.op_id, label="failed-rebuild", dest=Path(failed_dest))
                 
         def do_restore(ctx):
             snapshot = ctx.data.get("snapshot")
@@ -348,10 +361,21 @@ def plan_venv_repair(sys_dir: Path, findings: list, *, manifest: dict | None = N
             if scripts.exists():
                 for f in scripts.iterdir():
                     name = f.name.lower()
+                    if name.endswith(".lockprobe"):
+                        orig_name = f.name[:-len(".lockprobe")]
+                        orig_f = f.with_name(orig_name)
+                        if not orig_f.exists():
+                            os.rename(str(f), str(orig_f))
+                            
+                for f in list(scripts.iterdir()):
+                    name = f.name.lower()
                     if name in ("python.exe", "pythonw.exe") or (name.startswith("python3") and name.endswith(".dll")):
                         tmp = f.with_name(f.name + ".lockprobe")
-                        os.rename(str(f), str(tmp))
-                        os.rename(str(tmp), str(f))
+                        try:
+                            os.rename(str(f), str(tmp))
+                        finally:
+                            if tmp.exists():
+                                os.rename(str(tmp), str(f))
                         
             files = interpreter_file_set(venv_dir)
             ctx.data["old_interpreter_hashes"] = hash_files(venv_dir, files)
@@ -366,9 +390,11 @@ def plan_venv_repair(sys_dir: Path, findings: list, *, manifest: dict | None = N
                     if src.exists():
                         shutil.copy2(src, dst)
                         
+                dest = ctx.paths.get("venv_interp_backup")
+                if not dest:
+                    raise RuntimeError("missing venv_interp_backup path allocation")
                 from core import backups
-                ref = backups.create(ctx.sys_dir, "venv-interp", tmp_dir, reason="refresh interpreter", op_id=ctx.op_id, label="pre-refresh")
-                ctx.data["interp_backup_path"] = str(ref.path)
+                backups.create(ctx.sys_dir, "venv-interp", tmp_dir, reason="refresh interpreter", op_id=ctx.op_id, label="pre-refresh", dest=Path(dest))
             finally:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
                 
@@ -391,7 +417,8 @@ def plan_venv_repair(sys_dir: Path, findings: list, *, manifest: dict | None = N
             import tempfile, shutil
             tmp_venv = Path(tempfile.mkdtemp(prefix="venv-probe-"))
             try:
-                runner([str(managed_python), "-m", "virtualenv", "--no-seed", str(tmp_venv)], 30.0)
+                rc_probe, out_probe = runner([str(managed_python), "-m", "virtualenv", "--no-seed", str(tmp_venv)], 30.0)
+                if rc_probe != 0: raise RuntimeError(f"virtualenv probe failed: {out_probe}")
                 new_set = {f.as_posix() for f in interpreter_file_set(tmp_venv)}
             finally:
                 shutil.rmtree(tmp_venv, ignore_errors=True)
@@ -414,19 +441,21 @@ def plan_venv_repair(sys_dir: Path, findings: list, *, manifest: dict | None = N
             ctx.data["kept_foreign_files"] = kept_foreign
             
         def undo_refresh(ctx):
-            b_path = ctx.data.get("interp_backup_path")
-            if not b_path: return
             from core import backups
-            payload = Path(b_path) / backups.PAYLOAD
-            venv_dir = ctx.sys_dir / "env" / "venv"
             import shutil
-            for root, _, files in os.walk(payload):
-                for f in files:
-                    src = Path(root) / f
-                    rel = src.relative_to(payload)
-                    dst = venv_dir / rel
-                    dst.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(src, dst)
+            venv_dir = ctx.sys_dir / "env" / "venv"
+            for ref in backups.scan(ctx.sys_dir).valid:
+                if ref.meta.get("op_id") == ctx.op_id and ref.meta.get("label") == "pre-refresh":
+                    payload = ref.path / backups.PAYLOAD
+                    if payload.exists():
+                        for root, _, files in os.walk(payload):
+                            for f in files:
+                                src = Path(root) / f
+                                rel = src.relative_to(payload)
+                                dst = venv_dir / rel
+                                dst.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.copy2(src, dst)
+                        break
                     
         def do_record_hashes(ctx):
             venv_dir = ctx.sys_dir / "env" / "venv"

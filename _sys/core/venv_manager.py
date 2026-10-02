@@ -277,6 +277,7 @@ def probe_venv(
 
     scripts_dir = venv_dir / "Scripts"
     stale = []
+    native_exes = 0
     if path_exists(str(scripts_dir)):
         for f in Path(scripts_dir).iterdir():
             if not f.is_file():
@@ -284,13 +285,16 @@ def probe_venv(
             if f.suffix.lower() == ".exe" and not f.name.lower().startswith("python"):
                 emb = launcher_embedded_path(f)
                 if emb is None:
-                    stale.append(f"{f.name} (unreadable launcher)")
+                    native_exes += 1
                 elif _norm(emb) != _norm(python_exe) and _norm(emb) != _norm(venv_dir / "Scripts" / "pythonw.exe"):
                     stale.append(f.name)
     if stale:
         findings.append(Finding("console_scripts", "warning", f"stale-launchers: {', '.join(sorted(stale))}"))
     else:
-        findings.append(Finding("console_scripts", "ok", ""))
+        detail = ""
+        if native_exes > 0:
+            detail = f"{native_exes} native executable{'s' if native_exes > 1 else ''} ignored"
+        findings.append(Finding("console_scripts", "ok", detail))
         
     return findings
 

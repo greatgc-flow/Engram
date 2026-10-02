@@ -93,6 +93,10 @@ BRAIN_LOG_MAX_AGE_DAYS = 14
 # ── VSCode dated session log dirs ───────────────────────────────────────
 VSCODE_LOGS_KEEP = 2
 
+# ── Python swap runner copies ───────────────────────────────────────────
+ENV_OP_RUNNERS_MIN_AGE_DAYS = 3
+
+
 _SYS_DIR_EXPLICIT = False
 
 
@@ -251,7 +255,6 @@ def plan_pip_cache() -> list[Path]:
     return list(PIP_CACHE_DIR.iterdir())
 
 
-
 def plan_pycache() -> list[Path]:
     env_dir = _SYS_DIR / "env"
     tools_dir = _SYS_DIR / "tools"
@@ -313,6 +316,29 @@ def plan_vscode_caches() -> list[Path]:
         if (VSCODE_USER_DATA_DIR / name).exists()
     ]
 
+
+def plan_env_op_runners(now: float) -> list[Path]:
+    """Python swap runner copies live in <sys>/data/temp/env-op/<op_id>/runner.
+    Returns the <op_id> directories under data/temp/env-op that are older than 3 days
+    AND only when core.env_ops.journal_blocks(sys_dir) is None; never when a journal
+    is active; never touches data/state."""
+    if not DATA_TEMP_DIR.exists():
+        return []
+    env_op_dir = DATA_TEMP_DIR / "env-op"
+    if not env_op_dir.exists():
+        return []
+    try:
+        from core import env_ops
+        if env_ops.journal_blocks(_SYS_DIR) is not None:
+            return []
+    except Exception:
+        pass
+    
+    candidates = []
+    for op_dir in env_op_dir.iterdir():
+        if op_dir.is_dir() and _age_days(op_dir, now) >= ENV_OP_RUNNERS_MIN_AGE_DAYS:
+            candidates.append(op_dir)
+    return candidates
 
 
 # ── environment backup registry (docs/design/engram-env-resilience-design-2026-10-02.md, 8.3) ──
@@ -449,6 +475,7 @@ def build_plan(
         ("launcher_logs", "launcher_logs", plan_launcher_logs(deep)),
         ("vscode_cache", "vscode_cache", plan_vscode_caches()),
         ("backups", "backups", plan_backups(now, keep_override, size_cap_bytes, protect)),
+        ("env_op_runners", "env_op_runners", plan_env_op_runners(now)),
     ]
 
 
@@ -477,7 +504,7 @@ def main() -> int:
         "--only", default=None,
         help=(
             "comma-separated subset: tmp,data_temp,brain,vscode,"
-            "pytest_cache,winget_cache,npm_cache,pip_cache,vscode_cache,pycache,pytest_cache_default,launcher_logs,backups"
+            "pytest_cache,winget_cache,npm_cache,pip_cache,vscode_cache,pycache,pytest_cache_default,launcher_logs,backups,env_op_runners"
         ),
     )
     if "/?" in sys.argv[1:]:
@@ -491,7 +518,7 @@ def main() -> int:
 
     default_targets = (
         "tmp,data_temp,brain,vscode,"
-        "pytest_cache,winget_cache,npm_cache,pip_cache,vscode_cache,pycache,pytest_cache_default,launcher_logs,backups"
+        "pytest_cache,winget_cache,npm_cache,pip_cache,vscode_cache,pycache,pytest_cache_default,launcher_logs,backups,env_op_runners"
     )
     targets = set((args.only or default_targets).split(","))
     now = datetime.datetime.now().timestamp()

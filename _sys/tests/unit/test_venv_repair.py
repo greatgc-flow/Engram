@@ -3,6 +3,7 @@ import sys
 import ntpath
 import pytest
 import shutil
+import json
 from pathlib import Path
 
 # Fallback in case core.env_ops doesn't exist during test discovery
@@ -161,7 +162,12 @@ def test_rebuild_undo_quarantines(tmp_path):
     
     findings = [{"name": "venv_interpreter", "level": "error"}]
     steps = plan_venv_repair(sys_dir, findings, runner=FakeRunner())
-    ctx = OpContext(sys_dir, "op-1", "repair", {}, {})
+    
+    paths = {
+        "venv_backup": str(sys_dir / "data" / "backups" / "env" / "venv" / "bkp"),
+        "venv_failed_backup": str(sys_dir / "data" / "backups" / "env" / "venv" / "failed"),
+    }
+    ctx = OpContext(sys_dir, "op-1", "repair", paths, {})
     
     # quarantine
     steps[0].do(ctx)
@@ -178,6 +184,45 @@ def test_rebuild_undo_quarantines(tmp_path):
     # undo quarantine (restores old venv)
     steps[0].undo(ctx)
     assert (venv_dir / "test.txt").exists()
+
+def test_rebuild_undo_quarantines_crash(tmp_path):
+    sys_dir = tmp_path / "_sys"
+    sys_dir.mkdir()
+    venv_dir = sys_dir / "env" / "venv"
+    venv_dir.mkdir(parents=True)
+    (venv_dir / "test.txt").write_text("old venv")
+    
+    findings = [{"name": "venv_interpreter", "level": "error"}]
+    steps = plan_venv_repair(sys_dir, findings, runner=FakeRunner())
+    
+    paths = {
+        "venv_backup": str(sys_dir / "data" / "backups" / "env" / "venv" / "bkp"),
+        "venv_failed_backup": str(sys_dir / "data" / "backups" / "env" / "venv" / "failed"),
+    }
+    ctx = OpContext(sys_dir, "op-1", "repair", paths, {})
+    
+    # quarantine
+    steps[0].do(ctx)
+    assert not venv_dir.exists()
+    
+    # create half-built replacement
+    venv_dir.mkdir(parents=True)
+    (venv_dir / "test2.txt").write_text("half-built venv")
+    
+    # crash between move and done simulated by empty ctx.data
+    from core import backups
+    marker_only = sys_dir / "data" / "backups" / "env" / "venv" / "marker-only"
+    marker_only.mkdir(parents=True)
+    meta = {"schema_version": 1, "kind": "venv", "state": "pending", "created_at": "now", "op_id": "op-1", "label": "broken-venv"}
+    (marker_only / backups.MARKER).write_text(json.dumps(meta))
+    
+    ctx.data = {}
+    # undo quarantine directly without undo create to simulate crash logic checking missing payload
+    steps[0].undo(ctx)
+    
+    assert (venv_dir / "test.txt").exists()
+    assert not (venv_dir / "test2.txt").exists()
+    assert (Path(paths["venv_failed_backup"]) / backups.PAYLOAD / "test2.txt").exists()
 
 def test_refresh_foreign_files(tmp_path):
     sys_dir = tmp_path / "_sys"
@@ -221,7 +266,8 @@ def test_refresh_foreign_files(tmp_path):
     }
     
     steps = plan_venv_repair(sys_dir, findings, manifest=manifest, runner=fake_runner)
-    ctx = OpContext(sys_dir, "op-1", "repair", {}, {})
+    paths = {"venv_interp_backup": str(sys_dir / "data" / "backups" / "env" / "venv-interp" / "bkp")}
+    ctx = OpContext(sys_dir, "op-1", "repair", paths, {})
     
     steps[0].do(ctx) # backup
     steps[1].do(ctx) # refresh
@@ -235,7 +281,8 @@ def test_refresh_foreign_files(tmp_path):
     stale_dll.write_bytes(b"stale")
     old_dll.write_bytes(b"old")
     
-    ctx2 = OpContext(sys_dir, "op-2", "repair", {}, {})
+    paths2 = {"venv_interp_backup": str(sys_dir / "data" / "backups" / "env" / "venv-interp" / "bkp2")}
+    ctx2 = OpContext(sys_dir, "op-2", "repair", paths2, {})
     steps_no_baseline = plan_venv_repair(sys_dir, findings, manifest=None, runner=fake_runner)
     
     steps_no_baseline[0].do(ctx2) # backup
@@ -245,6 +292,25 @@ def test_refresh_foreign_files(tmp_path):
     assert "Scripts/user.dll" in ctx2.data["kept_foreign_files"]
     assert stale_dll.exists()
     assert "Scripts/stale.dll" in ctx2.data["kept_foreign_files"]
+
+def test_failed_refresh_keeps_files(tmp_path):
+    sys_dir = tmp_path / "_sys"
+    sys_dir.mkdir()
+    venv_dir = sys_dir / "env" / "venv"
+    venv_dir.mkdir(parents=True)
+    
+    findings = [{"name": "venv_interpreter_skew", "level": "warning", "detail": "patch-skew"}]
+    
+    def failing_runner(argv, timeout):
+        return 1, "failed"
+        
+    steps = plan_venv_repair(sys_dir, findings, runner=failing_runner)
+    paths = {"venv_interp_backup": str(sys_dir / "data" / "backups" / "env" / "venv-interp" / "bkp")}
+    ctx = OpContext(sys_dir, "op-1", "repair", paths, {})
+    
+    steps[0].do(ctx)
+    with pytest.raises(RuntimeError, match="failed"):
+        steps[1].do(ctx)
 
 def test_lock_probe_abort(tmp_path):
     sys_dir = tmp_path / "_sys"
@@ -257,7 +323,8 @@ def test_lock_probe_abort(tmp_path):
     
     findings = [{"name": "venv_interpreter_skew", "level": "warning", "detail": "patch-skew"}]
     steps = plan_venv_repair(sys_dir, findings)
-    ctx = OpContext(sys_dir, "op-1", "repair", {}, {})
+    paths = {"venv_interp_backup": str(sys_dir / "data" / "backups" / "env" / "venv-interp" / "bkp")}
+    ctx = OpContext(sys_dir, "op-1", "repair", paths, {})
     
     import core.venv_repair
     original_rename = core.venv_repair.os.rename
@@ -274,6 +341,24 @@ def test_lock_probe_abort(tmp_path):
         assert not (scripts / "python.exe.lockprobe").exists()
     finally:
         core.venv_repair.os.rename = original_rename
+
+def test_lockprobe_leftover_recovery(tmp_path):
+    sys_dir = tmp_path / "_sys"
+    sys_dir.mkdir()
+    venv_dir = sys_dir / "env" / "venv"
+    scripts = venv_dir / "Scripts"
+    scripts.mkdir(parents=True)
+    leftover = scripts / "python.exe.lockprobe"
+    leftover.write_bytes(b"exe")
+    
+    findings = [{"name": "venv_interpreter_skew", "level": "warning", "detail": "patch-skew"}]
+    steps = plan_venv_repair(sys_dir, findings)
+    paths = {"venv_interp_backup": str(sys_dir / "data" / "backups" / "env" / "venv-interp" / "bkp")}
+    ctx = OpContext(sys_dir, "op-1", "repair", paths, {})
+    
+    steps[0].do(ctx)
+    assert (scripts / "python.exe").exists()
+    assert not leftover.exists()
 
 @pytest.mark.skipif(os.environ.get("ENGRAM_SKIP_REAL_VENV_TESTS") == "1", reason="Skip real venv tests")
 def test_real_venv_refresh_and_regen(tmp_path):

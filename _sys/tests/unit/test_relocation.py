@@ -2,7 +2,10 @@ import json
 import os
 import hashlib
 import shutil
+import sys
 from pathlib import Path
+
+import pytest
 
 from core import relocation, env_ops, env_manifest
 
@@ -190,7 +193,7 @@ def test_state_regeneration(tmp_path):
     base_dir.mkdir(parents=True)
     state_dir = sys_dir / "data" / "state"
     state_dir.mkdir(parents=True)
-    (state_dir / "install.state.json").write_text('{"base_dir": "D:\\\\old"}')
+    (state_dir / "install.state.json").write_text(json.dumps({"base_dir": "D:\\old"}))
     drift = env_manifest.RootDrift("moved", "D:\\old", "manifest")
     steps = relocation.plan_relocation(sys_dir, base_dir, manifest=None, drift=drift, localappdata=tmp_path)
     ctx = env_ops.OpContext(sys_dir, "op", "kind", {}, {})
@@ -290,7 +293,7 @@ def _setup_rollback_env(tmp_path):
     manifest = {"schema_version": "1.0", "root": {"logical": "D:\\old", "physical": "D:\\old"}, "install_id": "123"}
     state_dir = sys_dir / "data" / "state"
     state_dir.mkdir(parents=True)
-    (state_dir / "install.state.json").write_bytes(b'{\r\n  "base_dir": "D:\\\\old"\r\n}\r\n')
+    (state_dir / "install.state.json").write_text(json.dumps({"base_dir": "D:\\old"}))
     git_dir = base_dir / ".engram" / "git"
     git_dir.mkdir(parents=True)
     (git_dir / ".gitconfig").write_bytes(b'[safe]\r\n\tdirectory = D:\\old\\repo\r\n')
@@ -362,3 +365,64 @@ def test_rollback_remap_ai_state(tmp_path):
         pass
     env_ops.rollback(sys_dir, lambda active: relocation.plan_relocation(sys_dir, base_dir, manifest=manifest, drift=drift, localappdata=localappdata, registry=registry, remap_ai_state=True, process_running=lambda x: False))
     assert _hash_tree(tmp_path) == before
+
+def test_plan_relocation_no_psutil_import_when_remap_ai_state_false(tmp_path, monkeypatch):
+    sys_dir = tmp_path / "_sys"
+    base_dir = tmp_path / "new_base"
+    drift = env_manifest.RootDrift("moved", "D:\\old_base", "manifest")
+    monkeypatch.setitem(sys.modules, "psutil", None)
+    
+    # Should not raise ImportError
+    steps = relocation.plan_relocation(sys_dir, base_dir, manifest=None, drift=drift, localappdata=tmp_path, remap_ai_state=False)
+    assert len(steps) > 0
+
+def test_remap_ai_state_fallback_tasklist(tmp_path, monkeypatch):
+    sys_dir = tmp_path / "_sys"
+    base_dir = tmp_path / "new_base"
+    localappdata = tmp_path / "local"
+    sys_dir.mkdir(parents=True)
+    base_dir.mkdir(parents=True)
+    drift = env_manifest.RootDrift("moved", "D:\\old", "manifest")
+    claude_dir = base_dir / ".engram" / "claude"
+    claude_dir.mkdir(parents=True)
+    (claude_dir / ".claude.json").write_text(json.dumps({"projects": {}}))
+    
+    monkeypatch.setitem(sys.modules, "psutil", None)
+    
+    def fake_runner(argv):
+        if "tasklist" in argv and "claude.exe" in argv[-2]:
+            return 0, "claude.exe      1234 Console      1      50,000 K"
+        return -1, ""
+        
+    steps = relocation.plan_relocation(sys_dir, base_dir, manifest=None, drift=drift, localappdata=localappdata, remap_ai_state=True, runner=fake_runner)
+    
+    ctx = env_ops.OpContext(sys_dir, "op", "kind", {}, {})
+    for s in steps:
+        if s.name == "remap-ai-state":
+            with pytest.raises(RuntimeError, match="claude.exe is running"):
+                s.do(ctx)
+
+def test_regenerate_state_files_crash_resumption(tmp_path):
+    sys_dir = tmp_path / "_sys"
+    base_dir = tmp_path / "new_base"
+    sys_dir.mkdir(parents=True)
+    base_dir.mkdir(parents=True)
+    state_dir = sys_dir / "data" / "state"
+    state_dir.mkdir(parents=True)
+    
+    (state_dir / "install.state.json").write_text(json.dumps({"base_dir": "D:\\old"}))
+    (state_dir / "register.state.json").write_text(json.dumps({"some_path": "D:\\old\\path"}))
+    
+    drift = env_manifest.RootDrift("moved", "D:\\old", "manifest")
+    steps = relocation.plan_relocation(sys_dir, base_dir, manifest=None, drift=drift, localappdata=tmp_path)
+    
+    ctx = env_ops.OpContext(sys_dir, "op", "kind", {}, {})
+    regen_step = next(s for s in steps if s.name == "regenerate-state-files")
+    
+    # Simulate partial execution
+    (state_dir / "install.state.json").write_text(json.dumps({"base_dir": str(base_dir)}))
+    
+    assert regen_step.done(ctx) is False
+    
+    regen_step.do(ctx)
+    assert regen_step.done(ctx) is True
