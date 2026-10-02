@@ -302,7 +302,10 @@ def sanitize_url(url: str) -> str:
         url = re.sub(r"(?i)(://)[^/@]+@", r"\1", url)
         if "?" in url:
             base, query = url.split("?", 1)
-            if re.search(r"(?i)\b(token|key|password|secret)\b", query):
+            # \b does not match after an underscore (access_token, api_key), so test parameter
+            # NAMES by substring instead of the whole query by word boundary.
+            names = [part.split("=", 1)[0] for part in re.split(r"[&;]", query)]
+            if any(re.search(r"(?i)(token|key|password|passwd|secret|signature|credential|auth)", n) for n in names):
                 url = base
     except Exception:
         pass

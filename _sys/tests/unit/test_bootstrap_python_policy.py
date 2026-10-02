@@ -77,7 +77,7 @@ def test_verified_cache_is_reused_before_downloading(text):
 
 def test_download_is_hashed_after_it_succeeds(text):
     lines = text.splitlines()
-    dl = _line_no(text, 'curl -L "!PY_URL!"')
+    dl = _line_no(text, 'curl -fL "!PY_URL!"')
     after = "\n".join(lines[dl:dl + 25])
     assert "ComputeHash" in after
 

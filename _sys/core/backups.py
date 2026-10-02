@@ -204,6 +204,12 @@ def _read_meta(dest: Path) -> Optional[dict]:
         return None
     if meta["kind"] not in KIND_POLICY:
         return None
+    for key in ("created_at", "committed_at", "orphaned_at"):
+        if meta.get(key) is not None:
+            try:
+                _parse(meta[key])
+            except (ValueError, TypeError):
+                return None  # unreadable timestamps would crash retention planning; treat as invalid
     return meta
 
 
@@ -403,6 +409,7 @@ def plan_retention(
     size_cap_bytes: Optional[int] = None,
     keep_override: Optional[int] = None,
     root: Optional[Path] = None,
+    protect: Iterable[Path] = (),
 ) -> RetentionPlan:
     """Pure planning: decide what may be deleted. Touches nothing.
 
@@ -416,7 +423,18 @@ def plan_retention(
     candidates: list[BackupRef] = []
     sized: list[BackupRef] = []
 
+    protected_paths = {Path(p) for p in protect}
     for ref in refs:
+        if Path(ref.path) in protected_paths:
+            plan.keep.append((ref, "adopted in this run"))
+            continue
+        try:
+            for key in ("created_at", "committed_at", "orphaned_at"):
+                if ref.meta.get(key) is not None:
+                    _parse(ref.meta[key])
+        except (ValueError, TypeError):
+            plan.keep.append((ref, "unparsable timestamp"))
+            continue
         if root is not None and not _under(ref.path, root):
             plan.keep.append((ref, "outside registry root"))
             continue

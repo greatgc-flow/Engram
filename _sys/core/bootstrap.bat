@@ -102,6 +102,7 @@ if "!_SKIP_UPDATE!"=="0" (
                     set "_OLD_PY_VER=!PY_VER!"
                     set "PY_VER=!_LATEST_VER!"
                     set "PY_URL=!_NEW_URL!"
+                    set "PY_SHA256="
                 ) else (
                     echo [Warning] runtimes.json is missing; keeping the built-in Python pin.
                 )
@@ -140,15 +141,20 @@ if not exist "!PY_EXE!" (
         for /f "usebackq delims=" %%h in ("!SHA_PATH!") do if not defined _CACHED_SHA set "_CACHED_SHA=%%h"
         for /f "usebackq delims=" %%h in (`powershell -NoProfile -Command "([System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath '!_ZIP_PS!').ProviderPath))) -replace '-','').ToLower()"`) do set "_ACTUAL_SHA=%%h"
         if defined _ACTUAL_SHA if /i "!_CACHED_SHA!"=="!_ACTUAL_SHA!" set "_CACHE_OK=1"
+        :: A hash declared in runtimes.json (PY_SHA256) gates the cache as well.
+        if "!_CACHE_OK!"=="1" if defined PY_SHA256 if /i not "!PY_SHA256!"=="!_ACTUAL_SHA!" set "_CACHE_OK=0"
     )
 
     if "!_CACHE_OK!"=="1" (
         echo [OK] Using the verified cached Python zip.
     ) else (
         echo [i] Downloading Python embeddable zip...
-        curl -L "!PY_URL!" -o "!ZIP_PATH!"
+        :: -f: an HTTP error (404/503, captive portal) must fail instead of being saved as the zip.
+        curl -fL "!PY_URL!" -o "!ZIP_PATH!"
         if errorlevel 1 (
             echo [Error] Failed to download Python.
+            del /q "!ZIP_PATH!" >nul 2>&1
+            del /q "!SHA_PATH!" >nul 2>&1
             if "%CI%"=="" pause
             exit /b 1
         )
@@ -166,17 +172,25 @@ if not exist "!PY_EXE!" (
             del /q "!ZIP_PATH!" >nul 2>&1
             exit /b 1
         )
-        >"!SHA_PATH!" echo !_ACTUAL_SHA!
     )
 
     echo [i] Extracting Python...
+    set "_PY_DIR_NEW=0"
+    if not exist "!PY_DIR!" set "_PY_DIR_NEW=1"
     if not exist "!PY_DIR!" mkdir "!PY_DIR!"
-    powershell -NoProfile -Command "Expand-Archive -Force -Path '!ZIP_PATH!' -DestinationPath '!PY_DIR!'"
+    powershell -NoProfile -Command "Expand-Archive -Force -Path '!_ZIP_PS!' -DestinationPath '!PY_DIR!'"
     if errorlevel 1 (
         echo [Error] Failed to extract Python.
+        :: Never leave a zip that cannot be extracted behind as a "verified" cache.
+        del /q "!ZIP_PATH!" >nul 2>&1
+        del /q "!SHA_PATH!" >nul 2>&1
+        :: Remove a half-extracted tree only if this attempt created the directory.
+        if "!_PY_DIR_NEW!"=="1" if exist "!PY_DIR!" rmdir /s /q "!PY_DIR!"
         if "%CI%"=="" pause
         exit /b 1
     )
+    :: Record the hash only now that the zip is known to extract (design P9).
+    if not "!_CACHE_OK!"=="1" >"!SHA_PATH!" echo !_ACTUAL_SHA!
 
     :: Enable pip (uncomment import site in ._pth)
     for %%f in ("!PY_DIR!\python*._pth") do (

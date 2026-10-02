@@ -277,8 +277,9 @@ def check_root_path(base_dir: Path) -> dict:
 
 # ---- environment-resilience checks (read-only) ----------------------------------------
 # Design: docs/design/engram-env-resilience-design-2026-10-02.md, section 5.
-# None of these may mutate anything or turn doctor's overall status into "failed":
-# python_pin remains the hard gate.
+# None of these may mutate anything. Overall status is "failed" only for the hard gates:
+# python_pin and a venv that does not run (any venv_* finding with level "error").
+# Everything else (manifest, root drift, stale registry, lock) is warning/info only.
 
 _DESIGN_DOC = "docs/design/engram-env-resilience-design-2026-10-02.md"
 
