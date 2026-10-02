@@ -63,3 +63,37 @@ Notes:
 (5) NON-BLOCKING FOLLOW-UPS:
 1. **Tidy read-only files:** `tidy_temp.py`'s `_rm()` uses standard `shutil.rmtree()`, which will fail on read-only files (e.g., git objects inside a backed-up repo), leaving a partially-deleted directory. Consider importing and using `backups._rmtree(path)` which has an `onerror` handler to unlock and delete them.
 2. **Memory usage in bootstrap:** `[System.IO.File]::ReadAllBytes` loads the entire zip into memory to compute the SHA256. While perfectly fine for the ~30MB Python zip, a streaming hash computation would scale better if much larger artifacts are cached in the future.
+
+## Round 2 (after fix commit bf99afd) - cc.deepthink: APPROVE_PUSH (verbatim)
+
+(1) VERDICT: APPROVE_PUSH
+
+(2) BLOCKERS: none. The round-1 blocker is fixed:
+- bootstrap.bat:153 uses `curl -fL` and deletes the zip and the `.sha256` on failure.
+- :168 checks the declared hash.
+- :193 writes the `.sha256` only after `Expand-Archive` succeeded.
+- :182-190 cleans up after a failed extract.
+- :145 lets PY_SHA256 gate the cache.
+
+(3) Regressions (low, not blocking):
+- **bootstrap.bat:185-186:** Any extract failure deletes the cached zip and its `.sha256`, even when the cause is a full disk, an antivirus lock or a PowerShell module-path problem. That throws away a good verified cache, so an offline re-bootstrap can't recover. It's a deliberate trade-off, but worth knowing.
+- **tidy_temp.py:530-567:** tidy holds `env_lock` for the whole run, including the npm, vscode and pycache deletes, not just the backup changes. A concurrent `engram update` gets `EnvLockBusy` for that whole time.
+
+(4) Notes:
+1. **test_approval_fixes.py:188-195:** A single adopted dir is already kept by the 72h newest-commit rule (backups.py:479), so this test passes even without `protect`. Adopt 2 or more `*_old` dirs to actually prove the fix.
+2. **bootstrap.bat:221:** Saving a version bump doesn't update or remove `runtimes.python.sha256`. If a hash was ever declared, the next fresh install fails with a checksum mismatch. It fails safe, but the error would be confusing.
+3. **backups.py:490/501:** `int(meta["size_bytes"])` can still raise on a hand-edited marker, so "plan_retention never raises" isn't fully true. Validate it in `_read_meta`. Two smaller gaps: `sanitize_url` ignores `#fragment`, and the get-pip download (bootstrap.bat:202) still has no `-f` and no errorlevel check (this one predates the fix).
+
+## Round 2 - ag.pro: APPROVE_PUSH (verbatim)
+
+(1) VERDICT: APPROVE_PUSH.
+(2) BLOCKERS: none.
+(3) Regressions: None found. The fixes correctly address the issues from Round 1 without introducing regressions.
+(4) Notes:
+- `venv_manager.py`'s `sanitize_url` aggressively drops the *entire* query string if any sensitive parameter is found (e.g., `?version=1&api_key=...` becomes just the base URL). This is safe for logging but removes benign parameters alongside secrets.
+- In `tidy_temp.py`, `plan_backups_retention` is executed twice when `backups` are targeted (once to generate `backups_plan` for orphans, and again within `build_plan`). This is harmless but slightly inefficient.
+- In `bootstrap.bat`, if `!PY_DIR!` existed prior to a failed extraction attempt (`_PY_DIR_NEW=0`), it won't be deleted on failure. This is appropriately cautious, avoiding deletion of pre-existing data.
+
+## Outcome
+
+Both reviewers approved the push of branch `feat/env-resilience-p0`. Non-blocking notes carried as follow-ups: adopt two or more legacy dirs in the protect test; validate `size_bytes` in `_read_meta`; `sanitize_url` fragment handling; get-pip download without `-f`; tidy holds the lock for the whole run; a bump should drop the persisted pin hash; failed extract also discards a good cache (deliberate).
