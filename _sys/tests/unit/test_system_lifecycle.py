@@ -197,7 +197,7 @@ class TestFullLifecycleMECETransitions:
         reset_ctx = {
             "base_dir": base_dir,
             "sys_dir": sys_dir,
-            "args": ["--yes"],
+            "args": ["--apply", "--yes"],
         }
         backup_personal_data.run_reset(reset_ctx)
         assert not (claude_dir / "settings.json").exists(), "Live settings must be wiped on reset"
@@ -206,7 +206,7 @@ class TestFullLifecycleMECETransitions:
         restore_ctx = {
             "base_dir": base_dir,
             "sys_dir": sys_dir,
-            "args": [str(backup_zip), "--force"],
+            "args": [str(backup_zip), "--apply", "--force"],
         }
         backup_personal_data.run_restore(restore_ctx)
         assert (claude_dir / "settings.json").is_file(), "Personal settings must be recovered after restore"
