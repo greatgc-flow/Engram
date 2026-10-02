@@ -1,4 +1,5 @@
 import json
+import re
 import zlib
 import datetime
 import uuid
@@ -8,6 +9,8 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 JOURNAL_FILENAME = "env-op.journal.jsonl"
+# A step with one of these records was part of the journaled plan: resume/rollback must find it again.
+_RECORDED_STATES = ("started", "done", "failed")
 
 class SimulatedCrash(BaseException):
     pass
@@ -47,31 +50,72 @@ def _compute_crc(record: dict) -> str:
     text = json.dumps(rec, sort_keys=True, separators=(',', ':'))
     return f"{zlib.crc32(text.encode('utf-8')):08x}"
 
-def read_journal(sys_dir: Path | str) -> list[dict]:
-    path = journal_path(sys_dir)
-    if not path.exists():
-        return []
-    records = []
+def _decode_record(line: bytes) -> Optional[dict]:
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    record = json.loads(line)
-                    if "crc" not in record:
-                        break
-                    if _compute_crc(record) != record["crc"]:
-                        break
-                    records.append(record)
-                except ValueError:
-                    break
+        record = json.loads(line.decode("utf-8"))
+    except ValueError:  # JSONDecodeError and UnicodeDecodeError
+        return None
+    if not isinstance(record, dict) or "crc" not in record:
+        return None
+    if _compute_crc(record) != record["crc"]:
+        return None
+    return record
+
+def _scan_journal(data: bytes) -> tuple[list[dict], int]:
+    """Return the valid records (up to the first torn / CRC-bad one) and the byte offset just past the last of them."""
+    records = []
+    valid_end = 0
+    pos = 0
+    while pos < len(data):
+        nl = data.find(b"\n", pos)
+        line_end = len(data) if nl < 0 else nl + 1
+        line = data[pos:line_end].strip()
+        pos = line_end
+        if not line:
+            continue
+        record = _decode_record(line)
+        if record is None:
+            break
+        records.append(record)
+        valid_end = line_end
+    return records, valid_end
+
+def _read_journal_bytes(path: Path) -> Optional[bytes]:
+    try:
+        with open(path, "rb") as f:
+            return f.read()
     except FileNotFoundError:
-        pass
+        return None
     except OSError as e:
         raise JournalError(f"Failed to read journal: {e}") from e
-    return records
+
+def read_journal(sys_dir: Path | str) -> list[dict]:
+    data = _read_journal_bytes(journal_path(sys_dir))
+    return _scan_journal(data)[0] if data else []
+
+def _truncate_torn_tail(jpath: Path) -> None:
+    """Cut a torn / CRC-bad tail before appending, so later records are not hidden behind it.
+
+    The file ends right after the last valid record (empty when even the first record is torn) and the next
+    record is guaranteed to start on a fresh line.
+    """
+    data = _read_journal_bytes(jpath)
+    if not data:
+        return
+    _, end = _scan_journal(data)
+    needs_newline = end > 0 and not data[:end].endswith(b"\n")
+    if end == len(data) and not needs_newline:
+        return
+    try:
+        if end < len(data):
+            os.truncate(jpath, end)
+        with open(jpath, "ab") as f:
+            if needs_newline:
+                f.write(b"\n")
+            f.flush()
+            os.fsync(f.fileno())
+    except OSError as e:
+        raise JournalError(f"Failed to cut the torn journal tail at byte {end}: {e}") from e
 
 def current_phase(sys_dir: Path | str) -> Optional[str]:
     records = read_journal(sys_dir)
@@ -90,7 +134,7 @@ def _parse_journal(records: list[dict]) -> Optional[dict]:
     steps = {}
     paths = {}
     planned_posts = []
-    
+
     for r in records:
         evt = r.get("event")
         if evt == "PHASE":
@@ -109,12 +153,12 @@ def _parse_journal(records: list[dict]) -> Optional[dict]:
             planned_posts = r.get("names", [])
         elif evt in ("STEP", "POST"):
             steps[r["name"]] = r["state"]
-            
+
     if phase is None:
         return None
-        
+
     pending_post = [p for p in planned_posts if steps.get(p) != "done"]
-    
+
     return {"op_id": op_id, "kind": kind, "phase": phase, "steps": steps, "paths": paths, "pending_post": pending_post, "planned_posts": planned_posts, "data": {}}
 
 def active_journal(sys_dir: Path | str) -> Optional[dict]:
@@ -122,12 +166,12 @@ def active_journal(sys_dir: Path | str) -> Optional[dict]:
     j = _parse_journal(records)
     if not j or j["phase"] == "ROLLED_BACK":
         return None
-        
+
     blocking_posts = [p for p in j["planned_posts"] if j["steps"].get(p) not in ("done", "failed")]
-    
+
     if j["phase"] == "COMMITTED" and not blocking_posts:
         return None
-        
+
     # Also parse data fields
     for r in records:
         if "data" in r and isinstance(r["data"], dict):
@@ -138,14 +182,18 @@ def active_journal(sys_dir: Path | str) -> Optional[dict]:
 def journal_blocks(sys_dir: Path | str) -> Optional[dict]:
     return active_journal(sys_dir)
 
+def _safe_name(op_id) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]", "_", str(op_id)) or "unknown"
+
 def _rotate_journal(jpath: Path, old_op_id: str):
-    done_path = jpath.with_name(f"{JOURNAL_FILENAME}.{old_op_id}.done")
-    try:
-        if jpath.exists():
+    done_path = jpath.with_name(f"{JOURNAL_FILENAME}.{_safe_name(old_op_id)}.done")
+    if jpath.exists():
+        try:
             os.replace(jpath, done_path)
-    except OSError:
-        pass
-    
+        except OSError as e:
+            # Appending a new operation to the finished journal would corrupt it: refuse to start instead.
+            raise JournalError(f"cannot rotate the finished journal of {old_op_id} to {done_path.name}: {e}") from e
+
     done_files = []
     for f in jpath.parent.glob(f"{JOURNAL_FILENAME}.*.done"):
         try:
@@ -164,12 +212,28 @@ def _append_record_fn(jpath: Path, seq_box: list[int], now_fn: Callable[[], str]
         seq_box[0] += 1
         record = {"seq": seq_box[0], "ts": now_fn(), "event": event, **kwargs}
         record["crc"] = _compute_crc(record)
-        line = json.dumps(record, separators=(',', ':')) + "\n"
-        with open(jpath, "a", encoding="utf-8") as f:
+        line = (json.dumps(record, separators=(',', ':')) + "\n").encode("utf-8")
+        with open(jpath, "ab") as f:
             f.write(line)
             f.flush()
             os.fsync(f.fileno())
     return append_record
+
+def _verify_plan_identity(records: list[dict], steps: list[Step], op_id: Optional[str]) -> None:
+    """Refuse a rebuilt plan that lacks a recorded step (it would never be undone or resumed, yet report success)."""
+    rebuilt = {"STEP": {s.name for s in steps if s.group == "A"}, "POST": {s.name for s in steps if s.group == "B"}}
+    missing = []
+    for r in records:
+        names = rebuilt.get(r.get("event"))
+        if names is None or r.get("state") not in _RECORDED_STATES:
+            continue
+        name = r.get("name")
+        if name not in names and name not in missing:
+            missing.append(name)
+    if missing:
+        raise JournalError(
+            f"the rebuilt plan does not match journal {op_id}: recorded step(s) missing from it: "
+            f"{', '.join(str(n) for n in missing)}; nothing was touched")
 
 def _do_rollback(ctx: OpContext, started_a: list[Step], append_record: Callable, steps_state: dict) -> dict:
     append_record("PHASE", name="ROLLING_BACK")
@@ -214,11 +278,11 @@ def execute(
 ) -> dict:
     sys_dir = Path(sys_dir)
     jpath = journal_path(sys_dir)
-    
+
     op_id = op_id or new_op_id(kind, now())
     paths = paths or {}
     jpath.parent.mkdir(parents=True, exist_ok=True)
-    
+
     from core import env_lock
     try:
         lock_handle = env_lock.acquire(sys_dir, op_id, process_probe=lock_probe or env_lock.default_process_probe)
@@ -229,25 +293,20 @@ def execute(
         active = active_journal(sys_dir)
         if active is not None:
             raise JournalError(f"active journal exists for {active['op_id']}")
-            
+
         if jpath.exists():
-            records = read_journal(sys_dir)
-            old_op_id = "unknown"
-            for r in records:
-                if "op_id" in r:
-                    old_op_id = r["op_id"]
-                    break
-            _rotate_journal(jpath, old_op_id)
-            
+            _rotate_journal(jpath, _peek_op_id(sys_dir))
+        _truncate_torn_tail(jpath)
+
         ctx = OpContext(sys_dir, op_id, kind, paths, initial_data or {})
         seq = [0]
         append_record = _append_record_fn(jpath, seq, now)
-        
+
         append_record("PHASE", name="PLANNED", op_id=op_id, kind=kind)
         append_record("PATHS", paths={k: str(v) for k, v in paths.items()})
         if initial_data:
             append_record("DATA", data=initial_data)
-        
+
         group_a = [s for s in steps if s.group == "A"]
         group_b = [s for s in steps if s.group == "B"]
         append_record("POSTS", names=[s.name for s in group_b])
@@ -255,7 +314,7 @@ def execute(
 
         started_a = []
         steps_state = {}
-        
+
         for step in group_a:
             started_a.append(step)
             append_record("STEP", name=step.name, state="started")
@@ -274,12 +333,12 @@ def execute(
                     return _do_rollback(ctx, started_a, append_record, steps_state)
                 append_record("STEP", name=step.name, state="done", data=ctx.data)
                 steps_state[step.name] = "done"
-                
+
             if crash_after == step.name:
                 raise SimulatedCrash(f"Crash after {step.name}")
 
         append_record("PHASE", name="COMMITTED")
-        
+
         post_failed = []
         for step in group_b:
             append_record("POST", name=step.name, state="started")
@@ -296,7 +355,7 @@ def execute(
                     post_failed.append(step.name)
             if crash_after == step.name:
                 raise SimulatedCrash(f"Crash after {step.name}")
-                
+
         if post_failed:
             return {"status": "success", "operation": kind, "op_id": op_id, "phase": "COMMITTED", "detail": f"post steps failed: {post_failed}", "failed_step": post_failed[0], "post_failed": post_failed, "exit_code": 0}
         return {"status": "success", "operation": kind, "op_id": op_id, "phase": "COMMITTED", "detail": "success", "failed_step": None, "exit_code": 0}
@@ -306,12 +365,12 @@ def execute(
 
 
 def resume(
-    sys_dir: Path | str, steps_for: Callable[[dict], list[Step]], *, 
+    sys_dir: Path | str, steps_for: Callable[[dict], list[Step]], *,
     now: Callable[[], str] = utc_now, lock_probe=None, crash_after: Optional[str] = None
 ) -> dict:
     sys_dir = Path(sys_dir)
     op_id = _peek_op_id(sys_dir)
-    
+
     from core import env_lock
     try:
         lock_handle = env_lock.acquire(sys_dir, op_id, process_probe=lock_probe or env_lock.default_process_probe)
@@ -325,12 +384,15 @@ def resume(
             raise JournalError("No active journal to resume")
         if active["phase"] == "COMMITTED" and not active["pending_post"]:
             raise JournalError("No active journal to resume")
-            
+
         op_id = active["op_id"]
         kind = active["kind"]
         phase = active["phase"]
         paths_dict = active["paths"]
-        
+
+        steps = steps_for(active)
+        _verify_plan_identity(records, steps, op_id)
+
         ctx = OpContext(sys_dir, op_id, kind, {k: Path(v) for k, v in paths_dict.items()}, {})
         seq = [0]
         for r in records:
@@ -339,13 +401,13 @@ def resume(
                 ctx.data.update(r["data"])
 
         jpath = journal_path(sys_dir)
+        _truncate_torn_tail(jpath)
         append_record = _append_record_fn(jpath, seq, now)
 
-        steps = steps_for(active)
         group_a = [s for s in steps if s.group == "A"]
         group_b = [s for s in steps if s.group == "B"]
         steps_state = active["steps"].copy()
-        
+
         if phase in ("PLANNED", "STEPS_RUNNING"):
             started_a = []
             for step in group_a:
@@ -353,7 +415,7 @@ def resume(
                 started_a.append(step)
                 if state == "done":
                     continue
-                
+
                 append_record("STEP", name=step.name, state="started")
                 steps_state[step.name] = "started"
                 if step.done and step.done(ctx):
@@ -370,13 +432,13 @@ def resume(
                         return _do_rollback(ctx, started_a, append_record, steps_state)
                     append_record("STEP", name=step.name, state="done", data=ctx.data)
                     steps_state[step.name] = "done"
-                
+
                 if crash_after == step.name:
                     raise SimulatedCrash(f"Crash after {step.name}")
 
             append_record("PHASE", name="COMMITTED")
             phase = "COMMITTED"
-            
+
         if phase == "COMMITTED":
             post_failed = []
             for step in group_b:
@@ -400,24 +462,24 @@ def resume(
             if post_failed:
                 return {"status": "success", "operation": kind, "op_id": op_id, "phase": "COMMITTED", "detail": f"post steps failed: {post_failed}", "failed_step": post_failed[0], "post_failed": post_failed, "exit_code": 0}
             return {"status": "success", "operation": kind, "op_id": op_id, "phase": "COMMITTED", "detail": "success", "failed_step": None, "exit_code": 0}
-            
+
         if phase in ("ROLLING_BACK", "ROLLBACK_FAILED"):
             started_a = [s for s in group_a if s.name in steps_state]
             return _do_rollback(ctx, started_a, append_record, steps_state)
-            
+
         return {"status": "failed", "operation": kind, "op_id": op_id, "phase": phase, "detail": f"unhandled phase: {phase}", "failed_step": None, "exit_code": 1}
-            
+
     finally:
         lock_handle.release()
 
 
 def rollback(
-    sys_dir: Path | str, steps_for: Callable[[dict], list[Step]], *, 
+    sys_dir: Path | str, steps_for: Callable[[dict], list[Step]], *,
     now: Callable[[], str] = utc_now, lock_probe=None, crash_after: Optional[str] = None
 ) -> dict:
     sys_dir = Path(sys_dir)
     op_id = _peek_op_id(sys_dir)
-            
+
     from core import env_lock
     try:
         lock_handle = env_lock.acquire(sys_dir, op_id, process_probe=lock_probe or env_lock.default_process_probe)
@@ -431,11 +493,14 @@ def rollback(
             raise JournalError("No active journal to rollback")
         if active["phase"] == "COMMITTED":
             raise JournalError("Cannot rollback a COMMITTED operation")
-            
+
         op_id = active["op_id"]
         kind = active["kind"]
         paths_dict = active["paths"]
-        
+
+        steps = steps_for(active)
+        _verify_plan_identity(records, steps, op_id)
+
         ctx = OpContext(sys_dir, op_id, kind, {k: Path(v) for k, v in paths_dict.items()}, {})
         seq = [0]
         for r in records:
@@ -444,9 +509,9 @@ def rollback(
                 ctx.data.update(r["data"])
 
         jpath = journal_path(sys_dir)
+        _truncate_torn_tail(jpath)
         append_record = _append_record_fn(jpath, seq, now)
-                
-        steps = steps_for(active)
+
         group_a = [s for s in steps if s.group == "A"]
         steps_state = active["steps"].copy()
         started_a = [s for s in group_a if s.name in steps_state]
