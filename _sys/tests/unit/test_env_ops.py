@@ -257,29 +257,42 @@ def test_new_op_id():
     assert "kind1" in a
 
 def test_execute_concurrency_race(tmp_path):
+    """Eight starters at once: the winner HOLDS the lock until every loser has been refused, so the
+    outcome is deterministic (a loser that merely started late would legitimately succeed afterwards)."""
+    import threading
     sys_dir = tmp_path / "sys"
-    
-    def fake_step(ctx):
-        time.sleep(0.05)
-        
-    steps = [Step("s1", fake_step)]
-    
-    def run_exec():
-        return execute(sys_dir, "race", steps)
-        
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        results = list(executor.map(lambda _: run_exec(), range(8)))
-        
+    losers_done = threading.Semaphore(0)
+    release = threading.Event()
+
+    def holding_step(ctx):
+        for _ in range(7):
+            assert losers_done.acquire(timeout=30), "losers were never refused"
+        release.set()
+
+    results = []
+    lock = threading.Lock()
+
+    def run_exec(i):
+        res = execute(sys_dir, "race", [Step("s1", holding_step)])
+        with lock:
+            results.append(res)
+        if res["status"] == "failed":
+            losers_done.release()
+
+    threads = [threading.Thread(target=run_exec, args=(i,)) for i in range(8)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join(timeout=60)
+    assert release.is_set()
     successes = [r for r in results if r["status"] == "success"]
     failures = [r for r in results if r["status"] == "failed"]
-    
-    assert len(successes) == 1
-    assert len(failures) == 7
+    assert len(successes) == 1 and len(failures) == 7
     for f in failures:
         assert "lock busy" in f["detail"].lower() or "held" in f["detail"].lower()
-        
     assert active_journal(sys_dir) is None
-    
+
+
 def test_resume_planned_phase(tmp_path):
     sys_dir = tmp_path / "sys"
     

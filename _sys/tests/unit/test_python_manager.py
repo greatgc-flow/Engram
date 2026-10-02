@@ -2,7 +2,7 @@ import os
 import zipfile
 import pytest
 from pathlib import Path
-from core.python_manager import classify_change, new_pin_text, plan_python_update, handoff_to_runner, allocate_paths
+from core.python_manager import classify_change, new_pin_text, plan_python_update, allocate_paths
 from core import env_ops, provisioner
 
 def test_classify_change():
@@ -201,18 +201,6 @@ def test_first_quarantine_failure_byte_identical(tmp_path):
                 assert p.name == "BACKUP.json"
         for p in backups_dir.rglob("payload"):
             assert not p.exists() or not any(p.iterdir())
-
-def test_handoff_to_runner(tmp_path):
-    staged = tmp_path / "staged"
-    staged.mkdir()
-    (staged / "python.exe").write_text("")
-    
-    def spawner(a, c):
-        return 42
-        
-    rc = handoff_to_runner(tmp_path, "op123", staged, ["--arg1"], spawner=spawner)
-    assert rc == 42
-    assert (tmp_path / "data" / "state" / "env-op" / "op123" / "runner" / "python.exe").exists()
 
 def test_venv_policy(tmp_path):
     _setup_tree(tmp_path)

@@ -28,6 +28,23 @@ setlocal enabledelayedexpansion
 :: Runtime versions/URLs sourced from %SYS_DIR%\runtimes.json (no hardcoding).
 :: ================================================================
 
+:: -- Interrupted environment operation gate (design section 9) --
+:: A non-terminal env-op journal means a Python swap was interrupted. Extracting a fresh Python now would
+:: collide with the half-swapped tree, so refuse before anything is downloaded or created.
+set "_JF=!SYS_DIR!\data\state\env-op.journal.jsonl"
+if exist "!_JF!" (
+    set "_LASTPH="
+    for /f "usebackq delims=" %%L in (`findstr /l /c:"\"event\":\"PHASE\"" "!_JF!"`) do set "_LASTPH=%%L"
+    if defined _LASTPH (
+        echo !_LASTPH!| findstr /l /c:"\"name\":\"COMMITTED\"" /c:"\"name\":\"ROLLED_BACK\"" >nul
+        if errorlevel 1 (
+            echo [Error] An environment operation was interrupted; its journal is still open.
+            echo         Run: engram repair --resume   or   engram repair --rollback
+            exit /b 14
+        )
+    )
+)
+
 :: -- Bootstrap default configuration --
 if not exist "!SYS_DIR!\runtimes.json" copy /y "!SYS_DIR!\defaults\runtimes.json" "!SYS_DIR!\runtimes.json" >nul
 if not exist "!SYS_DIR!\tool-catalog.v1.json" copy /y "!SYS_DIR!\defaults\tool-catalog.v1.json" "!SYS_DIR!\tool-catalog.v1.json" >nul

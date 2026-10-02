@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from core import env_lock, env_manifest, provisioner, state_paths, venv_manager
+from core import env_lock, env_manifest, env_ops, provisioner, state_paths, venv_manager
 
 try:  # registrar needs winreg (Windows); keep doctor importable elsewhere
     from core import registrar
@@ -351,6 +351,20 @@ def check_registry_stale(sys_dir: Path) -> dict:
                       f"{', '.join(stale)}. Run 'engram menu clean'."}
 
 
+def check_env_journal(sys_dir: Path) -> dict:
+    """A non-terminal env-op journal blocks every mutating verb (design section 9)."""
+    try:
+        active = env_ops.journal_blocks(sys_dir)
+    except Exception as exc:  # an unreadable journal is itself a finding, never a crash
+        return {"name": "env_journal", "ok": False, "level": "error",
+                "detail": f"environment journal is unreadable ({exc}); do not delete it, run 'engram repair --rollback'"}
+    if not active:
+        return {"name": "env_journal", "ok": True, "level": "ok", "detail": "no interrupted environment operation"}
+    return {"name": "env_journal", "ok": False, "level": "error",
+            "detail": (f"environment operation {active.get('op_id')!r} was interrupted in phase {active.get('phase')}. "
+                       f"Run 'engram repair --resume' to continue it or 'engram repair --rollback' to undo it.")}
+
+
 def check_env_lock(sys_dir: Path) -> dict:
     info = env_lock.inspect(sys_dir)
     if info["state"] == "free":
@@ -416,6 +430,7 @@ def run(ctx: dict) -> dict[str, Any]:
         check_root_moved(base_dir, sys_dir),
         check_registry_stale(sys_dir),
         check_env_lock(sys_dir),
+        check_env_journal(sys_dir),
         check_elevation(),
     ]
     broken = [c for c in checks if not c.get("ok")]

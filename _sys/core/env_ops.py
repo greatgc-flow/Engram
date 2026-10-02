@@ -115,7 +115,7 @@ def _parse_journal(records: list[dict]) -> Optional[dict]:
         
     pending_post = [p for p in planned_posts if steps.get(p) != "done"]
     
-    return {"op_id": op_id, "kind": kind, "phase": phase, "steps": steps, "paths": paths, "pending_post": pending_post, "planned_posts": planned_posts}
+    return {"op_id": op_id, "kind": kind, "phase": phase, "steps": steps, "paths": paths, "pending_post": pending_post, "planned_posts": planned_posts, "data": {}}
 
 def active_journal(sys_dir: Path | str) -> Optional[dict]:
     records = read_journal(sys_dir)
@@ -128,6 +128,11 @@ def active_journal(sys_dir: Path | str) -> Optional[dict]:
     if j["phase"] == "COMMITTED" and not blocking_posts:
         return None
         
+    # Also parse data fields
+    for r in records:
+        if "data" in r and isinstance(r["data"], dict):
+            j["data"].update(r["data"])
+
     return j
 
 def journal_blocks(sys_dir: Path | str) -> Optional[dict]:
@@ -185,7 +190,7 @@ def _do_rollback(ctx: OpContext, started_a: list[Step], append_record: Callable,
             append_record("STEP", name=step.name, state="undone")
             steps_state[step.name] = "undone"
         append_record("PHASE", name="ROLLED_BACK")
-        return {"status": "failed", "operation": ctx.kind, "op_id": ctx.op_id, "phase": "ROLLED_BACK", "detail": "clean rollback", "failed_step": failed_step}
+        return {"status": "failed", "operation": ctx.kind, "op_id": ctx.op_id, "phase": "ROLLED_BACK", "detail": "clean rollback", "failed_step": failed_step, "exit_code": 12}
     except Exception as e:
         if "step" in locals():
             fail_name = step.name
@@ -193,7 +198,7 @@ def _do_rollback(ctx: OpContext, started_a: list[Step], append_record: Callable,
             fail_name = started_a[-1].name if started_a else "unknown"
         append_record("STEP", name=fail_name, state="failed(undo)", error=str(e))
         append_record("PHASE", name="ROLLBACK_FAILED")
-        return {"status": "failed", "operation": ctx.kind, "op_id": ctx.op_id, "phase": "ROLLBACK_FAILED", "detail": f"rollback failed on {fail_name}", "failed_step": fail_name}
+        return {"status": "failed", "operation": ctx.kind, "op_id": ctx.op_id, "phase": "ROLLBACK_FAILED", "detail": f"rollback failed on {fail_name}", "failed_step": fail_name, "exit_code": 13}
 
 def _peek_op_id(sys_dir: Path) -> str:
     records = read_journal(sys_dir)
@@ -205,7 +210,7 @@ def _peek_op_id(sys_dir: Path) -> str:
 def execute(
     sys_dir: Path | str, kind: str, steps: list[Step], *, paths: Optional[dict[str, Path]] = None,
     op_id: Optional[str] = None, now: Callable[[], str] = utc_now, crash_after: Optional[str] = None,
-    lock_probe=None
+    lock_probe=None, initial_data: Optional[dict] = None
 ) -> dict:
     sys_dir = Path(sys_dir)
     jpath = journal_path(sys_dir)
@@ -218,7 +223,7 @@ def execute(
     try:
         lock_handle = env_lock.acquire(sys_dir, op_id, process_probe=lock_probe or env_lock.default_process_probe)
     except env_lock.EnvLockBusy as exc:
-        return {"status": "failed", "operation": kind, "op_id": op_id, "phase": None, "detail": str(exc), "failed_step": None}
+        return {"status": "failed", "operation": kind, "op_id": op_id, "phase": None, "detail": str(exc), "failed_step": None, "exit_code": 11}
 
     try:
         active = active_journal(sys_dir)
@@ -234,12 +239,14 @@ def execute(
                     break
             _rotate_journal(jpath, old_op_id)
             
-        ctx = OpContext(sys_dir, op_id, kind, paths, {})
+        ctx = OpContext(sys_dir, op_id, kind, paths, initial_data or {})
         seq = [0]
         append_record = _append_record_fn(jpath, seq, now)
         
         append_record("PHASE", name="PLANNED", op_id=op_id, kind=kind)
         append_record("PATHS", paths={k: str(v) for k, v in paths.items()})
+        if initial_data:
+            append_record("DATA", data=initial_data)
         
         group_a = [s for s in steps if s.group == "A"]
         group_b = [s for s in steps if s.group == "B"]
@@ -291,8 +298,8 @@ def execute(
                 raise SimulatedCrash(f"Crash after {step.name}")
                 
         if post_failed:
-            return {"status": "success", "operation": kind, "op_id": op_id, "phase": "COMMITTED", "detail": f"post steps failed: {post_failed}", "failed_step": post_failed[0], "post_failed": post_failed}
-        return {"status": "success", "operation": kind, "op_id": op_id, "phase": "COMMITTED", "detail": "success", "failed_step": None}
+            return {"status": "success", "operation": kind, "op_id": op_id, "phase": "COMMITTED", "detail": f"post steps failed: {post_failed}", "failed_step": post_failed[0], "post_failed": post_failed, "exit_code": 0}
+        return {"status": "success", "operation": kind, "op_id": op_id, "phase": "COMMITTED", "detail": "success", "failed_step": None, "exit_code": 0}
 
     finally:
         lock_handle.release()
@@ -309,7 +316,7 @@ def resume(
     try:
         lock_handle = env_lock.acquire(sys_dir, op_id, process_probe=lock_probe or env_lock.default_process_probe)
     except env_lock.EnvLockBusy as exc:
-        return {"status": "failed", "operation": "unknown", "op_id": op_id, "phase": "unknown", "detail": str(exc), "failed_step": None}
+        return {"status": "failed", "operation": "unknown", "op_id": op_id, "phase": "unknown", "detail": str(exc), "failed_step": None, "exit_code": 11}
 
     try:
         records = read_journal(sys_dir)
@@ -391,14 +398,14 @@ def resume(
                 if crash_after == step.name:
                     raise SimulatedCrash(f"Crash after {step.name}")
             if post_failed:
-                return {"status": "success", "operation": kind, "op_id": op_id, "phase": "COMMITTED", "detail": f"post steps failed: {post_failed}", "failed_step": post_failed[0], "post_failed": post_failed}
-            return {"status": "success", "operation": kind, "op_id": op_id, "phase": "COMMITTED", "detail": "success", "failed_step": None}
+                return {"status": "success", "operation": kind, "op_id": op_id, "phase": "COMMITTED", "detail": f"post steps failed: {post_failed}", "failed_step": post_failed[0], "post_failed": post_failed, "exit_code": 0}
+            return {"status": "success", "operation": kind, "op_id": op_id, "phase": "COMMITTED", "detail": "success", "failed_step": None, "exit_code": 0}
             
         if phase in ("ROLLING_BACK", "ROLLBACK_FAILED"):
             started_a = [s for s in group_a if s.name in steps_state]
             return _do_rollback(ctx, started_a, append_record, steps_state)
             
-        return {"status": "failed", "operation": kind, "op_id": op_id, "phase": phase, "detail": f"unhandled phase: {phase}", "failed_step": None}
+        return {"status": "failed", "operation": kind, "op_id": op_id, "phase": phase, "detail": f"unhandled phase: {phase}", "failed_step": None, "exit_code": 1}
             
     finally:
         lock_handle.release()
@@ -415,7 +422,7 @@ def rollback(
     try:
         lock_handle = env_lock.acquire(sys_dir, op_id, process_probe=lock_probe or env_lock.default_process_probe)
     except env_lock.EnvLockBusy as exc:
-        return {"status": "failed", "operation": "unknown", "op_id": op_id, "phase": "unknown", "detail": str(exc), "failed_step": None}
+        return {"status": "failed", "operation": "unknown", "op_id": op_id, "phase": "unknown", "detail": str(exc), "failed_step": None, "exit_code": 11}
 
     try:
         records = read_journal(sys_dir)

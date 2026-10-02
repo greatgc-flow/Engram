@@ -10,7 +10,6 @@ from core import backups, env_manifest, env_ops, venv_manager, venv_repair, prov
 
 Runner = Callable[[list[str], float], tuple[int, str]]
 Downloader = Callable[[str, Path], None]
-Spawner = Callable[[list[str], str], int]
 
 def classify_change(installed: str | None, target: str) -> str:
     if not installed:
@@ -285,30 +284,30 @@ def plan_python_update(
     return steps
 
 
-def handoff_to_runner(sys_dir: Path | str, op_id: str, staged_python_dir: Path, argv: list[str], *, spawner: Spawner = lambda a, c: subprocess.call(a, cwd=c), rename: Callable[[str, str], None] = os.replace) -> int:
+def handoff_path(sys_dir: Path | str) -> Path:
+    """The file a normal engine process leaves for dispatch.bat: line 1 runner python, line 2 `1` if the user confirmed."""
+    return Path(sys_dir) / "data" / "state" / "env-op" / "handoff.txt"
+
+
+def prepare_runner(sys_dir: Path | str, op_id: str, *, confirmed: bool, copytree=shutil.copytree) -> Path:
+    """Copy the CURRENT interpreter to a runner dir outside both swap targets and write the handoff file.
+
+    The calling process runs on env/python and so cannot rename it (design 6.1, B1). It must exit with code 75
+    right after this call; dispatch.bat then re-runs the same command line on the returned interpreter with
+    ENGRAM_IN_RUNNER=1. The copy is of the working interpreter, so the runner does not depend on the staged one.
+    """
     sys_dir = Path(sys_dir)
+    source = sys_dir / "env" / "python"
+    if not (source / "python.exe").is_file():
+        raise FileNotFoundError(f"no interpreter to copy for the runner: {source}")
     runner_dir = sys_dir / "data" / "state" / "env-op" / op_id / "runner"
-    if runner_dir.exists(): shutil.rmtree(runner_dir)
+    if runner_dir.exists():
+        shutil.rmtree(runner_dir)
     runner_dir.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(staged_python_dir, runner_dir)
+    copytree(source, runner_dir)
     exe = runner_dir / "python.exe"
-    return spawner([str(exe), "-m", "core.python_manager_main"] + argv, str(sys_dir.parent))
-
-
-def runner_main(argv: list[str]) -> int:
-    import argparse
-    p = argparse.ArgumentParser()
-    p.add_argument("--sys-dir")
-    p.add_argument("--op-id")
-    p.add_argument("--target")
-    p.add_argument("--url")
-    args, _ = p.parse_known_args(argv)
-    
-    sys_dir = Path(args.sys_dir)
-    active = env_ops.active_journal(sys_dir)
-    if active and active.get("op_id") == args.op_id:
-        def steps_for(a):
-            return plan_python_update(sys_dir, args.target, url=args.url)
-        res = env_ops.resume(sys_dir, steps_for)
-        return 0 if res["status"] == "success" else 1
-    return 1
+    handoff = handoff_path(sys_dir)
+    handoff.parent.mkdir(parents=True, exist_ok=True)
+    # read back by `set /p` / `for /f` in dispatch.bat: ANSI code page, one value per line, no escaping needed
+    handoff.write_bytes((str(exe) + "\r\n" + ("1" if confirmed else "0") + "\r\n").encode("mbcs"))
+    return exe

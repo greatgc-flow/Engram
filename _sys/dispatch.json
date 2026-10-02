@@ -27,6 +27,18 @@
             "idempotent": false,
             "failure_policy": "abort"
         },
+        "repair.run": {
+            "module": "core.repair",
+            "method": "repair_main",
+            "idempotent": false,
+            "failure_policy": "abort"
+        },
+        "relocate.run": {
+            "module": "core.repair",
+            "method": "relocate_main",
+            "idempotent": false,
+            "failure_policy": "abort"
+        },
         "registry.apply": {
             "module": "core.registrar",
             "method": "apply",
@@ -134,6 +146,8 @@
             "tidy.run"
         ],
         "snapshots": ["backups.snapshots"],
+        "repair": ["repair.run"],
+        "relocate": ["relocate.run"],
         "start": [
             "env.launch"
         ],
