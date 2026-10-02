@@ -106,6 +106,7 @@ if /i "%SUBCMD%"=="update" goto :cmd_update
 if /i "%SUBCMD%"=="doctor" goto :cmd_doctor
 if /i "%SUBCMD%"=="menu" goto :cmd_menu
 if /i "%SUBCMD%"=="tidy" goto :cmd_tidy
+if /i "%SUBCMD%"=="snapshots" goto :cmd_snapshots
 if /i "%SUBCMD%"=="uninstall" goto :cmd_uninstall
 if /i "%SUBCMD%"=="backup" goto :cmd_backup
 if /i "%SUBCMD%"=="restore" goto :cmd_restore
@@ -258,6 +259,17 @@ if errorlevel 1 exit /b 1
 call "%SYS_PATH%\core\dispatch.bat" tidy %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
+:cmd_snapshots
+if "%~1"=="/?" goto :dispatch_snapshots
+if "%~1"=="-h" goto :dispatch_snapshots
+if "%~1"=="--help" goto :dispatch_snapshots
+if /i "%~1"=="help" goto :dispatch_snapshots
+call :check_setup
+if errorlevel 1 exit /b 1
+:dispatch_snapshots
+call "%SYS_PATH%\core\dispatch.bat" snapshots %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %ERRORLEVEL%
+
 :cmd_update
 if "%~1"=="/?" goto :dispatch_update
 if "%~1"=="-h" goto :dispatch_update
@@ -408,6 +420,7 @@ echo   engram update         Check and apply latest stable runtime and tool upda
 echo   engram doctor         Report environment health, tool status, and configuration
 echo   engram menu           Manage right-click context menu (status, enable, disable, clean)
 echo   engram tidy           Clean temporary logs, caches, and orphaned files
+echo   engram snapshots      List, pin and restore environment backups: replaced Python/venv copies and package snapshots
 echo   engram uninstall      Full removal: registry teardown and folder purge
 echo.
 echo Backup ^& State:

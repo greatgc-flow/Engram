@@ -259,8 +259,11 @@ def test_snapshot_write_latest(tmp_path):
     assert latest is not None
     assert latest["created_at"] == "2026-10-02T18:58:17Z"
     
-    snapshots_dir = sys_dir / "data" / "state" / "venv-freeze"
-    assert len(list(snapshots_dir.glob("*.tmp"))) == 0
+    from core import backups
+    entries = backups.scan(sys_dir).valid
+    assert [e.kind for e in entries] == ["venv-freeze"]
+    leftovers = [p.name for e in entries for p in e.path.rglob("*") if p.name.endswith(".tmp") or ".tmp" in p.suffixes]
+    assert leftovers == []
 
 
 def test_snapshot_replace_retry(tmp_path):
@@ -276,8 +279,8 @@ def test_snapshot_replace_retry(tmp_path):
         shutil.move(src, dst)
         
     path = venv_manager.write_snapshot(sys_dir, snap, replace=failing_replace, sleep=lambda x: None)
-    assert attempts == 3
-    assert path.exists()
+    assert attempts >= 3          # the first replace needed 3 attempts; the registry writes marker + payload + commit
+    assert path.exists() and path.name == "snapshot.json"
 
 
 def test_snapshot_corrupt_fallback(tmp_path):
@@ -386,7 +389,8 @@ def test_snapshot_op_is_idempotent_when_nothing_changed(tmp_path):
     venv_manager.snapshot_op(_ctx(sys_dir), now="2026-10-02T10:00:00Z")
     res = venv_manager.snapshot_op(_ctx(sys_dir), now="2026-10-02T11:00:00Z")
     assert res["status"] == "success" and res.get("skipped") is True
-    assert len(list((sys_dir / "data" / "state" / "venv-freeze").glob("*.json"))) == 1
+    from core import backups
+    assert [r.kind for r in backups.scan(sys_dir).valid] == ["venv-freeze"]
 
 
 def test_snapshot_op_writes_a_new_one_when_packages_change(tmp_path):
@@ -395,7 +399,8 @@ def test_snapshot_op_writes_a_new_one_when_packages_change(tmp_path):
     (venv_dir / "Lib" / "site-packages" / "pkg1.dist-info" / "METADATA").write_text("Name: pkg1\nVersion: 2.0\n")
     res = venv_manager.snapshot_op(_ctx(sys_dir), now="2026-10-02T11:00:00Z")
     assert not res.get("skipped")
-    assert len(list((sys_dir / "data" / "state" / "venv-freeze").glob("*.json"))) == 2
+    from core import backups
+    assert len(backups.scan(sys_dir).valid) == 2
 
 
 def test_snapshot_op_without_a_venv_is_a_quiet_noop(tmp_path):
@@ -441,3 +446,21 @@ def test_snapshot_op_takes_and_releases_the_env_lock(tmp_path, monkeypatch):
 def test_ok_findings_have_a_readable_detail():
     assert venv_manager.Finding("venv_spawn", "ok", "").to_check()["detail"] == "ok"
     assert venv_manager.Finding("venv_spawn", "error", "boom").to_check()["detail"] == "boom"
+
+
+def test_latest_snapshot_prefers_the_registry_over_legacy_plain_files(tmp_path):
+    sys_dir = tmp_path / "_sys"
+    legacy = sys_dir / "data" / "state" / "venv-freeze"
+    legacy.mkdir(parents=True)
+    (legacy / "20261001T000000Z.json").write_text('{"created_at": "legacy"}')
+    venv_manager.write_snapshot(sys_dir, {"created_at": "2026-10-02T00:00:00Z", "packages": []})
+    assert venv_manager.latest_snapshot(sys_dir)["created_at"] == "2026-10-02T00:00:00Z"
+
+
+def test_snapshots_are_registered_under_the_retention_policy_kind(tmp_path):
+    from core import backups
+    sys_dir = tmp_path / "_sys"
+    venv_manager.write_snapshot(sys_dir, {"created_at": "2026-10-02T00:00:00Z", "packages": []})
+    ref = backups.scan(sys_dir).valid[0]
+    assert ref.kind == "venv-freeze" and ref.meta["state"] == "committed"
+    assert ref.meta["min_keep"] == 5 and ref.meta["ttl_days"] == 180

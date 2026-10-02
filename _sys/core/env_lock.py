@@ -163,13 +163,17 @@ def _break_stale(path: Path, judged: Optional[dict]) -> None:
         os.replace(path, broken)
     except FileNotFoundError:
         return  # someone else already broke it
-    # If what we renamed is not what we judged stale (a new owner slipped in),
-    # put it back without clobbering anything.
+    # If what we renamed is not what we judged stale (a new owner slipped in), put it back
+    # without clobbering anything. Hard link first; where links are unsupported (exFAT) a plain
+    # rename restores it (on Windows it fails if the lock was meanwhile re-created, which means
+    # someone else already won - then there is nothing to restore and the leftover is discarded).
     if _read_owner(broken) != judged:
-        try:
-            os.link(broken, path)
-        except OSError:
-            pass
+        for restore in (os.link, os.rename):
+            try:
+                restore(broken, path)
+                break
+            except OSError:
+                continue
     with contextlib.suppress(OSError):
         broken.unlink()
 

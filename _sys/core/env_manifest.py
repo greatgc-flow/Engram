@@ -103,8 +103,15 @@ def new_install_id() -> str:
 
 # ---- root identity ---------------------------------------------------------------
 
+_DRIVE_ONLY = re.compile(r"^[A-Za-z]:[\\/]*$")
+
+
 def _norm(path: str) -> str:
-    return ntpath.normcase(ntpath.normpath(str(path)))
+    """Normalize for comparison; a bare drive ("D:") and its root ("D:\\") are the same place."""
+    text = str(path)
+    if _DRIVE_ONLY.match(text):
+        return text[0].lower() + ":\\"
+    return ntpath.normcase(ntpath.normpath(text))
 
 
 def roots_equal(a: str, b: str) -> bool:
@@ -155,7 +162,10 @@ def _root_from_pyvenv_home(home: str) -> Optional[str]:
     m = _SYS_LAYOUT_SUFFIX.search(home.strip())
     if not m:
         return None
-    return home.strip()[: m.start()] or None
+    root = home.strip()[: m.start()]
+    if _DRIVE_ONLY.match(root):  # install at a drive root: "D:\\_sys\\env\\python" -> "D:\\", not "D:"
+        root = root[0] + ":\\"
+    return root or None
 
 
 def _read_text(path: Path) -> Optional[str]:

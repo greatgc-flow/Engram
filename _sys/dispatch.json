@@ -21,6 +21,12 @@
             "idempotent": true,
             "failure_policy": "warn"
         },
+        "backups.snapshots": {
+            "module": "core.backups",
+            "method": "snapshots_main",
+            "idempotent": false,
+            "failure_policy": "abort"
+        },
         "registry.apply": {
             "module": "core.registrar",
             "method": "apply",
@@ -127,6 +133,7 @@
         "tidy": [
             "tidy.run"
         ],
+        "snapshots": ["backups.snapshots"],
         "start": [
             "env.launch"
         ],

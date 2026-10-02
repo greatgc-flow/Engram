@@ -131,12 +131,14 @@ if not exist "!PY_EXE!" (
     :: unverified or tampered file is never trusted.
     set "ZIP_PATH=!SYS_DIR!\data\setup-files\python-!PY_VER!-embed-amd64.zip"
     set "SHA_PATH=!ZIP_PATH!.sha256"
+    :: PowerShell single-quote escaping for the hash commands (a quote in the path would end the string).
+    set "_ZIP_PS=!ZIP_PATH:'=''!"
     set "_CACHE_OK=0"
     set "_CACHED_SHA="
     set "_ACTUAL_SHA="
     if exist "!ZIP_PATH!" if exist "!SHA_PATH!" (
         for /f "usebackq delims=" %%h in ("!SHA_PATH!") do if not defined _CACHED_SHA set "_CACHED_SHA=%%h"
-        for /f "usebackq delims=" %%h in (`powershell -NoProfile -Command "([System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath '!ZIP_PATH!').ProviderPath))) -replace '-','').ToLower()"`) do set "_ACTUAL_SHA=%%h"
+        for /f "usebackq delims=" %%h in (`powershell -NoProfile -Command "([System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath '!_ZIP_PS!').ProviderPath))) -replace '-','').ToLower()"`) do set "_ACTUAL_SHA=%%h"
         if defined _ACTUAL_SHA if /i "!_CACHED_SHA!"=="!_ACTUAL_SHA!" set "_CACHE_OK=1"
     )
 
@@ -151,7 +153,7 @@ if not exist "!PY_EXE!" (
             exit /b 1
         )
         set "_ACTUAL_SHA="
-        for /f "usebackq delims=" %%h in (`powershell -NoProfile -Command "([System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath '!ZIP_PATH!').ProviderPath))) -replace '-','').ToLower()"`) do set "_ACTUAL_SHA=%%h"
+        for /f "usebackq delims=" %%h in (`powershell -NoProfile -Command "([System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath '!_ZIP_PS!').ProviderPath))) -replace '-','').ToLower()"`) do set "_ACTUAL_SHA=%%h"
         if "!_ACTUAL_SHA!"=="" (
             echo [Error] Could not compute the sha256 of the downloaded Python zip.
             del /q "!ZIP_PATH!" >nul 2>&1

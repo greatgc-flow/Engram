@@ -46,3 +46,12 @@ def test_venv_snapshot_operation_is_declared_warn_only_and_runs_after_install_an
     assert op["failure_policy"] == "warn"  # a snapshot problem must never fail an install/update
     assert d["pipelines"]["update"][-1] == "venv.snapshot"
     assert d["pipelines"]["install"].index("venv.snapshot") > d["pipelines"]["install"].index("provision.deploy")
+
+
+def test_snapshots_pipeline_is_wired_to_the_registry_front_end():
+    d = _dispatch()
+    assert d["pipelines"]["snapshots"] == ["backups.snapshots"]
+    op = d["operations"]["backups.snapshots"]
+    assert op["module"] == "core.backups" and op["method"] == "snapshots_main"
+    import importlib
+    assert callable(getattr(importlib.import_module("core.backups"), "snapshots_main"))

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
-from core import env_lock
+from core import backups, env_lock
 from core.env_manifest import _atomic_write_text
 
 Runner = Callable[[list[str], float], tuple[int, str]]
@@ -50,16 +50,22 @@ class Finding:
         }
 
 
+# An absolute Windows path: drive letter (either slash style) or a UNC share.
+_ABS_PREFIX = rb'(?:[A-Za-z]:[\\/]|\\\\[^\\/\r\n"\x00]+[\\/])'
+_LAUNCHER_SHEBANG = rb'#!"?(' + _ABS_PREFIX + rb'[^\r\n"\x00]+?\.exe)'
+_LAUNCHER_FALLBACK = rb'(' + _ABS_PREFIX + rb'[^\r\n"\x00]+?pythonw?\.exe)'
+
+
 def launcher_embedded_path(exe_path: Path) -> str | None:
     try:
         content = Path(exe_path).read_bytes()
         # pip-style launchers append `#!<absolute path to python.exe>`
-        m = list(re.finditer(rb'#!(?:"?)([A-Za-z]:\\[^\r\n"\x00]+?\.exe)', content))
+        m = list(re.finditer(_LAUNCHER_SHEBANG, content))
         if m:
             return m[-1].group(1).decode("utf-8")
         
         # fallback: last drive-letter path ending in python.exe/pythonw.exe
-        m2 = list(re.finditer(rb'([A-Za-z]:\\[^\r\n"\x00]+?pythonw?\.exe)', content))
+        m2 = list(re.finditer(_LAUNCHER_FALLBACK, content))
         if m2:
             return m2[-1].group(1).decode("utf-8")
         return None
@@ -107,6 +113,17 @@ def hash_files(venv_dir: Path, files: list[Path]) -> dict[str, str]:
 
 def _norm(p: str | Path) -> str:
     return ntpath.normcase(ntpath.normpath(str(p)))
+
+
+def _pip_check(python_exe: Path, runner: Runner) -> Finding:
+    """``pip check`` (design 5.1 step 8): informational - dependency problems never fail doctor."""
+    rc, out = runner([str(python_exe), "-m", "pip", "check"], 60.0)
+    if rc == 0:
+        return Finding("pip_check", "ok", "no broken requirements")
+    if "No module named pip" in out:
+        return Finding("pip_check", "info", "pip is not installed in the venv")
+    lines = [ln.strip() for ln in out.splitlines() if ln.strip()]
+    return Finding("pip_check", "warning", "; ".join(lines[:3]) or "pip check reported problems")
 
 
 def probe_venv(
@@ -181,8 +198,9 @@ def probe_venv(
                 findings.append(Finding("venv_imports", "ok", ""))
         except Exception:
             findings.append(Finding("venv_imports", "warning", "failed to probe imports"))
+        findings.append(_pip_check(python_exe, runner))
     else:
-        for name in ["venv_prefix", "venv_spawn", "venv_imports"]:
+        for name in ["venv_prefix", "venv_spawn", "venv_imports", "pip_check"]:
             findings.append(Finding(name, "info", "skipped: interpreter does not run"))
 
     if not path_exists(str(venv_dir)):
@@ -368,29 +386,46 @@ def build_snapshot(sys_dir: Path, *, now: str, python_version: Optional[str] = N
     }
 
 
+SNAPSHOT_KIND = "venv-freeze"
+SNAPSHOT_FILENAME = "snapshot.json"
+_LEGACY_SNAPSHOT_DIR = ("data", "state", "venv-freeze")  # P1 plain files; still read as a fallback
+
+
 def write_snapshot(sys_dir: Path, snapshot: dict, *, replace=os.replace, sleep=time.sleep) -> Path:
-    sys_dir = Path(sys_dir)
-    snapshots_dir = sys_dir / "data" / "state" / "venv-freeze"
-    snapshots_dir.mkdir(parents=True, exist_ok=True)
-    
-    compact_ts = snapshot["created_at"].replace("-", "").replace(":", "")
-    path = snapshots_dir / f"{compact_ts}.json"
-    
-    _atomic_write_text(path, json.dumps(snapshot, indent=2, ensure_ascii=False) + "\n", replace=replace, sleep=sleep)
-    return path
+    """Record a package snapshot as a committed ``venv-freeze`` registry entry (design 8.1)."""
+    ref = backups.create_text(
+        Path(sys_dir), SNAPSHOT_KIND, SNAPSHOT_FILENAME,
+        json.dumps(snapshot, indent=2, ensure_ascii=False) + "\n",
+        reason="venv package snapshot", op_id="venv-snapshot", label="venv-packages",
+        now=snapshot["created_at"], replace=replace, sleep=sleep,
+    )
+    return ref.path / backups.PAYLOAD / SNAPSHOT_FILENAME
+
+
+def _read_json(path: Path) -> Optional[dict]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def latest_snapshot(sys_dir: Path) -> dict | None:
-    snapshots_dir = Path(sys_dir) / "data" / "state" / "venv-freeze"
-    if not snapshots_dir.exists():
-        return None
-        
-    candidates = sorted(snapshots_dir.glob("*.json"), reverse=True)
-    for c in candidates:
-        try:
-            return json.loads(c.read_text(encoding="utf-8"))
-        except Exception:
-            continue
+    """Newest readable snapshot: registry first, then P1-era plain files."""
+    registered = sorted(
+        (r for r in backups.scan(Path(sys_dir)).valid if r.kind == SNAPSHOT_KIND and r.meta.get("state") == "committed"),
+        key=lambda r: r.meta["created_at"], reverse=True,
+    )
+    for ref in registered:
+        data = _read_json(ref.path / backups.PAYLOAD / SNAPSHOT_FILENAME)
+        if data is not None:
+            return data
+    legacy_dir = Path(sys_dir).joinpath(*_LEGACY_SNAPSHOT_DIR)
+    if legacy_dir.is_dir():
+        for candidate in sorted(legacy_dir.glob("*.json"), reverse=True):
+            data = _read_json(candidate)
+            if data is not None:
+                return data
     return None
 
 

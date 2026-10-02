@@ -32,6 +32,8 @@ sys.path.insert(0, str(_SYS_DIR / "core"))
 from root import bootstrap_root_package  # noqa: E402
 bootstrap_root_package(_SYS_DIR)
 
+from core import backups, env_lock, env_manifest  # noqa: E402
+
 # ── root tmp/: leftover test-probe files ────────────────────────────────
 ROOT_TMP_MIN_AGE_DAYS = 7
 
@@ -313,6 +315,51 @@ def plan_vscode_caches() -> list[Path]:
 
 
 
+# ── environment backup registry (docs/design/engram-env-resilience-design-2026-10-02.md, 8.3) ──
+# Only marker-bearing dirs under data/backups/env are ever candidates; name patterns never are.
+
+def _utc_iso(ts: float) -> str:
+    return datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _active_op_ids() -> set[str]:
+    """Operations that may still own a pending backup: manifest last_op + a live lock owner."""
+    active: set[str] = set()
+    manifest = env_manifest.read_manifest(_SYS_DIR)
+    if manifest.status == "ok":
+        last = (manifest.data or {}).get("last_op") or {}
+        if last.get("id"):
+            active.add(str(last["id"]))
+    info = env_lock.inspect(_SYS_DIR)
+    if info.get("state") == "held" and info.get("owner", {}).get("op_id"):
+        active.add(str(info["owner"]["op_id"]))
+    return active
+
+
+def plan_backups_retention(
+    now: float, keep_override: int | None = None, size_cap_bytes: int | None = None
+) -> backups.RetentionPlan:
+    scan = backups.scan(_SYS_DIR)
+    if size_cap_bytes is None:
+        try:
+            import shutil
+            free = shutil.disk_usage(_SYS_DIR).free
+        except OSError:
+            free = None
+        size_cap_bytes = backups.default_size_cap(free_bytes=free)
+    return backups.plan_retention(
+        scan.valid, now=_utc_iso(now), active_op_ids=_active_op_ids(),
+        size_cap_bytes=size_cap_bytes, keep_override=keep_override,
+        root=backups.backups_root(_SYS_DIR),
+    )
+
+
+def plan_backups(
+    now: float, keep_override: int | None = None, size_cap_bytes: int | None = None
+) -> list[Path]:
+    return [ref.path for ref, _ in plan_backups_retention(now, keep_override, size_cap_bytes).delete]
+
+
 def _rm(path: Path, apply: bool) -> int:
     """Returns bytes freed (best-effort, 0 for dry-run)."""
     path = Path(path)
@@ -371,7 +418,13 @@ def _rm(path: Path, apply: bool) -> int:
     return size
 
 
-def build_plan(now: float | None = None, deep: bool = False) -> list[tuple[str, str, list[Path]]]:
+def build_plan(
+    now: float | None = None,
+    deep: bool = False,
+    *,
+    keep_override: int | None = None,
+    size_cap_bytes: int | None = None,
+) -> list[tuple[str, str, list[Path]]]:
     """Return categorized cleanup items: list of (label, key, items)."""
     if not _SYS_DIR_EXPLICIT and ROOT != _SYS_DIR.parent and _SYS_DIR.name:
         configure_paths(root=ROOT, sys_dir=ROOT / _SYS_DIR.name)
@@ -392,6 +445,7 @@ def build_plan(now: float | None = None, deep: bool = False) -> list[tuple[str, 
         ("pytest_cache_default", "pytest_cache_default", plan_pytest_cache_default()),
         ("launcher_logs", "launcher_logs", plan_launcher_logs(deep)),
         ("vscode_cache", "vscode_cache", plan_vscode_caches()),
+        ("backups", "backups", plan_backups(now, keep_override, size_cap_bytes)),
     ]
 
 
@@ -410,11 +464,17 @@ def main() -> int:
     ap.add_argument("--sys-dir", default=None, help="Sys directory (default: _SYS_DIR)")
     ap.add_argument("--apply", action="store_true", help="actually delete (default: dry-run)")
     ap.add_argument("--deep", action="store_true", help="include deeper cleans (e.g., launcher logs)")
+    ap.add_argument("--keep", type=int, default=None,
+                    help="backups: keep at least N newest committed per kind (can only raise the policy floor)")
+    ap.add_argument("--max-size-gb", type=float, default=None,
+                    help="backups: size cap in GiB (default: min(2 GiB, 10%% of free space))")
+    ap.add_argument("--adopt-legacy", action="store_true",
+                    help="backups: adopt structurally valid env/<name>_old dirs into the backup registry")
     ap.add_argument(
         "--only", default=None,
         help=(
             "comma-separated subset: tmp,data_temp,brain,vscode,"
-            "pytest_cache,winget_cache,npm_cache,pip_cache,vscode_cache,pycache,pytest_cache_default,launcher_logs"
+            "pytest_cache,winget_cache,npm_cache,pip_cache,vscode_cache,pycache,pytest_cache_default,launcher_logs,backups"
         ),
     )
     if "/?" in sys.argv[1:]:
@@ -428,7 +488,7 @@ def main() -> int:
 
     default_targets = (
         "tmp,data_temp,brain,vscode,"
-        "pytest_cache,winget_cache,npm_cache,pip_cache,vscode_cache,pycache,pytest_cache_default,launcher_logs"
+        "pytest_cache,winget_cache,npm_cache,pip_cache,vscode_cache,pycache,pytest_cache_default,launcher_logs,backups"
     )
     targets = set((args.only or default_targets).split(","))
     now = datetime.datetime.now().timestamp()
@@ -450,11 +510,40 @@ def main() -> int:
             if len(items) > 10:
                 print(f"    ... and {len(items) - 10} more")
 
-    plan = build_plan(now=now, deep=args.deep)
+    size_cap = int(args.max_size_gb * 2**30) if args.max_size_gb is not None else None
+    backups_blocked = False
+    if "backups" in targets:
+        lock = env_lock.inspect(_SYS_DIR)
+        if lock.get("state") == "held":
+            backups_blocked = True
+            print("[backups] skipped: an environment operation holds the environment lock")
+
+    if "backups" in targets and not backups_blocked and args.adopt_legacy:
+        candidates = backups.find_legacy_candidates(_SYS_DIR)
+        verb = "adopted" if args.apply else "would adopt"
+        if args.apply:
+            adopted = backups.adopt_legacy(_SYS_DIR, now=_utc_iso(now))
+            count = len(adopted)
+        else:
+            count = len(candidates)
+        print(f"[legacy_adopt] {verb} {count} legacy *_old dir(s)")
+        for c in candidates[:10]:
+            print(f"    {c}")
+
+    if backups_blocked:
+        targets.discard("backups")
+
+    backups_plan = None
+    if "backups" in targets:
+        backups_plan = plan_backups_retention(now, args.keep, size_cap)
+    plan = build_plan(now=now, deep=args.deep, keep_override=args.keep, size_cap_bytes=size_cap)
     if "vscode_cache" in targets and VSCODE_USER_DATA_DIR.exists() and _vscode_is_running():
         print("[vscode_cache] skipped: VSCode (Code.exe) is currently running")
     for label, key, items in plan:
         run_item(label, key, items)
+    if backups_plan is not None and args.apply and backups_plan.orphan_marks:
+        backups.apply_orphan_marks(backups_plan, now=_utc_iso(now))
+        print(f"[backups] marked {len(backups_plan.orphan_marks)} abandoned pending backup(s) as orphaned")
 
     print(f"\nTOTAL: {total_count} item(s), {total_bytes / 1048576:.1f} MiB "
           f"({'applied' if args.apply else 'dry-run, pass --apply to execute'})")

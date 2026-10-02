@@ -93,3 +93,10 @@ def test_bootstrap_stays_ascii_english_without_bom(text):
     assert not raw.startswith(b"\xef\xbb\xbf"), "UTF-8 BOM breaks the first cmd.exe command"
     assert all(ord(ch) < 128 for ch in text), "non-ASCII characters are forbidden in .bat files"
     assert "chcp" not in text.lower().replace("chcp is prohibited", "")
+
+
+def test_hash_commands_escape_single_quotes_in_the_path(text):
+    # cross-review ag.deepthink: a quote in the path would end the PowerShell string
+    assert "_ZIP_PS" in text
+    assert "!ZIP_PATH:'=''!" in text
+    assert "-LiteralPath '!ZIP_PATH!'" not in text
