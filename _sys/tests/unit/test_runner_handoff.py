@@ -179,6 +179,33 @@ def test_resume_of_a_python_operation_also_goes_through_the_runner(sys_dir, monk
     assert res["exit_code"] == 75 and res["handoff"] is True
 
 
+def test_rollback_of_a_python_operation_also_goes_through_the_runner(sys_dir, monkeypatch):
+    monkeypatch.delenv("ENGRAM_IN_RUNNER", raising=False)
+    spec = [{"name": "update-python", "group": "A", "kind": "python", "params": {"target_version": "3.14.9", "url": "u"}}]
+    det = {**_det(), "journal": {"op_id": "op-x", "kind": "update", "phase": "STEPS_RUNNING", "data": {"spec": spec}}}
+    monkeypatch.setattr(repair, "detect", lambda *a, **k: det)
+    ctx = {"sys_dir": sys_dir, "base_dir": sys_dir.parent, "args": ["--rollback"], "command": "engram repair"}
+    res = repair.repair_main(ctx)
+    assert res["exit_code"] == 75 and res["handoff"] is True
+
+
+def test_standalone_venv_repair_allocates_backup_paths(sys_dir, monkeypatch):
+    seen = {}
+    real = repair.env_ops.execute
+
+    def fake(sd, kind, steps, **kw):
+        seen["paths"] = kw.get("paths")
+        return {"status": "committed", "phase": "COMMITTED"}
+
+    monkeypatch.setattr(repair.env_ops, "execute", fake)
+    monkeypatch.setattr(repair, "_cli_result", lambda res, mode: {"exit_code": 0})
+    monkeypatch.setattr(repair, "detect", lambda *a, **k: _det())
+    monkeypatch.setattr(repair, "build_plan", lambda *a, **k: {"kind": "repair", "steps": [object()], "spec": [{"name": "x", "kind": "venv"}], "summary": []})
+    ctx = {"sys_dir": sys_dir, "base_dir": sys_dir.parent, "args": ["--apply", "--yes"], "command": "engram repair"}
+    repair.repair_main(ctx)
+    assert seen["paths"] and "venv_backup" in seen["paths"] and "venv_failed_backup" in seen["paths"]
+
+
 def test_resume_of_a_non_python_operation_does_not_hand_off(sys_dir, monkeypatch):
     monkeypatch.delenv("ENGRAM_IN_RUNNER", raising=False)
     spec = [{"name": "repair-venv", "group": "A", "kind": "venv", "params": {}}]

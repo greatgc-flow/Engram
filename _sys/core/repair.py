@@ -366,6 +366,8 @@ def _repair_engine_main(ctx: dict, build_plan_fn: Callable, parser_setup: Callab
         if not active:
             return {"status": "failed", "operation": "repair", "detail": "No journal to rollback", "exit_code": 11}
         spec = active.get("data", {}).get("spec", [])
+        if _spec_needs_runner(spec) and not _in_runner():
+            return _handoff_result(sys_dir, "rollback")
         def steps_for(a): return steps_from_spec(sys_dir, base_dir, spec, **seams)
         try:
             res = env_ops.rollback(sys_dir, steps_for)
@@ -405,7 +407,7 @@ def _repair_engine_main(ctx: dict, build_plan_fn: Callable, parser_setup: Callab
     if _spec_needs_runner(plan["spec"]) and not _in_runner():
         return _handoff_result(sys_dir, plan["kind"])
     op_id = env_ops.new_op_id(plan["kind"])
-    paths = python_manager.allocate_paths(sys_dir, op_id, env_ops.utc_now) if _spec_needs_runner(plan["spec"]) else None
+    paths = python_manager.allocate_paths(sys_dir, op_id, env_ops.utc_now)
     try:
         res = env_ops.execute(sys_dir, plan["kind"], plan["steps"], op_id=op_id, paths=paths,
                               initial_data={"spec": plan["spec"]})
