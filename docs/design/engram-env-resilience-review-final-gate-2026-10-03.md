@@ -25,3 +25,10 @@ Verification: 1076 unit tests passed, 4 skipped, 0 failed; `check_encoding`, `ch
 - Real fresh-install E2E on a Korean+space root (bootstrap, missing Python, broken venv, folder rename + relocate, update dry-run, full unit suite inside the install) found and fixed: duplicated help, stray `cannot find the drive` (`::` comments inside paren blocks), venv rebuild lacking `virtualenv`, noisy tracebacks, dry-run writing snapshots, tidy touching backup payloads, cp949 decode errors, pending quarantine backups.
 - cx.pro re-gates found and we fixed: interpreter-refresh undo restored nothing, launcher regen failures ignored, tidy ignoring an active journal (fail closed), commit-before-regen ordering, unreadable payload in undo. ag.pro: APPROVE_PUSH at fe1c743 (cx.pro re-gate errored out on the peer side).
 - Suite: 1122 passed, 4 skipped, 0 failed.
+
+## Addendum: CLI freeze (v3.7.0)
+
+- Help system: static `_sys/core/help/<verb>.txt` for all 13 verbs plus `index.txt`, printed by `engram.cmd` without Python; unified layout (Usage / Description / Options / Examples / Exit codes / See also); `engram help <verb>`; consistent unknown verb/flag errors with 'Did you mean'; `--dry-run` accepted on dry-run-by-default verbs.
+- tidy: `--deep` implies `--adopt-legacy`; new `--purge-legacy` deletes `legacy-old` backups immediately (no 14-day grace), dry-run default, fail-closed on journal/lock/pin/running interpreter.
+- Docs: `docs/cli_reference.md` (kept identical to the help files by a test).
+- Gate: ag.pro found a batch-injection echo and Python-dependent help routing; both fixed; ag.pro APPROVE_PUSH at 714637b (cx.pro was not admitted by peerhub during this gate). Suite: 1369 passed, 4 skipped.
