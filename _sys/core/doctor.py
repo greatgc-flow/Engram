@@ -18,12 +18,18 @@ reported, not failures.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
-from core import provisioner, state_paths
+from core import env_lock, env_manifest, env_ops, provisioner, state_paths, venv_manager
+
+try:  # registrar needs winreg (Windows); keep doctor importable elsewhere
+    from core import registrar
+except Exception:  # pragma: no cover
+    registrar = None  # type: ignore[assignment]
 
 
 def _load_runtimes(sys_dir: Path) -> dict:
@@ -35,7 +41,7 @@ def _installed_python_version(sys_dir: Path) -> str | None:
     if not py.exists():
         return None
     try:
-        out = subprocess.run([str(py), "--version"], capture_output=True, text=True, timeout=15)
+        out = subprocess.run([str(py), "--version"], capture_output=True, encoding="utf-8", errors="replace", timeout=15)
         text = (out.stdout or out.stderr or "").strip()
         # "Python X.Y.Z"
         parts = text.split()
@@ -269,6 +275,108 @@ def check_root_path(base_dir: Path) -> dict:
     }
 
 
+# ---- environment-resilience checks (read-only) ----------------------------------------
+# Design: docs/design/engram-env-resilience-design-2026-10-02.md, section 5.
+# None of these may mutate anything. Overall status is "failed" only for the hard gates:
+# python_pin and a venv that does not run (any venv_* finding with level "error").
+# Everything else (manifest, root drift, stale registry, lock) is warning/info only.
+
+_DESIGN_DOC = "docs/design/engram-env-resilience-design-2026-10-02.md"
+
+
+def check_venv(sys_dir: Path) -> list[dict]:
+    """Read-only venv health/skew/integrity/launcher findings (see core.venv_manager)."""
+    manifest = env_manifest.read_manifest(sys_dir)
+    try:
+        return venv_manager.run_checks(sys_dir, manifest=manifest.data if manifest.status == "ok" else None)
+    except Exception as exc:  # a probe bug must never break doctor
+        return [{"name": "venv_health", "ok": True, "level": "info", "detail": f"venv probes unavailable ({exc})"}]
+
+
+def check_env_manifest(sys_dir: Path) -> dict:
+    res = env_manifest.read_manifest(sys_dir)
+    if res.status == "ok":
+        return {"name": "env_manifest", "ok": True, "level": "ok",
+                "detail": "environment manifest present and readable"}
+    if res.status == "absent":
+        return {"name": "env_manifest", "ok": True, "level": "info",
+                "detail": "no environment manifest yet (adoptable; written by a fresh install "
+                          "or a future 'engram repair')"}
+    return {"name": "env_manifest", "ok": True, "level": "warning",
+            "detail": f"environment manifest is {res.status} ({res.detail}); it will not be trusted"}
+
+
+def check_root_moved(base_dir: Path, sys_dir: Path) -> dict:
+    manifest = env_manifest.read_manifest(sys_dir)
+    local = os.environ.get("LOCALAPPDATA")
+    drift = env_manifest.detect_root_drift(
+        manifest.data if manifest.status == "ok" else None,
+        Path(base_dir), Path(sys_dir),
+        localappdata=Path(local) if local else None,
+    )
+    if drift.status == "consistent":
+        return {"name": "root_moved", "ok": True, "level": "ok",
+                "detail": f"install root unchanged ({base_dir})"}
+    if drift.status == "unknown":
+        return {"name": "root_moved", "ok": True, "level": "info",
+                "detail": "no record of a previous install root"}
+    what = "moved" if drift.status == "moved" else "looks like a copy (the old root still exists)"
+    return {
+        "name": "root_moved", "ok": True, "level": "warning",
+        "detail": (
+            f"install {what}: previously {drift.previous_root} (evidence: {drift.source}). "
+            f"Console scripts (e.g. pip.exe) and context-menu entries may be stale. "
+            f"Run 'engram relocate' (dry run) to preview the fix, then 'engram relocate --apply'."
+        ),
+        "previous_root": drift.previous_root,
+        "drift": drift.status,
+    }
+
+
+def check_registry_stale(sys_dir: Path) -> dict:
+    if registrar is None:
+        return {"name": "registry_stale", "ok": True, "level": "info",
+                "detail": "registry module unavailable on this platform"}
+    try:
+        stale = registrar.find_stale_entries(sys_dir)
+    except Exception as exc:
+        return {"name": "registry_stale", "ok": True, "level": "info",
+                "detail": f"could not scan the registry ({exc})"}
+    if not stale:
+        return {"name": "registry_stale", "ok": True, "level": "ok",
+                "detail": "no stale context-menu entries"}
+    return {"name": "registry_stale", "ok": True, "level": "warning",
+            "detail": f"{len(stale)} stale context-menu entr{'y' if len(stale) == 1 else 'ies'}: "
+                      f"{', '.join(stale)}. Run 'engram menu clean'."}
+
+
+def check_env_journal(sys_dir: Path) -> dict:
+    """A non-terminal env-op journal blocks every mutating verb (design section 9)."""
+    try:
+        active = env_ops.journal_blocks(sys_dir)
+    except Exception as exc:  # an unreadable journal is itself a finding, never a crash
+        return {"name": "env_journal", "ok": False, "level": "error",
+                "detail": f"environment journal is unreadable ({exc}); do not delete it, run 'engram repair --rollback'"}
+    if not active:
+        return {"name": "env_journal", "ok": True, "level": "ok", "detail": "no interrupted environment operation"}
+    return {"name": "env_journal", "ok": False, "level": "error",
+            "detail": (f"environment operation {active.get('op_id')!r} was interrupted in phase {active.get('phase')}. "
+                       f"Run 'engram repair --resume' to continue it or 'engram repair --rollback' to undo it.")}
+
+
+def check_env_lock(sys_dir: Path) -> dict:
+    info = env_lock.inspect(sys_dir)
+    if info["state"] == "free":
+        return {"name": "env_lock", "ok": True, "level": "ok", "detail": "no environment operation in progress"}
+    owner = info.get("owner") or {}
+    if info["state"] == "held":
+        return {"name": "env_lock", "ok": True, "level": "info",
+                "detail": f"environment operation in progress: {owner.get('op_id')} (pid {owner.get('pid')})"}
+    return {"name": "env_lock", "ok": True, "level": "warning",
+            "detail": f"stale environment lock left by op {owner.get('op_id')!r}; "
+                      f"the next mutating operation will break it safely"}
+
+
 def check_elevation() -> dict:
     is_admin = False
     try:
@@ -316,6 +424,12 @@ def run(ctx: dict) -> dict[str, Any]:
         check_components(sys_dir),
         check_legacy_host_integration(base_dir, sys_dir),
         check_registration(base_dir, sys_dir),
+        *check_venv(sys_dir),
+        check_env_manifest(sys_dir),
+        check_root_moved(base_dir, sys_dir),
+        check_registry_stale(sys_dir),
+        check_env_lock(sys_dir),
+        check_env_journal(sys_dir),
         check_elevation(),
     ]
     broken = [c for c in checks if not c.get("ok")]

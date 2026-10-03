@@ -9,6 +9,36 @@
             "idempotent": true,
             "failure_policy": "abort"
         },
+        "env.commit_install": {
+            "module": "core.env_manifest",
+            "method": "commit_install",
+            "idempotent": true,
+            "failure_policy": "warn"
+        },
+        "venv.snapshot": {
+            "module": "core.venv_manager",
+            "method": "snapshot_op",
+            "idempotent": true,
+            "failure_policy": "warn"
+        },
+        "backups.snapshots": {
+            "module": "core.backups",
+            "method": "snapshots_main",
+            "idempotent": false,
+            "failure_policy": "abort"
+        },
+        "repair.run": {
+            "module": "core.repair",
+            "method": "repair_main",
+            "idempotent": false,
+            "failure_policy": "abort"
+        },
+        "relocate.run": {
+            "module": "core.repair",
+            "method": "relocate_main",
+            "idempotent": false,
+            "failure_policy": "abort"
+        },
         "registry.apply": {
             "module": "core.registrar",
             "method": "apply",
@@ -56,7 +86,8 @@
         "doctor.run": {
             "module": "core.doctor",
             "method": "run",
-            "failure_policy": "abort"
+            "failure_policy": "abort",
+            "quiet_failure": true
         },
         "uninstall.run": {
             "module": "core.uninstaller",
@@ -86,10 +117,7 @@
         }
     },
     "pipelines": {
-        "install": [
-            "provision.deploy",
-            "state.write"
-        ],
+        "install": ["provision.deploy", "env.commit_install", "venv.snapshot", "state.write"],
         "menu-enable": [
             "registry.apply",
             "state.write"
@@ -118,13 +146,14 @@
         "tidy": [
             "tidy.run"
         ],
+        "snapshots": ["backups.snapshots"],
+        "repair": ["repair.run"],
+        "relocate": ["relocate.run"],
         "start": [
             "env.launch"
         ],
         "init": [],
-        "update": [
-            "update.run"
-        ],
+        "update": ["update.run", "venv.snapshot"],
         "doctor": [
             "doctor.run"
         ],

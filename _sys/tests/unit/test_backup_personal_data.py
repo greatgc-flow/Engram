@@ -861,15 +861,15 @@ def test_restore_refuses_when_node_process_is_running(
     capsys.readouterr()
 
     running = check_running_processes(sys_dir)
-    assert running == ["codex (node.exe)"]
+    assert running == ["node.exe"]
 
     with pytest.raises(SystemExit) as exc:
         do_restore(engram_dir, source_zip, base_dir=base_dir, sys_dir=sys_dir)
 
     assert exc.value.code == 1
     stdout = capsys.readouterr().out
-    assert "[Error] Cannot restore: managed AI CLI process(es) currently running: codex (node.exe)" in stdout
-    assert "Note: node.exe may be a Node-based AI CLI" in stdout
+    assert "[Error] Cannot restore: managed AI CLI process(es) currently running: node.exe" in stdout
+    assert "Note: 'node.exe' represents a Node-based AI CLI" in stdout
     assert "Please close all running AI CLIs and try again." in stdout
 
 

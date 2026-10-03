@@ -63,6 +63,16 @@ set "SYS_PATH=%~dp0%ENGRAM_SYS_DIR%"
 :: ----------------------------------------------------------------------------
 set "SUBCMD=%~1"
 
+:: --- Interrupted environment operation gate (design section 9) ---
+:: A non-terminal env-op journal means a Python/venv swap or relocation was interrupted. Only recovery,
+:: read-only and help verbs may run; everything else (including the first-run bootstrap path, i.e. plain
+:: `engram`) is refused.
+call :journal_active
+if not "%_JOURNAL_ACTIVE%"=="1" goto :journal_gate_pass
+for %%V in (help --help -h /? version --version -v doctor repair relocate snapshots) do if /i "%SUBCMD%"=="%%V" goto :journal_gate_pass
+goto :journal_blocked
+:journal_gate_pass
+
 if "%SUBCMD%"=="" goto :cmd_open
 if /i "%SUBCMD%"=="help" goto :show_help
 if /i "%SUBCMD%"=="--help" goto :show_help
@@ -106,6 +116,9 @@ if /i "%SUBCMD%"=="update" goto :cmd_update
 if /i "%SUBCMD%"=="doctor" goto :cmd_doctor
 if /i "%SUBCMD%"=="menu" goto :cmd_menu
 if /i "%SUBCMD%"=="tidy" goto :cmd_tidy
+if /i "%SUBCMD%"=="snapshots" goto :cmd_snapshots
+if /i "%SUBCMD%"=="repair" goto :cmd_repair
+if /i "%SUBCMD%"=="relocate" goto :cmd_relocate
 if /i "%SUBCMD%"=="uninstall" goto :cmd_uninstall
 if /i "%SUBCMD%"=="backup" goto :cmd_backup
 if /i "%SUBCMD%"=="restore" goto :cmd_restore
@@ -172,9 +185,21 @@ exit /b 0
 
 :check_setup
 if not exist "%SYS_PATH%\env\python\python.exe" (
+    if exist "%SYS_PATH%\env\venv\" (
+        call :managed_python_missing
+        if errorlevel 2 exit /b 1
+    )
     echo Engram is not set up.
     echo Run 'engram' to initialize the environment.
     exit /b 1
+)
+exit /b 0
+
+:managed_python_missing
+:: Recovery verbs get a precise hint when only the managed Python is gone (venv kept).
+for %%V in (repair relocate snapshots doctor) do if /i "%SUBCMD%"=="%%V" (
+    echo Managed Python is missing. Run _sys\core\bootstrap.bat to restore it ^(the venv and packages are kept^), then run 'engram repair'.
+    exit /b 2
 )
 exit /b 0
 
@@ -258,6 +283,42 @@ if errorlevel 1 exit /b 1
 call "%SYS_PATH%\core\dispatch.bat" tidy %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
 
+:cmd_snapshots
+if "%~1"=="/?" goto :dispatch_snapshots
+if "%~1"=="-h" goto :dispatch_snapshots
+if "%~1"=="--help" goto :dispatch_snapshots
+if /i "%~1"=="help" goto :dispatch_snapshots
+call :check_setup
+if errorlevel 1 exit /b 1
+:dispatch_snapshots
+call "%SYS_PATH%\core\dispatch.bat" snapshots %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %ERRORLEVEL%
+
+:cmd_repair
+if "%~1"=="/?" goto :dispatch_repair
+if "%~1"=="-h" goto :dispatch_repair
+if "%~1"=="--help" goto :dispatch_repair
+if /i "%~1"=="help" goto :dispatch_repair
+:: an interrupted swap may have removed env\python: dispatch.bat then finds an alternate interpreter
+if "%_JOURNAL_ACTIVE%"=="1" goto :dispatch_repair
+call :check_setup
+if errorlevel 1 exit /b 1
+:dispatch_repair
+call "%SYS_PATH%\core\dispatch.bat" repair %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %ERRORLEVEL%
+
+:cmd_relocate
+if "%~1"=="/?" goto :dispatch_relocate
+if "%~1"=="-h" goto :dispatch_relocate
+if "%~1"=="--help" goto :dispatch_relocate
+if /i "%~1"=="help" goto :dispatch_relocate
+if "%_JOURNAL_ACTIVE%"=="1" goto :dispatch_relocate
+call :check_setup
+if errorlevel 1 exit /b 1
+:dispatch_relocate
+call "%SYS_PATH%\core\dispatch.bat" relocate %1 %2 %3 %4 %5 %6 %7 %8 %9
+exit /b %ERRORLEVEL%
+
 :cmd_update
 if "%~1"=="/?" goto :dispatch_update
 if "%~1"=="-h" goto :dispatch_update
@@ -312,6 +373,27 @@ if errorlevel 1 exit /b 1
 :dispatch_reset
 call "%SYS_PATH%\core\dispatch.bat" reset %1 %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%
+
+:: ----------------------------------------------------------------------------
+:: Interrupted-operation journal helpers (design section 9)
+:: ----------------------------------------------------------------------------
+:journal_active
+set "_JOURNAL_ACTIVE=0"
+set "_LASTN="
+set "_TERMN="
+if not exist "%ENGRAM_SYS_DIR%\data\state\env-op.journal.jsonl" exit /b 0
+for /f "tokens=1 delims=:" %%N in ('findstr /n /l /c:"\"event\":\"PHASE\"" "%ENGRAM_SYS_DIR%\data\state\env-op.journal.jsonl"') do set "_LASTN=%%N"
+if not defined _LASTN exit /b 0
+for /f "tokens=1 delims=:" %%N in ('findstr /n /l /c:"\"name\":\"COMMITTED\"" /c:"\"name\":\"ROLLED_BACK\"" "%ENGRAM_SYS_DIR%\data\state\env-op.journal.jsonl"') do set "_TERMN=%%N"
+if not "%_LASTN%"=="%_TERMN%" set "_JOURNAL_ACTIVE=1"
+exit /b 0
+
+:journal_blocked
+echo [Error] An environment operation was interrupted; its journal is still open.
+echo         Finish or undo it before using Engram:
+echo           engram repair --resume      continue where it stopped
+echo           engram repair --rollback    undo it
+exit /b 14
 
 :: ----------------------------------------------------------------------------
 :: Retired Verbs Handlers
@@ -408,6 +490,9 @@ echo   engram update         Check and apply latest stable runtime and tool upda
 echo   engram doctor         Report environment health, tool status, and configuration
 echo   engram menu           Manage right-click context menu (status, enable, disable, clean)
 echo   engram tidy           Clean temporary logs, caches, and orphaned files
+echo   engram snapshots      List, pin and restore environment backups: replaced Python/venv copies and package snapshots
+echo   engram repair         Detect and repair environment drift: broken venv, stale launchers, moved root, missing manifest
+echo   engram relocate       Repair the environment after the portable folder was moved or renamed
 echo   engram uninstall      Full removal: registry teardown and folder purge
 echo.
 echo Backup ^& State:
@@ -427,6 +512,7 @@ echo   First time in a new folder:    engram
 echo   Keep everything up to date:    engram update --yes
 echo   Update just the AI CLIs:       engram update --only claude,codex,agy --yes
 echo   Move the folder to a new PC:   engram backup ; (copy folder) ; engram restore PATH
-echo   Something feels broken:        engram doctor
+echo   Something feels broken:        engram doctor ; engram repair
+echo   Folder moved or renamed:       engram relocate
 echo.
 exit /b 0

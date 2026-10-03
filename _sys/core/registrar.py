@@ -30,6 +30,21 @@ def _safe_key(text: str) -> str:
     return re.sub(r"_+", "_", safe).strip("_")
 
 
+def _root_pair(base_dir: Path) -> tuple[str, str]:
+    """Return (logical, physical) root. Physical resolves SUBST/junction aliases.
+
+    The relay records both so a later move/alias can be told apart from a new install
+    (docs/design/engram-env-resilience-design-2026-10-02.md, section 3). Falls back to
+    the logical root when the path cannot be resolved.
+    """
+    logical = str(base_dir)
+    try:
+        physical = os.path.realpath(logical)
+    except (OSError, ValueError):
+        physical = logical
+    return logical, physical
+
+
 def _registry_key_name(base_dir: Path) -> str:
     leaf   = base_dir.name
     parent = base_dir.parent.name if base_dir.parent else ""
@@ -238,7 +253,8 @@ def _unregister_entry(key_name: str, targets_cfg: dict, relay_root: Path) -> lis
     return errors
 
 
-def _clean_orphans(base_key: str, targets_cfg: dict, relay_root: Path, dry_run: bool = False) -> list[str]:
+def _clean_orphans(base_key: str, targets_cfg: dict, relay_root: Path, dry_run: bool = False,
+                   quiet: bool = False) -> list[str]:
     """Remove stale SandboxRun_ keys whose relay bat no longer points to a valid path.
 
     `base_key` is accepted for call-site symmetry with the entries this scan
@@ -298,11 +314,26 @@ def _clean_orphans(base_key: str, targets_cfg: dict, relay_root: Path, dry_run: 
                         p = relay_root / f"{subkey}{ext}"
                         if p.exists():
                             p.unlink()
-                    print(f"  [OK] Orphan removed: {subkey}")
+                    if not quiet:
+                        print(f"  [OK] Orphan removed: {subkey}")
                 removed.append(subkey)
         except Exception:
             continue
     return list(dict.fromkeys(removed))
+
+
+def find_stale_entries(sys_dir: Path, relay_root: Path | None = None) -> list[str]:
+    """Read-only: names of stale SandboxRun_* entries (what clean_orphans would remove).
+
+    Used by ``doctor``. Never deletes, never prints, never touches sidecars.
+    """
+    cfg = _load_context_menu(sys_dir)
+    if not cfg:
+        return []
+    if relay_root is None:
+        relay_root = Path(os.environ.get("LOCALAPPDATA", ""))
+    targets_cfg = cfg.get("registry", {}).get("targets", {})
+    return _clean_orphans("", targets_cfg, relay_root, dry_run=True, quiet=True)
 
 
 def apply(ctx: dict) -> dict:
@@ -320,7 +351,7 @@ def apply(ctx: dict) -> dict:
         return {"status": "success", "operation": "registry.apply", "skipped": True}
 
     drive      = base_dir.drive.rstrip(":")
-    root       = phys_root = str(base_dir)
+    root, phys_root = _root_pair(base_dir)
     relay_root = Path(os.environ.get("LOCALAPPDATA", ""))
     base_key   = _registry_key_name(Path(root))
     targets_cfg = cfg.get("registry", {}).get("targets", {})

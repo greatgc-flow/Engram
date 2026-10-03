@@ -106,7 +106,7 @@ def test_nodejs_major_upgrade_requires_opt_in(tmp_path, monkeypatch):
             "checksum_algo": "sha256",
             "checksum_value": "abc",
         }
-    monkeypatch.setattr(version_resolver, "resolve_latest", fake_resolve)
+    monkeypatch.setattr(check_tool_updates.version_resolver, "resolve_latest", fake_resolve)
 
     # Without allow_major_runtime_upgrade: should be notice only
     payload, runtimes, proposed, catalog, proposed_catalog = check_tool_updates.discover_updates(allow_major_runtime_upgrade=False)
@@ -141,7 +141,7 @@ def test_python_is_notice_only(tmp_path, monkeypatch):
             "latest_version": "3.14.5",
             "detail": "notice_only",
         }
-    monkeypatch.setattr(version_resolver, "resolve_latest", fake_resolve)
+    monkeypatch.setattr(check_tool_updates.version_resolver, "resolve_latest", fake_resolve)
 
     payload, runtimes, proposed, catalog, proposed_catalog = check_tool_updates.discover_updates()
     assert not payload["updates_discovered"]

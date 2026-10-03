@@ -114,7 +114,7 @@ def test_core_update_helper_renamed_sys_dir_success(tmp_path):
         "Bypass",
         "-Command",
         cmd,
-    ], capture_output=True, text=True)
+    ], capture_output=True, text=True, encoding="utf-8", errors="replace")
 
     assert cp.returncode == 0, f"PowerShell failed with: {cp.stderr}"
 
@@ -185,7 +185,7 @@ def test_core_update_helper_renamed_sys_dir_rollback(tmp_path):
         "Bypass",
         "-Command",
         cmd,
-    ], capture_output=True, text=True)
+    ], capture_output=True, text=True, encoding="utf-8", errors="replace")
 
     assert cp.returncode == 1
 

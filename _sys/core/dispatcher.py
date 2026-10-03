@@ -132,6 +132,27 @@ def _result_failed(result) -> bool:
     }
 
 
+class PipelineHandoff(Exception):
+    """An operation asked to be re-run on a runner interpreter (python swap): exit 75, no error output."""
+
+
+class PipelineFailure(RuntimeError):
+    """A failed operation that carries a CLI exit code (>= 10: preflight, rolled back, rollback failed, journal)."""
+
+    def __init__(self, message: str, exit_code: int, quiet: bool = False):
+        super().__init__(message)
+        self.exit_code = exit_code
+        self.quiet = quiet  # the operation already reported its findings (e.g. doctor): exit code only
+
+
+def _cli_exit_code(result) -> int | None:
+    if isinstance(result, dict):
+        code = result.get("exit_code")
+        if isinstance(code, int) and code >= 10:
+            return code
+    return None
+
+
 def _run_operation(op_id: str, op_cfg: dict, ctx: dict):
     module_name = op_cfg["module"]
     method_name = op_cfg.get("method", "main")
@@ -149,10 +170,19 @@ def _run_operation(op_id: str, op_cfg: dict, ctx: dict):
             return {"status": "failed", "operation": op_id, "detail": str(e)}
         raise
 
+    if (_result_failed(result) and isinstance(result, dict) and result.get("detail") == "usage"
+            and failure not in ("continue", "warn")):
+        # argparse already printed the usage message: exit with its code, no traceback.
+        raise PipelineFailure(f"operation '{op_id}' failed: usage", int(result.get("exit_code") or 2), quiet=True)
+    if _result_failed(result) and op_cfg.get("quiet_failure") and failure not in ("continue", "warn"):
+        raise PipelineFailure(f"operation '{op_id}' failed", 1, quiet=True)
     if _result_failed(result):
         detail = (result.get("detail") or result.get("failed") or result) if isinstance(result, dict) else result
         print(f"  [Error] Operation '{op_id}' returned failure: {detail}")
         if failure not in ("continue", "warn"):
+            code = _cli_exit_code(result)
+            if code is not None:
+                raise PipelineFailure(f"operation '{op_id}' failed: {detail}", code)
             raise RuntimeError(f"operation '{op_id}' failed: {detail}")
         if not isinstance(result, dict):
             result = {"status": "failed", "operation": op_id, "detail": detail}
@@ -193,6 +223,8 @@ def run_pipeline(cmd: str, extra_args: list) -> None:
             print(f"  [Error] Unknown operation '{op_id}'")
             continue
         result = _run_operation(op_id, op_cfg, ctx)
+        if isinstance(result, dict) and result.get("handoff"):
+            raise PipelineHandoff()
         if _result_failed(result):
             failures.append(result)
 
@@ -201,8 +233,22 @@ def run_pipeline(cmd: str, extra_args: list) -> None:
         raise RuntimeError(f"pipeline '{cmd}' incomplete; failed operations: {names}")
 
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
+def main(argv: list[str]) -> int:
+    """CLI entry. Returns the process exit code; a PipelineFailure with a CLI code (>= 10) is reported
+    and returned instead of surfacing as a traceback with exit code 1."""
+    if len(argv) < 2:
         print("Usage: dispatcher.py <command> [args...]")
-        sys.exit(1)
-    run_pipeline(sys.argv[1].lower(), sys.argv[2:])
+        return 1
+    try:
+        run_pipeline(argv[1].lower(), argv[2:])
+    except PipelineHandoff:
+        return 75
+    except PipelineFailure as exc:
+        if not exc.quiet:
+            print(f"[Error] {exc}")
+        return exc.exit_code
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

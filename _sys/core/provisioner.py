@@ -765,11 +765,17 @@ def _install_atomic(name: str, cfg: dict, manifest_path: Path, target_root: Path
 
         active_dir = target_root / name
         kind = "runtime" if target_root.name == "env" else "tool"
+        old_ref = None
         if active_dir.exists():
-            if old_dir.exists():
-                shutil.rmtree(old_dir, ignore_errors=True)
+            from core import backups
             try:
-                _safe_rename(active_dir, old_dir)
+                # design section 8.2: the replaced dir moves into the backup registry (never deleted here);
+                # a pre-existing legacy <name>_old is left for `tidy --adopt-legacy`.
+                old_ref = backups.create(
+                    sys_dir, "legacy-old", active_dir, reason=f"replaced by {name} {declared_version}",
+                    op_id=f"provision-{name}", label=f"{name}-old",
+                    rename=lambda s, d: _safe_rename(Path(s), Path(d)))
+                old_dir = old_ref.path / backups.PAYLOAD
             except OSError as e:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
                 _add_deferred(sys_dir, name, kind)
@@ -783,7 +789,7 @@ def _install_atomic(name: str, cfg: dict, manifest_path: Path, target_root: Path
             _safe_rename(tmp_dir, active_dir)
         except OSError as e:
             preserve_paths = cfg.get("preserve_paths") or []
-            if preserve_paths and old_dir.exists():
+            if preserve_paths and old_ref is not None and old_dir.exists():
                 for rel in preserve_paths:
                     moved_dest = tmp_dir / rel
                     orig_src = old_dir / rel
@@ -793,10 +799,10 @@ def _install_atomic(name: str, cfg: dict, manifest_path: Path, target_root: Path
                             shutil.move(str(moved_dest), str(orig_src))
                         except Exception:
                             pass
-            if old_dir.exists() and not active_dir.exists():
+            if old_ref is not None and old_dir.exists() and not active_dir.exists():
                 try:
-                    _safe_rename(old_dir, active_dir)
-                except OSError:
+                    backups.restore(old_ref, rename=lambda s, d: _safe_rename(Path(s), Path(d)))
+                except (OSError, ValueError):
                     pass
             shutil.rmtree(tmp_dir, ignore_errors=True)
             _add_deferred(sys_dir, name, kind)
@@ -818,6 +824,8 @@ def _install_atomic(name: str, cfg: dict, manifest_path: Path, target_root: Path
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         _remove_deferred(sys_dir, name, kind)
+        if old_ref is not None:
+            backups.commit(old_ref)
 
         return {"status": "success", "detail": "Installed successfully"}
 
@@ -1188,7 +1196,7 @@ def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = 
         try:
             res = subprocess.run(
                 [*npm_argv, "view", f"{pkg}@{declared_version}", "dist.integrity", "--json"],
-                capture_output=True, text=True, check=True,
+                capture_output=True, encoding="utf-8", errors="replace", check=True,
             )
             integrity = json.loads(res.stdout.strip())
         except Exception as e:
@@ -1293,7 +1301,7 @@ def self_update_peer(tool_id: str, sys_dir: Path | None = None) -> dict:
     version_argv = update_cfg.get("version_argv", ["--version"])
     v_args = version_argv[1:] if len(version_argv) > 0 and version_argv[0] in (bin_name, tool_id) else version_argv
     try:
-        res_v0 = subprocess.run([str(exe_path)] + list(v_args), capture_output=True, text=True, timeout=5)
+        res_v0 = subprocess.run([str(exe_path)] + list(v_args), capture_output=True, encoding="utf-8", errors="replace", timeout=5)
         v0_text = (res_v0.stdout or res_v0.stderr or "").strip()
         before_version = v0_text.splitlines()[0] if v0_text else "unknown"
     except Exception:
@@ -1308,7 +1316,7 @@ def self_update_peer(tool_id: str, sys_dir: Path | None = None) -> dict:
             [str(exe_path)] + list(u_args),
             cwd=str(exe_path.parent),
             capture_output=True,
-            text=True,
+            encoding="utf-8", errors="replace",
             timeout=timeout_sec,
             shell=False,
         )
@@ -1320,7 +1328,7 @@ def self_update_peer(tool_id: str, sys_dir: Path | None = None) -> dict:
 
     # Query after-version
     try:
-        res_v1 = subprocess.run([str(exe_path)] + list(v_args), capture_output=True, text=True, timeout=5)
+        res_v1 = subprocess.run([str(exe_path)] + list(v_args), capture_output=True, encoding="utf-8", errors="replace", timeout=5)
         v1_text = (res_v1.stdout or res_v1.stderr or "").strip()
         after_version = v1_text.splitlines()[0] if v1_text else before_version
     except Exception:
@@ -1421,6 +1429,15 @@ def _record_deploy_outcome(
         print(f"  [!] {component} failed: {detail}")
 
 
+def ensure_virtualenv_module() -> None:
+    """Install virtualenv into the embedded Python (sys.executable) only when it cannot be imported."""
+    probe = subprocess.run([sys.executable, "-c", "import virtualenv"], capture_output=True)
+    if probe.returncode == 0:
+        return
+    subprocess.run([sys.executable, "-m", "pip", "install", "virtualenv", "--quiet"], check=True)
+    print("  [OK] virtualenv installed into the embedded Python")
+
+
 def deploy(ctx: dict) -> dict:
     """Install all runtimes, tools, and AI peer CLIs via ensure_runtime/
     ensure_tool/ensure_peer_cli - every entry in runtimes.json/tool-catalog.v1.json is
@@ -1498,7 +1515,7 @@ def deploy(ctx: dict) -> dict:
         venv_creation_failed = False
         if force or not venv_py.exists():
             try:
-                subprocess.run([sys.executable, "-m", "pip", "install", "virtualenv", "--quiet"], check=True)
+                ensure_virtualenv_module()
                 subprocess.run([sys.executable, "-m", "virtualenv", str(env_dir / "venv")], check=True)
                 print("  [OK] venv created")
             except (subprocess.CalledProcessError, OSError) as exc:
@@ -1511,6 +1528,17 @@ def deploy(ctx: dict) -> dict:
                 })
         else:
             print("  [--] venv (already exists)")
+            # Later `repair`/`relocate` venv rebuilds run `python -m virtualenv` on the embedded Python, so it
+            # must be present even when the venv itself survived a Python re-extraction.
+            try:
+                ensure_virtualenv_module()
+            except (subprocess.CalledProcessError, OSError) as exc:
+                print(f"  [Fail] virtualenv install failed: {exc}")
+                failed.append({
+                    "component": "virtualenv",
+                    "status": "error",
+                    "detail": f"pip install virtualenv failed: {exc}",
+                })
         # Re-check on disk rather than trusting the exit code above: creation can
         # report success without actually leaving a working interpreter behind.
         if venv_py.exists():

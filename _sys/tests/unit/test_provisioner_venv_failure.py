@@ -42,3 +42,35 @@ def test_deploy_reports_venv_creation_failure_without_crashing(monkeypatch, tmp_
     venv_failures = [f for f in result["failed"] if f["component"] == "venv"]
     assert len(venv_failures) == 1
     assert venv_failures[0]["status"] == "error"
+
+
+def _ctx_with_existing_venv(tmp_path: Path) -> dict:
+    ctx = _make_deploy_ctx_no_venv(tmp_path)
+    venv_py = tmp_path / "_sys" / "env" / "venv" / "Scripts" / "python.exe"
+    venv_py.parent.mkdir(parents=True)
+    venv_py.write_bytes(b"")
+    return ctx
+
+
+def test_deploy_installs_virtualenv_when_venv_exists_but_module_missing(monkeypatch, tmp_path):
+    ctx = _ctx_with_existing_venv(tmp_path)
+    calls = []
+
+    def _fake_run(args, **kwargs):
+        calls.append(list(args))
+        rc = 1 if list(args[1:]) == ["-c", "import virtualenv"] else 0
+        return subprocess.CompletedProcess(args, rc)
+
+    monkeypatch.setattr(pv.subprocess, "run", _fake_run)
+    pv.deploy(ctx)
+    pip = [c for c in calls if c[1:4] == ["-m", "pip", "install"] and "virtualenv" in c]
+    assert len(pip) == 1 and pip[0][0] == sys.executable
+
+
+def test_deploy_skips_virtualenv_install_when_already_importable(monkeypatch, tmp_path):
+    ctx = _ctx_with_existing_venv(tmp_path)
+    calls = []
+    monkeypatch.setattr(pv.subprocess, "run",
+                        lambda args, **kw: calls.append(list(args)) or subprocess.CompletedProcess(args, 0))
+    pv.deploy(ctx)
+    assert not [c for c in calls if "virtualenv" in c and "pip" in c]

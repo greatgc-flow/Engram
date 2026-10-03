@@ -9,7 +9,7 @@ Verifies:
 2. Relocation & Drive Migration resilience:
    - Engram dynamically computes all environment variables relative to current base_dir
    - Zero hardcoded drive letters in runtime, tool, or dotdir paths
-   - _relocate tracks current base_dir in last_base_dir.txt
+   - the launcher detects (but never erases) a changed base_dir via last_base_dir.txt
 3. Strict Zero-SUBST & Zero-Junction invariant:
    - Doctor never recommends mounting via SUBST
    - All paths resolved via physical paths and dynamic root detection
@@ -201,21 +201,20 @@ class TestRelocationAndDriveMigration:
         assert (base_dir / ".engram" / "custom").is_dir()
         assert (base_dir / ".engram" / "claude").is_dir()
 
-    def test_relocate_tracks_base_dir_change(self, tmp_path):
-        """Moving Engram to a new location updates last_base_dir.txt correctly."""
+    def test_launch_does_not_erase_the_move_signal(self, tmp_path):
+        """Moving Engram must leave last_base_dir.txt pointing at the OLD root until a
+        committed install/repair rewrites it (env-resilience design section 3)."""
         base_dir_1 = tmp_path / "LocationA"
         sys_dir_1 = base_dir_1 / "_sys"
-        sys_dir_1.mkdir(parents=True)
+        (sys_dir_1 / "data").mkdir(parents=True)
+        (sys_dir_1 / "data" / "last_base_dir.txt").write_text(str(base_dir_1), encoding="utf-8")
 
-        launcher._relocate(base_dir_1, sys_dir_1)
+        # Relocated to LocationB: launching there must not rewrite the record.
+        base_dir_2 = tmp_path / "LocationB"
+        status = launcher._note_root_drift(base_dir_2, sys_dir_1, print_fn=lambda *_: None)
         record = (sys_dir_1 / "data" / "last_base_dir.txt").read_text(encoding="utf-8")
         assert record == str(base_dir_1)
-
-        # Relocated to LocationB
-        base_dir_2 = tmp_path / "LocationB"
-        launcher._relocate(base_dir_2, sys_dir_1)
-        record = (sys_dir_1 / "data" / "last_base_dir.txt").read_text(encoding="utf-8")
-        assert record == str(base_dir_2)
+        assert status in {"moved", "copied"}
 
 
 class TestZeroHostInvariants:

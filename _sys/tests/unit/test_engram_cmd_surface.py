@@ -252,7 +252,7 @@ def test_verb_name_directory_still_runs_the_verb(surface_root):
 # 5. The 'Not set up' rule (§3.2)
 # ----------------------------------------------------------------------------
 
-@pytest.mark.parametrize("verb", ["doctor", "menu", "tidy", "update", "uninstall", "backup", "restore", "reset"])
+@pytest.mark.parametrize("verb", ["doctor", "menu", "tidy", "snapshots", "update", "uninstall", "backup", "restore", "reset"])
 def test_not_set_up_rule_rejects_with_exit_1(surface_root, verb):
     """When python.exe is missing, subcommands exit 1 with setup message (§3.2)."""
     # Remove python stub to simulate fresh/not-set-up environment
@@ -266,7 +266,7 @@ def test_not_set_up_rule_rejects_with_exit_1(surface_root, verb):
     assert "Run 'engram'" in proc.stdout
 
 
-@pytest.mark.parametrize("verb", ["doctor", "tidy", "update", "uninstall", "backup", "restore", "reset"])
+@pytest.mark.parametrize("verb", ["doctor", "tidy", "snapshots", "update", "uninstall", "backup", "restore", "reset"])
 @pytest.mark.parametrize("help_flag", ["--help", "-h", "help"])
 def test_help_bypasses_not_set_up_check(surface_root, verb, help_flag):
     """Help flags on subcommands bypass :check_setup even when python.exe is missing."""
@@ -281,7 +281,7 @@ def test_help_bypasses_not_set_up_check(surface_root, verb, help_flag):
     assert f"DISPATCH_ARGS={verb} {help_flag}" in proc.stdout
 
 
-@pytest.mark.parametrize("verb", ["doctor", "tidy", "update", "uninstall", "backup", "restore", "reset"])
+@pytest.mark.parametrize("verb", ["doctor", "tidy", "snapshots", "update", "uninstall", "backup", "restore", "reset"])
 def test_slash_question_bypasses_not_set_up_check(surface_root, verb):
     """'/?' on subcommands bypasses :check_setup even when python.exe is missing.
     Note: In cmd.exe, 'call' intercepts unquoted '/?' to show CALL help before dispatch.bat

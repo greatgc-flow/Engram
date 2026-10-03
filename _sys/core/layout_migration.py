@@ -11,6 +11,10 @@ try:
 except ModuleNotFoundError:
     from checks.check_tool_updates import _atomic_write_json
     from core import provisioner
+try:
+    from _sys.core import backups
+except ModuleNotFoundError:
+    from core import backups
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +90,11 @@ def merge_declarations(dry_run: bool = False, sys_dir: Path | None = None) -> Li
     base_state_dir = effective_sys / "data" / "state" / "defaults-base"
     manifest_base_dir = effective_sys / "core" / "release-manifests" / "3.2.6-defaults"
     
-    return merge_declarations_impl(defaults_dir, live_dir, base_state_dir, manifest_base_dir, files, dry_run=dry_run)
+    return merge_declarations_impl(defaults_dir, live_dir, base_state_dir, manifest_base_dir, files, dry_run=dry_run, sys_dir=effective_sys)
 
-def merge_declarations_impl(defaults_dir: Path, live_dir: Path, base_state_dir: Path, manifest_base_dir: Path, files: List[str], dry_run: bool = False) -> List[str]:
+def merge_declarations_impl(defaults_dir: Path, live_dir: Path, base_state_dir: Path, manifest_base_dir: Path, files: List[str], dry_run: bool = False, sys_dir: Path | None = None) -> List[str]:
+    # <sys>/data/state/defaults-base -> <sys>
+    registry_sys = Path(sys_dir) if sys_dir is not None else Path(base_state_dir).parents[2]
     if not dry_run:
         base_state_dir.mkdir(parents=True, exist_ok=True)
     
@@ -170,8 +176,9 @@ def merge_declarations_impl(defaults_dir: Path, live_dir: Path, base_state_dir: 
                 all_reports.extend(reports)
                     
             if not dry_run:
-                pre_merge_bak = base_state_dir / f"{filename}.pre-merge.bak"
-                shutil.copy2(live_path, pre_merge_bak)
+                # design section 8.2: the pre-merge copy lives in the backup registry (copy: the live file is rewritten next)
+                backups.create_file(registry_sys, "state", live_path, reason="pre-merge copy of declarations",
+                                    op_id="merge-declarations", label=f"{Path(filename).stem}-pre-merge", copy=True)
                 
                 _atomic_write_json(live_path, merged)
                 
@@ -183,6 +190,25 @@ def merge_declarations_impl(defaults_dir: Path, live_dir: Path, base_state_dir: 
             sys.exit(1)
             
     return all_reports
+
+def _register_core_update_backups(sys_dir: Path, temp_update_dir: Path) -> bool:
+    """Move each ``core-update/<version>/backup`` into the registry; False if any could not be preserved."""
+    ok = True
+    for version_dir in sorted(p for p in temp_update_dir.iterdir() if p.is_dir()):
+        backup_dir = version_dir / "backup"
+        if not backup_dir.is_dir() or not any(backup_dir.iterdir()):
+            continue
+        label = "core-" + "".join(c if (c.isalnum() or c in "._-") else "-" for c in version_dir.name)[:50]
+        try:
+            ref = backups.create(sys_dir, "core-update", backup_dir,
+                                 reason=f"files replaced by core update {version_dir.name}",
+                                 op_id="layout-migration", label=label)
+            backups.commit(ref)
+        except (OSError, ValueError) as exc:
+            logger.warning(f"could not register core-update backup {backup_dir}: {exc}")
+            ok = False
+    return ok
+
 
 # WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 orchestration wiring happens in a follow-up dispatch."
 def m0_preflight(base_dir: Path, sys_dir: Path) -> bool:
@@ -510,17 +536,20 @@ def migrate_layout(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> int:
         layout_json_path.parent.mkdir(parents=True, exist_ok=True)
         _atomic_write_json(layout_json_path, layout_data)
         
-        # Section 8.4: delete Engram.exe.old and temp staging dir
+        # Section 8.4: register Engram.exe.old and the core-update backup (retention handles them), then
+        # drop the temp staging dir only if everything in it that matters was preserved.
         old_exe = base_dir / "Engram.exe.old"
         if old_exe.exists():
             try:
-                old_exe.unlink()
-            except OSError:
-                pass
-                
+                backups.create_file(sys_dir, "core-update", old_exe, reason="Engram.exe replaced by core update",
+                                    op_id="layout-migration", label="engram-exe-old")
+            except (OSError, ValueError) as exc:
+                logger.warning(f"could not register {old_exe}: {exc}")
+
         temp_update_dir = sys_dir / "data" / "temp" / "core-update"
         if temp_update_dir.exists():
-            shutil.rmtree(temp_update_dir, ignore_errors=True)
+            if _register_core_update_backups(sys_dir, temp_update_dir):
+                shutil.rmtree(temp_update_dir, ignore_errors=True)
         
     if not m1_ok or not m2_ok:
         return 1

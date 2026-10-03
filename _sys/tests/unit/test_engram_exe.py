@@ -71,7 +71,7 @@ def built_engram_exe(tmp_path, csc_compiler):
         if not wrapper_cs.exists():
             wrapper_cs = REPO_ROOT / "wrapper.cs"
         cmd = [csc_compiler, "/target:exe", "/optimize+", f"/out:{out_exe}", str(wrapper_cs)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         if res.returncode != 0:
             pytest.fail(f"csc compilation failed: {res.stderr}")
 
@@ -145,7 +145,7 @@ def test_double_click_when_python_absent(built_engram_exe):
     if py_path.exists():
         py_path.unlink()
 
-    proc = subprocess.run([str(exe_path)], capture_output=True, text=True, encoding="utf-8")
+    proc = subprocess.run([str(exe_path)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert proc.returncode == 0
     assert "CALLED_WITH=[]" in proc.stdout
 
@@ -167,7 +167,7 @@ def test_double_click_when_python_present(built_engram_exe):
     py_path = py_dir / "python.exe"
     py_path.write_text("dummy", encoding="utf-8")
 
-    proc = subprocess.run([str(exe_path)], capture_output=True, text=True, encoding="utf-8")
+    proc = subprocess.run([str(exe_path)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert proc.returncode == 0
     assert "CALLED_WITH=[]" in proc.stdout
 
@@ -209,6 +209,6 @@ def test_symlink_resolution_to_target_directory(tmp_path, built_engram_exe):
     # symlink_dir does NOT contain engram.cmd
     assert not (symlink_dir / "engram.cmd").exists()
 
-    proc = subprocess.run([str(link_exe)], capture_output=True, text=True, encoding="utf-8")
+    proc = subprocess.run([str(link_exe)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert proc.returncode == 42
     assert "REAL_CMD_EXECUTED" in proc.stdout

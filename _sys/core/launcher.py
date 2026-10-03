@@ -162,15 +162,31 @@ def _resolve_default_target(base_dir: Path, sys_dir: Path) -> Path:
     return base_dir
 
 
-def _relocate(base_dir: Path, sys_dir: Path) -> None:
-    """Track current base directory."""
-    last_file = sys_dir / "data" / "last_base_dir.txt"
-    current   = str(base_dir)
+def _note_root_drift(base_dir: Path, sys_dir: Path, print_fn=print) -> str:
+    """Read-only root-drift check: print one hint line when the install has moved.
+
+    This used to overwrite ``data/last_base_dir.txt`` on every launch, which erased the
+    only evidence of a move before anything could read it. Only a committed fresh
+    install / repair writes that file now (see core.env_manifest.commit_install).
+    Cheap file checks only; never raises, never mutates (design section 9, D8).
+    """
     try:
-        last_file.parent.mkdir(parents=True, exist_ok=True)
-        last_file.write_text(current, encoding="utf-8")
+        from core import env_manifest
+        manifest = env_manifest.read_manifest(sys_dir)
+        drift = env_manifest.detect_root_drift(
+            manifest.data if manifest.status == "ok" else None,
+            base_dir, sys_dir,
+            localappdata=Path(os.environ["LOCALAPPDATA"]) if os.environ.get("LOCALAPPDATA") else None,
+        )
     except Exception:
-        pass
+        return "unknown"
+    if drift.status in ("moved", "copied"):
+        print_fn(
+            f"[!] Engram root changed: previously {drift.previous_root} "
+            f"(evidence: {drift.source}). Console scripts and context-menu entries may be stale; "
+            f"run 'engram doctor' for details."
+        )
+    return drift.status
 
 
 def main(ctx: dict) -> None:
@@ -179,7 +195,7 @@ def main(ctx: dict) -> None:
     sys_dir  = ctx["sys_dir"]
     args     = ctx["args"]
 
-    _relocate(base_dir, sys_dir)
+    _note_root_drift(base_dir, sys_dir)
 
     # Log setup
     import state_paths

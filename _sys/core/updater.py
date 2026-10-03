@@ -52,6 +52,31 @@ def _download_and_stage_core_update(
     provisioner._extract(zip_path, staged_dir)
 
 
+_ENV_COMPONENTS = frozenset({"python", "venv", "packages"})
+
+
+def _env_update_args(args_list: list[str]) -> list[str]:
+    """Translate `engram update` flags into repair-engine flags: drop --only and its values, map --yes/--dry-run."""
+    out: list[str] = []
+    skipping_only = False
+    dry_run = any(a in ("--dry-run", "--check") for a in args_list)
+    for a in args_list:
+        if a == "--only":
+            skipping_only = True
+            continue
+        if skipping_only and not a.startswith("-"):
+            continue
+        skipping_only = False
+        if a in ("--yes", "-y"):
+            if not dry_run:  # --dry-run always wins: plan only, never execute (no snapshots, no journal)
+                out += ["--apply", "--yes"]
+        elif a in ("--dry-run", "--check", "--refresh", "-r"):
+            continue
+        else:
+            out.append(a)
+    return out
+
+
 def _parse_args(args: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Updater runner",
@@ -97,6 +122,16 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
 
     normalized_only = check_tool_updates.normalize_only_list(getattr(args, "only", None))
     only_set = set(normalized_only) if normalized_only is not None else None
+
+    # Managed environment components (design section 10): python / venv / packages go through the
+    # journaled repair engine (dry-run by default; --yes applies), never through tool discovery.
+    env_components = only_set & _ENV_COMPONENTS if only_set else set()
+    if env_components:
+        if only_set - _ENV_COMPONENTS:
+            return {"status": "failed", "exit_code": 2,
+                    "detail": "python/venv/packages cannot be combined with tool names in --only"}
+        from core import repair
+        return repair.update_env_main({**ctx, "args": _env_update_args(args_list)}, env_components)
 
     live_runtimes = provisioner.load_json_with_fallback(provisioner.resolve_declared_config(_SYS_DIR, "runtimes.json"))
     catalog = provisioner.load_json_with_fallback(provisioner.resolve_declared_config(_SYS_DIR, provisioner.TOOL_CATALOG_FILENAME))

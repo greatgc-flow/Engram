@@ -291,10 +291,10 @@ def check_running_processes(sys_dir: Path | None = None) -> list[str]:
                             except (getattr(psutil, "NoSuchProcess", ()), getattr(psutil, "AccessDenied", ())):
                                 continue
                         if "node.exe" in found_names and "codex.exe" not in found_names:
-                            running.append("codex (node.exe)")
+                            running.append("node.exe")
                         elif "codex.exe" in found_names and "node.exe" in found_names:
                             running.append("codex.exe")
-                            running.append("codex (node.exe)")
+                            running.append("node.exe")
                         else:
                             running.append(display_name)
                     except psutil_exceptions:
@@ -379,7 +379,7 @@ def do_backup(
     if running:
         print(f"[WARNING] Managed AI process(es) currently running: {', '.join(running)}")
         if any("node.exe" in r for r in running):
-            print("  Note: node.exe may be a Node-based AI CLI (e.g. Codex).")
+            print("  Note: 'node.exe' represents a Node-based AI CLI (e.g. Codex).")
         print("File copies taken during active sessions may produce partial reads.\n")
 
     # Determine archive vs plain-folder mode
@@ -603,7 +603,7 @@ def do_restore(
     if running:
         print(f"[Error] Cannot restore: managed AI CLI process(es) currently running: {', '.join(running)}")
         if any("node.exe" in r for r in running):
-            print("Note: node.exe may be a Node-based AI CLI (e.g. Codex).")
+            print("Note: 'node.exe' represents a Node-based AI CLI (e.g. Codex).")
         print("Please close all running AI CLIs and try again.")
         sys.exit(1)
 
@@ -723,7 +723,7 @@ def do_reset(
     if running:
         print(f"[Error] Cannot reset: managed AI CLI process(es) currently running: {', '.join(running)}")
         if any("node.exe" in r for r in running):
-            print("Note: node.exe may be a Node-based AI CLI (e.g. Codex).")
+            print("Note: 'node.exe' represents a Node-based AI CLI (e.g. Codex).")
         print("Please close all running AI CLIs and try again.")
         sys.exit(1)
 
@@ -859,10 +859,14 @@ def run_backup(ctx: dict) -> None:
                     print("Usage: engram backup [--out PATH] [--include-uncovered]")
                     sys.exit(2)
                 raw_out = args[i + 1]
+                if raw_out.startswith("-"):
+                    print("[Error] --out requires a PATH argument.")
+                    print("Usage: engram backup [--out PATH] [--include-uncovered]")
+                    sys.exit(2)
                 i += 2
             else:
                 raw_out = arg.split("=", 1)[1]
-                if not raw_out:
+                if not raw_out or raw_out.startswith("-"):
                     print("[Error] --out requires a PATH argument.")
                     print("Usage: engram backup [--out PATH] [--include-uncovered]")
                     sys.exit(2)
