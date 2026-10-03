@@ -332,6 +332,63 @@ def create_text(
     return ref
 
 
+def create_file(
+    sys_dir: Path,
+    kind: str,
+    source: Path,
+    *,
+    reason: str,
+    op_id: str,
+    label: str,
+    copy: bool = False,
+    now: Optional[str] = None,
+    engram_version: Optional[str] = None,
+) -> BackupRef:
+    """Preserve one regular file (``Engram.exe.old``, ``*.pre-merge.bak``) as a committed backup.
+
+    ``copy=False`` moves the file into ``payload/<name>`` (never deletes it); ``copy=True`` keeps the
+    original in place (for a live file about to be rewritten). Marker first (write-ahead), then the
+    file lands, then the marker commits; a failure leaves the original untouched.
+    """
+    if kind not in KIND_POLICY:
+        raise ValueError(f"unknown backup kind {kind!r}")
+    if not _LABEL_RE.match(label or "") or ".." in label:
+        raise ValueError(f"invalid backup label {label!r}")
+    source = Path(source)
+    if not source.is_file() or _is_reparse_point(source):
+        raise FileNotFoundError(f"backup source is not a regular file: {source}")
+    now = now or _utc_now()
+    min_keep, ttl_days = KIND_POLICY[kind]
+    root = backups_root(sys_dir)
+    dest = root / kind / f"{_compact(now)}-{label}"
+    n = 1
+    while dest.exists():
+        n += 1
+        dest = root / kind / f"{_compact(now)}-{label}-{n}"
+    (dest / PAYLOAD).mkdir(parents=True)
+    meta = {
+        "schema_version": SCHEMA_VERSION, "kind": kind, "state": "pending", "created_at": now,
+        "engram_version": engram_version, "op_id": op_id, "source_path": None, "reason": reason,
+        "size_bytes": source.stat().st_size, "ttl_days": ttl_days, "min_keep": min_keep,
+        "pinned": False, "restore_hint": None,
+    }
+    _write_meta(dest, meta)
+    target = dest / PAYLOAD / source.name
+    if copy:
+        shutil.copy2(source, target)
+    else:
+        try:
+            os.replace(source, target)
+        except OSError:
+            shutil.copy2(source, target)
+            if target.stat().st_size != source.stat().st_size:
+                target.unlink()
+                raise BackupVerificationError(f"copy of {source} did not verify; source left in place")
+            source.unlink()
+    ref = BackupRef(kind, dest, meta)
+    return commit(ref, now=now)
+
+
 def _update(ref: BackupRef, **changes) -> BackupRef:
     meta = _read_meta(ref.path) or dict(ref.meta)
     meta.update(changes)

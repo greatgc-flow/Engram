@@ -96,7 +96,11 @@ def test_merge_declarations_runtimes(migration_env, caplog):
     assert "kept local modifications despite upstream removal" in caplog.text
     
     # Assert backups
-    assert (migration_env["base_state"] / "runtimes.json.pre-merge.bak").exists()
+    from core import backups
+    registered = [r for r in backups.scan(migration_env["live"]).valid if r.kind == "state"]
+    assert len(registered) == 1 and registered[0].meta["state"] == "committed"
+    assert (registered[0].path / backups.PAYLOAD / "runtimes.json").exists()
+    assert not (migration_env["base_state"] / "runtimes.json.pre-merge.bak").exists()
     
     # Assert base updated
     with open(migration_env["base_state"] / "runtimes.json") as f:
@@ -644,7 +648,7 @@ def test_migrate_layout_success_and_idempotency(tmp_path, capsys, monkeypatch):
     def get_snapshot():
         snap = {}
         for p in base_dir.rglob("*"):
-            if p.is_file() and not p.name.endswith(".bak"):
+            if p.is_file() and not p.name.endswith(".bak") and "backups" not in p.relative_to(base_dir).parts:
                 snap[p.relative_to(base_dir).as_posix()] = hashlib.sha256(p.read_bytes()).hexdigest()
         return snap
         
@@ -796,5 +800,9 @@ def test_layout_migration_core_update_cleanup(tmp_path):
     # if not m1_ok or not m2_ok: return 1
     # So it reaches cleanup regardless of m1/m2 failure.
     
+    # registered in the backup registry instead of deleted
     assert not old_exe.exists()
+    from core import backups
+    kept = [r for r in backups.scan(sys_dir).valid if r.kind == "core-update"]
+    assert len(kept) == 1 and (kept[0].path / backups.PAYLOAD / "Engram.exe.old").read_text() == "old"
     assert not (sys_dir / "data" / "temp" / "core-update").exists()
