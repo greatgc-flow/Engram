@@ -50,6 +50,5 @@ Python/venv backups are restored through `engram repair`, not by hand.
 
 ## Known limitations
 
-- Legacy backup producers (`*_old` folders, core-update backup, `.pre-merge.bak`, `Engram.exe.old`) are not yet
-  registered in the backup registry (design phase P5).
+- Core-update's PowerShell helper still stages its backup under `data/temp/core-update`; the next layout migration run registers it (a later release may write straight into the registry).
 - A root-move hint is only cleared once `engram relocate` / `engram repair` completes.

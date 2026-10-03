@@ -18,3 +18,10 @@ Verification: 1076 unit tests passed, 4 skipped, 0 failed; `check_encoding`, `ch
 4. P5: register legacy producers (`*_old`, core-update backup, `.pre-merge.bak`, `Engram.exe.old`) in the backup registry.
 5. Root-move hint is cleared only after `engram relocate` / `engram repair` completes.
 6. Real Windows locking and non-UTF-8 code-page behaviour were verified by batch runs during development, not by an automated test.
+
+## Addendum: P5 + fresh-install E2E (v3.6.1)
+
+- P5 done: `_old` dirs, `*.pre-merge.bak`, `Engram.exe.old` and core-update backups now go through the registry (`backups.create_file` added).
+- Real fresh-install E2E on a Korean+space root (bootstrap, missing Python, broken venv, folder rename + relocate, update dry-run, full unit suite inside the install) found and fixed: duplicated help, stray `cannot find the drive` (`::` comments inside paren blocks), venv rebuild lacking `virtualenv`, noisy tracebacks, dry-run writing snapshots, tidy touching backup payloads, cp949 decode errors, pending quarantine backups.
+- cx.pro re-gates found and we fixed: interpreter-refresh undo restored nothing, launcher regen failures ignored, tidy ignoring an active journal (fail closed), commit-before-regen ordering, unreadable payload in undo. ag.pro: APPROVE_PUSH at fe1c743 (cx.pro re-gate errored out on the peer side).
+- Suite: 1122 passed, 4 skipped, 0 failed.
