@@ -1,6 +1,6 @@
 # Engram Environment Resilience: Python/venv Lifecycle, Root Relocation, and Backup Retention
 
-- **Status**: **IMPLEMENTED P0-P4 (v3.6.0)**; design R4.1 (cross-reviewed by cc.deepthink, ag.deepthink, ag.pro, cx.pro). P5 (legacy backup producers) and further review notes are tracked in the approval-gate record. User guide: `docs/env_resilience_guide.md`.
+- **Status**: **IMPLEMENTED P0-P5, released v3.6.1** (merged to main). Design R4.1 cross-reviewed by cc.deepthink, ag.deepthink, ag.pro, cx.pro; D1-D10 approved by the owner 2026-10-02. Verified by unit tests (1122) and a real fresh-install E2E on a Korean+space root. Gate records: `engram-env-resilience-review-*.md` (final: `...final-gate-2026-10-03.md`). User guide: `docs/env_resilience_guide.md`.
 - **Author**: `cc` (Claude Sonnet 5.5), at the user's request
 - **Date**: 2026-10-02
 - **Reviewers requested**: `ag.deepthink` (Windows/failure modes), `cc.deepthink` (state machine/rollback/idempotency), `ag.pro` (security/retention); `cx` unavailable (usage limit until 2026-10-04 10:35)
@@ -412,7 +412,7 @@ Each row becomes a test (unit with fakes unless marked `slow` = real Windows ven
 - **P3a** journal + entry-point gates + fault-injection harness, proven first on the lower-stakes **venv repairs**: `pyvenv.cfg` rewrite, offline console-script regeneration (moved here from P1 so a crash mid-regeneration is journaled and recoverable), interpreter refresh, rebuild (quarantine, restore, rollback).
 - **P3b** Python swap with runner handoff (`python_manager`, `update --only python|venv|packages`).
 - **P4** relocation (`repair`/`relocate`): registry export/clean/re-enable, state regeneration, git rebase, AI-state remap (opt-in).
-- **P5** migrate remaining producers (core-update, pre-merge, `Engram.exe.old`) + docs (`user_lifecycle_guide.md`).
+- **P5** (DONE v3.6.1) migrate remaining producers (core-update, pre-merge, `Engram.exe.old`, `_old` dirs) + docs (`env_resilience_guide.md`).
 
 Rationale: detect first (no writes except plain snapshot files), then give old copies a safe home, then add crash-safety machinery and prove it on the least risky mutations (cfg rewrite, launcher regeneration), and only then the Python swap. Gate P3a/P3b on T-F1 fault injection between every rename.
 
@@ -461,4 +461,4 @@ Author-verified claims: S-12, S-13, S-14 were executed after the reviews and con
 ### Open before ratification
 1. `cx` cross-review of R4 (after 2026-10-04 10:35); optional round-3 sanity pass by `ag.pro` on 7.4/8.
 2. Residual checks R-1..R-4 (section 13) at their phases.
-3. User sign-off on D1-D10 and the P0-P5 order.
+3. User sign-off on D1-D10 and the P0-P5 order. (Done 2026-10-02.)

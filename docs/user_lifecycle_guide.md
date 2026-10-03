@@ -138,3 +138,5 @@ PS D:\PortableDev> engram uninstall --purge-data
 ## 📌 요약: 사용자가 기억할 단 한 문장
 
 > **"평소엔 `engram backup`, 되돌릴 땐 `engram restore`, 비우고 싶을 땐 `engram reset`만 입력하세요. 미포함 파일 감지, 사전 용량 체크, 복원 안전망은 시스템이 알아서 다 해줍니다!"**
+
+> Python/venv 복구, 폴더 이동(`engram relocate`), 백업 레지스트리(`engram snapshots`)는 [env_resilience_guide.md](env_resilience_guide.md)를 참고하세요.
