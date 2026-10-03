@@ -63,6 +63,26 @@ set "SYS_PATH=%~dp0%ENGRAM_SYS_DIR%"
 :: ----------------------------------------------------------------------------
 set "SUBCMD=%~1"
 
+:: Help for any verb is a static file: print it before any setup/Python check (works on a fresh folder)
+set "_HELPVERB="
+for %%V in (open update doctor menu tidy snapshots repair relocate uninstall backup restore reset version) do if /i "%SUBCMD%"=="%%V" set "_HELPVERB=%%V"
+if not defined _HELPVERB goto :verb_help_done
+if /i "%~2"=="-h" goto :verb_help_out
+if /i "%~2"=="--help" goto :verb_help_out
+if /i "%~2"=="/?" goto :verb_help_out
+if /i "%~2"=="help" goto :verb_help_out
+if /i "%_HELPVERB%"=="menu" (
+    if /i "%~3"=="-h" goto :verb_help_out
+    if /i "%~3"=="--help" goto :verb_help_out
+    if /i "%~3"=="/?" goto :verb_help_out
+    if /i "%~3"=="help" goto :verb_help_out
+)
+goto :verb_help_done
+:verb_help_out
+call :print_help_file %_HELPVERB%
+exit /b 0
+:verb_help_done
+
 :: --- Interrupted environment operation gate (design section 9) ---
 :: A non-terminal env-op journal means a Python/venv swap or relocation was interrupted. Only recovery,
 :: read-only and help verbs may run; everything else (including the first-run bootstrap path, i.e. plain
@@ -74,7 +94,11 @@ goto :journal_blocked
 :journal_gate_pass
 
 if "%SUBCMD%"=="" goto :cmd_open
-if /i "%SUBCMD%"=="help" goto :show_help
+
+if /i "%SUBCMD%"=="help" (
+    if "%~2"=="" goto :show_help
+    goto :help_topic
+)
 if /i "%SUBCMD%"=="--help" goto :show_help
 if /i "%SUBCMD%"=="-h" goto :show_help
 if /i "%SUBCMD%"=="/?" goto :show_help
@@ -141,9 +165,52 @@ if exist "%SUBCMD%\" goto :cmd_open_implicit
 goto :cmd_unknown
 
 :cmd_unknown
-echo [Error] Unknown command: %SUBCMD%
+set "ENGRAM_UNKNOWN_VERB=%SUBCMD%"
+call :say_unknown "Unknown command"
+call :suggest_verb
 echo Run 'engram help' for available commands.
 exit /b 2
+
+:: 'engram help <verb>' prints the same file as '<verb> --help' (core\help\<verb>.txt)
+:help_topic
+set "_HV_FILE="
+if /i "%~2"=="help" goto :show_help
+if /i "%~2"=="--help" goto :show_help
+if /i "%~2"=="-h" goto :show_help
+if /i "%~2"=="/?" goto :show_help
+for %%F in ("%SYS_PATH%\core\help\*.txt") do if /i "%%~nF"=="%~2" if /i not "%%~nF"=="index" set "_HV_FILE=%%~fF"
+if defined _HV_FILE (
+    type "%_HV_FILE%"
+    exit /b 0
+)
+set "ENGRAM_UNKNOWN_VERB=%~2"
+call :say_unknown "Unknown command"
+call :suggest_verb
+echo Run 'engram help' for available commands.
+exit /b 2
+
+:: Echo user-supplied text safely: delayed expansion expands AFTER parsing, so & | < > ^ % and quotes stay literal
+:say_unknown
+setlocal EnableDelayedExpansion
+echo [Error] %~1: !ENGRAM_UNKNOWN_VERB!
+endlocal
+exit /b 0
+
+:: Prints "Did you mean ..." for ENGRAM_UNKNOWN_VERB when Python is available (silent otherwise)
+:suggest_verb
+if not exist "%SYS_PATH%\env\python\python.exe" exit /b 0
+"%SYS_PATH%\env\python\python.exe" "%SYS_PATH%\core\cli_help.py" suggest-verb 2>nul
+exit /b 0
+
+:: Prints core\help\<name>.txt (name passed as %1): the single source of every verb's help text
+:print_help_file
+if exist "%SYS_PATH%\core\help\%~1.txt" (
+    type "%SYS_PATH%\core\help\%~1.txt"
+) else (
+    echo Usage: engram %~1 [options]
+    echo Help file missing: _sys\core\help\%~1.txt
+)
+exit /b 0
 
 :: ----------------------------------------------------------------------------
 :: Subcommand Handlers
@@ -246,30 +313,15 @@ if /i "%~1"=="clean" (
     call "%SYS_PATH%\core\dispatch.bat" menu-clean %2 %3 %4 %5 %6 %7 %8 %9
     exit /b %ERRORLEVEL%
 )
-echo [Error] Unknown menu command: %1
+set "ENGRAM_UNKNOWN_VERB=%~1"
+call :say_unknown "Unknown menu command"
+set "ENGRAM_SUGGEST_FROM=status,enable,disable,clean"
+call :suggest_verb
 echo Run 'engram menu --help' for available commands.
 exit /b 2
 
 :show_menu_help
-echo Engram Right-Click Context Menu Management
-echo.
-echo Usage:
-echo   engram menu ^<subcommand^>
-echo.
-echo Subcommands:
-echo   status     Display current registration status in Windows Explorer
-echo   enable     Add "Open in Engram" to Explorer right-click context menu
-echo   disable    Remove "Open in Engram" from Explorer context menu
-echo   clean      Clean orphaned registry entries from previous installations
-echo.
-echo Options:
-echo   -h, --help, /?  Display this help message
-echo.
-echo Examples:
-echo   engram menu            same as 'engram menu status'
-echo   engram menu enable     first-time setup of the right-click entry
-echo   engram menu clean      after moving/renaming the portable folder, to drop stale registry entries
-echo.
+call :print_help_file menu
 exit /b 0
 
 :cmd_tidy
@@ -453,25 +505,11 @@ echo Engram %_ENGRAM_VER% (Portable Dev Runtime)
 exit /b 0
 
 :show_version_help
-echo Usage: engram version
-echo.
-echo Print the current Engram version and runtime name.
-echo.
-echo Examples:
-echo   engram version
-echo   engram --version
+call :print_help_file version
 exit /b 0
 
 :show_open_help
-echo Usage: engram open [PATH]
-echo.
-echo Open PATH as an Engram workspace. Without PATH, opens the default workspace.
-echo The first run may offer to bootstrap the portable runtime and context menu.
-echo.
-echo Examples:
-echo   engram
-echo   engram open .
-echo   engram open C:\work\project
+call :print_help_file open
 exit /b 0
 
 :show_help
@@ -481,38 +519,5 @@ echo   Engram %_ENGRAM_VER% - Portable Dev Runtime
 echo   Repository: https://github.com/greatgc-flow/Engram
 echo ===============================================================================
 echo.
-echo Usage:
-echo   engram ^<command^> [options...]
-echo.
-echo Lifecycle ^& Environment:
-echo   engram open           Open a workspace (default action)
-echo   engram update         Check and apply latest stable runtime and tool updates
-echo   engram doctor         Report environment health, tool status, and configuration
-echo   engram menu           Manage right-click context menu (status, enable, disable, clean)
-echo   engram tidy           Clean temporary logs, caches, and orphaned files
-echo   engram snapshots      List, pin and restore environment backups: replaced Python/venv copies and package snapshots
-echo   engram repair         Detect and repair environment drift: broken venv, stale launchers, moved root, missing manifest
-echo   engram relocate       Repair the environment after the portable folder was moved or renamed
-echo   engram uninstall      Full removal: registry teardown and folder purge
-echo.
-echo Backup ^& State:
-echo   engram backup         Back up personal AI data to a zip archive
-echo   engram restore        Restore personal AI data from a backup archive/bundle
-echo   engram reset          Reset personal AI data (.engram/ by default; --all includes workspace/)
-echo.
-echo Options:
-echo   --version, -v         Display Engram version information
-echo   --help, -h, /?        Display this help message
-echo.
-echo Run 'engram ^<command^> --help' for that command's full option list
-echo (e.g. 'engram update --help', 'engram backup --help').
-echo.
-echo Common workflows:
-echo   First time in a new folder:    engram
-echo   Keep everything up to date:    engram update --yes
-echo   Update just the AI CLIs:       engram update --only claude,codex,agy --yes
-echo   Move the folder to a new PC:   engram backup ; (copy folder) ; engram restore PATH
-echo   Something feels broken:        engram doctor ; engram repair
-echo   Folder moved or renamed:       engram relocate
-echo.
+call :print_help_file index
 exit /b 0

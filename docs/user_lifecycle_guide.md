@@ -6,6 +6,10 @@
 
 ---
 
+> Full command reference (English): [`cli_reference.md`](cli_reference.md). Every command also prints its own help with `engram <command> --help`.
+
+---
+
 ## ⚡ 3초 요약 치트시트 (자주 쓰는 핵심 명령어)
 
 | 내가 하고 싶은 일 | 실행할 명령어 | 무엇이 일어나는가? |

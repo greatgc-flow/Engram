@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from core import env_lock, env_manifest, env_ops, provisioner, state_paths, venv_manager
+from core import cli_help, env_lock, env_manifest, env_ops, provisioner, state_paths, venv_manager
 
 try:  # registrar needs winreg (Windows); keep doctor importable elsewhere
     from core import registrar
@@ -396,23 +396,26 @@ def check_elevation() -> dict:
 
 
 _LEVEL_ICON = {"ok": "[OK]", "info": "[i]", "warning": "[!]", "error": "[X]"}
-_HELP_FLAGS = ("--help", "-h", "/?")
 
 
 def run(ctx: dict) -> dict[str, Any]:
     args = ctx.get("args", []) or []
-    if any(a in _HELP_FLAGS for a in args):
-        print("engram doctor - Report environment health, tool status, and configuration")
-        print()
-        print("Usage: engram doctor [--json]")
-        print()
-        print("Options:")
-        print("  --json    Emit machine-readable JSON instead of the formatted report")
-        print()
-        print("Examples:")
-        print("  engram doctor            human-readable health report")
-        print("  engram doctor --json     machine-readable, for scripts/CI")
+    if cli_help.wants_help(args):
+        cli_help.print_verb_help("doctor")
         return {"status": "success", "detail": "help displayed"}
+    for a in args:
+        if a != "--json":
+            if a.startswith("-"):
+                try:
+                    cli_help.unknown_option("doctor", a)
+                except SystemExit:
+                    pass
+            else:
+                try:
+                    cli_help.unexpected_argument("doctor", a)
+                except SystemExit:
+                    pass
+            return {"status": "failed", "detail": "usage", "exit_code": 2, "quiet": True}
 
     base_dir = Path(ctx["base_dir"])
     sys_dir = Path(ctx["sys_dir"])

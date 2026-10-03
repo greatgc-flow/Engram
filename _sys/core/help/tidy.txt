@@ -1,0 +1,91 @@
+engram tidy - clean temp files, caches and old environment backups
+
+Usage: engram tidy [--apply] [--dry-run] [--deep] [--only LIST]
+                   [--keep N] [--max-size-gb N]
+                   [--adopt-legacy] [--purge-legacy [--yes]]
+
+Description:
+  Sweeps regenerable debris. It previews by default: it prints, per category,
+  what would be deleted and how big it is, and deletes nothing until --apply.
+  Categories (select with --only, default: all):
+    tmp                   loose files in the root tmp/ folder (over 7 days old)
+    data_temp             known test/probe debris in _sys/data/temp (older
+                          than 5 days)
+    brain                 old Antigravity task logs (older than 14 days)
+    vscode                old VS Code session logs (the newest 2 are kept)
+    pytest_cache          pytest temp rotation folders (older than 5 days)
+    winget_cache          WinGet download cache
+    npm_cache             npm download cache
+    pip_cache             pip download cache
+    vscode_cache          VS Code renderer/extension caches (skipped while
+                          VS Code is running)
+    pycache               __pycache__ folders under _sys (not env/ or tools/)
+    pytest_cache_default  _sys/tests/.pytest_cache
+    launcher_logs         launcher logs except the newest 5 (only with --deep)
+    backups               expired entries of the environment backup registry
+                          (see 'engram snapshots'): per-kind age limit, a
+                          minimum kept per kind, and a size cap
+    env_op_runners        leftover Python-swap runner copies (over 3 days old)
+  Never touched: workspace/, .engram/, _archive/, the managed Python itself
+  (only its pip cache), data/state, runtimes.json, the tool catalog, root
+  *.md files, pinned backups, backups still pending or owned by a running
+  operation, registry folders without a marker, and any <name>_old folder
+  unless you ask (below). While an environment operation holds the lock or an
+  interrupted-operation journal exists, backups are skipped entirely.
+
+  The _old workflow: when Python/Node/VS Code/... is replaced, the previous
+  copy may remain as _sys/env/<name>_old. To get rid of it:
+    1. engram tidy --adopt-legacy            preview what would be adopted
+    2. engram tidy --adopt-legacy --apply    move them into the registry as
+                                             'legacy-old' (kept 14 days, then
+                                             removed by a normal tidy)
+    or in one step, with no 14-day wait:
+    3. engram tidy --purge-legacy            preview: lists every item, size
+    4. engram tidy --purge-legacy --apply    adopt and delete them all now
+  --purge-legacy never deletes pinned entries or any other backup kind,
+  refuses while an operation journal is open or the environment lock is
+  held, holds the lock while deleting, and refuses if the running Python
+  interpreter lives inside what it would delete. Pin what you want to keep:
+  engram snapshots pin NAME.
+
+Options:
+  --apply          Actually delete (default: off, preview only)
+  --dry-run        Preview only; wins over --apply (default: on)
+  --deep           Also clean old launcher logs and adopt <name>_old folders,
+                   as --adopt-legacy does (default: off)
+  --only LIST      Comma-separated categories from the list above (default:
+                   all; launcher_logs only does something with --deep)
+  --keep N         backups: keep at least N newest committed per kind; can
+                   only raise the built-in minimum (default: built-in)
+  --max-size-gb N  backups: size cap in GiB (default: the smaller of 2 GiB
+                   and 10 percent of free space)
+  --adopt-legacy   backups: move valid _sys/env/<name>_old folders into the
+                   registry as 'legacy-old' (default: off, they stay put)
+  --purge-legacy   Adopt AND delete every 'legacy-old' backup at once, no
+                   14-day wait (default: off). Needs the 'backups' category.
+                   With --apply it asks first.
+  --yes, -y        Skip the --purge-legacy confirmation prompt (default: ask;
+                   a closed stdin counts as "no")
+  -h, --help, /?   Show this help (default: off)
+
+Examples:
+  engram tidy
+  engram tidy --apply
+  engram tidy --apply --only pycache,pip_cache
+  engram tidy --adopt-legacy --apply
+  engram tidy --purge-legacy
+  engram tidy --purge-legacy --apply --yes
+
+Exit codes:
+  0   done, or preview shown
+  2   usage error (unknown option or category)
+  3   --purge-legacy declined at the prompt
+  11  --purge-legacy refused: environment lock held, or the running Python
+      lives inside a deletion target
+  14  --purge-legacy refused: an unfinished operation journal exists
+      (run: engram repair --resume or --rollback)
+
+See also:
+  engram snapshots   list and pin environment backups
+  engram repair      finish or undo an interrupted operation
+  engram doctor      shows lock and journal state

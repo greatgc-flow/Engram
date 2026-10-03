@@ -64,6 +64,7 @@ sys.path.insert(0, str(_SYS_DIR / "core"))
 from root import bootstrap_root_package  # noqa: E402
 
 bootstrap_root_package(_SYS_DIR)
+from core import cli_help  # noqa: E402
 
 # Filenames that look like vendor credentials. This is a defensive
 # assertion on the allowlist itself (see _assert_no_credential_shaped_items)
@@ -815,7 +816,6 @@ def do_reset(
 # Dispatcher Pipeline Adapters
 # ----------------------------------------------------------------------------
 
-_HELP_FLAGS = ("--help", "-h", "/?")
 
 
 def run_backup(ctx: dict) -> None:
@@ -825,19 +825,8 @@ def run_backup(ctx: dict) -> None:
     engram_dir = base_dir / ".engram"
     args = ctx.get("args", [])
 
-    if any(a in _HELP_FLAGS for a in args):
-        print("engram backup - Back up personal AI data (.engram/) to a zip archive")
-        print()
-        print("Usage: engram backup [--out PATH] [--include-uncovered]")
-        print()
-        print("Options:")
-        print("  --out PATH            Target path (default: sys_dir/data/backups/engram_backup_<timestamp>.zip)")
-        print("  --include-uncovered   Also package discovered uncovered user dotdirs and custom items")
-        print()
-        print("Examples:")
-        print("  engram backup                       back up to the default timestamped path")
-        print("  engram backup --out D:\\backups\\my.zip   back up to a specific path")
-        print("  engram backup --include-uncovered   include discovered extra dotdirs/files")
+    if cli_help.wants_help(args):
+        cli_help.print_verb_help("backup")
         sys.exit(0)
 
     out_path = None
@@ -850,26 +839,18 @@ def run_backup(ctx: dict) -> None:
             i += 1
         elif arg == "--out" or arg.startswith("--out="):
             if out_path is not None:
-                print("[Error] --out specified more than once.")
-                print("Usage: engram backup [--out PATH] [--include-uncovered]")
-                sys.exit(2)
+                cli_help.usage_error("backup", "--out specified more than once.")
             if arg == "--out":
                 if i + 1 >= len(args):
-                    print("[Error] --out requires a PATH argument.")
-                    print("Usage: engram backup [--out PATH] [--include-uncovered]")
-                    sys.exit(2)
+                    cli_help.usage_error("backup", "--out requires a PATH argument.")
                 raw_out = args[i + 1]
                 if raw_out.startswith("-"):
-                    print("[Error] --out requires a PATH argument.")
-                    print("Usage: engram backup [--out PATH] [--include-uncovered]")
-                    sys.exit(2)
+                    cli_help.usage_error("backup", "--out requires a PATH argument.")
                 i += 2
             else:
                 raw_out = arg.split("=", 1)[1]
                 if not raw_out or raw_out.startswith("-"):
-                    print("[Error] --out requires a PATH argument.")
-                    print("Usage: engram backup [--out PATH] [--include-uncovered]")
-                    sys.exit(2)
+                    cli_help.usage_error("backup", "--out requires a PATH argument.")
                 i += 1
             caller_cwd = os.environ.get("ENGRAM_CALLER_CWD")
             if caller_cwd and not Path(raw_out).is_absolute():
@@ -879,13 +860,9 @@ def run_backup(ctx: dict) -> None:
             if raw_out.endswith(("/", "\\")):
                 out_path.mkdir(parents=True, exist_ok=True)
         elif arg.startswith("-"):
-            print(f"[Error] Unknown flag for backup: {arg}")
-            print("Usage: engram backup [--out PATH] [--include-uncovered]")
-            sys.exit(2)
+            cli_help.unknown_option("backup", arg)
         else:
-            print(f"[Error] Unexpected positional argument for backup: {arg}")
-            print("Usage: engram backup [--out PATH] [--include-uncovered]")
-            sys.exit(2)
+            cli_help.unexpected_argument("backup", arg)
 
     custom_extras = scan_uncovered_items(base_dir) if include_uncovered else None
     do_backup(engram_dir, out_path, as_zip=True, base_dir=base_dir, sys_dir=sys_dir, custom_extras=custom_extras)
@@ -898,40 +875,27 @@ def run_restore(ctx: dict) -> None:
     engram_dir = base_dir / ".engram"
     args = ctx.get("args", [])
 
-    if any(a in _HELP_FLAGS for a in args):
-        print("engram restore - Restore personal AI data from a backup archive/bundle")
-        print()
-        print("Usage: engram restore PATH [--apply] [--force]")
-        print()
-        print("Options:")
-        print("  PATH           Path to a backup .zip or bundle directory")
-        print("  --apply        Actually apply restore changes (default: dry-run preview only)")
-        print("  --force, -f    Overwrite existing live session/project data")
-        print()
-        print("Examples:")
-        print("  engram restore D:\\backups\\my.zip           dry-run preview of restore targets")
-        print("  engram restore D:\\backups\\my.zip --apply   apply restoration safely")
-        print("  engram restore D:\\backups\\my.zip --apply --force   restore and overwrite conflicts")
+    if cli_help.wants_help(args):
+        cli_help.print_verb_help("restore")
         sys.exit(0)
 
     force = False
     apply = False
 
     target_path = None
+    dry_run = False
     for a in args:
         if a == "--apply":
             apply = True
+        elif a == "--dry-run":
+            dry_run = True
         elif a in ("--force", "-f"):
             force = True
         elif a.startswith("-"):
-            print(f"[Error] Unknown flag for restore: {a}")
-            print("Usage: engram restore PATH [--apply] [--force]")
-            sys.exit(2)
+            cli_help.unknown_option("restore", a)
         else:
             if target_path is not None:
-                print(f"[Error] Unexpected extra positional argument for restore: {a}")
-                print("Usage: engram restore PATH [--apply] [--force]")
-                sys.exit(2)
+                cli_help.unexpected_argument("restore", a)
             caller_cwd = os.environ.get("ENGRAM_CALLER_CWD")
             if caller_cwd and not Path(a).is_absolute():
                 target_path = Path(caller_cwd) / a
@@ -939,9 +903,9 @@ def run_restore(ctx: dict) -> None:
                 target_path = Path(a)
 
     if target_path is None:
-        print("[Error] engram restore requires a PATH to a backup .zip or bundle directory.")
-        print("Usage: engram restore PATH [--apply] [--force]")
-        sys.exit(2)
+        cli_help.usage_error("restore", "'engram restore' requires a PATH to a backup .zip or bundle folder.")
+    if dry_run:
+        apply = False  # --dry-run always wins
 
     do_restore(engram_dir, target_path, force=force, base_dir=base_dir, sys_dir=sys_dir, apply=apply)
 
@@ -952,25 +916,14 @@ def run_reset(ctx: dict) -> None:
     sys_dir = ctx.get("sys_dir", (base_dir / _SYS_DIR.name) if base_dir else _SYS_DIR)
     args = ctx.get("args", [])
 
-    if any(a in _HELP_FLAGS for a in args):
-        print("engram reset - Reset personal AI data")
-        print()
-        print("Usage: engram reset [--apply] [--yes|-y] [--all]")
-        print()
-        print("Options:")
-        print("  --apply      Actually execute reset (default: dry-run preview only)")
-        print("  --yes, -y    Skip the [y/N] confirmation prompt")
-        print("  --all        Also delete workspace/ (default: only .engram/)")
-        print()
-        print("Examples:")
-        print("  engram reset                 preview reset targets (dry-run)")
-        print("  engram reset --apply         asks for confirmation, then executes reset")
-        print("  engram reset --apply --yes   executes reset without confirmation prompt")
+    if cli_help.wants_help(args):
+        cli_help.print_verb_help("reset")
         sys.exit(0)
 
     yes = False
     all_data = False
     apply = False
+    dry_run = False
 
     for a in args:
         if a == "--apply":
@@ -979,15 +932,15 @@ def run_reset(ctx: dict) -> None:
             yes = True
         elif a == "--all":
             all_data = True
+        elif a == "--dry-run":
+            dry_run = True
         elif a.startswith("-"):
-            print(f"[Error] Unknown flag for reset: {a}")
-            print("Usage: engram reset [--apply] [--yes|-y] [--all]")
-            sys.exit(2)
+            cli_help.unknown_option("reset", a)
         else:
-            print(f"[Error] Unexpected positional argument for reset: {a}")
-            print("Usage: engram reset [--apply] [--yes|-y] [--all]")
-            sys.exit(2)
+            cli_help.unexpected_argument("reset", a)
 
+    if dry_run:
+        apply = False  # --dry-run always wins
     do_reset(base_dir, yes=yes, all_data=all_data, sys_dir=sys_dir, apply=apply)
 
 

@@ -36,6 +36,9 @@ def surface_root(tmp_path: Path):
     core_dir = root / "_sys" / "core"
     core_dir.mkdir(parents=True, exist_ok=True)
     (core_dir / "version.json").write_text('{"version": "3.3.0"}', encoding="utf-8")
+    # help text is a static file set that engram.cmd prints with `type` (no Python needed)
+    import shutil as _shutil
+    _shutil.copytree(REPO_ROOT / "_sys" / "core" / "help", core_dir / "help")
 
     # Stub _sys/core/dispatch.bat
     stub_dispatch = core_dir / "dispatch.bat"
@@ -277,8 +280,9 @@ def test_help_bypasses_not_set_up_check(surface_root, verb, help_flag):
     proc = run_engram(surface_root, verb, help_flag)
     assert proc.returncode == 0, f"Failed for {verb} {help_flag}: rc={proc.returncode}, out={proc.stdout}, err={proc.stderr}"
     assert "Engram is not set up" not in proc.stdout
-    assert f"DISPATCH_PIPELINE={verb}" in proc.stdout
-    assert f"DISPATCH_ARGS={verb} {help_flag}" in proc.stdout
+    # help is a static file printed by engram.cmd itself (no dispatch, no Python)
+    assert "DISPATCH_PIPELINE" not in proc.stdout
+    assert f"engram {verb} - " in proc.stdout and "Examples:" in proc.stdout
 
 
 @pytest.mark.parametrize("verb", ["doctor", "tidy", "snapshots", "update", "uninstall", "backup", "restore", "reset"])

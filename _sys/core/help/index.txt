@@ -1,0 +1,57 @@
+Usage:
+  engram <command> [options]
+  engram help <command>            same as: engram <command> --help
+
+Daily use:
+  engram open        Open a workspace (the default when no command is given)
+  engram update      Check for and apply runtime, tool and Python updates
+  engram doctor      Report environment health (read-only, no network)
+  engram menu        Manage the Explorer right-click "Open in Engram" entry
+  engram version     Print the Engram version
+
+Health & repair:
+  engram repair      Detect and fix a broken Python/venv, launchers or manifest
+  engram relocate    Re-anchor the install after the folder was moved/renamed
+  engram tidy        Clean temp files, caches and old environment backups
+
+Backups & state:
+  engram backup      Back up personal AI data (.engram/) to a zip archive
+  engram restore     Restore personal AI data from a backup archive
+  engram snapshots   List, pin and restore environment backups (Python, venv)
+
+Removal:
+  engram reset       Delete personal AI data (a safety snapshot is taken first)
+  engram uninstall   Remove Engram's program files (your data is kept)
+
+Run 'engram <command> --help' (or 'engram help <command>') for the full
+options, examples and exit codes of one command.
+
+Safety model (same words mean the same thing everywhere):
+  --apply      do it. Verbs that change things preview first: tidy, repair,
+               relocate, restore, reset and 'snapshots restore' only show a
+               plan until you pass --apply.
+  --dry-run    preview only; always wins over --apply.
+  --yes, -y    skip the confirmation prompt (for scripts).
+  --json       machine-readable output (doctor, repair, relocate, snapshots).
+  Nothing is deleted without a preview or a prompt; replaced Python/venv
+  copies are moved into a backup registry, never deleted outright.
+
+Common workflows:
+  First time in a new folder:       engram
+  Keep everything up to date:       engram update --yes
+  Update only the AI CLIs:          engram update --only claude,codex,agy --yes
+  Update only the embedded Python:  engram update --only python --yes
+  Something feels broken:           engram doctor ; engram repair --apply
+  Folder moved or renamed:          engram relocate --apply
+  See or protect env backups:       engram snapshots list | pin NAME
+  Reclaim disk space:               engram tidy --apply
+  Remove leftover *_old folders:    engram tidy --adopt-legacy --apply
+  ...and delete them right away:    engram tidy --purge-legacy --apply
+  Back up / restore your AI data:   engram backup ; engram restore PATH --apply
+  Start over, keep the programs:    engram reset --apply
+  Remove Engram:                    engram uninstall --dry-run, then uninstall
+
+Exit codes (all commands): 0 ok, 1 failed, 2 usage error (unknown command or
+option), 3 declined at a prompt, 10-14 environment operations (see
+'engram repair --help').
+Full reference: docs/cli_reference.md

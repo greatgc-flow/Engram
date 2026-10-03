@@ -27,7 +27,7 @@ Design record: [`design/engram-env-resilience-design-2026-10-02.md`](design/engr
 | Interrupted operation (journal not terminal) | `engram repair --resume` (roll forward) or `engram repair --rollback` (undo); both hand off to the runner automatically when Python is involved |
 | Unsure | `engram doctor` reports drift, journal state, stale registry entries |
 
-Useful flags: `--apply`, `--yes` (skip prompt), `--offline` (use cached download only), `--json`, `--only`.
+Useful flags: `--apply`, `--dry-run` (no-op alias of the default), `--yes`/`-y` (skip prompt), `--offline` (use cached download only), `--json`, `--only`. See [`cli_reference.md`](cli_reference.md).
 
 Exit codes: `0` ok, `2` usage, `10` declined, `11` failed/precondition, `12` verification failed, `13` rolled back,
 `14` blocked by a journal or lock, `75` handoff to runner (handled by `dispatch.bat`; not an error).
@@ -47,6 +47,25 @@ engram snapshots restore <name> [--apply]   # dry run unless --apply; never over
 
 `engram tidy --apply` prunes backups by retention (newest kept, pinned and not-yet-committed ones never touched).
 Python/venv backups are restored through `engram repair`, not by hand.
+
+### Leftover `_old` folders (`engram tidy`)
+
+Older Engram versions, and some runtime updates, leave the previous copy of a runtime next to the new one as
+`_sys\env\<name>_old` (for example `python_old`, `nodejs_old`, `vscode_old`). Plain `engram tidy` never touches them.
+
+| Goal | Command |
+|---|---|
+| See what would be adopted | `engram tidy --adopt-legacy` (dry run; `--deep` implies it) |
+| File them as backups, delete after the normal 14 days | `engram tidy --adopt-legacy --apply` |
+| Delete them all right now, no 14-day wait | `engram tidy --purge-legacy` (preview with sizes), then `engram tidy --purge-legacy --apply` (asks `[y/N]`; `--yes` skips) |
+| Keep one forever | `engram snapshots pin <name>` before purging |
+
+`--purge-legacy` adopts valid `_old` folders and then deletes **every** `legacy-old` backup. It never deletes pinned
+entries or any other backup kind, takes the environment lock while it works, and refuses (printing why) while an
+interrupted-operation journal exists (exit 14), while another operation holds the lock (exit 11), or when the running
+Python interpreter lives inside something it would delete (exit 11). Declining the prompt exits 3.
+
+The full command reference is [`cli_reference.md`](cli_reference.md); every command also has `engram <command> --help`.
 
 ## Known limitations
 

@@ -19,7 +19,7 @@ bootstrap_root_package(sys_dir)
 if str(sys_dir) not in sys.path:
     sys.path.insert(0, str(sys_dir))
 
-from core import provisioner, state_paths
+from core import cli_help, provisioner, state_paths
 
 
 def _load_json(path: Path) -> dict:
@@ -174,6 +174,10 @@ def _run_operation(op_id: str, op_cfg: dict, ctx: dict):
             and failure not in ("continue", "warn")):
         # argparse already printed the usage message: exit with its code, no traceback.
         raise PipelineFailure(f"operation '{op_id}' failed: usage", int(result.get("exit_code") or 2), quiet=True)
+    if (_result_failed(result) and isinstance(result, dict) and result.get("quiet")
+            and isinstance(result.get("exit_code"), int) and failure not in ("continue", "warn")):
+        # the operation already explained itself (refusal, declined prompt, usage): exit code only.
+        raise PipelineFailure(f"operation '{op_id}' failed", int(result["exit_code"]), quiet=True)
     if _result_failed(result) and op_cfg.get("quiet_failure") and failure not in ("continue", "warn"):
         raise PipelineFailure(f"operation '{op_id}' failed", 1, quiet=True)
     if _result_failed(result):
@@ -194,6 +198,12 @@ def run_pipeline(cmd: str, extra_args: list) -> None:
     if not dispatch_path.exists():
         print(f"[Error] dispatch.json not found: {dispatch_path}")
         sys.exit(1)
+
+    help_verb = "open" if cmd == "start" else cmd
+    if help_verb in cli_help.verbs() and cli_help.wants_help(extra_args):
+        # one help source for every verb (core/help/<verb>.txt); needs no config, no environment, no network
+        cli_help.print_verb_help(help_verb)
+        return
 
     cfg        = _load_json(dispatch_path)
     pipelines  = cfg.get("pipelines", {})

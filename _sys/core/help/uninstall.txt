@@ -1,0 +1,39 @@
+engram uninstall - Safe, allowlist-based uninstaller for Engram
+
+Usage: engram uninstall [--yes|-y] [--purge-data] [--dry-run] [--apply]
+
+Description:
+  Removes Engram's own files by allowlist and undoes its registry entries.
+  Your data stays: .engram/ (AI settings and credentials) and workspace/ are
+  kept unless --purge-data. Instead of dry-run plus --apply, uninstall lists
+  what it will remove and keep, then asks "[y/N]"; --dry-run stops after the
+  list. --purge-data additionally asks you to type the folder name, even with
+  --yes. It refuses if a link under a target points outside the folder. The
+  actual deletion is done by a helper that waits for Engram to exit.
+  --apply is accepted for consistency with other verbs and changes nothing.
+
+Options:
+  --dry-run        Show what would be removed and kept, then stop (default:
+                   off)
+  --yes, -y        Skip the [y/N] prompt (default: ask)
+  --purge-data     Also delete .engram/, workspace/ and discovered dotfolders
+                   (default: off, data is kept)
+  --apply          Accepted, no effect (default: off)
+  -h, --help, /?   Show this help (default: off)
+
+Examples:
+  engram uninstall --dry-run
+  engram uninstall
+  engram uninstall --yes
+  engram uninstall --purge-data
+
+Exit codes:
+  0   handed off to the removal helper, or dry-run shown
+  1   refused or failed before hand-off
+  2   usage error (unknown option)
+  3   declined at a prompt
+  14  an interrupted environment operation blocks Engram (run: engram repair)
+
+See also:
+  engram backup   save your data first
+  engram reset    delete personal data but keep the programs

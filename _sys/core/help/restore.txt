@@ -1,0 +1,33 @@
+engram restore - restore personal AI data from a backup archive
+
+Usage: engram restore PATH [--apply] [--dry-run] [--force]
+
+Description:
+  Restores .engram/ (and any extra items the archive recorded) from a .zip
+  made by 'engram backup', or from an old folder-shaped bundle. It previews
+  by default and changes nothing until --apply. It refuses while a managed AI
+  CLI is running, and takes an automatic safety snapshot of the current
+  state first unless --force is given.
+
+Options:
+  PATH             Backup .zip or bundle folder to restore (required)
+  --apply          Actually restore (default: off, preview only)
+  --dry-run        Preview only; wins over --apply (default: on)
+  --force, -f      Overwrite existing live session/project data and skip the
+                   automatic pre-restore snapshot (default: off)
+  -h, --help, /?   Show this help (default: off)
+
+Examples:
+  engram restore D:\backups\engram.zip
+  engram restore D:\backups\engram.zip --apply
+  engram restore D:\backups\engram.zip --apply --force
+
+Exit codes:
+  0   restored, or preview shown
+  1   refused (an AI CLI is running) or the archive is invalid
+  2   usage error (no PATH, unknown option, extra argument)
+  14  an interrupted environment operation blocks Engram (run: engram repair)
+
+See also:
+  engram backup    create an archive
+  engram reset     delete personal AI data

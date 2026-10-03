@@ -44,6 +44,8 @@ def root(tmp_path: Path):
     core = r / "_sys" / "core"
     core.mkdir(parents=True)
     (core / "version.json").write_text('{"version": "3.5.0"}', encoding="utf-8")
+    import shutil
+    shutil.copytree(ENGRAM_CMD.parent / "_sys" / "core" / "help", core / "help")
     (core / "dispatch.bat").write_text(
         "@echo off\r\necho DISPATCH_PIPELINE=%1\r\necho DISPATCH_ARGS=%*\r\nexit /b 0\r\n", encoding="utf-8")
     py = r / "_sys" / "env" / "python"
@@ -174,7 +176,8 @@ def test_other_verbs_without_python_with_venv_still_say_not_set_up(root):
 def test_help_lists_each_recovery_verb_once(root):
     out = run_engram(root, "help").stdout
     for verb in ("repair", "relocate", "snapshots"):
-        assert out.count(f"engram {verb} ") == 1, verb
+        # one command-table row per verb (workflow examples use a single space after the verb)
+        assert out.count(f"engram {verb}  ") == 1, verb
 
 
 # ---- dispatch.bat: alternate interpreter for an interrupted swap ---------------------------------------------

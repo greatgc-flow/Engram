@@ -19,7 +19,7 @@ from root import bootstrap_root_package, find_root  # noqa: E402
 bootstrap_root_package(_SYS_DIR)
 
 from checks import check_tool_updates
-from core import provisioner
+from core import cli_help, provisioner
 from core.doctor import check_components
 
 
@@ -78,34 +78,18 @@ def _env_update_args(args_list: list[str]) -> list[str]:
 
 
 def _parse_args(args: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Updater runner",
-        epilog=(
-            "Examples:\n"
-            "  engram update                              interactive: show plan, confirm, apply\n"
-            "  engram update --yes                         apply without confirmation\n"
-            "  engram update --check                       show plan only, exit 1 if anything can't be checked (for scripts/CI)\n"
-            "  engram update --dry-run                     discover + show proposal, apply nothing\n"
-            "  engram update --only claude,codex            update just those two AI CLIs\n"
-            "  engram update --only nodejs --allow-major-runtime-upgrade --yes\n"
-            "                                               let Node.js cross a major version (e.g. 22 -> 24)\n"
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
-    parser.add_argument("--check", action="store_true", help="Stop after printing plan. Exit 1 if Could not check is non-empty")
-    parser.add_argument("--dry-run", action="store_true", help="Discover and show proposal, apply nothing")
-    parser.add_argument("--refresh", "-r", action="store_true", help="Bypass discovery cache and force fresh network check")
-    parser.add_argument("--only", nargs="+", help="Update only specified components")
-    parser.add_argument(
-        "--allow-major-runtime-upgrade",
-        action="store_true",
-        help="Allow major version upgrade for base runtimes (e.g. Node.js 22 -> 24)",
-    )
-    if "/?" in args:
-        # argparse understands -h/--help natively but not the Windows /? convention.
-        parser.print_help()
-        raise SystemExit(0)
+    parser = cli_help.CliParser("update")
+    parser.add_argument("--yes", "-y", action="store_true")
+    parser.add_argument("--check", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--refresh", "-r", action="store_true")
+    parser.add_argument("--only", nargs="+")
+    parser.add_argument("--allow-major-runtime-upgrade", action="store_true")
+    # python/venv/packages only (forwarded to the repair engine by _env_update_args)
+    parser.add_argument("--to", dest="to_version")
+    parser.add_argument("--all-packages", action="store_true")
+    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--offline", action="store_true")
     return parser.parse_args(args)
 
 
@@ -118,7 +102,7 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
         # only a real parse error (exit code 2) should fail the pipeline.
         if e.code in (0, None):
             return {"status": "success", "detail": "help displayed"}
-        return {"status": "failed", "detail": f"Argument parsing failed with code {e.code}", "exit_code": 2}
+        return {"status": "failed", "detail": f"Argument parsing failed with code {e.code}", "exit_code": 2, "quiet": True}
 
     normalized_only = check_tool_updates.normalize_only_list(getattr(args, "only", None))
     only_set = set(normalized_only) if normalized_only is not None else None
@@ -128,7 +112,8 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     env_components = only_set & _ENV_COMPONENTS if only_set else set()
     if env_components:
         if only_set - _ENV_COMPONENTS:
-            return {"status": "failed", "exit_code": 2,
+            print("[Error] python/venv/packages cannot be combined with tool names in --only")
+            return {"status": "failed", "exit_code": 2, "quiet": True,
                     "detail": "python/venv/packages cannot be combined with tool names in --only"}
         from core import repair
         return repair.update_env_main({**ctx, "args": _env_update_args(args_list)}, env_components)
@@ -149,8 +134,10 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                     valid_names.add(alias)
         unknown = [n for n in normalized_only if n not in valid_names]
         if unknown:
-            print(f"[Error] Unknown component: {', '.join(unknown)}")
-            return {"status": "failed", "detail": f"Unknown component in --only: {', '.join(unknown)}", "exit_code": 2}
+            cli_help.report_unknown("update", "component", unknown[0], valid_names,
+                                    message=f"[Error] Unknown component: {', '.join(unknown)}")
+            return {"status": "failed", "detail": f"Unknown component in --only: {', '.join(unknown)}",
+                    "exit_code": 2, "quiet": True}
 
     force_refresh = getattr(args, "refresh", False)
     if force_refresh:

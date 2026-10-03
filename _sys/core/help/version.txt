@@ -1,0 +1,23 @@
+engram version - print the Engram version
+
+Usage: engram version
+       engram --version | -v
+
+Description:
+  Prints the installed Engram version and runtime name. Works even when the
+  environment is not set up or an operation was interrupted.
+
+Options:
+  -h, --help, /?   Show this help (default: off)
+
+Examples:
+  engram version
+  engram --version
+  engram -v
+
+Exit codes:
+  0   always
+
+See also:
+  engram doctor    full environment health report
+  engram update    check for a newer version

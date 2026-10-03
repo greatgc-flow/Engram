@@ -1,0 +1,51 @@
+engram repair - detect and fix environment drift
+
+Usage: engram repair [--apply] [--dry-run] [--yes] [--only LIST] [--offline]
+                     [--remap-ai-state] [--json]
+       engram repair --resume | --rollback
+
+Description:
+  Finds a broken venv, stale launchers, a missing Python, a missing manifest
+  or stale registry entries and plans the fix. It previews by default: nothing
+  changes until --apply. Every change runs under the environment lock and a
+  crash-safe journal, and replaced Python/venv copies are moved into the
+  backup registry (see 'engram snapshots'), never deleted. If a run is
+  interrupted, other commands refuse to run (exit 14) until you finish it
+  with --resume or undo it with --rollback.
+
+Options:
+  --apply          Execute the plan (default: off, preview only)
+  --dry-run        Preview only; wins over --apply (default: on)
+  --yes, -y        Do not ask for confirmation with --apply (default: ask;
+                   without a terminal --yes is required)
+  --only LIST      Limit to: python,venv,registry,state,ai-state,manifest,
+                   packages (comma-separated; default: everything found)
+  --offline        Never download anything (default: off)
+  --remap-ai-state Also rewrite folder paths inside AI CLI state after a move
+                   (default: off)
+  --resume         Continue an interrupted operation (default: off)
+  --rollback       Undo an interrupted operation (default: off)
+  --json           Machine-readable plan/result (default: off)
+  -h, --help, /?   Show this help (default: off)
+
+Examples:
+  engram repair
+  engram repair --apply
+  engram repair --apply --yes --only venv
+  engram repair --json
+  engram repair --resume
+  engram repair --rollback
+
+Exit codes:
+  0   ok, or nothing to repair, or preview shown
+  2   usage error
+  10  declined at the prompt
+  11  precondition failed, or no terminal and no --yes (nothing was changed)
+  12  verification failed and the change was rolled back
+  13  rollback failed (run: engram repair --rollback)
+  14  an unfinished operation blocks the request (use --resume/--rollback)
+
+See also:
+  engram relocate    the same engine, for a moved or renamed folder
+  engram snapshots   the backups repair creates
+  engram doctor      what is wrong, read-only

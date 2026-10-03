@@ -12,7 +12,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from core import provisioner
+from core import cli_help, provisioner
 
 
 def _load_json(path: Path) -> dict:
@@ -195,6 +195,9 @@ def main(ctx: dict) -> None:
     sys_dir  = ctx["sys_dir"]
     args     = ctx["args"]
 
+    if args and args[0].startswith("-"):
+        cli_help.unknown_option("open", args[0])
+
     _note_root_drift(base_dir, sys_dir)
 
     # Log setup
@@ -235,7 +238,8 @@ def main(ctx: dict) -> None:
         target_dir = Path(raw_target).parent
         run_mode   = "APP"
     else:
-        raise ValueError(f"Path not found: {raw_target}")
+        print(f"[Error] Path not found: {raw_target}")
+        sys.exit(2)
 
     os.chdir(target_dir)
 

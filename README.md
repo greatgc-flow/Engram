@@ -57,27 +57,52 @@ The first run will prompt to bootstrap the portable environment (Python, Node, G
 
 ## Command Reference
 
-`engram.cmd` (or `Engram.exe`) dispatches every lifecycle action. There are no other batch files in the root.
+`engram.cmd` (or `Engram.exe`) dispatches every lifecycle action. There are no other batch files in the root. Every
+command has its own `--help` (also `engram help <command>`) with options and their defaults, examples and exit codes;
+the complete reference is [`docs/cli_reference.md`](docs/cli_reference.md).
 
-| Verb | Behavior | Exit codes |
+| Group | Command | Purpose |
 |---|---|---|
-| `engram` / `open [PATH]` | Open a workspace (default action). On first run (no Python), prints plan and prompts to set up here. If missing, prompts to add right-click menu entry. Otherwise dispatches the `start` pipeline. | 0 ok; 1 not set up / declined / bootstrap failed; launcher errors propagated |
-| `update [--check] [--dry-run] [--yes] [--refresh] [--only NAME[,NAME...]] [--allow-major-runtime-upgrade]` | Discover and apply updates across the catalog. `--check` prints the plan without modifying runtimes/tools (saves proposal artifacts under `_sys/data/state/update/proposals/`) and exits 1 if anything couldn't be checked. `--dry-run` discovers and shows the proposal but applies nothing. `--yes`/`-y` skips confirmation. `--refresh`/`-r` bypasses discovery cache to force a fresh network check. `--only` restricts to specific components (supports comma-separated names and aliases: `cc`, `cx`, `ag`). `--only python` / `--only packages` (with `--to X.Y.Z`, `--all-packages`, `--force`) update the embedded Python and its venv together, with a pre-swap backup. `--allow-major-runtime-upgrade` permits a base runtime (e.g. Node.js) to jump a major version; without it, major-version updates are discovered but not auto-applied. Run `engram update --help` for the authoritative, always-current flag list. | 0 success or nothing to do; 1 one or more components failed / `--check` found an issue; 2 usage error; 3 declined |
-| `doctor [--json]` | Zero-network health check: verifies Python consistency, components, context menu registration, and root path hygiene (warns if path contains `&`, `%`, `^`, or `!`). | 0 healthy; 1 broken |
-| `menu` / `menu status` | Read-only: check whether context menu entries are present. | 0 |
-| `menu enable` | Apply registry entries to add right-click context menu. Idempotent. | 0 / 1 |
-| `menu disable` | Remove right-click context menu registry entries. Idempotent. | 0 / 1 |
-| `menu clean` | Clean up orphaned context menu entries. | 0 / 1 |
-| `tidy [--apply] [--deep] [--only NAME[,NAME...]]` | Default is a dry run (print plan). `--apply` deletes planned items: temp dirs, `__pycache__`, pytest/npm/pip/winget/VS Code caches, and AG brain logs. `--deep` additionally cleans old launcher logs. `--only` restricts to specific categories (run `engram tidy --help` for the full list). | 0 |
-| `snapshots ACTION [NAME] [--apply]` (ACTION: list, show, pin, unpin, restore) | List and manage Engram's registered environment backups (replaced Python/venv copies, package lists). `pin` exempts one from `tidy`; `restore` is a dry run unless `--apply` and never overwrites. See [`docs/env_resilience_guide.md`](docs/env_resilience_guide.md). | 0 / 1 |
-| `repair [--apply] [--yes] [--offline] [--only python,venv,packages] [--resume] [--rollback] [--json]` | Detect and fix a broken Python/venv (dry run by default). `--resume` / `--rollback` finish or undo an interrupted operation. | 0 ok; 10 declined; 11 failed; 12 verify failed; 13 rolled back; 14 blocked |
-| `relocate [--from OLD_PATH] [--apply] [--yes] [--remap-ai-state]` | Re-anchor the install after the folder was moved or renamed (venv, launchers, registry hints, optional AI-state paths). | same as `repair` |
-| `uninstall [--yes] [--purge-data] [--dry-run] [--apply]` | Deletes Engram's program files by allowlist. Leaves `.engram/` (settings/credentials) and `workspace/` untouched by default. `--purge-data` adds `.engram/`, `.peerhub/`, and discovered dotdirs to the deletion plan, requiring un-bypassable typed confirmation. Hands off to a background helper that waits for Engram to exit before deletion. `--dry-run` displays preview without deleting anything. | 0 handed off / dry-run; 1 failed before hand-off; 3 declined |
-| `backup [--out PATH] [--include-uncovered]` | Back up personal AI-CLI data (memory, settings, rules, skills, session transcripts — never credentials, by construction) to a single `.zip` (default: `_sys/data/backups/engram_backup_<timestamp>.zip`). Discovers uncovered project configs (`.peerhub`, etc.) and packages them as `custom_extras`. Warns, doesn't refuse, if a managed AI CLI is currently running. | 0 |
-| `restore PATH [--apply] [--force]` | Restore personal AI-CLI data from a `.zip` or legacy folder-shaped bundle. Dry-run preview by default; pass `--apply` to execute restoration. Refuses if a managed AI CLI is running. Takes an automatic pre-restore snapshot unless `--force`. Restores custom extras to original relative locations. | 0 success / dry-run; 1 refused (process running) or invalid path; 2 usage error |
-| `reset [--apply] [--yes] [--all]` | Deletes personal AI-CLI state. Dry-run preview by default; pass `--apply` to execute. Gated behind mandatory fail-closed pre-reset safety snapshot (`safety_pre_reset_*.zip`). Default scope is `.engram/` and `.peerhub/` only. `--all` also deletes `workspace/`. Refuses if a managed AI CLI is running. See [User Lifecycle Guide](docs/user_lifecycle_guide.md) for details. | 0 success / dry-run; 1 refused (process running); 3 declined |
-| `version` / `--version` / `-v` | Print the current version (e.g. `Engram <version> (Portable Dev Runtime)`). | 0 |
-| `help` / `--help` / `-h` / `/?` | List the available commands. Every verb above also accepts its own `--help`/`-h`/`/?` (e.g. `engram update --help`) for that verb's full, authoritative option list. | 0 |
+| Daily use | `engram` / `open [PATH]` | Open a workspace (the default action). First run offers to set Engram up here. |
+| | `update` | Check for and apply updates (runtimes, tools, AI CLIs, `--only python` for the embedded Python). |
+| | `doctor [--json]` | Read-only, zero-network health report. |
+| | `menu [status\|enable\|disable\|clean]` | Manage the Explorer right-click entry. |
+| | `version` | Print the version (`--version`, `-v`). |
+| Health & repair | `repair` | Detect and fix a broken Python/venv, launchers or manifest (previews until `--apply`). |
+| | `relocate` | Re-anchor the install after the folder was moved or renamed. |
+| | `tidy` | Clean temp files, caches and expired environment backups (previews until `--apply`). |
+| Backups & state | `backup` | Back up personal AI data (`.engram/`) to a zip. |
+| | `restore PATH` | Restore personal AI data (previews until `--apply`). |
+| | `snapshots` | List, pin and restore environment backups (replaced Python/venv copies, package lists). |
+| Removal | `reset` | Delete personal AI data after a safety snapshot (previews until `--apply`). |
+| | `uninstall` | Remove Engram's program files; your data is kept unless `--purge-data`. |
+
+Shared flags mean the same everywhere: `--apply` executes (the commands marked above preview first), `--dry-run`
+previews and always wins over `--apply`, `--yes`/`-y` skips a prompt, `--json` gives machine-readable output
+(`doctor`, `repair`, `relocate`, `snapshots list`). Nothing is deleted without a preview or a prompt, and replaced
+Python/venv copies are moved into a backup registry, never deleted outright.
+
+Common workflows:
+
+```bat
+engram update --yes                     :: keep everything current
+engram update --only python --yes       :: update just the embedded Python
+engram doctor                           :: something feels broken ...
+engram repair --apply                   :: ... fix it (plain 'engram repair' previews)
+engram relocate --apply                 :: after moving or renaming the folder
+engram snapshots list                   :: see environment backups; 'snapshots pin NAME' keeps one
+engram tidy --apply                     :: reclaim disk space
+engram tidy --adopt-legacy --apply      :: file leftover _sys\env\<name>_old folders as backups (14 days)
+engram tidy --purge-legacy --apply      :: ... or delete them right now (asks first)
+engram backup                           :: save your AI data to a zip
+engram restore D:\backups\my.zip --apply
+engram reset --apply                    :: start over, keep the programs
+engram uninstall --dry-run              :: preview removal, then run 'engram uninstall'
+```
+
+Exit codes: `0` ok, `1` failed, `2` usage error (unknown command/option, with a "did you mean" hint), `3` declined at a
+prompt, `10`-`14` environment operations (`repair`, `relocate`, `update --only python`; `14` = an interrupted operation
+blocks the command, run `engram repair --resume` or `--rollback`).
 
 `install`, `setup`, `status`, `register`, `unregister`, `menu-cleanup`, `cleanup`, `launch`, and `start` are retired verbs — each prints its replacement and exits 2 rather than silently aliasing.
 

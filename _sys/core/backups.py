@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
+from core import cli_help
 from core.env_manifest import _atomic_write_text
 
 MARKER = "BACKUP.json"
@@ -637,26 +638,44 @@ def adopt_legacy(
     return adopted
 
 
+def plan_legacy_purge(refs: Iterable[BackupRef], *, root: Optional[Path] = None) -> RetentionPlan:
+    """Pure planning for ``engram tidy --purge-legacy``: every ``legacy-old`` backup is deletable at once
+    (no ttl, min_keep 0) EXCEPT pinned, pending, reparse-point, out-of-root or unparsable-marker entries.
+    Other kinds are never considered."""
+    plan = RetentionPlan()
+    for ref in refs:
+        if ref.kind != "legacy-old":
+            continue
+        try:
+            for key in ("created_at", "committed_at", "orphaned_at"):
+                if ref.meta.get(key) is not None:
+                    _parse(ref.meta[key])
+        except (ValueError, TypeError):
+            plan.keep.append((ref, "unparsable timestamp"))
+            continue
+        if root is not None and not _under(ref.path, root):
+            plan.keep.append((ref, "outside registry root"))
+        elif _is_reparse_point(ref.path):
+            plan.keep.append((ref, "reparse point"))
+        elif ref.meta.get("pinned"):
+            plan.keep.append((ref, "pinned"))
+        elif ref.meta.get("state") == "pending":
+            plan.keep.append((ref, "pending"))
+        else:
+            plan.delete.append((ref, "purge-legacy"))
+    return plan
+
+
 # ---- `engram snapshots` front-end ----------------------------------------------------------------------------------
 
-_USAGE = """usage: engram snapshots <action> [options]
-
-Environment backups kept by Engram (replaced Python/venv copies, package snapshots, ...).
-
-actions:
-  list [--json]          show every registered backup (kind, state, size, pin)
-  show <name>            show one backup's marker; <name> or <kind>/<name>
-  pin <name>             exempt a backup from tidy
-  unpin <name>           make it eligible for tidy again
-  restore <name> [--apply]
-                         move a backup's payload back to where it came from (dry-run unless --apply;
-                         never overwrites; python/venv kinds are restored through 'engram repair')
-
-examples:
-  engram snapshots list
-  engram snapshots pin 20261002T010000Z-before-update
-  engram snapshots restore state/20261002T010000Z-x --apply
-"""
+# Options each action accepts (anything else is a usage error, exit 2). --dry-run is a no-op alias of the default.
+_ACTION_FLAGS = {
+    "list": {"--json"},
+    "show": set(),
+    "pin": set(),
+    "unpin": set(),
+    "restore": {"--apply", "--dry-run"},
+}
 
 # Kinds whose restore must go through the lock + journal repair engine (design section 9).
 _ENGINE_ONLY_KINDS = frozenset({"python", "venv", "venv-interp"})
@@ -677,9 +696,11 @@ def _resolve(sys_dir: Path, token: str) -> tuple[Optional[BackupRef], str]:
     return matches[0], ""
 
 
-def _fail(detail: str) -> dict:
+def _fail(detail: str, exit_code: int = 11) -> dict:
+    """A failure that was already printed: the CLI exits with ``exit_code`` and no traceback."""
     print(f"[Error] {detail}")
-    return {"status": "failed", "operation": "backups.snapshots", "detail": detail}
+    return {"status": "failed", "operation": "backups.snapshots", "detail": detail,
+            "exit_code": exit_code, "quiet": True}
 
 
 def _ok(**extra) -> dict:
@@ -695,13 +716,18 @@ def snapshots_main(ctx: dict) -> dict:
 
     sys_dir = Path(ctx["sys_dir"])
     args = list(ctx.get("args") or [])
-    if not args:
-        print(_USAGE)
-        return _ok()
-    if args[0] in ("--help", "-h", "/?", "help"):
-        print(_USAGE)
+    if not args or cli_help.wants_help(args):
+        cli_help.print_verb_help("snapshots")
         return _ok()
     action, rest = args[0].lower(), args[1:]
+    if action in _ACTION_FLAGS:
+        for flag in (a for a in rest if a.startswith("-")):
+            if flag not in _ACTION_FLAGS[action]:
+                try:
+                    cli_help.unknown_option("snapshots", flag)
+                except SystemExit:  # the message is already printed
+                    return {"status": "failed", "operation": "backups.snapshots", "detail": "usage",
+                            "exit_code": 2, "quiet": True}
 
     if action == "list":
         found = scan(sys_dir)
@@ -729,7 +755,7 @@ def snapshots_main(ctx: dict) -> dict:
     if action in ("show", "pin", "unpin", "restore"):
         names = [a for a in rest if not a.startswith("--")]
         if len(names) != 1:
-            return _fail(f"'{action}' needs exactly one backup name (see: engram snapshots list)")
+            return _fail(f"'{action}' needs exactly one backup name (see: engram snapshots list)", 2)
         ref, problem = _resolve(sys_dir, names[0])
         if ref is None:
             return _fail(problem)
@@ -747,7 +773,7 @@ def snapshots_main(ctx: dict) -> dict:
         if not ref.meta.get("source_path"):
             return _fail(f"{ref.kind}/{ref.path.name} is a file snapshot, not a restorable directory")
         target = Path(ref.meta["source_path"])
-        if "--apply" not in rest:
+        if "--apply" not in rest or "--dry-run" in rest:
             print(f"[dry-run] would move the payload of {ref.kind}/{ref.path.name} back to {target}")
             print("          re-run with --apply to restore")
             return _ok()
@@ -761,4 +787,8 @@ def snapshots_main(ctx: dict) -> dict:
         print(f"[OK] restored to {restored}")
         return _ok()
 
-    return _fail(f"unknown action {action!r} (try: engram snapshots help)")
+    if action.startswith("-"):
+        cli_help.report_unknown("snapshots", "option", action, ())
+    else:
+        cli_help.report_unknown("snapshots", "action", action, _ACTION_FLAGS)
+    return {"status": "failed", "operation": "backups.snapshots", "detail": "usage", "exit_code": 2, "quiet": True}

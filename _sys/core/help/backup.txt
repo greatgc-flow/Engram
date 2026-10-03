@@ -1,0 +1,35 @@
+engram backup - back up personal AI data to a zip archive
+
+Usage: engram backup [--out PATH] [--include-uncovered]
+
+Description:
+  Packs the durable part of .engram/ (memory, settings, rules, skills,
+  session transcripts; never credentials) into one .zip, and records what
+  it skipped. It only reads your data, so it needs no preview and no
+  confirmation; a managed AI CLI that is running only produces a warning.
+  This is not the environment backup registry: for replaced Python/venv
+  copies see 'engram snapshots'.
+
+Options:
+  --out PATH           Where to write the archive (default:
+                       _sys/data/backups/engram_backup_<timestamp>.zip);
+                       a trailing \ or / means "a folder, use the default name"
+  --include-uncovered  Also package discovered extra dotfolders and project
+                       configs such as .peerhub (default: off)
+  -h, --help, /?       Show this help (default: off)
+
+Examples:
+  engram backup
+  engram backup --out D:\backups\engram.zip
+  engram backup --out D:\backups\
+  engram backup --include-uncovered
+
+Exit codes:
+  0   archive written
+  1   backup failed
+  2   usage error (unknown option, missing --out value)
+  14  an interrupted environment operation blocks Engram (run: engram repair)
+
+See also:
+  engram restore     put an archive back
+  engram snapshots   environment backups (Python/venv), a different thing
