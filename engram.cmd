@@ -63,6 +63,26 @@ set "SYS_PATH=%~dp0%ENGRAM_SYS_DIR%"
 :: ----------------------------------------------------------------------------
 set "SUBCMD=%~1"
 
+:: Help for any verb is a static file: print it before any setup/Python check (works on a fresh folder)
+set "_HELPVERB="
+for %%V in (open update doctor menu tidy snapshots repair relocate uninstall backup restore reset version) do if /i "%SUBCMD%"=="%%V" set "_HELPVERB=%%V"
+if not defined _HELPVERB goto :verb_help_done
+if /i "%~2"=="-h" goto :verb_help_out
+if /i "%~2"=="--help" goto :verb_help_out
+if /i "%~2"=="/?" goto :verb_help_out
+if /i "%~2"=="help" goto :verb_help_out
+if /i "%_HELPVERB%"=="menu" (
+    if /i "%~3"=="-h" goto :verb_help_out
+    if /i "%~3"=="--help" goto :verb_help_out
+    if /i "%~3"=="/?" goto :verb_help_out
+    if /i "%~3"=="help" goto :verb_help_out
+)
+goto :verb_help_done
+:verb_help_out
+call :print_help_file %_HELPVERB%
+exit /b 0
+:verb_help_done
+
 :: --- Interrupted environment operation gate (design section 9) ---
 :: A non-terminal env-op journal means a Python/venv swap or relocation was interrupted. Only recovery,
 :: read-only and help verbs may run; everything else (including the first-run bootstrap path, i.e. plain
@@ -74,6 +94,7 @@ goto :journal_blocked
 :journal_gate_pass
 
 if "%SUBCMD%"=="" goto :cmd_open
+
 if /i "%SUBCMD%"=="help" (
     if "%~2"=="" goto :show_help
     goto :help_topic
@@ -144,8 +165,8 @@ if exist "%SUBCMD%\" goto :cmd_open_implicit
 goto :cmd_unknown
 
 :cmd_unknown
-echo [Error] Unknown command: %SUBCMD%
 set "ENGRAM_UNKNOWN_VERB=%SUBCMD%"
+call :say_unknown "Unknown command"
 call :suggest_verb
 echo Run 'engram help' for available commands.
 exit /b 2
@@ -162,11 +183,18 @@ if defined _HV_FILE (
     type "%_HV_FILE%"
     exit /b 0
 )
-echo [Error] Unknown command: %~2
 set "ENGRAM_UNKNOWN_VERB=%~2"
+call :say_unknown "Unknown command"
 call :suggest_verb
 echo Run 'engram help' for available commands.
 exit /b 2
+
+:: Echo user-supplied text safely: delayed expansion expands AFTER parsing, so & | < > ^ % and quotes stay literal
+:say_unknown
+setlocal EnableDelayedExpansion
+echo [Error] %~1: !ENGRAM_UNKNOWN_VERB!
+endlocal
+exit /b 0
 
 :: Prints "Did you mean ..." for ENGRAM_UNKNOWN_VERB when Python is available (silent otherwise)
 :suggest_verb
@@ -285,8 +313,8 @@ if /i "%~1"=="clean" (
     call "%SYS_PATH%\core\dispatch.bat" menu-clean %2 %3 %4 %5 %6 %7 %8 %9
     exit /b %ERRORLEVEL%
 )
-echo [Error] Unknown menu command: %1
 set "ENGRAM_UNKNOWN_VERB=%~1"
+call :say_unknown "Unknown menu command"
 set "ENGRAM_SUGGEST_FROM=status,enable,disable,clean"
 call :suggest_verb
 echo Run 'engram menu --help' for available commands.

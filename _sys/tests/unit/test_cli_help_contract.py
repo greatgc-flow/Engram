@@ -336,3 +336,34 @@ def test_readme_and_docs_index_link_the_cli_reference():
     assert "cli_reference.md" in (REPO / "docs" / "README.md").read_text(encoding="utf-8")
     assert "cli_reference.md" in (REPO / "docs" / "env_resilience_guide.md").read_text(encoding="utf-8")
     assert "cli_reference.md" in (REPO / "docs" / "user_lifecycle_guide.md").read_text(encoding="utf-8")
+
+
+# ---- no Python needed for help; user text never executes ---------------------------------------------------
+
+@pytest.mark.parametrize("verb", VERBS)
+@pytest.mark.parametrize("form", ["--help", "-h", "/?", "help", "HELPVERB"])
+def test_every_verb_help_works_without_python(cmd_root, verb, form):
+    (cmd_root / "_sys" / "env" / "python" / "python.exe").unlink()
+    (cmd_root / "_sys" / "core" / "dispatch.bat").unlink()
+    proc = _engram(cmd_root, *(["help", verb] if form == "HELPVERB" else [verb, form]))
+    assert proc.returncode == 0, (verb, form, proc.stdout)
+    assert proc.stdout.replace("\r\n", "\n") == _text(verb), (verb, form)
+
+
+@pytest.mark.parametrize("payload", [
+    "a&canary", "a|canary", "a>canary_out", "a<canary", "a^&canary", "a%PATH%b", "a!b!c", "x&&canary",
+    "a'&canary", "(a)&canary", "a&echo", "a;canary", "a,canary",
+])
+@pytest.mark.parametrize("shape", ["help", "unknown", "menu"])
+def test_user_text_is_never_executed(cmd_root, payload, shape):
+    canary = cmd_root / "canary"
+    (cmd_root / "canary.cmd").write_text(f'@echo off\r\necho x> "{canary}"\r\n', encoding="utf-8")
+    quoted = f'"{payload}"'
+    args = {"help": ["help", quoted], "unknown": [quoted], "menu": ["menu", quoted]}[shape]
+    proc = _engram(cmd_root, *args)
+    assert not canary.exists(), (payload, shape, proc.stdout)
+    assert not (cmd_root / "canary_out").exists()
+    assert proc.returncode == 2
+    assert "[Error] Unknown" in proc.stdout
+    if "%" not in payload and "!" not in payload:
+        assert payload in proc.stdout, proc.stdout
