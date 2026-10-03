@@ -1196,7 +1196,7 @@ def ensure_peer_cli(peer: str, orch: dict | None = None, sys_dir: Path | None = 
         try:
             res = subprocess.run(
                 [*npm_argv, "view", f"{pkg}@{declared_version}", "dist.integrity", "--json"],
-                capture_output=True, text=True, check=True,
+                capture_output=True, encoding="utf-8", errors="replace", check=True,
             )
             integrity = json.loads(res.stdout.strip())
         except Exception as e:
@@ -1301,7 +1301,7 @@ def self_update_peer(tool_id: str, sys_dir: Path | None = None) -> dict:
     version_argv = update_cfg.get("version_argv", ["--version"])
     v_args = version_argv[1:] if len(version_argv) > 0 and version_argv[0] in (bin_name, tool_id) else version_argv
     try:
-        res_v0 = subprocess.run([str(exe_path)] + list(v_args), capture_output=True, text=True, timeout=5)
+        res_v0 = subprocess.run([str(exe_path)] + list(v_args), capture_output=True, encoding="utf-8", errors="replace", timeout=5)
         v0_text = (res_v0.stdout or res_v0.stderr or "").strip()
         before_version = v0_text.splitlines()[0] if v0_text else "unknown"
     except Exception:
@@ -1316,7 +1316,7 @@ def self_update_peer(tool_id: str, sys_dir: Path | None = None) -> dict:
             [str(exe_path)] + list(u_args),
             cwd=str(exe_path.parent),
             capture_output=True,
-            text=True,
+            encoding="utf-8", errors="replace",
             timeout=timeout_sec,
             shell=False,
         )
@@ -1328,7 +1328,7 @@ def self_update_peer(tool_id: str, sys_dir: Path | None = None) -> dict:
 
     # Query after-version
     try:
-        res_v1 = subprocess.run([str(exe_path)] + list(v_args), capture_output=True, text=True, timeout=5)
+        res_v1 = subprocess.run([str(exe_path)] + list(v_args), capture_output=True, encoding="utf-8", errors="replace", timeout=5)
         v1_text = (res_v1.stdout or res_v1.stderr or "").strip()
         after_version = v1_text.splitlines()[0] if v1_text else before_version
     except Exception:

@@ -100,7 +100,9 @@ def build_plan(
     
     manifest_status = detection.get("manifest")
     drift = detection.get("drift", {})
-    findings = detection.get("findings", [])
+    # Only genuine failures drive a venv repair; passing ok/info checks are not findings.
+    findings = [f for f in detection.get("findings", [])
+                if f.get("ok") is False or f.get("level") in ("warning", "error")]
     stale_registry = detection.get("stale_registry", [])
 
     moved = drift.get("status") in ("moved", "copied")

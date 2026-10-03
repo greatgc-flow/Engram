@@ -333,3 +333,12 @@ def test_e2e_repair_resume(tmp_path, monkeypatch):
     
     res = repair.repair_main(ctx)
     assert res["exit_code"] == 0
+
+
+def test_build_plan_ignores_ok_and_info_findings(tmp_path):
+    det = {"manifest": "ok", "drift": {"status": "consistent"}, "stale_registry": [],
+           "findings": [{"name": "venv_spawn", "level": "ok", "ok": True},
+                        {"name": "x", "level": "info", "ok": True}]}
+    plan = repair.build_plan(tmp_path / "_sys", tmp_path, det)
+    assert not plan["steps"]
+    assert plan["summary"] == ["nothing to repair"]

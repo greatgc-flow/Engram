@@ -284,7 +284,7 @@ def detect_root_drift(
 def _default_python_version_probe(python_exe: str) -> Optional[str]:
     try:
         out = subprocess.run(
-            [python_exe, "--version"], capture_output=True, text=True, timeout=20
+            [python_exe, "--version"], capture_output=True, encoding="utf-8", errors="replace", timeout=20
         )
     except (OSError, subprocess.SubprocessError):
         return None

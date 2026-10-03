@@ -14,7 +14,7 @@ if not exist "%PY%" (
         :: For now, we'll let the root _sys/core/bootstrap.bat handle the initial bootstrap.
         exit /b 0
     )
-    :: An interrupted Python swap can leave env\python missing: `repair` (and only repair) may run on the
+    :: An interrupted Python swap can leave env\python missing: only `repair` may run on the
     :: first working alternate interpreter so it can resume or roll the operation back.
     if exist "%SYS_DIR%\data\state\env-op.journal.jsonl" (
         if /i "%~1"=="repair" goto :alt_python

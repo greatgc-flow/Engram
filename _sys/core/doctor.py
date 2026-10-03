@@ -41,7 +41,7 @@ def _installed_python_version(sys_dir: Path) -> str | None:
     if not py.exists():
         return None
     try:
-        out = subprocess.run([str(py), "--version"], capture_output=True, text=True, timeout=15)
+        out = subprocess.run([str(py), "--version"], capture_output=True, encoding="utf-8", errors="replace", timeout=15)
         text = (out.stdout or out.stderr or "").strip()
         # "Python X.Y.Z"
         parts = text.split()
@@ -326,8 +326,7 @@ def check_root_moved(base_dir: Path, sys_dir: Path) -> dict:
         "detail": (
             f"install {what}: previously {drift.previous_root} (evidence: {drift.source}). "
             f"Console scripts (e.g. pip.exe) and context-menu entries may be stale. "
-            f"Run 'engram menu clean' then 'engram menu enable' to refresh the menu; "
-            f"automated environment repair is planned ({_DESIGN_DOC})."
+            f"Run 'engram relocate' (dry run) to preview the fix, then 'engram relocate --apply'."
         ),
         "previous_root": drift.previous_root,
         "drift": drift.status,

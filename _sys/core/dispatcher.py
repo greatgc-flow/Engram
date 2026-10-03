@@ -170,6 +170,10 @@ def _run_operation(op_id: str, op_cfg: dict, ctx: dict):
             return {"status": "failed", "operation": op_id, "detail": str(e)}
         raise
 
+    if (_result_failed(result) and isinstance(result, dict) and result.get("detail") == "usage"
+            and failure not in ("continue", "warn")):
+        # argparse already printed the usage message: exit with its code, no traceback.
+        raise PipelineFailure(f"operation '{op_id}' failed: usage", int(result.get("exit_code") or 2), quiet=True)
     if _result_failed(result) and op_cfg.get("quiet_failure") and failure not in ("continue", "warn"):
         raise PipelineFailure(f"operation '{op_id}' failed", 1, quiet=True)
     if _result_failed(result):

@@ -460,7 +460,7 @@ def build_plan(
     if now is None:
         now = datetime.datetime.now().timestamp()
     dirs, blat = plan_data_temp(now)
-    return [
+    plan = [
         ("root_tmp", "tmp", plan_root_tmp(now)),
         ("data_temp_dirs", "data_temp", dirs),
         ("data_temp_blat_files", "data_temp", blat),
@@ -477,6 +477,15 @@ def build_plan(
         ("backups", "backups", plan_backups(now, keep_override, size_cap_bytes, protect)),
         ("env_op_runners", "env_op_runners", plan_env_op_runners(now)),
     ]
+    # Registered backup payloads are only ever removed by the retention pruner.
+    protected = backups.backups_root(_SYS_DIR).resolve()
+
+    def _outside(p: Path) -> bool:
+        rp = Path(p).resolve()
+        return rp != protected and protected not in rp.parents
+
+    return [(label, key, items if key == "backups" else [p for p in items if _outside(p)])
+            for label, key, items in plan]
 
 
 def main() -> int:

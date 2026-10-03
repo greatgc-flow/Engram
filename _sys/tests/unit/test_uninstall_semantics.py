@@ -523,7 +523,7 @@ def test_case_6_powershell_helper_in_ampersand_and_special_chars_dir(tmp_path):
         "-PlanPath", str(plan_path),
     ]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert proc.returncode == 0, f"Helper failed with stderr: {proc.stderr}\nstdout: {proc.stdout}"
 
     assert not target_file.exists(), "Target file must be removed"
@@ -569,7 +569,7 @@ def test_powershell_helper_removes_file_links_without_touching_targets(tmp_path)
         "powershell.exe", "-NoProfile", "-NonInteractive",
         "-ExecutionPolicy", "Bypass", "-File", str(helper),
         "-PlanPath", str(plan_path),
-    ], capture_output=True, text=True, encoding="utf-8")
+    ], capture_output=True, text=True, encoding="utf-8", errors="replace")
 
     assert proc.returncode == 0, f"stderr: {proc.stderr}\nstdout: {proc.stdout}"
     assert not link.exists()
@@ -621,7 +621,7 @@ def test_powershell_helper_refuses_external_directory_junction(tmp_path):
         "powershell.exe", "-NoProfile", "-NonInteractive",
         "-ExecutionPolicy", "Bypass", "-File", str(helper),
         "-PlanPath", str(plan_path),
-    ], capture_output=True, text=True, encoding="utf-8")
+    ], capture_output=True, text=True, encoding="utf-8", errors="replace")
 
     assert proc.returncode == 1
     assert target_dir.exists()

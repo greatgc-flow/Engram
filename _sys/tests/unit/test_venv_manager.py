@@ -480,3 +480,12 @@ def test_snapshots_are_registered_under_the_retention_policy_kind(tmp_path):
     ref = backups.scan(sys_dir).valid[0]
     assert ref.kind == "venv-freeze" and ref.meta["state"] == "committed"
     assert ref.meta["min_keep"] == 5 and ref.meta["ttl_days"] == 180
+
+
+@pytest.mark.parametrize("flag", ["--dry-run", "--check"])
+def test_snapshot_op_is_noop_for_dry_run_or_check(tmp_path, flag):
+    sys_dir, venv_dir = _tree_with_package(tmp_path)
+    ctx = {**_ctx(sys_dir), "args": ["--only", "python", flag]}
+    res = venv_manager.snapshot_op(ctx, now="2026-10-02T10:00:00Z")
+    assert res["status"] == "success" and res.get("skipped") is True
+    assert venv_manager.latest_snapshot(sys_dir) is None

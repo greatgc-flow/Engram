@@ -187,7 +187,7 @@ def _gh_api_latest(discovery_id: str, etag: str | None) -> tuple[int, dict[str, 
             auth = subprocess.run(
                 ["gh", "auth", "status"],
                 capture_output=True,
-                text=True,
+                encoding="utf-8", errors="replace",
                 timeout=10,
             )
             _GH_AUTH_STATUS = (auth.returncode == 0)
@@ -200,7 +200,7 @@ def _gh_api_latest(discovery_id: str, etag: str | None) -> tuple[int, dict[str, 
     if etag:
         args.extend(["-H", f"If-None-Match: {etag}"])
     try:
-        cp = subprocess.run(args, capture_output=True, text=True, timeout=30)
+        cp = subprocess.run(args, capture_output=True, encoding="utf-8", errors="replace", timeout=30)
     except (OSError, subprocess.TimeoutExpired):
         return None
 

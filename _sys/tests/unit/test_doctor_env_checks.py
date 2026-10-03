@@ -89,6 +89,8 @@ def test_root_moved_warns_with_previous_root_and_canonical_verb(layout, tmp_path
     assert r["ok"] is True and r["level"] == "warning"
     assert str(gone) in r["detail"]
     assert ".bat" not in r["detail"].lower()
+    assert "engram relocate" in r["detail"] and "engram relocate --apply" in r["detail"]
+    assert "planned" not in r["detail"].lower() and "menu clean" not in r["detail"]
 
 
 def test_root_moved_copy_is_distinguished(layout, tmp_path):

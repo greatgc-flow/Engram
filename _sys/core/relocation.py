@@ -218,7 +218,7 @@ def plan_relocation(
     if runner is None:
         def _default_runner(argv: list[str]) -> tuple[int, str]:
             try:
-                res = subprocess.run(argv, capture_output=True, text=True, timeout=10)
+                res = subprocess.run(argv, capture_output=True, encoding="utf-8", errors="replace", timeout=10)
                 return res.returncode, res.stdout + res.stderr
             except Exception as e:
                 return -1, str(e)

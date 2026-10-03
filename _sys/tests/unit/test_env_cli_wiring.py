@@ -62,8 +62,13 @@ def test_other_failures_keep_the_old_behaviour(monkeypatch, tmp_path):
         dispatcher.main(["dispatcher.py", "x"])
 
 
-def test_a_small_exit_code_such_as_the_updater_usage_error_is_not_promoted(monkeypatch, tmp_path):
+def test_a_usage_error_exits_with_its_code_and_no_traceback(monkeypatch, tmp_path):
     _fake_pipeline(monkeypatch, tmp_path, {"status": "failed", "detail": "usage", "exit_code": 2})
+    assert dispatcher.main(["dispatcher.py", "x"]) == 2
+
+
+def test_a_small_exit_code_that_is_not_a_usage_error_is_not_promoted(monkeypatch, tmp_path):
+    _fake_pipeline(monkeypatch, tmp_path, {"status": "failed", "detail": "boom", "exit_code": 2})
     with pytest.raises(RuntimeError):
         dispatcher.main(["dispatcher.py", "x"])
 

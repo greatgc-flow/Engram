@@ -87,7 +87,7 @@ def check_closure() -> list[str]:
             ["git", "status", "--short"],
             cwd=str(PORTABLE_ROOT),
             capture_output=True,
-            text=True
+            encoding="utf-8", errors="replace"
         )
         if proc.returncode != 0:
             errors.append(f"git status failed: {proc.stderr.strip()}")
@@ -102,7 +102,7 @@ def check_closure() -> list[str]:
             ["git", "diff", "--check"],
             cwd=str(PORTABLE_ROOT),
             capture_output=True,
-            text=True
+            encoding="utf-8", errors="replace"
         )
         if proc.returncode != 0:
             errors.append(f"git diff --check found whitespace errors or failed:\n{proc.stdout.strip()}")

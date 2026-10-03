@@ -27,7 +27,7 @@ BASELINE_MODULES = ("filelock", "psutil", "pydantic", "winpty")
 
 def default_runner(argv: list[str], timeout_s: float) -> tuple[int, str]:
     try:
-        res = subprocess.run(argv, capture_output=True, text=True, timeout=timeout_s)
+        res = subprocess.run(argv, capture_output=True, encoding="utf-8", errors="replace", timeout=timeout_s)
         return res.returncode, res.stdout + res.stderr
     except OSError as exc:
         return -1, str(exc)
@@ -461,6 +461,9 @@ def snapshot_op(ctx: dict, *, now: Optional[str] = None) -> dict:
     """
     sys_dir = Path(ctx["sys_dir"])
     op = {"status": "success", "operation": "venv.snapshot"}
+    if any(a in ("--dry-run", "--check") for a in (ctx.get("args") or [])):
+        print("  [--] venv snapshot: skipped (dry-run/check)")
+        return {**op, "skipped": True, "detail": "dry-run"}
     venv_dir = sys_dir / "env" / "venv"
     if not (venv_dir / "Scripts" / "python.exe").is_file():
         print("  [--] venv snapshot: no venv present")
