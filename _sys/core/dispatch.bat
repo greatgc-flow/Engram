@@ -68,18 +68,14 @@ set "PY="
 set "_KIND="
 
 :: 1) newest runner copy
-pushd "%SYS_DIR%\data\temp\env-op" 2>nul
-if not errorlevel 1 (
-    for /f "usebackq delims=" %%D in (`dir /b /ad /o-d 2^>nul`) do call :check_runner "%%D"
-    popd
+if exist "%SYS_DIR%\data\temp\env-op\" (
+    for /f "usebackq delims=" %%D in (`dir /b /ad /o-d "%SYS_DIR%\data\temp\env-op" 2^>nul`) do call :check_runner "%%D"
 )
 if defined PY goto :alt_found
 
 :: 2) backup payload
-pushd "%SYS_DIR%\data\backups\env\python" 2>nul
-if not errorlevel 1 (
-    for /f "usebackq delims=" %%D in (`dir /b /ad /o-d 2^>nul`) do call :check_backup "%%D"
-    popd
+if exist "%SYS_DIR%\data\backups\env\python\" (
+    for /f "usebackq delims=" %%D in (`dir /b /ad /o-d "%SYS_DIR%\data\backups\env\python" 2^>nul`) do call :check_backup "%%D"
 )
 if defined PY goto :alt_found
 

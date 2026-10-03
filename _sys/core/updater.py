@@ -59,6 +59,7 @@ def _env_update_args(args_list: list[str]) -> list[str]:
     """Translate `engram update` flags into repair-engine flags: drop --only and its values, map --yes/--dry-run."""
     out: list[str] = []
     skipping_only = False
+    dry_run = any(a in ("--dry-run", "--check") for a in args_list)
     for a in args_list:
         if a == "--only":
             skipping_only = True
@@ -67,7 +68,8 @@ def _env_update_args(args_list: list[str]) -> list[str]:
             continue
         skipping_only = False
         if a in ("--yes", "-y"):
-            out += ["--apply", "--yes"]
+            if not dry_run:  # --dry-run always wins: plan only, never execute (no snapshots, no journal)
+                out += ["--apply", "--yes"]
         elif a in ("--dry-run", "--check", "--refresh", "-r"):
             continue
         else:

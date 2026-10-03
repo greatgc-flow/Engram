@@ -86,7 +86,8 @@
         "doctor.run": {
             "module": "core.doctor",
             "method": "run",
-            "failure_policy": "abort"
+            "failure_policy": "abort",
+            "quiet_failure": true
         },
         "uninstall.run": {
             "module": "core.uninstaller",

@@ -19,7 +19,7 @@ Design record: [`design/engram-env-resilience-design-2026-10-02.md`](design/engr
 
 | Situation | What to run |
 |---|---|
-| `_sys\env\python` deleted, venv kept | `engram repair` (plan) then `engram repair --apply` — or `bootstrap.bat`, which now keeps the venv, restores Python from the pinned, hash-verified download, and re-verifies the venv |
+| `_sys\env\python` deleted, venv kept | `engram repair`, `doctor` and `snapshots` cannot run without the managed Python (they print where to go). Run `_sys\core\bootstrap.bat` first: it keeps the venv, restores Python from the pinned, hash-verified download and re-verifies the venv. Then run `engram repair` (plan) and `engram repair --apply` if it reports drift. (An interrupted swap with a journal is different: `engram repair --resume/--rollback` runs on the alternate interpreter.) |
 | venv broken or points at a missing interpreter | `engram repair --apply` (venv is quarantined as a backup, rebuilt, packages restored from the recorded list) |
 | Folder moved or renamed | `engram relocate` (plan) then `engram relocate --apply`; pass `--from <old path>` if the old path cannot be detected; `--remap-ai-state` rewrites path references in AI CLI state |
 | Python version change | `engram update --only python [--to X.Y.Z] [--force]` (snapshot, swap, venv refresh/rebuild, packages) |

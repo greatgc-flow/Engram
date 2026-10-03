@@ -1429,6 +1429,15 @@ def _record_deploy_outcome(
         print(f"  [!] {component} failed: {detail}")
 
 
+def ensure_virtualenv_module() -> None:
+    """Install virtualenv into the embedded Python (sys.executable) only when it cannot be imported."""
+    probe = subprocess.run([sys.executable, "-c", "import virtualenv"], capture_output=True)
+    if probe.returncode == 0:
+        return
+    subprocess.run([sys.executable, "-m", "pip", "install", "virtualenv", "--quiet"], check=True)
+    print("  [OK] virtualenv installed into the embedded Python")
+
+
 def deploy(ctx: dict) -> dict:
     """Install all runtimes, tools, and AI peer CLIs via ensure_runtime/
     ensure_tool/ensure_peer_cli - every entry in runtimes.json/tool-catalog.v1.json is
@@ -1506,7 +1515,7 @@ def deploy(ctx: dict) -> dict:
         venv_creation_failed = False
         if force or not venv_py.exists():
             try:
-                subprocess.run([sys.executable, "-m", "pip", "install", "virtualenv", "--quiet"], check=True)
+                ensure_virtualenv_module()
                 subprocess.run([sys.executable, "-m", "virtualenv", str(env_dir / "venv")], check=True)
                 print("  [OK] venv created")
             except (subprocess.CalledProcessError, OSError) as exc:
@@ -1519,6 +1528,17 @@ def deploy(ctx: dict) -> dict:
                 })
         else:
             print("  [--] venv (already exists)")
+            # Later `repair`/`relocate` venv rebuilds run `python -m virtualenv` on the embedded Python, so it
+            # must be present even when the venv itself survived a Python re-extraction.
+            try:
+                ensure_virtualenv_module()
+            except (subprocess.CalledProcessError, OSError) as exc:
+                print(f"  [Fail] virtualenv install failed: {exc}")
+                failed.append({
+                    "component": "virtualenv",
+                    "status": "error",
+                    "detail": f"pip install virtualenv failed: {exc}",
+                })
         # Re-check on disk rather than trusting the exit code above: creation can
         # report success without actually leaving a working interpreter behind.
         if venv_py.exists():

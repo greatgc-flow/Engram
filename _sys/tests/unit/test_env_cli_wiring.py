@@ -157,3 +157,22 @@ def test_tool_only_updates_do_not_touch_the_repair_engine(monkeypatch):
     # an unknown tool still fails the old way (before any network access)
     res = updater.run({"args": ["--only", "definitely-not-a-tool"], "sys_dir": SYS_DIR, "base_dir": SYS_DIR.parent})
     assert res["status"] == "failed" and res.get("exit_code") == 2
+
+
+@pytest.mark.parametrize("flags", [["--dry-run"], ["--yes", "--dry-run"], ["--dry-run", "--yes"]])
+def test_update_dry_run_never_maps_to_apply(flags):
+    out = updater._env_update_args(["--only", "python", *flags])
+    assert "--apply" not in out and "--yes" not in out
+
+
+def test_update_yes_still_maps_to_apply():
+    assert updater._env_update_args(["--only", "python", "--yes"]) == ["--apply", "--yes"]
+
+
+def test_plan_with_only_informational_summary_does_not_claim_nothing_to_repair(capsys):
+    from core import repair
+    repair._print_plan({"steps": [], "summary": ["Python already at 3.14.8"]})
+    out = capsys.readouterr().out
+    assert "Python already at 3.14.8" in out and "nothing to repair" not in out
+    repair._print_plan({"steps": [], "summary": []})
+    assert "nothing to repair" in capsys.readouterr().out

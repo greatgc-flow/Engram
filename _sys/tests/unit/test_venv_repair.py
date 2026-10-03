@@ -369,12 +369,13 @@ def test_real_venv_refresh_and_regen(tmp_path):
         
     venv_dir = tmp_path / "venv"
     import subprocess
-    subprocess.run([str(managed_py), "-m", "virtualenv", "--no-seed", str(venv_dir)], check=True)
+    # Seeded on purpose: console-script regeneration needs pip's vendored distlib inside the venv.
+    subprocess.run([str(managed_py), "-m", "virtualenv", str(venv_dir)], check=True)
     
     venv_py = venv_dir / "Scripts" / "python.exe"
     assert venv_py.exists()
     
-    subprocess.run([str(managed_py), "-m", "virtualenv", "--no-seed", str(venv_dir)], check=True)
+    subprocess.run([str(managed_py), "-m", "virtualenv", str(venv_dir)], check=True)
     
     site_packages = venv_dir / "Lib" / "site-packages"
     dist_info = site_packages / "fake-1.0.dist-info"
@@ -386,5 +387,34 @@ def test_real_venv_refresh_and_regen(tmp_path):
         return res.returncode, res.stdout + res.stderr
         
     res = regenerate_console_scripts(venv_dir, python_exe=venv_py, runner=real_runner)
-    assert "fake-tool" not in res.get("failed", [])
+    assert res.get("failed") == [], res
     assert (venv_dir / "Scripts" / "fake-tool.exe").exists()
+
+
+def test_rebuild_commits_quarantine_backup_on_success(tmp_path):
+    from core import backups
+    sys_dir = tmp_path / "_sys"
+    venv_dir = sys_dir / "env" / "venv"
+    venv_dir.mkdir(parents=True)
+    (venv_dir / "test.txt").write_text("old venv")
+    steps = plan_venv_repair(sys_dir, [{"name": "venv_interpreter", "level": "error"}], runner=FakeRunner())
+    paths = {"venv_backup": str(sys_dir / "data" / "backups" / "env" / "venv" / "bkp"),
+             "venv_failed_backup": str(sys_dir / "data" / "backups" / "env" / "venv" / "failed")}
+    ctx = OpContext(sys_dir, "op-1", "repair", paths, {})
+    steps[0].do(ctx)
+    states = [r.meta["state"] for r in backups.scan(sys_dir).valid if r.meta.get("op_id") == "op-1"]
+    assert states == ["pending"]
+    venv_dir.mkdir(parents=True)
+    by_name = {s.name: s for s in steps}
+    by_name["regenerate-console-scripts"].do(ctx)
+    states = [r.meta["state"] for r in backups.scan(sys_dir).valid if r.meta.get("op_id") == "op-1"]
+    assert states == ["committed"]
+
+
+def test_regenerate_reports_missing_distlib_as_failure(tmp_path):
+    venv_dir = tmp_path / "venv"
+    venv_dir.mkdir()
+    res = regenerate_console_scripts(
+        venv_dir, python_exe=venv_dir / "python.exe",
+        runner=lambda argv, timeout: (0, json.dumps({"error": "distlib.scripts not found"})))
+    assert res["regenerated"] == 0 and res["failed"] and "distlib" in res["failed"][0]

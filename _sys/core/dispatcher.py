@@ -139,9 +139,10 @@ class PipelineHandoff(Exception):
 class PipelineFailure(RuntimeError):
     """A failed operation that carries a CLI exit code (>= 10: preflight, rolled back, rollback failed, journal)."""
 
-    def __init__(self, message: str, exit_code: int):
+    def __init__(self, message: str, exit_code: int, quiet: bool = False):
         super().__init__(message)
         self.exit_code = exit_code
+        self.quiet = quiet  # the operation already reported its findings (e.g. doctor): exit code only
 
 
 def _cli_exit_code(result) -> int | None:
@@ -169,6 +170,8 @@ def _run_operation(op_id: str, op_cfg: dict, ctx: dict):
             return {"status": "failed", "operation": op_id, "detail": str(e)}
         raise
 
+    if _result_failed(result) and op_cfg.get("quiet_failure") and failure not in ("continue", "warn"):
+        raise PipelineFailure(f"operation '{op_id}' failed", 1, quiet=True)
     if _result_failed(result):
         detail = (result.get("detail") or result.get("failed") or result) if isinstance(result, dict) else result
         print(f"  [Error] Operation '{op_id}' returned failure: {detail}")
@@ -237,7 +240,8 @@ def main(argv: list[str]) -> int:
     except PipelineHandoff:
         return 75
     except PipelineFailure as exc:
-        print(f"[Error] {exc}")
+        if not exc.quiet:
+            print(f"[Error] {exc}")
         return exc.exit_code
     return 0
 

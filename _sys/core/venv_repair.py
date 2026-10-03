@@ -167,9 +167,13 @@ def regenerate_console_scripts(venv_dir: Path, *, python_exe: Path | None = None
         return {"regenerated": 0, "failed": [f"error: {out}"]}
         
     try:
-        return json.loads(out.strip())
+        data = json.loads(out.strip())
     except Exception:
         return {"regenerated": 0, "failed": [f"parse error: {out}"]}
+    if isinstance(data, dict) and "error" in data:
+        # e.g. the venv has no pip (distlib): never report that as a silent success
+        return {"regenerated": 0, "failed": [f"error: {data['error']}"]}
+    return data
 
 def rebase_path(path: str, old_root: str, new_root: str) -> str | None:
     path_norm = ntpath.normpath(path)
@@ -245,6 +249,15 @@ def restore_packages_step_data(snapshot: dict, *, wheelhouse: Path | None = None
         "skipped_editable": skipped_editable,
         "constraints_text": "\n".join(constraints) + "\n" if constraints else ""
     }
+
+def _commit_op_backups(ctx) -> None:
+    """The rebuild/refresh verified: commit this operation's pending backups so they age out normally
+    instead of staying ``pending`` (which retention never touches)."""
+    from core import backups
+    for ref in backups.scan(ctx.sys_dir).valid:
+        if ref.meta.get("op_id") == ctx.op_id and ref.meta.get("state") == "pending":
+            backups.commit(ref)
+
 
 def plan_venv_repair(sys_dir: Path, findings: list, *, manifest: dict | None = None, runner: Runner = default_runner, allow_rebuild: bool = True) -> list:
     findings_by_name = {f["name"]: f for f in findings}
@@ -336,6 +349,7 @@ def plan_venv_repair(sys_dir: Path, findings: list, *, manifest: dict | None = N
         def do_regen(ctx):
             venv_dir = ctx.sys_dir / "env" / "venv"
             ctx.data["regenerated_scripts"] = regenerate_console_scripts(venv_dir, runner=runner)
+            _commit_op_backups(ctx)
             
         steps.append(Step("quarantine-venv", do=do_quarantine, undo=undo_quarantine, group="A"))
         steps.append(Step("create-venv", do=do_create, undo=undo_create, group="A"))
@@ -460,6 +474,7 @@ def plan_venv_repair(sys_dir: Path, findings: list, *, manifest: dict | None = N
         def do_record_hashes(ctx):
             venv_dir = ctx.sys_dir / "env" / "venv"
             ctx.data["new_interpreter_hashes"] = hash_files(venv_dir, interpreter_file_set(venv_dir))
+            _commit_op_backups(ctx)
             
         steps.append(Step("backup-interpreter-files", do=do_backup_interp, group="A"))
         steps.append(Step("refresh-interpreter", do=do_refresh, undo=undo_refresh, group="A"))

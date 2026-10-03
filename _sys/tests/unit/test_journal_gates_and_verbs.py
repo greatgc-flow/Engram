@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+from pycopy import copy_python
+
 from _sys.core.root import find_root
 
 REPO_ROOT = find_root(__file__).parent
@@ -46,7 +48,7 @@ def root(tmp_path: Path):
         "@echo off\r\necho DISPATCH_PIPELINE=%1\r\necho DISPATCH_ARGS=%*\r\nexit /b 0\r\n", encoding="utf-8")
     py = r / "_sys" / "env" / "python"
     py.mkdir(parents=True)
-    shutil.copy(sys.executable, py / "python.exe")
+    copy_python(py / "python.exe")
     state = r / "_sys" / "data" / "state"
     state.mkdir(parents=True)
     (state / "layout.json").write_text('{"layout_version": 2}', encoding="utf-8")
@@ -145,10 +147,34 @@ def test_new_verbs_are_listed_in_help(root):
     assert "engram repair" in out and "engram relocate" in out
 
 
-def test_repair_without_python_and_without_journal_says_not_set_up(root):
+def test_repair_without_python_and_without_venv_says_not_set_up(root):
     (root / "_sys" / "env" / "python" / "python.exe").unlink()
     proc = run_engram(root, "repair")
     assert proc.returncode == 1 and "Engram is not set up" in proc.stdout
+
+
+@pytest.mark.parametrize("verb", ["repair", "relocate", "snapshots", "doctor"])
+def test_recovery_verbs_without_python_but_with_venv_point_at_bootstrap(root, verb):
+    (root / "_sys" / "env" / "python" / "python.exe").unlink()
+    (root / "_sys" / "env" / "venv").mkdir()
+    proc = run_engram(root, verb)
+    assert proc.returncode == 1
+    assert "Managed Python is missing" in proc.stdout
+    assert "_sys\\core\\bootstrap.bat" in proc.stdout and "engram repair" in proc.stdout
+    assert "Engram is not set up" not in proc.stdout
+
+
+def test_other_verbs_without_python_with_venv_still_say_not_set_up(root):
+    (root / "_sys" / "env" / "python" / "python.exe").unlink()
+    (root / "_sys" / "env" / "venv").mkdir()
+    proc = run_engram(root, "tidy")
+    assert proc.returncode == 1 and "Engram is not set up" in proc.stdout
+
+
+def test_help_lists_each_recovery_verb_once(root):
+    out = run_engram(root, "help").stdout
+    for verb in ("repair", "relocate", "snapshots"):
+        assert out.count(f"engram {verb} ") == 1, verb
 
 
 # ---- dispatch.bat: alternate interpreter for an interrupted swap ---------------------------------------------
@@ -174,7 +200,7 @@ def test_dispatch_falls_back_to_python_new_for_repair_when_a_journal_is_active(d
     write_journal(r, ["PLANNED", "STEPS_RUNNING"])
     alt = r / "_sys" / "env" / "python.new"
     alt.mkdir(parents=True)
-    shutil.copy(sys.executable, alt / "python.exe")
+    copy_python(alt / "python.exe")
     proc = run_dispatch(r, "repair", "--resume")
     assert proc.returncode == 0, proc.stdout + proc.stderr
     recover_line = next((line for line in proc.stdout.splitlines() if line.startswith("[i] Recover")), "")
@@ -188,7 +214,7 @@ def test_dispatch_falls_back_to_the_runner_copy(dispatch_root):
     write_journal(r, ["PLANNED", "STEPS_RUNNING"])
     runner = r / "_sys" / "data" / "temp" / "env-op" / "op-1" / "runner"
     runner.mkdir(parents=True)
-    shutil.copy(sys.executable, runner / "python.exe")
+    copy_python(runner / "python.exe")
     proc = run_dispatch(r, "repair", "--rollback")
     assert proc.returncode == 0, proc.stdout + proc.stderr
     recover_line = next((line for line in proc.stdout.splitlines() if line.startswith("[i] Recover")), "")
@@ -202,11 +228,11 @@ def test_dispatch_falls_back_to_backup_payload_over_python_new(dispatch_root):
     write_journal(r, ["PLANNED", "STEPS_RUNNING"])
     backup = r / "_sys" / "data" / "backups" / "env" / "python" / "bkp-1" / "payload"
     backup.mkdir(parents=True)
-    shutil.copy(sys.executable, backup / "python.exe")
+    copy_python(backup / "python.exe")
     
     alt = r / "_sys" / "env" / "python.new"
     alt.mkdir(parents=True)
-    shutil.copy(sys.executable, alt / "python.exe")
+    copy_python(alt / "python.exe")
     
     proc = run_dispatch(r, "repair", "--rollback")
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -222,15 +248,15 @@ def test_dispatch_runner_preferred_over_all(dispatch_root):
     
     runner = r / "_sys" / "data" / "temp" / "env-op" / "op-1" / "runner"
     runner.mkdir(parents=True)
-    shutil.copy(sys.executable, runner / "python.exe")
+    copy_python(runner / "python.exe")
     
     backup = r / "_sys" / "data" / "backups" / "env" / "python" / "bkp-1" / "payload"
     backup.mkdir(parents=True)
-    shutil.copy(sys.executable, backup / "python.exe")
+    copy_python(backup / "python.exe")
     
     alt = r / "_sys" / "env" / "python.new"
     alt.mkdir(parents=True)
-    shutil.copy(sys.executable, alt / "python.exe")
+    copy_python(alt / "python.exe")
     
     proc = run_dispatch(r, "repair", "--rollback")
     assert proc.returncode == 0 and "runner" in proc.stdout
@@ -242,7 +268,7 @@ def test_dispatch_does_not_use_an_alternate_interpreter_for_other_commands(dispa
     write_journal(r, ["PLANNED", "STEPS_RUNNING"])
     alt = r / "_sys" / "env" / "python.new"
     alt.mkdir(parents=True)
-    shutil.copy(sys.executable, alt / "python.exe")
+    copy_python(alt / "python.exe")
     proc = run_dispatch(r, "tidy")
     assert proc.returncode == 1 and "not initialized" in proc.stdout
 
@@ -251,7 +277,7 @@ def test_dispatch_without_a_journal_never_uses_python_new(dispatch_root):
     r = dispatch_root
     alt = r / "_sys" / "env" / "python.new"
     alt.mkdir(parents=True)
-    shutil.copy(sys.executable, alt / "python.exe")
+    copy_python(alt / "python.exe")
     proc = run_dispatch(r, "repair")
     assert proc.returncode == 1 and "not initialized" in proc.stdout
 
@@ -288,8 +314,11 @@ handoff = r'''{str(handoff_txt)}'''
 runner = r'''{str(runner_py)}'''
 os.makedirs(os.path.dirname(handoff), exist_ok=True)
 os.makedirs(os.path.dirname(runner), exist_ok=True)
-with open(runner, 'wb') as f:
-    f.write(open(sys.executable, 'rb').read())
+import shutil
+from pathlib import Path
+for _f in Path(sys.executable).parent.iterdir():
+    if _f.is_file():
+        shutil.copy(_f, Path(runner).parent / _f.name)
 with open(handoff, 'wb') as f:
     sysdir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     f.write((os.path.relpath(runner, sysdir) + "\\r\\n0\\r\\n").encode('ascii'))
@@ -299,7 +328,7 @@ sys.exit(75)
     
     py_dir = r / "_sys" / "env" / "python"
     py_dir.mkdir(parents=True)
-    shutil.copy(sys.executable, py_dir / "python.exe")
+    copy_python(py_dir / "python.exe")
     
     proc = _run(Path("_sys") / "core" / "dispatch.bat", ["tidy"], r)
     assert proc.returncode == 0, proc.stderr + proc.stdout

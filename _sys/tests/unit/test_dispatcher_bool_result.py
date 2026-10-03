@@ -77,3 +77,25 @@ def test_build_ctx_menu_disable_preloads_prior_state(tmp_path, monkeypatch):
     assert "prior_state" in ctx_unregister
     assert ctx_unregister["prior_state"] == {"test_entry": "present"}
 
+
+
+def test_quiet_failure_operation_exits_cleanly_without_traceback(monkeypatch, capsys):
+    from core import dispatcher
+
+    mod = types.ModuleType("quiet_mod")
+    mod.run = lambda ctx: {"status": "failed", "operation": "doctor.run", "checks": []}
+    monkeypatch.setitem(sys.modules, "quiet_mod", mod)
+    cfg = {"pipelines": {"doctor": ["doctor.run"]},
+           "operations": {"doctor.run": {"module": "quiet_mod", "method": "run",
+                                         "failure_policy": "abort", "quiet_failure": True}}}
+    monkeypatch.setattr(dispatcher, "_load_json", lambda path: cfg)
+    monkeypatch.setattr(dispatcher, "_build_ctx", lambda *a: {})
+    monkeypatch.setattr(Path, "exists", lambda self: True)
+    assert dispatcher.main(["dispatcher.py", "doctor"]) == 1
+    assert "Error" not in capsys.readouterr().out
+
+
+def test_doctor_operation_is_marked_quiet_in_dispatch_json():
+    import json
+    cfg = json.loads((find_root(__file__) / "dispatch.json").read_text(encoding="utf-8"))
+    assert cfg["operations"]["doctor.run"]["quiet_failure"] is True

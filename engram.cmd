@@ -185,9 +185,21 @@ exit /b 0
 
 :check_setup
 if not exist "%SYS_PATH%\env\python\python.exe" (
+    if exist "%SYS_PATH%\env\venv\" (
+        call :managed_python_missing
+        if errorlevel 2 exit /b 1
+    )
     echo Engram is not set up.
     echo Run 'engram' to initialize the environment.
     exit /b 1
+)
+exit /b 0
+
+:managed_python_missing
+:: Recovery verbs get a precise hint when only the managed Python is gone (venv kept).
+for %%V in (repair relocate snapshots doctor) do if /i "%SUBCMD%"=="%%V" (
+    echo Managed Python is missing. Run _sys\core\bootstrap.bat to restore it ^(the venv and packages are kept^), then run 'engram repair'.
+    exit /b 2
 )
 exit /b 0
 
@@ -478,9 +490,6 @@ echo   engram update         Check and apply latest stable runtime and tool upda
 echo   engram doctor         Report environment health, tool status, and configuration
 echo   engram menu           Manage right-click context menu (status, enable, disable, clean)
 echo   engram tidy           Clean temporary logs, caches, and orphaned files
-echo   engram repair         Fix a broken Python/venv (dry run; --apply to execute)
-echo   engram relocate       Re-anchor Engram after the folder was moved or renamed
-echo   engram snapshots      List, pin and restore Engram's environment backups
 echo   engram snapshots      List, pin and restore environment backups: replaced Python/venv copies and package snapshots
 echo   engram repair         Detect and repair environment drift: broken venv, stale launchers, moved root, missing manifest
 echo   engram relocate       Repair the environment after the portable folder was moved or renamed

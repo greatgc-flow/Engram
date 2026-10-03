@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from pycopy import copy_python
+
 from _sys.core.root import find_root
 
 SYS_SRC = find_root(__file__)
@@ -255,7 +257,7 @@ def bat_root(tmp_path):
     shutil.copy(DISPATCH, core / "dispatch.bat")
     py = r / "_sys" / "env" / "python"
     py.mkdir(parents=True)
-    shutil.copy(sys.executable, py / "python.exe")
+    copy_python(py / "python.exe")
     (r / "_sys" / "data" / "state").mkdir(parents=True)
     # stub dispatcher: first (normal) run prepares a runner copy + handoff file and exits 75; the runner run prints context
     (core / "dispatcher.py").write_text(
@@ -269,7 +271,9 @@ def bat_root(tmp_path):
         "    sys.exit(7)\n"
         "runner = sysdir / 'data' / 'temp' / 'env-op' / 'op' / 'runner'\n"
         "runner.mkdir(parents=True)\n"
-        "shutil.copy(sys.executable, runner / 'python.exe')\n"
+        "for _f in Path(sys.executable).parent.iterdir():\n"
+        "    if _f.is_file():\n"
+        "        shutil.copy(_f, runner / _f.name)\n"
         "handoff = sysdir / 'data' / 'state' / 'env-op' / 'handoff.txt'\n"
         "handoff.parent.mkdir(parents=True, exist_ok=True)\n"
         "handoff.write_text(str((runner / 'python.exe').relative_to(sysdir)) + '\\n1\\n', encoding='utf-8')\n"

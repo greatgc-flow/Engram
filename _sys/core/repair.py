@@ -297,10 +297,11 @@ def _plan_json(plan: dict) -> dict:
 
 def _print_plan(plan: dict):
     if not plan["steps"]:
-        for line in plan.get("summary", []):
-            if line != "nothing to repair":
-                print(line)
-        print("nothing to repair")
+        lines = [line for line in plan.get("summary", []) if line != "nothing to repair"]
+        for line in lines:
+            print(line)
+        if not lines:
+            print("nothing to repair")
         return
     for s in plan["summary"]:
         print(s)
