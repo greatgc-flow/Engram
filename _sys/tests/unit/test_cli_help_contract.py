@@ -220,6 +220,19 @@ def test_cli_parser_error_format(capsys):
 
 # ---- engram.cmd: help <verb>, unknown command ----------------------------------------------------------
 
+def _install_python(dest: Path) -> None:
+    """Give the fixture a python.exe that runs on its own. A venv launcher copied elsewhere cannot start (it
+    needs its base install), so prefer the self-contained managed Python's top-level files (embeddable layout:
+    exe, dlls, stdlib zip); fall back to copying the current interpreter, which is self-contained in a dev checkout."""
+    managed = SYS_DIR / "env" / "python"
+    if (managed / "python.exe").is_file():
+        for f in managed.iterdir():
+            if f.is_file():
+                shutil.copy(f, dest / f.name)
+    else:
+        shutil.copy(sys.executable, dest / "python.exe")
+
+
 @pytest.fixture
 def cmd_root(tmp_path):
     root = tmp_path / "a&b!"
@@ -232,7 +245,7 @@ def cmd_root(tmp_path):
     shutil.copy(SYS_DIR / "core" / "cli_help.py", core / "cli_help.py")
     py = root / "_sys" / "env" / "python"
     py.mkdir(parents=True)
-    shutil.copy(sys.executable, py / "python.exe")
+    _install_python(py)
     state = root / "_sys" / "data" / "state"
     state.mkdir(parents=True)
     (state / "layout.json").write_text('{"layout_version": 2}', encoding="utf-8")
