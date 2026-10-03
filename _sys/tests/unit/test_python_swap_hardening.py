@@ -26,14 +26,19 @@ TARGET_PATCH = "3.14.9"
 TARGET_MINOR = "3.15.0"
 
 
-def tree_hash(root: Path, skip=()) -> dict:
+def tree_hash(root: Path, skip=(), marker: str | None = None) -> dict:
+    """sha256 per file; `marker` (an install root) is replaced by <ROOT> so two installs compare equal."""
     out = {}
     for p in sorted(Path(root).rglob("*")):
         if p.is_file():
             rel = p.relative_to(root).as_posix()
             if any(rel.startswith(s) for s in skip):
                 continue
-            out[rel] = hashlib.sha256(p.read_bytes()).hexdigest()
+            data = p.read_bytes()
+            if marker:
+                for variant in (marker, marker.replace("\\", "/")):
+                    data = data.replace(variant.encode(), b"<ROOT>")
+            out[rel] = hashlib.sha256(data).hexdigest()
     return out
 
 
@@ -139,9 +144,15 @@ class World:
         return python_manager.allocate_paths(self.sys, op_id, env_ops.utc_now)
 
     def snapshot(self):
-        """Everything a rollback must restore bit-for-bit (the quarantine registry is excluded on purpose)."""
-        return {**tree_hash(self.sys / "env"), "runtimes.json": hashlib.sha256((self.sys / "runtimes.json").read_bytes()).hexdigest(),
-                "manifest": json.dumps(env_manifest.read_manifest(self.sys).data, sort_keys=True)}
+        """Everything a rollback must restore bit-for-bit (the quarantine registry is excluded on purpose);
+        absolute paths of THIS install are normalised so different installs can be compared."""
+        marker = str(self.root)
+        norm = lambda b: b.replace(marker.encode(), b"<ROOT>").replace(marker.replace("\\", "/").encode(), b"<ROOT>")
+        manifest = json.dumps(env_manifest.read_manifest(self.sys).data, sort_keys=True).replace(
+            marker.replace("\\", "\\\\"), "<ROOT>")
+        return {**tree_hash(self.sys / "env", marker=marker),
+                "runtimes.json": hashlib.sha256(norm((self.sys / "runtimes.json").read_bytes())).hexdigest(),
+                "manifest": manifest}
 
 
 def run(world, steps, op_id="op-1", **kw):
