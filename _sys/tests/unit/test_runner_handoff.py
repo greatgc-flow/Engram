@@ -51,7 +51,7 @@ def sys_dir(tmp_path):
 
 def test_prepare_runner_copies_the_current_interpreter_outside_both_swap_targets(sys_dir):
     exe = python_manager.prepare_runner(sys_dir, "op-1", confirmed=True)
-    runner_dir = sys_dir / "data" / "state" / "env-op" / "op-1" / "runner"
+    runner_dir = sys_dir / "data" / "temp" / "env-op" / "op-1" / "runner"
     assert exe == runner_dir / "python.exe" and exe.read_bytes() == b"fake-python"
     assert (runner_dir / "python314.dll").exists()
     for target in (sys_dir / "env" / "python", sys_dir / "env" / "venv"):
@@ -74,7 +74,7 @@ def test_handoff_file_has_the_runner_path_and_the_confirmation_flag(sys_dir):
 
 def test_prepare_runner_replaces_a_stale_runner_for_the_same_op(sys_dir):
     python_manager.prepare_runner(sys_dir, "op-1", confirmed=False)
-    stale = sys_dir / "data" / "state" / "env-op" / "op-1" / "runner" / "stale.txt"
+    stale = sys_dir / "data" / "temp" / "env-op" / "op-1" / "runner" / "stale.txt"
     stale.write_text("x")
     python_manager.prepare_runner(sys_dir, "op-1", confirmed=False)
     assert not stale.exists()
@@ -119,7 +119,7 @@ def test_apply_from_the_normal_process_hands_off_and_mutates_nothing(sys_dir, mo
     assert env_ops.active_journal(sys_dir) is None                 # no journal yet: nothing was started
     after = tree_hash(sys_dir)
     new_files = set(after) - set(before)
-    assert all(f.startswith("data/state/env-op/") for f in new_files)       # only the runner copy + handoff file
+    assert all(f.startswith("data/state/env-op/") or f.startswith("data/temp/env-op/") for f in new_files)
     assert all(before[f] == after[f] for f in before)
 
 
@@ -166,7 +166,7 @@ def test_the_python_plan_allocates_write_ahead_paths(sys_dir, monkeypatch):
     monkeypatch.setattr(env_ops, "execute", spy)
     monkeypatch.setattr(repair, "steps_from_spec", lambda s, b, spec, **seams: [env_ops.Step("noop", lambda c: None)])
     _update(sys_dir, monkeypatch, ["--apply", "--yes"], in_runner=True)
-    assert set(seen["paths"]) == {"python_backup", "venv_backup", "freeze_backup", "runner_dir"}
+    assert set(seen["paths"]) == {"python_backup", "venv_backup", "freeze_backup", "venv_failed_backup", "venv_interp_backup"}
 
 
 def test_resume_of_a_python_operation_also_goes_through_the_runner(sys_dir, monkeypatch):
@@ -240,7 +240,7 @@ def bat_root(tmp_path):
         "    print('ASSUME_YES=' + os.environ.get('ENGRAM_ASSUME_YES', ''))\n"
         "    print('ARGS=' + ' '.join(sys.argv[1:]))\n"
         "    sys.exit(7)\n"
-        "runner = sysdir / 'data' / 'state' / 'env-op' / 'op' / 'runner'\n"
+        "runner = sysdir / 'data' / 'temp' / 'env-op' / 'op' / 'runner'\n"
         "runner.mkdir(parents=True)\n"
         "shutil.copy(sys.executable, runner / 'python.exe')\n"
         "(sysdir / 'data' / 'state' / 'env-op' / 'handoff.txt').write_text(str(runner / 'python.exe') + '\\n1\\n', encoding='utf-8')\n"

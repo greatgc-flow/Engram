@@ -216,6 +216,7 @@ def steps_from_spec(sys_dir: Path | str, base_dir: Path | str, spec: list[dict],
                 allow_downgrade=params.get("allow_downgrade", False),
                 allow_major=params.get("allow_major", False),
                 offline=params.get("offline", False), force=params.get("force", False),
+                installed=params.get("installed"), had_venv=params.get("had_venv"),
                 **{k: v for k, v in seams.items() if k in _PYTHON_SEAMS})
             out.extend(p_steps)
             
@@ -440,6 +441,7 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
                 f"https://www.python.org/ftp/python/{target}/python-{target}-embed-amd64.zip")
             sha = pin["sha256"] if target == pin["version"] else None
             installed = _installed_python(s, seams)
+            had_venv = (Path(s) / "env" / "venv" / "Scripts" / "python.exe").is_file()
             change = python_manager.classify_change(installed, target)
             if change in ("downgrade", "major") and not getattr(cli_args, "allow_major_runtime_upgrade", False):
                 raise ValueError(f"Blocked {change} update {installed} -> {target}: pass --allow-major-runtime-upgrade and --yes.")
@@ -450,7 +452,8 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
                     "name": "update-python", "group": "A", "kind": "python",
                     "params": {"target_version": target, "url": url, "sha256": sha,
                                "allow_downgrade": change == "downgrade", "allow_major": change == "major",
-                               "offline": getattr(cli_args, "offline", False)},
+                               "offline": getattr(cli_args, "offline", False),
+                               "installed": installed, "had_venv": had_venv},
                 })
                 summary.append(f"Update python {installed or 'none'} -> {target} ({change})")
 

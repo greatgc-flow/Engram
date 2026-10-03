@@ -29,7 +29,7 @@ def classify_change(installed: str | None, target: str) -> str:
 def cache_paths(sys_dir: Path | str, version: str) -> tuple[Path, Path]:
     d = Path(sys_dir) / "data" / "setup-files"
     base = d / f"python-{version}-embed-amd64.zip"
-    return base, base.with_suffix(".sha256")
+    return base, Path(str(base) + ".sha256")
 
 def allocate_paths(sys_dir: Path | str, op_id: str, now: Callable[[], str]) -> dict[str, Path]:
     sys_dir = Path(sys_dir)
@@ -39,8 +39,40 @@ def allocate_paths(sys_dir: Path | str, op_id: str, now: Callable[[], str]) -> d
         "python_backup": broot / "python" / f"{ts}-python-update",
         "venv_backup": broot / "venv" / f"{ts}-broken-venv",
         "freeze_backup": broot / "venv-freeze" / f"{ts}-venv-snapshot",
-        "runner_dir": sys_dir / "data" / "state" / "env-op" / op_id / "runner",
+        "venv_failed_backup": broot / "venv" / f"{ts}-failed-rebuild",
+        "venv_interp_backup": broot / "venv-interp" / f"{ts}-venv-refresh",
     }
+
+def default_holders(paths: list[Path], runner: Runner = venv_manager.default_runner) -> list[dict]:
+    cmd = [
+        "powershell", "-NoProfile", "-Command",
+        "Get-CimInstance Win32_Process | Select-Object ProcessId,ExecutablePath | ConvertTo-Json -Compress"
+    ]
+    try:
+        rc, out = runner(cmd, 10.0)
+        if rc != 0 or not out.strip():
+            return []
+        import json
+        import ntpath
+        data = json.loads(out)
+        if not isinstance(data, list):
+            data = [data]
+            
+        held = []
+        search_paths = [ntpath.normcase(str(p.resolve())) for p in paths]
+        for proc in data:
+            exe = proc.get("ExecutablePath")
+            if not exe:
+                continue
+            exe_lower = ntpath.normcase(exe)
+            for sp in search_paths:
+                sp_prefix = sp if sp.endswith("\\") else sp + "\\"
+                if exe_lower.startswith(sp_prefix) or exe_lower == sp:
+                    held.append({"pid": proc.get("ProcessId"), "exe": exe})
+                    break
+        return held
+    except Exception:
+        return []
 
 def new_pin_text(runtimes_text: str, version: str, url: str, sha256: str | None) -> str:
     in_python = False
@@ -71,23 +103,28 @@ def plan_python_update(
     downloader: Downloader = lambda u, d: provisioner._secure_download(u, d),
     runner: Runner = venv_manager.default_runner,
     free_space: Callable[[Path], int] = lambda p: shutil.disk_usage(p).free,
-    holders: Callable[[list[Path]], list[dict]] = lambda ps: [],
+    holders: Callable[[list[Path]], list[dict]] = default_holders,
     rename: Callable[[str, str], None] = os.replace,
     sleep: Callable[[float], None] = __import__("time").sleep,
     now: Callable[[], str] = env_ops.utc_now,
-    venv_policy: str = "auto"
+    venv_policy: str = "auto",
+    installed: str | None = None,
+    had_venv: bool | None = None
 ) -> list[env_ops.Step]:
     sys_dir = Path(sys_dir)
     env_dir = sys_dir / "env"
     py_dir = env_dir / "python"
     venv_dir = env_dir / "venv"
 
-    installed = None
-    if (py_dir / "python.exe").exists():
-        rc, out = runner([str(py_dir / "python.exe"), "--version"], 10.0)
-        if rc == 0:
-            m = re.search(r"(\d+\.\d+\.\d+)", out)
-            if m: installed = m.group(1)
+    if installed is None:
+        if (py_dir / "python.exe").exists():
+            rc, out = runner([str(py_dir / "python.exe"), "--version"], 10.0)
+            if rc == 0:
+                m = re.search(r"(\d+\.\d+\.\d+)", out)
+                if m: installed = m.group(1)
+
+    if had_venv is None:
+        had_venv = venv_dir.exists()
 
     change = classify_change(installed, target_version)
     if change == "downgrade" and not allow_downgrade and not force:
@@ -172,10 +209,13 @@ def plan_python_update(
             
         pip_script = sys_dir / "data" / "setup-files" / "get-pip.py"
         if pip_script.exists():
-            runner([str(new_dir / "python.exe"), str(pip_script), "--no-warn-script-location"], 60.0)
-            runner([str(new_dir / "python.exe"), "-m", "pip", "install", "virtualenv"], 60.0)
+            rc1, out1 = runner([str(new_dir / "python.exe"), str(pip_script), "--no-warn-script-location"], 60.0)
+            if rc1 != 0: raise RuntimeError(f"get-pip failed: {out1}")
+            rc2, out2 = runner([str(new_dir / "python.exe"), "-m", "pip", "install", "virtualenv"], 60.0)
+            if rc2 != 0: raise RuntimeError(f"virtualenv install failed: {out2}")
             
         rc, out = runner([str(new_dir / "python.exe"), "--version"], 10.0)
+        if rc != 0: raise RuntimeError(f"Staged python --version failed: {out}")
         if str(target_version) not in out:
             raise RuntimeError("Staged python version mismatch")
             
@@ -189,17 +229,6 @@ def plan_python_update(
             snap = venv_manager.build_snapshot(sys_dir, now=now(), python_version=installed)
             venv_manager.write_snapshot(sys_dir, snap, replace=robust_rename, sleep=sleep)
             ctx.data["snapshot"] = snap
-
-    def do_quar_venv(ctx):
-        if venv_dir.exists() and (change in ("minor", "major") or venv_policy == "rebuild"):
-            backups.create(sys_dir, "venv", venv_dir, reason="rebuild", op_id=ctx.op_id, label="old-venv", rename=robust_rename, sleep=sleep)
-            
-    def undo_quar_venv(ctx):
-        for ref in backups.scan(sys_dir).valid:
-            if ref.meta.get("op_id") == ctx.op_id and ref.kind == "venv" and "old-venv" in ref.path.name:
-                if (ref.path / backups.PAYLOAD).exists() and not venv_dir.exists():
-                    backups.restore(ref, rename=robust_rename, sleep=sleep)
-                break
 
     def do_quar_py(ctx):
         if py_dir.exists():
@@ -221,28 +250,25 @@ def plan_python_update(
         if py_dir.exists() and not new_dir.exists():
             robust_rename(str(py_dir), str(new_dir))
 
-    def do_venv_decision(ctx):
-        if venv_policy == "keep" or (venv_policy == "auto" and change == "same"):
-            return
-        elif venv_policy == "rebuild" or change in ("minor", "major"):
-            if venv_dir.exists(): shutil.rmtree(venv_dir)
-            runner([str(py_dir / "python.exe"), "-m", "virtualenv", str(venv_dir)], 60.0)
-            snap = ctx.data.get("snapshot") or {}
-            plan = venv_repair.restore_packages_step_data(snap)
-            v_py = venv_dir / "Scripts" / "python.exe"
-            if plan.get("t1"): runner([str(v_py), "-m", "pip", "install"] + plan["t1"], 120.0)
-            if plan.get("t2"): runner([str(v_py), "-m", "pip", "install"] + plan["t2"], 300.0)
-        else:
-            runner([str(py_dir / "python.exe"), "-m", "virtualenv", "--no-seed", str(venv_dir)], 30.0)
-            venv_repair.regenerate_console_scripts(venv_dir, runner=runner)
-
+    was_rebuilt = change in ("minor", "major") or venv_policy == "rebuild"
+    
     def do_verify(ctx):
         rc, out = runner([str(py_dir / "python.exe"), "--version"], 10.0)
         if rc != 0: raise RuntimeError("Verify failed")
+        if str(target_version) not in out:
+            raise RuntimeError(f"Verify python version mismatch: target={target_version}, got={out}")
+            
+        if had_venv or was_rebuilt:
+            if not venv_dir.exists():
+                raise RuntimeError("Verify failed: venv missing")
+                
         if venv_dir.exists():
             f = venv_manager.probe_venv(sys_dir, runner=runner)
             for x in f:
-                if x.level == "error": raise RuntimeError(f"Venv verify failed: {x.name}")
+                if x.level == "error":
+                    raise RuntimeError(f"Venv verify failed: {x.name}")
+                if was_rebuilt and x.name == "venv_imports" and x.level == "warning":
+                    raise RuntimeError(f"Venv verify failed: {x.name} (warning after rebuild)")
 
     steps.extend([
         env_ops.Step("preflight", do_preflight, group="A"),
@@ -250,12 +276,31 @@ def plan_python_update(
         env_ops.Step("stage", do_stage, undo=undo_stage, group="A"),
         env_ops.Step("snapshot-packages", do_snapshot, group="A"),
     ])
-    if change in ("minor", "major") or venv_policy == "rebuild":
-        steps.append(env_ops.Step("quarantine-venv", do_quar_venv, undo=undo_quar_venv, group="A"))
+
+    venv_pre_swap = []
+    venv_post_swap = []
+    synthetic_findings = []
+    if not (venv_policy == "keep" or (venv_policy == "auto" and change == "same")):
+        if was_rebuilt:
+            synthetic_findings.append({"name": "venv_interpreter", "level": "error"})
+        elif change == "patch":
+            synthetic_findings.append({"name": "venv_interpreter_skew", "level": "warning", "detail": "patch-skew"})
+            
+    if synthetic_findings:
+        all_venv_steps = venv_repair.plan_venv_repair(sys_dir, synthetic_findings, runner=runner)
+        for s in all_venv_steps:
+            if s.name in ("quarantine-venv", "backup-interpreter-files"):
+                venv_pre_swap.append(s)
+            else:
+                venv_post_swap.append(s)
+
+    steps.extend(venv_pre_swap)
     steps.extend([
         env_ops.Step("quarantine-python", do_quar_py, undo=undo_quar_py, group="A"),
         env_ops.Step("swap", do_swap, undo=undo_swap, group="A"),
-        env_ops.Step("venv-decision", do_venv_decision, group="A"),
+    ])
+    steps.extend(venv_post_swap)
+    steps.extend([
         env_ops.Step("verify", do_verify, group="A"),
     ])
 
@@ -300,7 +345,7 @@ def prepare_runner(sys_dir: Path | str, op_id: str, *, confirmed: bool, copytree
     source = sys_dir / "env" / "python"
     if not (source / "python.exe").is_file():
         raise FileNotFoundError(f"no interpreter to copy for the runner: {source}")
-    runner_dir = sys_dir / "data" / "state" / "env-op" / op_id / "runner"
+    runner_dir = sys_dir / "data" / "temp" / "env-op" / op_id / "runner"
     if runner_dir.exists():
         shutil.rmtree(runner_dir)
     runner_dir.parent.mkdir(parents=True, exist_ok=True)

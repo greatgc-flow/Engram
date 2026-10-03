@@ -367,12 +367,13 @@ exit /b %ERRORLEVEL%
 :: ----------------------------------------------------------------------------
 :journal_active
 set "_JOURNAL_ACTIVE=0"
-set "_LASTPH="
+set "_LASTN="
+set "_TERMN="
 if not exist "%ENGRAM_SYS_DIR%\data\state\env-op.journal.jsonl" exit /b 0
-for /f "usebackq delims=" %%L in (`findstr /l /c:"\"event\":\"PHASE\"" "%ENGRAM_SYS_DIR%\data\state\env-op.journal.jsonl"`) do set "_LASTPH=%%L"
-if not defined _LASTPH exit /b 0
-echo %_LASTPH%| findstr /l /c:"\"name\":\"COMMITTED\"" /c:"\"name\":\"ROLLED_BACK\"" >nul
-if errorlevel 1 set "_JOURNAL_ACTIVE=1"
+for /f "tokens=1 delims=:" %%N in ('findstr /n /l /c:"\"event\":\"PHASE\"" "%ENGRAM_SYS_DIR%\data\state\env-op.journal.jsonl"') do set "_LASTN=%%N"
+if not defined _LASTN exit /b 0
+for /f "tokens=1 delims=:" %%N in ('findstr /n /l /c:"\"name\":\"COMMITTED\"" /c:"\"name\":\"ROLLED_BACK\"" "%ENGRAM_SYS_DIR%\data\state\env-op.journal.jsonl"') do set "_TERMN=%%N"
+if not "%_LASTN%"=="%_TERMN%" set "_JOURNAL_ACTIVE=1"
 exit /b 0
 
 :journal_blocked

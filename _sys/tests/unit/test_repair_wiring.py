@@ -9,7 +9,7 @@ import pytest
 from _sys.core.root import find_root
 
 sys.path.insert(0, str(find_root(__file__)))
-from core import env_ops, repair  # noqa: E402
+from core import env_ops, repair, python_manager  # noqa: E402
 
 
 def _tree(tmp_path, pin_version="3.14.8", sha=None, installed=None):
@@ -179,3 +179,61 @@ def test_adopt_manifest_describes_the_current_root_and_records_last_base_dir(tmp
     assert data["root"]["logical"] == str(tmp_path)
     assert (sys_dir / "data" / "last_base_dir.txt").read_text(encoding="utf-8") == str(tmp_path)
     assert steps[0].done(env_ops.OpContext(sys_dir, "op", "repair", {}, {})) is True
+
+
+# ---- new plan persist tests ------------------------------------------------------------------------------------
+
+def test_update_spec_contains_installed_and_had_venv(tmp_path, monkeypatch):
+    monkeypatch.setattr(repair, "_installed_python", lambda s, seams: "3.14.7")
+    monkeypatch.setattr(repair, "detect", lambda *a, **k: {"manifest": "ok", "drift": {"status": "consistent"}, "findings": [], "stale_registry": [], "journal": None, "lock": None})
+    sys_dir = _tree(tmp_path, pin_version="3.14.8")
+    (sys_dir / "env" / "venv" / "Scripts").mkdir(parents=True)
+    (sys_dir / "env" / "venv" / "Scripts" / "python.exe").write_text("")
+    
+    captured_spec = []
+    original = repair.steps_from_spec
+    def spy_steps(s, b, spec, **seams):
+        captured_spec.extend(spec)
+        return original(s, b, spec, **seams)
+    
+    monkeypatch.setattr(repair, "steps_from_spec", spy_steps)
+    ctx = {"sys_dir": sys_dir, "base_dir": tmp_path, "args": [], "command": "engram update"}
+    repair.update_env_main(ctx, {"python"})
+    
+    assert len(captured_spec) == 1
+    assert captured_spec[0]["params"]["installed"] == "3.14.7"
+    assert captured_spec[0]["params"]["had_venv"] is True
+
+def test_steps_from_spec_forwards_installed_and_had_venv(tmp_path, monkeypatch):
+    sys_dir = _tree(tmp_path)
+    spec = [{
+        "name": "update-python", "group": "A", "kind": "python",
+        "params": {"target_version": "3.14.9", "url": "x", "installed": "3.14.7", "had_venv": True}
+    }]
+    
+    captured_kwargs = {}
+    def fake_plan(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return []
+    
+    monkeypatch.setattr(python_manager, "plan_python_update", fake_plan)
+    repair.steps_from_spec(sys_dir, tmp_path, spec)
+    assert captured_kwargs.get("installed") == "3.14.7"
+    assert captured_kwargs.get("had_venv") is True
+
+def test_steps_from_spec_without_installed_had_venv_works(tmp_path, monkeypatch):
+    sys_dir = _tree(tmp_path)
+    spec = [{
+        "name": "update-python", "group": "A", "kind": "python",
+        "params": {"target_version": "3.14.9", "url": "x"}
+    }]
+    
+    captured_kwargs = {}
+    def fake_plan(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return []
+    
+    monkeypatch.setattr(python_manager, "plan_python_update", fake_plan)
+    repair.steps_from_spec(sys_dir, tmp_path, spec)
+    assert captured_kwargs.get("installed") is None
+    assert captured_kwargs.get("had_venv") is None

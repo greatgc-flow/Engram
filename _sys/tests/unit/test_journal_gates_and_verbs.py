@@ -81,6 +81,13 @@ def test_non_terminal_journal_blocks_mutating_verbs(root, phase):
         assert "DISPATCH_PIPELINE" not in proc.stdout
 
 
+def test_journal_gate_injection_hardening(root):
+    write_journal(root, ["PLANNED", "STEPS_RUNNING & echo PWNED_MARKER"])
+    proc = run_engram(root, "tidy")
+    assert proc.returncode == 14, (proc.stdout, proc.stderr)
+    assert "PWNED_MARKER" not in proc.stdout.splitlines()
+
+
 @pytest.mark.parametrize("phases", [["PLANNED", "STEPS_RUNNING", "COMMITTED"], ["PLANNED", "STEPS_RUNNING", "ROLLING_BACK", "ROLLED_BACK"]])
 def test_terminal_journal_does_not_block(root, phases):
     write_journal(root, phases)
@@ -148,7 +155,7 @@ def test_repair_without_python_and_without_journal_says_not_set_up(root):
 
 @pytest.fixture
 def dispatch_root(tmp_path: Path):
-    r = tmp_path / "root"
+    r = tmp_path / "a&b root"
     core = r / "_sys" / "core"
     core.mkdir(parents=True)
     shutil.copy(DISPATCH, core / "dispatch.bat")
@@ -171,16 +178,55 @@ def test_dispatch_falls_back_to_python_new_for_repair_when_a_journal_is_active(d
     proc = run_dispatch(r, "repair", "--resume")
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "python.new" in proc.stdout and "ARGS=repair --resume" in proc.stdout
+    assert str(alt / "python.exe") not in proc.stdout
 
 
 def test_dispatch_falls_back_to_the_runner_copy(dispatch_root):
     r = dispatch_root
     write_journal(r, ["PLANNED", "STEPS_RUNNING"])
-    runner = r / "_sys" / "data" / "state" / "env-op" / "op-1" / "runner"
+    runner = r / "_sys" / "data" / "temp" / "env-op" / "op-1" / "runner"
     runner.mkdir(parents=True)
     shutil.copy(sys.executable, runner / "python.exe")
     proc = run_dispatch(r, "repair", "--rollback")
     assert proc.returncode == 0 and "runner" in proc.stdout
+    assert str(runner / "python.exe") not in proc.stdout
+
+
+def test_dispatch_falls_back_to_backup_payload_over_python_new(dispatch_root):
+    r = dispatch_root
+    write_journal(r, ["PLANNED", "STEPS_RUNNING"])
+    backup = r / "_sys" / "data" / "backups" / "env" / "python" / "bkp-1" / "payload"
+    backup.mkdir(parents=True)
+    shutil.copy(sys.executable, backup / "python.exe")
+    
+    alt = r / "_sys" / "env" / "python.new"
+    alt.mkdir(parents=True)
+    shutil.copy(sys.executable, alt / "python.exe")
+    
+    proc = run_dispatch(r, "repair", "--rollback")
+    assert proc.returncode == 0 and "backup" in proc.stdout
+    assert str(backup / "python.exe") not in proc.stdout
+
+
+def test_dispatch_runner_preferred_over_all(dispatch_root):
+    r = dispatch_root
+    write_journal(r, ["PLANNED", "STEPS_RUNNING"])
+    
+    runner = r / "_sys" / "data" / "temp" / "env-op" / "op-1" / "runner"
+    runner.mkdir(parents=True)
+    shutil.copy(sys.executable, runner / "python.exe")
+    
+    backup = r / "_sys" / "data" / "backups" / "env" / "python" / "bkp-1" / "payload"
+    backup.mkdir(parents=True)
+    shutil.copy(sys.executable, backup / "python.exe")
+    
+    alt = r / "_sys" / "env" / "python.new"
+    alt.mkdir(parents=True)
+    shutil.copy(sys.executable, alt / "python.exe")
+    
+    proc = run_dispatch(r, "repair", "--rollback")
+    assert proc.returncode == 0 and "runner" in proc.stdout
+    assert "backup" not in proc.stdout and "python.new" not in proc.stdout
 
 
 def test_dispatch_does_not_use_an_alternate_interpreter_for_other_commands(dispatch_root):
@@ -200,6 +246,45 @@ def test_dispatch_without_a_journal_never_uses_python_new(dispatch_root):
     shutil.copy(sys.executable, alt / "python.exe")
     proc = run_dispatch(r, "repair")
     assert proc.returncode == 1 and "not initialized" in proc.stdout
+
+
+def test_handoff_file_roundtrips_mbcs(tmp_path):
+    r = tmp_path / "한글 root"
+    try:
+        str(r).encode("mbcs")
+    except UnicodeEncodeError:
+        pytest.skip("cannot encode root path in mbcs")
+        
+    core = r / "_sys" / "core"
+    core.mkdir(parents=True)
+    shutil.copy(DISPATCH, core / "dispatch.bat")
+    
+    handoff_txt = r / "_sys" / "data" / "state" / "env-op" / "handoff.txt"
+    runner_py = r / "_sys" / "data" / "temp" / "env-op" / "op-1" / "runner" / "python.exe"
+    
+    dispatcher_code = f"""import sys, os
+if os.environ.get('ENGRAM_IN_RUNNER') == '1':
+    print('SUCCESS_IN_RUNNER')
+    sys.exit(0)
+handoff = r'''{str(handoff_txt)}'''
+runner = r'''{str(runner_py)}'''
+os.makedirs(os.path.dirname(handoff), exist_ok=True)
+os.makedirs(os.path.dirname(runner), exist_ok=True)
+with open(runner, 'wb') as f:
+    f.write(open(sys.executable, 'rb').read())
+with open(handoff, 'wb') as f:
+    f.write((runner + "\\n0\\n").encode('mbcs'))
+sys.exit(75)
+"""
+    (core / "dispatcher.py").write_text(dispatcher_code, encoding="utf-8")
+    
+    py_dir = r / "_sys" / "env" / "python"
+    py_dir.mkdir(parents=True)
+    shutil.copy(sys.executable, py_dir / "python.exe")
+    
+    proc = _run(core / "dispatch.bat", ["tidy"], r)
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    assert "SUCCESS_IN_RUNNER" in proc.stdout
 
 
 # ---- bootstrap.bat gate ------------------------------------------------------------------------------------------

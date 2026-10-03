@@ -27,9 +27,9 @@ def test_blocked_changes(tmp_path):
     py_dir.mkdir(parents=True)
     (py_dir / "python.exe").write_text("")
     with pytest.raises(ValueError, match="downgrade blocked"):
-        plan_python_update(tmp_path, "3.14.7", url="x", runner=lambda a, t: (0, "3.14.8"))
+        plan_python_update(tmp_path, "3.14.7", url="x", installed="3.14.8")
     with pytest.raises(ValueError, match="major upgrade blocked"):
-        plan_python_update(tmp_path, "4.0.0", url="x", runner=lambda a, t: (0, "3.14.8"))
+        plan_python_update(tmp_path, "4.0.0", url="x", installed="3.14.8")
 
 def _setup_tree(tmp_path):
     env = tmp_path / "env"
@@ -51,7 +51,7 @@ def test_cache_reuse_matching_sha(tmp_path):
     zip_path = tmp_path / "data" / "setup-files" / "python-3.14.9-embed-amd64.zip"
     _make_zip(zip_path, {"python.exe": b"exe"})
     c_sha = provisioner._hash_file(zip_path, "sha256")
-    zip_path.with_suffix(".sha256").write_text(c_sha)
+    Path(str(zip_path) + ".sha256").write_text(c_sha)
     
     called = []
     def dl(u, d): called.append(u)
@@ -64,7 +64,7 @@ def test_cache_reuse_matching_sha(tmp_path):
 def test_cache_sha_mismatch_redownload(tmp_path):
     zip_path = tmp_path / "data" / "setup-files" / "python-3.14.9-embed-amd64.zip"
     _make_zip(zip_path, {"python.exe": b"bad"})
-    zip_path.with_suffix(".sha256").write_text("badhash")
+    Path(str(zip_path) + ".sha256").write_text("badhash")
     
     def dl(u, d): 
         _make_zip(d, {"python.exe": b"good"})
@@ -73,7 +73,7 @@ def test_cache_sha_mismatch_redownload(tmp_path):
     ctx = env_ops.OpContext(tmp_path, "123", "up", {}, {})
     next(s for s in steps if s.name == "download-verify").do(ctx)
     assert zip_path.exists()
-    assert provisioner._hash_file(zip_path, "sha256") == zip_path.with_suffix(".sha256").read_text()
+    assert provisioner._hash_file(zip_path, "sha256") == Path(str(zip_path) + ".sha256").read_text()
 
 def test_downloader_failure_leaves_no_zip(tmp_path):
     def dl(u, d): raise RuntimeError("dl fail")
@@ -83,13 +83,13 @@ def test_downloader_failure_leaves_no_zip(tmp_path):
         next(s for s in steps if s.name == "download-verify").do(ctx)
     zip_path = tmp_path / "data" / "setup-files" / "python-3.14.9-embed-amd64.zip"
     assert not zip_path.exists()
-    assert not zip_path.with_suffix(".sha256").exists()
+    assert not Path(str(zip_path) + ".sha256").exists()
 
 def test_offline_verified_cache_works(tmp_path):
     zip_path = tmp_path / "data" / "setup-files" / "python-3.14.9-embed-amd64.zip"
     _make_zip(zip_path, {"python.exe": b"exe"})
     c_sha = provisioner._hash_file(zip_path, "sha256")
-    zip_path.with_suffix(".sha256").write_text(c_sha)
+    Path(str(zip_path) + ".sha256").write_text(c_sha)
     
     steps = plan_python_update(tmp_path, "3.14.9", url="http://x", offline=True, force=True)
     ctx = env_ops.OpContext(tmp_path, "123", "up", {}, {})
@@ -111,7 +111,7 @@ def test_offline_without_cache_raises_before_mutation(tmp_path):
 def test_zip_slip_rejected(tmp_path):
     zip_path = tmp_path / "data" / "setup-files" / "python-3.14.9-embed-amd64.zip"
     _make_zip(zip_path, {"../evil.txt": b"evil"})
-    zip_path.with_suffix(".sha256").write_text(provisioner._hash_file(zip_path, "sha256"))
+    Path(str(zip_path) + ".sha256").write_text(provisioner._hash_file(zip_path, "sha256"))
     
     steps = plan_python_update(tmp_path, "3.14.9", url="x", force=True)
     ctx = env_ops.OpContext(tmp_path, "123", "up", {}, {})
@@ -121,7 +121,7 @@ def test_zip_slip_rejected(tmp_path):
 def test_pth_edit(tmp_path):
     zip_path = tmp_path / "data" / "setup-files" / "python-3.14.9-embed-amd64.zip"
     _make_zip(zip_path, {"python311._pth": b"#import site\nother"})
-    zip_path.with_suffix(".sha256").write_text(provisioner._hash_file(zip_path, "sha256"))
+    Path(str(zip_path) + ".sha256").write_text(provisioner._hash_file(zip_path, "sha256"))
     
     steps = plan_python_update(tmp_path, "3.14.9", url="x", force=True, runner=lambda a, t: (0, "3.14.9"))
     ctx = env_ops.OpContext(tmp_path, "123", "up", {"runner_dir": tmp_path / "runner"}, {})
@@ -131,7 +131,7 @@ def test_pth_edit(tmp_path):
 def test_stage_version_probe_mismatch_rolls_back(tmp_path):
     zip_path = tmp_path / "data" / "setup-files" / "python-3.14.9-embed-amd64.zip"
     _make_zip(zip_path, {"python.exe": b""})
-    zip_path.with_suffix(".sha256").write_text(provisioner._hash_file(zip_path, "sha256"))
+    Path(str(zip_path) + ".sha256").write_text(provisioner._hash_file(zip_path, "sha256"))
     
     steps = plan_python_update(tmp_path, "3.14.9", url="x", force=True, runner=lambda a, t: (0, "3.14.8"))
     ctx = env_ops.OpContext(tmp_path, "123", "up", {"runner_dir": tmp_path / "runner"}, {})
@@ -211,10 +211,7 @@ def test_venv_policy(tmp_path):
 
 def test_allocate_paths(tmp_path):
     paths = allocate_paths(tmp_path, "op123", lambda: "2026-10-02T12:00:00Z")
-    assert "python_backup" in paths
-    assert "venv_backup" in paths
-    assert "freeze_backup" in paths
-    assert "runner_dir" in paths
+    assert set(paths.keys()) == {"python_backup", "venv_backup", "freeze_backup", "venv_failed_backup", "venv_interp_backup"}
 
 @pytest.mark.parametrize("fail_step", ["stage", "quarantine-python", "swap", "verify"])
 def test_plan_execution_rollback(tmp_path, fail_step, monkeypatch):
@@ -227,7 +224,7 @@ def test_plan_execution_rollback(tmp_path, fail_step, monkeypatch):
     
     zip_path = tmp_path / "data" / "setup-files" / "python-3.14.9-embed-amd64.zip"
     _make_zip(zip_path, {"python.exe": b"newexe"})
-    zip_path.with_suffix(".sha256").write_text(provisioner._hash_file(zip_path, "sha256"))
+    Path(str(zip_path) + ".sha256").write_text(provisioner._hash_file(zip_path, "sha256"))
     
     def hash_tree(d): return {str(p.relative_to(d)): provisioner._hash_file(p, "sha256") for p in d.rglob("*") if p.is_file()}
     py_before = hash_tree(py)
@@ -270,7 +267,7 @@ def test_plan_execution_success(tmp_path, monkeypatch):
     
     zip_path = tmp_path / "data" / "setup-files" / "python-3.14.9-embed-amd64.zip"
     _make_zip(zip_path, {"python.exe": b"newexe", "python3._pth": b"#import site"})
-    zip_path.with_suffix(".sha256").write_text(provisioner._hash_file(zip_path, "sha256"))
+    Path(str(zip_path) + ".sha256").write_text(provisioner._hash_file(zip_path, "sha256"))
     
     def run(a, t): 
         if "--version" in a: return 0, "3.14.9"

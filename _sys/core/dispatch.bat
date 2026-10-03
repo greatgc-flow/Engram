@@ -54,14 +54,55 @@ exit /b %errorlevel%
 
 :alt_python
 set "PYTHONUTF8=1"
-if exist "%SYS_DIR%\env\python.new\python.exe" set "PY=%SYS_DIR%\env\python.new\python.exe"
-if not exist "%PY%" for /d %%R in ("%SYS_DIR%\data\state\env-op\*") do if exist "%%R\runner\python.exe" set "PY=%%R\runner\python.exe"
-if not exist "%PY%" (
+set "PY="
+set "_KIND="
+
+:: 1) newest runner copy
+pushd "%SYS_DIR%\data\temp\env-op" 2>nul
+if not errorlevel 1 (
+    for /f "usebackq delims=" %%D in (`dir /b /ad /o-d 2^>nul`) do call :check_runner "%%D"
+    popd
+)
+if defined PY goto :alt_found
+
+:: 2) backup payload
+pushd "%SYS_DIR%\data\backups\env\python" 2>nul
+if not errorlevel 1 (
+    for /f "usebackq delims=" %%D in (`dir /b /ad /o-d 2^>nul`) do call :check_backup "%%D"
+    popd
+)
+if defined PY goto :alt_found
+
+:: 3) python.new
+if exist "%SYS_DIR%\env\python.new\python.exe" (
+    set "PY=%SYS_DIR%\env\python.new\python.exe"
+    set "_KIND=python.new"
+    goto :alt_found
+)
+
+:alt_found
+if not defined PY (
     echo [Error] No usable Python interpreter was found to recover the interrupted operation.
     exit /b 1
 )
-echo [i] Recovering an interrupted environment operation with: %PY%
+echo [i] Recovering an interrupted environment operation with an alternate interpreter: %_KIND%
 :: an alternate interpreter is already outside the swap targets: never hand off again
 set "ENGRAM_IN_RUNNER=1"
 "%PY%" "%SYS_DIR%\core\dispatcher.py" %*
 exit /b %errorlevel%
+
+:check_runner
+if defined PY exit /b 0
+if exist "%SYS_DIR%\data\temp\env-op\%~1\runner\python.exe" (
+    set "PY=%SYS_DIR%\data\temp\env-op\%~1\runner\python.exe"
+    set "_KIND=runner"
+)
+exit /b 0
+
+:check_backup
+if defined PY exit /b 0
+if exist "%SYS_DIR%\data\backups\env\python\%~1\payload\python.exe" (
+    set "PY=%SYS_DIR%\data\backups\env\python\%~1\payload\python.exe"
+    set "_KIND=backup"
+)
+exit /b 0

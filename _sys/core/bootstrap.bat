@@ -33,11 +33,12 @@ setlocal enabledelayedexpansion
 :: collide with the half-swapped tree, so refuse before anything is downloaded or created.
 set "_JF=!SYS_DIR!\data\state\env-op.journal.jsonl"
 if exist "!_JF!" (
-    set "_LASTPH="
-    for /f "usebackq delims=" %%L in (`findstr /l /c:"\"event\":\"PHASE\"" "!_JF!"`) do set "_LASTPH=%%L"
-    if defined _LASTPH (
-        echo !_LASTPH!| findstr /l /c:"\"name\":\"COMMITTED\"" /c:"\"name\":\"ROLLED_BACK\"" >nul
-        if errorlevel 1 (
+    set "_LASTN="
+    set "_TERMN="
+    for /f "tokens=1 delims=:" %%N in ('findstr /n /l /c:"\"event\":\"PHASE\"" "!_JF!"') do set "_LASTN=%%N"
+    if defined _LASTN (
+        for /f "tokens=1 delims=:" %%N in ('findstr /n /l /c:"\"name\":\"COMMITTED\"" /c:"\"name\":\"ROLLED_BACK\"" "!_JF!"') do set "_TERMN=%%N"
+        if not "!_LASTN!"=="!_TERMN!" (
             echo [Error] An environment operation was interrupted; its journal is still open.
             echo         Run: engram repair --resume   or   engram repair --rollback
             exit /b 14
