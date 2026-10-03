@@ -1,6 +1,6 @@
 # Engram Environment Resilience: Python/venv Lifecycle, Root Relocation, and Backup Retention
 
-- **Status**: **DRAFT R4.1 - pre-TDD design; R2 = cross-review round 1, R3 = spikes overturning one premise, R4 = round-2 review + spikes S-12..S-14, R4.1 = round-3 sanity pass (section 17). Ready for sign-off; cx round pending** (no code written)
+- **Status**: **IMPLEMENTED P0-P4 (v3.6.0)**; design R4.1 (cross-reviewed by cc.deepthink, ag.deepthink, ag.pro, cx.pro). P5 (legacy backup producers) and further review notes are tracked in the approval-gate record. User guide: `docs/env_resilience_guide.md`.
 - **Author**: `cc` (Claude Sonnet 5.5), at the user's request
 - **Date**: 2026-10-02
 - **Reviewers requested**: `ag.deepthink` (Windows/failure modes), `cc.deepthink` (state machine/rollback/idempotency), `ag.pro` (security/retention); `cx` unavailable (usage limit until 2026-10-04 10:35)

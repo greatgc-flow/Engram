@@ -478,6 +478,9 @@ echo   engram update         Check and apply latest stable runtime and tool upda
 echo   engram doctor         Report environment health, tool status, and configuration
 echo   engram menu           Manage right-click context menu (status, enable, disable, clean)
 echo   engram tidy           Clean temporary logs, caches, and orphaned files
+echo   engram repair         Fix a broken Python/venv (dry run; --apply to execute)
+echo   engram relocate       Re-anchor Engram after the folder was moved or renamed
+echo   engram snapshots      List, pin and restore Engram's environment backups
 echo   engram snapshots      List, pin and restore environment backups: replaced Python/venv copies and package snapshots
 echo   engram repair         Detect and repair environment drift: broken venv, stale launchers, moved root, missing manifest
 echo   engram relocate       Repair the environment after the portable folder was moved or renamed
@@ -500,6 +503,7 @@ echo   First time in a new folder:    engram
 echo   Keep everything up to date:    engram update --yes
 echo   Update just the AI CLIs:       engram update --only claude,codex,agy --yes
 echo   Move the folder to a new PC:   engram backup ; (copy folder) ; engram restore PATH
-echo   Something feels broken:        engram doctor
+echo   Something feels broken:        engram doctor ; engram repair
+echo   Folder moved or renamed:       engram relocate
 echo.
 exit /b 0
