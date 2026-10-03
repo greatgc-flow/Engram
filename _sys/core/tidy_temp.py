@@ -368,7 +368,8 @@ def _active_journal() -> dict | None:
     try:
         return env_ops.active_journal(_SYS_DIR)
     except Exception:
-        return None
+        # Fail closed: an unreadable journal must be treated as active.
+        return {"op_id": None, "phase": "UNREADABLE", "paths": {}, "unreadable": True}
 
 
 def _journal_protected_paths() -> tuple[Path, ...]:

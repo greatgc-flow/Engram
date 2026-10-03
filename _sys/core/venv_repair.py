@@ -369,6 +369,8 @@ def plan_venv_repair(sys_dir: Path, findings: list, *, manifest: dict | None = N
             rewrite_pyvenv_cfg(venv_dir, managed_dir)
         steps.append(Step("rewrite-pyvenv-cfg", do=do_rewrite, group="A"))
         
+    console = findings_by_name.get("console_scripts", {})
+    console_stale = console.get("level") == "warning" and console.get("detail", "").startswith("stale-launchers")
     skew = findings_by_name.get("venv_interpreter_skew", {})
     if skew.get("detail") == "patch-skew":
         def do_backup_interp(ctx):
@@ -468,18 +470,27 @@ def plan_venv_repair(sys_dir: Path, findings: list, *, manifest: dict | None = N
             payload = dest / backups.PAYLOAD
             if not payload.exists():
                 raise RuntimeError(f"cannot undo refresh-interpreter: interpreter backup not found at {dest}")
-            for root, _, files in os.walk(payload):
+            def _raise(err):
+                raise err
+            expected = 0
+            restored = 0
+            for root, _, files in os.walk(payload, onerror=_raise):
                 for f in files:
+                    expected += 1
                     src = Path(root) / f
                     rel = src.relative_to(payload)
                     dst = venv_dir / rel
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(src, dst)
+                    restored += 1
+            if restored != expected:
+                raise RuntimeError(f"undo refresh-interpreter restored {restored} of {expected} files")
 
         def do_record_hashes(ctx):
             venv_dir = ctx.sys_dir / "env" / "venv"
             ctx.data["new_interpreter_hashes"] = hash_files(venv_dir, interpreter_file_set(venv_dir))
-            _commit_op_backups(ctx)
+            if not console_stale:
+                _commit_op_backups(ctx)
             
         steps.append(Step("backup-interpreter-files", do=do_backup_interp, group="A"))
         steps.append(Step("refresh-interpreter", do=do_refresh, undo=undo_refresh, group="A"))
@@ -493,6 +504,7 @@ def plan_venv_repair(sys_dir: Path, findings: list, *, manifest: dict | None = N
             ctx.data["regenerated_scripts"] = res
             if res.get("failed"):
                 raise RuntimeError(f"console script regeneration failed: {res['failed']}")
+            _commit_op_backups(ctx)
         steps.append(Step("regenerate-console-scripts", do=do_regen_stale, group="A"))
         
     return steps

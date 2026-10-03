@@ -218,3 +218,15 @@ def test_journal_paths_protected_in_plan(env, tmp_path):
     assert tidy_temp.plan_backups(datetime.datetime.now().timestamp()) == []
     plan = tidy_temp.plan_backups_retention(datetime.datetime.now().timestamp())
     assert not plan.delete
+
+
+def test_unreadable_journal_fails_closed(env, tmp_path, monkeypatch, capsys):
+    from core import env_ops
+    base, sys_dir = env
+    old = _backup(tmp_path, sys_dir, "venv", "old", 30)
+
+    def boom(_):
+        raise OSError("unreadable")
+    monkeypatch.setattr(env_ops, "active_journal", boom)
+    rc, out = _run(monkeypatch, capsys, "--only", "backups", "--apply")
+    assert "unfinished environment operation journal" in out and old.path.exists()

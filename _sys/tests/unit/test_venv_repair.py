@@ -467,3 +467,38 @@ def test_regen_failure_raises_and_does_not_commit_backups(tmp_path):
         by_name["regenerate-console-scripts"].do(ctx)
     states = [r.meta["state"] for r in backups.scan(sys_dir).valid if r.meta.get("op_id") == "op-1"]
     assert states == ["pending"]
+
+
+def test_refresh_undo_fails_on_unreadable_payload(tmp_path, monkeypatch):
+    sys_dir, scripts, by_name, ctx = _patch_skew_ctx(tmp_path, FakeRunner())
+    by_name["backup-interpreter-files"].do(ctx)
+    real_walk = os.walk
+
+    def bad_walk(top, topdown=True, onerror=None, followlinks=False):
+        if onerror:
+            onerror(OSError("denied"))
+        return real_walk(top, topdown, onerror, followlinks)
+    monkeypatch.setattr(os, "walk", bad_walk)
+    with pytest.raises(OSError):
+        by_name["refresh-interpreter"].undo(ctx)
+
+
+def test_combined_skew_and_stale_commits_only_after_regen(tmp_path):
+    from core import backups
+    sys_dir = tmp_path / "_sys"
+    (sys_dir / "env" / "venv" / "Scripts").mkdir(parents=True)
+    (sys_dir / "env" / "venv" / "Scripts" / "python.exe").write_text("X")
+    findings = [{"name": "venv_interpreter_skew", "level": "warning", "detail": "patch-skew"},
+                {"name": "console_scripts", "level": "warning", "detail": "stale-launchers: 1"}]
+    bad = FakeRunner(0, json.dumps({"regenerated": 0, "failed": ["pip.exe"]}))
+    steps = plan_venv_repair(sys_dir, findings, runner=bad)
+    by_name = {s.name: s for s in steps}
+    ctx = OpContext(sys_dir, "op-1", "repair",
+                    {"venv_interp_backup": str(sys_dir / "data" / "backups" / "env" / "venv-interp" / "bkp")}, {})
+    by_name["backup-interpreter-files"].do(ctx)
+    by_name["record-interpreter-hashes"].do(ctx)
+    st = lambda: [r.meta["state"] for r in backups.scan(sys_dir).valid if r.meta.get("op_id") == "op-1"]
+    assert st() == ["pending"]
+    with pytest.raises(RuntimeError):
+        by_name["regenerate-console-scripts"].do(ctx)
+    assert st() == ["pending"]
