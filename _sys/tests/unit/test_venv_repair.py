@@ -397,7 +397,7 @@ def test_rebuild_commits_quarantine_backup_on_success(tmp_path):
     venv_dir = sys_dir / "env" / "venv"
     venv_dir.mkdir(parents=True)
     (venv_dir / "test.txt").write_text("old venv")
-    steps = plan_venv_repair(sys_dir, [{"name": "venv_interpreter", "level": "error"}], runner=FakeRunner())
+    steps = plan_venv_repair(sys_dir, [{"name": "venv_interpreter", "level": "error"}], runner=FakeRunner(0, json.dumps({"regenerated": 0, "failed": []})))
     paths = {"venv_backup": str(sys_dir / "data" / "backups" / "env" / "venv" / "bkp"),
              "venv_failed_backup": str(sys_dir / "data" / "backups" / "env" / "venv" / "failed")}
     ctx = OpContext(sys_dir, "op-1", "repair", paths, {})
@@ -418,3 +418,52 @@ def test_regenerate_reports_missing_distlib_as_failure(tmp_path):
         venv_dir, python_exe=venv_dir / "python.exe",
         runner=lambda argv, timeout: (0, json.dumps({"error": "distlib.scripts not found"})))
     assert res["regenerated"] == 0 and res["failed"] and "distlib" in res["failed"][0]
+
+
+def _patch_skew_ctx(tmp_path, runner):
+    sys_dir = tmp_path / "_sys"
+    scripts = sys_dir / "env" / "venv" / "Scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "python.exe").write_text("ORIGINAL")
+    steps = plan_venv_repair(
+        sys_dir, [{"name": "venv_interpreter_skew", "level": "warning", "detail": "patch-skew"}], runner=runner)
+    paths = {"venv_interp_backup": str(sys_dir / "data" / "backups" / "env" / "venv-interp" / "bkp")}
+    return sys_dir, scripts, {s.name: s for s in steps}, OpContext(sys_dir, "op-1", "repair", paths, {})
+
+
+def test_refresh_undo_restores_original_interpreter_files(tmp_path):
+    def failing(argv, timeout):
+        return 1, "boom"
+    sys_dir, scripts, by_name, ctx = _patch_skew_ctx(tmp_path, failing)
+    by_name["backup-interpreter-files"].do(ctx)
+    (scripts / "python.exe").write_text("CLOBBERED")
+    with pytest.raises(RuntimeError):
+        by_name["refresh-interpreter"].do(ctx)
+    by_name["refresh-interpreter"].undo(ctx)
+    assert (scripts / "python.exe").read_text() == "ORIGINAL"
+
+
+def test_refresh_undo_fails_loudly_without_backup(tmp_path):
+    sys_dir, scripts, by_name, ctx = _patch_skew_ctx(tmp_path, FakeRunner())
+    with pytest.raises(RuntimeError, match="backup not found"):
+        by_name["refresh-interpreter"].undo(ctx)
+
+
+def test_regen_failure_raises_and_does_not_commit_backups(tmp_path):
+    from core import backups
+    sys_dir = tmp_path / "_sys"
+    venv_dir = sys_dir / "env" / "venv"
+    venv_dir.mkdir(parents=True)
+    (venv_dir / "test.txt").write_text("old venv")
+    bad = FakeRunner(0, json.dumps({"regenerated": 0, "failed": ["pip.exe"]}))
+    steps = plan_venv_repair(sys_dir, [{"name": "venv_interpreter", "level": "error"}], runner=bad)
+    paths = {"venv_backup": str(sys_dir / "data" / "backups" / "env" / "venv" / "bkp"),
+             "venv_failed_backup": str(sys_dir / "data" / "backups" / "env" / "venv" / "failed")}
+    ctx = OpContext(sys_dir, "op-1", "repair", paths, {})
+    by_name = {s.name: s for s in steps}
+    by_name["quarantine-venv"].do(ctx)
+    venv_dir.mkdir(parents=True)
+    with pytest.raises(RuntimeError, match="regeneration failed"):
+        by_name["regenerate-console-scripts"].do(ctx)
+    states = [r.meta["state"] for r in backups.scan(sys_dir).valid if r.meta.get("op_id") == "op-1"]
+    assert states == ["pending"]

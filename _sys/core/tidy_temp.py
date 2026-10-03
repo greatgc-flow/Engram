@@ -362,10 +362,27 @@ def _active_op_ids() -> set[str]:
     return active
 
 
+def _active_journal() -> dict | None:
+    """A non-terminal env-op journal (its recovery backups must survive); None when none/unreadable-as-none."""
+    from core import env_ops
+    try:
+        return env_ops.active_journal(_SYS_DIR)
+    except Exception:
+        return None
+
+
+def _journal_protected_paths() -> tuple[Path, ...]:
+    j = _active_journal()
+    if not j:
+        return ()
+    return tuple(Path(v) for v in (j.get("paths") or {}).values() if isinstance(v, str))
+
+
 def plan_backups_retention(
     now: float, keep_override: int | None = None, size_cap_bytes: int | None = None,
     protect: tuple[Path, ...] = (),
 ) -> backups.RetentionPlan:
+    protect = tuple(protect) + _journal_protected_paths()
     scan = backups.scan(_SYS_DIR)
     if size_cap_bytes is None:
         try:
@@ -385,6 +402,8 @@ def plan_backups(
     now: float, keep_override: int | None = None, size_cap_bytes: int | None = None,
     protect: tuple[Path, ...] = (),
 ) -> list[Path]:
+    if _active_journal() is not None:
+        return []
     return [ref.path for ref, _ in plan_backups_retention(now, keep_override, size_cap_bytes, protect).delete]
 
 
@@ -556,6 +575,10 @@ def main() -> int:
         if lock.get("state") == "held":
             backups_blocked = True
             print("[backups] skipped: an environment operation holds the environment lock")
+
+    if "backups" in targets and not backups_blocked and _active_journal() is not None:
+        backups_blocked = True
+        print("[backups] skipped: an unfinished environment operation journal exists (recovery backups must be kept)")
 
     adopted_paths: tuple[Path, ...] = ()
     lock_handle = None

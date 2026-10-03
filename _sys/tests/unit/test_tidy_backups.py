@@ -187,3 +187,34 @@ def test_build_plan_exposes_a_backups_category(env, tmp_path):
     _backup(tmp_path, sys_dir, "venv", "new", 1)
     plan = {key: items for _, key, items in tidy_temp.build_plan()}
     assert len(plan["backups"]) == 1
+
+
+def _write_active_journal(sys_dir, paths):
+    from core import env_ops
+    jp = env_ops.journal_path(sys_dir)
+    jp.parent.mkdir(parents=True, exist_ok=True)
+    seq = [0]
+    ap = env_ops._append_record_fn(jp, seq, env_ops.utc_now)
+    ap("PHASE", name="PLANNED", op_id="op-live", kind="repair")
+    ap("PATHS", paths={k: str(v) for k, v in paths.items()})
+
+
+def test_active_journal_skips_backups_pruner(env, tmp_path, monkeypatch, capsys):
+    base, sys_dir = env
+    pend = _backup(tmp_path, sys_dir, "venv", "p", 5, committed=False, op="op-live")
+    old = _backup(tmp_path, sys_dir, "venv", "old", 30)
+    _write_active_journal(sys_dir, {"venv_backup": pend.path})
+    rc, out = _run(monkeypatch, capsys, "--only", "backups", "--apply")
+    assert rc == 0 and "unfinished environment operation journal" in out
+    assert pend.path.exists() and old.path.exists()
+    meta = json.loads((pend.path / backups.MARKER).read_text(encoding="utf-8"))
+    assert meta["state"] == "pending"
+
+
+def test_journal_paths_protected_in_plan(env, tmp_path):
+    base, sys_dir = env
+    old = _backup(tmp_path, sys_dir, "venv", "old", 30)
+    _write_active_journal(sys_dir, {"venv_backup": old.path})
+    assert tidy_temp.plan_backups(datetime.datetime.now().timestamp()) == []
+    plan = tidy_temp.plan_backups_retention(datetime.datetime.now().timestamp())
+    assert not plan.delete

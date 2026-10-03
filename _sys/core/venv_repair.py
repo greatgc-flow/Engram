@@ -348,7 +348,10 @@ def plan_venv_repair(sys_dir: Path, findings: list, *, manifest: dict | None = N
                 
         def do_regen(ctx):
             venv_dir = ctx.sys_dir / "env" / "venv"
-            ctx.data["regenerated_scripts"] = regenerate_console_scripts(venv_dir, runner=runner)
+            res = regenerate_console_scripts(venv_dir, runner=runner)
+            ctx.data["regenerated_scripts"] = res
+            if res.get("failed"):
+                raise RuntimeError(f"console script regeneration failed: {res['failed']}")
             _commit_op_backups(ctx)
             
         steps.append(Step("quarantine-venv", do=do_quarantine, undo=undo_quarantine, group="A"))
@@ -458,19 +461,21 @@ def plan_venv_repair(sys_dir: Path, findings: list, *, manifest: dict | None = N
             from core import backups
             import shutil
             venv_dir = ctx.sys_dir / "env" / "venv"
-            for ref in backups.scan(ctx.sys_dir).valid:
-                if ref.meta.get("op_id") == ctx.op_id and ref.meta.get("label") == "pre-refresh":
-                    payload = ref.path / backups.PAYLOAD
-                    if payload.exists():
-                        for root, _, files in os.walk(payload):
-                            for f in files:
-                                src = Path(root) / f
-                                rel = src.relative_to(payload)
-                                dst = venv_dir / rel
-                                dst.parent.mkdir(parents=True, exist_ok=True)
-                                shutil.copy2(src, dst)
-                        break
-                    
+            dest = ctx.paths.get("venv_interp_backup")
+            if not dest:
+                raise RuntimeError("cannot undo refresh-interpreter: missing venv_interp_backup path allocation")
+            dest = Path(dest)
+            payload = dest / backups.PAYLOAD
+            if not payload.exists():
+                raise RuntimeError(f"cannot undo refresh-interpreter: interpreter backup not found at {dest}")
+            for root, _, files in os.walk(payload):
+                for f in files:
+                    src = Path(root) / f
+                    rel = src.relative_to(payload)
+                    dst = venv_dir / rel
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, dst)
+
         def do_record_hashes(ctx):
             venv_dir = ctx.sys_dir / "env" / "venv"
             ctx.data["new_interpreter_hashes"] = hash_files(venv_dir, interpreter_file_set(venv_dir))
@@ -484,7 +489,10 @@ def plan_venv_repair(sys_dir: Path, findings: list, *, manifest: dict | None = N
     if console.get("level") == "warning" and console.get("detail", "").startswith("stale-launchers"):
         def do_regen_stale(ctx):
             venv_dir = ctx.sys_dir / "env" / "venv"
-            ctx.data["regenerated_scripts"] = regenerate_console_scripts(venv_dir, runner=runner)
+            res = regenerate_console_scripts(venv_dir, runner=runner)
+            ctx.data["regenerated_scripts"] = res
+            if res.get("failed"):
+                raise RuntimeError(f"console script regeneration failed: {res['failed']}")
         steps.append(Step("regenerate-console-scripts", do=do_regen_stale, group="A"))
         
     return steps
