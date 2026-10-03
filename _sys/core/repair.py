@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Optional, Callable, Any
 
-from core import env_manifest, venv_manager, env_ops, env_lock
+from core import cli_help, env_manifest, venv_manager, env_ops, env_lock
 from core import python_manager, relocation, venv_repair
 from core.venv_manager import default_runner
 from core.registrar import find_stale_entries
@@ -316,10 +316,12 @@ def _repair_engine_main(ctx: dict, build_plan_fn: Callable, parser_setup: Callab
     base_dir = Path(ctx["base_dir"])
     args_list = ctx.get("args", [])
     command = ctx.get("command", "engram repair")
-    
-    p = argparse.ArgumentParser(prog=command)
+    help_verb = command if command in ("repair", "relocate", "update") else "repair"
+
+    p = cli_help.CliParser(help_verb)
     p.add_argument("--apply", action="store_true")
-    p.add_argument("--yes", action="store_true")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--yes", "-y", action="store_true")
     p.add_argument("--offline", action="store_true")
     p.add_argument("--remap-ai-state", action="store_true")
     p.add_argument("--resume", action="store_true")
@@ -334,6 +336,8 @@ def _repair_engine_main(ctx: dict, build_plan_fn: Callable, parser_setup: Callab
         args = p.parse_args(args_list)
     except SystemExit as e:
         return {"status": "success" if e.code == 0 else "failed", "operation": "repair", "detail": "usage", "exit_code": 0 if e.code == 0 else 2}
+    if args.dry_run:
+        args.apply = False  # --dry-run always wins
 
     only_set = set(args.only.split(",")) if args.only else None
     seams = ctx.get("seams", {})

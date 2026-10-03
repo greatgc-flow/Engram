@@ -1,0 +1,56 @@
+engram update - check for and apply updates
+
+Usage: engram update [--yes] [--check | --dry-run] [--refresh]
+                     [--only NAME[,NAME...]] [--allow-major-runtime-upgrade]
+       engram update --only python|venv|packages [--to X.Y.Z]
+                     [--all-packages] [--force] [--offline] [--yes]
+
+Description:
+  Discovers newer versions of Engram, its runtimes (Node.js, Git, VS Code,
+  ...) and the AI CLIs, shows a plan, asks for confirmation, then applies it.
+  Anything that cannot be checked is listed under "Not checked" and is never
+  counted as up to date. Unlike tidy/repair, update is plan + prompt rather
+  than dry-run + --apply: --yes is what skips the prompt.
+  python, venv and packages are managed environment components: they run
+  through the journaled repair engine (a backup is taken before the swap,
+  dry-run by default, --yes applies) and cannot be mixed with tool names.
+
+Options:
+  --yes, -y        Apply without asking (default: ask first)
+  --check          Print the plan only; exit 1 if something could not be
+                   checked (default: off; for scripts and CI)
+  --dry-run        Discover and show the plan, apply nothing (default: off)
+  --refresh, -r    Ignore the discovery cache and re-check online (default:
+                   use the cache)
+  --only LIST      Update only these components, comma- or space-separated;
+                   aliases cc, cx, ag work (default: everything)
+  --allow-major-runtime-upgrade
+                   Let a base runtime cross a major version, e.g. Node.js
+                   22 to 24 (default: off; major jumps are shown, not applied)
+  --to X.Y.Z       With --only python: target version (default: pinned one)
+  --all-packages   With --only packages: upgrade every package (default:
+                   only Engram's baseline set)
+  --force          With --only python: reinstall even when already current
+                   (default: off)
+  --offline        With --only python: use only local files (default: off)
+  -h, --help, /?   Show this help (default: off)
+
+Examples:
+  engram update
+  engram update --yes
+  engram update --check
+  engram update --only claude,codex,agy --yes
+  engram update --only python --yes
+  engram update --only nodejs --allow-major-runtime-upgrade --yes
+
+Exit codes:
+  0   success or nothing to do
+  1   a component failed, or --check found something unchecked
+  2   usage error (unknown option or component)
+  3   declined at the prompt
+  10-14  python/venv/packages only: same codes as 'engram repair'
+
+See also:
+  engram doctor    what is installed and healthy
+  engram snapshots   the backups an update leaves behind
+  engram tidy      remove old backups once you are happy

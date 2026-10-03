@@ -1,0 +1,30 @@
+engram menu - Engram Right-Click Context Menu Management
+
+Usage: engram menu [status|enable|disable|clean]
+
+Description:
+  Manages the Explorer right-click entry "Open in Engram". It writes only
+  per-user registry keys (no administrator rights). With no subcommand it
+  shows the status. All subcommands are safe to repeat.
+
+Options:
+  status           Show whether the entry is registered (default subcommand)
+  enable           Add "Open in Engram" to the Explorer context menu
+  disable          Remove the entry again
+  clean            Drop stale entries left by an old or moved installation
+  -h, --help, /?   Show this help (default: off)
+
+Examples:
+  engram menu
+  engram menu enable
+  engram menu clean       after moving or renaming the portable folder
+
+Exit codes:
+  0   ok
+  1   not set up, or the registry change failed
+  2   unknown subcommand
+  14  an interrupted environment operation blocks Engram (run: engram repair)
+
+See also:
+  engram relocate   re-anchor the install after a move
+  engram doctor     reports stale or missing menu entries

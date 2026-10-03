@@ -1,0 +1,33 @@
+engram open - open a workspace in Engram
+
+Usage: engram open [PATH]
+       engram [PATH]            'open' is the default command
+
+Description:
+  Opens PATH as a workspace: a folder starts VS Code there; a file is run
+  (.py with the managed Python, .bat/.cmd directly, anything else with its
+  default app). Without PATH the default workspace is opened.
+  On the very first run (no managed Python yet) it offers to set Engram up
+  in this folder and to add the right-click "Open in Engram" menu entry.
+  A folder literally named like a command (for example "update") is only
+  opened through the explicit form: engram open update
+
+Options:
+  PATH             Folder or file to open (default: the default workspace)
+  -h, --help, /?   Show this help (default: off)
+
+Examples:
+  engram
+  engram open .
+  engram open C:\work\project
+  engram open tools\build.cmd
+
+Exit codes:
+  0   opened (or help shown)
+  1   not set up and setup was declined or failed
+  2   path not found or unknown option
+  14  an interrupted environment operation blocks Engram (run: engram repair)
+
+See also:
+  engram menu      right-click integration
+  engram doctor    check the environment

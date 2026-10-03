@@ -1,0 +1,30 @@
+engram doctor - report environment health (read-only)
+
+Usage: engram doctor [--json]
+
+Description:
+  Checks Python, the venv, managed tools, root-path hygiene (characters such
+  as & % ^ ! in the folder path), context-menu registration, the environment
+  manifest, a moved root, stale registry entries, the environment lock and any
+  interrupted operation journal. It never changes anything and uses no
+  network. It also works while an interrupted operation blocks other commands.
+
+Options:
+  --json           Print machine-readable JSON instead of the report
+                   (default: off, human-readable)
+  -h, --help, /?   Show this help (default: off)
+
+Examples:
+  engram doctor
+  engram doctor --json
+  engram doctor --json > doctor.json
+
+Exit codes:
+  0   healthy
+  1   needs attention (the report names the fix: repair, relocate, ...)
+  2   unknown option
+
+See also:
+  engram repair     fix what doctor reports
+  engram relocate   fix a moved folder
+  engram tidy       reclaim disk space

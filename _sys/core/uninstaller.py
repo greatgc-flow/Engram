@@ -30,7 +30,7 @@ from root import bootstrap_root_package, find_root  # noqa: E402
 bootstrap_root_package(_SYS_DIR)
 
 from core.layout import INSTALL_ROOT_ENTRIES
-from core import provisioner, state_paths
+from core import cli_help, provisioner, state_paths
 
 # Constant list of top-level _sys program entries for v3.2.7 (Ratified §6.1)
 V326_SYS_PROGRAM_ENTRIES = {
@@ -229,29 +229,17 @@ def check_links_under_targets(targets: List[Path]) -> List[Path]:
     return unsafe_links
 
 
-_HELP_FLAGS = ("--help", "-h", "/?")
-
-
 def run(ctx: dict) -> dict[str, Any] | None:
     """Main uninstaller execution entry point invoked via dispatch pipeline."""
     args = ctx.get("args", []) or []
-    if any(a in _HELP_FLAGS for a in args):
-        print("engram uninstall - Safe, allowlist-based uninstaller for Engram")
-        print()
-        print("Usage: engram uninstall [--yes|-y] [--purge-data] [--dry-run] [--apply]")
-        print()
-        print("Options:")
-        print("  --yes, -y       Skip the confirmation prompt")
-        print("  --purge-data    Also delete personal data (.engram/) and projects (workspace/)")
-        print("  --dry-run       Preview removal plan without deleting anything")
-        print("  --apply         Acknowledge and apply removal")
-        print()
-        print("Examples:")
-        print("  engram uninstall                 asks for confirmation, preserves .engram/ and workspace/")
-        print("  engram uninstall --dry-run       previews removal plan without changes")
-        print("  engram uninstall --yes           removes program files without confirmation prompt")
-        print("  engram uninstall --purge-data    removes program files and prompts to purge personal data")
+    if cli_help.wants_help(args):
+        cli_help.print_verb_help("uninstall")
         return {"status": "success", "detail": "help displayed"}
+    for a in args:
+        if a not in ("--yes", "-y", "--purge-data", "--dry-run", "--apply"):
+            if a.startswith("-"):
+                cli_help.unknown_option("uninstall", a)
+            cli_help.unexpected_argument("uninstall", a)
 
     base_dir = ctx["base_dir"]
     sys_dir = ctx.get("sys_dir") or find_root(base_dir)

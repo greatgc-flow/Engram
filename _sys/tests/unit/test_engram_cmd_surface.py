@@ -36,6 +36,9 @@ def surface_root(tmp_path: Path):
     core_dir = root / "_sys" / "core"
     core_dir.mkdir(parents=True, exist_ok=True)
     (core_dir / "version.json").write_text('{"version": "3.3.0"}', encoding="utf-8")
+    # help text is a static file set that engram.cmd prints with `type` (no Python needed)
+    import shutil as _shutil
+    _shutil.copytree(REPO_ROOT / "_sys" / "core" / "help", core_dir / "help")
 
     # Stub _sys/core/dispatch.bat
     stub_dispatch = core_dir / "dispatch.bat"

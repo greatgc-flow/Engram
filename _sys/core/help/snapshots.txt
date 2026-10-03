@@ -1,0 +1,43 @@
+engram snapshots - list, pin and restore environment backups
+
+Usage: engram snapshots list [--json]
+       engram snapshots show NAME
+       engram snapshots pin NAME | unpin NAME
+       engram snapshots restore NAME [--apply] [--dry-run]
+
+Description:
+  Engram never deletes a replaced Python, venv or state file outright: it
+  moves it into a backup registry under _sys/data/backups/env first. This
+  command shows what is there. NAME is the folder name from 'list', or
+  KIND/NAME when two kinds share a name. Pinned entries are never removed by
+  'engram tidy'. restore previews by default, never overwrites an existing
+  target, and holds the environment lock. Python and venv backups are
+  restored through 'engram repair' (lock + journal), not from here.
+
+Options:
+  list             One line per backup: kind, name, state, size, pin
+  show NAME        Print one backup's marker (what, when, why, where from)
+  pin NAME         Exempt a backup from tidy
+  unpin NAME       Make it eligible for tidy again
+  restore NAME     Move a backup's payload back to where it came from
+  --json           With list: machine-readable output (default: off)
+  --apply          With restore: do it (default: off, preview only)
+  --dry-run        With restore: preview only; wins over --apply (default: on)
+  -h, --help, /?   Show this help (default: off)
+
+Examples:
+  engram snapshots list
+  engram snapshots list --json
+  engram snapshots pin 20261002T010000Z-before-update
+  engram snapshots restore state/20261002T010000Z-x
+  engram snapshots restore state/20261002T010000Z-x --apply
+
+Exit codes:
+  0   ok, or preview shown
+  2   usage error (unknown action or option)
+  11  failed: no such backup, ambiguous name, target exists, lock busy, or
+      the kind must be restored through 'engram repair'
+
+See also:
+  engram tidy      removes expired, unpinned backups
+  engram repair    restores Python/venv backups

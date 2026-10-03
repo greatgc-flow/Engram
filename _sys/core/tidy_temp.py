@@ -21,6 +21,7 @@ Usage:
 import argparse
 import datetime
 import fnmatch
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -32,7 +33,7 @@ sys.path.insert(0, str(_SYS_DIR / "core"))
 from root import bootstrap_root_package  # noqa: E402
 bootstrap_root_package(_SYS_DIR)
 
-from core import backups, env_lock, env_manifest  # noqa: E402
+from core import backups, cli_help, env_lock, env_manifest  # noqa: E402
 
 # ── root tmp/: leftover test-probe files ────────────────────────────────
 ROOT_TMP_MIN_AGE_DAYS = 7
@@ -508,48 +509,84 @@ def build_plan(
             for label, key, items in plan]
 
 
+ALL_TARGETS = (
+    "tmp,data_temp,brain,vscode,"
+    "pytest_cache,winget_cache,npm_cache,pip_cache,vscode_cache,pycache,pytest_cache_default,launcher_logs,backups,env_op_runners"
+)
+
+
+def _fmt_bytes(n: int) -> str:
+    if n >= 1048576:
+        return f"{n / 1048576:.1f} MiB"
+    if n >= 1024:
+        return f"{n / 1024:.1f} KiB"
+    return f"{n} B"
+
+
+def plan_purge_legacy() -> dict:
+    """Read-only plan for --purge-legacy: registered legacy-old backups to delete (with reasons for the ones
+    kept) plus structurally valid env/<name>_old dirs that would be adopted first. Items are (path, size)."""
+    scan = backups.scan(_SYS_DIR)
+    plan = backups.plan_legacy_purge(scan.valid, root=backups.backups_root(_SYS_DIR))
+    return {
+        "delete": [(ref.path, _rm(ref.path, False)) for ref, _ in plan.delete],
+        "keep": [(ref.path.name, reason) for ref, reason in plan.keep],
+        "adopt": [(p, _rm(p, False)) for p in backups.find_legacy_candidates(_SYS_DIR)],
+    }
+
+
+def _purge_refusal(paths: list[Path]) -> tuple[int, str] | None:
+    """Why --purge-legacy --apply must not run right now (exit code, reason), or None. Fails closed."""
+    if _active_journal() is not None:
+        return 14, ("an unfinished environment operation journal exists (recovery backups must be kept). "
+                    "Run 'engram repair --resume' or 'engram repair --rollback' first.")
+    if env_lock.inspect(_SYS_DIR).get("state") == "held":
+        return 11, "an environment operation holds the environment lock; retry when it has finished."
+    try:
+        exe = Path(sys.executable).resolve()
+    except OSError:
+        exe = Path(sys.executable)
+    for target in paths:
+        try:
+            t = Path(target).resolve()
+        except OSError:
+            t = Path(target)
+        if exe == t or t in exe.parents:
+            return 11, f"the running Python interpreter ({exe}) lives inside {t}; refusing to delete it."
+    return None
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(
-        epilog=(
-            "Examples:\n"
-            "  engram tidy                       dry run: show what would be deleted\n"
-            "  engram tidy --apply                actually delete the planned items\n"
-            "  engram tidy --apply --deep         also clean old launcher logs\n"
-            "  engram tidy --apply --only pycache,pip_cache   clean just those two categories\n"
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    ap.add_argument("--base-dir", default=None, help="Root directory (default: ROOT)")
-    ap.add_argument("--sys-dir", default=None, help="Sys directory (default: _SYS_DIR)")
-    ap.add_argument("--apply", action="store_true", help="actually delete (default: dry-run)")
-    ap.add_argument("--deep", action="store_true", help="include deeper cleans (e.g., launcher logs)")
-    ap.add_argument("--keep", type=int, default=None,
-                    help="backups: keep at least N newest committed per kind (can only raise the policy floor)")
-    ap.add_argument("--max-size-gb", type=float, default=None,
-                    help="backups: size cap in GiB (default: min(2 GiB, 10%% of free space))")
-    ap.add_argument("--adopt-legacy", action="store_true",
-                    help="backups: adopt structurally valid env/<name>_old dirs into the backup registry")
-    ap.add_argument(
-        "--only", default=None,
-        help=(
-            "comma-separated subset: tmp,data_temp,brain,vscode,"
-            "pytest_cache,winget_cache,npm_cache,pip_cache,vscode_cache,pycache,pytest_cache_default,launcher_logs,backups,env_op_runners"
-        ),
-    )
-    if "/?" in sys.argv[1:]:
-        # argparse understands -h/--help natively but not the Windows /? convention.
-        ap.print_help()
-        return 0
+    ap = cli_help.CliParser("tidy")
+    ap.add_argument("--base-dir", default=None)
+    ap.add_argument("--sys-dir", default=None)
+    ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--yes", "-y", action="store_true")
+    ap.add_argument("--deep", action="store_true")
+    ap.add_argument("--keep", type=int, default=None)
+    ap.add_argument("--max-size-gb", type=float, default=None)
+    ap.add_argument("--adopt-legacy", action="store_true")
+    ap.add_argument("--purge-legacy", action="store_true")
+    ap.add_argument("--only", default=None)
     args = ap.parse_args()
+    if args.dry_run:
+        args.apply = False  # --dry-run always wins
+    if args.deep or args.purge_legacy:
+        args.adopt_legacy = True  # --deep also adopts <name>_old dirs; --purge-legacy adopts then deletes
 
     if args.base_dir or args.sys_dir:
         configure_paths(root=args.base_dir, sys_dir=args.sys_dir)
 
-    default_targets = (
-        "tmp,data_temp,brain,vscode,"
-        "pytest_cache,winget_cache,npm_cache,pip_cache,vscode_cache,pycache,pytest_cache_default,launcher_logs,backups,env_op_runners"
-    )
-    targets = set((args.only or default_targets).split(","))
+    targets = set((args.only or ALL_TARGETS).split(","))
+    unknown = sorted(t for t in targets if t not in ALL_TARGETS.split(","))
+    if unknown:
+        cli_help.report_unknown("tidy", "category", unknown[0], ALL_TARGETS.split(","))
+        print(f"        Valid categories: {ALL_TARGETS}")
+        return 2
+    if args.purge_legacy and "backups" not in targets:
+        print("[Error] --purge-legacy works on the 'backups' category; add 'backups' to --only (or drop --only).")
+        return 2
     now = datetime.datetime.now().timestamp()
     total_bytes = 0
     total_count = 0
@@ -570,6 +607,40 @@ def main() -> int:
                 print(f"    ... and {len(items) - 10} more")
 
     size_cap = int(args.max_size_gb * 2**30) if args.max_size_gb is not None else None
+
+    purge_deleted = 0
+    if args.purge_legacy:
+        purge = plan_purge_legacy()
+        victims = purge["delete"] + purge["adopt"]
+        refusal = _purge_refusal([p for p, _ in victims])
+        if victims:
+            verb = "deleted" if args.apply else "would delete"
+            total = sum(size for _, size in victims)
+            print(f"[purge_legacy] {'will delete' if args.apply else verb} {len(victims)} legacy item(s), "
+                  f"{_fmt_bytes(total)} (no grace period; {len(purge['adopt'])} not yet adopted)")
+            for path, size in victims:
+                print(f"    {path}  {_fmt_bytes(size)}")
+        else:
+            print("[purge_legacy] nothing to purge: no legacy-old backups or *_old dirs found")
+        for name, reason in purge["keep"]:
+            print(f"    kept: {name} ({reason})")
+        if refusal is not None:
+            if args.apply:
+                print(f"[purge_legacy] refused: {refusal[1]}")
+                return refusal[0]
+            print(f"[purge_legacy] NOTE: --apply would be refused right now: {refusal[1]}")
+        elif args.apply and victims and not args.yes and os.environ.get("ENGRAM_ASSUME_YES") != "1":
+            try:
+                resp = input(f"Permanently delete these {len(victims)} legacy item(s) "
+                             f"({_fmt_bytes(sum(size for _, size in victims))})? [y/N] ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                print("Purge cancelled.")
+                return 3
+            if resp.lower() != "y":
+                print("Purge cancelled.")
+                return 3
+
     backups_blocked = False
     if "backups" in targets:
         lock = env_lock.inspect(_SYS_DIR)
@@ -592,9 +663,33 @@ def main() -> int:
             backups_blocked = True
             print("[backups] skipped: an environment operation holds the environment lock")
             targets.discard("backups")
+            if args.purge_legacy:
+                print("[purge_legacy] refused: an environment operation holds the environment lock")
+                return 11
 
+    rc = 0
     try:
-        if "backups" in targets and not backups_blocked and args.adopt_legacy:
+        if args.purge_legacy and args.apply and lock_handle is not None:
+            if _active_journal() is not None:  # re-check under the lock: fail closed
+                print("[purge_legacy] refused: an unfinished environment operation journal exists")
+                return 14
+            adopted_now = backups.adopt_legacy(_SYS_DIR, now=_utc_iso(now))
+            print(f"[legacy_adopt] adopted {len(adopted_now)} legacy *_old dir(s)")
+            freed_purge = 0
+            doomed = backups.plan_legacy_purge(
+                backups.scan(_SYS_DIR).valid, root=backups.backups_root(_SYS_DIR)).delete
+            for ref, _ in doomed:
+                try:
+                    freed_purge += _rm(ref.path, True)
+                    purge_deleted += 1
+                except OSError as exc:
+                    print(f"[purge_legacy] could not delete {ref.path}: {exc}")
+                    rc = 1
+            total_bytes += freed_purge
+            total_count += purge_deleted
+            print(f"[purge_legacy] deleted {purge_deleted} legacy item(s), {_fmt_bytes(freed_purge)}")
+        if "backups" in targets and not backups_blocked and args.adopt_legacy and not (
+                args.purge_legacy and args.apply):
             candidates = backups.find_legacy_candidates(_SYS_DIR)
             verb = "adopted" if args.apply else "would adopt"
             if args.apply:
@@ -628,7 +723,7 @@ def main() -> int:
 
     print(f"\nTOTAL: {total_count} item(s), {total_bytes / 1048576:.1f} MiB "
           f"({'applied' if args.apply else 'dry-run, pass --apply to execute'})")
-    return 0
+    return rc
 
 
 def run(ctx: dict) -> dict:
@@ -642,9 +737,13 @@ def run(ctx: dict) -> dict:
     try:
         sys.argv = ["tidy_temp.py"] + (ctx.get("args") or [])
         rc = main()
-        return {"status": "success" if rc == 0 else "failed", "operation": "tidy.run"}
+        if rc == 0:
+            return {"status": "success", "operation": "tidy.run"}
+        return {"status": "failed", "operation": "tidy.run", "detail": f"exit {rc}", "exit_code": rc, "quiet": True}
     except SystemExit as e:
-        return {"status": "success" if e.code == 0 else "failed", "operation": "tidy.run"}
+        if e.code in (0, None):
+            return {"status": "success", "operation": "tidy.run"}
+        return {"status": "failed", "operation": "tidy.run", "detail": "usage", "exit_code": 2, "quiet": True}
     finally:
         sys.argv = old_argv
 

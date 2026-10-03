@@ -1,0 +1,48 @@
+engram relocate - re-anchor Engram after the folder moved
+
+Usage: engram relocate [--from OLD_PATH] [--apply] [--dry-run] [--yes]
+                       [--remap-ai-state] [--offline] [--only LIST] [--json]
+       engram relocate --resume | --rollback
+
+Description:
+  After the portable folder was moved or renamed (or copied to a new PC),
+  fixes everything that still points at the old location: the venv, its
+  launchers, registry hints and, optionally, paths inside AI CLI state.
+  It runs the same engine and plan as 'engram repair' (plus --from), so the
+  safety is identical: preview by default, environment lock, crash-safe
+  journal, backups moved into the registry and never deleted.
+
+Options:
+  --from OLD_PATH  The previous location, if Engram cannot detect it
+                   (default: auto-detected from the manifest)
+  --apply          Execute the plan (default: off, preview only)
+  --dry-run        Preview only; wins over --apply (default: on)
+  --yes, -y        Do not ask for confirmation with --apply (default: ask)
+  --remap-ai-state Also rewrite folder paths in AI CLI state (default: off)
+  --only LIST      Limit to: python,venv,registry,state,ai-state,manifest,
+                   packages (default: everything found)
+  --offline        Never download anything (default: off)
+  --resume         Continue an interrupted operation (default: off)
+  --rollback       Undo an interrupted operation (default: off)
+  --json           Machine-readable plan/result (default: off)
+  -h, --help, /?   Show this help (default: off)
+
+Examples:
+  engram relocate
+  engram relocate --apply
+  engram relocate --from D:\old\Engram --apply --yes
+  engram relocate --apply --remap-ai-state
+
+Exit codes:
+  0   ok, nothing to do, or preview shown
+  2   usage error
+  10  declined at the prompt
+  11  precondition failed, or no terminal and no --yes (nothing was changed)
+  12  verification failed and the change was rolled back
+  13  rollback failed (run: engram relocate --rollback)
+  14  an unfinished operation blocks the request (use --resume/--rollback)
+
+See also:
+  engram repair    broken venv or Python without a move
+  engram menu clean   drop stale right-click entries after a move
+  engram doctor    detects a moved folder
