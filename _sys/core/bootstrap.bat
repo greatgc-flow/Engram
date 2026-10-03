@@ -143,14 +143,14 @@ if not exist "!PY_EXE!" (
     echo [i] Python not found. Bootstrapping Python !PY_VER!...
     if not exist "!SYS_DIR!\data\setup-files" mkdir "!SYS_DIR!\data\setup-files"
 
-    :: The hash uses .NET directly - not Get-FileHash - when bootstrap is started from a
-    :: PowerShell 7 session the inherited PSModulePath hides the 5.1 utility module.
-    :: Versioned cache with a recorded sha256 per design P9, a cached zip is reused only
-    :: when its recorded hash still matches, so an offline re-bootstrap works and an
-    :: unverified or tampered file is never trusted.
+    REM The hash uses .NET directly - not Get-FileHash - when bootstrap is started from a
+    REM PowerShell 7 session the inherited PSModulePath hides the 5.1 utility module.
+    REM Versioned cache with a recorded sha256 per design P9, a cached zip is reused only
+    REM when its recorded hash still matches, so an offline re-bootstrap works and an
+    REM unverified or tampered file is never trusted.
     set "ZIP_PATH=!SYS_DIR!\data\setup-files\python-!PY_VER!-embed-amd64.zip"
     set "SHA_PATH=!ZIP_PATH!.sha256"
-    :: PowerShell single-quote escaping for the hash commands - a quote in the path would end the string.
+    REM PowerShell single-quote escaping for the hash commands - a quote in the path would end the string.
     set "_ZIP_PS=!ZIP_PATH:'=''!"
     set "_CACHE_OK=0"
     set "_CACHED_SHA="
@@ -159,7 +159,7 @@ if not exist "!PY_EXE!" (
         for /f "usebackq delims=" %%h in ("!SHA_PATH!") do if not defined _CACHED_SHA set "_CACHED_SHA=%%h"
         for /f "usebackq delims=" %%h in (`powershell -NoProfile -Command "([System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash([System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath '!_ZIP_PS!').ProviderPath))) -replace '-','').ToLower()"`) do set "_ACTUAL_SHA=%%h"
         if defined _ACTUAL_SHA if /i "!_CACHED_SHA!"=="!_ACTUAL_SHA!" set "_CACHE_OK=1"
-        :: A hash declared in runtimes.json from PY_SHA256 gates the cache as well.
+        REM A hash declared in runtimes.json from PY_SHA256 gates the cache as well.
         if "!_CACHE_OK!"=="1" if defined PY_SHA256 if /i not "!PY_SHA256!"=="!_ACTUAL_SHA!" set "_CACHE_OK=0"
     )
 
@@ -167,7 +167,7 @@ if not exist "!PY_EXE!" (
         echo [OK] Using the verified cached Python zip.
     ) else (
         echo [i] Downloading Python embeddable zip...
-        :: -f: an HTTP error such as 404, 503 or a captive portal must fail instead of being saved as the zip.
+        REM -f: an HTTP error such as 404, 503 or a captive portal must fail instead of being saved as the zip.
         curl -fL "!PY_URL!" -o "!ZIP_PATH!"
         if errorlevel 1 (
             echo [Error] Failed to download Python.
@@ -199,23 +199,23 @@ if not exist "!PY_EXE!" (
     powershell -NoProfile -Command "Expand-Archive -Force -Path '!_ZIP_PS!' -DestinationPath '!PY_DIR!'"
     if errorlevel 1 (
         echo [Error] Failed to extract Python.
-        :: Never leave a zip that cannot be extracted behind as a "verified" cache.
+        REM Never leave a zip that cannot be extracted behind as a "verified" cache.
         del /q "!ZIP_PATH!" >nul 2>&1
         del /q "!SHA_PATH!" >nul 2>&1
-        :: Remove a half-extracted tree only if this attempt created the directory.
+        REM Remove a half-extracted tree only if this attempt created the directory.
         if "!_PY_DIR_NEW!"=="1" if exist "!PY_DIR!" rmdir /s /q "!PY_DIR!"
         if "%CI%"=="" pause
         exit /b 1
     )
-    :: Record the hash only now that the zip is known to extract per design P9.
+    REM Record the hash only now that the zip is known to extract per design P9.
     if not "!_CACHE_OK!"=="1" >"!SHA_PATH!" echo !_ACTUAL_SHA!
 
-    :: Enable pip by uncommenting import site in ._pth
+    REM Enable pip by uncommenting import site in ._pth
     for %%f in ("!PY_DIR!\python*._pth") do (
         powershell -NoProfile -Command "(Get-Content '%%f') -replace '#import site', 'import site' | Set-Content '%%f'"
     )
 
-    :: Install pip
+    REM Install pip
     echo [i] Installing pip from !GET_PIP_URL!...
     curl -L "!GET_PIP_URL!" -o "!SYS_DIR!\data\setup-files\get-pip.py"
     "!PY_EXE!" "!SYS_DIR!\data\setup-files\get-pip.py" --no-warn-script-location
