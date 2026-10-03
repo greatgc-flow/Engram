@@ -825,12 +825,11 @@ def prepare_runner(
     executable = runner_dir / "python.exe"
     handoff = handoff_path(sys_dir)
     handoff.parent.mkdir(parents=True, exist_ok=True)
-    handoff.write_bytes(
-        (
-            str(executable)
-            + "\r\n"
-            + ("1" if confirmed else "0")
-            + "\r\n"
-        ).encode("mbcs")
-    )
+    # The path is stored RELATIVE to the sys dir (op ids are ASCII): dispatch.bat reads it with `set /p` under
+    # whatever console code page is active, so an absolute path with non-ASCII characters (Korean install roots)
+    # would be mis-decoded. Relative + ASCII has no encoding dependence at all.
+    rel = executable.relative_to(sys_dir)
+    if not str(rel).isascii():
+        raise ValueError(f"runner path must be ASCII relative to the sys dir: {rel}")
+    handoff.write_bytes((str(rel) + "\r\n" + ("1" if confirmed else "0") + "\r\n").encode("ascii"))
     return executable

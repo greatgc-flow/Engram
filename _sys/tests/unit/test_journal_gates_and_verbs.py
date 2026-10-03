@@ -177,8 +177,10 @@ def test_dispatch_falls_back_to_python_new_for_repair_when_a_journal_is_active(d
     shutil.copy(sys.executable, alt / "python.exe")
     proc = run_dispatch(r, "repair", "--resume")
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "python.new" in proc.stdout and "ARGS=repair --resume" in proc.stdout
-    assert str(alt / "python.exe") not in proc.stdout
+    recover_line = next((line for line in proc.stdout.splitlines() if line.startswith("[i] Recover")), "")
+    assert "python.new" in recover_line and "ARGS=repair --resume" in proc.stdout
+    assert str(alt / "python.exe") not in recover_line
+    assert f"RAN_WITH={alt / 'python.exe'}" in proc.stdout.splitlines()
 
 
 def test_dispatch_falls_back_to_the_runner_copy(dispatch_root):
@@ -188,8 +190,11 @@ def test_dispatch_falls_back_to_the_runner_copy(dispatch_root):
     runner.mkdir(parents=True)
     shutil.copy(sys.executable, runner / "python.exe")
     proc = run_dispatch(r, "repair", "--rollback")
-    assert proc.returncode == 0 and "runner" in proc.stdout
-    assert str(runner / "python.exe") not in proc.stdout
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    recover_line = next((line for line in proc.stdout.splitlines() if line.startswith("[i] Recover")), "")
+    assert "runner" in recover_line
+    assert str(runner / "python.exe") not in recover_line
+    assert f"RAN_WITH={runner / 'python.exe'}" in proc.stdout.splitlines()
 
 
 def test_dispatch_falls_back_to_backup_payload_over_python_new(dispatch_root):
@@ -204,8 +209,11 @@ def test_dispatch_falls_back_to_backup_payload_over_python_new(dispatch_root):
     shutil.copy(sys.executable, alt / "python.exe")
     
     proc = run_dispatch(r, "repair", "--rollback")
-    assert proc.returncode == 0 and "backup" in proc.stdout
-    assert str(backup / "python.exe") not in proc.stdout
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    recover_line = next((line for line in proc.stdout.splitlines() if line.startswith("[i] Recover")), "")
+    assert "backup" in recover_line
+    assert str(backup / "python.exe") not in recover_line
+    assert f"RAN_WITH={backup / 'python.exe'}" in proc.stdout.splitlines()
 
 
 def test_dispatch_runner_preferred_over_all(dispatch_root):
@@ -257,6 +265,16 @@ def test_handoff_file_roundtrips_mbcs(tmp_path):
         
     core = r / "_sys" / "core"
     core.mkdir(parents=True)
+    try:
+        probe = subprocess.run(
+            ["cmd.exe", "/c", "echo", "ok"], cwd=str(r), capture_output=True,
+            text=True, encoding="mbcs", errors="replace", timeout=120)
+    except OSError as exc:
+        pytest.skip(f"cmd.exe cannot run in the Korean directory: {exc}")
+    if probe.returncode != 0 or probe.stdout.strip() != "ok":
+        pytest.skip(
+            f"cmd.exe cannot run 'echo ok' in the Korean directory "
+            f"(exit {probe.returncode}): {probe.stderr}{probe.stdout}")
     shutil.copy(DISPATCH, core / "dispatch.bat")
     
     handoff_txt = r / "_sys" / "data" / "state" / "env-op" / "handoff.txt"
@@ -273,7 +291,8 @@ os.makedirs(os.path.dirname(runner), exist_ok=True)
 with open(runner, 'wb') as f:
     f.write(open(sys.executable, 'rb').read())
 with open(handoff, 'wb') as f:
-    f.write((runner + "\\n0\\n").encode('mbcs'))
+    sysdir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    f.write((os.path.relpath(runner, sysdir) + "\\r\\n0\\r\\n").encode('ascii'))
 sys.exit(75)
 """
     (core / "dispatcher.py").write_text(dispatcher_code, encoding="utf-8")
@@ -282,7 +301,7 @@ sys.exit(75)
     py_dir.mkdir(parents=True)
     shutil.copy(sys.executable, py_dir / "python.exe")
     
-    proc = _run(core / "dispatch.bat", ["tidy"], r)
+    proc = _run(Path("_sys") / "core" / "dispatch.bat", ["tidy"], r)
     assert proc.returncode == 0, proc.stderr + proc.stdout
     assert "SUCCESS_IN_RUNNER" in proc.stdout
 

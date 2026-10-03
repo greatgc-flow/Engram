@@ -37,11 +37,21 @@ if not exist "%SYS_DIR%\data\state\env-op\handoff.txt" (
     echo [Error] A runner handoff was requested but no handoff file was written.
     exit /b 1
 )
-set "_RUNNER="
+set "_REL="
 set "_YES="
-set /p _RUNNER=<"%SYS_DIR%\data\state\env-op\handoff.txt"
+set /p _REL=<"%SYS_DIR%\data\state\env-op\handoff.txt"
 for /f "usebackq skip=1 delims=" %%Y in ("%SYS_DIR%\data\state\env-op\handoff.txt") do set "_YES=%%Y"
 del /q "%SYS_DIR%\data\state\env-op\handoff.txt" >nul 2>&1
+:: The handoff names the runner RELATIVE to the sys dir (ASCII): immune to console code pages. Refuse traversal.
+if not defined _REL (
+    echo [Error] The runner handoff file is empty.
+    exit /b 1
+)
+if not "%_REL:..=%"=="%_REL%" (
+    echo [Error] The runner handoff path is not allowed.
+    exit /b 1
+)
+set "_RUNNER=%SYS_DIR%\%_REL%"
 if not exist "%_RUNNER%" (
     echo [Error] The runner interpreter named by the handoff file does not exist.
     exit /b 1

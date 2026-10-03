@@ -67,7 +67,7 @@ def test_prepare_runner_does_not_touch_env_python(sys_dir):
 def test_handoff_file_has_the_runner_path_and_the_confirmation_flag(sys_dir):
     exe = python_manager.prepare_runner(sys_dir, "op-1", confirmed=True)
     lines = python_manager.handoff_path(sys_dir).read_text(encoding="utf-8").splitlines()
-    assert lines == [str(exe), "1"]
+    assert lines == [str(exe.relative_to(sys_dir)), "1"]
     python_manager.prepare_runner(sys_dir, "op-2", confirmed=False)
     assert python_manager.handoff_path(sys_dir).read_text(encoding="utf-8").splitlines()[1] == "0"
 
@@ -243,7 +243,9 @@ def bat_root(tmp_path):
         "runner = sysdir / 'data' / 'temp' / 'env-op' / 'op' / 'runner'\n"
         "runner.mkdir(parents=True)\n"
         "shutil.copy(sys.executable, runner / 'python.exe')\n"
-        "(sysdir / 'data' / 'state' / 'env-op' / 'handoff.txt').write_text(str(runner / 'python.exe') + '\\n1\\n', encoding='utf-8')\n"
+        "handoff = sysdir / 'data' / 'state' / 'env-op' / 'handoff.txt'\n"
+        "handoff.parent.mkdir(parents=True, exist_ok=True)\n"
+        "handoff.write_text(str((runner / 'python.exe').relative_to(sysdir)) + '\\n1\\n', encoding='utf-8')\n"
         "print('FIRST_RUN')\n"
         "sys.exit(75)\n", encoding="utf-8")
     return r
