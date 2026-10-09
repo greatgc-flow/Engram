@@ -26,8 +26,8 @@ Every command belongs to exactly one group.
 | Removal | [`engram reset`](#engram-reset) | Delete personal AI data (start over, keep the programs) |
 | Removal | [`engram uninstall`](#engram-uninstall) | Safe, allowlist-based uninstaller for Engram |
 
-Calling `engram` with no command is the same as `engram open`. `engram <folder>` opens that folder when no command has
-that name (to open a folder literally named like a command, use `engram open <name>`). `engram help <command>`,
+Calling `engram` with no command is the same as `engram open`. Paths require
+explicit `engram open PATH`; relative paths use the caller directory.
 `engram <command> --help`, `-h` and `/?` all show a command's help.
 
 ## Which command do I need?
@@ -116,13 +116,15 @@ point at their replacement: each prints it and exits `2`.
 ```text
 engram open - open a workspace in Engram
 
-Usage: engram open [PATH]
-       engram [PATH]            'open' is the default command
+Usage: engram open [PATH] [ARGS...]
+       engram                   open the default workspace
 
 Description:
   Opens PATH as a workspace: a folder starts VS Code there; a file is run
   (.py with the managed Python, .bat/.cmd directly, anything else with its
   default app). Without PATH the default workspace is opened.
+  Relative PATH uses the caller directory. ARGS are passed to script files.
+  Use explicit open PATH; bare paths are not commands.
   On the very first run (no managed Python yet) it offers to set Engram up
   in this folder and to add the right-click "Open in Engram" menu entry.
   A folder literally named like a command (for example "update") is only
@@ -139,7 +141,7 @@ Examples:
   engram open tools\build.cmd
 
 Exit codes:
-  0   opened (or help shown)
+  0   opened (or help shown); scripts return their child exit code
   1   not set up and setup was declined or failed
   2   path not found or unknown option
   14  an interrupted environment operation blocks Engram (run: engram repair)
@@ -253,6 +255,7 @@ engram menu - Engram Right-Click Context Menu Management
 Usage: engram menu [status|enable|disable|clean]
 
 Description:
+  Actions accept no extra operands.
   Manages the Explorer right-click entry "Open in Engram". It writes only
   per-user registry keys (no administrator rights). With no subcommand it
   shows the status. All subcommands are safe to repeat.
@@ -301,7 +304,8 @@ Examples:
   engram -v
 
 Exit codes:
-  0   always
+  0   version or help shown
+  2   surplus operands
 
 See also:
   engram doctor    full environment health report
@@ -338,9 +342,10 @@ Options:
   --offline        Never download anything (default: off)
   --remap-ai-state Also rewrite folder paths inside AI CLI state after a move
                    (default: off)
-  --resume         Continue an interrupted operation (default: off)
+  --resume         Continue an interrupted operation (default: off;
+                   mutually exclusive with --rollback)
   --rollback       Undo an interrupted operation (default: off)
-  --json           Machine-readable plan/result (default: off)
+  --json           One final JSON plan/result in every mode (default: off)
   -h, --help, /?   Show this help (default: off)
 
 Examples:
@@ -353,7 +358,7 @@ Examples:
 
 Exit codes:
   0   ok, or nothing to repair, or preview shown
-  2   usage error
+  2   usage error, including invalid --only or conflicting recovery flags
   10  declined at the prompt
   11  precondition failed, or no terminal and no --yes (nothing was changed)
   12  verification failed and the change was rolled back
@@ -393,9 +398,10 @@ Options:
   --only LIST      Limit to: python,venv,registry,state,ai-state,manifest,
                    packages (default: everything found)
   --offline        Never download anything (default: off)
-  --resume         Continue an interrupted operation (default: off)
+  --resume         Continue an interrupted operation (default: off;
+                   mutually exclusive with --rollback)
   --rollback       Undo an interrupted operation (default: off)
-  --json           Machine-readable plan/result (default: off)
+  --json           One final JSON plan/result in every mode (default: off)
   -h, --help, /?   Show this help (default: off)
 
 Examples:
@@ -406,7 +412,7 @@ Examples:
 
 Exit codes:
   0   ok, nothing to do, or preview shown
-  2   usage error
+  2   usage error, including invalid --only or conflicting recovery flags
   10  declined at the prompt
   11  precondition failed, or no terminal and no --yes (nothing was changed)
   12  verification failed and the change was rolled back
@@ -616,7 +622,7 @@ Description:
   KIND/NAME when two kinds share a name. Pinned entries are never removed by
   'engram tidy'. restore previews by default, never overwrites an existing
   target, and holds the environment lock. Python and venv backups are
-  restored through 'engram repair' (lock + journal), not from here.
+  not restorable yet. Keep them; repair fixes the current environment.
 
 Options:
   list             One line per backup: kind, name, state, size, pin
@@ -640,11 +646,11 @@ Exit codes:
   0   ok, or preview shown
   2   usage error (unknown action or option)
   11  failed: no such backup, ambiguous name, target exists, lock busy, or
-      the kind must be restored through 'engram repair'
+      restoring this backup kind is not supported yet
 
 See also:
   engram tidy      removes expired, unpinned backups
-  engram repair    restores Python/venv backups
+  engram repair    repairs the current Python/venv environment
 ```
 
 ### Removal
@@ -745,3 +751,7 @@ When Engram replaces a runtime (Python, Node.js, Git, VS Code, ...) the previous
    asks `[y/N]` (or use `--yes`), then adopts and deletes all `legacy-old` backups at once. Pinned entries and all
    other backup kinds are never touched. It refuses, and says why, while an operation journal is open (exit 14),
    while the environment lock is held, or if the running Python lives inside what it would delete (exit 11).
+
+Layout migration is explicit: `_sys\core\dispatch.bat migrate-layout` (available to
+installation and maintenance callers). Public read-only and preview verbs never trigger it.
+Help and version reject surplus operands with exit 2.

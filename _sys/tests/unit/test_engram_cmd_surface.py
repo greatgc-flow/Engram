@@ -4,7 +4,7 @@ Verifies the canonical command surface defined in the ratified spec:
 - Every public verb and flag (§3.2)
 - Every retired verb with rename guidance and exit code 2 (§3.4)
 - Unknown command handling with exit code 2 and help guidance (§3.2 rule 5)
-- Existing file/dir path routing to 'open' (§3.2 rule 4)
+- Paths require explicit 'open PATH' (CX-013)
 - The 'not set up' rule when python.exe is missing (§3.2)
 - Literal '!' preservation in arguments forwarded across '%*'-boundaries in '&'-laden paths
 
@@ -95,25 +95,25 @@ def test_bare_invocation_routes_to_open(surface_root):
 
 
 @pytest.mark.parametrize("verb_args,expected_pipeline", [
-    (["open"], "start"),
-    (["open", "workspace"], "start"),
+    (["open"], "open"),
+    (["open", "workspace"], "open"),
     (["update"], "update"),
     (["update", "--check"], "update"),
     (["update", "--yes"], "update"),
     (["update", "--only", "codex,agy"], "update"),
     (["doctor"], "doctor"),
     (["doctor", "--json"], "doctor"),
-    (["menu"], "menu-status"),
-    (["menu", "status"], "menu-status"),
-    (["menu", "enable"], "menu-enable"),
-    (["menu", "disable"], "menu-disable"),
-    (["menu", "clean"], "menu-clean"),
+    (["menu"], "menu"),
+    (["menu", "status"], "menu"),
+    (["menu", "enable"], "menu"),
+    (["menu", "disable"], "menu"),
+    (["menu", "clean"], "menu"),
     (["tidy"], "tidy"),
     (["tidy", "--apply"], "tidy"),
     (["tidy", "--deep"], "tidy"),
 ])
 def test_public_verbs_dispatch(surface_root, verb_args, expected_pipeline):
-    """Every §3.2 verb routes to its canonical dispatch pipeline."""
+    """Every public verb reaches the dispatcher with its original argv."""
     proc = run_engram(surface_root, *verb_args)
     assert proc.returncode == 0, f"Failed for {verb_args}: rc={proc.returncode}, out={proc.stdout}"
     assert f"DISPATCH_PIPELINE={expected_pipeline}" in proc.stdout
@@ -224,18 +224,20 @@ def test_unknown_command_exits_2(surface_root):
 
 
 # ----------------------------------------------------------------------------
-# 4. Existing path routes to open (§3.2 rule 4)
+# 4. Paths require explicit open (CX-013)
 # ----------------------------------------------------------------------------
 
-def test_existing_path_routes_to_open(surface_root):
-    """First arg matching an existing directory routes to open <path> (§3.2 rule 4)."""
+def test_existing_path_requires_explicit_open(surface_root):
+    """A bare directory is rejected; explicit open remains available."""
     proj_dir = surface_root / "my_project"
     proj_dir.mkdir()
 
     proc = run_engram(surface_root, "my_project")
+    assert proc.returncode == 2
+    assert "DISPATCH_PIPELINE" not in proc.stdout
+    proc = run_engram(surface_root, "open", "my_project")
     assert proc.returncode == 0
-    # Must route to start pipeline with that path, not dispatch a pipeline named 'my_project'
-    assert "DISPATCH_PIPELINE=start" in proc.stdout
+    assert "DISPATCH_PIPELINE=open" in proc.stdout
 
 
 def test_verb_name_directory_still_runs_the_verb(surface_root):

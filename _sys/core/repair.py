@@ -3,6 +3,8 @@ import dataclasses
 import json
 import os
 import sys
+import contextlib
+import io
 from pathlib import Path
 from typing import Optional, Callable, Any
 
@@ -312,6 +314,22 @@ def _print_plan(plan: dict):
 
 
 def _repair_engine_main(ctx: dict, build_plan_fn: Callable, parser_setup: Callable[[argparse.ArgumentParser], None] = None) -> dict:
+    """Emit exactly one final JSON result, including failures and recovery modes."""
+    if "--json" not in ctx.get("args", []) or cli_help.wants_help(ctx.get("args", [])):
+        return _repair_engine_run(ctx, build_plan_fn, parser_setup)
+    with contextlib.redirect_stdout(io.StringIO()):
+        try:
+            result = _repair_engine_run(ctx, build_plan_fn, parser_setup)
+        except Exception as exc:
+            result = {"status": "failed", "operation": ctx.get("command", "repair"),
+                      "detail": str(exc), "exit_code": 11}
+    if not result.get("handoff"):
+        print(json.dumps(result, default=str))
+    result["quiet"] = True
+    return result
+
+
+def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callable[[argparse.ArgumentParser], None] = None) -> dict:
     sys_dir = Path(ctx["sys_dir"])
     base_dir = Path(ctx["base_dir"])
     args_list = ctx.get("args", [])
@@ -324,8 +342,9 @@ def _repair_engine_main(ctx: dict, build_plan_fn: Callable, parser_setup: Callab
     p.add_argument("--yes", "-y", action="store_true")
     p.add_argument("--offline", action="store_true")
     p.add_argument("--remap-ai-state", action="store_true")
-    p.add_argument("--resume", action="store_true")
-    p.add_argument("--rollback", action="store_true")
+    recovery = p.add_mutually_exclusive_group()
+    recovery.add_argument("--resume", action="store_true")
+    recovery.add_argument("--rollback", action="store_true")
     p.add_argument("--json", action="store_true")
     p.add_argument("--only")
     
@@ -334,6 +353,9 @@ def _repair_engine_main(ctx: dict, build_plan_fn: Callable, parser_setup: Callab
     
     try:
         args = p.parse_args(args_list)
+        valid_only = {"python", "venv", "registry", "state", "ai-state", "manifest", "packages"}
+        if args.only is not None and (not args.only or set(args.only.split(",")) - valid_only):
+            p.error("--only requires comma-separated names: " + ",".join(sorted(valid_only)))
     except SystemExit as e:
         return {"status": "success" if e.code == 0 else "failed", "operation": "repair", "detail": "usage", "exit_code": 0 if e.code == 0 else 2}
     if args.dry_run:
@@ -352,9 +374,7 @@ def _repair_engine_main(ctx: dict, build_plan_fn: Callable, parser_setup: Callab
     if detection["journal"] is not None:
         if not args.resume and not args.rollback:
             msg = f"Non-terminal journal blocks the request. Run --resume or --rollback for {detection['journal']['op_id']}."
-            if args.json:
-                print(json.dumps({"status": "failed", "detail": msg}))
-            else:
+            if not args.json:
                 print(msg)
             return {"status": "failed", "operation": "repair", "detail": msg, "exit_code": 14}
             
@@ -388,24 +408,24 @@ def _repair_engine_main(ctx: dict, build_plan_fn: Callable, parser_setup: Callab
         return {"status": "failed", "operation": "repair", "detail": str(ve), "exit_code": 11}
         
     if not plan["steps"]:
-        if args.json:
-            print(json.dumps({"status": "success", "detail": "nothing to repair", "plan": _plan_json(plan)}))
-        else:
+        if not args.json:
             _print_plan(plan)
-        return {"status": "success", "operation": "repair", "detail": "nothing to repair", "exit_code": 0}
+        return {"status": "success", "operation": "repair", "detail": "nothing to repair", "exit_code": 0,
+                "plan": _plan_json(plan)}
         
     if not args.apply:
-        if args.json:
-            print(json.dumps({"status": "success", "plan": _plan_json(plan)}))
-        else:
+        if not args.json:
             _print_plan(plan)
             print("Run with --apply to execute.")
-        return {"status": "success", "operation": "repair", "detail": "dry run", "exit_code": 0}
+        return {"status": "success", "operation": "repair", "detail": "dry run", "exit_code": 0,
+                "plan": _plan_json(plan)}
         
     if not args.yes and os.environ.get("ENGRAM_ASSUME_YES") != "1":
         if sys.stdin and sys.stdin.isatty():
             _print_plan(plan)
-            ans = input_fn("Proceed? [y/N] ")
+            if args.json:
+                print("Proceed? [y/N] ", end="", file=sys.stderr, flush=True)
+            ans = input_fn("" if args.json else "Proceed? [y/N] ")
             if not ans.lower().startswith('y'):
                 return {"status": "failed", "operation": "repair", "detail": "user declined", "exit_code": 10}
         else:

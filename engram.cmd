@@ -72,13 +72,18 @@ if /i "%~2"=="--help" goto :verb_help_out
 if /i "%~2"=="/?" goto :verb_help_out
 if /i "%~2"=="help" goto :verb_help_out
 if /i "%_HELPVERB%"=="menu" (
-    if /i "%~3"=="-h" goto :verb_help_out
-    if /i "%~3"=="--help" goto :verb_help_out
-    if /i "%~3"=="/?" goto :verb_help_out
-    if /i "%~3"=="help" goto :verb_help_out
+    if /i "%~3"=="-h" goto :menu_help_out
+    if /i "%~3"=="--help" goto :menu_help_out
+    if /i "%~3"=="/?" goto :menu_help_out
+    if /i "%~3"=="help" goto :menu_help_out
 )
 goto :verb_help_done
+:menu_help_out
+if not "%~4"=="" goto :usage_surplus
+call :print_help_file menu
+exit /b 0
 :verb_help_out
+if not "%~3"=="" goto :usage_surplus
 call :print_help_file %_HELPVERB%
 exit /b 0
 :verb_help_done
@@ -94,7 +99,6 @@ goto :journal_blocked
 :journal_gate_pass
 
 if "%SUBCMD%"=="" goto :cmd_open
-
 if /i "%SUBCMD%"=="help" (
     if "%~2"=="" goto :show_help
     goto :help_topic
@@ -102,39 +106,11 @@ if /i "%SUBCMD%"=="help" (
 if /i "%SUBCMD%"=="--help" goto :show_help
 if /i "%SUBCMD%"=="-h" goto :show_help
 if /i "%SUBCMD%"=="/?" goto :show_help
-
-if /i "%SUBCMD%"=="version" (
-    if "%~2"=="/?" goto :show_version_help
-    if "%~2"=="-h" goto :show_version_help
-    if "%~2"=="--help" goto :show_version_help
-    if /i "%~2"=="help" goto :show_version_help
-    goto :show_version
-)
+if /i "%SUBCMD%"=="version" goto :show_version
 if /i "%SUBCMD%"=="--version" goto :show_version
 if /i "%SUBCMD%"=="-v" goto :show_version
 
-:: --- Layout Migration Auto-Trigger ---
-set "_MIGRATE_LAYOUT=0"
-if exist "%SYS_PATH%\env\python\python.exe" (
-    if not exist "%SYS_PATH%\data\state\layout.json" (
-        set "_MIGRATE_LAYOUT=1"
-    ) else (
-        "%SYS_PATH%\env\python\python.exe" -c "import json, sys; l=json.load(open(r'%SYS_PATH%\data\state\layout.json', encoding='utf-8')); v=json.load(open(r'%SYS_PATH%\core\version.json', encoding='utf-8')).get('version', 'unknown'); sys.exit(0 if l.get('layout_version', 0) < 2 or l.get('engram_version', 'unknown') != v else 1)" 2>nul
-        if not errorlevel 1 set "_MIGRATE_LAYOUT=1"
-    )
-)
-if "%_MIGRATE_LAYOUT%"=="1" (
-    call "%SYS_PATH%\core\dispatch.bat" migrate-layout
-    if not exist "%SYS_PATH%\data\state\layout.json" exit /b 1
-)
-:: -------------------------------------
-
-:: Shift first argument so %1-%9 in sub-scripts receives remaining arguments
-shift
-
-:: 1. Public verbs (checked before the existing-path fallback: a folder that
-:: happens to be named like a verb is opened only via the explicit
-:: 'engram open <name>', per the ratified command-surface rule ordering)
+:: Public verbs; paths require explicit open PATH. No automatic migration.
 if /i "%SUBCMD%"=="open" goto :cmd_open
 if /i "%SUBCMD%"=="update" goto :cmd_update
 if /i "%SUBCMD%"=="doctor" goto :cmd_doctor
@@ -148,7 +124,6 @@ if /i "%SUBCMD%"=="backup" goto :cmd_backup
 if /i "%SUBCMD%"=="restore" goto :cmd_restore
 if /i "%SUBCMD%"=="reset" goto :cmd_reset
 
-:: 2. Retired verbs
 if /i "%SUBCMD%"=="install" goto :retired_install
 if /i "%SUBCMD%"=="setup" goto :retired_install
 if /i "%SUBCMD%"=="status" goto :retired_status
@@ -158,10 +133,6 @@ if /i "%SUBCMD%"=="menu-cleanup" goto :retired_menu_cleanup
 if /i "%SUBCMD%"=="cleanup" goto :retired_cleanup
 if /i "%SUBCMD%"=="launch" goto :retired_launch
 if /i "%SUBCMD%"=="start" goto :retired_launch
-
-:: 3. Existing path routes to open (only reached once SUBCMD matched no verb)
-if exist "%SUBCMD%\" goto :cmd_open_implicit
-
 goto :cmd_unknown
 
 :cmd_unknown
@@ -171,13 +142,10 @@ call :suggest_verb
 echo Run 'engram help' for available commands.
 exit /b 2
 
-:: 'engram help <verb>' prints the same file as '<verb> --help' (core\help\<verb>.txt)
 :help_topic
+if not "%~3"=="" goto :usage_surplus
 set "_HV_FILE="
-if /i "%~2"=="help" goto :show_help
-if /i "%~2"=="--help" goto :show_help
-if /i "%~2"=="-h" goto :show_help
-if /i "%~2"=="/?" goto :show_help
+for %%V in (help --help -h /?) do if /i "%~2"=="%%V" goto :show_help
 for %%F in ("%SYS_PATH%\core\help\*.txt") do if /i "%%~nF"=="%~2" if /i not "%%~nF"=="index" set "_HV_FILE=%%~fF"
 if defined _HV_FILE (
     type "%_HV_FILE%"
@@ -189,20 +157,17 @@ call :suggest_verb
 echo Run 'engram help' for available commands.
 exit /b 2
 
-:: Echo user-supplied text safely: delayed expansion expands AFTER parsing, so & | < > ^ % and quotes stay literal
 :say_unknown
 setlocal EnableDelayedExpansion
 echo [Error] %~1: !ENGRAM_UNKNOWN_VERB!
 endlocal
 exit /b 0
 
-:: Prints "Did you mean ..." for ENGRAM_UNKNOWN_VERB when Python is available (silent otherwise)
 :suggest_verb
 if not exist "%SYS_PATH%\env\python\python.exe" exit /b 0
 "%SYS_PATH%\env\python\python.exe" "%SYS_PATH%\core\cli_help.py" suggest-verb 2>nul
 exit /b 0
 
-:: Prints core\help\<name>.txt (name passed as %1): the single source of every verb's help text
 :print_help_file
 if exist "%SYS_PATH%\core\help\%~1.txt" (
     type "%SYS_PATH%\core\help\%~1.txt"
@@ -212,29 +177,20 @@ if exist "%SYS_PATH%\core\help\%~1.txt" (
 )
 exit /b 0
 
-:: ----------------------------------------------------------------------------
-:: Subcommand Handlers
-:: ----------------------------------------------------------------------------
-
 :cmd_open
-if "%~1"=="/?" goto :show_open_help
-if "%~1"=="-h" goto :show_open_help
-if "%~1"=="--help" goto :show_open_help
-if /i "%~1"=="help" goto :show_open_help
 if not exist "%SYS_PATH%\env\python\python.exe" (
     call :do_first_run
     if errorlevel 1 exit /b 1
 )
-call "%SYS_PATH%\core\dispatch.bat" start %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b %ERRORLEVEL%
+if "%SUBCMD%"=="" goto :forward_default
+goto :forward_command
 
-:cmd_open_implicit
-if not exist "%SYS_PATH%\env\python\python.exe" (
-    call :do_first_run
-    if errorlevel 1 exit /b 1
-)
-call "%SYS_PATH%\core\dispatch.bat" start "%SUBCMD%" %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b %ERRORLEVEL%
+:forward_default
+"%SYS_PATH%\core\dispatch.bat" start
+
+:forward_command
+:: Transfer directly: CALL reparses metacharacters; %* preserves every token.
+"%SYS_PATH%\core\dispatch.bat" %*
 
 :do_first_run
 echo This will set up Engram's portable Python, tools, and runtimes in "%CD%"
@@ -271,160 +227,71 @@ for %%V in (repair relocate snapshots doctor) do if /i "%SUBCMD%"=="%%V" (
 exit /b 0
 
 :cmd_doctor
-if "%~1"=="/?" goto :dispatch_doctor
-if "%~1"=="-h" goto :dispatch_doctor
-if "%~1"=="--help" goto :dispatch_doctor
-if /i "%~1"=="help" goto :dispatch_doctor
 call :check_setup
 if errorlevel 1 exit /b 1
-:dispatch_doctor
-call "%SYS_PATH%\core\dispatch.bat" doctor %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b %ERRORLEVEL%
+goto :forward_command
 
 :cmd_menu
-if "%~1"=="/?" goto :show_menu_help
-if "%~1"=="-h" goto :show_menu_help
-if "%~1"=="--help" goto :show_menu_help
-if /i "%~1"=="help" goto :show_menu_help
-if "%~2"=="/?" goto :show_menu_help
-if "%~2"=="-h" goto :show_menu_help
-if "%~2"=="--help" goto :show_menu_help
-if /i "%~2"=="help" goto :show_menu_help
-call :check_setup
-if errorlevel 1 exit /b 1
-:: if no args, default to status
-if "%~1"=="" (
-    call "%SYS_PATH%\core\dispatch.bat" menu-status
-    exit /b %ERRORLEVEL%
-)
-if /i "%~1"=="status" (
-    call "%SYS_PATH%\core\dispatch.bat" menu-status %2 %3 %4 %5 %6 %7 %8 %9
-    exit /b %ERRORLEVEL%
-)
-if /i "%~1"=="enable" (
-    call "%SYS_PATH%\core\dispatch.bat" menu-enable %2 %3 %4 %5 %6 %7 %8 %9
-    exit /b %ERRORLEVEL%
-)
-if /i "%~1"=="disable" (
-    call "%SYS_PATH%\core\dispatch.bat" menu-disable %2 %3 %4 %5 %6 %7 %8 %9
-    exit /b %ERRORLEVEL%
-)
-if /i "%~1"=="clean" (
-    call "%SYS_PATH%\core\dispatch.bat" menu-clean %2 %3 %4 %5 %6 %7 %8 %9
-    exit /b %ERRORLEVEL%
-)
-set "ENGRAM_UNKNOWN_VERB=%~1"
+if not "%~3"=="" goto :usage_surplus
+if "%~2"=="" goto :menu_valid
+for %%V in (status enable disable clean) do if /i "%~2"=="%%V" goto :menu_valid
+set "ENGRAM_UNKNOWN_VERB=%~2"
 call :say_unknown "Unknown menu command"
 set "ENGRAM_SUGGEST_FROM=status,enable,disable,clean"
 call :suggest_verb
 echo Run 'engram menu --help' for available commands.
 exit /b 2
-
-:show_menu_help
-call :print_help_file menu
-exit /b 0
+:menu_valid
+call :check_setup
+if errorlevel 1 exit /b 1
+goto :forward_command
 
 :cmd_tidy
-if "%~1"=="/?" goto :dispatch_tidy
-if "%~1"=="-h" goto :dispatch_tidy
-if "%~1"=="--help" goto :dispatch_tidy
-if /i "%~1"=="help" goto :dispatch_tidy
 call :check_setup
 if errorlevel 1 exit /b 1
-:dispatch_tidy
-call "%SYS_PATH%\core\dispatch.bat" tidy %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b %ERRORLEVEL%
+goto :forward_command
 
 :cmd_snapshots
-if "%~1"=="/?" goto :dispatch_snapshots
-if "%~1"=="-h" goto :dispatch_snapshots
-if "%~1"=="--help" goto :dispatch_snapshots
-if /i "%~1"=="help" goto :dispatch_snapshots
 call :check_setup
 if errorlevel 1 exit /b 1
-:dispatch_snapshots
-call "%SYS_PATH%\core\dispatch.bat" snapshots %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b %ERRORLEVEL%
+goto :forward_command
 
 :cmd_repair
-if "%~1"=="/?" goto :dispatch_repair
-if "%~1"=="-h" goto :dispatch_repair
-if "%~1"=="--help" goto :dispatch_repair
-if /i "%~1"=="help" goto :dispatch_repair
-:: an interrupted swap may have removed env\python: dispatch.bat then finds an alternate interpreter
-if "%_JOURNAL_ACTIVE%"=="1" goto :dispatch_repair
+if "%_JOURNAL_ACTIVE%"=="1" goto :forward_command
 call :check_setup
 if errorlevel 1 exit /b 1
-:dispatch_repair
-call "%SYS_PATH%\core\dispatch.bat" repair %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b %ERRORLEVEL%
+goto :forward_command
 
 :cmd_relocate
-if "%~1"=="/?" goto :dispatch_relocate
-if "%~1"=="-h" goto :dispatch_relocate
-if "%~1"=="--help" goto :dispatch_relocate
-if /i "%~1"=="help" goto :dispatch_relocate
-if "%_JOURNAL_ACTIVE%"=="1" goto :dispatch_relocate
+if "%_JOURNAL_ACTIVE%"=="1" goto :forward_command
 call :check_setup
 if errorlevel 1 exit /b 1
-:dispatch_relocate
-call "%SYS_PATH%\core\dispatch.bat" relocate %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b %ERRORLEVEL%
+goto :forward_command
 
 :cmd_update
-if "%~1"=="/?" goto :dispatch_update
-if "%~1"=="-h" goto :dispatch_update
-if "%~1"=="--help" goto :dispatch_update
-if /i "%~1"=="help" goto :dispatch_update
 call :check_setup
 if errorlevel 1 exit /b 1
-:dispatch_update
-call "%SYS_PATH%\core\dispatch.bat" update %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b %ERRORLEVEL%
+goto :forward_command
 
 :cmd_uninstall
-if "%~1"=="/?" goto :dispatch_uninstall
-if "%~1"=="-h" goto :dispatch_uninstall
-if "%~1"=="--help" goto :dispatch_uninstall
-if /i "%~1"=="help" goto :dispatch_uninstall
 call :check_setup
 if errorlevel 1 exit /b 1
-:dispatch_uninstall
-call "%SYS_PATH%\core\dispatch.bat" uninstall %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b %ERRORLEVEL%
+goto :forward_command
 
 :cmd_backup
-if "%~1"=="/?" goto :dispatch_backup
-if "%~1"=="-h" goto :dispatch_backup
-if "%~1"=="--help" goto :dispatch_backup
-if /i "%~1"=="help" goto :dispatch_backup
 call :check_setup
 if errorlevel 1 exit /b 1
-:dispatch_backup
-call "%SYS_PATH%\core\dispatch.bat" backup %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b %ERRORLEVEL%
+goto :forward_command
 
 :cmd_restore
-if "%~1"=="/?" goto :dispatch_restore
-if "%~1"=="-h" goto :dispatch_restore
-if "%~1"=="--help" goto :dispatch_restore
-if /i "%~1"=="help" goto :dispatch_restore
 call :check_setup
 if errorlevel 1 exit /b 1
-:dispatch_restore
-call "%SYS_PATH%\core\dispatch.bat" restore %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b %ERRORLEVEL%
+goto :forward_command
 
 :cmd_reset
-if "%~1"=="/?" goto :dispatch_reset
-if "%~1"=="-h" goto :dispatch_reset
-if "%~1"=="--help" goto :dispatch_reset
-if /i "%~1"=="help" goto :dispatch_reset
 call :check_setup
 if errorlevel 1 exit /b 1
-:dispatch_reset
-call "%SYS_PATH%\core\dispatch.bat" reset %1 %2 %3 %4 %5 %6 %7 %8 %9
-exit /b %ERRORLEVEL%
+goto :forward_command
 
 :: ----------------------------------------------------------------------------
 :: Interrupted-operation journal helpers (design section 9)
@@ -502,6 +369,7 @@ if "%_ENGRAM_VER%"=="" set "_ENGRAM_VER=unknown"
 exit /b 0
 
 :show_version
+if not "%~2"=="" goto :usage_surplus
 call :get_version
 echo Engram %_ENGRAM_VER% (Portable Dev Runtime)
 exit /b 0
@@ -515,6 +383,9 @@ call :print_help_file open
 exit /b 0
 
 :show_help
+if /i "%SUBCMD%"=="help" goto :help_index_valid
+if not "%~2"=="" goto :usage_surplus
+:help_index_valid
 call :get_version
 echo ===============================================================================
 echo   Engram %_ENGRAM_VER% - Portable Dev Runtime
@@ -523,3 +394,8 @@ echo ===========================================================================
 echo.
 call :print_help_file index
 exit /b 0
+
+:usage_surplus
+echo [Error] Surplus operands are not accepted.
+echo Run 'engram help' for usage.
+exit /b 2

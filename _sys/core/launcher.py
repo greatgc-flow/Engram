@@ -255,7 +255,7 @@ def main(ctx: dict) -> None:
 
         if not raw_target:
             print(f"[Sandbox] Ready at {base_dir}")
-            subprocess.run(["cmd", "/k"], env=env)
+            sys.exit(subprocess.run(["cmd", "/k"], env=env).returncode)
 
     elif run_mode == "APP":
         target_file = Path(raw_target)
@@ -265,15 +265,15 @@ def main(ctx: dict) -> None:
             python_exe = provisioner.venv_python_exe(sys_dir)
             if not python_exe.exists():
                 python_exe = provisioner.portable_python_exe(sys_dir)
-            subprocess.run([str(python_exe), str(target_file)], env=env)
+            sys.exit(subprocess.run([str(python_exe), str(target_file), *args[1:]], env=env).returncode)
         elif ext in (".bat", ".cmd"):
             # Use .\name with cwd= to avoid cmd.exe interpreting "&" in
             # absolute paths as a statement separator (D11 ampersand fix).
             bat_dir = str(target_file.parent)
             bat_name = target_file.name
-            subprocess.run(
-                ["cmd", "/c", f".\\{bat_name}"], env=env, cwd=bat_dir,
-            )
+            sys.exit(subprocess.run(
+                ["cmd", "/c", f".\\{bat_name}", *args[1:]], env=env, cwd=bat_dir,
+            ).returncode)
         else:
             os.startfile(str(target_file))
 

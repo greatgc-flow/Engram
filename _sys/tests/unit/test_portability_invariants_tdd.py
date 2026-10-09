@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+from subprocess import CompletedProcess
 import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -150,7 +151,7 @@ class TestVSCodePortableMode:
             return proc
 
         monkeypatch.setattr("subprocess.Popen", mock_popen)
-        monkeypatch.setattr("subprocess.run", lambda *a, **kw: None)
+        monkeypatch.setattr("subprocess.run", lambda args, **kw: CompletedProcess(args, returncode=0))
 
         data_dir = vscode_dir / "data"
         assert not data_dir.exists()
@@ -160,7 +161,9 @@ class TestVSCodePortableMode:
             "sys_dir": sys_dir,
             "args": [],
         }
-        launcher.main(ctx)
+        with pytest.raises(SystemExit) as exc:
+            launcher.main(ctx)
+        assert exc.value.code == 0
 
         assert data_dir.is_dir(), "launcher.main() must ensure data/ exists"
         assert any("Code.exe" in str(c[0]) for c in popen_calls)

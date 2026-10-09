@@ -12,7 +12,7 @@ Description:
   KIND/NAME when two kinds share a name. Pinned entries are never removed by
   'engram tidy'. restore previews by default, never overwrites an existing
   target, and holds the environment lock. Python and venv backups are
-  restored through 'engram repair' (lock + journal), not from here.
+  not restorable yet. Keep them; repair fixes the current environment.
 
 Options:
   list             One line per backup: kind, name, state, size, pin
@@ -36,8 +36,8 @@ Exit codes:
   0   ok, or preview shown
   2   usage error (unknown action or option)
   11  failed: no such backup, ambiguous name, target exists, lock busy, or
-      the kind must be restored through 'engram repair'
+      restoring this backup kind is not supported yet
 
 See also:
   engram tidy      removes expired, unpinned backups
-  engram repair    restores Python/venv backups
+  engram repair    repairs the current Python/venv environment

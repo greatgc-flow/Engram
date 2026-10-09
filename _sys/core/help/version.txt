@@ -16,7 +16,8 @@ Examples:
   engram -v
 
 Exit codes:
-  0   always
+  0   version or help shown
+  2   surplus operands
 
 See also:
   engram doctor    full environment health report
