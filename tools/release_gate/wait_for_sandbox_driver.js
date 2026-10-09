@@ -3,9 +3,9 @@
  * Driver for testing .github/scripts/wait_for_sandbox.js with fake timers and stubbed GitHub API.
  *
  * Simulates the promotion job step in .github/workflows/sandbox-gate.yml:
- *   const wait = new Function('github', 'context', 'core',
+ *   const wait = new Function('github', 'context', 'core', 'require',
  *     'return (async () => {' + fs.readFileSync('.github/scripts/wait_for_sandbox.js', 'utf8') + '})()');
- *   await wait(github, context, core);
+ *   await wait(github, context, core, require);
  */
 const fs = require('fs');
 const path = require('path');
@@ -152,9 +152,9 @@ const github = {
 (async () => {
   try {
     const scriptContent = fs.readFileSync(scriptPath, 'utf8');
-    const wait = new Function('github', 'context', 'core',
+    const wait = new Function('github', 'context', 'core', 'require',
       'return (async () => {' + scriptContent + '})()');
-    await wait(github, context, core);
+    await wait(github, context, core, require);
 
     if (jsonOutput) {
       console.log(JSON.stringify({

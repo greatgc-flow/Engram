@@ -17,6 +17,9 @@ import subprocess
 import zipfile
 
 import importlib.util
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from installed_artifact_suite import run_checks
 
 _spec = importlib.util.spec_from_file_location(
     "release_evidence_checks", Path(__file__).resolve().parents[2] / "_sys/checks/release_evidence.py"
@@ -53,20 +56,10 @@ def run_clean_room_checks(clean_root: Path, *, runner=None) -> None:
 
     env = dict(os.environ, CI="1", PYTHONUTF8="1")
 
-    # 1. Candidate bootstrap
-    bootstrap_bat = clean_root / "_sys" / "core" / "bootstrap.bat"
-    if not bootstrap_bat.is_file():
-        raise Hold("candidate missing _sys/core/bootstrap.bat")
-    runner([str(bootstrap_bat), "--skip-vscode", "--skip-claude"], cwd=clean_root, env=env)
-
-    # 2. Runtime health check (doctor --json)
-    engram_cmd = clean_root / "engram.cmd"
-    if not engram_cmd.is_file():
-        raise Hold("candidate missing engram.cmd")
-    runner([str(engram_cmd), "doctor", "--json"], cwd=clean_root, env=env)
-
-    # 3. Real network discovery check (update --check --refresh)
-    runner([str(engram_cmd), "update", "--check", "--refresh"], cwd=clean_root, env=env)
+    try:
+        run_checks(clean_root, runner=runner, env=env)
+    except ValueError as exc:
+        raise Hold(str(exc)) from exc
 
 
 def execute_hosted_clean_room(
@@ -87,6 +80,8 @@ def execute_hosted_clean_room(
     base._identity(candidate)
     hashes = base._hashes(candidate.get("candidate_sha256s"))
 
+    if Path(clean_root).is_symlink():
+        raise Hold("clean-room root must be fresh (must not be a link)")
     clean_root = Path(clean_root).resolve()
     out_path = Path(out_path).resolve()
 
@@ -96,19 +91,40 @@ def execute_hosted_clean_room(
     if (clean_root / "requirements-dev.txt").exists():
         raise Hold("clean-room root must not contain dev requirements (requirements-dev.txt)")
 
-    # If clean root is empty or needs extraction from archive
-    if not (clean_root / "engram.cmd").exists():
-        archive = candidate_zip
-        if archive is None and assets_dir is not None:
-            zips = list(Path(assets_dir).glob("*.zip"))
-            if len(zips) != 1:
-                raise Hold(f"expected exactly one portable zip in assets, found {len(zips)}")
-            archive = zips[0]
-        if archive is None:
-            raise Hold("clean root has no candidate and no archive was supplied")
-        clean_root.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(archive, "r") as zf:
-            zf.extractall(clean_root)
+    if clean_root.exists() or clean_root.is_symlink():
+        raise Hold("clean-room root must be fresh (must not exist)")
+    archive = candidate_zip
+    if archive is None and assets_dir is not None:
+        zips = list(Path(assets_dir).glob("*.zip"))
+        if len(zips) != 1:
+            raise Hold(f"expected exactly one portable zip in assets, found {len(zips)}")
+        archive = zips[0]
+    if archive is None:
+        raise Hold("no candidate archive was supplied")
+    archive = Path(archive)
+    if assets_dir is not None:
+        name = archive.resolve().relative_to(Path(assets_dir).resolve()).as_posix()
+    else:
+        matches = [name for name in hashes if Path(name).name == archive.name]
+        if len(matches) != 1:
+            raise Hold("archive must identify exactly one candidate asset")
+        name = matches[0]
+    # Extract the same bytes that were hashed; never reopen an unverified archive.
+    import io
+    payload = archive.read_bytes()
+    if hashlib.sha256(payload).hexdigest() != hashes.get(name):
+        raise Hold("candidate archive SHA256 mismatch")
+    with zipfile.ZipFile(io.BytesIO(payload)) as zf:
+        for member in zf.infolist():
+            target = (clean_root / member.filename).resolve()
+            if not target.is_relative_to(clean_root):
+                raise Hold("archive path escapes clean-room root")
+        clean_root.mkdir(parents=True, exist_ok=False)
+        zf.extractall(clean_root)
+
+    for forbidden in (".git", "requirements-dev.txt"):
+        if (clean_root / forbidden).exists():
+            raise Hold(f"candidate clean-room contains {forbidden}")
 
     # Run the clean-room suite
     run_clean_room_checks(clean_root, runner=runner)

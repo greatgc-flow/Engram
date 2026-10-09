@@ -5,6 +5,12 @@ import json
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
+import sys
+
+DEFAULT_POLICY = Path(__file__).resolve().parents[2] / "release_policy.json"
+
+def read_policy(path=DEFAULT_POLICY):
+    return json.loads(Path(path).read_text(encoding="utf-8"))
 from urllib.parse import quote
 
 
@@ -54,7 +60,9 @@ def fetch_winget(version):
     return 'available'
 
 
-def check_closure(candidate, *, fetch_release, fetch_winget, now=None, pending_days=21):
+def check_closure(candidate, *, fetch_release, fetch_winget, now=None, pending_days=None):
+    if pending_days is None:
+        pending_days = read_policy()["winget_pending_days"]
     now = now or datetime.now(timezone.utc)
     evidence = {'status': 'DRIFT', 'tag': candidate.get('tag'),
                 'candidate_sha256s': candidate.get('candidate_sha256s', {}),
@@ -122,8 +130,40 @@ def exit_code(evidence):
     return 0 if evidence['status'] in ('CLOSED', 'OPEN_PENDING') else 1
 
 
+def check_ledger(candidates_dir, results_dir, repo, *, run=subprocess.run, summary_path=None, policy_path=DEFAULT_POLICY):
+    """Bound each candidate independently and retain DRIFT on timeout."""
+    candidates = sorted(Path(candidates_dir).glob('*.json'))
+    if not candidates:
+        raise ValueError('DRIFT: no frozen candidates; recover the promotion artifact and rerun')
+    failed = False
+    for candidate in candidates:
+        out = Path(results_dir) / candidate.stem / 'post_release_closure.json'
+        try:
+            result = run([sys.executable, str(Path(__file__).resolve()), '--candidate', str(candidate),
+                          '--repo', repo, '--out', str(out), '--policy', str(policy_path)],
+                         capture_output=True, text=True, timeout=180)
+            summary = result.stdout + result.stderr
+            failed |= result.returncode != 0
+        except subprocess.TimeoutExpired:
+            frozen = json.loads(candidate.read_text(encoding='utf-8-sig'))
+            summary = f'DRIFT: {frozen.get("tag")}; candidate closure timed out; recheck this candidate'
+            evidence = dict(status='DRIFT', tag=frozen.get('tag'),
+                            candidate_sha256s=frozen.get('candidate_sha256s', {}), published_digests={},
+                            checked_at=datetime.now(timezone.utc).isoformat(), summary=summary,
+                            recheck='weekly post-release-closure.yml or workflow_dispatch')
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(evidence, indent=2) + '\n', encoding='utf-8')
+            failed = True
+        print(summary)
+        if summary_path:
+            with Path(summary_path).open('a', encoding='utf-8') as stream:
+                stream.write(summary + '\n')
+    return int(failed)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--policy', default=DEFAULT_POLICY, type=Path)
     parser.add_argument('--candidate', required=True, type=Path)
     parser.add_argument('--repo', required=True)
     parser.add_argument('--out', required=True, type=Path)
@@ -132,7 +172,8 @@ def main(argv=None):
         candidate = json.loads(args.candidate.read_text(encoding='utf-8-sig'))
         if not isinstance(candidate, dict):
             raise ValueError('candidate must be an object')
-        evidence = check_closure(candidate, fetch_release=release_fetcher(args.repo), fetch_winget=fetch_winget)
+        evidence = check_closure(candidate, fetch_release=release_fetcher(args.repo), fetch_winget=fetch_winget,
+                                 pending_days=read_policy(args.policy)["winget_pending_days"])
     except Exception as exc:
         evidence = {'status': 'DRIFT', 'candidate_sha256s': {}, 'published_digests': {},
                     'checked_at': datetime.now(timezone.utc).isoformat(), 'summary': f'DRIFT: {exc}'}

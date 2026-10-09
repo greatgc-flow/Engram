@@ -87,6 +87,9 @@ jobs:
           Copy-Item _sys/tests "$root/_sys/tests" -Recurse
           Copy-Item tools "$root/tools" -Recurse
           Copy-Item requirements-dev.txt "$root/requirements-dev.txt"
+          Copy-Item release_policy.json "$root/release_policy.json"
+          python tools/release_gate/sandbox_installed_suite.py --root "$root"
+          if ($LASTEXITCODE) { throw "HOLD: mandatory suite preparation failed" }
           "SANDBOX_ROOT=$root" >> $env:GITHUB_ENV
       - name: Run clean-room candidate checks
         id: sandbox
@@ -140,16 +143,10 @@ jobs:
         with:
           name: candidate-${{ github.run_id }}-${{ github.run_attempt }}
           path: release
-      - name: Verify candidate hashes and prepare candidate clean-room root
+      - name: Choose fresh hosted root
         shell: pwsh
         run: |
-          python .github/scripts/check_candidate_assets.py release/candidate.json release/assets
-          if ($LASTEXITCODE) { throw 'HOLD: candidate mismatch' }
           $root = Join-Path $env:RUNNER_TEMP "clean-room-hosted-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
-          if (Test-Path -LiteralPath $root) { throw 'HOLD: clean-room root already exists' }
-          $zip = @(Get-ChildItem release/assets -Filter *.zip)
-          if ($zip.Count -ne 1) { throw 'HOLD: expected one portable archive' }
-          Expand-Archive -LiteralPath $zip[0].FullName -DestinationPath $root
           "CLEAN_ROOM_ROOT=$root" >> $env:GITHUB_ENV
       - name: Run hosted clean-room candidate checks
         id: hosted
@@ -158,6 +155,7 @@ jobs:
           python tools/release_gate/hosted_clean_room.py `
             --candidate release/candidate.json `
             --clean-root "$env:CLEAN_ROOM_ROOT" `
+            --assets release/assets `
             --out release/sandbox_evidence.json
           if ($LASTEXITCODE) { throw 'HOLD: hosted clean-room checks failed' }
       - name: Ensure fallback evidence on failure or cancellation
@@ -352,15 +350,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
-      - name: Bounded wait for Sandbox (45 minutes)
+      - name: Bounded wait for clean-room evidence
         timeout-minutes: 46
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const wait = new Function('github', 'context', 'core',
+            const wait = new Function('github', 'context', 'core', 'require',
               'return (async () => {' + fs.readFileSync('.github/scripts/wait_for_sandbox.js', 'utf8') + '})()');
-            await wait(github, context, core);
+            await wait(github, context, core, require);
       - uses: actions/download-artifact@v4
         with:
           name: candidate-${{ github.run_id }}-${{ github.run_attempt }}
@@ -393,7 +391,7 @@ jobs:
         run: |
           python .github/scripts/check_candidate_assets.py release/candidate.json release/assets evidence/sandbox_evidence.json
           if ($LASTEXITCODE) { throw 'HOLD: candidate mismatch' }
-          python _sys/checks/release_evidence.py verify --candidate release/candidate.json --evidence evidence/sandbox_evidence.json --policy release_policy.json --upgrade-evidence evidence/upgrade_evidence.json --winget-evidence evidence/winget_evidence.json
+          python _sys/checks/release_evidence.py verify --candidate release/candidate.json --evidence evidence/sandbox_evidence.json --policy release_policy.json --upgrade-evidence evidence/upgrade_evidence.json --winget-evidence evidence/winget_evidence.json --run-id ${{ github.run_id }} --run-attempt ${{ github.run_attempt }}
           if ($LASTEXITCODE) { throw 'HOLD: Sandbox, upgrade, or WinGet evidence rejected' }
       - name: Publish verified tag assets
         if: startsWith(github.ref, 'refs/tags/v')

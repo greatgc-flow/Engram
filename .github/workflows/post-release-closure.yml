@@ -30,6 +30,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
+      - name: Read closure retention policy
+        id: policy
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          policy = json.loads(Path('release_policy.json').read_text())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+              stream.write(f"retention_days={policy['closure_retention_days']}\n")
+          PY
       - name: Find previous frozen-candidate ledger
         id: previous
         uses: actions/github-script@v7
@@ -74,23 +84,10 @@ jobs:
       - name: Check publication and upstream WinGet (all retained candidates)
         run: |
           python - <<'PY'
-          import os, subprocess, sys
-          from pathlib import Path
-          candidates = sorted(Path('ledger/candidates').glob('*.json'))
-          if not candidates:
-              raise SystemExit('DRIFT: no frozen candidates; recover the promotion artifact and rerun')
-          failed = False
-          for candidate in candidates:
-              out = Path('ledger/results') / candidate.stem / 'post_release_closure.json'
-              result = subprocess.run([sys.executable, 'tools/release_gate/post_release_closure.py',
-                  '--candidate', str(candidate), '--repo', os.environ['GH_REPO'], '--out', str(out)],
-                  capture_output=True, text=True, timeout=180)
-              summary = result.stdout + result.stderr
-              print(summary)
-              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
-                  stream.write(summary + '\n')
-              failed |= result.returncode != 0
-          raise SystemExit(1 if failed else 0)
+          import os
+          from tools.release_gate.post_release_closure import check_ledger
+          raise SystemExit(check_ledger('ledger/candidates', 'ledger/results', os.environ['GH_REPO'],
+              summary_path=os.environ['GITHUB_STEP_SUMMARY']))
           PY
       - name: Persist frozen candidates and closure evidence for weekly recheck
         if: always()
@@ -99,7 +96,7 @@ jobs:
           name: closure-ledger
           path: ledger/
           if-no-files-found: error
-          retention-days: 90
+          retention-days: ${{ steps.policy.outputs.retention_days }}
       - name: Issue-ready infrastructure failure summary
         if: failure()
         run: echo 'DRIFT or unavailable closure evidence. Inspect this run and attach closure-ledger; recover frozen candidates if needed, then rerun Post-release closure. Publication remains independent.' >> "$GITHUB_STEP_SUMMARY"

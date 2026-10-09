@@ -17,7 +17,7 @@ COMMIT = "a" * 40
 
 def run_cli(*args):
     if args and args[0] == "verify":
-        args = (*args, "--no-winget-evidence")
+        args = (*args, "--no-winget-evidence", "--run-id", "123", "--run-attempt", "1")
         if "--policy" not in args:
             args = (*args, "--policy", SCRIPT.parents[2] / "release_policy.json")
     env = dict(os.environ, RELEASE_TAG="v1.2.3", GITHUB_SHA=COMMIT)
@@ -28,6 +28,8 @@ def run_cli(*args):
 
 
 def write_json(path, value):
+    if isinstance(value, dict) and 'status' in value:
+        value = {"cancelled": False, "skipped": False, "run_id": "123", "run_attempt": "1", **value}
     path.write_text(json.dumps(value), encoding="utf-8")
     return path
 
@@ -273,7 +275,8 @@ def test_upgrade_evidence_requires_explicit_false_flags(tmp_path, candidate, fla
         del data[flag]
     else:
         data[flag] = value
-    upgrade = write_json(tmp_path / "upgrade.json", data)
+    upgrade = tmp_path / "upgrade.json"
+    upgrade.write_text(json.dumps(data), encoding="utf-8")
     result = run_cli(
         "verify", "--candidate", candidate, "--evidence", evidence,
         "--upgrade-evidence", upgrade,
@@ -353,7 +356,9 @@ def test_repository_policy_is_required_by_default(tmp_path, candidate):
         "provider": "hosted-ephemeral-vm", "runner_environment": "github-hosted",
         "workflow_run_id": "123", "image": "Windows runner image",
     })
-    gate.verify(candidate, evidence, no_upgrade_evidence=True, no_winget_evidence=True)
+    gate.verify(candidate, evidence, no_upgrade_evidence=True, no_winget_evidence=True,
+                run_id="123", run_attempt="1")
     with pytest.raises((gate.Hold, OSError)):
         gate.verify(candidate, evidence, no_upgrade_evidence=True,
-                    no_winget_evidence=True, policy_path=tmp_path / "missing.json")
+                    no_winget_evidence=True, policy_path=tmp_path / "missing.json",
+                    run_id="123", run_attempt="1")

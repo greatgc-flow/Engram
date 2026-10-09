@@ -5,6 +5,8 @@ Verifies isolation assertions, candidate check sequence, and provider evidence s
 from __future__ import annotations
 
 import json
+import hashlib
+import zipfile
 from pathlib import Path
 import pytest
 
@@ -24,13 +26,17 @@ def make_candidate(tmp_path: Path, files: dict[str, str] | None = None) -> Path:
     return path
 
 
+def make_archive(tmp_path):
+    archive = tmp_path / "Engram-v2.1.0-portable-x64.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("engram.cmd", "@echo off")
+        zf.writestr("_sys/core/bootstrap.bat", "@echo off")
+    return archive, make_candidate(tmp_path, {archive.name: hashlib.sha256(archive.read_bytes()).hexdigest()})
+
+
 def test_hosted_clean_room_success(tmp_path: Path) -> None:
-    cand_path = make_candidate(tmp_path)
+    archive, cand_path = make_archive(tmp_path)
     clean_root = tmp_path / "clean_root"
-    clean_root.mkdir()
-    (clean_root / "engram.cmd").write_text("@echo off", encoding="utf-8")
-    (clean_root / "_sys" / "core").mkdir(parents=True)
-    (clean_root / "_sys" / "core" / "bootstrap.bat").write_text("@echo off", encoding="utf-8")
 
     out_path = tmp_path / "evidence.json"
     commands_run = []
@@ -42,6 +48,7 @@ def test_hosted_clean_room_success(tmp_path: Path) -> None:
     evidence = hosted_clean_room.execute_hosted_clean_room(
         candidate_path=cand_path,
         clean_root=clean_root,
+        candidate_zip=archive,
         out_path=out_path,
         workflow_run_id="999",
         image="test-image-v1",
@@ -96,12 +103,8 @@ def test_clean_root_with_dev_requirements_holds(tmp_path: Path) -> None:
 
 
 def test_failed_command_holds(tmp_path: Path) -> None:
-    cand_path = make_candidate(tmp_path)
+    archive, cand_path = make_archive(tmp_path)
     clean_root = tmp_path / "clean_root"
-    clean_root.mkdir()
-    (clean_root / "engram.cmd").write_text("@echo off", encoding="utf-8")
-    (clean_root / "_sys" / "core").mkdir(parents=True)
-    (clean_root / "_sys" / "core" / "bootstrap.bat").write_text("@echo off", encoding="utf-8")
 
     out_path = tmp_path / "evidence.json"
 
@@ -114,6 +117,7 @@ def test_failed_command_holds(tmp_path: Path) -> None:
             clean_root=clean_root,
             out_path=out_path,
             runner=failing_runner,
+            candidate_zip=archive,
         )
 
 

@@ -37,7 +37,11 @@ jobs:
 
     - name: Run unit tests
       run: |
-        python -u -m pytest _sys/tests/unit -v --tb=short
+        python -u -m pytest _sys/tests/unit -v --tb=short --junitxml=contract-results.xml
+
+    - name: Require release contracts without skips
+      if: always()
+      run: python tools/release_gate/check_required_tests.py --report contract-results.xml
 
     # Step 2 (Option D): CP949 / Korean-locale emulated test verification gate.
     # Emulates CP949 at the encoding boundary on hosted English-locale runners.

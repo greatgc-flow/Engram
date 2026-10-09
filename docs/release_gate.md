@@ -17,8 +17,7 @@ loudly; neither proves closure. This workflow cannot block publication.
 `tools/release_gate/post_release_closure.py --candidate release/candidate.json
 --repo OWNER/REPO --out post_release_closure.json` uses only stdlib and `gh`.
 There are no import-time network calls; `check_closure` accepts injectable
-release and WinGet fetchers for offline tests. The tests were authored first
-against the absent module (RED contract); execution belongs to cc.
+release and WinGet fetchers for offline tests. The offline tests exercise injected fetchers without network access.
 
 The release query is `gh api repos/OWNER/REPO/releases/tags/TAG`, followed by
 paginated `releases/ID/assets` inventory queries. It requires a published,
@@ -94,7 +93,8 @@ weekly runs exercise the same gate but do not publish a release.
 6. Promotion downloads candidate, upgrade, WinGet, and all candidate clean-room artifacts
    (`pattern: sandbox-evidence-*`), selects the PASS clean-room evidence, and runs
    `_sys/checks/release_evidence.py verify` with `--policy release_policy.json`,
-   `--evidence`, `--upgrade-evidence`, and `--winget-evidence`.
+   `--evidence`, `--upgrade-evidence`, `--winget-evidence`, and required
+   `--run-id ${{ github.run_id }} --run-attempt ${{ github.run_attempt }}`.
    The policy file at repository root serves as the trust root: evidence provider must
    exist in policy, runner environment must match provider, and evidence cannot widen policy.
    If any check fails, promotion fails closed and reports HOLD. Only subsequent `v*` tag runs call
@@ -207,9 +207,9 @@ user data, evidence hash/identity mismatch, missing flags/files, and timeouts.
 
 ## Bounded-HOLD Sandbox wait contract (EN-GAP-P1-005)
 
-The promotion job executes `.github/scripts/wait_for_sandbox.js` to poll the asynchronous `clean-room-sandbox` job every 15 seconds up to a strict 45-minute deadline:
+The promotion job executes `.github/scripts/wait_for_sandbox.js` to poll the asynchronous `clean-room-sandbox` job every 15 seconds up to the policy-defined 45-minute deadline, accepting either clean-room provider:
 - Successful completion (`status: completed`, `conclusion: success`) logs PASS and resolves.
-- Unsuccessful conclusions (`failure`, `cancelled`, `skipped`) immediately throw `HOLD: Sandbox concluded <conclusion>`.
+- If all listed candidate jobs have completed unsuccessfully (`failure`, `cancelled`, `skipped`), throw `HOLD: Sandbox concluded <conclusion>`; a pending alternative keeps polling.
 - Runner absence / missing job: if the runner is unavailable or the job never appears, polling terminates at 45 minutes and throws `HOLD: Sandbox runner unavailable or evidence deadline exceeded (45 minutes)`.
 - Resilient late dispatch: jobs appearing or running before the deadline poll until completion.
 - Fail-closed API handling: GitHub API errors throw `HOLD: GitHub API error: <msg>`; malformed or empty job lists throw `HOLD: malformed or empty job list`. The script never silently passes.
@@ -228,3 +228,50 @@ only `COMPLETED`. Keep staging, backups, and the journal for investigation when
 rollback fails; do not treat that state as a restored installation.
 The offline helper fault tests compare the full installed file inventory, excluding
 handoff artifacts under the system directory's `data/temp`, and cover renamed systems.
+
+## Wave B1 coherence contracts
+
+`validate_evidence` in `_sys/checks/release_evidence.py` is the shared predicate
+for Sandbox (either provider), upgrade, and WinGet. Each requires `status: PASS`,
+`cancelled` and `skipped` present and exactly JSON false, identical candidate
+hashes, and string `run_id` / `run_attempt` equal to the current promotion.
+The CLI requires both current identity arguments; the workflow supplies GitHub
+context values. Python callers may supply those arguments or current GitHub
+environment values; missing current identity fails closed. Sandbox additionally
+requires `workflow_run_id` to equal that current run, allowed provider/environment
+metadata, and image. Upgrade additionally requires a different previous tag.
+
+Hosted extraction belongs to `hosted_clean_room.py`: the supplied archive must
+identify exactly one frozen asset and its bytes must match that asset SHA256.
+The root must not exist, including an empty root or link. The driver extracts
+the same bytes it hashed and rejects paths escaping that fresh root. A populated
+installation cannot substitute for the supplied candidate archive.
+
+`tools/release_gate/installed_artifact_suite.json` defines the mandatory suite
+once: bootstrap with `--skip-vscode --skip-claude`, `doctor --json`, and
+`update --check --refresh`. Hosted runs these through the shared Python runner;
+Sandbox's entry is generated from the same data by `sandbox_installed_suite.py`
+into the extracted candidate's source-only harness. Both require every command
+to exit zero. Sandbox additionally provides hypervisor isolation, installs source
+test dependencies, and runs the full unit/lifecycle/path suite. Hosted adds no
+source suite; archive integrity and fresh-root checks precede its installed suite.
+
+`release_policy.json` owns `evidence_wait_minutes: 45`,
+`evidence_poll_seconds: 15`, `winget_pending_days: 21`, and
+`closure_retention_days: 90`. The wait script, closure tool, and ledger upload
+read these values. Workflow job timeouts and the wait step's outer 46-minute
+safety timeout remain fixed; making YAML timeout expressions consume checkout
+files would require additional job-output plumbing. They must be reviewed if
+the evidence deadline grows. No requested policy value remains hardcoded in its
+operational consumer.
+
+The policy's small `required_test_ids` list names release evidence, installed
+hosted validation, upgrade, bounded wait, missing flags, and closure continuation
+contracts. CI and Sandbox produce JUnit XML and run `check_required_tests.py`.
+Any required ID absent, skipped, failed, or errored fails the gate; all parameter
+cases for a listed ID must pass. Other platform-specific skips remain allowed.
+IDs use JUnit `module[.Class]::test` names, without a repository package prefix.
+
+Closure checks each retained candidate with an independent subprocess deadline.
+A timeout writes candidate-bound DRIFT evidence and a summary, then checks the
+remaining candidates. Any DRIFT makes the ledger check fail after traversal.

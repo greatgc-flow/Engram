@@ -41,22 +41,22 @@ class TestRequiredEvidence:
             candidate.write_text(json.dumps({'tag': 'v1.2.3', 'commit': 'b' * 40, 'candidate_sha256s': hashes}))
             sandbox.write_text(json.dumps({'status': 'PASS', 'candidate_sha256s': hashes,
                 'provider': 'windows-sandbox', 'runner_environment': 'self-hosted',
-                'workflow_run_id': '12', 'image': 'Windows 11'}))
+                'workflow_run_id': '12', 'image': 'Windows 11', 'cancelled': False, 'skipped': False, 'run_id': '12', 'run_attempt': '1'}))
             good = {'status': 'PASS', 'candidate_sha256s': hashes, 'cancelled': False, 'skipped': False, 'run_id': '12', 'run_attempt': '1'}
             with patch.dict(os.environ, {'GITHUB_RUN_ID': '12', 'GITHUB_RUN_ATTEMPT': '1'}):
                 for change in ({}, {'status': 'HOLD'}, {'status': 'SKIPPED'}, {'skipped': True}, {'cancelled': True}, {'skipped': None}, {'candidate_sha256s': {'release.zip': 'c' * 64}}, {'run_attempt': '2'}):
                     winget.write_text(json.dumps(dict(good, **change)))
                     if change:
                         with pytest.raises(gate.Hold):
-                            gate.verify(candidate, sandbox, winget_evidence_path=winget, no_upgrade_evidence=True)
+                            gate.verify(candidate, sandbox, run_id="12", run_attempt="1", winget_evidence_path=winget, no_upgrade_evidence=True)
                     else:
-                        gate.verify(candidate, sandbox, winget_evidence_path=winget, no_upgrade_evidence=True)
+                        gate.verify(candidate, sandbox, run_id="12", run_attempt="1", winget_evidence_path=winget, no_upgrade_evidence=True)
                 winget.unlink()
                 with pytest.raises(gate.Hold):
-                    gate.verify(candidate, sandbox, winget_evidence_path=winget, no_upgrade_evidence=True)
-                gate.verify(candidate, sandbox, no_upgrade_evidence=True, no_winget_evidence=True)
+                    gate.verify(candidate, sandbox, run_id="12", run_attempt="1", winget_evidence_path=winget, no_upgrade_evidence=True)
+                gate.verify(candidate, sandbox, run_id="12", run_attempt="1", no_upgrade_evidence=True, no_winget_evidence=True)
                 with pytest.raises(gate.Hold):
-                    gate.verify(candidate, sandbox, winget_evidence_path=winget, no_upgrade_evidence=True, no_winget_evidence=True)
+                    gate.verify(candidate, sandbox, run_id="12", run_attempt="1", winget_evidence_path=winget, no_upgrade_evidence=True, no_winget_evidence=True)
 
 class TestSmoke:
 
@@ -181,7 +181,7 @@ def test_winget_requires_explicit_false_flags(flag, value):
                                          "candidate_sha256s": hashes}))
         sandbox.write_text(json.dumps({"status": "PASS", "candidate_sha256s": hashes,
             "provider": "windows-sandbox", "runner_environment": "self-hosted",
-            "workflow_run_id": "12", "image": "Windows 11"}))
+            "workflow_run_id": "12", "image": "Windows 11", "cancelled": False, "skipped": False, "run_id": "12", "run_attempt": "1"}))
         evidence = {"status": "PASS", "candidate_sha256s": hashes,
                     "cancelled": False, "skipped": False}
         if value == "missing":
@@ -190,16 +190,16 @@ def test_winget_requires_explicit_false_flags(flag, value):
             evidence[flag] = value
         winget.write_text(json.dumps(evidence))
         with pytest.raises(gate.Hold, match=flag):
-            gate.verify(candidate, sandbox, winget_evidence_path=winget,
+            gate.verify(candidate, sandbox, run_id="12", run_attempt="1", winget_evidence_path=winget,
                         no_upgrade_evidence=True)
 
 
 def test_winget_cli_required_and_mutually_exclusive(capsys):
-    assert gate.main(["verify", "--candidate", "missing", "--evidence", "missing",
+    assert gate.main(["verify", "--run-id", "12", "--run-attempt", "1", "--candidate", "missing", "--evidence", "missing",
                       "--no-upgrade-evidence"]) == 1
     assert capsys.readouterr().out == "HOLD: WinGet evidence is required\n"
     with pytest.raises(SystemExit) as exc:
-        gate.main(["verify", "--candidate", "missing", "--evidence", "missing",
+        gate.main(["verify", "--run-id", "12", "--run-attempt", "1", "--candidate", "missing", "--evidence", "missing",
                    "--winget-evidence", "missing", "--no-winget-evidence"])
     assert exc.value.code == 2
 
@@ -216,7 +216,7 @@ def test_winget_malformed_evidence_holds(content):
                                          "candidate_sha256s": hashes}))
         sandbox.write_text(json.dumps({"status": "PASS", "candidate_sha256s": hashes,
             "provider": "windows-sandbox", "runner_environment": "self-hosted",
-            "workflow_run_id": "12", "image": "Windows 11"}))
+            "workflow_run_id": "12", "image": "Windows 11", "cancelled": False, "skipped": False, "run_id": "12", "run_attempt": "1"}))
         winget.write_text(content)
-        assert gate.main(["verify", "--candidate", str(candidate), "--evidence", str(sandbox),
+        assert gate.main(["verify", "--run-id", "12", "--run-attempt", "1", "--candidate", str(candidate), "--evidence", str(sandbox),
                           "--no-upgrade-evidence", "--winget-evidence", str(winget)]) == 1
