@@ -1,4 +1,7 @@
-const policy = JSON.parse(require('fs').readFileSync('release_policy.json', 'utf8'));
+const POLICY_PATH = typeof __dirname !== 'undefined'
+  ? require('path').resolve(__dirname, '../../tools/release_gate/release_policy.json')
+  : 'tools/release_gate/release_policy.json';
+const policy = JSON.parse(require('fs').readFileSync(POLICY_PATH, 'utf8'));
 for (const key of ['evidence_wait_minutes', 'evidence_poll_seconds']) {
   if (!Number.isInteger(policy[key]) || policy[key] <= 0) throw new Error(`HOLD: invalid policy ${key}`);
 }

@@ -34,9 +34,9 @@ jobs:
         id: policy
         run: |
           python - <<'PY'
-          import json, os
-          from pathlib import Path
-          policy = json.loads(Path('release_policy.json').read_text())
+          import os
+          from tools.release_gate.post_release_closure import read_policy
+          policy = read_policy()
           with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
               stream.write(f"retention_days={policy['closure_retention_days']}\n")
           PY

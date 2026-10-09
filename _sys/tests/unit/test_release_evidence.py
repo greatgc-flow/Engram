@@ -12,6 +12,7 @@ from evidence_fixtures import evidence_fixture
 
 
 SCRIPT = Path(__file__).resolve().parents[2] / "checks" / "release_evidence.py"
+DEFAULT_POLICY = SCRIPT.parents[2] / "tools" / "release_gate" / "release_policy.json"
 HASH = hashlib.sha256(b"release").hexdigest()
 COMMIT = "a" * 40
 
@@ -23,7 +24,7 @@ def run_cli(*args):
             args = tuple(a for a in args if a != "--fixture-upgrade") + ("--upgrade-evidence", evidence_fixture(candidate_path, "upgrade", "123"))
         args = (*args, "--winget-evidence", evidence_fixture(candidate_path, "winget", "123"), "--run-id", "123", "--run-attempt", "1")
         if "--policy" not in args:
-            args = (*args, "--policy", SCRIPT.parents[2] / "release_policy.json")
+            args = (*args, "--policy", DEFAULT_POLICY)
     env = dict(os.environ, RELEASE_TAG="v1.2.3", GITHUB_SHA=COMMIT)
     return subprocess.run(
         [sys.executable, str(SCRIPT), *map(str, args)],

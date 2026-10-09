@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
+DEFAULT_POLICY = Path(__file__).resolve().parent / "release_policy.json"
+
 
 def check_report(report, required):
     if not isinstance(required, list) or not required:
@@ -21,9 +23,9 @@ def check_report(report, required):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--report', required=True)
-    parser.add_argument('--policy', default='release_policy.json')
+    parser.add_argument('--policy', default=DEFAULT_POLICY)
     args = parser.parse_args()
-    check_report(args.report, json.loads(Path(args.policy).read_text())['required_test_ids'])
+    check_report(args.report, json.loads(Path(args.policy).read_text(encoding="utf-8"))['required_test_ids'])
 
 
 if __name__ == '__main__':

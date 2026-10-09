@@ -3,7 +3,7 @@
 Candidate schema: tag, commit, candidate_sha256s (relative asset name -> SHA256).
 Evidence schema: status=PASS and the identical candidate_sha256s mapping.
 Sandbox provider, runner_environment, workflow_run_id and image are required.
---policy defaults to the repository release_policy.json and is always enforced.
+--policy defaults to tools/release_gate/release_policy.json and is always enforced.
 All evidence requires explicit-false flags and current promotion run identity.
 Upgrade and WinGet evidence are required and must include both flags as exactly false.
 Provenance comes from
@@ -21,7 +21,7 @@ import re
 import subprocess
 
 
-DEFAULT_POLICY = Path(__file__).resolve().parents[2] / "release_policy.json"
+DEFAULT_POLICY = Path(__file__).resolve().parents[2] / "tools" / "release_gate" / "release_policy.json"
 PROVIDER_ENVIRONMENTS = {
     "windows-sandbox": "self-hosted",
     "hosted-ephemeral-vm": "github-hosted",
@@ -203,7 +203,7 @@ def main(argv=None):
     verify_parser.add_argument("--candidate", required=True)
     verify_parser.add_argument("--evidence", required=True)
     verify_parser.add_argument("--policy", default=DEFAULT_POLICY,
-                               help="required provider policy (default: repository release_policy.json)")
+                               help="required provider policy (default: tools/release_gate/release_policy.json)")
     verify_parser.add_argument("--upgrade-evidence", required=True)
     verify_parser.add_argument("--winget-evidence", required=True)
     args = parser.parse_args(argv)

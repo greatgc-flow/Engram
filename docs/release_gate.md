@@ -102,11 +102,11 @@ This launches a fresh Windows Sandbox instance, downloads declared runtimes, ins
    If neither job completes successfully within the deadline, it throws HOLD.
 6. Promotion downloads candidate, upgrade, WinGet, and all candidate clean-room artifacts
    (`pattern: sandbox-evidence-*`), selects the PASS clean-room evidence, and runs
-   `_sys/checks/release_evidence.py verify` with `--policy release_policy.json`,
+   `_sys/checks/release_evidence.py verify` with `--policy tools/release_gate/release_policy.json`,
    `--evidence`, `--upgrade-evidence`, `--winget-evidence`, and required
    `--run-id ${{ github.run_id }} --run-attempt ${{ github.run_attempt }}`.
    Promotion selects artifacts only from the current run and attempt.
-   The policy file at repository root serves as the trust root: evidence provider must
+   The policy file at `tools/release_gate/release_policy.json` serves as the trust root: evidence provider must
    exist in policy, runner environment must match provider, and evidence cannot widen policy.
    If any check fails, promotion fails closed and reports HOLD. Only subsequent `v*` tag runs call
    `gh release create --draft --verify-tag` with verified assets, then publishes the draft.
@@ -123,15 +123,15 @@ only; it does not prove execution on a machine whose GetACP returns 949.
 
 The offline verifier checks consistency, not authenticity. Evidence trust
 comes from workflow permissions, same-run artifact selection, protected tags,
-ancestry checks against `origin/main`, the root `release_policy.json` trust root,
+ancestry checks against `origin/main`, the `tools/release_gate/release_policy.json` trust root,
 and runner evidence metadata. Configure repository access so release writers do
 not bypass this workflow.
 
 ## Provider-agnostic clean-room gate (EN-GAP-P1-005)
 
-### Policy trust root (`release_policy.json`)
+### Policy trust root (`tools/release_gate/release_policy.json`)
 
-The repository root `release_policy.json` defines allowable clean-room providers:
+The policy file `tools/release_gate/release_policy.json` defines allowable clean-room providers:
 ```json
 {
   "sandbox_providers": [
@@ -141,7 +141,7 @@ The repository root `release_policy.json` defines allowable clean-room providers
 }
 ```
 `_sys/checks/release_evidence.py verify` reads this via `--policy` (defaulting to
-repo root `release_policy.json`). Rules enforced:
+`tools/release_gate/release_policy.json`). Rules enforced:
 - `evidence.provider` must appear in `policy.sandbox_providers`.
 - Provider / environment pairs are strictly mapped:
   - `windows-sandbox` requires `runner_environment: self-hosted`.
@@ -267,7 +267,7 @@ to exit zero. Sandbox additionally provides hypervisor isolation, installs sourc
 test dependencies, and runs the full unit/lifecycle/path suite. Hosted adds no
 source suite; archive integrity and fresh-root checks precede its installed suite.
 
-`release_policy.json` owns `evidence_wait_minutes: 45`,
+`tools/release_gate/release_policy.json` owns `evidence_wait_minutes: 45`,
 `evidence_poll_seconds: 15`, `winget_pending_days: 21`, and
 `closure_retention_days: 90`. The wait script, closure tool, and ledger upload
 read these values. Workflow job timeouts and the wait step's outer 46-minute

@@ -7,7 +7,7 @@ import re
 import subprocess
 import sys
 
-DEFAULT_POLICY = Path(__file__).resolve().parents[2] / "release_policy.json"
+DEFAULT_POLICY = Path(__file__).resolve().parent / "release_policy.json"
 
 def read_policy(path=DEFAULT_POLICY):
     return json.loads(Path(path).read_text(encoding="utf-8"))

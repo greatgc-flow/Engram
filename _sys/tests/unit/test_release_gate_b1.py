@@ -13,6 +13,7 @@ from unittest.mock import patch
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[3]
+POLICY_PATH = ROOT / "tools" / "release_gate" / "release_policy.json"
 @contextmanager
 def temporary_directory():
     root=ROOT / ('b1-fixture-'+uuid.uuid4().hex)
@@ -155,7 +156,7 @@ class B1Tests(unittest.TestCase):
         self.assertIn('(1 minutes)',report['error'])
 
     def test_policy_and_shared_suite(self):
-        policy=json.loads((ROOT/'release_policy.json').read_text())
+        policy=json.loads(POLICY_PATH.read_text(encoding="utf-8"))
         self.assertEqual([policy[k] for k in ('evidence_wait_minutes','evidence_poll_seconds','winget_pending_days','closure_retention_days')],[45,15,21,90])
         suite=load('installed_artifact_suite')
         commands=suite.commands(ROOT)

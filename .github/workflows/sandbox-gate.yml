@@ -87,7 +87,6 @@ jobs:
           Copy-Item _sys/tests "$root/_sys/tests" -Recurse
           Copy-Item tools "$root/tools" -Recurse
           Copy-Item requirements-dev.txt "$root/requirements-dev.txt"
-          Copy-Item release_policy.json "$root/release_policy.json"
           python tools/release_gate/sandbox_installed_suite.py --root "$root"
           if ($LASTEXITCODE) { throw "HOLD: mandatory suite preparation failed" }
           "SANDBOX_ROOT=$root" >> $env:GITHUB_ENV
@@ -400,7 +399,7 @@ jobs:
         run: |
           python .github/scripts/check_candidate_assets.py release/candidate.json release/assets evidence/sandbox_evidence.json
           if ($LASTEXITCODE) { throw 'HOLD: candidate mismatch' }
-          python _sys/checks/release_evidence.py verify --candidate release/candidate.json --evidence evidence/sandbox_evidence.json --policy release_policy.json --upgrade-evidence evidence/upgrade_evidence.json --winget-evidence evidence/winget_evidence.json --run-id ${{ github.run_id }} --run-attempt ${{ github.run_attempt }}
+          python _sys/checks/release_evidence.py verify --candidate release/candidate.json --evidence evidence/sandbox_evidence.json --policy tools/release_gate/release_policy.json --upgrade-evidence evidence/upgrade_evidence.json --winget-evidence evidence/winget_evidence.json --run-id ${{ github.run_id }} --run-attempt ${{ github.run_attempt }}
           if ($LASTEXITCODE) { throw 'HOLD: Sandbox, upgrade, or WinGet evidence rejected' }
       - name: Publish verified tag assets
         if: startsWith(github.ref, 'refs/tags/v')

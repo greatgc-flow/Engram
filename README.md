@@ -56,7 +56,7 @@ Run `engram update` (or `engram update --yes`) to discover and apply updates for
 To inspect and operate Engram with minimum token consumption:
 1. **CLI discovery**: Run `engram help` for the verb index, then `engram help <verb>` for options, defaults, and exit codes; [`docs/cli_reference.md`](docs/cli_reference.md) is generated verbatim from these help files.
 2. **Health & limitations**: Run `engram doctor --json` for a zero-network structured report; declarative limitations are defined in [`_sys/limitations.json`](_sys/limitations.json).
-3. **Evidence & gates**: Policy root is [`release_policy.json`](release_policy.json), canonical gate specifications live in [`docs/release_gate.md`](docs/release_gate.md), and verification evidence is written to `release/` and `evidence/`.
+3. **Evidence & gates**: Policy root is [`tools/release_gate/release_policy.json`](tools/release_gate/release_policy.json), canonical gate specifications live in [`docs/release_gate.md`](docs/release_gate.md), and verification evidence is written to `release/` and `evidence/`.
 
 ## Command Reference
 

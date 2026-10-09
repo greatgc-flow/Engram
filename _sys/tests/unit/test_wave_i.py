@@ -7,6 +7,7 @@ import unittest
 import pytest
 from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[3]
+POLICY_PATH = ROOT / "tools" / "release_gate" / "release_policy.json"
 sys.path.insert(0, str(ROOT / '_sys'))
 from checks import backup_personal_data as backup
 from core import layout_migration
@@ -121,7 +122,7 @@ class WaveI(unittest.TestCase):
                 with self.assertRaises(gate.Hold): gate.verify(*args, **kw)
 
     def test_updater_policy_is_explicit(self):
-        policy = json.loads((ROOT / 'release_policy.json').read_text())
+        policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
         self.assertEqual(policy['upgrade_updater_sources'], ['candidate', 'previous'])
 
     def test_artifact_selection_excludes_other_attempts(self):
