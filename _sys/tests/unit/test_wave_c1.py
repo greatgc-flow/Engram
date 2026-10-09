@@ -115,6 +115,20 @@ else:
             proc = self.run_cli('open "' + str(child) + '"', 'launcher')
             self.assertEqual(proc.returncode, 23, proc.stdout + proc.stderr)
 
+    def test_launcher_child_receives_all_arguments(self):
+        tokens = ['one two', 'a&b', 'a|b', 'a<b', 'a>b', 'a^b', 'a!b', 'a%b', 'nine', 'ten', 'say "hello"']
+        output = self.root / 'child-args.json'
+        receiver = self.root / 'receive.py'
+        receiver.write_text('import json, sys\nfrom pathlib import Path\nPath(' + repr(str(output)) + ').write_text(json.dumps(sys.argv[1:]))\n')
+        batch = self.root / 'child with space.cmd'
+        batch.write_text('@echo off\n"' + sys.executable + '" "' + str(receiver) + '" %*\n')
+        for child in (receiver, batch):
+            if output.exists(): output.unlink()
+            args = ' '.join('"' + token.replace('"', '\\"') + '"' for token in tokens)
+            proc = self.run_cli('open "' + str(child) + '" ' + args, 'launcher')
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertEqual(json.loads(output.read_text()), tokens)
+
     def test_explicit_relative_open_and_default(self):
         caller = self.root / 'caller'
         caller.mkdir()

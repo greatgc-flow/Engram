@@ -25,3 +25,5 @@ Credentials, secrets, uncovered `.engram/` files and `workspace/` projects remai
 Use `engram uninstall --dry-run` to inspect removal. `engram uninstall --purge-data` requests permanent personal-data removal and requires the typed folder name. See the command reference for its scope.
 
 For Python/venv recovery, relocation and environment backup management, see [env_resilience_guide.md](env_resilience_guide.md).
+
+Backup/restore: empty directories are not preserved. Existing folder backups replace directory payloads, removing stale files. Restore previews create no files or directories. Confirmed updates maintain layout, merge declarations, retire obsolete shipped files, and clean preserved update staging; preview and --check skip this maintenance.

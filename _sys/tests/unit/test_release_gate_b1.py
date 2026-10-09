@@ -8,6 +8,7 @@ import shutil
 import uuid
 from contextlib import contextmanager
 import unittest
+from evidence_fixtures import evidence_fixture
 from unittest.mock import patch
 import zipfile
 
@@ -39,7 +40,7 @@ class B1Tests(unittest.TestCase):
             (root/'evidence.json').write_text(json.dumps(data))
             with patch.dict('os.environ', GITHUB_RUN_ID='12', GITHUB_RUN_ATTEMPT='1'):
                 with self.assertRaises(gate.Hold):
-                    gate.verify(root/'candidate.json',root/'evidence.json',no_upgrade_evidence=True,no_winget_evidence=True)
+                    gate.verify(root/'candidate.json',root/'evidence.json',upgrade_evidence_path=evidence_fixture(root/"candidate.json", "upgrade"),winget_evidence_path=evidence_fixture(root/"candidate.json", "winget"))
 
     def test_shared_validator_rejects_stale_identity_and_flags(self):
         good=dict(status='PASS',candidate_sha256s={'a.zip':'a'*64},cancelled=False,skipped=False,run_id='12',run_attempt='1')

@@ -57,20 +57,7 @@ Always verify your changes against the test suite before submitting:
 - **Run pre-commit checks:**
   Static and hygiene checks live in `_sys/checks/` (e.g. `check_encoding.py`, `check_root_hygiene.py`, `check_unreferenced_functions.py`).
 
-- **Run the isolated, real-network release gate (required before a release):**
-  ```cmd
-  _sys\tests\run-sandbox-test.bat
-  ```
-  This creates a fresh Windows Sandbox install, downloads the declared runtimes,
-  installs source-only test dependencies, runs the complete unit/lifecycle/path
-  suite, runs `engram doctor --json`, and forces a live update-discovery refresh.
-  It can consume bandwidth and wall-clock time but never invokes an AI model, so
-  Engram itself has no token-cost test tier. PeerHub owns model dispatch tests.
-  The same command is scheduled weekly by `sandbox-gate.yml` on a dedicated
-  Windows self-hosted runner labelled `engram-sandbox`. GitHub-hosted runners
-  do not expose the nested virtualization required by Windows Sandbox. Start
-  the dedicated runner interactively with `run.cmd`, not as a Windows service;
-  service-mode runners execute in Session 0, where Windows Sandbox cannot run.
+- **Release gate:** For canonical release verification procedures, clean-room gates, and publishing workflows, see [`docs/release_gate.md`](docs/release_gate.md).
 
 ---
 
@@ -127,8 +114,7 @@ reproducible test or a documented limitation instead of an untracked workaround.
 
 Operational decisions and environment constraints:
 
-- **Release Policy & Mainline Ancestry**: Release tags must point to a commit on `main` (governed by policy trust root `release_policy.json`).
-- **Clean-Room Verification Gate**: Release gates are provider-agnostic (`hosted-ephemeral-vm` default; `windows-sandbox` opt-in via repo variable `ENGRAM_SANDBOX_RUNNER=true`). Verification evidence is required by default.
+- **Release Governance**: Canonical release procedures, mainline ancestry rules, and clean-room gate specifications are documented in [`docs/release_gate.md`](docs/release_gate.md).
 - **VDI / RDP Session Resilience**: Forced VDI/RDP logoff kills interactive runners and background jobs; commit and push in small steps.
 - **Headless Shell Git Auth**: Pushing from a headless shell requires a GitHub credential helper (`gh auth setup-git` or per-command `-c credential.helper`).
 - **AI-to-AI Collaboration**: Multi-agent collaboration uses English exclusively for all design notes, reviews, and commits.

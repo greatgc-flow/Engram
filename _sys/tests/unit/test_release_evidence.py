@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 import pytest
+from evidence_fixtures import evidence_fixture
 
 
 SCRIPT = Path(__file__).resolve().parents[2] / "checks" / "release_evidence.py"
@@ -17,7 +18,10 @@ COMMIT = "a" * 40
 
 def run_cli(*args):
     if args and args[0] == "verify":
-        args = (*args, "--no-winget-evidence", "--run-id", "123", "--run-attempt", "1")
+        candidate_path = args[args.index("--candidate") + 1]
+        if "--fixture-upgrade" in args:
+            args = tuple(a for a in args if a != "--fixture-upgrade") + ("--upgrade-evidence", evidence_fixture(candidate_path, "upgrade", "123"))
+        args = (*args, "--winget-evidence", evidence_fixture(candidate_path, "winget", "123"), "--run-id", "123", "--run-attempt", "1")
         if "--policy" not in args:
             args = (*args, "--policy", SCRIPT.parents[2] / "release_policy.json")
     env = dict(os.environ, RELEASE_TAG="v1.2.3", GITHUB_SHA=COMMIT)
@@ -90,7 +94,7 @@ def test_exact_pass_evidence_promotes(tmp_path, candidate):
         "workflow_run_id": "123", "image": "Windows 11",
         "status": "PASS", "candidate_sha256s": {"release.zip": HASH},
     })
-    result = run_cli("verify", "--candidate", candidate, "--evidence", evidence, "--no-upgrade-evidence")
+    result = run_cli("verify", "--candidate", candidate, "--evidence", evidence, "--fixture-upgrade")
     assert result.returncode == 0, result.stdout + result.stderr
 
 
@@ -101,7 +105,7 @@ def test_non_pass_status_holds(tmp_path, candidate, status):
         "workflow_run_id": "123", "image": "Windows 11",
         "status": status, "candidate_sha256s": {"release.zip": HASH},
     })
-    result = run_cli("verify", "--candidate", candidate, "--evidence", evidence, "--no-upgrade-evidence")
+    result = run_cli("verify", "--candidate", candidate, "--evidence", evidence, "--fixture-upgrade")
     assert result.returncode != 0
     assert result.stdout.startswith("HOLD:")
     assert len(result.stdout.splitlines()) == 1
@@ -114,7 +118,7 @@ def test_missing_extra_or_mismatched_hashes_hold(tmp_path, candidate, hashes):
         "workflow_run_id": "123", "image": "Windows 11",
         "status": "PASS", "candidate_sha256s": hashes,
     })
-    assert run_cli("verify", "--candidate", candidate, "--evidence", evidence, "--no-upgrade-evidence").returncode != 0
+    assert run_cli("verify", "--candidate", candidate, "--evidence", evidence, "--fixture-upgrade").returncode != 0
 
 
 @pytest.mark.parametrize("flag", ["cancelled", "skipped"])
@@ -124,7 +128,7 @@ def test_pass_cannot_override_cancelled_or_skipped(tmp_path, candidate, flag):
         "workflow_run_id": "123", "image": "Windows 11",
         "status": "PASS", "candidate_sha256s": {"release.zip": HASH}, flag: True,
     })
-    assert run_cli("verify", "--candidate", candidate, "--evidence", evidence, "--no-upgrade-evidence").returncode != 0
+    assert run_cli("verify", "--candidate", candidate, "--evidence", evidence, "--fixture-upgrade").returncode != 0
 
 
 @pytest.mark.parametrize("content", [None, "{", "[]", '{"status":"PASS","status":"FAIL"}'])
@@ -132,7 +136,7 @@ def test_missing_or_malformed_evidence_holds(tmp_path, candidate, content):
     evidence = tmp_path / "evidence.json"
     if content is not None:
         evidence.write_text(content, encoding="utf-8")
-    result = run_cli("verify", "--candidate", candidate, "--evidence", evidence, "--no-upgrade-evidence")
+    result = run_cli("verify", "--candidate", candidate, "--evidence", evidence, "--fixture-upgrade")
     assert result.returncode != 0
     assert result.stdout.startswith("HOLD:")
     assert len(result.stdout.splitlines()) == 1
@@ -148,7 +152,7 @@ def test_invalid_candidate_holds(tmp_path, candidate, field, value):
         "workflow_run_id": "123", "image": "Windows 11",
         "status": "PASS", "candidate_sha256s": data["candidate_sha256s"],
     })
-    assert run_cli("verify", "--candidate", candidate, "--evidence", evidence, "--no-upgrade-evidence").returncode != 0
+    assert run_cli("verify", "--candidate", candidate, "--evidence", evidence, "--fixture-upgrade").returncode != 0
 
 
 def test_upgrade_evidence_pass_promotes(tmp_path, candidate):
@@ -250,17 +254,17 @@ def test_upgrade_evidence_required_by_default(tmp_path, candidate):
         "status": "PASS", "candidate_sha256s": {"release.zip": HASH},
     })
     result = run_cli("verify", "--candidate", candidate, "--evidence", evidence)
-    assert result.returncode == 1
-    assert result.stdout == "HOLD: upgrade evidence is required\n"
+    assert result.returncode == 2
+    assert "--upgrade-evidence" in result.stderr
 
 
 def test_upgrade_evidence_options_are_mutually_exclusive(tmp_path, candidate):
     result = run_cli(
         "verify", "--candidate", candidate, "--evidence", tmp_path / "evidence.json",
-        "--upgrade-evidence", tmp_path / "upgrade.json", "--no-upgrade-evidence",
+        "--upgrade-evidence", tmp_path / "upgrade.json", "--removed-opt-out",
     )
     assert result.returncode == 2
-    assert "not allowed with argument" in result.stderr
+    assert "unrecognized arguments" in result.stderr
 
 
 @pytest.mark.parametrize("flag", ["cancelled", "skipped"])
@@ -301,7 +305,7 @@ def test_policy_allows_provider_pairs(tmp_path, candidate, provider, environment
         "workflow_run_id": "123", "image": "runner image version",
     })
     result = run_cli("verify", "--candidate", candidate, "--evidence", evidence,
-                     "--no-upgrade-evidence")
+                     "--fixture-upgrade")
     assert result.returncode == 0, result.stdout + result.stderr
 
 
@@ -317,7 +321,7 @@ def test_required_sandbox_metadata_holds(tmp_path, candidate, field, value):
         data[field] = value
     evidence = write_json(tmp_path / "sandbox.json", data)
     assert run_cli("verify", "--candidate", candidate, "--evidence", evidence,
-                   "--no-upgrade-evidence").returncode == 1
+                   "--fixture-upgrade").returncode == 1
 
 
 @pytest.mark.parametrize("provider,environment", [
@@ -331,7 +335,7 @@ def test_unknown_or_mismatched_provider_holds(tmp_path, candidate, provider, env
         "workflow_run_id": "123", "image": "Windows 11",
     })
     assert run_cli("verify", "--candidate", candidate, "--evidence", evidence,
-                   "--no-upgrade-evidence").returncode == 1
+                   "--fixture-upgrade").returncode == 1
 
 
 @pytest.mark.parametrize("policy_data", [None, {}, {"sandbox_providers": []},
@@ -348,7 +352,7 @@ def test_missing_invalid_or_restrictive_policy_holds(tmp_path, candidate, policy
         "sandbox_providers": ["windows-sandbox", "hosted-ephemeral-vm"],
     })
     assert run_cli("verify", "--candidate", candidate, "--evidence", evidence,
-                   "--no-upgrade-evidence", "--policy", policy).returncode == 1
+                   "--fixture-upgrade", "--policy", policy).returncode == 1
 
 
 def test_repository_policy_is_required_by_default(tmp_path, candidate):
@@ -361,9 +365,9 @@ def test_repository_policy_is_required_by_default(tmp_path, candidate):
         "provider": "hosted-ephemeral-vm", "runner_environment": "github-hosted",
         "workflow_run_id": "123", "image": "Windows runner image",
     })
-    gate.verify(candidate, evidence, no_upgrade_evidence=True, no_winget_evidence=True,
+    gate.verify(candidate, evidence, upgrade_evidence_path=evidence_fixture(candidate, "upgrade", "123"), winget_evidence_path=evidence_fixture(candidate, "winget", "123"),
                 run_id="123", run_attempt="1")
     with pytest.raises((gate.Hold, OSError)):
-        gate.verify(candidate, evidence, no_upgrade_evidence=True,
-                    no_winget_evidence=True, policy_path=tmp_path / "missing.json",
+        gate.verify(candidate, evidence, upgrade_evidence_path=evidence_fixture(candidate, "upgrade", "123"),
+                    winget_evidence_path=evidence_fixture(candidate, "winget", "123"), policy_path=tmp_path / "missing.json",
                     run_id="123", run_attempt="1")

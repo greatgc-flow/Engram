@@ -32,3 +32,6 @@ Exit codes:
 See also:
   engram backup    create an archive
   engram reset     delete personal AI data
+
+Empty directories are not preserved.
+Preview and --dry-run create no files or directories.

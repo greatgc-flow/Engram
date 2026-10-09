@@ -53,6 +53,16 @@ There was no separate release/publish workflow. CI is reusable via
 `workflow_call`; its checks must pass before the candidate is built. Manual and
 weekly runs exercise the same gate but do not publish a release.
 
+### Local pre-release verification
+
+Maintainers can run the isolated, real-network clean-room gate locally before tagging:
+```cmd
+_sys\tests\run-sandbox-test.bat
+```
+This launches a fresh Windows Sandbox instance, downloads declared runtimes, installs source-only test dependencies, runs the unit/lifecycle/path suite, runs `engram doctor --json`, and forces a live update-discovery refresh. It requires an interactive Windows session (cannot run in Session 0).
+
+### Automated release workflow
+
 1. A hosted Windows runner builds Engram.exe and the portable ZIP and WinGet
    manifests once. On tag pushes, `build-candidate` checks that the tag commit is
    a verified ancestor of `origin/main` using `tools/release_gate/check_tag_on_main.py`
@@ -95,6 +105,7 @@ weekly runs exercise the same gate but do not publish a release.
    `_sys/checks/release_evidence.py verify` with `--policy release_policy.json`,
    `--evidence`, `--upgrade-evidence`, `--winget-evidence`, and required
    `--run-id ${{ github.run_id }} --run-attempt ${{ github.run_attempt }}`.
+   Promotion selects artifacts only from the current run and attempt.
    The policy file at repository root serves as the trust root: evidence provider must
    exist in policy, runner environment must match provider, and evidence cannot widen policy.
    If any check fails, promotion fails closed and reports HOLD. Only subsequent `v*` tag runs call
@@ -103,9 +114,9 @@ weekly runs exercise the same gate but do not publish a release.
 A green build or a missing clean-room/upgrade report does not authorize release. Treat a
 cancelled workflow, a still-queued workflow, and any missing/failed promotion
 check as HOLD. GitHub job execution timeouts do not bound runner queue time;
-this is why the hosted polling job does not have `needs: clean-room-sandbox`.
-A runner that appears after the evidence deadline cannot revive the failed
-promotion job. Rerun all jobs for a new attempt and a fresh candidate; rerunning
+this is why the hosted promotion job does not have a direct workflow dependency on
+the clean-room candidate jobs. A runner that appears after the evidence deadline
+cannot revive the failed promotion job. Rerun all jobs for a new attempt and a fresh candidate; rerunning
 only failed jobs cannot reuse a previous attempt's candidate artifact. Never
 publish manually to bypass HOLD. The real ACP=949 locale claim is deferred. Current locale coverage is emulated
 only; it does not prove execution on a machine whose GetACP returns 949.
@@ -198,20 +209,20 @@ and upgrade evidence by default, with PASS, exact candidate hashes, and both
 cancellation/skipping flags present and exactly false. Explicit
 `--no-winget-evidence` is a legacy/test-only opt-out, analogous to
 `--no-upgrade-evidence`; each is mutually exclusive with its evidence option.
-The hosted workflow never uses either opt-out.
+The hosted workflow never uses either opt-out. Upgrade and WinGet evidence are mandatory with no opt-out.
 
 Offline contracts: `python -m pytest _sys/tests/unit/test_winget_smoke.py`.
 Tests stub CLI execution and cover success, unavailable WinGet, failed settings,
 install/uninstall, incorrect installed bytes/version, remaining files, lost
 user data, evidence hash/identity mismatch, missing flags/files, and timeouts.
 
-## Bounded-HOLD Sandbox wait contract (EN-GAP-P1-005)
+## Bounded-HOLD clean-room wait contract (EN-GAP-P1-005)
 
-The promotion job executes `.github/scripts/wait_for_sandbox.js` to poll the asynchronous `clean-room-sandbox` job every 15 seconds up to the policy-defined 45-minute deadline, accepting either clean-room provider:
-- Successful completion (`status: completed`, `conclusion: success`) logs PASS and resolves.
-- If all listed candidate jobs have completed unsuccessfully (`failure`, `cancelled`, `skipped`), throw `HOLD: Sandbox concluded <conclusion>`; a pending alternative keeps polling.
-- Runner absence / missing job: if the runner is unavailable or the job never appears, polling terminates at 45 minutes and throws `HOLD: Sandbox runner unavailable or evidence deadline exceeded (45 minutes)`.
-- Resilient late dispatch: jobs appearing or running before the deadline poll until completion.
+The promotion job executes `.github/scripts/wait_for_sandbox.js` to poll candidate clean-room jobs (`clean-room-sandbox` and `clean-room-hosted`) every 15 seconds up to the policy-defined 45-minute deadline, accepting evidence from either clean-room provider:
+- Successful completion (`status: completed`, `conclusion: success`) on either candidate job logs PASS and resolves immediately.
+- If all listed candidate jobs have completed unsuccessfully (`failure`, `cancelled`, `skipped`), throw `HOLD: Sandbox concluded <conclusion>`; while any candidate job remains pending or running, polling continues.
+- Evidence deadline exceeded: if no candidate job completes successfully before the deadline, polling terminates at 45 minutes and throws `HOLD: Sandbox runner unavailable or evidence deadline exceeded (45 minutes)`.
+- Resilient late dispatch: candidate jobs appearing or running before the deadline poll until completion.
 - Fail-closed API handling: GitHub API errors throw `HOLD: GitHub API error: <msg>`; malformed or empty job lists throw `HOLD: malformed or empty job list`. The script never silently passes.
 
 Offline contract verification: `_sys/tests/unit/test_wait_for_sandbox.py` tests `.github/scripts/wait_for_sandbox.js` under Node.js via `tools/release_gate/wait_for_sandbox_driver.js`, stubbing GitHub Actions pagination and overriding `Date.now`/`setTimeout` with fake timers so tests run instantly without real waiting.

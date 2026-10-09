@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import sys
 import pytest
+from evidence_fixtures import evidence_fixture
 from unittest.mock import patch
 import zipfile
 ROOT = Path(__file__).resolve().parents[3]
@@ -29,7 +30,7 @@ class TestRequiredEvidence:
 
     def test_missing_winget_is_hold(self):
         with pytest.raises(gate.Hold, match='WinGet evidence is required'):
-            gate.verify('missing', 'missing', no_upgrade_evidence=True)
+            gate.verify('missing', 'missing', 'upgrade.json')
 
     def test_evidence_contract(self):
         with temporary_directory() as temporary:
@@ -48,15 +49,15 @@ class TestRequiredEvidence:
                     winget.write_text(json.dumps(dict(good, **change)))
                     if change:
                         with pytest.raises(gate.Hold):
-                            gate.verify(candidate, sandbox, run_id="12", run_attempt="1", winget_evidence_path=winget, no_upgrade_evidence=True)
+                            gate.verify(candidate, sandbox, run_id="12", run_attempt="1", winget_evidence_path=winget, upgrade_evidence_path=evidence_fixture(candidate, "upgrade"))
                     else:
-                        gate.verify(candidate, sandbox, run_id="12", run_attempt="1", winget_evidence_path=winget, no_upgrade_evidence=True)
+                        gate.verify(candidate, sandbox, run_id="12", run_attempt="1", winget_evidence_path=winget, upgrade_evidence_path=evidence_fixture(candidate, "upgrade"))
                 winget.unlink()
                 with pytest.raises(gate.Hold):
-                    gate.verify(candidate, sandbox, run_id="12", run_attempt="1", winget_evidence_path=winget, no_upgrade_evidence=True)
-                gate.verify(candidate, sandbox, run_id="12", run_attempt="1", no_upgrade_evidence=True, no_winget_evidence=True)
+                    gate.verify(candidate, sandbox, run_id="12", run_attempt="1", winget_evidence_path=winget, upgrade_evidence_path=evidence_fixture(candidate, "upgrade"))
+                gate.verify(candidate, sandbox, run_id="12", run_attempt="1", upgrade_evidence_path=evidence_fixture(candidate, "upgrade"), winget_evidence_path=evidence_fixture(candidate, "winget"))
                 with pytest.raises(gate.Hold):
-                    gate.verify(candidate, sandbox, run_id="12", run_attempt="1", winget_evidence_path=winget, no_upgrade_evidence=True, no_winget_evidence=True)
+                    gate.verify(candidate, sandbox, run_id="12", run_attempt="1", upgrade_evidence_path=evidence_fixture(candidate, "upgrade"))
 
 class TestSmoke:
 
@@ -191,17 +192,15 @@ def test_winget_requires_explicit_false_flags(flag, value):
         winget.write_text(json.dumps(evidence))
         with pytest.raises(gate.Hold, match=flag):
             gate.verify(candidate, sandbox, run_id="12", run_attempt="1", winget_evidence_path=winget,
-                        no_upgrade_evidence=True)
+                        upgrade_evidence_path=evidence_fixture(candidate, "upgrade"))
 
 
-def test_winget_cli_required_and_mutually_exclusive(capsys):
-    assert gate.main(["verify", "--run-id", "12", "--run-attempt", "1", "--candidate", "missing", "--evidence", "missing",
-                      "--no-upgrade-evidence"]) == 1
-    assert capsys.readouterr().out == "HOLD: WinGet evidence is required\n"
-    with pytest.raises(SystemExit) as exc:
-        gate.main(["verify", "--run-id", "12", "--run-attempt", "1", "--candidate", "missing", "--evidence", "missing",
-                   "--winget-evidence", "missing", "--no-winget-evidence"])
-    assert exc.value.code == 2
+def test_winget_cli_required_and_removed_options(capsys):
+    for removed in ("--no-upgrade-evidence", "--no-winget-evidence"):
+        with pytest.raises(SystemExit) as exc:
+            gate.main(["verify", "--run-id", "12", "--run-attempt", "1", "--candidate", "missing", "--evidence", "missing",
+                       "--upgrade-evidence", "missing", "--winget-evidence", "missing", removed])
+        assert exc.value.code == 2
 
 
 @pytest.mark.parametrize("content", ["{", "[]", '{"status":"PASS","status":"HOLD"}'])
@@ -219,4 +218,4 @@ def test_winget_malformed_evidence_holds(content):
             "workflow_run_id": "12", "image": "Windows 11", "cancelled": False, "skipped": False, "run_id": "12", "run_attempt": "1"}))
         winget.write_text(content)
         assert gate.main(["verify", "--run-id", "12", "--run-attempt", "1", "--candidate", str(candidate), "--evidence", str(sandbox),
-                          "--no-upgrade-evidence", "--winget-evidence", str(winget)]) == 1
+                          "--upgrade-evidence", str(evidence_fixture(candidate, "upgrade")), "--winget-evidence", str(winget)]) == 1

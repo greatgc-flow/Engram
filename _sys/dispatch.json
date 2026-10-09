@@ -94,6 +94,11 @@
             "method": "run",
             "failure_policy": "abort"
         },
+        "migration.update_layout": {
+            "module": "core.layout_migration",
+            "method": "update_layout",
+            "failure_policy": "abort"
+        },
         "migration.run_layout_migration": {
             "module": "core.layout_migration",
             "method": "run_pipeline",
@@ -153,7 +158,7 @@
             "env.launch"
         ],
         "init": [],
-        "update": ["update.run", "venv.snapshot"],
+        "update": ["migration.update_layout", "update.run", "venv.snapshot"],
         "doctor": [
             "doctor.run"
         ],

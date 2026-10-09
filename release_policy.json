@@ -15,5 +15,9 @@
     "test_release_gate_b1.B1Tests::test_sandbox_requires_flags",
     "test_release_gate_b1.B1Tests::test_timeout_continues_ledger",
     "test_wait_for_sandbox.TestSandboxWaitContract::test_sandbox_success_resolves"
+  ],
+  "upgrade_updater_sources": [
+    "candidate",
+    "previous"
   ]
 }

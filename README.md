@@ -49,11 +49,14 @@ source repository alone does not make the command installable.
 The first run will prompt to bootstrap the portable environment (Python, Node, Git, VS Code, tools) and optionally register the Explorer right-click context menu.
 
 **Upgrading an existing install:**
-1. Close VS Code and any shell launched from the install.
-2. Extract the new zip **into the existing install folder**, choosing *Replace* for conflicts.
-3. Run `engram` (or `engram doctor`).
+Run `engram update` (or `engram update --yes`) to discover and apply updates for Engram, runtimes, and managed tools. Core updates stage and execute detached replacement with verified automatic rollback on failure (`FAILED_ROLLED_BACK`), while environment updates take safety snapshots manageable via `engram snapshots` or reversible via `engram repair --rollback` if interrupted. Anything that cannot be checked automatically is listed under "Not checked" — never counted as up to date.
 
-> Run `engram update` to keep Engram and everything it manages current. Anything it cannot check automatically is listed by name under "Not checked" — never counted as up to date.
+## Quick start for AI agents
+
+To inspect and operate Engram with minimum token consumption:
+1. **CLI discovery**: Run `engram help` for the verb index, then `engram help <verb>` for options, defaults, and exit codes; [`docs/cli_reference.md`](docs/cli_reference.md) is generated verbatim from these help files.
+2. **Health & limitations**: Run `engram doctor --json` for a zero-network structured report; declarative limitations are defined in [`_sys/limitations.json`](_sys/limitations.json).
+3. **Evidence & gates**: Policy root is [`release_policy.json`](release_policy.json), canonical gate specifications live in [`docs/release_gate.md`](docs/release_gate.md), and verification evidence is written to `release/` and `evidence/`.
 
 ## Command Reference
 
@@ -73,7 +76,7 @@ the complete reference is [`docs/cli_reference.md`](docs/cli_reference.md).
 | | `tidy` | Clean temp files, caches and expired environment backups (previews until `--apply`). |
 | Backups & state | `backup` | Back up personal AI data (`.engram/`) to a zip. |
 | | `restore PATH` | Restore personal AI data (previews until `--apply`). |
-| | `snapshots` | List, pin and restore environment backups (replaced Python/venv copies, package lists). |
+| | `snapshots` | List, pin and restore environment backups (Python and venv backups are not restorable yet). |
 | Removal | `reset` | Delete personal AI data after a safety snapshot (previews until `--apply`). |
 | | `uninstall` | Remove Engram's program files; your data is kept unless `--purge-data`. |
 
@@ -131,7 +134,7 @@ See [peerhub's own README](https://github.com/greatgc-flow/peerhub#readme) for t
 
 ## AI CLI personal config: `.engram/`
 
-Every AI CLI Engram manages reads and writes its personal, durable data (memory, settings, session history) from one consolidated, automatic root — `.engram/{claude,codex,agy}/`. PeerHub is never configured or selectively handled by Engram and is absent from Engram's backup/reset schema. Explicit whole-tree operations such as `reset --all` or `uninstall --purge-data` still delete the user-confirmed `workspace/` tree regardless of which external tools wrote files there. No `subst` drive, no directory junction, and nothing to run by hand: AI-CLI redirection uses ordinary environment variables applied at every launch. `.engram/` is a **live** root — it accumulates real credentials and caches over time, so it is gitignored and never copied wholesale; [`_sys/checks/backup_personal_data.py`](_sys/checks/backup_personal_data.py) extracts just the safe, durable subset for backup instead. Full detail: [`docs/engram-dotdir.md`](docs/engram-dotdir.md).
+Every AI CLI Engram manages reads and writes its personal, durable data (memory, settings, session history) from one consolidated, automatic root — `.engram/{claude,codex,agy}/`. Backup and reset operate on a fixed allowlist of durable `.engram/` data plus discovered dot-folders (such as `.peerhub`, packaged in backup via `--include-uncovered` and cleared under a verified safety snapshot in reset) while strictly excluding credentials and secrets per [`docs/user_lifecycle_guide.md`](docs/user_lifecycle_guide.md). Whole-tree operations such as `uninstall --purge-data` still delete the user-confirmed `workspace/` tree regardless of which external tools wrote files there. No `subst` drive, no directory junction, and nothing to run by hand: AI-CLI redirection uses ordinary environment variables applied at every launch. `.engram/` is a **live** root — it accumulates real credentials and caches over time, so it is gitignored and never copied wholesale; [`_sys/checks/backup_personal_data.py`](_sys/checks/backup_personal_data.py) extracts just the safe, durable subset for backup instead. Full detail: [`docs/engram-dotdir.md`](docs/engram-dotdir.md).
 
 ## What's next
 
@@ -177,7 +180,7 @@ and quota tests belong to PeerHub's separate `slow`/`e2e` tiers.
 The Sandbox runner must run in a logged-in interactive Windows session via the
 Actions runner's `run.cmd`; a runner installed as a Windows service executes in
 Session 0 and cannot host Windows Sandbox. The workflow checks this before it
-starts the 30-minute Sandbox wait.
+starts the bounded clean-room wait.
 
 ## Trust Signals
 

@@ -197,7 +197,7 @@ def test_main_backup_then_restore_round_trip(
     other_base = tmp_path / "other-base"
     # Dry run by default
     assert main(["--base-dir", str(other_base), "--restore", str(out_dir)]) == 0
-    assert not any(p.is_file() for p in (other_base / ".engram").rglob("*"))
+    assert not any((other_base / ".engram").rglob("*"))
 
     # Apply restore
     assert main(["--base-dir", str(other_base), "--restore", str(out_dir), "--apply"]) == 0

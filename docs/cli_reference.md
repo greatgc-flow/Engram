@@ -210,6 +210,10 @@ See also:
   engram doctor    what is installed and healthy
   engram snapshots   the backups an update leaves behind
   engram tidy      remove old backups once you are happy
+
+Confirmed updates maintain layout, merge declarations, retire obsolete shipped
+files, and clean preserved update staging. Preview and --check skip this
+maintenance.
 ```
 
 #### engram doctor
@@ -566,6 +570,10 @@ Exit codes:
 See also:
   engram restore     put an archive back
   engram snapshots   environment backups (Python/venv), a different thing
+
+Empty directories are not preserved.
+Existing folder bundles replace each directory payload; stale files are
+removed.
 ```
 
 #### engram restore
@@ -605,6 +613,9 @@ Exit codes:
 See also:
   engram backup    create an archive
   engram reset     delete personal AI data
+
+Empty directories are not preserved.
+Preview and --dry-run create no files or directories.
 ```
 
 #### engram snapshots
@@ -757,3 +768,5 @@ When Engram replaces a runtime (Python, Node.js, Git, VS Code, ...) the previous
 Layout migration is explicit: `_sys\core\dispatch.bat migrate-layout` (available to
 installation and maintenance callers). Public read-only and preview verbs never trigger it.
 Help and version reject surplus operands with exit 2.
+
+Backup/restore: empty directories are not preserved. Existing folder backups replace directory payloads, removing stale files. Restore previews create no files or directories. Confirmed updates maintain layout, merge declarations, retire obsolete shipped files, and clean preserved update staging; preview and --check skip this maintenance.

@@ -348,7 +348,21 @@ def _sync_item_to_bundle(item: SyncItem, engram_dir: Path, bundle_dir: Path) -> 
     _check_restore_path(bundle_dir, dest, recursive=True)
     if not _source_matches_kind(live, item.kind):
         return None
-    return _copy_payload(live, dest, database=item.database)
+    if item.kind != "dir":
+        return _copy_payload(live, dest, database=item.database)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    import uuid
+    staged = dest.parent / (".payload-" + uuid.uuid4().hex)
+    staged.mkdir(mode=0o777)
+    try:
+        count = _copy_payload(live, staged, database=item.database)
+        if dest.exists():
+            shutil.rmtree(dest)
+        os.replace(staged, dest)
+    finally:
+        if staged.exists():
+            shutil.rmtree(staged)
+    return count
 
 
 def _restore_item(item: SyncItem, bundle_dir: Path, engram_dir: Path, force: bool) -> str:

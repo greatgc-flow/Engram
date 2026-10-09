@@ -406,10 +406,20 @@ exit $LASTEXITCODE
 
 
 import unittest
+from evidence_fixtures import evidence_fixture, temporary_directory
 import tempfile
 
 
 class UpgradeGateTests(unittest.TestCase):
+    @pytest.fixture(autouse=True)
+    def scratch_root(self, tmp_path):
+        from functools import partial
+        from unittest.mock import patch
+        self.root = tmp_path
+        self.temporary_directory = partial(temporary_directory, tmp_path)
+        with patch.object(tempfile, 'TemporaryDirectory', self.temporary_directory):
+            yield
+
     def fixture(self, root, previous_seam=True):
         target = root / "installed"
         target.mkdir()
@@ -440,14 +450,14 @@ class UpgradeGateTests(unittest.TestCase):
         return target, candidate, identity
 
     def test_upgrade_gate_offline_success(self):
-        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[3]) as temp:
+        with self.temporary_directory() as temp:
             target, candidate, identity = self.fixture(Path(temp))
             evidence = upgrade_harness.run_upgrade_gate(target, candidate, identity, "v1.0.0")
             self.assertEqual(evidence["updater_source"], "previous")
             self.assertEqual(evidence["scenarios"], {"upgrade": "PASS", "rollback": "PASS"})
 
     def test_upgrade_gate_offline_failure_rollback(self):
-        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[3]) as temp:
+        with self.temporary_directory() as temp:
             target, candidate, identity = self.fixture(Path(temp), previous_seam=False)
             evidence = upgrade_harness.run_upgrade_gate(target, candidate, identity, "v1.0.0")
             self.assertEqual(evidence["updater_source"], "candidate")
@@ -455,7 +465,7 @@ class UpgradeGateTests(unittest.TestCase):
 
     def test_missing_rollback_blocks_pass(self):
         from _sys.checks import release_evidence
-        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[3]) as temp:
+        with self.temporary_directory() as temp:
             root = Path(temp)
             hashes = {"candidate.zip": "a" * 64}
             candidate = {"tag": "v2", "commit": "b" * 40, "candidate_sha256s": hashes}
@@ -468,4 +478,5 @@ class UpgradeGateTests(unittest.TestCase):
                 (root / name).write_text(json.dumps(value), encoding="utf-8")
             with self.assertRaisesRegex(release_evidence.Hold, "rollback"):
                 release_evidence.verify(root / "candidate", root / "sandbox", root / "upgrade",
-                    no_winget_evidence=True, run_id="1", run_attempt="1")
+                    winget_evidence_path=evidence_fixture(root / "candidate", "winget", "1"), run_id="1", run_attempt="1")
+

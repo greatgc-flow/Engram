@@ -36,3 +36,7 @@ Exit codes:
 See also:
   engram restore     put an archive back
   engram snapshots   environment backups (Python/venv), a different thing
+
+Empty directories are not preserved.
+Existing folder bundles replace each directory payload; stale files are
+removed.

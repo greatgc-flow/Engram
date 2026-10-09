@@ -54,3 +54,7 @@ See also:
   engram doctor    what is installed and healthy
   engram snapshots   the backups an update leaves behind
   engram tidy      remove old backups once you are happy
+
+Confirmed updates maintain layout, merge declarations, retire obsolete shipped
+files, and clean preserved update staging. Preview and --check skip this
+maintenance.

@@ -389,7 +389,9 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     if args.check:
         if could_not_check:
             sys.exit(1)
+            return {"status": "failed", "detail": "Update discovery encountered provider failures"}
         sys.exit(0)
+        return {"status": "success", "detail": "Update check complete"}
 
     if not has_actionable:
         print("\nEverything Engram can check is up to date.")
@@ -426,6 +428,13 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
         return {"status": "failed", "detail": "Apply failed or proposal invalid/stale", "apply_result": apply_result}
     elif exit_code != 0:
         return {"status": "failed", "detail": f"Unknown exit code {exit_code}", "apply_result": apply_result}
+
+    from core import layout_migration
+    maintenance_ctx = {**ctx, "base_dir": _PORTABLE_ROOT, "sys_dir": sys_dir,
+                       "update_confirmed": True}
+    maintenance = layout_migration.update_layout(maintenance_ctx)
+    if maintenance["status"] == "failed":
+        return maintenance
 
     print("\nReconciling via provisioner (in-process)...")
     try:

@@ -6,8 +6,7 @@ Sandbox provider, runner_environment, workflow_run_id and image are required.
 --policy defaults to the repository release_policy.json and is always enforced.
 All evidence requires explicit-false flags and current promotion run identity.
 Upgrade and WinGet evidence are required and must include both flags as exactly false.
---no-winget-evidence is an explicit legacy/test-only opt-out.
---no-upgrade-evidence is a legacy/test-only opt-out. Provenance comes from
+Provenance comes from
 RELEASE_TAG/GITHUB_REF_NAME and GITHUB_SHA, with local Git fallbacks.
 Existing candidate files are never overwritten; rebuilding needs a new path.
 This offline gate checks evidence consistency, not evidence authenticity.
@@ -136,17 +135,13 @@ def validate_evidence(evidence, hashes, label, *, run_id, run_attempt):
             raise Hold(f"{label} evidence {field} differs from current promotion")
 
 
-def verify(candidate_path, evidence_path, upgrade_evidence_path=None, *, no_upgrade_evidence=False,
-           winget_evidence_path=None, no_winget_evidence=False, policy_path=DEFAULT_POLICY,
+def verify(candidate_path, evidence_path, upgrade_evidence_path=None, *,
+           winget_evidence_path=None, policy_path=DEFAULT_POLICY,
            run_id=None, run_attempt=None):
-    if upgrade_evidence_path is None and not no_upgrade_evidence:
+    if upgrade_evidence_path is None:
         raise Hold("upgrade evidence is required")
-    if upgrade_evidence_path is not None and no_upgrade_evidence:
-        raise Hold("upgrade evidence and opt-out are mutually exclusive")
-    if winget_evidence_path is None and not no_winget_evidence:
+    if winget_evidence_path is None:
         raise Hold("WinGet evidence is required")
-    if winget_evidence_path is not None and no_winget_evidence:
-        raise Hold("WinGet evidence and opt-out are mutually exclusive")
     run_id = run_id if run_id is not None else os.environ.get("GITHUB_RUN_ID")
     run_attempt = run_attempt if run_attempt is not None else os.environ.get("GITHUB_RUN_ATTEMPT")
     candidate = _read(candidate_path)
@@ -178,7 +173,11 @@ def verify(candidate_path, evidence_path, upgrade_evidence_path=None, *, no_upgr
         validate_evidence(upgrade_evidence, hashes, "upgrade", run_id=run_id, run_attempt=run_attempt)
         if upgrade_evidence.get("scenarios") != {"upgrade": "PASS", "rollback": "PASS"}:
             raise Hold("upgrade evidence requires upgrade and rollback scenarios")
-        if upgrade_evidence.get("updater_source") not in ("previous", "candidate"):
+        sources = policy.get("upgrade_updater_sources")
+        if (not isinstance(sources, list) or not sources
+                or any(source not in ("candidate", "previous") for source in sources)):
+            raise Hold("invalid upgrade updater source policy")
+        if upgrade_evidence.get("updater_source") not in sources:
             raise Hold("upgrade evidence updater source is missing or invalid")
         prev_tag = upgrade_evidence.get("previous_tag")
         if not isinstance(prev_tag, str) or not prev_tag.strip() or any(c.isspace() for c in prev_tag) or prev_tag == candidate.get("tag"):
@@ -205,16 +204,8 @@ def main(argv=None):
     verify_parser.add_argument("--evidence", required=True)
     verify_parser.add_argument("--policy", default=DEFAULT_POLICY,
                                help="required provider policy (default: repository release_policy.json)")
-    upgrade_options = verify_parser.add_mutually_exclusive_group()
-    upgrade_options.add_argument("--upgrade-evidence", default=None)
-    upgrade_options.add_argument(
-        "--no-upgrade-evidence", action="store_true",
-        help="legacy/test-only opt-out from required upgrade evidence",
-    )
-    winget_options = verify_parser.add_mutually_exclusive_group()
-    winget_options.add_argument("--winget-evidence", default=None)
-    winget_options.add_argument("--no-winget-evidence", action="store_true",
-                               help="legacy/test-only opt-out from required WinGet evidence")
+    verify_parser.add_argument("--upgrade-evidence", required=True)
+    verify_parser.add_argument("--winget-evidence", required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "freeze":
@@ -222,9 +213,7 @@ def main(argv=None):
         else:
             verify(
                 args.candidate, args.evidence, args.upgrade_evidence,
-                no_upgrade_evidence=args.no_upgrade_evidence,
                 winget_evidence_path=args.winget_evidence,
-                no_winget_evidence=args.no_winget_evidence,
                 policy_path=args.policy,
                 run_id=args.run_id, run_attempt=args.run_attempt,
             )

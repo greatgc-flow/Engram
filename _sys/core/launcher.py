@@ -271,8 +271,11 @@ def main(ctx: dict) -> None:
             # absolute paths as a statement separator (D11 ampersand fix).
             bat_dir = str(target_file.parent)
             bat_name = target_file.name
+            command = '".\\' + bat_name + '"'
+            for arg in args[1:]:
+                command += ' "' + arg.replace('"', '\\"') + '"'
             sys.exit(subprocess.run(
-                ["cmd", "/c", f".\\{bat_name}", *args[1:]], env=env, cwd=bat_dir,
+                'cmd.exe /d /v:off /s /c "' + command + '"', env=env, cwd=bat_dir,
             ).returncode)
         else:
             os.startfile(str(target_file))
