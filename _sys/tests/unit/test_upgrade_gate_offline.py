@@ -406,7 +406,10 @@ exit $LASTEXITCODE
 
 
 import unittest
-from evidence_fixtures import evidence_fixture, temporary_directory
+try:
+    from evidence_fixtures import evidence_fixture, temporary_directory
+except ModuleNotFoundError:
+    from _sys.tests.unit.evidence_fixtures import evidence_fixture, temporary_directory
 import tempfile
 
 
@@ -420,7 +423,7 @@ class UpgradeGateTests(unittest.TestCase):
         with patch.object(tempfile, 'TemporaryDirectory', self.temporary_directory):
             yield
 
-    def fixture(self, root, previous_seam=True):
+    def fixture(self, root, previous_seam=True, prev_version="1.0.0", cand_version="1.0.1", cand_tag="v1.0.1"):
         target = root / "installed"
         target.mkdir()
         for name in ("core", "checks", "defaults"):
@@ -428,7 +431,7 @@ class UpgradeGateTests(unittest.TestCase):
                             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         (target / "Engram.exe").write_bytes(b"OLD EXE")
         (target / "README.md").write_bytes(b"OLD README")
-        (target / "_sys/core/version.json").write_text('{"version":"1.0.0"}', encoding="utf-8")
+        (target / "_sys/core/version.json").write_text(json.dumps({"version": prev_version}), encoding="utf-8")
         upgrade_harness.seed_user_data(target / ".engram")
         candidate = root / "candidate.zip"
         with zipfile.ZipFile(candidate, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -439,13 +442,13 @@ class UpgradeGateTests(unittest.TestCase):
                         continue
                     content = path.read_bytes()
                     if rel == "_sys/core/version.json":
-                        content = b'{"version":"1.0.1"}'
+                        content = json.dumps({"version": cand_version}).encode("utf-8")
                     archive.writestr(rel, content)
             archive.writestr("_sys/core/introduced.txt", b"candidate-only file")
         if not previous_seam:
             (target / "_sys/core/version_resolver.py").write_text("# old resolver", encoding="utf-8")
         identity = root / "candidate.json"
-        identity.write_text(json.dumps({"tag": "v1.0.1", "candidate_sha256s": {
+        identity.write_text(json.dumps({"tag": cand_tag, "candidate_sha256s": {
             candidate.name: hashlib.sha256(candidate.read_bytes()).hexdigest()}}), encoding="utf-8")
         return target, candidate, identity
 
@@ -463,6 +466,66 @@ class UpgradeGateTests(unittest.TestCase):
             self.assertEqual(evidence["updater_source"], "candidate")
             self.assertEqual(evidence["scenarios"]["rollback"], "PASS")
 
+    def test_candidate_version_equal_previous_stable_holds(self):
+        with self.temporary_directory() as temp:
+            target, candidate, identity = self.fixture(
+                Path(temp), prev_version="3.7.0", cand_version="3.7.0", cand_tag="candidate-3.7.0"
+            )
+            with self.assertRaises(ValueError) as ctx:
+                upgrade_harness.run_upgrade_gate(target, candidate, identity, "v3.7.0")
+            self.assertIn("HOLD: candidate version 3.7.0 is not newer than previous v3.7.0", str(ctx.exception))
+
+    def test_candidate_version_older_than_previous_holds(self):
+        with self.temporary_directory() as temp:
+            target, candidate, identity = self.fixture(
+                Path(temp), prev_version="1.0.1", cand_version="1.0.0", cand_tag="v1.0.0"
+            )
+            with self.assertRaises(ValueError) as ctx:
+                upgrade_harness.run_upgrade_gate(target, candidate, identity, "v1.0.1")
+            self.assertIn("HOLD: candidate version 1.0.0 is not newer than previous v1.0.1", str(ctx.exception))
+
+    def test_candidate_version_precondition_cli_output(self):
+        import io
+        from unittest.mock import patch
+        with self.temporary_directory() as temp:
+            target, candidate, identity = self.fixture(
+                Path(temp), prev_version="3.7.0", cand_version="3.7.0", cand_tag="candidate-3.7.0"
+            )
+            stderr_buf = io.StringIO()
+            with patch("sys.stderr", stderr_buf):
+                ret = upgrade_harness.main([
+                    "run",
+                    "--target-dir", str(target),
+                    "--candidate-zip", str(candidate),
+                    "--candidate-json", str(identity),
+                    "--prev-tag", "v3.7.0",
+                ])
+            self.assertEqual(ret, 1)
+            output_lines = [l.strip() for l in stderr_buf.getvalue().splitlines() if l.strip()]
+            self.assertIn("HOLD: candidate version 3.7.0 is not newer than previous v3.7.0", output_lines)
+
+    def test_updater_not_started_fails_fast(self):
+        import subprocess
+        from unittest.mock import patch
+        with self.temporary_directory() as temp:
+            target = Path(temp) / "installed"
+            target.mkdir()
+            (target / "_sys/data/temp").mkdir(parents=True)
+            mock_proc = subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="Everything Engram can check is up to date.\n", stderr=""
+            )
+            with patch("subprocess.run", return_value=mock_proc):
+                with self.assertRaises(RuntimeError) as ctx:
+                    upgrade_harness.public_update(
+                        target=target,
+                        code_sys=target / "_sys",
+                        fault=Path(temp) / "fault",
+                        env={},
+                        version="3.7.0",
+                        expected="COMPLETED",
+                    )
+                self.assertIn("updater did not start a core update: Everything Engram can check is up to date.", str(ctx.exception))
+
     def test_missing_rollback_blocks_pass(self):
         from _sys.checks import release_evidence
         with self.temporary_directory() as temp:
@@ -479,4 +542,9 @@ class UpgradeGateTests(unittest.TestCase):
             with self.assertRaisesRegex(release_evidence.Hold, "rollback"):
                 release_evidence.verify(root / "candidate", root / "sandbox", root / "upgrade",
                     winget_evidence_path=evidence_fixture(root / "candidate", "winget", "1"), run_id="1", run_attempt="1")
+
+
+if __name__ == "__main__":
+    unittest.main()
+
 

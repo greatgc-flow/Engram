@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 import shutil
 import sys
+import unittest
+import subprocess
 import pytest
 from evidence_fixtures import evidence_fixture
 from unittest.mock import patch
@@ -102,6 +104,11 @@ class TestSmoke:
                     if failure == 'files':
                         (install / 'engram.cmd').write_bytes(b'wrong')
                 elif operation == 'uninstall':
+                    assert '--manifest' in args and '--id' not in args and '--name' not in args
+                    assert Path(args[args.index('--manifest') + 1]).is_dir()
+                    assert '--accept-source-agreements' in args
+                    assert '--purge' not in args and '--force' not in args
+                    assert calls[-2][1] == 'list'
                     alias.unlink()
                     for path in list(install.iterdir()):
                         if path != data:
@@ -165,8 +172,68 @@ class TestSmoke:
             with pytest.raises(smoke.Hold):
                 smoke.command(['winget', 'install'])
         with patch.object(smoke.subprocess, 'run', side_effect=subprocess.TimeoutExpired('winget', 300)):
-            with pytest.raises(subprocess.TimeoutExpired):
+            with pytest.raises(smoke.Hold, match='timed out'):
                 smoke.command(['winget', 'install'])
+
+
+class TestWingetDiagnostics(unittest.TestCase):
+    def test_local_manifest_uninstall_and_preservation(self):
+        TestSmoke().exercise()
+
+    def test_each_failed_step_records_both_streams(self):
+        for operation in ('install', 'list', 'uninstall'):
+            with self.subTest(operation=operation):
+                records = []
+                result = subprocess.CompletedProcess([], 2316632134, 'source agreement required', 'stderr detail')
+                with patch.object(smoke.subprocess, 'run', return_value=result):
+                    with self.assertRaises(smoke.Hold) as caught:
+                        smoke.command(['winget', operation], evidence=records)
+                self.assertIn('0x8A150046', str(caught.exception))
+                self.assertIn(result.stdout, str(caught.exception))
+                self.assertIn(result.stderr, str(caught.exception))
+                self.assertEqual(records[0]['returncode'], result.returncode)
+                self.assertEqual(records[0]['stdout'], result.stdout)
+                self.assertEqual(records[0]['stderr'], result.stderr)
+
+    def test_empty_output_and_bounded_output(self):
+        for stdout, stderr in (('', ''), ('x' * 10000, 'y' * 10000)):
+            records = []
+            with patch.object(smoke.subprocess, 'run', return_value=subprocess.CompletedProcess([], -1978335162, stdout, stderr)):
+                with self.assertRaises(smoke.Hold) as caught:
+                    smoke.command(['winget', 'uninstall'], evidence=records)
+            self.assertIn('0x8A150046', str(caught.exception))
+            self.assertLess(len(str(caught.exception)), 4500)
+            self.assertLessEqual(len(records[0]['stdout']), 2060)
+            self.assertLessEqual(len(records[0]['stderr']), 2060)
+            if not stdout:
+                self.assertIn("stdout=''; stderr=''", str(caught.exception))
+
+    def test_successful_list_dump_and_timeout_output(self):
+        records = []
+        with patch.object(smoke.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, 'installed registration', 'warning')):
+            self.assertEqual(smoke.command(['winget', 'list'], evidence=records), 'installed registration')
+        self.assertEqual(records[0]['stderr'], 'warning')
+        with patch.object(smoke.subprocess, 'run', side_effect=subprocess.TimeoutExpired('winget', 300, output=b'partial stdout', stderr=b'partial stderr')):
+            with self.assertRaises(smoke.Hold) as caught:
+                smoke.command(['winget', 'install'], evidence=records)
+        self.assertIn('partial stdout', str(caught.exception))
+        self.assertIn('partial stderr', str(caught.exception))
+        self.assertTrue(records[-1]['timeout'])
+
+    def test_main_retains_failure_evidence(self):
+        with temporary_directory() as temporary:
+            root = Path(temporary)
+            candidate = root / 'candidate.json'
+            candidate.write_text(json.dumps({'candidate_sha256s': {}}))
+            out = root / 'evidence.json'
+            def failed_smoke(*args, run):
+                run(['winget', 'uninstall'])
+            with patch.object(smoke, 'smoke', side_effect=failed_smoke), patch.object(smoke.subprocess, 'run', return_value=subprocess.CompletedProcess([], 2316632134, 'agreement required', 'detail')):
+                self.assertEqual(smoke.main(['--candidate', str(candidate), '--assets', str(root), '--install-root', str(root / 'program'), '--user-data', str(root / 'data'), '--out', str(out)]), 1)
+            evidence = json.loads(out.read_text())
+            self.assertEqual(evidence['status'], 'HOLD')
+            self.assertEqual(evidence['commands'][0]['stdout'], 'agreement required')
+            self.assertIn('detail', evidence['reason'])
 
 
 @pytest.mark.parametrize("flag", ["cancelled", "skipped"])

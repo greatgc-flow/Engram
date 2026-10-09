@@ -28,10 +28,29 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def command(args):
-    result = subprocess.run(args, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=300)
+def clipped(value):
+    if isinstance(value, bytes):
+        value = value.decode('utf-8', errors='replace')
+    value = value or ''
+    return value[:2048] + ('\n[truncated]' if len(value) > 2048 else '')
+
+
+def command(args, evidence=None):
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=300)
+    except subprocess.TimeoutExpired as exc:
+        details = {'args': args, 'returncode': None, 'timeout': True,
+                   'stdout': clipped(exc.stdout), 'stderr': clipped(exc.stderr)}
+        if evidence is not None:
+            evidence.append(details)
+        raise Hold(f'{args[0]} {args[1]} timed out: stdout={details["stdout"]!r}; stderr={details["stderr"]!r}') from exc
+    details = {'args': args, 'returncode': result.returncode,
+               'stdout': clipped(result.stdout), 'stderr': clipped(result.stderr)}
+    if evidence is not None:
+        evidence.append(details)
     if result.returncode != 0:
-        raise Hold(f'{args[0]} {args[1]} exited {result.returncode}: {result.stderr}')
+        raise Hold(f'{args[0]} {args[1]} exited {result.returncode} (0x{result.returncode & 0xffffffff:08X}): '
+                   f'stdout={details["stdout"]!r}; stderr={details["stderr"]!r}')
     return result.stdout.strip()
 
 
@@ -99,7 +118,10 @@ def smoke(candidate, assets, install_root, user_data, run=command):
                 raise Hold('engram command alias does not target candidate')
             if run([str(alias), '--version']) != f'Engram {version} (Portable Dev Runtime)':
                 raise Hold('installed version differs from candidate')
-            run(['winget', 'uninstall', '--id', package, '--exact', '--scope', 'user', '--disable-interactivity'])
+            # Dump installed registration before removal; local IDs can differ from catalog IDs.
+            run(['winget', 'list', '--scope', 'user', '--accept-source-agreements', '--disable-interactivity'])
+            run(['winget', 'uninstall', '--manifest', str(manifests), '--scope', 'user',
+                 '--accept-source-agreements', '--disable-interactivity'])
             if any(p.is_file() and not p.is_relative_to(user_data) for p in install_root.rglob('*')):
                 raise Hold('program files remain after uninstall')
             if alias.exists() or alias.is_symlink():
@@ -120,11 +142,13 @@ def main(argv=None):
         parser.add_argument('--' + name, required=True, type=Path)
     args = parser.parse_args(argv)
     evidence = {'status': 'HOLD', 'candidate_sha256s': {}, 'cancelled': False, 'skipped': False,
-                'run_id': os.environ.get('GITHUB_RUN_ID'), 'run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT')}
+                'run_id': os.environ.get('GITHUB_RUN_ID'), 'run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT'),
+                'commands': []}
     try:
         candidate = base._read(args.candidate)
         evidence['candidate_sha256s'] = candidate.get('candidate_sha256s', {})
-        smoke(candidate, args.assets, args.install_root, args.user_data)
+        smoke(candidate, args.assets, args.install_root, args.user_data,
+              run=partial(command, evidence=evidence['commands']))
         evidence['status'] = 'PASS'
     except (OSError, ValueError, subprocess.SubprocessError, zipfile.BadZipFile) as exc:
         evidence['reason'] = str(exc)

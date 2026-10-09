@@ -83,6 +83,24 @@ exit $LASTEXITCODE
 """
 
 
+def parse_version(v: str | None) -> tuple[int, ...]:
+    """Parse semver-like version string into a tuple of ints for comparison."""
+    if not v:
+        return ()
+    s = str(v).strip()
+    if s.startswith("v") or s.startswith("V"):
+        s = s[1:]
+    import re
+    parts = []
+    for part in s.split("."):
+        m = re.match(r"^(\d+)", part)
+        if m:
+            parts.append(int(m.group(1)))
+        else:
+            break
+    return tuple(parts)
+
+
 def public_update(target: Path, code_sys: Path, fault: Path, env: dict, version: str, expected: str) -> None:
     import subprocess
     import time
@@ -90,9 +108,26 @@ def public_update(target: Path, code_sys: Path, fault: Path, env: dict, version:
     if journal_path.exists():
         raise RuntimeError("pre-existing upgrade journal")
     result = subprocess.run([sys.executable, "-c", _WORKER, str(code_sys), str(target), str(fault)],
-                            env=env, cwd=target, timeout=120)
+                            env=env, cwd=target, timeout=120, capture_output=True, text=True,
+                            encoding="utf-8", errors="replace")
+    if result.stdout:
+        sys.stdout.write(result.stdout)
+    if result.stderr:
+        sys.stderr.write(result.stderr)
     if result.returncode:
         raise RuntimeError(f"public updater failed: {result.returncode}")
+
+    journal_start_wait = time.monotonic()
+    while time.monotonic() - journal_start_wait < 3.0:
+        if journal_path.exists():
+            break
+        time.sleep(0.1)
+    if not journal_path.exists():
+        output = (result.stdout or "") + ("\n" + result.stderr if result.stderr else "")
+        lines = [line.strip() for line in output.splitlines() if line.strip()]
+        last_line = lines[-1] if lines else "no output"
+        raise RuntimeError(f"updater did not start a core update: {last_line}")
+
     deadline = time.monotonic() + 120
     while time.monotonic() < deadline:
         try:
@@ -109,6 +144,7 @@ def public_update(target: Path, code_sys: Path, fault: Path, env: dict, version:
     if expected == "FAILED_ROLLED_BACK":
         if Path(str(journal_path) + ".undo").read_text(encoding="utf-8-sig").strip() != "ROLLBACK_IN_PROGRESS":
             raise RuntimeError("rollback did not expose in-progress journal")
+
 
 
 def seed_user_data(engram_dir: Path) -> None:
@@ -226,7 +262,25 @@ def run_upgrade_gate(
                 cand_version = vdata.get("version")
                 break
     if not cand_version:
+        cand_version = candidate_data.get("version") or candidate_data.get("tag")
+    if not cand_version:
         raise ValueError("candidate zip missing _sys/core/version.json")
+
+    target_version_file = target_dir / "_sys" / "core" / "version.json"
+    target_installed_version = None
+    if target_version_file.is_file():
+        try:
+            target_installed_version = json.loads(target_version_file.read_text(encoding="utf-8")).get("version")
+        except Exception:
+            pass
+
+    cand_v_tuple = parse_version(cand_version)
+    if target_installed_version and not (cand_v_tuple > parse_version(target_installed_version)):
+        disp_prev = previous_tag if (previous_tag and parse_version(previous_tag) == parse_version(target_installed_version)) else target_installed_version
+        raise ValueError(f"HOLD: candidate version {cand_version} is not newer than previous {disp_prev}")
+    if previous_tag and not (cand_v_tuple > parse_version(previous_tag)):
+        raise ValueError(f"HOLD: candidate version {cand_version} is not newer than previous {previous_tag}")
+
 
     engram_dir = target_dir / ".engram"
     if not engram_dir.exists() or not any(engram_dir.iterdir()):
@@ -355,7 +409,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"PASS: upgrade verified and evidence emitted to {out_evidence}")
         return 0
     except Exception as exc:
-        print(f"HOLD: upgrade harness error: {exc}", file=sys.stderr)
+        msg = str(exc)
+        if msg.startswith("HOLD:"):
+            print(msg, file=sys.stderr)
+        else:
+            print(f"HOLD: upgrade harness error: {exc}", file=sys.stderr)
         if out_evidence:
             try:
                 cand_data = json.loads(Path(candidate_json).read_text(encoding="utf-8")) if Path(candidate_json).is_file() else {}

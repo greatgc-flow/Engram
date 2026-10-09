@@ -90,6 +90,7 @@ This launches a fresh Windows Sandbox instance, downloads declared runtimes, ins
    isolated root, seeds user data under `.engram/` (structured JSON, Unicode,
    and raw binary content), and runs `tools/release_gate/upgrade_harness.py`
    against the candidate ZIP using the external SHA256 from `candidate.json`.
+   Before running the updater, the harness enforces that candidate version is strictly newer than the previous installation, and fails fast if the updater exits without starting a core update.
    The harness verifies offline staging, manifest integrity, detached helper
    execution, verified failed-update rollback, journal completion, updated installed version, and byte-for-byte
    preservation of user data. It emits `upgrade_evidence.json` bound to the
@@ -191,7 +192,18 @@ that executable, and `--version` must print the candidate version in the
 existing `Engram <version> (Portable Dev Runtime)` format.
 
 Before uninstall, the harness seeds `<install-root>/.engram` with binary user
-data and snapshots its inventory and bytes. WinGet uninstall must exit zero,
+data and snapshots its inventory and bytes. It records a `winget list --scope user`
+dump, then uses `winget uninstall --manifest <temp-dir> --scope user
+--accept-source-agreements --disable-interactivity`. Local manifest matching avoids
+relying on a catalog ID or display name; no source filter or force is needed, and
+`--purge` is never used. Hosted run 37993728437 reached uninstall but returned
+0x8A150046: [source agreements were not accepted](https://github.com/microsoft/winget-cli/blob/master/doc/windows/package-manager/winget/returnCodes.md).
+The [uninstall documentation](https://learn.microsoft.com/en-us/windows/package-manager/winget/uninstall)
+supports local manifests and source-agreement acceptance; the specific source
+was not captured in that run (Microsoft Store is a possible cause). Each command
+records its arguments, exit code, stdout and stderr (bounded to 2 KiB per stream)
+in evidence; failure and timeout HOLD reasons include both streams. This retains
+the list dump before uninstall for the next hosted run. WinGet uninstall must exit zero,
 remove program files and the command alias, and leave `.engram` unchanged.
 If WinGet's portable uninstaller deletes that directory, the gate correctly
 reports HOLD; this change does not alter the installer or runtime to bypass
