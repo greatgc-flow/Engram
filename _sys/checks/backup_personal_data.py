@@ -573,6 +573,65 @@ def do_backup(
         return out_dir
 
 
+def _check_restore_path(root: Path, path: Path, *, recursive: bool = False) -> None:
+    """Reject redirects before resolving containment or traversing a tree."""
+    root = Path(os.path.abspath(root))
+    path = Path(os.path.abspath(path))
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"Restore path escapes root: {path}") from exc
+
+    def inspect(candidate: Path) -> bool:
+        try:
+            info = os.lstat(candidate)
+        except FileNotFoundError:
+            return False
+        if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+            raise ValueError(f"Restore path contains a reparse point: {candidate}")
+        return stat.S_ISDIR(info.st_mode)
+
+    # Include ancestors of the supplied root: resolving them first would hide
+    # a junction or symlink in the root itself or its parent chain.
+    for candidate in reversed((path, *path.parents)):
+        inspect(candidate)
+    if not path.resolve().is_relative_to(root.resolve()):
+        raise ValueError(f"Restore path escapes resolved root: {path}")
+    if recursive and inspect(path):
+        pending = [path]
+        while pending:
+            for child in pending.pop().iterdir():
+                if inspect(child):
+                    pending.append(child)
+
+
+def _validated_restore_extras(bundle: Path, base_dir: Path) -> list[tuple[Path, Path, str]]:
+    manifest = bundle / "MANIFEST.json"
+    _check_restore_path(bundle, manifest)
+    if not manifest.is_file():
+        return []
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    extras = data.get("custom_extras", [])
+    if not isinstance(extras, list):
+        raise ValueError("custom_extras must be a list")
+    result = []
+    for extra in extras:
+        if not isinstance(extra, dict):
+            raise ValueError("Invalid custom_extras entry")
+        rel = extra.get("relpath")
+        kind = extra.get("kind")
+        if (not isinstance(rel, str) or not rel or "\\" in rel or ":" in rel
+                or any(part in {"", ".", ".."} or part.rstrip(" .") != part
+                       for part in rel.split("/")) or kind not in {"dir", "file"}):
+            raise ValueError(f"Noncanonical custom_extras path: {rel!r}")
+        src = bundle / "custom_extras" / rel
+        dst = base_dir / rel
+        _check_restore_path(bundle, src, recursive=True)
+        _check_restore_path(base_dir, dst, recursive=True)
+        result.append((src, dst, kind))
+    return result
+
+
 def do_restore(
     engram_dir: Path,
     src_path: Path,
@@ -608,9 +667,10 @@ def do_restore(
         print("Please close all running AI CLIs and try again.")
         sys.exit(1)
 
-    # Pre-restore safety snapshot (unless --force)
-    if not force:
-        if engram_dir.is_dir() and any(engram_dir.iterdir()):
+    def _restore_bundle_dir(temp_bundle: Path) -> None:
+        extras = _validated_restore_extras(temp_bundle, base_dir)
+        # Validate every extra before snapshots or standard payload writes.
+        if not force and engram_dir.is_dir() and any(engram_dir.iterdir()):
             backups_dir = sys_dir / "data" / "backups"
             backups_dir.mkdir(parents=True, exist_ok=True)
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -618,26 +678,18 @@ def do_restore(
             print(f"[SNAPSHOT] Creating automatic pre-restore backup at: {snap_path}")
             do_backup(engram_dir, snap_path, as_zip=True, base_dir=base_dir, sys_dir=sys_dir)
 
-    def _restore_bundle_dir(temp_bundle: Path) -> None:
         _restore_from_folder(engram_dir, temp_bundle, force)
-        manifest_json_path = temp_bundle / "MANIFEST.json"
-        if manifest_json_path.is_file():
-            try:
-                data = json.loads(manifest_json_path.read_text(encoding="utf-8"))
-                for extra in data.get("custom_extras", []):
-                    rel = Path(extra["relpath"])
-                    src = temp_bundle / "custom_extras" / rel
-                    dst = base_dir / rel
-                    if extra.get("kind") == "dir" and src.is_dir():
-                        dst.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copytree(src, dst, dirs_exist_ok=True)
-                        print(f"  [OK]   custom_extra dir  -> {dst}")
-                    elif src.is_file():
-                        dst.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(src, dst)
-                        print(f"  [OK]   custom_extra file -> {dst}")
-            except Exception as e:
-                print(f"[WARNING] Could not restore custom_extras: {e}")
+        for src, dst, kind in extras:
+            _check_restore_path(temp_bundle, src, recursive=True)
+            _check_restore_path(base_dir, dst, recursive=True)
+            if kind == "dir" and src.is_dir():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(src, dst, dirs_exist_ok=True)
+                print(f"  [OK]   custom_extra dir  -> {dst}")
+            elif kind == "file" and src.is_file():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+                print(f"  [OK]   custom_extra file -> {dst}")
 
     if zipfile.is_zipfile(src_path):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -780,15 +832,20 @@ def do_reset(
 
     # Phase 2: Clean Sweep with Rename-then-Purge pattern
     def _safe_purge(target_dir: Path) -> None:
-        if not target_dir.exists():
+        if not os.path.lexists(target_dir):
             return
         temp_renamed = target_dir.parent / f".purge_{stamp}_{target_dir.name}"
+        if os.path.lexists(temp_renamed):
+            raise FileExistsError(f"Purge staging target already exists: {temp_renamed}")
         try:
             target_dir.rename(temp_renamed)
-            shutil.rmtree(temp_renamed)
         except OSError:
             # Fallback to direct rmtree if rename fails
-            shutil.rmtree(target_dir, ignore_errors=True)
+            shutil.rmtree(target_dir)
+        else:
+            shutil.rmtree(temp_renamed)
+        if os.path.lexists(target_dir) or os.path.lexists(temp_renamed):
+            raise OSError(f"Purge postcondition failed: {target_dir} or {temp_renamed} remains")
 
     if engram_dir.exists():
         _safe_purge(engram_dir)

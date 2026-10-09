@@ -2,6 +2,7 @@
 Path Scenarios Test (PATH)
 Verify registration and execution with Korean paths and special characters.
 """
+import contextlib
 import datetime
 import json
 import os
@@ -36,6 +37,24 @@ def _mbcs_can_represent_korean() -> bool:
         return False
 
 
+@contextlib.contextmanager
+def _cp949_encoding_boundary():
+    """Emulate cp949 at the registrar encoding boundary (explicit cp949 injection)
+    when running on a host whose system ACP cannot represent Korean (e.g. hosted CI
+    under CP1252). On systems with a real Korean ACP (CP949), production mbcs encoding
+    runs unpatched."""
+    if _mbcs_can_represent_korean():
+        yield
+        return
+    def _sidecar_cp949(path: Path, val: str) -> None:
+        registrar._atomic_write_bytes(path, val.encode("cp949", errors="strict"))
+    def _relay_cp949(path: Path, content: str) -> None:
+        registrar._atomic_write_bytes(path, content.encode("cp949", errors="replace"))
+    with patch.object(registrar, "_write_sidecar", side_effect=_sidecar_cp949), \
+         patch.object(registrar, "_write_relay", side_effect=_relay_cp949):
+        yield
+
+
 _KOREAN_LOCALE_REQUIRED = pytest.mark.skipif(
     not _mbcs_can_represent_korean(),
     reason=(
@@ -48,9 +67,9 @@ _KOREAN_LOCALE_REQUIRED = pytest.mark.skipif(
 
 
 def _no_drive_exists(path: object) -> bool:
-    """os.path.exists 선택적 mock: 드라이브 존재 체크만 False, 실제 경로는 real check."""
+    """Selective os.path.exists mock: drive check returns False, real path check otherwise."""
     p = str(path)
-    # 드라이브 문자 체크 (X: 또는 X:\)
+    # Drive letter check (X: or X:\)
     if len(p) in (2, 3) and p[1] == ":" and (len(p) == 2 or p[2] == "\\"):
         return False
     return _real_os_exists(path)
@@ -75,14 +94,14 @@ def _make_ctx(base_dir: Path, tmp_path: Path) -> dict:
 class TestPathScenarios:
     @pytest.fixture
     def korean_base(self, tmp_path):
-        """한글 경로를 포함한 기본 디렉터리."""
+        """Base directory containing Korean characters."""
         base = tmp_path / "테스트_폴더" / "PortableDev"
         (base / "_sys" / "ai").mkdir(parents=True)
         return base
 
-    @_KOREAN_LOCALE_REQUIRED
+    @pytest.mark.cp949
     def test_registry_command_double_quotes_wrapping(self, korean_base, tmp_path):
-        """Scenario: 레지스트리 명령에 cmd.exe /c \"\" 이중인용부호 래핑 확인."""
+        """Scenario: Verify double quote wrapping in cmd.exe /c \"\" registry command."""
         sys_dir = korean_base / "_sys"
         ctx_menu = {
             "win11_classic_menu": False,
@@ -113,7 +132,8 @@ class TestPathScenarios:
         ctx = _make_ctx(korean_base, tmp_path)
         local_dir = ctx["paths"]["localappdata"]
 
-        with patch.dict(os.environ, {"LOCALAPPDATA": str(local_dir)}), \
+        with _cp949_encoding_boundary(), \
+             patch.dict(os.environ, {"LOCALAPPDATA": str(local_dir)}), \
              patch("winreg.CreateKey", return_value=MagicMock()), \
              patch("winreg.SetValueEx") as mock_set_val, \
              patch("winreg.CloseKey"), \
@@ -129,9 +149,9 @@ class TestPathScenarios:
             and isinstance(c.args[4], str)
             and 'cmd.exe /c ""' in c.args[4]
         ]
-        assert cmd_values, 'cmd.exe /c "" 패턴이 레지스트리 명령에 있어야 함'
+        assert cmd_values, 'cmd.exe /c "" pattern must exist in registry command'
         for cmd in cmd_values:
-            assert cmd.startswith('cmd.exe /c ""'), f"이중인용부호 래핑 없음: {cmd}"
+            assert cmd.startswith('cmd.exe /c ""'), f"Missing double quote wrapping: {cmd}"
 
     def test_expand_substitutes_folder_placeholder(self):
         """{FOLDER} renders as the install's own folder name -- distinct
@@ -153,7 +173,7 @@ class TestPathScenarios:
         assert one == "(t2)"
         assert two == "(tttt)"
 
-    @_KOREAN_LOCALE_REQUIRED
+    @pytest.mark.cp949
     def test_registry_label_uses_folder_name_not_drive_letter(self, korean_base, tmp_path):
         """The shipped default label reads {FOLDER}: two installs on the
         same physical drive must render distinct, recognizable labels
@@ -188,7 +208,8 @@ class TestPathScenarios:
         ctx = _make_ctx(korean_base, tmp_path)
         local_dir = ctx["paths"]["localappdata"]
 
-        with patch.dict(os.environ, {"LOCALAPPDATA": str(local_dir)}), \
+        with _cp949_encoding_boundary(), \
+             patch.dict(os.environ, {"LOCALAPPDATA": str(local_dir)}), \
              patch("winreg.CreateKey", return_value=MagicMock()), \
              patch("winreg.SetValueEx") as mock_set_val, \
              patch("winreg.CloseKey"), \
@@ -203,7 +224,7 @@ class TestPathScenarios:
         ]
         assert f"Open in Sandbox ({korean_base.name})" in label_values
 
-    @_KOREAN_LOCALE_REQUIRED
+    @pytest.mark.cp949
     def test_registry_apply_reports_failed_write(self, korean_base, tmp_path):
         """A registry write error must make register fail truthfully."""
         sys_dir = korean_base / "_sys"
@@ -235,7 +256,8 @@ class TestPathScenarios:
         )
         ctx = _make_ctx(korean_base, tmp_path)
 
-        with patch.dict(os.environ, {"LOCALAPPDATA": str(ctx["paths"]["localappdata"])}), \
+        with _cp949_encoding_boundary(), \
+             patch.dict(os.environ, {"LOCALAPPDATA": str(ctx["paths"]["localappdata"])}), \
              patch("winreg.CreateKey", side_effect=PermissionError("denied")), \
              patch.object(registrar, "_resolve_icon", return_value=None), \
              patch.object(registrar, "_clean_orphans"):
@@ -243,6 +265,96 @@ class TestPathScenarios:
 
         assert result["status"] == "failed"
         assert any("registry write failed" in error for error in result["errors"])
+
+    @pytest.mark.cp949
+    def test_registrar_korean_relay_emulated_cp949(self, korean_base, tmp_path):
+        """Emulate CP949 at the encoding boundary: explicit cp949 injection,
+        assert exact sidecar bytes on disk, and run relay under chcp 949."""
+        import subprocess
+
+        # 1. Real physical root directory containing Korean characters
+        sys_dir = korean_base / "_sys"
+        sys_dir.mkdir(parents=True, exist_ok=True)
+
+        # 2. Minimal start.bat inside _sys
+        start_bat = sys_dir / "start.bat"
+        encoding = "mbcs" if _mbcs_can_represent_korean() else "cp949"
+        start_bat.write_text("@echo off\r\necho START_HIT arg=%~1\r\nexit /b 0\r\n", encoding=encoding)
+
+        # 3. Build context_menu config using the real relay.content_template from _sys/context_menu.json
+        real_cm_path = _sys_path / "context_menu.json"
+        assert real_cm_path.exists(), f"context_menu.json not found at {real_cm_path}"
+        with open(real_cm_path, "r", encoding="utf-8") as f:
+            real_cm = json.load(f)
+
+        ctx_menu = {
+            "win11_classic_menu": False,
+            "registry": {
+                "targets": {
+                    "Directory": {
+                        "path": r"Software\Classes\Directory\shell",
+                        "arg": "%V",
+                    }
+                }
+            },
+            "relay": {
+                "content_template": real_cm["relay"]["content_template"],
+            },
+            "entries": [
+                {
+                    "id": "sandbox_open",
+                    "label": "Open Sandbox ({FOLDER})",
+                    "icon": "",
+                    "targets": ["Directory"],
+                    "enabled": True,
+                }
+            ],
+        }
+        (sys_dir / "context_menu.json").write_text(json.dumps(ctx_menu), encoding="utf-8")
+
+        ctx = _make_ctx(korean_base, tmp_path)
+        local_dir = ctx["paths"]["localappdata"]
+
+        with _cp949_encoding_boundary(), \
+             patch.dict(os.environ, {"LOCALAPPDATA": str(local_dir)}), \
+             patch("winreg.CreateKey", return_value=MagicMock()), \
+             patch("winreg.SetValueEx"), \
+             patch("winreg.CloseKey"), \
+             patch.object(registrar, "_resolve_icon", return_value=None), \
+             patch.object(registrar, "_clean_orphans"):
+            result = registrar.apply(ctx)
+
+        assert result["status"] == "success", f"registrar.apply failed: {result}"
+
+        # 4. Locate generated relay .bat and assert matching sidecars exist with exact bytes
+        relay_bats = list(local_dir.glob("SandboxRun_*.bat"))
+        assert len(relay_bats) == 1, f"Expected exactly 1 relay .bat, found: {relay_bats}"
+        relay_bat_path = relay_bats[0]
+
+        physroot_sidecar = local_dir / f"{relay_bat_path.stem}.physroot.txt"
+        root_sidecar = local_dir / f"{relay_bat_path.stem}.root.txt"
+        assert physroot_sidecar.exists(), f"Matching sidecar file missing: {physroot_sidecar}"
+        assert root_sidecar.exists(), f"Matching root sidecar file missing: {root_sidecar}"
+
+        expected_bytes = str(korean_base).encode("cp949")
+        assert physroot_sidecar.read_bytes() == expected_bytes
+        assert root_sidecar.read_bytes() == expected_bytes
+
+        # 5. Execute relay under chcp 949 and verify stdout reaches start.bat
+        proc = subprocess.run(
+            f'cmd.exe /c "chcp 949 >nul && "{relay_bat_path}" "some_target_arg""',
+            capture_output=True,
+            text=True,
+            encoding="cp949",
+            errors="replace",
+        )
+        assert "START_HIT arg=some_target_arg" in proc.stdout, (
+            f"Relay .bat failed to reach start.bat under chcp 949.\n"
+            f"returncode: {proc.returncode}\n"
+            f"stdout: {proc.stdout}\n"
+            f"stderr: {proc.stderr}"
+        )
+        assert proc.returncode == 0
 
     def test_registrar_caret_percent_relay_end_to_end(self, tmp_path):
         """End-to-end: relay .bat survives physical paths with '^' and '%' via sidecar."""
