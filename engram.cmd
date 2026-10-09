@@ -485,16 +485,18 @@ exit /b 2
 :get_version
 set "_ENGRAM_VER=unknown"
 if exist "%SYS_PATH%\core\version.json" (
+    set "ENGRAM_VERSION_FILE=%SYS_PATH%\core\version.json"
     if exist "%SYS_PATH%\env\python\python.exe" (
-        for /f "usebackq delims=" %%v in (`"%SYS_PATH%\env\python\python.exe" -c "import json, sys; sys.stdout.write(json.load(open(r'%SYS_PATH%\core\version.json', encoding='utf-8')).get('version', 'unknown'))" 2^>nul`) do (
+        for /f "usebackq delims=" %%v in (`"%SYS_PATH%\env\python\python.exe" -c "import json, os, sys; sys.stdout.write(json.load(open(os.environ['ENGRAM_VERSION_FILE'], encoding='utf-8')).get('version', 'unknown'))" 2^>nul`) do (
             set "_ENGRAM_VER=%%v"
         )
     )
     if "%_ENGRAM_VER%"=="unknown" (
-        for /f "usebackq delims=" %%v in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "try { (Get-Content '%SYS_PATH%\core\version.json' -Raw | ConvertFrom-Json).version } catch { 'unknown' }" 2^>nul`) do (
+        for /f "usebackq delims=" %%v in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "try { (Get-Content $env:ENGRAM_VERSION_FILE -Raw | ConvertFrom-Json).version } catch { 'unknown' }" 2^>nul`) do (
             set "_ENGRAM_VER=%%v"
         )
     )
+    set "ENGRAM_VERSION_FILE="
 )
 if "%_ENGRAM_VER%"=="" set "_ENGRAM_VER=unknown"
 exit /b 0
