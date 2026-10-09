@@ -137,6 +137,14 @@ Every AI CLI Engram manages reads and writes its personal, durable data (memory,
 
 See [2026-09-03_separation-completion-backlog.md](https://github.com/greatgc-flow/peerhub/blob/main/docs/history/from-engram-repo/sessions/2026-09-03_separation-completion-backlog.md) for the full remaining-work backlog on both sides of the separation (Engram + peerhub), and what's deliberately deferred and why.
 
+## Known limitations
+
+`engram doctor` evaluates declarative environment limitation warnings (reported, non-fatal):
+- **Path characters**: Root paths with `&`, `%`, `^`, `!`, `(`, `)`, `'` or non-ASCII characters may break batch wrappers, PowerShell, or Node.js AI CLIs.
+- **Console code page**: Non-UTF-8 code pages (e.g. 949) may garble console output (`PYTHONUTF8` is set for Engram's own processes).
+- **Cloud-sync folders**: Placing Engram in OneDrive, Dropbox, or Google Drive risks sync/AV locks (backup, restore, and reset fail closed on locked files).
+- **Path length**: Paths approaching Windows `MAX_PATH` (260 characters) may cause nested tool or dependency installation failures.
+
 ## Contributing / Reporting issues
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for local dev setup, testing, and branch/commit conventions, or report bugs and suggest features on the [GitHub Issues](https://github.com/greatgc-flow/Engram/issues) tracker.

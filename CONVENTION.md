@@ -262,3 +262,14 @@ Script and environment lifecycle tests should run inside Windows Sandbox wheneve
 - `_sys\tests\run-sandbox-test.bat` (injects `__PORTABLE_ROOT__` into the `.wsb` template — do not launch `sandbox-unit-test.wsb` directly).
 - Host repository is mounted read-only at `C:\PortableDev`.
 - Test outputs write to host `_archive\test-results\` (writable), mapped at `C:\TestResults` inside the sandbox.
+
+---
+
+## 8. Known Limitations
+
+Engram surfaces limitation warnings declaratively via `engram doctor`:
+- **Special Characters and Non-ASCII in Install Path**: Paths containing `&`, `%`, `^`, `!`, `(`, `)`, `'` or non-ASCII characters may trigger parsing or expansion failures in batch wrappers, PowerShell, or Node.js-based AI CLIs. Use plain ASCII paths.
+- **Console Code Page**: Non-UTF-8 console code pages (e.g. 949) can cause output garbling in external tools. While Engram sets `PYTHONUTF8=1` for its own processes, host shells should use UTF-8 (`chcp 65001`).
+- **Cloud-Sync Folders**: Installing in folders managed by OneDrive, Dropbox, or Google Drive introduces file locks from sync engines or antivirus scanners, which cause backup, restore, and reset operations to fail closed.
+- **Path Length Near MAX_PATH**: Install paths approaching Windows `MAX_PATH` (260 characters) can exceed limits when deep nested dependencies are unpacked. Maintain short install paths near drive roots.
+

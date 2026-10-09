@@ -223,8 +223,10 @@ Description:
   Checks Python, the venv, managed tools, root-path hygiene (characters such
   as & % ^ ! in the folder path), context-menu registration, the environment
   manifest, a moved root, stale registry entries, the environment lock and any
-  interrupted operation journal. It never changes anything and uses no
-  network. It also works while an interrupted operation blocks other commands.
+  interrupted operation journal. Also checks declarative limitation warnings
+  (special characters, code page, cloud-sync folders, and path length). It
+  never changes anything and uses no network. It also works while an
+  interrupted operation blocks other commands.
 
 Options:
   --json           Print machine-readable JSON instead of the report
