@@ -47,7 +47,7 @@ jobs:
       - name: Freeze candidate
         run: python _sys/checks/release_evidence.py freeze --assets release/assets --out release/candidate.json
       - name: Upload immutable candidate and assets
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: candidate-${{ github.run_id }}-${{ github.run_attempt }}
           path: release/
@@ -122,7 +122,7 @@ jobs:
           } | ConvertTo-Json -Depth 10 | Set-Content release/sandbox_evidence.json -Encoding utf8NoBOM
       - name: Upload Sandbox evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sandbox-evidence-windows-sandbox-${{ github.run_id }}-${{ github.run_attempt }}
           path: release/sandbox_evidence.json
@@ -182,7 +182,7 @@ jobs:
           }
       - name: Upload hosted clean-room evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sandbox-evidence-hosted-ephemeral-vm-${{ github.run_id }}-${{ github.run_attempt }}
           path: release/sandbox_evidence.json
@@ -277,7 +277,7 @@ jobs:
           }
       - name: Upload upgrade evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: upgrade-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: release/upgrade_evidence.json
@@ -329,7 +329,7 @@ jobs:
           }
       - name: Upload WinGet evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: winget-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: release/winget_evidence.json
