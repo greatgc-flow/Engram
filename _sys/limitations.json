@@ -1,0 +1,27 @@
+[
+  {
+    "id": "path_special_chars",
+    "kind": "path-chars",
+    "message": "Install root path contains cmd-special characters (& % ^ ! ( ) ') or non-ASCII characters; tools such as batch wrappers, Node.js AI CLIs, or PowerShell may misbehave.",
+    "remedy": "Move Engram to a clean ASCII path without special characters (e.g. C:\\Engram)."
+  },
+  {
+    "id": "console_codepage",
+    "kind": "console-codepage",
+    "message": "Console/system code page is not UTF-8 (e.g. 949); non-ASCII output may be garbled. PYTHONUTF8 is set by Engram for its own processes.",
+    "remedy": "Run 'chcp 65001' or enable Windows system-wide UTF-8 support."
+  },
+  {
+    "id": "cloud_sync_folder",
+    "kind": "install-path-segment",
+    "message": "Install path is inside a cloud-sync folder (OneDrive, Dropbox, Google Drive); sync and antivirus locks may cause backup, restore, or reset to fail closed on locked files.",
+    "remedy": "Move Engram outside synced folders (e.g. C:\\Engram)."
+  },
+  {
+    "id": "path_length_max",
+    "kind": "path-length",
+    "threshold": 200,
+    "message": "Install path length is near MAX_PATH (260 characters); nested tool and package paths may exceed Windows limits.",
+    "remedy": "Move Engram closer to the drive root (e.g. C:\\Engram)."
+  }
+]

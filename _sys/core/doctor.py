@@ -275,6 +275,146 @@ def check_root_path(base_dir: Path) -> dict:
     }
 
 
+# ---- declarative limitations detectors (pure functions over (path, env)) --------------
+
+_LIMITATION_SPECIAL_CHARS = set("&%^!()'")
+_CLOUD_SYNC_SEGMENTS = ("onedrive", "dropbox", "google drive", "google_drive", "googledrive")
+
+
+def detect_path_chars(path: Path | str, env: dict[str, str] | None = None, **kwargs: Any) -> bool:
+    """Pure detector: install root path contains cmd-special characters or non-ASCII."""
+    path_str = str(path)
+    for c in path_str:
+        if c in _LIMITATION_SPECIAL_CHARS or not c.isascii():
+            return True
+    return False
+
+
+def detect_console_codepage(path: Path | str, env: dict[str, str] | None = None, **kwargs: Any) -> bool:
+    """Pure detector: console/system code page is not UTF-8 (chcp / ACP e.g. 949)."""
+    if env is None:
+        return False
+    cp = str(env.get("CODEPAGE") or env.get("CHCP") or env.get("ACP") or "").strip().lower()
+    if not cp:
+        return False
+    return cp not in ("65001", "utf-8", "utf8", "cp65001")
+
+
+def detect_install_path_segment(path: Path | str, env: dict[str, str] | None = None, **kwargs: Any) -> bool:
+    """Pure detector: install path inside a cloud-sync folder (OneDrive, Dropbox, Google Drive)."""
+    p = Path(path)
+    for part in p.parts:
+        part_lower = part.lower()
+        if any(sync in part_lower for sync in _CLOUD_SYNC_SEGMENTS):
+            return True
+    if env:
+        for key in ("ONEDRIVE", "ONEDRIVECONSUMER", "ONEDRIVECOMMERCIAL", "DROPBOX"):
+            val = env.get(key)
+            if val:
+                try:
+                    if p.resolve().is_relative_to(Path(val).resolve()):
+                        return True
+                except Exception:
+                    if str(p).lower().startswith(str(val).lower()):
+                        return True
+    return False
+
+
+def detect_path_length(path: Path | str, env: dict[str, str] | None = None, threshold: int = 200, **kwargs: Any) -> bool:
+    """Pure detector: path length near MAX_PATH."""
+    limit = int(kwargs.get("threshold", threshold))
+    return len(str(path)) >= limit
+
+
+LIMITATION_DETECTORS: dict[str, Any] = {
+    "path-chars": detect_path_chars,
+    "path_chars": detect_path_chars,
+    "console-codepage": detect_console_codepage,
+    "console_codepage": detect_console_codepage,
+    "install-path-segment": detect_install_path_segment,
+    "install_path_segment": detect_install_path_segment,
+    "cloud-sync": detect_install_path_segment,
+    "path-length": detect_path_length,
+    "path_length": detect_path_length,
+    "max-path": detect_path_length,
+    "max_path": detect_path_length,
+}
+
+
+def get_live_env() -> dict[str, str]:
+    """Capture environment dictionary with console codepage on Windows for doctor run."""
+    env = dict(os.environ)
+    if "CODEPAGE" not in env and "CHCP" not in env and "ACP" not in env:
+        try:
+            if sys.platform == "win32":
+                import ctypes
+                cp = ctypes.windll.kernel32.GetConsoleOutputCP()
+                if cp:
+                    env["CODEPAGE"] = str(cp)
+                acp = ctypes.windll.kernel32.GetACP()
+                if acp:
+                    env["ACP"] = str(acp)
+        except Exception:
+            pass
+    return env
+
+
+def load_limitations(sys_dir: Path) -> list[dict[str, Any]]:
+    """Load declarative limitations table from sys_dir, config/, or defaults/."""
+    candidates = [
+        sys_dir / "limitations.json",
+        sys_dir / "config" / "limitations.json",
+        sys_dir / "defaults" / "limitations.json",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            try:
+                data = json.loads(candidate.read_text(encoding="utf-8"))
+                if isinstance(data, list):
+                    return data
+                if isinstance(data, dict):
+                    return data.get("limitations", data.get("entries", []))
+            except Exception:
+                pass
+    return []
+
+
+def evaluate_limitations(
+    base_dir: Path | str,
+    sys_dir: Path | str | None = None,
+    env: dict[str, str] | None = None,
+    table: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Generically evaluate declarative limitations table over pure detectors."""
+    if env is None:
+        env = get_live_env()
+    if table is None:
+        table = load_limitations(Path(sys_dir)) if sys_dir else []
+
+    warnings: list[dict[str, Any]] = []
+    base_path = Path(base_dir)
+    for entry in table:
+        if not isinstance(entry, dict):
+            continue
+        kind = entry.get("kind")
+        detector = LIMITATION_DETECTORS.get(kind)
+        if not detector:
+            continue
+        try:
+            triggered = detector(base_path, env, **entry)
+        except Exception:
+            triggered = False
+        if triggered:
+            warnings.append({
+                "id": entry.get("id", str(kind)),
+                "kind": kind,
+                "message": entry.get("message", ""),
+                "remedy": entry.get("remedy") or entry.get("remedy-in-one-line", ""),
+            })
+    return warnings
+
+
+
 # ---- environment-resilience checks (read-only) ----------------------------------------
 # Design: docs/design/engram-env-resilience-design-2026-10-02.md, section 5.
 # None of these may mutate anything. Overall status is "failed" only for the hard gates:
@@ -438,8 +578,13 @@ def run(ctx: dict) -> dict[str, Any]:
     broken = [c for c in checks if not c.get("ok")]
     overall = "failed" if broken else "success"
 
+    env = ctx.get("env")
+    if env is None:
+        env = get_live_env()
+    warnings = evaluate_limitations(base_dir, sys_dir, env=env)
+
     if want_json:
-        print(json.dumps({"status": overall, "checks": checks}, ensure_ascii=False, indent=2))
+        print(json.dumps({"status": overall, "checks": checks, "warnings": warnings}, ensure_ascii=False, indent=2))
     else:
         print("=" * 56)
         print("  Portable Dev - Environment Status (doctor)")
@@ -449,11 +594,20 @@ def run(ctx: dict) -> dict[str, Any]:
             name = c.get("name", "unknown")
             detail = c.get("detail", "no detail provided")
             print(f"  {icon} {name:<14} {detail}")
+        if warnings:
+            print("-" * 56)
+            for w in warnings:
+                wid = w.get("id", "warning")
+                msg = w.get("message", "")
+                rem = w.get("remedy", "")
+                rem_str = f" Remedy: {rem}" if rem else ""
+                print(f"  WARN {wid}: {msg}{rem_str}")
         print("=" * 56)
         print(f"  Overall: {'HEALTHY' if overall == 'success' else 'NEEDS ATTENTION'}")
         print("=" * 56)
 
-    result: dict[str, Any] = {"status": overall, "checks": checks}
+    result: dict[str, Any] = {"status": overall, "checks": checks, "warnings": warnings}
     if broken:
         result["detail"] = "; ".join(c.get("detail", "no detail provided") for c in broken)
     return result
+

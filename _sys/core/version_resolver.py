@@ -816,8 +816,83 @@ def _resolve_engram_release(
     force_refresh: bool = False,
     ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS,
 ) -> dict[str, Any]:
-    cache_path = cache_path or _DEFAULT_CACHE
     provider = "engram_release"
+    candidate_zip = os.environ.get("ENGRAM_UPDATE_CANDIDATE_ZIP")
+    if candidate_zip and candidate_zip.strip():
+        cand_path = Path(candidate_zip.strip()).resolve()
+        if not cand_path.is_file():
+            return _result(
+                status="error",
+                provider=provider,
+                discovery_id=discovery_id,
+                detail=f"candidate zip not found: {cand_path}",
+                error_type="missing_candidate_zip",
+            )
+
+        candidate_version = os.environ.get("ENGRAM_UPDATE_CANDIDATE_VERSION")
+        if not candidate_version or not candidate_version.strip():
+            import zipfile
+            try:
+                with zipfile.ZipFile(cand_path, "r") as zf:
+                    for name in zf.namelist():
+                        norm = name.replace("\\", "/")
+                        if norm.endswith("_sys/core/version.json"):
+                            vdata = json.loads(zf.read(name).decode("utf-8"))
+                            candidate_version = vdata.get("version")
+                            break
+            except Exception as exc:
+                return _result(
+                    status="error",
+                    provider=provider,
+                    discovery_id=discovery_id,
+                    detail=f"failed to read version from candidate zip: {exc}",
+                    error_type="invalid_candidate_zip",
+                )
+
+        if not candidate_version:
+            return _result(
+                status="error",
+                provider=provider,
+                discovery_id=discovery_id,
+                detail="candidate zip missing _sys/core/version.json and ENGRAM_UPDATE_CANDIDATE_VERSION unset",
+                error_type="missing_candidate_version",
+            )
+
+        latest_version = _normalize_version(str(candidate_version))
+
+        candidate_sha = os.environ.get("ENGRAM_UPDATE_CANDIDATE_SHA256", "").strip()
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", candidate_sha):
+            return _result(
+                status="error", provider=provider, discovery_id=discovery_id,
+                detail="ENGRAM_UPDATE_CANDIDATE_SHA256 must contain an external SHA-256 digest",
+                error_type="invalid_candidate_sha256",
+            )
+        if not isinstance(candidate_version, str) or not re.fullmatch(
+            r"v?[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?(?:\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?",
+            candidate_version,
+        ):
+            return _result(
+                status="error", provider=provider, discovery_id=discovery_id,
+                detail="candidate version must be a safe release version",
+                error_type="invalid_candidate_version",
+            )
+        latest_version = _normalize_version(candidate_version)
+        checksum_value = candidate_sha
+        checksum_source = "candidate_env"
+
+        return _result(
+            status="ok",
+            provider=provider,
+            discovery_id=discovery_id,
+            latest_version=latest_version,
+            url=cand_path.as_uri(),
+            checksum_algo="sha256",
+            checksum_value=checksum_value,
+            checksum_source=checksum_source,
+            source="candidate_local",
+        )
+
+    cache_path = cache_path or _DEFAULT_CACHE
     cache = _load_cache(cache_path)
     cached = _cache_get(cache, provider, discovery_id)
 

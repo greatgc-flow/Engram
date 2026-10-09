@@ -1,4 +1,5 @@
 import pytest
+from subprocess import CompletedProcess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -30,10 +31,12 @@ def test_launcher_log_append_mode(tmp_path):
         return original_read_text(self, *args, **kwargs)
         
     with patch("subprocess.Popen"), \
-         patch("subprocess.run"), \
+         patch("subprocess.run", return_value=CompletedProcess(["cmd", "/k"], returncode=0)), \
          patch.object(Path, "read_text", autospec=True, side_effect=mock_read_text):
         
-        launcher.main(ctx)
+        with pytest.raises(SystemExit) as exc:
+            launcher.main(ctx)
+        assert exc.value.code == 0
         
     # Verify a log file was created and written to
     log_dir = tmp_path / "_sys" / "data" / "logs" / "launcher"

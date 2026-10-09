@@ -23,20 +23,18 @@ deliberately removed from Engram).
 accumulates real caches and credentials over time, so it is never itself
 something you'd hand off, sync, or commit wholesale. This script's job is
 to extract just the durable, non-secret, non-cache subset via an explicit
-named allowlist -- never a wholesale directory copy with an exclude list,
-so a credential file simply never has an entry that would ever pick it up,
-rather than needing to be actively filtered out every time -- into a
+named allowlist with recursive credential/secret exclusions into a
 separate, portable backup bundle (.zip by default).
 
 Usage:
     engram backup [--out PATH] [--include-uncovered]
     engram restore PATH [--force] [--apply]
-    engram reset [--yes] [--all] [--apply]
+    engram reset [--yes] [--apply]
 
 Or standalone script:
     python _sys/checks/backup_personal_data.py --base-dir PATH --backup [--out PATH] [--include-uncovered]
     python _sys/checks/backup_personal_data.py --base-dir PATH --restore PATH [--force] [--apply]
-    python _sys/checks/backup_personal_data.py --base-dir PATH --reset [--yes] [--all] [--apply]
+    python _sys/checks/backup_personal_data.py --base-dir PATH --reset [--yes] [--apply]
     python _sys/checks/backup_personal_data.py --list PATH
 """
 
@@ -48,6 +46,8 @@ import os
 import re
 import shutil
 import stat
+import sqlite3
+from contextlib import closing
 import sys
 import tempfile
 import zipfile
@@ -85,8 +85,8 @@ class SyncItem:
 
     Both paths are relative -- `live_relpath` to `.engram/`, `bundle_relpath`
     to the bundle root -- so the same table works for both --backup and
-    --restore. `kind` is "dir" (shutil.copytree, replacing the destination
-    wholesale) or "file" (shutil.copy2). Never a wildcard/glob: every real
+    --restore. `kind` is "dir" or "file"; every copy recursively excludes
+    credentials and secrets. Never a wildcard/glob: every real
     item this script touches is named explicitly.
     """
 
@@ -94,6 +94,7 @@ class SyncItem:
     live_relpath: str
     bundle_relpath: str
     kind: str  # "dir" | "file"
+    database: bool = False
 
 
 ITEMS: tuple[SyncItem, ...] = (
@@ -104,11 +105,11 @@ ITEMS: tuple[SyncItem, ...] = (
     SyncItem("codex/config.toml", "codex/config.toml", "codex/config.toml", "file"),
     SyncItem("codex/rules", "codex/rules", "codex/rules", "dir"),
     SyncItem("codex/skills", "codex/skills", "codex/skills", "dir"),
-    SyncItem("codex/memories_1.sqlite", "codex/memories_1.sqlite", "codex/memories_1.sqlite", "file"),
+    SyncItem("codex/memories_1.sqlite", "codex/memories_1.sqlite", "codex/memories_1.sqlite", "file", True),
     SyncItem("agy/AGY.md", "agy/AGY.md", "agy/AGY.md", "file"),
     SyncItem("agy/settings.json", "agy/settings.json", "agy/settings.json", "file"),
     SyncItem("agy/keybindings.json", "agy/keybindings.json", "agy/keybindings.json", "file"),
-    SyncItem("agy/conversation_summaries.db", "agy/conversation_summaries.db", "agy/conversation_summaries.db", "file"),
+    SyncItem("agy/conversation_summaries.db", "agy/conversation_summaries.db", "agy/conversation_summaries.db", "file", True),
     SyncItem("agy/knowledge", "agy/knowledge", "agy/knowledge", "dir"),
     SyncItem("agy/skills", "agy/skills", "agy/skills", "dir"),
 )
@@ -145,6 +146,8 @@ KNOWN_IGNORE_DIRS = frozenset({
 def is_sensitive_path(path: Path) -> bool:
     """Return True if path matches known sensitive/credential patterns."""
     name = path.name
+    if name.lower() in CREDENTIAL_SHAPED_NAMES:
+        return True
     for pat in SENSITIVE_PATTERNS:
         if pat.search(name):
             return True
@@ -160,15 +163,6 @@ def ensure_long_path_prefix(path: Path | str) -> str:
             return "\\\\?\\UNC\\" + abs_path[2:]
         return "\\\\?\\" + abs_path
     return p_str
-
-
-def strip_long_path_prefix(path_str: str) -> str:
-    """Strip \\\\?\\ prefix if present."""
-    if path_str.startswith("\\\\?\\UNC\\"):
-        return "\\\\" + path_str[8:]
-    elif path_str.startswith("\\\\?\\"):
-        return path_str[4:]
-    return path_str
 
 
 def scan_uncovered_items(base_dir: Path) -> list[Path]:
@@ -305,51 +299,87 @@ def check_running_processes(sys_dir: Path | None = None) -> list[str]:
     return running
 
 
-def _sync_item_to_bundle(item: SyncItem, engram_dir: Path, bundle_dir: Path) -> int | None:
-    """Copy one item .engram/ -> bundle. Returns a file count, or None if
-    the live source doesn't exist (not every item is present on every
-    install -- e.g. Antigravity may not have run yet)."""
+def _source_matches_kind(path: Path, kind: str) -> bool:
+    """Only an absent source may be skipped; access errors must abort."""
+    try:
+        mode = path.stat().st_mode
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise OSError(f"Cannot inspect backup source {path}: {exc}") from exc
+    return stat.S_ISDIR(mode) if kind == "dir" else stat.S_ISREG(mode)
 
+
+def _eligible_files(path: Path):
+    """One recursive exclusion policy for copy, replacement and reset."""
+    if is_sensitive_path(path):
+        return
+    if path.is_dir():
+        for child in sorted(path.iterdir()):
+            yield from _eligible_files(child)
+    elif path.is_file():
+        yield path
+
+
+def _copy_payload(src: Path, dst: Path, *, database: bool = False) -> int:
+    count = 0
+    if src.is_dir() and not is_sensitive_path(src):
+        dst.mkdir(parents=True, exist_ok=True)
+    for source in _eligible_files(src):
+        target = dst / source.relative_to(src) if src.is_dir() else dst
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            if database:
+                with closing(sqlite3.connect(source.as_uri() + '?mode=ro', uri=True)) as live:
+                    with closing(sqlite3.connect(target)) as saved:
+                        live.backup(saved)
+            else:
+                shutil.copy2(source, target)
+        except OSError as exc:
+            raise OSError(f"Cannot copy {source} to {target}: {exc}") from exc
+        count += 1
+    return count
+
+
+def _sync_item_to_bundle(item: SyncItem, engram_dir: Path, bundle_dir: Path) -> int | None:
     live = engram_dir / item.live_relpath
     dest = bundle_dir / item.bundle_relpath
-    if item.kind == "dir":
-        if not live.is_dir():
-            return None
+    _check_restore_path(engram_dir, live, recursive=True)
+    _check_restore_path(bundle_dir, dest, recursive=True)
+    if not _source_matches_kind(live, item.kind):
+        return None
+    if item.kind != "dir":
+        return _copy_payload(live, dest, database=item.database)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    import uuid
+    staged = dest.parent / (".payload-" + uuid.uuid4().hex)
+    staged.mkdir(mode=0o777)
+    try:
+        count = _copy_payload(live, staged, database=item.database)
         if dest.exists():
             shutil.rmtree(dest)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(live, dest)
-        return sum(1 for _ in dest.rglob("*") if _.is_file())
-    else:
-        if not live.is_file():
-            return None
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(live, dest)
-        return 1
+        os.replace(staged, dest)
+    finally:
+        if staged.exists():
+            shutil.rmtree(staged)
+    return count
 
 
 def _restore_item(item: SyncItem, bundle_dir: Path, engram_dir: Path, force: bool) -> str:
-    """Copy one item bundle -> .engram/. Returns a short status string."""
-
     src = bundle_dir / item.bundle_relpath
     live = engram_dir / item.live_relpath
-    if item.kind == "dir":
-        if not src.is_dir():
-            return "skip (not in bundle)"
-        if live.exists():
-            if item.label in _RESTORE_PROTECTED_LABELS and not force:
-                return f"REFUSED (exists, use --force): {live}"
-            shutil.rmtree(live)
-        live.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(src, live)
-        count = sum(1 for _ in live.rglob("*") if _.is_file())
-        return f"restored ({count} files) -> {live}"
-    else:
-        if not src.is_file():
-            return "skip (not in bundle)"
-        live.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, live)
-        return f"restored -> {live}"
+    _check_restore_path(bundle_dir, src, recursive=True)
+    _check_restore_path(engram_dir, live, recursive=True)
+    if not _source_matches_kind(src, item.kind):
+        return "skip (not in bundle)"
+    if item.kind == "dir" and live.exists():
+        if item.label in _RESTORE_PROTECTED_LABELS and not force:
+            return f"REFUSED (exists, use --force): {live}"
+        # Keep excluded bytes in place; only replace portable payloads.
+        for old in _eligible_files(live):
+            old.unlink()
+    count = _copy_payload(src, live, database=item.database)
+    return f"restored ({count} files) -> {live}"
 
 
 def _restore_from_folder(engram_dir: Path, src_dir: Path, force: bool) -> None:
@@ -369,6 +399,7 @@ def do_backup(
     base_dir: Path | None = None,
     sys_dir: Path | None = None,
     custom_extras: Sequence[Path] | None = None,
+    items: Sequence[SyncItem] = ITEMS,
 ) -> Path:
     if base_dir is None:
         base_dir = engram_dir.parent
@@ -456,7 +487,7 @@ def do_backup(
         with tempfile.TemporaryDirectory() as tmp_bundle:
             bundle_path = Path(tmp_bundle)
             manifest_lines: list[str] = []
-            for item in ITEMS:
+            for item in items:
                 result = _sync_item_to_bundle(item, engram_dir, bundle_path)
                 source = engram_dir / item.live_relpath
                 if result is None:
@@ -473,18 +504,12 @@ def do_backup(
                     extra_p = Path(extra)
                     if not extra_p.exists():
                         continue
-                    try:
-                        rel = extra_p.resolve().relative_to(base_dir.resolve())
-                    except ValueError:
-                        rel = Path(extra_p.name)
+                    _check_restore_path(base_dir, extra_p, recursive=True)
+                    rel = extra_p.absolute().relative_to(base_dir.absolute())
                     dest = extras_bundle_root / rel
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    if extra_p.is_dir():
-                        shutil.copytree(extra_p, dest, dirs_exist_ok=True)
-                        extras_meta.append({"relpath": str(rel).replace("\\", "/"), "kind": "dir"})
-                    else:
-                        shutil.copy2(extra_p, dest)
-                        extras_meta.append({"relpath": str(rel).replace("\\", "/"), "kind": "file"})
+                    _check_restore_path(bundle_path, dest, recursive=True)
+                    _copy_payload(extra_p, dest)
+                    extras_meta.append({"relpath": rel.as_posix(), "kind": "dir" if extra_p.is_dir() else "file"})
                     manifest_lines.append(f"custom_extra:{rel}: 1 item <- {extra_p}")
                     print(f"  [EXTRA] {str(rel):<31} <- {extra_p}")
 
@@ -497,8 +522,8 @@ def do_backup(
                 + "\n\n"
                 "Deliberately excluded: auth.json, .credentials.json,\n"
                 "credentials.json, token.json, hosts.yml, and any other\n"
-                "credential/secret file (excluded by construction -- every item\n"
-                "above is an explicit named allowlist entry, never a wholesale\n"
+                "credential/secret file (recursively excluded within every item\n"
+                "above; standard roots are explicit named allowlist entries, never a\n"
                 "directory copy); all 3 tools' caches/logs/queues/crash-dumps/CLI\n"
                 "internals.\n",
                 encoding="utf-8",
@@ -528,9 +553,7 @@ def do_backup(
                         arcname = fp.relative_to(bundle_path)
                         zf.write(ensure_long_path_prefix(fp), arcname)
 
-            if target_zip.exists():
-                target_zip.unlink()
-            Path(strip_long_path_prefix(long_temp_dest)).replace(target_zip)
+            os.replace(long_temp_dest, ensure_long_path_prefix(target_zip))
 
         print(f"\nDone. Manifest written inside {target_zip}")
         print("\n[NOTE] Same-drive backup created. This protects against accidental local")
@@ -544,7 +567,7 @@ def do_backup(
         print(f"Backing up personal AI-CLI data from {engram_dir} to: {out_dir}\n")
 
         manifest_lines = []
-        for item in ITEMS:
+        for item in items:
             result = _sync_item_to_bundle(item, engram_dir, out_dir)
             source = engram_dir / item.live_relpath
             if result is None:
@@ -563,8 +586,8 @@ def do_backup(
             + "\n\n"
             "Deliberately excluded: auth.json, .credentials.json,\n"
             "credentials.json, token.json, hosts.yml, and any other\n"
-            "credential/secret file (excluded by construction -- every item\n"
-            "above is an explicit named allowlist entry, never a wholesale\n"
+            "credential/secret file (recursively excluded within every item\n"
+            "above; standard roots are explicit named allowlist entries, never a\n"
             "directory copy); all 3 tools' caches/logs/queues/crash-dumps/CLI\n"
             "internals.\n",
             encoding="utf-8",
@@ -669,14 +692,30 @@ def do_restore(
 
     def _restore_bundle_dir(temp_bundle: Path) -> None:
         extras = _validated_restore_extras(temp_bundle, base_dir)
-        # Validate every extra before snapshots or standard payload writes.
-        if not force and engram_dir.is_dir() and any(engram_dir.iterdir()):
+        selected = []
+        for item in ITEMS:
+            src = temp_bundle / item.bundle_relpath
+            dst = engram_dir / item.live_relpath
+            _check_restore_path(temp_bundle, src, recursive=True)
+            _check_restore_path(engram_dir, dst, recursive=True)
+            if (_source_matches_kind(src, item.kind)
+                    and not (item.label in _RESTORE_PROTECTED_LABELS and dst.exists() and not force)):
+                selected.append(item)
+        existing_extras = []
+        for src, dst, kind in extras:
+            if _source_matches_kind(src, kind):
+                for incoming in _eligible_files(src):
+                    target = dst / incoming.relative_to(src) if kind == "dir" else dst
+                    if target.is_file():
+                        existing_extras.append(target)
+        if not force and (any((engram_dir / i.live_relpath).exists() for i in selected) or existing_extras):
             backups_dir = sys_dir / "data" / "backups"
             backups_dir.mkdir(parents=True, exist_ok=True)
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             snap_path = backups_dir / f"pre_restore_{stamp}.zip"
             print(f"[SNAPSHOT] Creating automatic pre-restore backup at: {snap_path}")
-            do_backup(engram_dir, snap_path, as_zip=True, base_dir=base_dir, sys_dir=sys_dir)
+            do_backup(engram_dir, snap_path, as_zip=True, base_dir=base_dir,
+                      sys_dir=sys_dir, items=selected, custom_extras=existing_extras)
 
         _restore_from_folder(engram_dir, temp_bundle, force)
         for src, dst, kind in extras:
@@ -684,11 +723,11 @@ def do_restore(
             _check_restore_path(base_dir, dst, recursive=True)
             if kind == "dir" and src.is_dir():
                 dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(src, dst, dirs_exist_ok=True)
+                _copy_payload(src, dst)
                 print(f"  [OK]   custom_extra dir  -> {dst}")
             elif kind == "file" and src.is_file():
                 dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, dst)
+                _copy_payload(src, dst)
                 print(f"  [OK]   custom_extra file -> {dst}")
 
     if zipfile.is_zipfile(src_path):
@@ -735,7 +774,6 @@ def do_list(src_path: Path) -> None:
 def do_reset(
     base_dir: Path,
     yes: bool = False,
-    all_data: bool = False,
     sys_dir: Path | None = None,
     apply: bool = True,
 ) -> dict[str, Any]:
@@ -743,7 +781,6 @@ def do_reset(
         sys_dir = (base_dir / _SYS_DIR.name) if base_dir else _SYS_DIR
 
     engram_dir = base_dir / ".engram"
-    workspace_dir = base_dir / "workspace"
 
     # Scan user dotdirs (like .peerhub, etc.)
     extra_dotdirs: list[Path] = []
@@ -759,16 +796,13 @@ def do_reset(
         print(f"\n[Plan: Pre-reset Safety Snapshot]")
         print(f"  -> Will create snapshot in: {sys_dir / 'data' / 'backups' / 'safety_pre_reset_<timestamp>.zip'}")
         print("\n[Plan: Targets to be purged]")
-        if engram_dir.exists():
-            print(f"  - [DIR]  {engram_dir}")
+        print(f"  - Portable, non-secret files covered by snapshot in {engram_dir}")
         for ed in extra_dotdirs:
             print(f"  - [DIR]  {ed} (discovered dotdir)")
-        if all_data and workspace_dir.exists():
-            print(f"  - [DIR]  {workspace_dir} (--all scope)")
         print("\nRun with '--apply' to execute this plan.")
         return {
             "dry_run": True,
-            "targets": [engram_dir] + extra_dotdirs + ([workspace_dir] if all_data else []),
+            "targets": [engram_dir] + extra_dotdirs,
         }
 
     # Process liveness check on reset
@@ -789,18 +823,6 @@ def do_reset(
             sys.exit(3)
         if resp.lower() != "y":
             print("Reset cancelled.")
-            sys.exit(3)
-
-    # Confirmation 2: If --all, typed-folder-name gate (un-bypassable even with --yes)
-    if all_data:
-        try:
-            prompt = f"Type the folder name '{base_dir.name}' to also permanently delete .engram/ and workspace/: "
-            resp = input(prompt).strip()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            sys.exit(3)
-        if resp != base_dir.name:
-            print("Folder name does not match. Aborting.")
             sys.exit(3)
 
     # Phase 1: 2PC Mandatory Safety Snapshot
@@ -830,40 +852,22 @@ def do_reset(
             safety_snap.unlink()
         raise RuntimeError(f"Safety snapshot integrity check failed: {e}. Aborting reset to prevent data loss.")
 
-    # Phase 2: Clean Sweep with Rename-then-Purge pattern
-    def _safe_purge(target_dir: Path) -> None:
-        if not os.path.lexists(target_dir):
-            return
-        temp_renamed = target_dir.parent / f".purge_{stamp}_{target_dir.name}"
-        if os.path.lexists(temp_renamed):
-            raise FileExistsError(f"Purge staging target already exists: {temp_renamed}")
-        try:
-            target_dir.rename(temp_renamed)
-        except OSError:
-            # Fallback to direct rmtree if rename fails
-            shutil.rmtree(target_dir)
-        else:
-            shutil.rmtree(temp_renamed)
-        if os.path.lexists(target_dir) or os.path.lexists(temp_renamed):
-            raise OSError(f"Purge postcondition failed: {target_dir} or {temp_renamed} remains")
-
-    if engram_dir.exists():
-        _safe_purge(engram_dir)
-        print(f"  [OK] Removed personal AI state: {engram_dir}")
-    else:
-        print(f"  [SKIP] .engram/ does not exist: {engram_dir}")
-
-    for ed in extra_dotdirs:
-        if ed.exists():
-            _safe_purge(ed)
-            print(f"  [OK] Removed discovered dotdir: {ed}")
-
-    if all_data:
-        if workspace_dir.exists():
-            _safe_purge(workspace_dir)
-            print(f"  [OK] Removed workspace projects: {workspace_dir}")
-        else:
-            print(f"  [SKIP] workspace/ does not exist: {workspace_dir}")
+    # Delete exactly the files in the verified snapshot, never whole live roots.
+    with zipfile.ZipFile(safety_snap) as archive:
+        for name in archive.namelist():
+            member = Path(name)
+            if name.startswith("custom_extras/"):
+                target = base_dir / member.relative_to("custom_extras")
+            elif any(name == i.bundle_relpath or name.startswith(i.bundle_relpath + "/") for i in ITEMS):
+                target = engram_dir / member
+            else:
+                continue
+            _check_restore_path(base_dir, target)
+            if target.is_file():
+                target.unlink()
+                if target.exists():
+                    raise OSError(f"Reset deletion failed: {target}")
+                print(f"  [OK] Removed snapshot-covered file: {target}")
 
     print("\nReset complete.")
     return {"dry_run": False, "snapshot_path": safety_snap}
@@ -922,7 +926,10 @@ def run_backup(ctx: dict) -> None:
             cli_help.unexpected_argument("backup", arg)
 
     custom_extras = scan_uncovered_items(base_dir) if include_uncovered else None
-    do_backup(engram_dir, out_path, as_zip=True, base_dir=base_dir, sys_dir=sys_dir, custom_extras=custom_extras)
+    try:
+        do_backup(engram_dir, out_path, as_zip=True, base_dir=base_dir, sys_dir=sys_dir, custom_extras=custom_extras)
+    except ValueError as exc:
+        raise OSError(str(exc)) from exc
 
 
 def run_restore(ctx: dict) -> None:
@@ -964,7 +971,10 @@ def run_restore(ctx: dict) -> None:
     if dry_run:
         apply = False  # --dry-run always wins
 
-    do_restore(engram_dir, target_path, force=force, base_dir=base_dir, sys_dir=sys_dir, apply=apply)
+    try:
+        do_restore(engram_dir, target_path, force=force, base_dir=base_dir, sys_dir=sys_dir, apply=apply)
+    except ValueError as exc:
+        raise OSError(str(exc)) from exc
 
 
 def run_reset(ctx: dict) -> None:
@@ -978,7 +988,6 @@ def run_reset(ctx: dict) -> None:
         sys.exit(0)
 
     yes = False
-    all_data = False
     apply = False
     dry_run = False
 
@@ -987,8 +996,6 @@ def run_reset(ctx: dict) -> None:
             apply = True
         elif a in ("--yes", "-y"):
             yes = True
-        elif a == "--all":
-            all_data = True
         elif a == "--dry-run":
             dry_run = True
         elif a.startswith("-"):
@@ -998,7 +1005,10 @@ def run_reset(ctx: dict) -> None:
 
     if dry_run:
         apply = False  # --dry-run always wins
-    do_reset(base_dir, yes=yes, all_data=all_data, sys_dir=sys_dir, apply=apply)
+    try:
+        do_reset(base_dir, yes=yes, sys_dir=sys_dir, apply=apply)
+    except ValueError as exc:
+        raise OSError(str(exc)) from exc
 
 
 # ----------------------------------------------------------------------------
@@ -1012,14 +1022,13 @@ def main(argv: list[str] | None = None) -> int:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--backup", action="store_true", help="Back up .engram/'s durable subset to --out")
     group.add_argument("--restore", metavar="PATH", help="Restore a bundle back into .engram/")
-    group.add_argument("--reset", action="store_true", help="Reset personal AI state (.engram/ by default; --all includes workspace/)")
+    group.add_argument("--reset", action="store_true", help="Reset snapshot-covered personal AI state")
     group.add_argument("--list", metavar="PATH", help="Show what a bundle contains (does not need --base-dir)")
     parser.add_argument("--out", metavar="PATH", help="Target path for --backup (defaults to sys_dir/data/backups/engram_backup_<timestamp>.zip)")
     parser.add_argument("--apply", action="store_true", help="Actually execute restore or reset (default: dry-run preview)")
     parser.add_argument("--include-uncovered", action="store_true", help="With --backup, package discovered extra dotdirs/files")
     parser.add_argument("--force", action="store_true", help="With --restore, overwrite existing live session/project data")
     parser.add_argument("--yes", "-y", action="store_true", help="Skip [y/N] confirmation for --reset")
-    parser.add_argument("--all", action="store_true", dest="all_data", help="With --reset, also delete workspace/")
     args = parser.parse_args(argv)
 
     if args.list:
@@ -1039,7 +1048,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.restore:
         do_restore(engram_dir, Path(args.restore).resolve(), force=args.force, base_dir=base_dir, sys_dir=sys_dir, apply=args.apply)
     elif args.reset:
-        do_reset(base_dir, yes=args.yes, all_data=args.all_data, sys_dir=sys_dir, apply=args.apply)
+        do_reset(base_dir, yes=args.yes, sys_dir=sys_dir, apply=args.apply)
     return 0
 
 

@@ -1,0 +1,102 @@
+name: Post-release closure
+
+on:
+  workflow_run:
+    workflows: ["Windows Sandbox release and weekly gate"]
+    types: [completed]
+  schedule:
+    - cron: "0 19 * * 5"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: post-release-closure
+  cancel-in-progress: false
+
+jobs:
+  closure:
+    # sandbox-gate has only tag pushes; weekly/manual gate runs do not publish.
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.14"
+      - name: Read closure retention policy
+        id: policy
+        run: |
+          python - <<'PY'
+          import os
+          from tools.release_gate.post_release_closure import read_policy
+          policy = read_policy()
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+              stream.write(f"retention_days={policy['closure_retention_days']}\n")
+          PY
+      - name: Find previous frozen-candidate ledger
+        id: previous
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const artifacts = await github.paginate(github.rest.actions.listArtifactsForRepo, {
+              ...context.repo, per_page: 100
+            });
+            const previous = artifacts.filter(a => a.name === 'closure-ledger' &&
+              !a.expired && a.workflow_run.id !== context.runId)
+              .sort((a, b) => b.id - a.id)[0];
+            core.setOutput('run', previous ? previous.workflow_run.id : '');
+      - name: Restore ledger
+        if: steps.previous.outputs.run != ''
+        env:
+          PREVIOUS_RUN: ${{ steps.previous.outputs.run }}
+        run: |
+          gh run download "$PREVIOUS_RUN" --name closure-ledger --dir previous-ledger
+          python - <<'PY'
+          import shutil
+          # Restore only immutable candidates; old CLOSED reports are not current evidence.
+          shutil.copytree('previous-ledger/candidates', 'ledger/candidates')
+          PY
+      - name: Add newly published candidate from exact promotion attempt
+        if: github.event_name == 'workflow_run'
+        env:
+          SOURCE_RUN: ${{ github.event.workflow_run.id }}
+          SOURCE_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          gh run download "$SOURCE_RUN" --name "candidate-$SOURCE_RUN-$SOURCE_ATTEMPT" --dir source
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          candidate = json.loads(Path('source/candidate.json').read_text())
+          if not candidate['tag'].startswith('v') or candidate['commit'] != os.environ['SOURCE_SHA']:
+              raise SystemExit('DRIFT: promotion candidate identity mismatch')
+          dest = Path('ledger/candidates') / (os.environ['SOURCE_RUN'] + '-' + os.environ['SOURCE_ATTEMPT'] + '.json')
+          dest.parent.mkdir(parents=True, exist_ok=True)
+          dest.write_bytes(Path('source/candidate.json').read_bytes())
+          PY
+      - name: Check publication and upstream WinGet (all retained candidates)
+        run: |
+          python - <<'PY'
+          import os
+          from tools.release_gate.post_release_closure import check_ledger
+          raise SystemExit(check_ledger('ledger/candidates', 'ledger/results', os.environ['GH_REPO'],
+              summary_path=os.environ['GITHUB_STEP_SUMMARY']))
+          PY
+      - name: Persist frozen candidates and closure evidence for weekly recheck
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: closure-ledger
+          path: ledger/
+          if-no-files-found: error
+          retention-days: ${{ steps.policy.outputs.retention_days }}
+      - name: Issue-ready infrastructure failure summary
+        if: failure()
+        run: echo 'DRIFT or unavailable closure evidence. Inspect this run and attach closure-ledger; recover frozen candidates if needed, then rerun Post-release closure. Publication remains independent.' >> "$GITHUB_STEP_SUMMARY"

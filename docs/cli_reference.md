@@ -4,7 +4,7 @@ This is the complete reference for the `engram` command (`engram.cmd` / `Engram.
 `engram <command> --help` and `engram help <command>`; those files (`_sys/core/help/<command>.txt`) are the single
 source, and a unit test keeps the per-command blocks below identical to them. Run `engram help` for the short overview.
 
-The command surface is frozen: verbs and flags are only ever added, never renamed or removed.
+The command help below defines the supported verbs and flags.
 
 ## Command groups
 
@@ -26,8 +26,8 @@ Every command belongs to exactly one group.
 | Removal | [`engram reset`](#engram-reset) | Delete personal AI data (start over, keep the programs) |
 | Removal | [`engram uninstall`](#engram-uninstall) | Safe, allowlist-based uninstaller for Engram |
 
-Calling `engram` with no command is the same as `engram open`. `engram <folder>` opens that folder when no command has
-that name (to open a folder literally named like a command, use `engram open <name>`). `engram help <command>`,
+Calling `engram` with no command is the same as `engram open`. Paths require
+explicit `engram open PATH`; relative paths use the caller directory.
 `engram <command> --help`, `-h` and `/?` all show a command's help.
 
 ## Which command do I need?
@@ -65,8 +65,9 @@ that name (to open a folder literally named like a command, use `engram open <na
   interrupted, every command except `help`, `version`, `doctor`, `repair`, `relocate` and `snapshots` refuses with
   exit 14 until you run `engram repair --resume` or `--rollback`. `tidy` also skips backups while the lock is held
   or a journal is open.
-- **Personal data is protected twice.** `reset` takes a verified safety snapshot first, and `reset --all` /
-  `uninstall --purge-data` additionally need the folder name typed, even with `--yes`.
+- **Personal data reset is limited to snapshot coverage.** `reset` deletes only archived portable files;
+  credentials, secrets, uncovered `.engram/` files and workspace projects remain.
+  `uninstall --purge-data` requires the folder name typed, even with `--yes`.
 
 ### Shared flags
 
@@ -74,7 +75,7 @@ that name (to open a folder literally named like a command, use `engram open <na
 |---|---|---|
 | `--apply` | Execute the planned change. | `update` and `uninstall` have no preview mode, so they do not need it (`uninstall` accepts it as a no-op). |
 | `--dry-run` | Preview only; always wins over `--apply`. A harmless no-op alias on preview-by-default commands. | Not offered on read-only or non-destructive commands (`doctor`, `menu`, `backup`, `open`). |
-| `--yes`, `-y` | Skip the confirmation prompt (for scripts). | `tidy`: only the `--purge-legacy` prompt. `reset --all` and `uninstall --purge-data` still require the typed folder name. `update --yes` is what applies the plan. |
+| `--yes`, `-y` | Skip the confirmation prompt (for scripts). | `tidy`: only the `--purge-legacy` prompt. `uninstall --purge-data` still require the typed folder name. `update --yes` is what applies the plan. |
 | `--json` | Machine-readable output. | `doctor`, `repair`, `relocate` and `snapshots list` only. |
 | `--only LIST` | Limit to the named parts (comma-separated). | `update`: tools/components; `repair`/`relocate`: python,venv,registry,state,ai-state,manifest,packages; `tidy`: cleanup categories. |
 | `-h`, `--help`, `/?` | Show help; never changes anything. | none |
@@ -115,13 +116,15 @@ point at their replacement: each prints it and exits `2`.
 ```text
 engram open - open a workspace in Engram
 
-Usage: engram open [PATH]
-       engram [PATH]            'open' is the default command
+Usage: engram open [PATH] [ARGS...]
+       engram                   open the default workspace
 
 Description:
   Opens PATH as a workspace: a folder starts VS Code there; a file is run
   (.py with the managed Python, .bat/.cmd directly, anything else with its
   default app). Without PATH the default workspace is opened.
+  Relative PATH uses the caller directory. ARGS are passed to script files.
+  Use explicit open PATH; bare paths are not commands.
   On the very first run (no managed Python yet) it offers to set Engram up
   in this folder and to add the right-click "Open in Engram" menu entry.
   A folder literally named like a command (for example "update") is only
@@ -138,7 +141,7 @@ Examples:
   engram open tools\build.cmd
 
 Exit codes:
-  0   opened (or help shown)
+  0   opened (or help shown); scripts return their child exit code
   1   not set up and setup was declined or failed
   2   path not found or unknown option
   14  an interrupted environment operation blocks Engram (run: engram repair)
@@ -207,6 +210,10 @@ See also:
   engram doctor    what is installed and healthy
   engram snapshots   the backups an update leaves behind
   engram tidy      remove old backups once you are happy
+
+Confirmed updates maintain layout, merge declarations, retire obsolete shipped
+files, and clean preserved update staging. Preview and --check skip this
+maintenance.
 ```
 
 #### engram doctor
@@ -220,8 +227,10 @@ Description:
   Checks Python, the venv, managed tools, root-path hygiene (characters such
   as & % ^ ! in the folder path), context-menu registration, the environment
   manifest, a moved root, stale registry entries, the environment lock and any
-  interrupted operation journal. It never changes anything and uses no
-  network. It also works while an interrupted operation blocks other commands.
+  interrupted operation journal. Also checks declarative limitation warnings
+  (special characters, code page, cloud-sync folders, and path length). It
+  never changes anything and uses no network. It also works while an
+  interrupted operation blocks other commands.
 
 Options:
   --json           Print machine-readable JSON instead of the report
@@ -252,6 +261,7 @@ engram menu - Engram Right-Click Context Menu Management
 Usage: engram menu [status|enable|disable|clean]
 
 Description:
+  Actions accept no extra operands.
   Manages the Explorer right-click entry "Open in Engram". It writes only
   per-user registry keys (no administrator rights). With no subcommand it
   shows the status. All subcommands are safe to repeat.
@@ -300,7 +310,8 @@ Examples:
   engram -v
 
 Exit codes:
-  0   always
+  0   version or help shown
+  2   surplus operands
 
 See also:
   engram doctor    full environment health report
@@ -337,9 +348,10 @@ Options:
   --offline        Never download anything (default: off)
   --remap-ai-state Also rewrite folder paths inside AI CLI state after a move
                    (default: off)
-  --resume         Continue an interrupted operation (default: off)
+  --resume         Continue an interrupted operation (default: off;
+                   mutually exclusive with --rollback)
   --rollback       Undo an interrupted operation (default: off)
-  --json           Machine-readable plan/result (default: off)
+  --json           One final JSON plan/result in every mode (default: off)
   -h, --help, /?   Show this help (default: off)
 
 Examples:
@@ -352,7 +364,7 @@ Examples:
 
 Exit codes:
   0   ok, or nothing to repair, or preview shown
-  2   usage error
+  2   usage error, including invalid --only or conflicting recovery flags
   10  declined at the prompt
   11  precondition failed, or no terminal and no --yes (nothing was changed)
   12  verification failed and the change was rolled back
@@ -392,9 +404,10 @@ Options:
   --only LIST      Limit to: python,venv,registry,state,ai-state,manifest,
                    packages (default: everything found)
   --offline        Never download anything (default: off)
-  --resume         Continue an interrupted operation (default: off)
+  --resume         Continue an interrupted operation (default: off;
+                   mutually exclusive with --rollback)
   --rollback       Undo an interrupted operation (default: off)
-  --json           Machine-readable plan/result (default: off)
+  --json           One final JSON plan/result in every mode (default: off)
   -h, --help, /?   Show this help (default: off)
 
 Examples:
@@ -405,7 +418,7 @@ Examples:
 
 Exit codes:
   0   ok, nothing to do, or preview shown
-  2   usage error
+  2   usage error, including invalid --only or conflicting recovery flags
   10  declined at the prompt
   11  precondition failed, or no terminal and no --yes (nothing was changed)
   12  verification failed and the change was rolled back
@@ -528,6 +541,9 @@ Description:
   session transcripts; never credentials) into one .zip, and records what
   it skipped. It only reads your data, so it needs no preview and no
   confirmation; a managed AI CLI that is running only produces a warning.
+  Credentials and secret filenames are excluded recursively in every copy.
+  Declared SQLite databases use a consistent SQLite backup, including WAL.
+  Existing archives are replaced atomically after the new archive is ready.
   This is not the environment backup registry: for replaced Python/venv
   copies see 'engram snapshots'.
 
@@ -554,6 +570,10 @@ Exit codes:
 See also:
   engram restore     put an archive back
   engram snapshots   environment backups (Python/venv), a different thing
+
+Empty directories are not preserved.
+Existing folder bundles replace each directory payload; stale files are
+removed.
 ```
 
 #### engram restore
@@ -568,7 +588,8 @@ Description:
   made by 'engram backup', or from an old folder-shaped bundle. It previews
   by default and changes nothing until --apply. It refuses while a managed AI
   CLI is running, and takes an automatic safety snapshot of the current
-  state first unless --force is given.
+  destinations it will overwrite, including extras, unless --force is given.
+  Secret files stay excluded. Redirected source/destination paths are refused.
 
 Options:
   PATH             Backup .zip or bundle folder to restore (required)
@@ -592,6 +613,9 @@ Exit codes:
 See also:
   engram backup    create an archive
   engram reset     delete personal AI data
+
+Empty directories are not preserved.
+Preview and --dry-run create no files or directories.
 ```
 
 #### engram snapshots
@@ -611,7 +635,7 @@ Description:
   KIND/NAME when two kinds share a name. Pinned entries are never removed by
   'engram tidy'. restore previews by default, never overwrites an existing
   target, and holds the environment lock. Python and venv backups are
-  restored through 'engram repair' (lock + journal), not from here.
+  not restorable yet. Keep them; repair fixes the current environment.
 
 Options:
   list             One line per backup: kind, name, state, size, pin
@@ -635,11 +659,11 @@ Exit codes:
   0   ok, or preview shown
   2   usage error (unknown action or option)
   11  failed: no such backup, ambiguous name, target exists, lock busy, or
-      the kind must be restored through 'engram repair'
+      restoring this backup kind is not supported yet
 
 See also:
   engram tidy      removes expired, unpinned backups
-  engram repair    restores Python/venv backups
+  engram repair    repairs the current Python/venv environment
 ```
 
 ### Removal
@@ -649,30 +673,27 @@ See also:
 ```text
 engram reset - delete personal AI data (start over, keep the programs)
 
-Usage: engram reset [--apply] [--dry-run] [--yes|-y] [--all]
+Usage: engram reset [--apply] [--dry-run] [--yes|-y]
 
 Description:
-  Deletes .engram/ (AI CLI settings, memory, sessions) and any discovered
-  extra dotfolders such as .peerhub. Engram's programs and your workspace/
-  stay, unless --all. It previews by default. With --apply it first writes
-  a verified safety snapshot (_sys/data/backups/safety_pre_reset_*.zip) and
-  aborts if that fails, then asks for confirmation. --all additionally
-  requires typing the folder name, even with --yes. It refuses while a
-  managed AI CLI is running. Undo: engram restore <that snapshot>.
+  Deletes only portable files covered by a verified safety snapshot in
+  _sys/data/backups/safety_pre_reset_*.zip. Credentials, secrets, uncovered
+  .engram/ files and workspace/ stay. Discovered extra dotfolders use the
+  same exclusions. It previews by default. With --apply it asks for
+  confirmation, writes and verifies the snapshot, then deletes its files.
+  It refuses while a managed AI CLI is running.
+  Undo: engram restore <that snapshot> --apply.
 
 Options:
   --apply          Actually delete (default: off, preview only)
   --dry-run        Preview only; wins over --apply (default: on)
-  --yes, -y        Skip the [y/N] prompt; does not skip the typed-name check
-                   of --all (default: ask)
-  --all            Also delete workspace/ (default: off, only .engram/)
+  --yes, -y        Skip the [y/N] prompt (default: ask)
   -h, --help, /?   Show this help (default: off)
 
 Examples:
   engram reset
   engram reset --apply
   engram reset --apply --yes
-  engram reset --apply --all
 
 Exit codes:
   0   reset done, or preview shown
@@ -743,3 +764,9 @@ When Engram replaces a runtime (Python, Node.js, Git, VS Code, ...) the previous
    asks `[y/N]` (or use `--yes`), then adopts and deletes all `legacy-old` backups at once. Pinned entries and all
    other backup kinds are never touched. It refuses, and says why, while an operation journal is open (exit 14),
    while the environment lock is held, or if the running Python lives inside what it would delete (exit 11).
+
+Layout migration is explicit: `_sys\core\dispatch.bat migrate-layout` (available to
+installation and maintenance callers). Public read-only and preview verbs never trigger it.
+Help and version reject surplus operands with exit 2.
+
+Backup/restore: empty directories are not preserved. Existing folder backups replace directory payloads, removing stale files. Restore previews create no files or directories. Confirmed updates maintain layout, merge declarations, retire obsolete shipped files, and clean preserved update staging; preview and --check skip this maintenance.

@@ -1,29 +1,26 @@
 engram reset - delete personal AI data (start over, keep the programs)
 
-Usage: engram reset [--apply] [--dry-run] [--yes|-y] [--all]
+Usage: engram reset [--apply] [--dry-run] [--yes|-y]
 
 Description:
-  Deletes .engram/ (AI CLI settings, memory, sessions) and any discovered
-  extra dotfolders such as .peerhub. Engram's programs and your workspace/
-  stay, unless --all. It previews by default. With --apply it first writes
-  a verified safety snapshot (_sys/data/backups/safety_pre_reset_*.zip) and
-  aborts if that fails, then asks for confirmation. --all additionally
-  requires typing the folder name, even with --yes. It refuses while a
-  managed AI CLI is running. Undo: engram restore <that snapshot>.
+  Deletes only portable files covered by a verified safety snapshot in
+  _sys/data/backups/safety_pre_reset_*.zip. Credentials, secrets, uncovered
+  .engram/ files and workspace/ stay. Discovered extra dotfolders use the
+  same exclusions. It previews by default. With --apply it asks for
+  confirmation, writes and verifies the snapshot, then deletes its files.
+  It refuses while a managed AI CLI is running.
+  Undo: engram restore <that snapshot> --apply.
 
 Options:
   --apply          Actually delete (default: off, preview only)
   --dry-run        Preview only; wins over --apply (default: on)
-  --yes, -y        Skip the [y/N] prompt; does not skip the typed-name check
-                   of --all (default: ask)
-  --all            Also delete workspace/ (default: off, only .engram/)
+  --yes, -y        Skip the [y/N] prompt (default: ask)
   -h, --help, /?   Show this help (default: off)
 
 Examples:
   engram reset
   engram reset --apply
   engram reset --apply --yes
-  engram reset --apply --all
 
 Exit codes:
   0   reset done, or preview shown

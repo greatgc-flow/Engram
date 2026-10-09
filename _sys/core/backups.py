@@ -278,7 +278,8 @@ def create(
         "ttl_days": ttl_days,
         "min_keep": min_keep,
         "pinned": False,
-        "restore_hint": f"engram snapshots restore {dest.name}",
+        "restore_hint": ("Restoring Python/venv backups is not supported yet."
+                         if kind in _ENGINE_ONLY_KINDS else f"engram snapshots restore {dest.name}"),
     }
     _write_meta(dest, meta)                       # write-ahead: marker first
     _move_dir(source, dest / PAYLOAD, rename=rename, sleep=sleep)
@@ -768,8 +769,8 @@ def snapshots_main(ctx: dict) -> dict:
             return _ok()
         # restore
         if ref.kind in _ENGINE_ONLY_KINDS:
-            return _fail(f"{ref.kind} backups are restored through 'engram repair' (lock + journal); "
-                         f"that engine is not available yet, so 'snapshots restore' refuses to guess")
+            return _fail(f"Restoring {ref.kind} backups is not supported yet. "
+                         "Keep the backup; 'engram repair' repairs the current environment.")
         if not ref.meta.get("source_path"):
             return _fail(f"{ref.kind}/{ref.path.name} is a file snapshot, not a restorable directory")
         target = Path(ref.meta["source_path"])

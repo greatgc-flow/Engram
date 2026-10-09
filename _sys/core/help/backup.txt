@@ -7,6 +7,9 @@ Description:
   session transcripts; never credentials) into one .zip, and records what
   it skipped. It only reads your data, so it needs no preview and no
   confirmation; a managed AI CLI that is running only produces a warning.
+  Credentials and secret filenames are excluded recursively in every copy.
+  Declared SQLite databases use a consistent SQLite backup, including WAL.
+  Existing archives are replaced atomically after the new archive is ready.
   This is not the environment backup registry: for replaced Python/venv
   copies see 'engram snapshots'.
 
@@ -33,3 +36,7 @@ Exit codes:
 See also:
   engram restore     put an archive back
   engram snapshots   environment backups (Python/venv), a different thing
+
+Empty directories are not preserved.
+Existing folder bundles replace each directory payload; stale files are
+removed.

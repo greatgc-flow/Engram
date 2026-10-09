@@ -1,6 +1,6 @@
 # `.engram/`: the AI CLI personal-config root
 
-Ratified 2026-09-09: [`docs/design/dotdir-consolidation-RATIFIED-2026-09-09.md`](https://github.com/greatgc-flow/peerhub/blob/main/docs/design/dotdir-consolidation-RATIFIED-2026-09-09.md) in the [peerhub](https://github.com/greatgc-flow/peerhub) repo (the design record for both repos; this repo's own Round-1 proposal is at [`docs/design/dotdir-consolidation-engram-proposal-2026-09-09.md`](design/dotdir-consolidation-engram-proposal-2026-09-09.md)). This page is the Engram-side user-facing reference.
+Ratified 2026-09-09: [`docs/design/dotdir-consolidation-RATIFIED-2026-09-09.md`](https://github.com/greatgc-flow/peerhub/blob/main/docs/design/dotdir-consolidation-RATIFIED-2026-09-09.md) in the [peerhub](https://github.com/greatgc-flow/peerhub) repo (the ratified design record for both repos). This page is the Engram-side user-facing reference.
 
 ## What it is
 
@@ -24,7 +24,7 @@ Consequences:
 
 ## Retired: `.ais/` and `ais-env.bat`
 
-`.ais/` was this feature's first prototype (built during a same-day parallel-install exercise, D:\tttt) — a folder you pointed `CLAUDE_CONFIG_DIR`/`CODEX_HOME`/`GEMINI_DIR` at yourself, by running `ais-env.bat` in every new shell. `.engram/` is the permanent replacement: the same idea, but automatic (no script to remember to run) and generalized to every tool Engram manages, not just the 3 AI CLIs.
+`.ais/` was this feature's first prototype (built during a same-day parallel-install exercise, `<legacy-install-dir>`) — a folder you pointed `CLAUDE_CONFIG_DIR`/`CODEX_HOME`/`GEMINI_DIR` at yourself, by running `ais-env.bat` in every new shell. `.engram/` is the permanent replacement: the same idea, but automatic (no script to remember to run) and generalized to every tool Engram manages, not just the 3 AI CLIs.
 
 If you still have an `.ais/` folder from before this change, migrate it once:
 ```

@@ -131,3 +131,22 @@ def test_main_errors(mock_root, capsys):
     out, _ = capsys.readouterr()
     assert "[CHK-ROOT] Validation failed:" in out
     assert "  - Unexpected file: foo.txt" in out
+
+
+def test_representative_runs_leave_no_new_root_entries():
+    import unittest
+    from test_wave_a1_personal_data import WaveA1
+    from test_wave_c1 import CliCorrectness
+    from test_special_char_paths_batch import TestSpecialCharPathsBatch
+
+    root = find_root(__file__).parent
+    before = {entry.name for entry in root.iterdir()}
+    suite = unittest.TestSuite([
+        WaveA1("test_CX002_reset_all_is_usage_error"),
+        CliCorrectness("test_no_implicit_path"),
+        TestSpecialCharPathsBatch("test_batch_00_control"),
+    ])
+    result = unittest.TestResult()
+    suite.run(result)
+    assert not ({entry.name for entry in root.iterdir()} - before)
+    assert result.wasSuccessful(), (result.failures, result.errors)

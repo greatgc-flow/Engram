@@ -1,0 +1,24 @@
+[
+  {
+    "path": "_sys/core/bootstrap.bat",
+    "args": [
+      "--skip-vscode",
+      "--skip-claude"
+    ]
+  },
+  {
+    "path": "engram.cmd",
+    "args": [
+      "doctor",
+      "--json"
+    ]
+  },
+  {
+    "path": "engram.cmd",
+    "args": [
+      "update",
+      "--check",
+      "--refresh"
+    ]
+  }
+]
