@@ -113,3 +113,15 @@ Offline contracts: `python -m pytest _sys/tests/unit/test_winget_smoke.py`.
 Tests stub CLI execution and cover success, unavailable WinGet, failed settings,
 install/uninstall, incorrect installed bytes/version, remaining files, lost
 user data, evidence hash/identity mismatch, missing flags/files, and timeouts.
+
+## Bounded-HOLD Sandbox wait contract (EN-GAP-P1-005)
+
+The promotion job executes `.github/scripts/wait_for_sandbox.js` to poll the asynchronous `clean-room-sandbox` job every 15 seconds up to a strict 45-minute deadline:
+- Successful completion (`status: completed`, `conclusion: success`) logs PASS and resolves.
+- Unsuccessful conclusions (`failure`, `cancelled`, `skipped`) immediately throw `HOLD: Sandbox concluded <conclusion>`.
+- Runner absence / missing job: if the runner is unavailable or the job never appears, polling terminates at 45 minutes and throws `HOLD: Sandbox runner unavailable or evidence deadline exceeded (45 minutes)`.
+- Resilient late dispatch: jobs appearing or running before the deadline poll until completion.
+- Fail-closed API handling: GitHub API errors throw `HOLD: GitHub API error: <msg>`; malformed or empty job lists throw `HOLD: malformed or empty job list`. The script never silently passes.
+
+Offline contract verification: `_sys/tests/unit/test_wait_for_sandbox.py` tests `.github/scripts/wait_for_sandbox.js` under Node.js via `tools/release_gate/wait_for_sandbox_driver.js`, stubbing GitHub Actions pagination and overriding `Date.now`/`setTimeout` with fake timers so tests run instantly without real waiting.
+
