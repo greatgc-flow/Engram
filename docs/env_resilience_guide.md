@@ -46,7 +46,8 @@ engram snapshots restore <name> [--apply]   # dry run unless --apply; never over
 ```
 
 `engram tidy --apply` prunes backups by retention (newest kept, pinned and not-yet-committed ones never touched).
-Python/venv backups are restored through `engram repair`, not by hand.
+Restoring Python/venv backups is not supported yet. Keep these backups;
+`engram repair` repairs the current environment and does not select a saved backup.
 
 ### Leftover `_old` folders (`engram tidy`)
 

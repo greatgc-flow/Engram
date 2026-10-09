@@ -6,11 +6,14 @@ This directory contains architectural specifications, design decision records, a
 
 | Directory / File | Category | Description |
 | :--- | :--- | :--- |
-| **[`design/`](design/)** | **Architecture Decisions (ADRs & RFCs)** | Architectural design proposals, peer debate outcomes, and ratified specifications (e.g. UX simplification, system rename). |
-| **[`engram-dotdir.md`](engram-dotdir.md)** | **Technical Specifications** | Normative technical specification for `.engram/` dotdir isolation, path resolution, and environment variable redirection for AI CLIs. |
-| **[`cli_reference.md`](cli_reference.md)** | **User Guide** | Complete `engram` command reference: command groups, every command's options, examples and exit codes, the safety model (preview by default, move-never-delete, journals) and a "which command do I need" table. |
-| **[`env_resilience_guide.md`](env_resilience_guide.md)** | **User Guide** | Python/venv repair, folder relocation, Python updates, and the backup registry (`engram repair`, `relocate`, `snapshots`). |
-| **[`history/`](history/)** | **Historical Archives** | Historical records and artifacts preserved from repository separations and backlog migrations (e.g. open items preserved during the PeerHub migration). |
+| **[`cli_reference.md`](cli_reference.md)** | **User Guide** | Complete command reference covering every engram verb, option, example, exit code, and safety guarantee. |
+| **[`user_lifecycle_guide.md`](user_lifecycle_guide.md)** | **User Guide** | Personal settings, AI session data, backup, restore, reset, and uninstallation workflows. |
+| **[`env_resilience_guide.md`](env_resilience_guide.md)** | **User Guide** | Python/venv repair, root folder relocation, Python updates, and the backup registry. |
+| **[`engram-dotdir.md`](engram-dotdir.md)** | **Technical Specification** | Normative specification for `.engram/` dotdir isolation, path resolution, and AI CLI environment redirection. |
+| **[`cp949_verification.md`](cp949_verification.md)** | **Technical Specification** | Architecture and test procedures for CP949 Korean-locale and non-ASCII path resilience. |
+| **[`release_gate.md`](release_gate.md)** | **Release & Governance** | Policy trust root, clean-room verification gates, candidate packaging, and post-release closure audits. |
+| **[`design/`](design/)** | **Architecture Decisions (ADRs)** | Ratified architectural design specifications and decision records (UX simplification, system rename, environment resilience). |
+| **[`history/`](history/)** | **Historical Archives** | Historical records, backlog migrations, and audit artifacts preserved from repository milestones. |
 
 The latest whole-package release review is
 [`history/recursive-mece-release-audit-2026-09-28.md`](history/recursive-mece-release-audit-2026-09-28.md).

@@ -63,12 +63,17 @@ setup_test_env.py
 /Remains
 # Python temporary-directory write probes contain exactly "blat". These files
 # are detected by validation and should be removed, not silently ignored.
-# Pytest temp dirs scattered to root
+# Pytest temp dirs and test scratch scattered to root
+/.pytest-*/
 /.pytest-basetemp/
 /.pytest-local/
 /.pytest-tmp/
 /.pytest-work/
 /pytest_local/
+/.test-temp/
+/engram_batch_*/
+/tmp*/
+/oom_marker.json
 # =================================================================
 # 8. System, Editor, & Cache Garbage
 # =================================================================

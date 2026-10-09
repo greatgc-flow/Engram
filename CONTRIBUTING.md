@@ -120,3 +120,18 @@ code, and the relevant file under `_sys/data/logs/` or
 `_sys/data/state/update/`. Never attach `.engram/` wholesale: it may contain
 credentials and session data. Use the bug-report template so a failure becomes a
 reproducible test or a documented limitation instead of an untracked workaround.
+
+---
+
+## 6. Maintainer Notes
+
+Operational decisions and environment constraints:
+
+- **Release Policy & Mainline Ancestry**: Release tags must point to a commit on `main` (governed by policy trust root `release_policy.json`).
+- **Clean-Room Verification Gate**: Release gates are provider-agnostic (`hosted-ephemeral-vm` default; `windows-sandbox` opt-in via repo variable `ENGRAM_SANDBOX_RUNNER=true`). Verification evidence is required by default.
+- **VDI / RDP Session Resilience**: Forced VDI/RDP logoff kills interactive runners and background jobs; commit and push in small steps.
+- **Headless Shell Git Auth**: Pushing from a headless shell requires a GitHub credential helper (`gh auth setup-git` or per-command `-c credential.helper`).
+- **AI-to-AI Collaboration**: Multi-agent collaboration uses English exclusively for all design notes, reviews, and commits.
+  Roles follow peerhub conventions: `cx` (coordinator / architect), `ag` (implementer / test author), and `cc` (reviewer / verification gatekeeper).
+  Independent cross-review and clean-room contract verification are required before changes are merged or promoted.
+

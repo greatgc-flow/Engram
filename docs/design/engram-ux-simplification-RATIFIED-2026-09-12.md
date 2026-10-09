@@ -7,8 +7,8 @@
 
 **Inputs ratified:**
 
-1. `docs/design/engram-ux-simplification-proposal-ag-2026-09-12.md` (ag), narrow scope
-2. `docs/design/engram-ux-simplification-proposal-cx-2026-09-12.md` (cx), broad scope
+1. Round-1 proposal by ag (narrow scope, superseded)
+2. Round-1 proposal by cx (broad scope, superseded)
 
 Neither author saw the other's document. Every load-bearing claim in both was re-read against source or measured on disk before ruling. Anything not re-checked is listed in §0.5.
 
@@ -16,10 +16,10 @@ Neither author saw the other's document. Every load-bearing claim in both was re
 
 | Short name | Path | State | Role |
 |---|---|---|---|
-| **repo** | `D:\Engram&Peerhub\engram-main-worktree` | `main` @ `fbca05d`, v3.2.6, tags `v3.1.1`…`v3.2.6` | Engram product source |
-| **tttt** | `D:\tttt` | v3.2.6 release-zip extraction, **not a git checkout** | Living acceptance fixture (read-only) |
-| **t2** | `D:\t2` | v3.2.6 release-zip extraction, **not a git checkout** | Living acceptance fixture (read-only) |
-| **v2.1-env** | `D:\Engram&Peerhub\PortableDev (v2.1)` | separate deployed dev environment | Out of scope; mentioned only where it constrains safety |
+| **repo** | `<repo-root>` | `main` @ `fbca05d`, v3.2.6, tags `v3.1.1`…`v3.2.6` | Engram product source |
+| **tttt** | `<test-install-1>` | v3.2.6 release-zip extraction, **not a git checkout** | Living acceptance fixture (read-only) |
+| **t2** | `<test-install-2>` | v3.2.6 release-zip extraction, **not a git checkout** | Living acceptance fixture (read-only) |
+| **v2.1-env** | `<legacy-dev-env>` | separate deployed dev environment | Out of scope; mentioned only where it constrains safety |
 
 **Binding constraints (carried in, not reopened):**
 
@@ -44,13 +44,13 @@ These carry more weight in the rulings below than anything in either proposal.
 
 | # | Fact | Evidence |
 |---|---|---|
-| N1 | **Both real installs are release-zip extractions, not git checkouts.** There is no `.git` in tttt or t2. The root `*.bat`, `engram.cmd` and `Engram.exe` in both are byte-identical to repo HEAD (md5 `debd3cb3…` UPDATE.bat, `e9d29c6c…` engram.cmd, `0bd01b6a…` Engram.exe, and so on). | `ls -d D:\tttt\.git` → not found; md5 comparison |
+| N1 | **Both real installs are release-zip extractions, not git checkouts.** There is no `.git` in tttt or t2. The root `*.bat`, `engram.cmd` and `Engram.exe` in both are byte-identical to repo HEAD (md5 `debd3cb3…` UPDATE.bat, `e9d29c6c…` engram.cmd, `0bd01b6a…` Engram.exe, and so on). | `ls -d <test-install-1>\.git` → not found; md5 comparison |
 | N2 | **The local declaration files are mutated state, not shipped constants.** tttt's `_sys/runtimes.json` differs from the v3.2.6 shipped file in 6 pins (`python` 3.14.5→3.14.7, `sqlite` 3.53.3→3.53.4, `fd` 10.4.2→10.5.0, `fzf` 0.74.1→0.74.3, `oh-my-posh` 29.33.0→31.2.1, `gh` 2.96.0→2.100.0). t2's differs in 1 pin (`python` →3.14.7). `tool-catalog.v1.json` is still identical to shipped in both (md5 `207e7f99…`). | parsed diff against `git show v3.2.6:_sys/runtimes.json` |
-| N3 | **Engram creates a second unexplained root directory, `_archive/`.** `launcher.py:226-228` writes `_archive/logs/start_*.log` on **every launch**, and `check_tool_updates.py:30` writes `_archive/tool-updates/<stamp>/` on every `engram update`. tttt has both. | `D:\tttt\_archive\{logs,tool-updates}` present |
+| N3 | **Engram creates a second unexplained root directory, `_archive/`.** `launcher.py:226-228` writes `_archive/logs/start_*.log` on **every launch**, and `check_tool_updates.py:30` writes `_archive/tool-updates/<stamp>/` on every `engram update`. tttt has both. | `<test-install-1>\_archive\{logs,tool-updates}` present |
 | N4 | **Uninstall has no confirmation prompt at all**, and `engram.cmd:112-114` forwards **no arguments** to it. It also runs through `_sys\env\venv\Scripts\python.exe`, so uninstall fails outright if the venv is missing. | full read of `manage.py:48-159`, `engram.cmd:112-114` |
 | N5 | **tttt's `_sys/` holds non-shipped legacy personal data**: `_sys/ai/` (22 files), `_sys/claude/config` (2), `_sys/codex/config` (3), and `_sys/antigravity/config`, all dated 2026-09-09. None of these exist in the v3.2.6 tree. A "delete all of `_sys`" uninstall would destroy them. | `find` counts; `git ls-tree -r v3.2.6` has no `_sys/{ai,claude,codex,antigravity}/` |
-| N6 | **The one live SUBST mapping on this host (`P:\ => D:\Engram&Peerhub\PortableDev (v2.1)`) belongs to v2.1-env, not to any Engram install.** Any teardown or doctor logic that treats "a SUBST mapping exists" as Engram's would act on someone else's drive. | `subst` output |
-| N7 | **Venvs embed the absolute interpreter path**: `D:\tttt\_sys\env\venv\pyvenv.cfg` has `home = D:\tttt\_sys\env\python`, and likewise for t2. Renaming `_sys` breaks every venv, including the PeerHub each fixture installed. Those installs came from the package index (no `direct_url.json`, `INSTALLER`=`pip`), so they are reproducible but only online. | `pyvenv.cfg`, dist-info |
+| N6 | **The one live SUBST mapping on this host (`<drive>:\ => <legacy-dev-env>`) belongs to v2.1-env, not to any Engram install.** Any teardown or doctor logic that treats "a SUBST mapping exists" as Engram's would act on someone else's drive. | `subst` output |
+| N7 | **Venvs embed the absolute interpreter path**: `<test-install-1>\_sys\env\venv\pyvenv.cfg` has `home = <test-install-1>\_sys\env\python`, and likewise for t2. Renaming `_sys` breaks every venv, including the PeerHub each fixture installed. Those installs came from the package index (no `direct_url.json`, `INSTALLER`=`pip`), so they are reproducible but only online. | `pyvenv.cfg`, dist-info |
 | N8 | The **release asset name `Engram-v3.2.6-portable-x64.zip` does not contain `win`**, so `version_resolver._pick_windows_asset()` (lines 221-222 require `"win" in name`) rejects it. The generic `github_releases` provider therefore cannot supply the Core download URL. The GitHub API *does* expose `"digest": "sha256:248b1784…"` for the asset, which matches `InstallerSha256` in the 3.2.6 WinGet manifest exactly. | `gh api repos/greatgc-flow/Engram/releases/latest` |
 | N9 | **A single provider error aborts the whole update.** `updater.py:29-30` returns `failed` if `payload["errors"]` is non-empty, so one flaky GitHub or npm response blocks every other update. | read |
 | N10 | **A third stale version literal**: `_sys/core/version.py:10,13` falls back to `"3.2.0"` if `version.json` is unreadable, and `tools/winget/build_package.py:45` imports that `VERSION`. | `git grep 3\.2\.0` |
@@ -157,7 +157,7 @@ Net: this is a bold cut of the *surface* (0 root wrappers, 8 public verbs) and a
 
 **Reasoning, evidence first:**
 
-- **Every existing install needs a network-dependent venv rebuild.** `pyvenv.cfg` embeds `home = D:\tttt\_sys\env\python` (N7). PeerHub 0.2.0 (tttt) and 0.3.0 (t2) would have to be reinstalled from the index. That makes "installed PeerHub venvs survive" depend on network availability and on PyPI still serving those exact versions. That is a real, avoidable risk against a binding constraint, spent on a name.
+- **Every existing install needs a network-dependent venv rebuild.** `pyvenv.cfg` embeds `home = <test-install-1>\_sys\env\python` (N7). PeerHub 0.2.0 (tttt) and 0.3.0 (t2) would have to be reinstalled from the index. That makes "installed PeerHub venvs survive" depend on network availability and on PyPI still serving those exact versions. That is a real, avoidable risk against a binding constraint, spent on a name.
 - **Blast radius.** The rename touches 100 non-doc files / 703 lines (255 / 2,381 counting docs). This includes the context-menu relay template (`context_menu.json:9`), which is baked into already-written relay files in `%LOCALAPPDATA%`, so every registered install needs re-registration.
 - **Payoff.** The payoff is cosmetic, and the declutter in §3.5 already removes most of the discomfort. After this ratification the installed root is exactly **seven entries**: `Engram.exe`, `engram.cmd`, `README.md`, `LICENSE`, `_sys/`, `workspace/`, `.engram/`. `_sys/` becomes the single "program files" folder, with no reason for a user to open it. Every user action is a verb.
 
@@ -352,7 +352,7 @@ Every later version arrives through `engram update` (§8.4), which performs the 
 **Guarantee:** migration, first-hop overlay, `engram update`, `open`, `doctor`, `menu`, `tidy` and default `uninstall` leave every byte, name and mtime under `.engram/` and `workspace/` unchanged, including every `.peerhub/`.
 
 **Release-gating test** (`_sys/tests/fixtures/test_fixture_migration.py`, marked `fixture`, run manually before release):
-1. Copy tttt and t2 byte-for-byte with `robocopy <src> <dst> /MIR /COPY:DAT /DCOPY:DAT /R:0` to disposable paths. The copies are about 465 MB / 17,856 files and 382 MB / 15,176 files of `.engram/`. **Never operate on the originals**; the test asserts `dst` is not `D:\tttt` or `D:\t2`.
+1. Copy tttt and t2 byte-for-byte with `robocopy <src> <dst> /MIR /COPY:DAT /DCOPY:DAT /R:0` to disposable paths. The copies are about 465 MB / 17,856 files and 382 MB / 15,176 files of `.engram/`. **Never operate on the originals**; the test asserts `dst` is not `<test-install-1>` or `<test-install-2>`.
 2. Build manifest A over `.engram/` and `workspace/`: `(relpath, is_dir, size, sha256, mtime_ns)` for every entry.
 3. Overlay the candidate package onto the copy (simulating step 2 of §5.3), then run `engram doctor`, `engram update --check`, `engram menu status` and `engram tidy`.
 4. Build manifest B and assert **A == B**.
