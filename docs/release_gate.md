@@ -61,6 +61,24 @@ _sys\tests\run-sandbox-test.bat
 ```
 This launches a fresh Windows Sandbox instance, downloads declared runtimes, installs source-only test dependencies, runs the unit/lifecycle/path suite, runs `engram doctor --json`, and forces a live update-discovery refresh. It requires an interactive Windows session (cannot run in Session 0).
 
+### Dry run before a release
+
+- Use `workflow_dispatch` for `sandbox-gate` on a throwaway branch, never the
+  release tag. Bump `version.json` above the previous stable version:
+  `upgrade-gate` requires candidate > previous; the same version produces HOLD
+  with a clear message. Promotion on a non-tag ref verifies evidence but does
+  not publish. Delete the throwaway branch after the dry run.
+- A queued scheduled run on `main` waiting for a non-existent self-hosted runner
+  holds the `engram-sandbox` concurrency group and blocks other runs. Cancel it
+  with `gh run cancel <id>`. This only affects workflows from before the sandbox
+  job became opt-in via `ENGRAM_SANDBOX_RUNNER`.
+- Rerun failed jobs with `gh run rerun <id> --failed`. One runner flake was seen:
+  the pytest process ended without a message at about 89%, then passed on rerun.
+  Rerun once; investigate if it repeats. If promotion needs a fresh candidate
+  artifact for the new attempt, rerun all jobs as required below.
+- The first hosted run catches root-hygiene and WinGet source-agreement
+  (`0x8A150046`) problems that local tests cannot catch.
+
 ### Automated release workflow
 
 1. A hosted Windows runner builds Engram.exe and the portable ZIP and WinGet

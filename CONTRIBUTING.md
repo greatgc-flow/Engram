@@ -115,7 +115,9 @@ reproducible test or a documented limitation instead of an untracked workaround.
 Operational decisions and environment constraints:
 
 - **Release Governance**: Canonical release procedures, mainline ancestry rules, and clean-room gate specifications are documented in [`docs/release_gate.md`](docs/release_gate.md).
-- **VDI / RDP Session Resilience**: Forced VDI/RDP logoff kills interactive runners and background jobs; commit and push in small steps.
+- Peers cannot run the full pytest suite in their sandbox; the maintainer runs it after EVERY change wave and chains the commit with `&&` so a failing suite never commits.
+- Never create scratch or temporary files at the repo root; tests use `tmp_path`.
+- The VDI may force-logoff sessions; commit and push in small steps.
 - **Headless Shell Git Auth**: Pushing from a headless shell requires a GitHub credential helper (`gh auth setup-git` or per-command `-c credential.helper`).
 - **AI-to-AI Collaboration**: Multi-agent collaboration uses English exclusively for all design notes, reviews, and commits.
   Roles follow peerhub conventions: `cx` (coordinator / architect), `ag` (implementer / test author), and `cc` (reviewer / verification gatekeeper).
