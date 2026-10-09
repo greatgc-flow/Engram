@@ -14,6 +14,7 @@ This directory contains architectural specifications, design decision records, a
 | **[`release_gate.md`](release_gate.md)** | **Release & Governance** | Policy trust root, clean-room verification gates, candidate packaging, and post-release closure audits. |
 | **[`design/`](design/)** | **Architecture Decisions (ADRs)** | Ratified architectural design specifications and decision records (UX simplification, system rename, environment resilience). |
 | **[`history/`](history/)** | **Historical Archives** | Historical records, backlog migrations, and audit artifacts preserved from repository milestones. |
+| [`history/audit-2026-10.md`](history/audit-2026-10.md) | Historical Audit | October 2026 findings, dispositions, hosted-run lessons, and open maintainer decisions. |
 
 The latest whole-package release review is
 [`history/recursive-mece-release-audit-2026-09-28.md`](history/recursive-mece-release-audit-2026-09-28.md).
