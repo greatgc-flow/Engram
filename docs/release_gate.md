@@ -34,18 +34,18 @@ weekly runs exercise the same gate but do not publish a release.
    preservation of user data. It emits `upgrade_evidence.json` bound to the
    candidate SHA256s and previous tag, and uploads the
    `upgrade-evidence-<run_id>-<run_attempt>` artifact.
-5. A hosted promotion job (`needs: [build-candidate, upgrade-gate]`) starts
-   after build and upgrade checks succeed, independently of Sandbox runner
+5. A hosted promotion job (`needs: [build-candidate, upgrade-gate, winget-smoke]`) starts
+   after build, upgrade, and WinGet checks succeed, independently of Sandbox runner
    scheduling. It polls this run's exact attempt Sandbox job every 15 seconds
    for at most 45 minutes. Missing runners, queued jobs, unsuccessful outcomes,
    timeout, cancellation, skipped jobs, API errors, or missing artifacts mean
    HOLD. Sandbox execution itself is limited to 40 minutes; promotion has a
    55-minute job limit. Workflow concurrency serializes Sandbox host access.
 6. Promotion downloads only this run/attempt's artifacts (`candidate`,
-   `sandbox-evidence`, and `upgrade-evidence`), rechecks asset inventory
+   `sandbox-evidence`, `upgrade-evidence`, and `winget-evidence`), rechecks asset inventory
    and SHA256 values, checks candidate ref/commit and evidence run/attempt
-   against workflow identity, and runs `release_evidence.py verify` with both
-   `--evidence` and `--upgrade-evidence`. If either evidence document is missing,
+   against workflow identity, and runs `_sys/checks/release_evidence.py verify` with
+   `--evidence`, `--upgrade-evidence`, and required `--winget-evidence`. If any evidence document is missing,
    non-PASS, or mismatched against candidate hashes or tags, verification
    fails closed and reports HOLD. Only subsequent `v*` tag runs call
    `gh release create --draft --verify-tag` with those downloaded assets, then
@@ -68,3 +68,48 @@ comes from workflow permissions, same-run artifact selection, protected tags,
 and the dedicated runner. Configure repository access so release writers do
 not bypass this workflow. `release_evidence.py verify` was extended to check
 upgrade evidence compatibility, previous tag validity, and hash binding.
+
+## Exact-candidate WinGet smoke (EN-GAP-P1-004)
+
+The hosted `winget-smoke` job requires `build-candidate` and runs on
+`windows-latest`. It downloads the frozen artifact, verifies provenance and
+all asset hashes, and invokes `tools/release_gate/winget_smoke.py`.
+WinGet availability on hosted images is not assumed: absence, setting-enable
+failure, command timeout, failed or skipped checks, or missing evidence means
+HOLD. No hosted WinGet execution has been demonstrated by offline tests.
+
+Generated manifests use an unpublished GitHub release download URL and the
+candidate ZIP's SHA256. The harness checks that digest, serves the unchanged
+ZIP on loopback HTTP, and rewrites only InstallerUrl in a temporary manifest
+copy. Frozen manifests remain untouched and are hashed again after the smoke.
+It enables LocalManifestFiles, then runs `winget install --manifest <temp-dir>`
+with user scope and an isolated installation location. Every ZIP file must
+exist there with the candidate bytes. The installed `engram` alias must target
+that executable, and `--version` must print the candidate version in the
+existing `Engram <version> (Portable Dev Runtime)` format.
+
+Before uninstall, the harness seeds `<install-root>/.engram` with binary user
+data and snapshots its inventory and bytes. WinGet uninstall must exit zero,
+remove program files and the command alias, and leave `.engram` unchanged.
+If WinGet's portable uninstaller deletes that directory, the gate correctly
+reports HOLD; this change does not alter the installer or runtime to bypass
+that requirement. Installed data preservation needs hosted confirmation.
+
+`winget_evidence.json` records PASS only after every assertion, exact candidate
+hashes, false cancellation/skipping flags, and workflow run/attempt. The
+workflow emits fallback HOLD evidence if the harness cannot run and uploads
+it with `if: always()`. Promotion downloads that exact run/attempt's evidence
+and requires it alongside Sandbox and upgrade evidence. A failed dependency
+also prevents publication; missing uploads never approve a release.
+
+The single verifier is `_sys/checks/release_evidence.py`. It requires WinGet
+and upgrade evidence by default, with PASS, exact candidate hashes, and both
+cancellation/skipping flags present and exactly false. Explicit
+`--no-winget-evidence` is a legacy/test-only opt-out, analogous to
+`--no-upgrade-evidence`; each is mutually exclusive with its evidence option.
+The hosted workflow never uses either opt-out.
+
+Offline contracts: `python -m pytest _sys/tests/unit/test_winget_smoke.py`.
+Tests stub CLI execution and cover success, unavailable WinGet, failed settings,
+install/uninstall, incorrect installed bytes/version, remaining files, lost
+user data, evidence hash/identity mismatch, missing flags/files, and timeouts.

@@ -1,0 +1,216 @@
+from contextlib import contextmanager
+import uuid
+import json
+import os
+from pathlib import Path
+import shutil
+import sys
+import pytest
+from unittest.mock import patch
+import zipfile
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / 'tools/release_gate'))
+import importlib.util
+_spec = importlib.util.spec_from_file_location('winget_gate_checks', ROOT / '_sys/checks/release_evidence.py')
+gate = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(gate)
+import winget_smoke as smoke
+
+@contextmanager
+def temporary_directory(**kwargs):
+    directory = ROOT / '_sys/tests/unit' / ('winget-fixture-' + uuid.uuid4().hex)
+    directory.mkdir(mode=511)
+    try:
+        yield str(directory)
+    finally:
+        shutil.rmtree(directory)
+
+class TestRequiredEvidence:
+
+    def test_missing_winget_is_hold(self):
+        with pytest.raises(gate.Hold, match='WinGet evidence is required'):
+            gate.verify('missing', 'missing', no_upgrade_evidence=True)
+
+    def test_evidence_contract(self):
+        with temporary_directory() as temporary:
+            root = Path(temporary)
+            hashes = {'release.zip': 'a' * 64}
+            candidate = root / 'candidate.json'
+            sandbox = root / 'sandbox.json'
+            winget = root / 'winget.json'
+            candidate.write_text(json.dumps({'tag': 'v1.2.3', 'commit': 'b' * 40, 'candidate_sha256s': hashes}))
+            sandbox.write_text(json.dumps({'status': 'PASS', 'candidate_sha256s': hashes}))
+            good = {'status': 'PASS', 'candidate_sha256s': hashes, 'cancelled': False, 'skipped': False, 'run_id': '12', 'run_attempt': '1'}
+            with patch.dict(os.environ, {'GITHUB_RUN_ID': '12', 'GITHUB_RUN_ATTEMPT': '1'}):
+                for change in ({}, {'status': 'HOLD'}, {'status': 'SKIPPED'}, {'skipped': True}, {'cancelled': True}, {'skipped': None}, {'candidate_sha256s': {'release.zip': 'c' * 64}}, {'run_attempt': '2'}):
+                    winget.write_text(json.dumps(dict(good, **change)))
+                    if change:
+                        with pytest.raises(gate.Hold):
+                            gate.verify(candidate, sandbox, winget_evidence_path=winget, no_upgrade_evidence=True)
+                    else:
+                        gate.verify(candidate, sandbox, winget_evidence_path=winget, no_upgrade_evidence=True)
+                winget.unlink()
+                with pytest.raises(gate.Hold):
+                    gate.verify(candidate, sandbox, winget_evidence_path=winget, no_upgrade_evidence=True)
+                gate.verify(candidate, sandbox, no_upgrade_evidence=True, no_winget_evidence=True)
+                with pytest.raises(gate.Hold):
+                    gate.verify(candidate, sandbox, winget_evidence_path=winget, no_upgrade_evidence=True, no_winget_evidence=True)
+
+class TestSmoke:
+
+    def exercise(self, failure=None):
+        with temporary_directory() as temporary:
+            root = Path(temporary)
+            assets = root / 'assets'
+            manifests = assets / 'manifests'
+            manifests.mkdir(parents=True)
+            archive = assets / 'Engram-v1.2.3-portable-x64.zip'
+            with zipfile.ZipFile(archive, 'w') as payload:
+                payload.writestr('Engram.exe', b'candidate-executable')
+                payload.writestr('engram.cmd', b'candidate-launcher')
+                payload.writestr('_sys/core/version.json', b'{"version":"1.2.3"}')
+            installer = manifests / 'greatgc-flow.Engram.installer.yaml'
+            original = f'PackageIdentifier: greatgc-flow.Engram\nPackageVersion: 1.2.3\nInstallerUrl: https://github.com/unpublished.zip\nInstallerSha256: {smoke.digest(archive).upper()}\n'
+            installer.write_text(original)
+            candidate = {'tag': 'v1.2.3', 'commit': 'b' * 40, 'candidate_sha256s': smoke.snapshot(assets)}
+            install = root / 'program'
+            data = install / '.engram'
+            local = root / 'local'
+            alias = local / 'Microsoft/WinGet/Links/engram.exe'
+            calls = []
+
+            def stub(args):
+                calls.append(args)
+                operation = args[1]
+                if failure == operation:
+                    raise smoke.Hold('stub CLI failure')
+                if failure == 'absent':
+                    raise FileNotFoundError('winget absent')
+                if operation == 'install':
+                    copied = Path(args[args.index('--manifest') + 1]) / installer.name
+                    rewritten = copied.read_text()
+                    assert 'http://127.0.0.1:' in rewritten
+                    assert rewritten.split('InstallerUrl:')[0] == original.split('InstallerUrl:')[0]
+                    assert rewritten.split('InstallerSha256:')[1] == original.split('InstallerSha256:')[1]
+                    with zipfile.ZipFile(archive) as payload:
+                        payload.extractall(install)
+                    alias.parent.mkdir(parents=True)
+                    os.link(install / 'Engram.exe', alias)
+                    if failure == 'files':
+                        (install / 'engram.cmd').write_bytes(b'wrong')
+                elif operation == 'uninstall':
+                    alias.unlink()
+                    for path in list(install.iterdir()):
+                        if path != data:
+                            if path.is_dir():
+                                shutil.rmtree(path)
+                            else:
+                                path.unlink()
+                    if failure == 'data':
+                        shutil.rmtree(data)
+                    if failure == 'removal':
+                        (install / 'Engram.exe').write_bytes(b'remains')
+                elif args[0] == str(alias):
+                    return 'Engram 9.9.9 (Portable Dev Runtime)' if failure == 'version' else 'Engram 1.2.3 (Portable Dev Runtime)'
+                return ''
+            with patch.dict(os.environ, {'LOCALAPPDATA': str(local)}), patch.object(smoke.tempfile, 'TemporaryDirectory', temporary_directory):
+                if failure:
+                    with pytest.raises((smoke.Hold, OSError)):
+                        smoke.smoke(candidate, assets, install, data, run=stub)
+                else:
+                    smoke.smoke(candidate, assets, install, data, run=stub)
+                    assert data.is_dir()
+                    assert 'uninstall' in [c[1] for c in calls]
+            assert installer.read_text() == original
+
+    def test_success_and_frozen_manifest(self):
+        self.exercise()
+
+    def test_all_incomplete_checks_hold(self):
+        for failure in ('absent', 'settings', 'install', 'files', 'version', 'uninstall', 'data', 'removal'):
+            self.exercise(failure)
+
+    def test_hash_mismatch_holds_before_cli(self):
+        with temporary_directory() as temporary:
+            root = Path(temporary)
+            assets = root / 'assets'
+            assets.mkdir()
+            (assets / 'release.zip').write_bytes(b'changed')
+            candidate = {'tag': 'v1.2.3', 'commit': 'b' * 40, 'candidate_sha256s': {'release.zip': 'a' * 64}}
+            with pytest.raises(smoke.Hold, match='asset hashes differ'):
+                smoke.smoke(candidate, assets, root / 'program', root / 'program/.engram', run=lambda args: pytest.fail('CLI must not run for mismatched assets'))
+
+    def test_missing_candidate_emits_hold(self):
+        with temporary_directory() as temporary:
+            root = Path(temporary)
+            out = root / 'evidence.json'
+            result = smoke.main(['--candidate', str(root / 'missing'), '--assets', str(root / 'assets'), '--install-root', str(root / 'program'), '--user-data', str(root / 'program/.engram'), '--out', str(out)])
+            assert result == 1
+            assert json.loads(out.read_text())['status'] == 'HOLD'
+
+    def test_hosted_gate_requires_evidence(self):
+        workflow = (ROOT / '.github/workflows/sandbox-gate.yml').read_text()
+        assert '  winget-smoke:' in workflow
+        assert 'needs: [build-candidate, upgrade-gate, winget-smoke]' in workflow
+        assert '--winget-evidence evidence/winget_evidence.json' in workflow
+        assert '--no-winget-evidence' not in workflow
+        assert '_sys/checks/release_evidence.py verify' in workflow
+
+    def test_cli_failure_and_timeout(self):
+        import subprocess
+        with patch.object(smoke.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', 'failed')):
+            with pytest.raises(smoke.Hold):
+                smoke.command(['winget', 'install'])
+        with patch.object(smoke.subprocess, 'run', side_effect=subprocess.TimeoutExpired('winget', 300)):
+            with pytest.raises(subprocess.TimeoutExpired):
+                smoke.command(['winget', 'install'])
+
+
+@pytest.mark.parametrize("flag", ["cancelled", "skipped"])
+@pytest.mark.parametrize("value", ["missing", None, True, 0, 1, "false"])
+def test_winget_requires_explicit_false_flags(flag, value):
+    with temporary_directory() as temporary:
+        root = Path(temporary)
+        hashes = {"release.zip": "a" * 64}
+        candidate = root / "candidate.json"
+        sandbox = root / "sandbox.json"
+        winget = root / "winget.json"
+        candidate.write_text(json.dumps({"tag": "v1.2.3", "commit": "b" * 40,
+                                         "candidate_sha256s": hashes}))
+        sandbox.write_text(json.dumps({"status": "PASS", "candidate_sha256s": hashes}))
+        evidence = {"status": "PASS", "candidate_sha256s": hashes,
+                    "cancelled": False, "skipped": False}
+        if value == "missing":
+            del evidence[flag]
+        else:
+            evidence[flag] = value
+        winget.write_text(json.dumps(evidence))
+        with pytest.raises(gate.Hold, match=flag):
+            gate.verify(candidate, sandbox, winget_evidence_path=winget,
+                        no_upgrade_evidence=True)
+
+
+def test_winget_cli_required_and_mutually_exclusive(capsys):
+    assert gate.main(["verify", "--candidate", "missing", "--evidence", "missing",
+                      "--no-upgrade-evidence"]) == 1
+    assert capsys.readouterr().out == "HOLD: WinGet evidence is required\n"
+    with pytest.raises(SystemExit) as exc:
+        gate.main(["verify", "--candidate", "missing", "--evidence", "missing",
+                   "--winget-evidence", "missing", "--no-winget-evidence"])
+    assert exc.value.code == 2
+
+
+@pytest.mark.parametrize("content", ["{", "[]", '{"status":"PASS","status":"HOLD"}'])
+def test_winget_malformed_evidence_holds(content):
+    with temporary_directory() as temporary:
+        root = Path(temporary)
+        hashes = {"release.zip": "a" * 64}
+        candidate = root / "candidate.json"
+        sandbox = root / "sandbox.json"
+        winget = root / "winget.json"
+        candidate.write_text(json.dumps({"tag": "v1.2.3", "commit": "b" * 40,
+                                         "candidate_sha256s": hashes}))
+        sandbox.write_text(json.dumps({"status": "PASS", "candidate_sha256s": hashes}))
+        winget.write_text(content)
+        assert gate.main(["verify", "--candidate", str(candidate), "--evidence", str(sandbox),
+                          "--no-upgrade-evidence", "--winget-evidence", str(winget)]) == 1

@@ -3,7 +3,8 @@
 Candidate schema: tag, commit, candidate_sha256s (relative asset name -> SHA256).
 Evidence schema: status=PASS and the identical candidate_sha256s mapping.
 Sandbox cancelled/skipped flags, when present, must be exactly false.
-Upgrade evidence is required and must include both flags as exactly false.
+Upgrade and WinGet evidence are required and must include both flags as exactly false.
+--no-winget-evidence is an explicit legacy/test-only opt-out.
 --no-upgrade-evidence is a legacy/test-only opt-out. Provenance comes from
 RELEASE_TAG/GITHUB_REF_NAME and GITHUB_SHA, with local Git fallbacks.
 Existing candidate files are never overwritten; rebuilding needs a new path.
@@ -110,11 +111,16 @@ def freeze(assets, out):
         stream.write(payload)
 
 
-def verify(candidate_path, evidence_path, upgrade_evidence_path=None, *, no_upgrade_evidence=False):
+def verify(candidate_path, evidence_path, upgrade_evidence_path=None, *, no_upgrade_evidence=False,
+           winget_evidence_path=None, no_winget_evidence=False):
     if upgrade_evidence_path is None and not no_upgrade_evidence:
         raise Hold("upgrade evidence is required")
     if upgrade_evidence_path is not None and no_upgrade_evidence:
         raise Hold("upgrade evidence and opt-out are mutually exclusive")
+    if winget_evidence_path is None and not no_winget_evidence:
+        raise Hold("WinGet evidence is required")
+    if winget_evidence_path is not None and no_winget_evidence:
+        raise Hold("WinGet evidence and opt-out are mutually exclusive")
     candidate = _read(candidate_path)
     _identity(candidate)
     hashes = _hashes(candidate.get("candidate_sha256s"))
@@ -141,6 +147,21 @@ def verify(candidate_path, evidence_path, upgrade_evidence_path=None, *, no_upgr
         if not isinstance(prev_tag, str) or not prev_tag.strip() or any(c.isspace() for c in prev_tag) or prev_tag == candidate.get("tag"):
             raise Hold("upgrade evidence previous tag is missing, invalid, or matches candidate")
 
+    if winget_evidence_path is not None:
+        if not Path(winget_evidence_path).is_file():
+            raise Hold('WinGet evidence file is missing')
+        evidence = _read(winget_evidence_path)
+        if evidence.get('status') != 'PASS':
+            raise Hold('WinGet evidence status is not PASS')
+        for flag in ('cancelled', 'skipped'):
+            if evidence.get(flag) is not False:
+                raise Hold(f'WinGet evidence {flag} flag is invalid')
+        if _hashes(evidence.get('candidate_sha256s')) != _hashes(candidate.get('candidate_sha256s')):
+            raise Hold('WinGet evidence candidate hashes differ')
+        for field, variable in (('run_id', 'GITHUB_RUN_ID'), ('run_attempt', 'GITHUB_RUN_ATTEMPT')):
+            if os.environ.get(variable) and evidence.get(field) != os.environ[variable]:
+                raise Hold(f'WinGet evidence {field} differs')
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
@@ -157,6 +178,10 @@ def main(argv=None):
         "--no-upgrade-evidence", action="store_true",
         help="legacy/test-only opt-out from required upgrade evidence",
     )
+    winget_options = verify_parser.add_mutually_exclusive_group()
+    winget_options.add_argument("--winget-evidence", default=None)
+    winget_options.add_argument("--no-winget-evidence", action="store_true",
+                               help="legacy/test-only opt-out from required WinGet evidence")
     args = parser.parse_args(argv)
     try:
         if args.command == "freeze":
@@ -165,6 +190,8 @@ def main(argv=None):
             verify(
                 args.candidate, args.evidence, args.upgrade_evidence,
                 no_upgrade_evidence=args.no_upgrade_evidence,
+                winget_evidence_path=args.winget_evidence,
+                no_winget_evidence=args.no_winget_evidence,
             )
     except (Hold, OSError, ValueError, subprocess.SubprocessError) as exc:
         reason = " ".join(str(exc).split())

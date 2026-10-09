@@ -16,6 +16,8 @@ COMMIT = "a" * 40
 
 
 def run_cli(*args):
+    if args and args[0] == "verify":
+        args = (*args, "--no-winget-evidence")
     env = dict(os.environ, RELEASE_TAG="v1.2.3", GITHUB_SHA=COMMIT)
     return subprocess.run(
         [sys.executable, str(SCRIPT), *map(str, args)],
