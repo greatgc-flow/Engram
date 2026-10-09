@@ -395,3 +395,70 @@ def test_candidate_stage_rejects_path_before_writes(tmp_path, monkeypatch):
             {"latest_version": "../escape", "url": "unused", "checksum_value": "0" * 64},
             sys_dir=tmp_path / "_sys", target_dir=tmp_path)
     assert not (tmp_path / "_sys").exists()
+
+
+@pytest.mark.parametrize("undo_fails", [False, True])
+@pytest.mark.parametrize("sys_name", ["_sys", "custom_sys"])
+def test_helper_verified_rollback_inventory(tmp_path, monkeypatch, undo_fails, sys_name):
+    """Real handoff: fail after candidate copy, then optionally fail backup restore."""
+    import subprocess
+    target = tmp_path / "installed"
+    _setup_baseline_install(target, "1.0.0", b"OLD EXE", b"OLD APP")
+    if sys_name != "_sys":
+        (target / "_sys").rename(target / sys_name)
+    before = upgrade_harness.take_inventory(target)
+    candidate = tmp_path / "candidate.zip"
+    sha = _build_fixture_zip(candidate, "1.0.1", b"NEW EXE", b"NEW APP",
+                             {"_sys/core/introduced.txt": b"NEW FILE"})
+    monkeypatch.setenv("ENGRAM_UPDATE_CANDIDATE_ZIP", str(candidate))
+    monkeypatch.setenv("ENGRAM_UPDATE_CANDIDATE_SHA256", sha)
+    monkeypatch.setenv("ENGRAM_UPDATE_SKIP_PROCESS_WAIT", "1")
+    observed = tmp_path / "undo-status.txt"
+
+    def launch(helper, plan, workdir):
+        wrapper = tmp_path / "fault.ps1"
+        # Override only the filesystem boundary; execute the complete real helper.
+        wrapper.write_text(r"""
+param($Helper, $PlanPath, $Observed, $UndoFails)
+$global:wavePayload = Get-Content -LiteralPath $PlanPath | ConvertFrom-Json
+function Copy-Item {
+    param($Path, $LiteralPath, $Destination, [switch]$Force, [switch]$Recurse)
+    $source = if ($LiteralPath) { $LiteralPath } else { $Path }
+    if ([string]$source -like "$($global:wavePayload.backup_dir)*") {
+        (Get-Content $global:wavePayload.journal_path | ConvertFrom-Json).status |
+            Set-Content $Observed
+        if ($UndoFails -eq 'True') { throw 'injected undo failure' }
+    }
+    if ($LiteralPath) {
+        Microsoft.PowerShell.Management\Copy-Item -LiteralPath $LiteralPath -Destination $Destination -Force:$Force -Recurse:$Recurse
+    } else {
+        Microsoft.PowerShell.Management\Copy-Item -Path $Path -Destination $Destination -Force:$Force -Recurse:$Recurse
+    }
+    if ([string]$source -like "$($global:wavePayload.staged_dir)*" -and
+        (Test-Path (Join-Path $global:wavePayload.target_dir '""" + sys_name + r"""/core/introduced.txt'))) {
+        throw 'injected failure after candidate file creation'
+    }
+}
+& $Helper -PlanPath $PlanPath
+exit $LASTEXITCODE
+""", encoding="utf-8")
+        return subprocess.Popen(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+             "-File", str(wrapper), "-Helper", str(helper), "-PlanPath", str(plan),
+             "-Observed", str(observed), "-UndoFails", str(undo_fails)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    monkeypatch.setattr(provisioner, "_launch_detached_powershell_helper", launch)
+    result = upgrade_harness.stage_and_handoff_core_update(
+        {"latest_version": "1.0.1", "url": candidate.as_uri(), "checksum_value": sha},
+        sys_dir=target / sys_name, target_dir=target, parent_pid=999999)
+    assert result["process"].wait(timeout=20) == 1
+    journal = json.loads(result["journal_path"].read_text(encoding="utf-8-sig"))
+    assert observed.read_text(encoding="utf-8-sig").strip() == "ROLLBACK_IN_PROGRESS"
+    assert journal["status"] == ("FAILED_ROLLBACK_FAILED" if undo_fails else "FAILED_ROLLED_BACK")
+    assert f"{sys_name}\\core\\introduced.txt" in journal["created_files"]
+    if not undo_fails:
+        after = {k: v for k, v in upgrade_harness.take_inventory(target).items()
+                 if not k.startswith(f"{sys_name}/data/temp/")}
+        upgrade_harness.assert_inventory_identical(before, after)
+

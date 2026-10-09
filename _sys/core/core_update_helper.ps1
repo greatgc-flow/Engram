@@ -30,12 +30,28 @@ try {
 } catch {
 }
 
+function Get-Sha256 {
+    param([string]$FilePath)
+    $stream = [System.IO.File]::OpenRead($FilePath)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return [BitConverter]::ToString($sha.ComputeHash($stream))
+    } finally {
+        $stream.Dispose()
+        $sha.Dispose()
+    }
+}
+
 function Write-Journal {
     param([string]$Status)
-    $journal = @{ status = $Status }
+    $journal = @{ status = $Status; created_files = @($CreatedFiles) }
     $journal | ConvertTo-Json | Set-Content -Path $JournalPath -Encoding UTF8
 }
 
+$CreatedFiles = @()
+$OriginalHashes = @{}
+$BackedUpFiles = @()
+$ExeRenamed = $false
 Write-Journal "IN_PROGRESS"
 
 try {
@@ -50,19 +66,28 @@ try {
             $TargetRelPath = $RelPath
         }
         $TargetPath = Join-Path $TargetDir $TargetRelPath
-        if (Test-Path $TargetPath) {
+        if (Test-Path -LiteralPath $TargetPath -PathType Container) {
+            throw "Candidate file conflicts with directory: $TargetRelPath"
+        }
+        if (Test-Path -LiteralPath $TargetPath -PathType Leaf) {
+            $OriginalHashes[$TargetRelPath] = (Get-Sha256 $TargetPath)
             $BackupFilePath = Join-Path $BackupDir $TargetRelPath
             $BackupFileDir = Split-Path $BackupFilePath
             if (-not (Test-Path $BackupFileDir)) {
                 New-Item -ItemType Directory -Force -Path $BackupFileDir | Out-Null
             }
-            Copy-Item -Path $TargetPath -Destination $BackupFilePath -Force
+            Copy-Item -LiteralPath $TargetPath -Destination $BackupFilePath -Force
+            $BackedUpFiles += $TargetRelPath
+        } else {
+            $CreatedFiles += $TargetRelPath
         }
     }
     
+    Write-Journal "IN_PROGRESS"
     $EngramExe = Join-Path $TargetDir "Engram.exe"
     if (Test-Path $EngramExe) {
         Rename-Item -Path $EngramExe -NewName "Engram.exe.old" -Force
+        $ExeRenamed = $true
     }
     
     if ($SysDirName -ne "_sys") {
@@ -91,18 +116,36 @@ try {
     
     Write-Journal "COMPLETED"
 } catch {
-    Write-Journal "FAILED_ROLLED_BACK"
-    
-    $EngramExeOld = Join-Path $TargetDir "Engram.exe.old"
-    $EngramExe = Join-Path $TargetDir "Engram.exe"
-    if (Test-Path $EngramExeOld) {
-        Move-Item -Path $EngramExeOld -Destination $EngramExe -Force
+    Write-Journal "ROLLBACK_IN_PROGRESS"
+    try {
+        foreach ($RelPath in $CreatedFiles) {
+            $CreatedPath = Join-Path $TargetDir $RelPath
+            if (Test-Path -LiteralPath $CreatedPath -PathType Leaf) {
+                Remove-Item -LiteralPath $CreatedPath -Force
+            }
+        }
+        if ($ExeRenamed) {
+            Move-Item -LiteralPath (Join-Path $TargetDir "Engram.exe.old") -Destination (Join-Path $TargetDir "Engram.exe") -Force
+        }
+        foreach ($RelPath in $BackedUpFiles) {
+            Copy-Item -LiteralPath (Join-Path $BackupDir $RelPath) -Destination (Join-Path $TargetDir $RelPath) -Force
+        }
+        foreach ($RelPath in $OriginalHashes.Keys) {
+            $Restored = Join-Path $TargetDir $RelPath
+            if (-not (Test-Path -LiteralPath $Restored -PathType Leaf) -or
+                (Get-Sha256 $Restored) -ne $OriginalHashes[$RelPath]) {
+                throw "Rollback verification failed: $RelPath"
+            }
+        }
+        foreach ($RelPath in $CreatedFiles) {
+            if (Test-Path -LiteralPath (Join-Path $TargetDir $RelPath)) {
+                throw "Rollback left candidate file: $RelPath"
+            }
+        }
+        Write-Journal "FAILED_ROLLED_BACK"
+    } catch {
+        Write-Journal "FAILED_ROLLBACK_FAILED"
     }
-    
-    if (Test-Path $BackupDir) {
-        Copy-Item -Path "$BackupDir\*" -Destination $TargetDir -Recurse -Force
-    }
-    
     exit 1
 }
 exit 0

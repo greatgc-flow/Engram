@@ -4,7 +4,7 @@ This is the complete reference for the `engram` command (`engram.cmd` / `Engram.
 `engram <command> --help` and `engram help <command>`; those files (`_sys/core/help/<command>.txt`) are the single
 source, and a unit test keeps the per-command blocks below identical to them. Run `engram help` for the short overview.
 
-The command surface is frozen: verbs and flags are only ever added, never renamed or removed.
+The command help below defines the supported verbs and flags.
 
 ## Command groups
 
@@ -65,8 +65,9 @@ that name (to open a folder literally named like a command, use `engram open <na
   interrupted, every command except `help`, `version`, `doctor`, `repair`, `relocate` and `snapshots` refuses with
   exit 14 until you run `engram repair --resume` or `--rollback`. `tidy` also skips backups while the lock is held
   or a journal is open.
-- **Personal data is protected twice.** `reset` takes a verified safety snapshot first, and `reset --all` /
-  `uninstall --purge-data` additionally need the folder name typed, even with `--yes`.
+- **Personal data reset is limited to snapshot coverage.** `reset` deletes only archived portable files;
+  credentials, secrets, uncovered `.engram/` files and workspace projects remain.
+  `uninstall --purge-data` requires the folder name typed, even with `--yes`.
 
 ### Shared flags
 
@@ -74,7 +75,7 @@ that name (to open a folder literally named like a command, use `engram open <na
 |---|---|---|
 | `--apply` | Execute the planned change. | `update` and `uninstall` have no preview mode, so they do not need it (`uninstall` accepts it as a no-op). |
 | `--dry-run` | Preview only; always wins over `--apply`. A harmless no-op alias on preview-by-default commands. | Not offered on read-only or non-destructive commands (`doctor`, `menu`, `backup`, `open`). |
-| `--yes`, `-y` | Skip the confirmation prompt (for scripts). | `tidy`: only the `--purge-legacy` prompt. `reset --all` and `uninstall --purge-data` still require the typed folder name. `update --yes` is what applies the plan. |
+| `--yes`, `-y` | Skip the confirmation prompt (for scripts). | `tidy`: only the `--purge-legacy` prompt. `uninstall --purge-data` still require the typed folder name. `update --yes` is what applies the plan. |
 | `--json` | Machine-readable output. | `doctor`, `repair`, `relocate` and `snapshots list` only. |
 | `--only LIST` | Limit to the named parts (comma-separated). | `update`: tools/components; `repair`/`relocate`: python,venv,registry,state,ai-state,manifest,packages; `tidy`: cleanup categories. |
 | `-h`, `--help`, `/?` | Show help; never changes anything. | none |
@@ -528,6 +529,9 @@ Description:
   session transcripts; never credentials) into one .zip, and records what
   it skipped. It only reads your data, so it needs no preview and no
   confirmation; a managed AI CLI that is running only produces a warning.
+  Credentials and secret filenames are excluded recursively in every copy.
+  Declared SQLite databases use a consistent SQLite backup, including WAL.
+  Existing archives are replaced atomically after the new archive is ready.
   This is not the environment backup registry: for replaced Python/venv
   copies see 'engram snapshots'.
 
@@ -568,7 +572,8 @@ Description:
   made by 'engram backup', or from an old folder-shaped bundle. It previews
   by default and changes nothing until --apply. It refuses while a managed AI
   CLI is running, and takes an automatic safety snapshot of the current
-  state first unless --force is given.
+  destinations it will overwrite, including extras, unless --force is given.
+  Secret files stay excluded. Redirected source/destination paths are refused.
 
 Options:
   PATH             Backup .zip or bundle folder to restore (required)
@@ -649,30 +654,27 @@ See also:
 ```text
 engram reset - delete personal AI data (start over, keep the programs)
 
-Usage: engram reset [--apply] [--dry-run] [--yes|-y] [--all]
+Usage: engram reset [--apply] [--dry-run] [--yes|-y]
 
 Description:
-  Deletes .engram/ (AI CLI settings, memory, sessions) and any discovered
-  extra dotfolders such as .peerhub. Engram's programs and your workspace/
-  stay, unless --all. It previews by default. With --apply it first writes
-  a verified safety snapshot (_sys/data/backups/safety_pre_reset_*.zip) and
-  aborts if that fails, then asks for confirmation. --all additionally
-  requires typing the folder name, even with --yes. It refuses while a
-  managed AI CLI is running. Undo: engram restore <that snapshot>.
+  Deletes only portable files covered by a verified safety snapshot in
+  _sys/data/backups/safety_pre_reset_*.zip. Credentials, secrets, uncovered
+  .engram/ files and workspace/ stay. Discovered extra dotfolders use the
+  same exclusions. It previews by default. With --apply it asks for
+  confirmation, writes and verifies the snapshot, then deletes its files.
+  It refuses while a managed AI CLI is running.
+  Undo: engram restore <that snapshot> --apply.
 
 Options:
   --apply          Actually delete (default: off, preview only)
   --dry-run        Preview only; wins over --apply (default: on)
-  --yes, -y        Skip the [y/N] prompt; does not skip the typed-name check
-                   of --all (default: ask)
-  --all            Also delete workspace/ (default: off, only .engram/)
+  --yes, -y        Skip the [y/N] prompt (default: ask)
   -h, --help, /?   Show this help (default: off)
 
 Examples:
   engram reset
   engram reset --apply
   engram reset --apply --yes
-  engram reset --apply --all
 
 Exit codes:
   0   reset done, or preview shown

@@ -76,7 +76,7 @@ def test_public_cli_body_failure_reports_error_and_preserves_recovery(
         args = [bundle, "--apply"]  # --force explicitly waives snapshot recovery
 
     observed = {"mutation": 0}
-    real_copy2, real_rmtree = shutil.copy2, shutil.rmtree
+    real_copy2, real_rmtree, real_unlink = shutil.copy2, shutil.rmtree, Path.unlink
 
     def copy2(src, dst, *a, **kw):
         result = real_copy2(src, dst, *a, **kw)
@@ -99,6 +99,14 @@ def test_public_cli_body_failure_reports_error_and_preserves_recovery(
             raise OSError("injected mutation body fault after filesystem deletion")
         return real_rmtree(path, *a, **kw)
 
+    def unlink(path, *a, **kw):
+        result = real_unlink(path, *a, **kw)
+        if verb == "reset" and path == original_file and not observed["mutation"]:
+            observed["mutation"] += 1
+            raise OSError("injected mutation body fault after filesystem deletion")
+        return result
+
+    monkeypatch.setattr(Path, "unlink", unlink)
     monkeypatch.setattr(shutil, "copy2", copy2)
     monkeypatch.setattr(shutil, "rmtree", rmtree)
     code = _invoke(verb, *args)

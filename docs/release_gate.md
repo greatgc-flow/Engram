@@ -216,3 +216,15 @@ The promotion job executes `.github/scripts/wait_for_sandbox.js` to poll the asy
 
 Offline contract verification: `_sys/tests/unit/test_wait_for_sandbox.py` tests `.github/scripts/wait_for_sandbox.js` under Node.js via `tools/release_gate/wait_for_sandbox_driver.js`, stubbing GitHub Actions pagination and overriding `Date.now`/`setTimeout` with fake timers so tests run instantly without real waiting.
 
+
+### Core helper rollback journal
+
+The helper records candidate-created paths in `created_files` before replacement.
+On failure it writes `ROLLBACK_IN_PROGRESS`, removes those files, restores backups,
+and verifies original SHA-256 hashes and absence of candidate-created files.
+Only verified undo receives `FAILED_ROLLED_BACK`; undo or verification failure
+receives `FAILED_ROLLBACK_FAILED`. Both failures exit 1. The upgrade gate accepts
+only `COMPLETED`. Keep staging, backups, and the journal for investigation when
+rollback fails; do not treat that state as a restored installation.
+The offline helper fault tests compare the full installed file inventory, excluding
+handoff artifacts under the system directory's `data/temp`, and cover renamed systems.
