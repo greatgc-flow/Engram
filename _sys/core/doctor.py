@@ -396,7 +396,7 @@ def evaluate_limitations(
     for entry in table:
         if not isinstance(entry, dict):
             continue
-        kind = entry.get("kind") or entry.get("detector")
+        kind = entry.get("kind")
         detector = LIMITATION_DETECTORS.get(kind)
         if not detector:
             continue

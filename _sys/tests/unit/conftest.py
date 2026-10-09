@@ -5,6 +5,7 @@ import json
 import shutil
 import threading
 import time
+import tempfile
 import psutil
 import pytest
 from pathlib import Path
@@ -21,8 +22,12 @@ bootstrap_root_package(_SYS_DIR)
 
 # --- OOM / Hang Protection ---
 
-def _enforce_oom_guard(threshold_mb: float, available_mb: float, marker_path: str = "oom_marker.json") -> None:
+DEFAULT_OOM_MARKER = str(Path(tempfile.gettempdir()) / "oom_marker.json")
+
+def _enforce_oom_guard(threshold_mb: float, available_mb: float, marker_path: str | None = None) -> None:
     """Decision point for the OOM guard. Isolated for testability."""
+    if marker_path is None:
+        marker_path = DEFAULT_OOM_MARKER
     if available_mb < threshold_mb:
         print(f"\n[CRITICAL] OOM Guard: Available RAM ({available_mb:.1f}MB) below threshold ({threshold_mb}MB)!")
         print("[CRITICAL] Force-terminating pytest and child processes to save OS...")

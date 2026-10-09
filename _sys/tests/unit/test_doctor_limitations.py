@@ -88,7 +88,7 @@ class TestDoctorLimitations(unittest.TestCase):
         entries = data if isinstance(data, list) else data.get("limitations", [])
         self.assertGreaterEqual(len(entries), 4)
 
-        kinds = {e.get("kind") or e.get("detector") for e in entries}
+        kinds = {e.get("kind") for e in entries}
         self.assertIn("path-chars", kinds)
         self.assertIn("console-codepage", kinds)
         self.assertIn("install-path-segment", kinds)
