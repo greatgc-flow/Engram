@@ -20,7 +20,7 @@ from core import provisioner
 
 # Run the actual public updater in a child process so its helper can wait for exit.
 _WORKER = r"""
-import sys
+import os, sys
 from pathlib import Path
 code_sys, target, fault = map(Path, sys.argv[1:4])
 sys.path[:0] = [str(code_sys), str(code_sys / "core")]
@@ -42,7 +42,7 @@ def launch(helper, plan, workdir):
     if fault.is_file():
         return subprocess.Popen(["powershell.exe", "-NoProfile", "-NonInteractive",
             "-ExecutionPolicy", "Bypass", "-File", str(fault),
-            "-Helper", str(helper), "-PlanPath", str(plan)], cwd=workdir)
+            "-Helper", str(helper), "-PlanPath", str(plan)], cwd=workdir, env=os.environ.copy())
     return original_launch(helper, plan, workdir)
 provisioner._launch_detached_powershell_helper = launch
 provisioner._default_sys_dir = lambda: target / "_sys"
@@ -101,6 +101,14 @@ def parse_version(v: str | None) -> tuple[int, ...]:
     return tuple(parts)
 
 
+def build_subprocess_env(overrides: dict) -> dict:
+    """Use the launcher's static environment manifest for all harness children."""
+    manifest = json.loads((_SYS_DIR_DEFAULT / "env.json").read_text(encoding="utf-8"))
+    env = dict(os.environ, **overrides)
+    env.update({key: str(value) for key, value in manifest["env_vars"].items()})
+    return env
+
+
 def public_update(target: Path, code_sys: Path, fault: Path, env: dict, version: str, expected: str) -> None:
     import subprocess
     import time
@@ -108,7 +116,7 @@ def public_update(target: Path, code_sys: Path, fault: Path, env: dict, version:
     if journal_path.exists():
         raise RuntimeError("pre-existing upgrade journal")
     result = subprocess.run([sys.executable, "-c", _WORKER, str(code_sys), str(target), str(fault)],
-                            env=env, cwd=target, timeout=120, capture_output=True, text=True,
+                            env=build_subprocess_env(env), cwd=target, timeout=120, capture_output=True, text=True,
                             encoding="utf-8", errors="replace")
     if result.stdout:
         sys.stdout.write(result.stdout)

@@ -189,7 +189,7 @@ def _check_python_version(V: dict) -> None:
     running  = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     expected = V.get("Python", "")
     if expected and running != expected:
-        print(f"  [!] Python 버전 불일치: 실행={running}, 기대={expected}")
+        print(f"  [!] Python version mismatch: running={running}, expected={expected}")
     else:
         print(f"  [OK] Python {running}")
 
