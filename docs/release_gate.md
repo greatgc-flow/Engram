@@ -81,7 +81,7 @@ weekly runs exercise the same gate but do not publish a release.
    and raw binary content), and runs `tools/release_gate/upgrade_harness.py`
    against the candidate ZIP using the external SHA256 from `candidate.json`.
    The harness verifies offline staging, manifest integrity, detached helper
-   execution, journal completion, updated installed version, and byte-for-byte
+   execution, verified failed-update rollback, journal completion, updated installed version, and byte-for-byte
    preservation of user data. It emits `upgrade_evidence.json` bound to the
    candidate SHA256s and previous tag, and uploads the
    `upgrade-evidence-<run_id>-<run_attempt>` artifact.
@@ -107,8 +107,8 @@ this is why the hosted polling job does not have `needs: clean-room-sandbox`.
 A runner that appears after the evidence deadline cannot revive the failed
 promotion job. Rerun all jobs for a new attempt and a fresh candidate; rerunning
 only failed jobs cannot reuse a previous attempt's candidate artifact. Never
-publish manually to bypass HOLD. The real ACP=949 proof described in
-`docs/cp949_verification.md` remains a separate required pre-release check.
+publish manually to bypass HOLD. The real ACP=949 locale claim is deferred. Current locale coverage is emulated
+only; it does not prove execution on a machine whose GetACP returns 949.
 
 The offline verifier checks consistency, not authenticity. Evidence trust
 comes from workflow permissions, same-run artifact selection, protected tags,
@@ -223,8 +223,8 @@ The helper records candidate-created paths in `created_files` before replacement
 On failure it writes `ROLLBACK_IN_PROGRESS`, removes those files, restores backups,
 and verifies original SHA-256 hashes and absence of candidate-created files.
 Only verified undo receives `FAILED_ROLLED_BACK`; undo or verification failure
-receives `FAILED_ROLLBACK_FAILED`. Both failures exit 1. The upgrade gate accepts
-only `COMPLETED`. Keep staging, backups, and the journal for investigation when
+receives `FAILED_ROLLBACK_FAILED`. Both failures exit 1. The upgrade gate requires both successful `COMPLETED` replacement and injected
+failed replacement with verified `FAILED_ROLLED_BACK` undo. Keep staging, backups, and the journal for investigation when
 rollback fails; do not treat that state as a restored installation.
 The offline helper fault tests compare the full installed file inventory, excluding
 handoff artifacts under the system directory's `data/temp`, and cover renamed systems.
@@ -275,3 +275,22 @@ IDs use JUnit `module[.Class]::test` names, without a repository package prefix.
 Closure checks each retained candidate with an independent subprocess deadline.
 A timeout writes candidate-bound DRIFT evidence and a summary, then checks the
 remaining candidates. Any DRIFT makes the ledger check fail after traversal.
+
+
+## Wave F public upgrade coverage
+
+The hosted upgrade job runs the previous installation's public updater with
+`--only core --yes`, using its own helper and the frozen local candidate seam.
+If its resolver/provisioner lack the external-digest seam, the gate explicitly
+records `updater_source: candidate`: candidate updater and helper code run against
+the previous tree. This proves candidate migration/rollback compatibility, but
+cannot prove that the older release's updater can discover or install the candidate.
+No staging implementation is copied into the harness.
+
+A separate clone exercises deterministic failure after replacement through a
+PowerShell filesystem boundary wrapper. Undo must expose `ROLLBACK_IN_PROGRESS`,
+end in `FAILED_ROLLED_BACK`, and preserve the full file inventory captured at
+handoff, excluding only `_sys/data/temp` helper artifacts. Public updater
+bookkeeping before handoff remains in that inventory. Success must install the
+candidate version and preserve seeded user data. Promotion requires both
+`scenarios: {upgrade: PASS, rollback: PASS}` and the recorded updater source.

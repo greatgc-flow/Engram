@@ -30,57 +30,25 @@ from core import provisioner, updater, version_resolver
 from tools.release_gate import upgrade_harness
 
 
-def _take_inventory(root_dir: Path) -> dict[str, str]:
-    """Capture file inventory mapping relative POSIX path to SHA-256 digest."""
-    inventory: dict[str, str] = {}
-    if not root_dir.exists():
-        return inventory
-    for path in sorted(root_dir.rglob("*")):
-        if path.is_file():
-            rel = path.relative_to(root_dir).as_posix()
-            inventory[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
-    return inventory
 
+def _fixture_handoff(core_update, sys_dir, target_dir, parent_pid=999999):
+    """Helper-only fixture; public updater integration is tested separately below."""
+    temp = sys_dir / "data/temp/core-update" / core_update["latest_version"]
+    temp.mkdir(parents=True)
+    staged = temp / "staged"
+    updater._download_and_stage_core_update(core_update["url"], core_update["checksum_value"], temp / "update.zip", staged)
+    helper = temp / "core_update_helper.ps1"
+    shutil.copyfile(sys_dir / "core/core_update_helper.ps1", helper)
+    journal = temp / "journal.json"
+    plan = temp / "plan.json"
+    plan.write_text(json.dumps({"target_dir": str(target_dir), "staged_dir": str(staged),
+        "backup_dir": str(temp / "backup"), "journal_path": str(journal),
+        "parent_pid": parent_pid, "sys_dir_name": sys_dir.name}), encoding="utf-8")
+    return {"process": provisioner._launch_detached_powershell_helper(helper, plan, temp), "journal_path": journal}
 
-def _assert_inventory_identical(before: dict[str, str], after: dict[str, str]) -> None:
-    """Assert two inventories have zero additions, deletions, or hash mismatches."""
-    added = set(after.keys()) - set(before.keys())
-    deleted = set(before.keys()) - set(after.keys())
-    mismatched = {k: (before[k], after[k]) for k in before.keys() & after.keys() if before[k] != after[k]}
-    assert not added, f"Unexpected files added to user inventory: {sorted(added)}"
-    assert not deleted, f"Files unexpectedly deleted from user inventory: {sorted(deleted)}"
-    assert not mismatched, f"Files modified in user inventory: {mismatched}"
-
-
-def _seed_user_data(engram_dir: Path) -> None:
-    """Seed user data under .engram/ including structured, binary, and Unicode content."""
-    engram_dir.mkdir(parents=True, exist_ok=True)
-
-    # 1. Structured JSON
-    (engram_dir / "user_config.json").write_text(
-        json.dumps({"theme": "midnight", "user_id": "u-42", "active": True}, indent=2),
-        encoding="utf-8",
-    )
-
-    # 2. Multilingual Unicode text
-    unicode_text = (
-        "Engram Memory Vault 🧠\n"
-        "Japanese: 日本語テストノート (ひらがな・カタカナ・漢字)\n"
-        "Spanish: ¿Cómo estás niño? ¡Mañana café!\n"
-        "Russian: Привет, как дела? Тестовый файл.\n"
-        "Symbols: €100 + £50 = ¥20,000 | 🚀 ⚡ 🔒\n"
-    )
-    (engram_dir / "unicode_notes.md").write_text(unicode_text, encoding="utf-8")
-
-    # 3. Raw arbitrary binary with all byte values 0x00-0xFF
-    full_byte_range = bytes(range(256)) * 4 + b"\x00\xff\xfe\x00\x1a\x04\x00"
-    (engram_dir / "binary_store.dat").write_bytes(full_byte_range)
-
-    # 4. Nested subfolder with binary payload and Unicode path
-    sub_dir = engram_dir / "vault_sub" / "데이터_data"
-    sub_dir.mkdir(parents=True, exist_ok=True)
-    (sub_dir / "random_entropy.bin").write_bytes(bytes([b ^ 0x5C for b in full_byte_range]))
-    (sub_dir / "accented_filename_é_ü.txt").write_text("accented file payload", encoding="utf-8")
+_take_inventory = upgrade_harness.take_inventory
+_assert_inventory_identical = upgrade_harness.assert_inventory_identical
+_seed_user_data = upgrade_harness.seed_user_data
 
 
 def _build_fixture_zip(
@@ -138,7 +106,7 @@ def _setup_baseline_install(
     shutil.copyfile(real_helper, sys_core / "core_update_helper.ps1")
 
 
-def test_upgrade_gate_offline_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_helper_offline_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """End-to-end offline upgrade gate: staging, validation, handoff, inventory preservation."""
     target_dir = tmp_path / "installed_app"
     prev_version = "1.0.0"
@@ -180,7 +148,7 @@ def test_upgrade_gate_offline_success(tmp_path: Path, monkeypatch: pytest.Monkey
     assert discovery["url"] == candidate_zip.as_uri()
 
     # 5. Run real staging, validation, and helper handoff
-    staged_res = upgrade_harness.stage_and_handoff_core_update(
+    staged_res = _fixture_handoff(
         core_update={
             "latest_version": discovery["latest_version"],
             "url": discovery["url"],
@@ -217,7 +185,7 @@ def test_upgrade_gate_offline_success(tmp_path: Path, monkeypatch: pytest.Monkey
     assert (target_dir / "_sys" / "core" / "app.py").read_bytes() == candidate_app_bytes
 
 
-def test_upgrade_gate_offline_failure_rollback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_helper_offline_failure_rollback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Injected replacement conflict yields FAILED_ROLLED_BACK with baseline program bytes restored."""
     target_dir = tmp_path / "installed_app"
     prev_version = "1.0.0"
@@ -260,7 +228,7 @@ def test_upgrade_gate_offline_failure_rollback(tmp_path: Path, monkeypatch: pyte
     monkeypatch.setenv("ENGRAM_UPDATE_CANDIDATE_SHA256", candidate_sha)
     monkeypatch.setenv("ENGRAM_UPDATE_SKIP_PROCESS_WAIT", "1")
 
-    staged_res = upgrade_harness.stage_and_handoff_core_update(
+    staged_res = _fixture_handoff(
         core_update={
             "latest_version": candidate_version,
             "url": candidate_zip.as_uri(),
@@ -361,24 +329,6 @@ function Get-Process {
     assert cp.returncode == 0, cp.stderr
 
 
-def test_bare_skip_environment_omitted_from_plan(tmp_path, monkeypatch):
-    target = tmp_path / "installed"
-    _setup_baseline_install(target, "1.0.0", b"OLD", b"OLD")
-    candidate = tmp_path / "candidate.zip"
-    sha = _build_fixture_zip(candidate, "1.0.1", b"NEW", b"NEW")
-    monkeypatch.delenv("ENGRAM_UPDATE_CANDIDATE_ZIP", raising=False)
-    monkeypatch.setenv("ENGRAM_UPDATE_SKIP_PROCESS_WAIT", "1")
-    def stage(url, checksum, archive, staged):
-        with zipfile.ZipFile(candidate) as zf:
-            zf.extractall(staged)
-    monkeypatch.setattr(upgrade_harness, "_download_and_stage_core_update", stage)
-    monkeypatch.setattr(provisioner, "_launch_detached_powershell_helper", lambda *args: None)
-    result = upgrade_harness.stage_and_handoff_core_update(
-        {"latest_version": "1.0.1", "url": "https://example.test/release.zip", "checksum_value": sha},
-        sys_dir=target / "_sys", target_dir=target)
-    assert "skip_process_wait" not in json.loads(result["plan_file"].read_text())
-
-
 def test_candidate_transport_requires_external_digest(tmp_path, monkeypatch):
     candidate = tmp_path / "candidate.zip"
     _build_fixture_zip(candidate, "1.0.1", b"EXE", b"APP")
@@ -386,15 +336,6 @@ def test_candidate_transport_requires_external_digest(tmp_path, monkeypatch):
     monkeypatch.delenv("ENGRAM_UPDATE_CANDIDATE_SHA256", raising=False)
     with pytest.raises(urllib.error.URLError, match="require ENGRAM_UPDATE_CANDIDATE_SHA256"):
         provisioner._secure_download(candidate.as_uri(), tmp_path / "download.zip")
-
-
-def test_candidate_stage_rejects_path_before_writes(tmp_path, monkeypatch):
-    monkeypatch.setenv("ENGRAM_UPDATE_CANDIDATE_ZIP", str(tmp_path / "candidate.zip"))
-    with pytest.raises(ValueError, match="invalid candidate version"):
-        upgrade_harness.stage_and_handoff_core_update(
-            {"latest_version": "../escape", "url": "unused", "checksum_value": "0" * 64},
-            sys_dir=tmp_path / "_sys", target_dir=tmp_path)
-    assert not (tmp_path / "_sys").exists()
 
 
 @pytest.mark.parametrize("undo_fails", [False, True])
@@ -449,7 +390,7 @@ exit $LASTEXITCODE
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     monkeypatch.setattr(provisioner, "_launch_detached_powershell_helper", launch)
-    result = upgrade_harness.stage_and_handoff_core_update(
+    result = _fixture_handoff(
         {"latest_version": "1.0.1", "url": candidate.as_uri(), "checksum_value": sha},
         sys_dir=target / sys_name, target_dir=target, parent_pid=999999)
     assert result["process"].wait(timeout=20) == 1
@@ -462,3 +403,69 @@ exit $LASTEXITCODE
                  if not k.startswith(f"{sys_name}/data/temp/")}
         upgrade_harness.assert_inventory_identical(before, after)
 
+
+
+import unittest
+import tempfile
+
+
+class UpgradeGateTests(unittest.TestCase):
+    def fixture(self, root, previous_seam=True):
+        target = root / "installed"
+        target.mkdir()
+        for name in ("core", "checks", "defaults"):
+            shutil.copytree(_SYS_DIR / name, target / "_sys" / name,
+                            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        (target / "Engram.exe").write_bytes(b"OLD EXE")
+        (target / "README.md").write_bytes(b"OLD README")
+        (target / "_sys/core/version.json").write_text('{"version":"1.0.0"}', encoding="utf-8")
+        upgrade_harness.seed_user_data(target / ".engram")
+        candidate = root / "candidate.zip"
+        with zipfile.ZipFile(candidate, "w", zipfile.ZIP_DEFLATED) as archive:
+            for path in target.rglob("*"):
+                if path.is_file() and ".engram" not in path.parts:
+                    rel = path.relative_to(target).as_posix()
+                    if rel.endswith("release-manifest.json"):
+                        continue
+                    content = path.read_bytes()
+                    if rel == "_sys/core/version.json":
+                        content = b'{"version":"1.0.1"}'
+                    archive.writestr(rel, content)
+            archive.writestr("_sys/core/introduced.txt", b"candidate-only file")
+        if not previous_seam:
+            (target / "_sys/core/version_resolver.py").write_text("# old resolver", encoding="utf-8")
+        identity = root / "candidate.json"
+        identity.write_text(json.dumps({"tag": "v1.0.1", "candidate_sha256s": {
+            candidate.name: hashlib.sha256(candidate.read_bytes()).hexdigest()}}), encoding="utf-8")
+        return target, candidate, identity
+
+    def test_upgrade_gate_offline_success(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[3]) as temp:
+            target, candidate, identity = self.fixture(Path(temp))
+            evidence = upgrade_harness.run_upgrade_gate(target, candidate, identity, "v1.0.0")
+            self.assertEqual(evidence["updater_source"], "previous")
+            self.assertEqual(evidence["scenarios"], {"upgrade": "PASS", "rollback": "PASS"})
+
+    def test_upgrade_gate_offline_failure_rollback(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[3]) as temp:
+            target, candidate, identity = self.fixture(Path(temp), previous_seam=False)
+            evidence = upgrade_harness.run_upgrade_gate(target, candidate, identity, "v1.0.0")
+            self.assertEqual(evidence["updater_source"], "candidate")
+            self.assertEqual(evidence["scenarios"]["rollback"], "PASS")
+
+    def test_missing_rollback_blocks_pass(self):
+        from _sys.checks import release_evidence
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[3]) as temp:
+            root = Path(temp)
+            hashes = {"candidate.zip": "a" * 64}
+            candidate = {"tag": "v2", "commit": "b" * 40, "candidate_sha256s": hashes}
+            base = {"status": "PASS", "candidate_sha256s": hashes, "cancelled": False,
+                    "skipped": False, "run_id": "1", "run_attempt": "1"}
+            sandbox = dict(base, provider="hosted-ephemeral-vm", runner_environment="github-hosted",
+                           workflow_run_id="1", image="Windows")
+            upgrade = dict(base, previous_tag="v1", updater_source="previous", scenarios={"upgrade": "PASS"})
+            for name, value in (("candidate", candidate), ("sandbox", sandbox), ("upgrade", upgrade)):
+                (root / name).write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaisesRegex(release_evidence.Hold, "rollback"):
+                release_evidence.verify(root / "candidate", root / "sandbox", root / "upgrade",
+                    no_winget_evidence=True, run_id="1", run_attempt="1")

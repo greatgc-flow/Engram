@@ -244,7 +244,7 @@ jobs:
         run: |
           python tools/release_gate/upgrade_harness.py seed --target-dir $env:ISOLATED_ROOT
           if ($LASTEXITCODE) { throw 'HOLD: failed to seed user data' }
-      - name: Run upgrade harness against candidate
+      - name: Run public update and failed replacement rollback against candidate
         id: upgrade
         shell: pwsh
         run: |

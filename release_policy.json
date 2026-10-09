@@ -9,7 +9,8 @@
   "closure_retention_days": 90,
   "required_test_ids": [
     "test_release_evidence::test_exact_pass_evidence_promotes",
-    "test_upgrade_gate_offline::test_upgrade_gate_offline_success",
+    "test_upgrade_gate_offline.UpgradeGateTests::test_upgrade_gate_offline_success",
+    "test_upgrade_gate_offline.UpgradeGateTests::test_upgrade_gate_offline_failure_rollback",
     "test_hosted_clean_room::test_hosted_clean_room_success",
     "test_release_gate_b1.B1Tests::test_sandbox_requires_flags",
     "test_release_gate_b1.B1Tests::test_timeout_continues_ledger",

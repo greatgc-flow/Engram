@@ -16,149 +16,99 @@ if str(_SYS_DIR_DEFAULT) not in sys.path:
 if str(_SYS_DIR_DEFAULT / "core") not in sys.path:
     sys.path.insert(0, str(_SYS_DIR_DEFAULT / "core"))
 
-from core import provisioner, updater
+from core import provisioner
 
-_SYS_DIR = updater._SYS_DIR
-_PORTABLE_ROOT = updater._PORTABLE_ROOT
-_download_and_stage_core_update = updater._download_and_stage_core_update
+# Run the actual public updater in a child process so its helper can wait for exit.
+_WORKER = r"""
+import sys
+from pathlib import Path
+code_sys, target, fault = map(Path, sys.argv[1:4])
+sys.path[:0] = [str(code_sys), str(code_sys / "core")]
+from core import updater, provisioner
+# Candidate fallback uses candidate code, with installation paths bound to the previous tree.
+for module in list(sys.modules.values()):
+    filename = getattr(module, "__file__", None)
+    if not filename or not Path(filename).resolve().is_relative_to(code_sys):
+        continue
+    for key, value in list(vars(module).items()):
+        if isinstance(value, Path) and value.is_relative_to(code_sys.parent):
+            setattr(module, key, target / value.relative_to(code_sys.parent))
+import subprocess, hashlib, json, shutil
+original_launch = provisioner._launch_detached_powershell_helper
+original_helper = code_sys / "core/core_update_helper.ps1"
+def launch(helper, plan, workdir):
+    if code_sys != target / "_sys":
+        shutil.copyfile(original_helper, helper)
+    if fault.is_file():
+        return subprocess.Popen(["powershell.exe", "-NoProfile", "-NonInteractive",
+            "-ExecutionPolicy", "Bypass", "-File", str(fault),
+            "-Helper", str(helper), "-PlanPath", str(plan)], cwd=workdir)
+    return original_launch(helper, plan, workdir)
+provisioner._launch_detached_powershell_helper = launch
+provisioner._default_sys_dir = lambda: target / "_sys"
+result = updater.run({"args": ["--only", "core", "--yes"],
+                      "sys_dir": target / "_sys", "base_dir": target, "state": {}})
+if result.get("status") != "success":
+    raise SystemExit(str(result))
+if fault.is_file():
+    inventory = {p.relative_to(target).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                 for p in target.rglob("*") if p.is_file()
+                 and not p.relative_to(target).as_posix().startswith("_sys/data/temp/")}
+    fault.with_suffix(".inventory.json").write_text(json.dumps(inventory), encoding="utf-8")
 
+"""
 
-def stage_and_handoff_core_update(
-    core_update: dict[str, Any],
-    sys_dir: Path | None = None,
-    target_dir: Path | None = None,
-    parent_pid: int | None = None,
-) -> dict[str, Any]:
-    """Securely stage, validate, and hand off a core update to core_update_helper.ps1."""
-    from core.layout import INSTALL_ROOT_ENTRIES
-
-    sys_dir = sys_dir or _SYS_DIR
-    target_dir = target_dir or _PORTABLE_ROOT
-    parent_pid = os.getpid() if parent_pid is None else parent_pid
-
-    target_version = core_update["latest_version"]
-    if os.environ.get("ENGRAM_UPDATE_CANDIDATE_ZIP", "").strip():
-        import re
-        if not isinstance(target_version, str) or not re.fullmatch(
-            r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?(?:\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?",
-            target_version,
-        ):
-            raise ValueError("invalid candidate version")
-    temp_update_dir = sys_dir / "data" / "temp" / "core-update" / target_version
-    temp_update_dir.mkdir(parents=True, exist_ok=True)
-
-    zip_path = temp_update_dir / "update.zip"
-    staged_dir = temp_update_dir / "staged"
-    backup_dir = temp_update_dir / "backup"
-
-    print(f"  - Downloading {core_update['url']}...")
-    _download_and_stage_core_update(
-        core_update["url"], core_update["checksum_value"], zip_path, staged_dir
-    )
-
-    root_entries = list(staged_dir.iterdir())
-    if len(root_entries) == 1 and root_entries[0].is_dir():
-        wrapped_dir = root_entries[0]
-        for item in wrapped_dir.iterdir():
-            shutil.move(str(item), str(staged_dir))
-        wrapped_dir.rmdir()
-
-    # Verifications
-    staged_version_file = staged_dir / "_sys" / "core" / "version.json"
-    if not staged_version_file.exists():
-        raise ValueError("staged/_sys/core/version.json not found")
-    staged_version = json.loads(staged_version_file.read_text(encoding="utf-8")).get("version")
-    if staged_version != target_version:
-        raise ValueError(f"staged version tag '{staged_version}' does not match target '{target_version}'")
-
-    # Check root entries
-    for entry in staged_dir.iterdir():
-        if entry.name not in INSTALL_ROOT_ENTRIES:
-            raise ValueError(f"staged root entry '{entry.name}' not in INSTALL_ROOT_ENTRIES")
-
-    # Check no staged path falls under protected areas
-    protected = [
-        ".engram", "workspace",
-        f"{sys_dir.name}/env", f"{sys_dir.name}/tools",
-        f"{sys_dir.name}/data/state", f"{sys_dir.name}/data/logs",
-        f"{sys_dir.name}/data/cache", f"{sys_dir.name}/data/temp",
-        f"{sys_dir.name}/data/backups",
-        f"{sys_dir.name}/runtimes.json", f"{sys_dir.name}/tool-catalog.v1.json",
-    ]
-    if sys_dir.name != "_sys":
-        protected.extend([
-            "_sys/env", "_sys/tools",
-            "_sys/data/state", "_sys/data/logs",
-            "_sys/data/cache", "_sys/data/temp",
-            "_sys/data/backups",
-            "_sys/runtimes.json", "_sys/tool-catalog.v1.json",
-        ])
-    for p in staged_dir.rglob("*"):
-        rel_p = p.relative_to(staged_dir).as_posix()
-        for prot in protected:
-            if rel_p == prot or rel_p.startswith(prot + "/"):
-                raise ValueError(f"staged path '{rel_p}' falls under protected area '{prot}'")
-
-    # Check manifest hashes
-    manifest_path = staged_dir / "_sys" / "core" / "release-manifest.json"
-    if manifest_path.exists():
-        manifest_files = json.loads(manifest_path.read_text(encoding="utf-8")).get("files", {})
-        for path_str, expected_hash in manifest_files.items():
-            target_file = staged_dir / path_str
-            if target_file.exists() and target_file.is_file():
-                actual_file_hash = provisioner._hash_file(target_file, "sha256")
-                if actual_file_hash.upper() != expected_hash.upper():
-                    raise ValueError(f"staged file '{path_str}' hash mismatch")
-
-    # Handoff
-    print("  - Handing off to core_update_helper.ps1...")
-
-    helper_src = sys_dir / "core" / "core_update_helper.ps1"
-    if not helper_src.exists():
-        helper_src = _SYS_DIR / "core" / "core_update_helper.ps1"
-    helper_dest = temp_update_dir / "core_update_helper.ps1"
-    shutil.copyfile(helper_src, helper_dest)
-
-    journal_path = temp_update_dir / "journal.json"
-
-    plan_payload = {
-        "target_dir": str(target_dir),
-        "staged_dir": str(staged_dir),
-        "backup_dir": str(backup_dir),
-        "journal_path": str(journal_path),
-        "parent_pid": parent_pid,
-        "sys_dir_name": sys_dir.name,
+_FAULT = r"""
+param($Helper, $PlanPath)
+$global:payload = Get-Content -LiteralPath $PlanPath -Raw | ConvertFrom-Json
+function Copy-Item {
+    param($Path, $LiteralPath, $Destination, [switch]$Force, [switch]$Recurse)
+    $source = if ($LiteralPath) { $LiteralPath } else { $Path }
+    if ([string]$source -like "$($global:payload.backup_dir)*") {
+        $status = (Get-Content $global:payload.journal_path -Raw | ConvertFrom-Json).status
+        if ($status -ne 'ROLLBACK_IN_PROGRESS') { throw 'undo journal not in progress' }
+        Set-Content ($global:payload.journal_path + '.undo') $status
     }
-    candidate_zip = os.environ.get("ENGRAM_UPDATE_CANDIDATE_ZIP", "").strip()
-    candidate_sha = os.environ.get("ENGRAM_UPDATE_CANDIDATE_SHA256", "").strip()
-    candidate_seam = (
-        bool(candidate_zip)
-        and core_update["url"] == Path(candidate_zip).resolve().as_uri()
-        and len(candidate_sha) == 64
-        and all(c in "0123456789abcdefABCDEF" for c in candidate_sha)
-        and candidate_sha.lower() == core_update["checksum_value"].lower()
-    )
-    if candidate_seam and os.environ.get("ENGRAM_UPDATE_SKIP_PROCESS_WAIT") == "1":
-        plan_payload["skip_process_wait"] = True
-
-    plan_file = temp_update_dir / "plan.json"
-    plan_file.write_text(json.dumps(plan_payload, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    proc = provisioner._launch_detached_powershell_helper(
-        helper_dest, plan_file, temp_update_dir
-    )
-
-    return {
-        "status": "staged",
-        "target_version": target_version,
-        "temp_update_dir": temp_update_dir,
-        "staged_dir": staged_dir,
-        "backup_dir": backup_dir,
-        "plan_file": plan_file,
-        "journal_path": journal_path,
-        "helper_script": helper_dest,
-        "process": proc,
+    if ($LiteralPath) {
+        Microsoft.PowerShell.Management\Copy-Item -LiteralPath $LiteralPath -Destination $Destination -Force:$Force -Recurse:$Recurse
+    } else {
+        Microsoft.PowerShell.Management\Copy-Item -Path $Path -Destination $Destination -Force:$Force -Recurse:$Recurse
     }
+    if ([string]$source -like "$($global:payload.staged_dir)*") {
+        throw 'deterministic failure after replacement'
+    }
+}
+& $Helper -PlanPath $PlanPath
+exit $LASTEXITCODE
+"""
+
+
+def public_update(target: Path, code_sys: Path, fault: Path, env: dict, version: str, expected: str) -> None:
+    import subprocess
+    import time
+    journal_path = target / "_sys/data/temp/core-update" / version / "journal.json"
+    if journal_path.exists():
+        raise RuntimeError("pre-existing upgrade journal")
+    result = subprocess.run([sys.executable, "-c", _WORKER, str(code_sys), str(target), str(fault)],
+                            env=env, cwd=target, timeout=120)
+    if result.returncode:
+        raise RuntimeError(f"public updater failed: {result.returncode}")
+    deadline = time.monotonic() + 120
+    while time.monotonic() < deadline:
+        try:
+            journal = json.loads(journal_path.read_text(encoding="utf-8-sig"))
+            if journal.get("status") in ("COMPLETED", "FAILED_ROLLED_BACK", "FAILED_ROLLBACK_FAILED"):
+                break
+        except (OSError, ValueError):
+            pass
+        time.sleep(.1)
+    else:
+        raise RuntimeError("helper journal timed out")
+    if journal["status"] != expected:
+        raise RuntimeError(f"expected {expected}, got {journal['status']}")
+    if expected == "FAILED_ROLLED_BACK":
+        if Path(str(journal_path) + ".undo").read_text(encoding="utf-8-sig").strip() != "ROLLBACK_IN_PROGRESS":
+            raise RuntimeError("rollback did not expose in-progress journal")
 
 
 def seed_user_data(engram_dir: Path) -> None:
@@ -289,32 +239,34 @@ def run_upgrade_gate(
     if not before_inventory:
         raise ValueError("user data inventory is empty before upgrade")
 
-    os.environ["ENGRAM_UPDATE_CANDIDATE_ZIP"] = str(candidate_zip)
-    os.environ["ENGRAM_UPDATE_CANDIDATE_SHA256"] = cand_sha
-    os.environ["ENGRAM_UPDATE_SKIP_PROCESS_WAIT"] = "1"
-
-    staged_res = stage_and_handoff_core_update(
-        core_update={
-            "latest_version": cand_version,
-            "url": candidate_zip.as_uri(),
-            "checksum_value": cand_sha,
-        },
-        sys_dir=target_dir / "_sys",
-        target_dir=target_dir,
-        parent_pid=999999,
-    )
-
-    proc = staged_res["process"]
-    ret = proc.wait(timeout=60)
-    if ret != 0:
-        raise RuntimeError(f"core update helper process failed with exit code {ret}")
-
-    journal_path = staged_res["journal_path"]
-    if not journal_path.exists():
-        raise RuntimeError("upgrade journal.json was not created")
-    journal = json.loads(journal_path.read_text(encoding="utf-8-sig"))
-    if journal.get("status") != "COMPLETED":
-        raise RuntimeError(f"upgrade journal status is '{journal.get('status')}', expected COMPLETED")
+    import tempfile
+    env = dict(os.environ, ENGRAM_UPDATE_CANDIDATE_ZIP=str(candidate_zip),
+               ENGRAM_UPDATE_CANDIDATE_SHA256=cand_sha)
+    previous_sys = target_dir / "_sys"
+    seam_files = (previous_sys / "core/version_resolver.py", previous_sys / "core/provisioner.py")
+    previous_seam = all(p.is_file() and "ENGRAM_UPDATE_CANDIDATE_SHA256" in p.read_text(encoding="utf-8")
+                        for p in seam_files)
+    updater_source = "previous" if previous_seam else "candidate"
+    with tempfile.TemporaryDirectory(prefix="engram-upgrade-", dir=target_dir.parent) as temp:
+        work = Path(temp)
+        candidate_root = work / "candidate"
+        provisioner._extract(candidate_zip, candidate_root)
+        code_sys = previous_sys if previous_seam else candidate_root / "_sys"
+        if not code_sys.is_dir():
+            raise ValueError("candidate code root missing")
+        rollback_root = work / "rollback"
+        shutil.copytree(target_dir, rollback_root)
+        fault = work / "replacement-failure.ps1"
+        fault.write_text(_FAULT, encoding="utf-8")
+        # Compare every installed file at handoff; exclude only helper artifacts.
+        def installed_inventory(root):
+            return {k: v for k, v in take_inventory(root).items()
+                    if not k.startswith("_sys/data/temp/")}
+        rollback_code = rollback_root / "_sys" if previous_seam else code_sys
+        public_update(rollback_root, rollback_code, fault, env, cand_version, "FAILED_ROLLED_BACK")
+        before_tree = json.loads(fault.with_suffix(".inventory.json").read_text(encoding="utf-8"))
+        assert_inventory_identical(before_tree, installed_inventory(rollback_root))
+        public_update(target_dir, code_sys, work / "no-fault", env, cand_version, "COMPLETED")
 
     after_inventory = take_inventory(engram_dir)
     assert_inventory_identical(before_inventory, after_inventory)
@@ -332,6 +284,8 @@ def run_upgrade_gate(
         "status": "PASS",
         "candidate_sha256s": candidate_sha256s,
         "previous_tag": previous_tag,
+        "updater_source": updater_source,
+        "scenarios": {"upgrade": "PASS", "rollback": "PASS"},
         "cancelled": False,
         "skipped": False,
     }

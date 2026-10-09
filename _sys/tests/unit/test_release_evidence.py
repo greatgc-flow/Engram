@@ -160,6 +160,7 @@ def test_upgrade_evidence_pass_promotes(tmp_path, candidate):
     upgrade_evidence = write_json(tmp_path / "upgrade_evidence.json", {
         "status": "PASS", "candidate_sha256s": {"release.zip": HASH},
         "previous_tag": "v1.2.2", "cancelled": False, "skipped": False,
+        "updater_source": "previous", "scenarios": {"upgrade": "PASS", "rollback": "PASS"},
     })
     result = run_cli(
         "verify", "--candidate", candidate, "--evidence", evidence,
@@ -178,6 +179,7 @@ def test_upgrade_evidence_non_pass_holds(tmp_path, candidate, status):
     upgrade_evidence = write_json(tmp_path / "upgrade_evidence.json", {
         "status": status, "candidate_sha256s": {"release.zip": HASH},
         "previous_tag": "v1.2.2", "cancelled": False, "skipped": False,
+        "updater_source": "previous", "scenarios": {"upgrade": "PASS", "rollback": "PASS"},
     })
     result = run_cli(
         "verify", "--candidate", candidate, "--evidence", evidence,
@@ -197,6 +199,7 @@ def test_upgrade_evidence_invalid_or_matching_tag_holds(tmp_path, candidate, pre
     upgrade_evidence = write_json(tmp_path / "upgrade_evidence.json", {
         "status": "PASS", "candidate_sha256s": {"release.zip": HASH},
         "previous_tag": prev_tag, "cancelled": False, "skipped": False,
+        "updater_source": "previous", "scenarios": {"upgrade": "PASS", "rollback": "PASS"},
     })
     result = run_cli(
         "verify", "--candidate", candidate, "--evidence", evidence,
@@ -215,6 +218,7 @@ def test_upgrade_evidence_hash_mismatch_holds(tmp_path, candidate):
     upgrade_evidence = write_json(tmp_path / "upgrade_evidence.json", {
         "status": "PASS", "candidate_sha256s": {"release.zip": "0" * 64},
         "previous_tag": "v1.2.2", "cancelled": False, "skipped": False,
+        "updater_source": "previous", "scenarios": {"upgrade": "PASS", "rollback": "PASS"},
     })
     result = run_cli(
         "verify", "--candidate", candidate, "--evidence", evidence,
@@ -270,6 +274,7 @@ def test_upgrade_evidence_requires_explicit_false_flags(tmp_path, candidate, fla
     data = {
         "status": "PASS", "candidate_sha256s": {"release.zip": HASH},
         "previous_tag": "v1.2.2", "cancelled": False, "skipped": False,
+        "updater_source": "previous", "scenarios": {"upgrade": "PASS", "rollback": "PASS"},
     }
     if value == "missing":
         del data[flag]

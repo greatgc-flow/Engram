@@ -176,6 +176,10 @@ def verify(candidate_path, evidence_path, upgrade_evidence_path=None, *, no_upgr
             raise Hold("upgrade evidence file is missing")
         upgrade_evidence = _read(upgrade_evidence_path)
         validate_evidence(upgrade_evidence, hashes, "upgrade", run_id=run_id, run_attempt=run_attempt)
+        if upgrade_evidence.get("scenarios") != {"upgrade": "PASS", "rollback": "PASS"}:
+            raise Hold("upgrade evidence requires upgrade and rollback scenarios")
+        if upgrade_evidence.get("updater_source") not in ("previous", "candidate"):
+            raise Hold("upgrade evidence updater source is missing or invalid")
         prev_tag = upgrade_evidence.get("previous_tag")
         if not isinstance(prev_tag, str) or not prev_tag.strip() or any(c.isspace() for c in prev_tag) or prev_tag == candidate.get("tag"):
             raise Hold("upgrade evidence previous tag is missing, invalid, or matches candidate")

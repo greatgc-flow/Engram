@@ -105,7 +105,7 @@ class B1Tests(unittest.TestCase):
             candidate.write_text(json.dumps(dict(tag='v1.2.3',commit='b'*40,candidate_sha256s=hashes)))
             good=dict(status='PASS',candidate_sha256s=hashes,cancelled=False,skipped=False,run_id='12',run_attempt='2')
             reports=[root/(name+'.json') for name in ('sandbox','upgrade','winget')]
-            data=[dict(good,provider='windows-sandbox',runner_environment='self-hosted',workflow_run_id='12',image='Windows'),dict(good,previous_tag='v1.2.2'),good]
+            data=[dict(good,provider='windows-sandbox',runner_environment='self-hosted',workflow_run_id='12',image='Windows'),dict(good,previous_tag='v1.2.2',updater_source='previous',scenarios={'upgrade':'PASS','rollback':'PASS'}),good]
             def verify():
                 gate.verify(candidate,reports[0],reports[1],winget_evidence_path=reports[2],run_id='12',run_attempt='2')
             for path,value in zip(reports,data):path.write_text(json.dumps(value))
