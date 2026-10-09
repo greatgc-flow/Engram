@@ -21,9 +21,11 @@ if (-not $SysDirName) {
 $SysDirName = $SysDirName.TrimEnd('\', '/')
 
 try {
-    $parent = Get-Process -Id $ParentPID -ErrorAction SilentlyContinue
-    if ($parent) {
-        $parent.WaitForExit()
+    if (-not ($Plan.PSObject.Properties['skip_process_wait'] -and $Plan.skip_process_wait -eq $true)) {
+        $parent = Get-Process -Id $ParentPID -ErrorAction SilentlyContinue
+        if ($parent) {
+            $parent.WaitForExit()
+        }
     }
 } catch {
 }
