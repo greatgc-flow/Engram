@@ -285,30 +285,43 @@ def test_dispatch_without_a_journal_never_uses_python_new(dispatch_root):
     assert proc.returncode == 1 and "not initialized" in proc.stdout
 
 
+@pytest.mark.cp949
 def test_handoff_file_roundtrips_mbcs(tmp_path):
     r = tmp_path / "한글 root"
     try:
         str(r).encode("mbcs")
-    except UnicodeEncodeError:
-        pytest.skip("cannot encode root path in mbcs")
-        
+        can_mbcs = True
+    except (UnicodeEncodeError, LookupError):
+        can_mbcs = False
+
     core = r / "_sys" / "core"
     core.mkdir(parents=True)
-    try:
+    if can_mbcs:
+        try:
+            probe = subprocess.run(
+                ["cmd.exe", "/c", "echo", "ok"], cwd=str(r), capture_output=True,
+                text=True, encoding="mbcs", errors="replace", timeout=120)
+        except OSError as exc:
+            pytest.skip(f"cmd.exe cannot run in the Korean directory: {exc}")
+        if probe.returncode != 0 or probe.stdout.strip() != "ok":
+            pytest.skip(
+                f"cmd.exe cannot run 'echo ok' in the Korean directory "
+                f"(exit {probe.returncode}): {probe.stderr}{probe.stdout}")
+    else:
+        # On hosted CI runners with CP1252, emulate CP949 execution under chcp 949
         probe = subprocess.run(
-            ["cmd.exe", "/c", "echo", "ok"], cwd=str(r), capture_output=True,
-            text=True, encoding="mbcs", errors="replace", timeout=120)
-    except OSError as exc:
-        pytest.skip(f"cmd.exe cannot run in the Korean directory: {exc}")
-    if probe.returncode != 0 or probe.stdout.strip() != "ok":
-        pytest.skip(
-            f"cmd.exe cannot run 'echo ok' in the Korean directory "
-            f"(exit {probe.returncode}): {probe.stderr}{probe.stdout}")
+            f'cmd.exe /c "chcp 949 >nul && cd /d "{r}" && echo ok"',
+            cwd=str(tmp_path), capture_output=True,
+            text=True, encoding="cp949", errors="replace", timeout=120)
+        assert probe.returncode == 0 and probe.stdout.strip() == "ok", (
+            f"cmd.exe cannot run under chcp 949 in the Korean directory: {probe.stderr}{probe.stdout}"
+        )
+
     shutil.copy(DISPATCH, core / "dispatch.bat")
-    
+
     handoff_txt = r / "_sys" / "data" / "state" / "env-op" / "handoff.txt"
     runner_py = r / "_sys" / "data" / "temp" / "env-op" / "op-1" / "runner" / "python.exe"
-    
+
     dispatcher_code = f"""import sys, os
 if os.environ.get('ENGRAM_IN_RUNNER') == '1':
     print('SUCCESS_IN_RUNNER')
@@ -328,12 +341,19 @@ with open(handoff, 'wb') as f:
 sys.exit(75)
 """
     (core / "dispatcher.py").write_text(dispatcher_code, encoding="utf-8")
-    
+
     py_dir = r / "_sys" / "env" / "python"
     py_dir.mkdir(parents=True)
     copy_python(py_dir / "python.exe")
-    
-    proc = _run(Path("_sys") / "core" / "dispatch.bat", ["tidy"], r)
+
+    if can_mbcs:
+        proc = _run(Path("_sys") / "core" / "dispatch.bat", ["tidy"], r)
+    else:
+        cmd = f'cmd.exe /c "chcp 949 >nul && cd /d "{r}" && "{r / "_sys" / "core" / "dispatch.bat"}" tidy"'
+        proc = subprocess.run(
+            cmd, cwd=str(tmp_path), capture_output=True, text=True,
+            encoding="cp949", errors="replace", timeout=120,
+        )
     assert proc.returncode == 0, proc.stderr + proc.stdout
     assert "SUCCESS_IN_RUNNER" in proc.stdout
 

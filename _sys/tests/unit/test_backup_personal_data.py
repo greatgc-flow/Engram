@@ -3,6 +3,7 @@ ratified 2026-09-09): backup/restore of the 3 AI CLIs' durable data,
 sourced from the single `.engram/` live root."""
 
 import shutil
+import json
 import sys
 import zipfile
 from pathlib import Path
@@ -1127,6 +1128,75 @@ def test_restore_custom_extras_symmetric_reconstruction(tmp_path: Path) -> None:
     assert (target_engram / "claude" / "CLAUDE.md").is_file()
     assert (target_base / "my_script.bat").is_file()
     assert (target_base / "my_script.bat").read_text(encoding="utf-8") == "echo test"
+
+
+@pytest.mark.parametrize("rel", ["../escape", "a/../../escape", "/absolute", "C:/escape", "C:escape", r"\\server\share\escape", r"a\..\escape", "", ".", "a/./b"])
+def test_restore_extras_rejects_unsafe_relpaths_before_writes(tmp_path, rel):
+    bundle = tmp_path / "bundle"
+    _seed_engram(bundle)
+    (bundle / "MANIFEST.json").write_text(json.dumps({"custom_extras": [{"relpath": rel, "kind": "file"}]}))
+    target = tmp_path / "target"
+    with pytest.raises(ValueError):
+        do_restore(target / ".engram", bundle, force=True, base_dir=target)
+    assert not target.exists()
+
+
+@pytest.mark.parametrize("side", ["source", "destination"])
+@pytest.mark.parametrize("position", ["root", "parent", "leaf", "descendant"])
+def test_restore_extras_reparse_fails_closed(tmp_path, monkeypatch, side, position):
+    import backup_personal_data as backup
+    bundle = tmp_path / "bundle"
+    _seed_engram(bundle)
+    src = bundle / "custom_extras" / "notes" / "sub"
+    src.mkdir(parents=True)
+    (src / "note.txt").write_text("saved")
+    target = tmp_path / "target"
+    dst = target / "notes" / "sub"
+    dst.mkdir(parents=True)
+    (dst / "note.txt").write_text("original")
+    (bundle / "MANIFEST.json").write_text(json.dumps({"custom_extras": [{"relpath": "notes/sub", "kind": "dir"}]}))
+    root = bundle if side == "source" else target
+    paths = {"root": root, "parent": (src if side == "source" else dst).parent,
+             "leaf": src if side == "source" else dst,
+             "descendant": (src if side == "source" else dst) / "note.txt"}
+    real_lstat = backup.os.lstat
+    def injected(path, *args, **kwargs):
+        result = real_lstat(path, *args, **kwargs)
+        if Path(path) == paths[position]:
+            from types import SimpleNamespace
+            return SimpleNamespace(st_mode=result.st_mode, st_file_attributes=0x400)
+        return result
+    monkeypatch.setattr(backup.os, "lstat", injected)
+    with pytest.raises(ValueError):
+        do_restore(target / ".engram", bundle, force=True, base_dir=target)
+    assert not (target / ".engram").exists()
+    assert (dst / "note.txt").read_text() == "original"
+
+
+@pytest.mark.parametrize("failure", ["rename_and_delete", "renamed_delete", "silent_delete"])
+def test_reset_purge_failure_never_reports_success(tmp_path, monkeypatch, capsys, failure):
+    base = tmp_path / "base"
+    _seed_engram(base / ".engram")
+    real_rename = Path.rename
+    def rename(path, dst):
+        if failure == "rename_and_delete" and path == base / ".engram":
+            raise PermissionError("locked rename")
+        return real_rename(path, dst)
+    real_rmtree = shutil.rmtree
+    def remove(path, *args, **kwargs):
+        if Path(path).parent == base:
+            if failure == "silent_delete" or kwargs.get("ignore_errors"):
+                return
+            raise PermissionError("locked delete")
+        return real_rmtree(path, *args, **kwargs)
+    monkeypatch.setattr(Path, "rename", rename)
+    monkeypatch.setattr(shutil, "rmtree", remove)
+    with pytest.raises(OSError):
+        do_reset(base, yes=True, apply=True)
+    output = capsys.readouterr().out
+    assert "Reset complete" not in output
+    assert "[OK] Removed" not in output
+    assert list((base / "_sys" / "data" / "backups").glob("safety_pre_reset_*.zip"))
 
 
 

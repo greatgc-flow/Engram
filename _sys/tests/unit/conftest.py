@@ -60,14 +60,22 @@ class MemoryGuard(threading.Thread):
     def stop(self):
         self.stop_event.set()
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--cp949-strict",
+        action="store_true",
+        default=False,
+        help="Fail unconditionally if any cp949 test is skipped or if the cp949 test set is empty",
+    )
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_sessionstart(session):
-    """Start memory guard at the beginning of the test session."""
-    # pytest-timeout: 기본값이 0(disabled)일 때만 60s로 강제 설정.
-    # pytest.ini의 timeout= 또는 --timeout CLI 옵션이 우선순위를 가짐.
+    """Start memory guard and initialize strict CP949 tracking at session start."""
+    # pytest-timeout: enforce 60s fallback when disabled (0 or None)
+    # Values in pytest.ini or CLI --timeout take precedence.
     if session.config.pluginmanager.hasplugin("timeout"):
         current = session.config.getoption("timeout", default=0)
-        if not current:  # 0 또는 None이면 기본값 60s 적용
+        if not current:
             session.config.option.timeout = 60
 
     # Start OOM monitor
@@ -75,10 +83,41 @@ def pytest_sessionstart(session):
     session.memory_guard.start()
     print(f"\n[OOM-GUARD] Active (Threshold: 512MB, Interval: 1.0s)")
 
+    # CP949 verification tracking
+    session.cp949_collected = 0
+    session.cp949_skipped = []
+
+def pytest_collection_modifyitems(session, config, items):
+    """Track collected cp949 tests for strict verification."""
+    cp949_items = [item for item in items if item.get_closest_marker("cp949") is not None]
+    session.cp949_collected = len(cp949_items)
+
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Capture skipped cp949 tests."""
+    outcome = yield
+    report = outcome.get_result()
+    if report.skipped and item.get_closest_marker("cp949") is not None:
+        session = item.session
+        if hasattr(session, "cp949_skipped"):
+            session.cp949_skipped.append((item.nodeid, str(report.longrepr or "")))
+
 def pytest_sessionfinish(session, exitstatus):
-    """Stop memory guard when the session ends."""
+    """Stop memory guard and enforce CP949 strict gate if enabled."""
     if hasattr(session, "memory_guard"):
         session.memory_guard.stop()
+
+    if session.config.getoption("--cp949-strict", default=False):
+        collected = getattr(session, "cp949_collected", 0)
+        skipped = getattr(session, "cp949_skipped", [])
+        if collected == 0:
+            print("\n[CP949-STRICT] FAILED: CP949 test set is empty (0 tests collected).", file=sys.stderr)
+            session.exitstatus = 1
+        elif skipped:
+            print(f"\n[CP949-STRICT] FAILED: {len(skipped)} CP949 test(s) skipped on CI:", file=sys.stderr)
+            for nodeid, reason in skipped:
+                print(f"  - {nodeid}: {reason.strip()}", file=sys.stderr)
+            session.exitstatus = 1
 
 # --- Log isolation (prevents tests from polluting tracked _sys/data/logs) ---
 
@@ -87,5 +126,3 @@ def isolate_hub_logs(tmp_path, monkeypatch):
     """Redirect HubLogger output to a per-test temp dir so error/ipc/etc. log
     fixtures never write into the tracked production logs under _sys/data/logs."""
     monkeypatch.setenv("HUB_LOG_DIR", str(tmp_path / "hub-logs"))
-
-

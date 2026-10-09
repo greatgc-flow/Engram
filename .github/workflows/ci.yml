@@ -37,3 +37,14 @@ jobs:
     - name: Run unit tests
       run: |
         python -u -m pytest _sys/tests/unit -v --tb=short
+
+    # Step 2 (Option D): CP949 / Korean-locale emulated test verification gate.
+    # Emulates CP949 at the encoding boundary on hosted English-locale runners.
+    # Unconditionally fails if any test in the cp949 set is skipped or if the set is empty.
+    # Note: Emulated encoding cannot prove production MBCS behavior across arbitrary Windows APIs.
+    # Verification under real system ACP (ACP=949) is maintained as a pre-release gate;
+    # see docs/cp949_verification.md.
+    - name: Verify CP949 emulated tests (no skips)
+      run: |
+        python -u -m pytest _sys/tests/unit -v -m cp949 --cp949-strict --tb=short
+
