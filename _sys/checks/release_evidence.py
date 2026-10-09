@@ -2,7 +2,9 @@
 
 Candidate schema: tag, commit, candidate_sha256s (relative asset name -> SHA256).
 Evidence schema: status=PASS and the identical candidate_sha256s mapping.
-Optional cancelled/skipped flags must be false. Provenance comes from
+Sandbox cancelled/skipped flags, when present, must be exactly false.
+Upgrade evidence is required and must include both flags as exactly false.
+--no-upgrade-evidence is a legacy/test-only opt-out. Provenance comes from
 RELEASE_TAG/GITHUB_REF_NAME and GITHUB_SHA, with local Git fallbacks.
 Existing candidate files are never overwritten; rebuilding needs a new path.
 This offline gate checks evidence consistency, not evidence authenticity.
@@ -108,7 +110,11 @@ def freeze(assets, out):
         stream.write(payload)
 
 
-def verify(candidate_path, evidence_path):
+def verify(candidate_path, evidence_path, upgrade_evidence_path=None, *, no_upgrade_evidence=False):
+    if upgrade_evidence_path is None and not no_upgrade_evidence:
+        raise Hold("upgrade evidence is required")
+    if upgrade_evidence_path is not None and no_upgrade_evidence:
+        raise Hold("upgrade evidence and opt-out are mutually exclusive")
     candidate = _read(candidate_path)
     _identity(candidate)
     hashes = _hashes(candidate.get("candidate_sha256s"))
@@ -120,6 +126,20 @@ def verify(candidate_path, evidence_path):
             raise Hold(f"Sandbox evidence is {flag} or has an invalid flag")
     if _hashes(evidence.get("candidate_sha256s")) != hashes:
         raise Hold("Sandbox evidence candidate hashes do not match exactly")
+    if upgrade_evidence_path is not None:
+        if not Path(upgrade_evidence_path).is_file():
+            raise Hold("upgrade evidence file is missing")
+        upgrade_evidence = _read(upgrade_evidence_path)
+        if upgrade_evidence.get("status") != "PASS":
+            raise Hold("upgrade evidence status is not PASS")
+        for flag in ("cancelled", "skipped"):
+            if upgrade_evidence.get(flag) is not False:
+                raise Hold(f"upgrade evidence is {flag} or has an invalid flag")
+        if _hashes(upgrade_evidence.get("candidate_sha256s")) != hashes:
+            raise Hold("upgrade evidence candidate hashes do not match exactly")
+        prev_tag = upgrade_evidence.get("previous_tag")
+        if not isinstance(prev_tag, str) or not prev_tag.strip() or any(c.isspace() for c in prev_tag) or prev_tag == candidate.get("tag"):
+            raise Hold("upgrade evidence previous tag is missing, invalid, or matches candidate")
 
 
 def main(argv=None):
@@ -131,17 +151,26 @@ def main(argv=None):
     verify_parser = commands.add_parser("verify")
     verify_parser.add_argument("--candidate", required=True)
     verify_parser.add_argument("--evidence", required=True)
+    upgrade_options = verify_parser.add_mutually_exclusive_group()
+    upgrade_options.add_argument("--upgrade-evidence", default=None)
+    upgrade_options.add_argument(
+        "--no-upgrade-evidence", action="store_true",
+        help="legacy/test-only opt-out from required upgrade evidence",
+    )
     args = parser.parse_args(argv)
     try:
         if args.command == "freeze":
             freeze(args.assets, args.out)
         else:
-            verify(args.candidate, args.evidence)
+            verify(
+                args.candidate, args.evidence, args.upgrade_evidence,
+                no_upgrade_evidence=args.no_upgrade_evidence,
+            )
     except (Hold, OSError, ValueError, subprocess.SubprocessError) as exc:
         reason = " ".join(str(exc).split())
         print(f"HOLD: {reason}")
         return 1
-    print("PASS: candidate frozen" if args.command == "freeze" else "PASS: Sandbox evidence matches candidate")
+    print("PASS: candidate frozen" if args.command == "freeze" else "PASS: candidate evidence verified")
     return 0
 
 

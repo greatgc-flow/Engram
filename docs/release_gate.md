@@ -23,22 +23,37 @@ weekly runs exercise the same gate but do not publish a release.
    required; missing files are errors. Hard cancellation can prevent upload;
    absent evidence is never approval. Detailed reports remain in the runner's
    run-specific `_archive/test-results` directory.
-4. A hosted promotion job starts after the build, independently of Sandbox
-   runner scheduling. It polls this run's exact attempt Sandbox job every 15 seconds
+4. A hosted `upgrade-gate` job (`needs: build-candidate`, `windows-latest`)
+   downloads the candidate artifact and the latest published stable release
+   ZIP via `gh` (`tag != candidate`). It extracts the previous release to an
+   isolated root, seeds user data under `.engram/` (structured JSON, Unicode,
+   and raw binary content), and runs `tools/release_gate/upgrade_harness.py`
+   against the candidate ZIP using the external SHA256 from `candidate.json`.
+   The harness verifies offline staging, manifest integrity, detached helper
+   execution, journal completion, updated installed version, and byte-for-byte
+   preservation of user data. It emits `upgrade_evidence.json` bound to the
+   candidate SHA256s and previous tag, and uploads the
+   `upgrade-evidence-<run_id>-<run_attempt>` artifact.
+5. A hosted promotion job (`needs: [build-candidate, upgrade-gate]`) starts
+   after build and upgrade checks succeed, independently of Sandbox runner
+   scheduling. It polls this run's exact attempt Sandbox job every 15 seconds
    for at most 45 minutes. Missing runners, queued jobs, unsuccessful outcomes,
    timeout, cancellation, skipped jobs, API errors, or missing artifacts mean
    HOLD. Sandbox execution itself is limited to 40 minutes; promotion has a
    55-minute job limit. Workflow concurrency serializes Sandbox host access.
-5. Promotion downloads only this run/attempt's artifacts, rechecks the asset
-   inventory and SHA256 values, checks candidate ref/commit and evidence run/attempt
-   against the workflow identity, and runs `release_evidence.py verify` against
-   the candidate and evidence. Only subsequent `v*` tag runs call
+6. Promotion downloads only this run/attempt's artifacts (`candidate`,
+   `sandbox-evidence`, and `upgrade-evidence`), rechecks asset inventory
+   and SHA256 values, checks candidate ref/commit and evidence run/attempt
+   against workflow identity, and runs `release_evidence.py verify` with both
+   `--evidence` and `--upgrade-evidence`. If either evidence document is missing,
+   non-PASS, or mismatched against candidate hashes or tags, verification
+   fails closed and reports HOLD. Only subsequent `v*` tag runs call
    `gh release create --draft --verify-tag` with those downloaded assets, then
    publishes the completed draft. Upload failures leave an unpublished draft. Existing
    releases are not overwritten; publication failure is HOLD. All manifest
    files and the ZIP are published without rebuilding.
 
-A green build or a missing Sandbox report does not authorize release. Treat a
+A green build or a missing Sandbox/upgrade report does not authorize release. Treat a
 cancelled workflow, a still-queued workflow, and any missing/failed promotion
 check as HOLD. GitHub job execution timeouts do not bound runner queue time;
 this is why the hosted polling job does not have `needs: clean-room-sandbox`.
@@ -51,4 +66,5 @@ publish manually to bypass HOLD. The real ACP=949 proof described in
 The offline verifier checks consistency, not authenticity. Evidence trust
 comes from workflow permissions, same-run artifact selection, protected tags,
 and the dedicated runner. Configure repository access so release writers do
-not bypass this workflow. No change to `release_evidence.py` was needed.
+not bypass this workflow. `release_evidence.py verify` was extended to check
+upgrade evidence compatibility, previous tag validity, and hash binding.

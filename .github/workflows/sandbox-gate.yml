@@ -117,9 +117,104 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  upgrade-gate:
+    needs: build-candidate
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release
+      - name: Verify candidate assets before upgrade
+        shell: pwsh
+        run: |
+          python .github/scripts/check_candidate_assets.py release/candidate.json release/assets
+          if ($LASTEXITCODE) { throw 'HOLD: candidate mismatch' }
+      - name: Download previous stable release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if (!(Test-Path release/candidate.json)) { throw 'HOLD: missing candidate' }
+          $candidate = Get-Content release/candidate.json -Raw | ConvertFrom-Json
+          $candTag = $candidate.tag
+          $releases = gh release list --json tagName,isDraft,isPrerelease --limit 30 | ConvertFrom-Json
+          $prevRelease = $releases | Where-Object { -not $_.isDraft -and -not $_.isPrerelease -and $_.tagName -ne $candTag } | Select-Object -First 1
+          if (-not $prevRelease) { throw 'HOLD: no previous published release found' }
+          $prevTag = $prevRelease.tagName
+          Write-Host "Previous stable release tag: $prevTag (candidate: $candTag)"
+          "PREV_TAG=$prevTag" >> $env:GITHUB_ENV
+
+          $prevDir = Join-Path $env:RUNNER_TEMP "prev-release-$env:GITHUB_RUN_ID"
+          New-Item -ItemType Directory -Force -Path $prevDir | Out-Null
+          gh release download "$prevTag" --pattern "*.zip" --dir "$prevDir"
+          if ($LASTEXITCODE) { throw 'HOLD: failed to download previous release zip' }
+          $prevZip = @(Get-ChildItem $prevDir -Filter *.zip)
+          if ($prevZip.Count -ne 1) { throw 'HOLD: expected exactly one zip in previous release' }
+          "PREV_ZIP=$($prevZip[0].FullName)" >> $env:GITHUB_ENV
+      - name: Extract previous release to isolated root
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP "isolated-upgrade-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          if (Test-Path -LiteralPath $root) { throw 'HOLD: isolated root already exists' }
+          Expand-Archive -LiteralPath $env:PREV_ZIP -DestinationPath $root
+          "ISOLATED_ROOT=$root" >> $env:GITHUB_ENV
+      - name: Seed user data
+        shell: pwsh
+        run: |
+          python tools/release_gate/upgrade_harness.py seed --target-dir $env:ISOLATED_ROOT
+          if ($LASTEXITCODE) { throw 'HOLD: failed to seed user data' }
+      - name: Run upgrade harness against candidate
+        id: upgrade
+        shell: pwsh
+        run: |
+          $candZip = @(Get-ChildItem release/assets -Filter *.zip)
+          if ($candZip.Count -ne 1) { throw 'HOLD: expected exactly one candidate zip' }
+          python tools/release_gate/upgrade_harness.py run `
+            --target-dir $env:ISOLATED_ROOT `
+            --candidate-zip $candZip[0].FullName `
+            --candidate-json release/candidate.json `
+            --prev-tag $env:PREV_TAG `
+            --out release/upgrade_evidence.json
+          if ($LASTEXITCODE) { throw 'HOLD: upgrade harness failed' }
+      - name: Ensure upgrade evidence on failure
+        if: always()
+        shell: pwsh
+        env:
+          UPGRADE_OUTCOME: ${{ steps.upgrade.outcome }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          if (!(Test-Path release/upgrade_evidence.json)) {
+            $candidate = if (Test-Path release/candidate.json) { Get-Content release/candidate.json -Raw | ConvertFrom-Json } else { $null }
+            @{
+              status = 'HOLD'
+              candidate_sha256s = if ($candidate) { $candidate.candidate_sha256s } else { @{} }
+              previous_tag = if ($env:PREV_TAG) { $env:PREV_TAG } else { 'unknown' }
+              cancelled = ($env:JOB_STATUS -eq 'cancelled')
+              skipped = ($env:UPGRADE_OUTCOME -eq 'skipped')
+              run_id = $env:GITHUB_RUN_ID
+              run_attempt = $env:GITHUB_RUN_ATTEMPT
+            } | ConvertTo-Json -Depth 10 | Set-Content release/upgrade_evidence.json -Encoding utf8NoBOM
+          }
+      - name: Upload upgrade evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upgrade-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release/upgrade_evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
   promotion:
     # Do not depend on the self-hosted job: a missing runner must have a bounded HOLD.
-    needs: build-candidate
+    needs: [build-candidate, upgrade-gate]
     runs-on: windows-latest
     timeout-minutes: 55
     permissions:
@@ -147,13 +242,17 @@ jobs:
         with:
           name: sandbox-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: evidence
+      - uses: actions/download-artifact@v4
+        with:
+          name: upgrade-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence
       - name: Verify before promotion or publish
         shell: pwsh
         run: |
           python .github/scripts/check_candidate_assets.py release/candidate.json release/assets evidence/sandbox_evidence.json
           if ($LASTEXITCODE) { throw 'HOLD: candidate mismatch' }
-          python _sys/checks/release_evidence.py verify --candidate release/candidate.json --evidence evidence/sandbox_evidence.json
-          if ($LASTEXITCODE) { throw 'HOLD: Sandbox evidence rejected' }
+          python _sys/checks/release_evidence.py verify --candidate release/candidate.json --evidence evidence/sandbox_evidence.json --upgrade-evidence evidence/upgrade_evidence.json
+          if ($LASTEXITCODE) { throw 'HOLD: Sandbox or upgrade evidence rejected' }
       - name: Publish verified tag assets
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
@@ -168,4 +267,4 @@ jobs:
       - name: Report HOLD
         if: failure() || cancelled()
         shell: pwsh
-        run: '"HOLD: promotion requires a successful Sandbox job and matching evidence; no release approved." >> $env:GITHUB_STEP_SUMMARY'
+        run: '"HOLD: promotion requires successful Sandbox and upgrade jobs and matching evidence; no release approved." >> $env:GITHUB_STEP_SUMMARY'
