@@ -5,9 +5,12 @@ import json
 import shutil
 import threading
 import time
+import tempfile
 import psutil
 import pytest
 from pathlib import Path
+from contextlib import contextmanager
+import uuid
 
 # Register _sys via bootstrap_root_package so 'from _sys.core import ...' works
 _SYS_DIR = Path(__file__).resolve().parent.parent.parent
@@ -16,13 +19,17 @@ sys.path.insert(0, str(_SYS_DIR / "core"))
 if str(_SYS_DIR) not in sys.path:
     sys.path.insert(0, str(_SYS_DIR))
 
-from root import bootstrap_root_package
+from root import bootstrap_root_package, find_root
 bootstrap_root_package(_SYS_DIR)
 
 # --- OOM / Hang Protection ---
 
-def _enforce_oom_guard(threshold_mb: float, available_mb: float, marker_path: str = "oom_marker.json") -> None:
+DEFAULT_OOM_MARKER = str(Path(tempfile.gettempdir()) / "oom_marker.json")
+
+def _enforce_oom_guard(threshold_mb: float, available_mb: float, marker_path: str | None = None) -> None:
     """Decision point for the OOM guard. Isolated for testability."""
+    if marker_path is None:
+        marker_path = DEFAULT_OOM_MARKER
     if available_mb < threshold_mb:
         print(f"\n[CRITICAL] OOM Guard: Available RAM ({available_mb:.1f}MB) below threshold ({threshold_mb}MB)!")
         print("[CRITICAL] Force-terminating pytest and child processes to save OS...")
@@ -126,3 +133,24 @@ def isolate_hub_logs(tmp_path, monkeypatch):
     """Redirect HubLogger output to a per-test temp dir so error/ipc/etc. log
     fixtures never write into the tracked production logs under _sys/data/logs."""
     monkeypatch.setenv("HUB_LOG_DIR", str(tmp_path / "hub-logs"))
+
+
+@contextmanager
+def scratch_dir():
+    """Shared unittest scratch with inherited ACLs and best-effort cleanup."""
+    parent = find_root(__file__) / "data" / "temp"
+    parent.mkdir(parents=True, exist_ok=True)
+    path = parent / ("unit_scratch_" + uuid.uuid4().hex)
+    path.mkdir()  # Plain mkdir preserves ACL access for child cmd.exe.
+    try:
+        yield path
+    finally:
+        for attempt in range(3):
+            try:
+                shutil.rmtree(path)
+                break
+            except OSError:
+                if attempt < 2:
+                    time.sleep(0.1 * (attempt + 1))
+                else:
+                    shutil.rmtree(path, ignore_errors=True)

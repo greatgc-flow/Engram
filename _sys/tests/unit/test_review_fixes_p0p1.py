@@ -1,5 +1,5 @@
 """Regression tests for findings of the ag.deepthink cross-review of the P0/P1 implementation
-(docs/design/engram-env-resilience-review-ag-p0p1-impl-2026-10-02.md)."""
+(ratified in docs/design/engram-env-resilience-design-2026-10-02.md)."""
 import json
 import os
 from pathlib import Path

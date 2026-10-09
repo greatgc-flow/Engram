@@ -8,8 +8,8 @@
   - Full suite at completion: 403 passed, 3 skipped, 0 failed. The §5 risk analysis below is kept as real history explaining what was weighed before the user's override -- it is no longer this project's operative recommendation.
 - **Author**: `ag.effort`
 - **Date**: 2026-09-20
-- **Target Repo**: `D:\Engram&Peerhub\engram-main-worktree` (commit `65308a9` at design time; `48b82fa` at implementation completion)
-- **Reference Doc**: `P:\workspace\peerhub\docs\design\engram-sys-folder-rename-feasibility-2026-09-17.md` (Addenda 1–4)
+- **Target Repo**: `<repo-root>` (commit `65308a9` at design time; `48b82fa` at implementation completion)
+- **Reference Doc**: `<peerhub-repo>\docs\design\engram-sys-folder-rename-feasibility-2026-09-17.md` (Addenda 1–4)
 - **Preconditions**:
   1. Full green pytest suite across Phases 1–3: **SATISFIED** (405 passed, 3 skipped, 0 failed at commit `65308a9`).
   2. Concrete design note for batch-entrypoint discovery: **SATISFIED BY THIS DOCUMENT**.

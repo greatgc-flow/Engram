@@ -1,6 +1,5 @@
-"""Regression tests for the push-approval review (cc.deepthink BLOCK_PUSH, ag.pro follow-ups).
-
-docs/design/engram-env-resilience-review-approval-gate-2026-10-02.md
+"""Regression tests for the push-approval review (cc.deepthink BLOCK_PUSH, ag.pro follow-ups;
+ratified in docs/design/engram-env-resilience-design-2026-10-02.md).
 """
 import datetime
 import json

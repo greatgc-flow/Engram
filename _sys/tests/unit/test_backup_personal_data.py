@@ -197,7 +197,7 @@ def test_main_backup_then_restore_round_trip(
     other_base = tmp_path / "other-base"
     # Dry run by default
     assert main(["--base-dir", str(other_base), "--restore", str(out_dir)]) == 0
-    assert not (other_base / ".engram").exists()
+    assert not any((other_base / ".engram").rglob("*"))
 
     # Apply restore
     assert main(["--base-dir", str(other_base), "--restore", str(out_dir), "--apply"]) == 0
@@ -519,7 +519,7 @@ def test_reset_default_scope_deletes_engram_leaves_workspace(
     monkeypatch.setattr("builtins.input", lambda prompt: "y")
     do_reset(base_dir, yes=False)
 
-    assert not engram_dir.exists()
+    assert not any(p.is_file() for p in engram_dir.rglob("*"))
     assert workspace.exists()
     assert (workspace / "my_project.py").read_text(encoding="utf-8") == "print('hello')"
 
@@ -534,48 +534,8 @@ def test_reset_yes_flag_bypasses_confirmation(tmp_path: Path) -> None:
 
     do_reset(base_dir, yes=True)
 
-    assert not engram_dir.exists()
+    assert not any(p.is_file() for p in engram_dir.rglob("*"))
     assert workspace.exists()
-
-
-def test_reset_all_scope_aborts_on_name_mismatch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    base_dir = tmp_path / "target_root"
-    engram_dir = base_dir / ".engram"
-    _seed_engram(engram_dir)
-    workspace = base_dir / "workspace"
-    workspace.mkdir(parents=True)
-    (workspace / "important.py").write_text("keep", encoding="utf-8")
-
-    monkeypatch.setattr("builtins.input", lambda prompt: "wrong_root_name")
-    capsys.readouterr()
-
-    with pytest.raises(SystemExit) as exc:
-        do_reset(base_dir, yes=True, all_data=True)
-
-    assert exc.value.code == 3
-    assert engram_dir.exists()
-    assert workspace.exists()
-    assert (workspace / "important.py").is_file()
-    assert "Folder name does not match. Aborting." in capsys.readouterr().out
-
-
-def test_reset_all_scope_deletes_both_on_name_match(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    base_dir = tmp_path / "target_root"
-    engram_dir = base_dir / ".engram"
-    _seed_engram(engram_dir)
-    workspace = base_dir / "workspace"
-    workspace.mkdir(parents=True)
-    (workspace / "important.py").write_text("code", encoding="utf-8")
-
-    monkeypatch.setattr("builtins.input", lambda prompt: "target_root")
-    do_reset(base_dir, yes=True, all_data=True)
-
-    assert not engram_dir.exists()
-    assert not workspace.exists()
 
 
 def test_reset_refuses_when_process_is_running(
@@ -619,7 +579,7 @@ def test_reset_handles_input_interrupts(tmp_path: Path, monkeypatch: pytest.Monk
 
     monkeypatch.setattr("builtins.input", raise_eof)
     with pytest.raises(SystemExit) as exc2:
-        do_reset(base_dir, yes=True, all_data=True)
+        do_reset(base_dir, yes=False)
     assert exc2.value.code == 3
 
 
@@ -818,7 +778,7 @@ def test_run_reset_dispatcher_adapter(tmp_path: Path) -> None:
         "args": ["--yes", "--apply"],
     }
     run_reset(ctx_apply)
-    assert not (base_dir / ".engram").exists()
+    assert not any(p.is_file() for p in (base_dir / ".engram").rglob("*"))
     assert workspace.exists()
 
     # Unknown flag exits 2
@@ -890,7 +850,7 @@ def test_main_reset_and_zip_restore_round_trip(tmp_path: Path) -> None:
 
     # Reset via main (with --apply)
     assert main(["--base-dir", str(other_base), "--reset", "--yes", "--apply"]) == 0
-    assert not (other_base / ".engram").exists()
+    assert not any(p.is_file() for p in (other_base / ".engram").rglob("*"))
 
 
 def test_backup_and_restore_renamed_sys_dir_safe(
@@ -944,7 +904,7 @@ def test_run_reset_help_flag_exits_zero(flag, tmp_path, capsys):
         run_reset({"base_dir": tmp_path, "sys_dir": tmp_path / "_sys", "args": [flag]})
     assert exc.value.code == 0
     out = capsys.readouterr().out
-    assert "--all" in out
+    assert "--all" not in out
 
 
 # ============================================================================
@@ -1036,7 +996,7 @@ def test_sensitive_credential_pattern_exclusion(tmp_path: Path) -> None:
 
 def test_long_path_extended_length_support(tmp_path: Path) -> None:
     """TC-04: Paths over 260 characters are handled safely via extended prefix."""
-    from backup_personal_data import ensure_long_path_prefix, strip_long_path_prefix
+    from backup_personal_data import ensure_long_path_prefix
 
     short_path = tmp_path / "short.txt"
     assert ensure_long_path_prefix(short_path) == str(short_path)
@@ -1045,7 +1005,6 @@ def test_long_path_extended_length_support(tmp_path: Path) -> None:
     assert len(long_str) > 260
     prefixed = ensure_long_path_prefix(Path(long_str))
     assert prefixed.startswith("\\\\?\\")
-    assert strip_long_path_prefix(prefixed) == long_str
 
 
 def test_dry_run_default_leaves_filesystem_untouched(tmp_path: Path) -> None:
@@ -1093,8 +1052,8 @@ def test_reset_2pc_fail_closed_on_corrupt_snapshot(tmp_path: Path, monkeypatch: 
     assert (engram_dir / "claude" / "CLAUDE.md").is_file()
 
 
-def test_reset_rename_then_purge_pattern(tmp_path: Path) -> None:
-    """TC-07: do_reset purges .engram and discovered dotdirs atomically via pre-rename."""
+def test_reset_deletes_snapshot_covered_files(tmp_path: Path) -> None:
+    """TC-07: reset deletes archived portable files and permits empty directories."""
     base_dir = tmp_path / "base"
     engram_dir = base_dir / ".engram"
     _seed_engram(engram_dir)
@@ -1104,8 +1063,8 @@ def test_reset_rename_then_purge_pattern(tmp_path: Path) -> None:
 
     res = do_reset(base_dir, yes=True, apply=True)
     assert res["dry_run"] is False
-    assert not engram_dir.exists()
-    assert not user_dotdir.exists()
+    assert not any(p.is_file() for p in engram_dir.rglob("*"))
+    assert not any(p.is_file() for p in user_dotdir.rglob("*"))
     assert res["snapshot_path"].exists()
 
 
@@ -1173,30 +1132,21 @@ def test_restore_extras_reparse_fails_closed(tmp_path, monkeypatch, side, positi
     assert (dst / "note.txt").read_text() == "original"
 
 
-@pytest.mark.parametrize("failure", ["rename_and_delete", "renamed_delete", "silent_delete"])
-def test_reset_purge_failure_never_reports_success(tmp_path, monkeypatch, capsys, failure):
+@pytest.mark.parametrize("failure", ["locked_delete", "silent_delete"])
+def test_reset_deletion_failure_never_reports_success(tmp_path, monkeypatch, capsys, failure):
     base = tmp_path / "base"
     _seed_engram(base / ".engram")
-    real_rename = Path.rename
-    def rename(path, dst):
-        if failure == "rename_and_delete" and path == base / ".engram":
-            raise PermissionError("locked rename")
-        return real_rename(path, dst)
-    real_rmtree = shutil.rmtree
+    real_unlink = Path.unlink
     def remove(path, *args, **kwargs):
-        if Path(path).parent == base:
-            if failure == "silent_delete" or kwargs.get("ignore_errors"):
+        if path.is_relative_to(base / ".engram"):
+            if failure == "silent_delete":
                 return
-            raise PermissionError("locked delete")
-        return real_rmtree(path, *args, **kwargs)
-    monkeypatch.setattr(Path, "rename", rename)
-    monkeypatch.setattr(shutil, "rmtree", remove)
+            raise PermissionError(f"locked delete: {path}")
+        return real_unlink(path, *args, **kwargs)
+    monkeypatch.setattr(Path, "unlink", remove)
     with pytest.raises(OSError):
         do_reset(base, yes=True, apply=True)
     output = capsys.readouterr().out
     assert "Reset complete" not in output
     assert "[OK] Removed" not in output
     assert list((base / "_sys" / "data" / "backups").glob("safety_pre_reset_*.zip"))
-
-
-

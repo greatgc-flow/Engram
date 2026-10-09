@@ -194,6 +194,16 @@ def _run_operation(op_id: str, op_cfg: dict, ctx: dict):
 
 
 def run_pipeline(cmd: str, extra_args: list) -> None:
+    # Public entry passes its original argv intact; normalize only here.
+    if cmd == "open":
+        cmd = "start"
+    if cmd == "menu":
+        if len(extra_args) == 1 and cli_help.wants_help(extra_args):
+            cli_help.print_verb_help("menu")
+            return
+        action = extra_args[0].lower() if extra_args else "status"
+        # engram.cmd validates the action and rejects extras once, before setup.
+        cmd, extra_args = "menu-" + action, []
     dispatch_path = sys_dir / "dispatch.json"
     if not dispatch_path.exists():
         print(f"[Error] dispatch.json not found: {dispatch_path}")
@@ -201,6 +211,8 @@ def run_pipeline(cmd: str, extra_args: list) -> None:
 
     help_verb = "open" if cmd == "start" else cmd
     if help_verb in cli_help.verbs() and cli_help.wants_help(extra_args):
+        if len(extra_args) != 1:
+            cli_help.usage_error(help_verb, "Help accepts no surplus operands.")
         # one help source for every verb (core/help/<verb>.txt); needs no config, no environment, no network
         cli_help.print_verb_help(help_verb)
         return

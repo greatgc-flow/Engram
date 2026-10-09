@@ -189,7 +189,7 @@ def _check_python_version(V: dict) -> None:
     running  = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     expected = V.get("Python", "")
     if expected and running != expected:
-        print(f"  [!] Python 버전 불일치: 실행={running}, 기대={expected}")
+        print(f"  [!] Python version mismatch: running={running}, expected={expected}")
     else:
         print(f"  [OK] Python {running}")
 
@@ -406,6 +406,29 @@ class _SameHostRedirectHandler(urllib.request.HTTPRedirectHandler):
 
 
 def _secure_download(url: str, dest_path: Path) -> dict:
+    candidate_zip = os.environ.get("ENGRAM_UPDATE_CANDIDATE_ZIP")
+    if candidate_zip and candidate_zip.strip():
+        cand_path = Path(candidate_zip.strip()).resolve()
+        try:
+            if Path(url).resolve() == cand_path:
+                url = cand_path.as_uri()
+        except Exception:
+            pass
+
+    parsed = urlparse(url)
+    if parsed.scheme == "file":
+        if not candidate_zip or not candidate_zip.strip():
+            raise urllib.error.URLError("Local file URLs only permitted when ENGRAM_UPDATE_CANDIDATE_ZIP is configured.")
+        candidate_sha = os.environ.get("ENGRAM_UPDATE_CANDIDATE_SHA256", "").strip()
+        if len(candidate_sha) != 64 or any(c not in "0123456789abcdefABCDEF" for c in candidate_sha):
+            raise urllib.error.URLError("Local candidates require ENGRAM_UPDATE_CANDIDATE_SHA256.")
+        if parsed.netloc not in ("", "localhost") or parsed.query or parsed.fragment:
+            raise urllib.error.URLError("Invalid local candidate URL.")
+        cand_path = Path(candidate_zip.strip()).resolve()
+        file_path = Path(urllib.request.url2pathname(parsed.path)).resolve()
+        if file_path != cand_path:
+            raise urllib.error.URLError(f"File URL does not match ENGRAM_UPDATE_CANDIDATE_ZIP: {file_path} vs {cand_path}")
+
     opener = urllib.request.build_opener(_SameHostRedirectHandler())
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with opener.open(req) as response, open(dest_path, "wb") as f:
@@ -413,6 +436,10 @@ def _secure_download(url: str, dest_path: Path) -> dict:
         f.flush()
         os.fsync(f.fileno())
         length_header = response.headers.get("Content-Length")
+    if parsed.scheme == "file":
+        actual_hash = _hash_file(dest_path, "sha256")
+        if actual_hash.lower() != candidate_sha.lower():
+            raise ValueError(f"Checksum mismatch: expected {candidate_sha}, got {actual_hash}")
     try:
         expected_length = int(length_header) if length_header is not None else None
     except (TypeError, ValueError):
@@ -436,10 +463,11 @@ def _launch_detached_powershell_helper(
     this process itself has open, or to finish cleanup after this process
     exits)."""
 
-    flags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+    flags = (subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP) if sys.platform == "win32" else 0
+    ps_exe = "powershell.exe" if sys.platform == "win32" else (shutil.which("powershell") or shutil.which("pwsh") or "powershell")
     return subprocess.Popen(
         [
-            "powershell.exe",
+            ps_exe,
             "-NoProfile",
             "-NonInteractive",
             "-ExecutionPolicy",

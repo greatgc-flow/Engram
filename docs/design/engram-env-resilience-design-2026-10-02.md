@@ -1,10 +1,10 @@
 # Engram Environment Resilience: Python/venv Lifecycle, Root Relocation, and Backup Retention
 
-- **Status**: **IMPLEMENTED P0-P5, released v3.6.1** (merged to main). Design R4.1 cross-reviewed by cc.deepthink, ag.deepthink, ag.pro, cx.pro; D1-D10 approved by the owner 2026-10-02. Verified by unit tests (1122) and a real fresh-install E2E on a Korean+space root. Gate records: `engram-env-resilience-review-*.md` (final: `...final-gate-2026-10-03.md`). User guide: `docs/env_resilience_guide.md`.
+- **Status**: **IMPLEMENTED P0-P5, released v3.6.1, CLI frozen v3.7.0** (merged to main). Design R4.1 cross-reviewed by cc.deepthink, ag.deepthink, ag.pro, cx.pro; D1-D10 approved by owner 2026-10-02; final push-approval gate passed 2026-10-03. Verified by unit tests and real fresh-install E2E on Korean+space root. User guide: [`docs/env_resilience_guide.md`](../env_resilience_guide.md).
 - **Author**: `cc` (Claude Sonnet 5.5), at the user's request
 - **Date**: 2026-10-02
 - **Reviewers requested**: `ag.deepthink` (Windows/failure modes), `cc.deepthink` (state machine/rollback/idempotency), `ag.pro` (security/retention); `cx` unavailable (usage limit until 2026-10-04 10:35)
-- **Target repo**: `workspace/engram` (commit `72e7d15`, v3.5.0). Live install used for fact-finding: `D:\PkgDev\_sys`.
+- **Target repo**: `workspace/engram` (commit `72e7d15`, v3.5.0). Live install used for fact-finding: `<install-dir>\_sys`.
 - **Related**: `engram-sys-rename-phase4-batch-entrypoint-design-2026-09-20.md` (the `_sys` folder rename; this doc covers the *root* folder and the interpreter/venv), `docs/engram-dotdir.md`, `docs/user_lifecycle_guide.md`.
 - **Language**: English only (CONVENTION.md section 1). User-facing console text may be Korean.
 
@@ -17,7 +17,7 @@ Evidence labels: **[V]** verified by reading code/state in this session, **[I]**
 Three real failure classes, one shared root cause: Engram keeps **absolute-path, version-coupled artifacts** (the venv, registry keys, state files, editable installs, AI-tool project state) but has **no single record of what it believes the environment is**, so it cannot detect or repair drift.
 
 1. **Python deleted, venv kept -> silent version skew.** *(Corrected in R3: earlier drafts claimed the venv breaks without its base Python; spike S-9 disproved that, section 1a.)* `bootstrap.bat` reinstalls Python, possibly a **different version** (it may auto-bump to latest stable and rewrite `runtimes.json` [V]); `provisioner.py:1499` tests only that `venv\Scripts\python.exe` exists [V], so the venv stays on its own **older interpreter copy** while `env\python` moves on. Nothing detects or reports the skew, `runtimes.json` no longer describes what the venv runs, and a later minor-version change leaves C-extension packages built for the wrong ABI.
-2. **Root folder renamed/moved.** `pip.exe`/`pytest.exe`-style **console-script launchers embed the absolute venv path and stop working** (S-1, [V]); `pyvenv.cfg` holds stale absolute paths (cosmetic: the venv interpreter still runs, S-1); editable installs keep absolute paths in their `__editable___*_finder.py`/`.pth` [V]; registry key names are derived from the path (`_registry_key_name`, e.g. `SandboxRun_D_PkgDev_engram_open`) [V], so a rename creates new keys and strands old ones; `data/state/*.state.json` store `base_dir` and relay paths [V]; Claude's per-project state is keyed by path (`.claude.json`, `projects/D--PkgDev-workspace`) [V].
+2. **Root folder renamed/moved.** `pip.exe`/`pytest.exe`-style **console-script launchers embed the absolute venv path and stop working** (S-1, [V]); `pyvenv.cfg` holds stale absolute paths (cosmetic: the venv interpreter still runs, S-1); editable installs keep absolute paths in their `__editable___*_finder.py`/`.pth` [V]; registry key names are derived from the path (`_registry_key_name`, e.g. `SandboxRun_<path_slug>_engram_open`) [V], so a rename creates new keys and strands old ones; `data/state/*.state.json` store `base_dir` and relay paths [V]; Claude's per-project state is keyed by path (`.claude.json`, `projects/<path_slug>-workspace`) [V].
 3. **Backups accumulate with no owner.** Producers today: `<name>_old` dirs (`provisioner.py:690`), `core-update/<ver>/{staged,backup,journal}` under `data/temp` (`updater.py:535`), `*.pre-merge.bak` (`layout_migration.py:173`), `Engram.exe.old` (`layout_migration.py:513`), `data/backups`. `tidy_temp.py` knows none of them: it deletes by hard-coded name allowlists + age. The proposed fixes below would add more (python/venv old copies, freeze snapshots), so retention must be solved first-class.
 
 ### Non-goals
@@ -43,7 +43,7 @@ Three real failure classes, one shared root cause: Engram keeps **absolute-path,
 | S-13 | Regenerate console scripts **offline** | pip's vendored `distlib.scripts.ScriptMaker` (always present with pip) regenerated all 6 console scripts from installed `entry_points.txt` with the venv python as target; previously failing `pygmentize.exe` and `pytest.exe` ran. No network, no wheels, works for **every** installed package (not only REQUESTED). |
 | S-14 | `virtualenv --no-seed` refresh | Refreshes interpreter copy + `pyvenv.cfg` (`home`) and **leaves installed packages and pip untouched** (no pip re-seed/downgrade). |
 | S-4 | peerhub workspace DB paths | Only free text (`dispatch_transcripts.transcript_text`); **no structural absolute paths** -> root rename does not break a peerhub workspace. |
-| S-5 | Claude path-keyed state | `.claude.json` has `projects` keyed by forward-slash absolute path (`"D:/PkgDev/workspace"`); `projects/<slug>` dir name = path with **every non-alphanumeric character replaced by `-`** (`D:\PkgDev\_sys\data\temp` -> `D--PkgDev--sys-data-temp`). Per-project entry fields include trust, MCP, session metrics. |
+| S-5 | Claude path-keyed state | `.claude.json` has `projects` keyed by forward-slash absolute path (`"/path/to/workspace"`); `projects/<slug>` dir name = path with **every non-alphanumeric character replaced by `-`** (`<install-dir>\_sys\data\temp` -> `<install-slug>--sys-data-temp`). Per-project entry fields include trust, MCP, session metrics. |
 | S-6 | Dispatcher conventions | Pipelines are config (`dispatch.json`); failures raise `RuntimeError` -> exit 1; usage errors `sys.exit(1)`. **Only 0/1 exist today**; path/config knobs live in `_sys/config/environment.json` (`paths`, `env_vars`). New discrete exit codes are an extension and need `.bat` handling (the chain is `dispatch.bat` `exit /b %errorlevel%`). |
 
 **Consequences (R4):** (1) the venv *interpreter* is self-contained, but `pyvenv.cfg home` must still resolve to an existing Python or spawn-based multiprocessing breaks (S-12); (2) relocation/skew repair is **in-place and offline-capable**: rewrite `pyvenv.cfg` -> (optional) `virtualenv --no-seed` refresh -> regenerate console scripts with `ScriptMaker` (S-13/S-14) -> re-register editables; no rebuild unless the probe fails or the minor differs; (3) the R2 check "`base_prefix` == `env/python`" was wrong (base_prefix is `venv\Scripts`); the right checks are `home` resolves + version skew; (4) Python replacement does not endanger a healthy venv, but a managed Python is still needed for `virtualenv`, pins, and as `home`.
@@ -442,7 +442,7 @@ Rationale: detect first (no writes except plain snapshot files), then give old c
 | ag | `ag.pro` | APPROVE-WITH-CHANGES | first attempt timed out, narrowed second succeeded. Added: size-cap vs min_keep, structural verification for `--adopt-legacy`, ACLs for all backup kinds, cross-volume copy atomicity + TOCTOU + symlink flattening, CI prompt hangs, discrete exit codes, dynamic cap |
 | cx | - | **not reviewed** | usage limit reached until 2026-10-04 10:35; request a cx round before ratification |
 
-Reviewer-reported facts the author could not independently confirm (cc.deepthink could not read the live `D:\PkgDev\_sys\env`): `psutil` only in the venv; `engram.cmd`/`bootstrap.bat`/`provisioner.py` line citations. They are marked "per review"/"review finding" and must be re-verified by spikes before TDD.
+Reviewer-reported facts the author could not independently confirm (cc.deepthink could not read the live `<install-dir>\_sys\env`): `psutil` only in the venv; `engram.cmd`/`bootstrap.bat`/`provisioner.py` line citations. They are marked "per review"/"review finding" and must be re-verified by spikes before TDD.
 
 ### Round 2 (R3 delta, 2026-10-02)
 | Reviewer | Profile | Result | Notes |
@@ -462,3 +462,12 @@ Author-verified claims: S-12, S-13, S-14 were executed after the reviews and con
 1. `cx` cross-review of R4 (after 2026-10-04 10:35); optional round-3 sanity pass by `ag.pro` on 7.4/8.
 2. Residual checks R-1..R-4 (section 13) at their phases.
 3. User sign-off on D1-D10 and the P0-P5 order. (Done 2026-10-02.)
+
+---
+
+## 18. Ratified ADR: Final Push Gate & CLI Freeze Decisions (2026-10-03)
+
+- **Standalone venv repair backup allocation**: Standalone venv repair must allocate a backup path for every mutation; `--rollback` must invoke runner handoff when required.
+- **Legacy backup registration**: P5 registers legacy backup producers (`*_old`, `.pre-merge.bak`, `Engram.exe.old`, and core-update backups) directly into the backup registry via `backups.create_file`.
+- **CLI Freeze (v3.7.0)**: Help system uses static `_sys/core/help/<verb>.txt` for all 13 verbs plus `index.txt` routed without Python dependency; `tidy --deep` implies `--adopt-legacy`; `--purge-legacy` immediately purges `legacy-old` backups fail-closed on journal/lock.
+

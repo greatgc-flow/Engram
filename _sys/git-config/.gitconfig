@@ -1,15 +1,15 @@
 # ================================================================
-# git_config/.gitconfig  -  포터블 Git 전용 설정
+# git_config/.gitconfig  -  Portable Git settings
 #
-# start.bat 이 GIT_CONFIG_GLOBAL 환경변수로 이 파일을 지정함.
-# 포터블 Git(git\cmd\git.exe)이 있을 때만 적용됨.
+# start.bat selects this file through the GIT_CONFIG_GLOBAL environment variable.
+# Applies only when portable Git (git\cmd\git.exe) is available.
 #
-# delta 연동: start.bat 에서 delta.exe 감지 시 GIT_PAGER=delta 설정
-#             이 파일에는 delta UI 옵션만 정의
+# delta integration: start.bat sets GIT_PAGER=delta when delta.exe is detected
+#             This file defines only delta UI options
 # ================================================================
 
 [core]
-    # Windows 에서 줄바꿈 자동 변환 방지 (팀 협업 시 혼란 예방)
+    # Prevent automatic line-ending conversion on Windows (avoid confusion during team collaboration)
     autocrlf = input
     safecrlf = warn
 
@@ -19,7 +19,7 @@
 [pull]
     rebase = false
 
-# ── delta 옵션 (tools\delta\ 폴더가 있을 때 효과 있음) ─────────
+# ── delta options (effective when the tools\delta\ folder exists) ─────────
 [delta]
     navigate     = true
     side-by-side = true
@@ -32,18 +32,18 @@
 [merge]
     conflictstyle = diff3
 
-# ── 자주 쓰는 별칭 ──────────────────────────────────────────────
-# ── 인증 (드라이브 문자 변경 대비 system gitconfig override) ────
+# ── Frequently used aliases ──────────────────────────────────────────────
+# ── Authentication (override system gitconfig to handle drive letter changes) ────
 [credential]
     helper =
     helper = manager
 
 [alias]
-    # 그래프 형태의 커밋 로그
+    # Commit log as a graph
     lg  = log --oneline --graph --decorate --all
-    # 간결한 상태
+    # Concise status
     st  = status -sb
-    # 마지막 커밋 내용 확인
+    # Show the latest commit
     last = log -1 HEAD --stat
-    # 스테이징 취소
+    # Unstage changes
     unstage = reset HEAD --

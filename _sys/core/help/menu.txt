@@ -3,6 +3,7 @@ engram menu - Engram Right-Click Context Menu Management
 Usage: engram menu [status|enable|disable|clean]
 
 Description:
+  Actions accept no extra operands.
   Manages the Explorer right-click entry "Open in Engram". It writes only
   per-user registry keys (no administrator rights). With no subcommand it
   shows the status. All subcommands are safe to repeat.

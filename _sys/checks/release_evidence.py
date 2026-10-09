@@ -2,7 +2,11 @@
 
 Candidate schema: tag, commit, candidate_sha256s (relative asset name -> SHA256).
 Evidence schema: status=PASS and the identical candidate_sha256s mapping.
-Optional cancelled/skipped flags must be false. Provenance comes from
+Sandbox provider, runner_environment, workflow_run_id and image are required.
+--policy defaults to tools/release_gate/release_policy.json and is always enforced.
+All evidence requires explicit-false flags and current promotion run identity.
+Upgrade and WinGet evidence are required and must include both flags as exactly false.
+Provenance comes from
 RELEASE_TAG/GITHUB_REF_NAME and GITHUB_SHA, with local Git fallbacks.
 Existing candidate files are never overwritten; rebuilding needs a new path.
 This offline gate checks evidence consistency, not evidence authenticity.
@@ -15,6 +19,13 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
+
+
+DEFAULT_POLICY = Path(__file__).resolve().parents[2] / "tools" / "release_gate" / "release_policy.json"
+PROVIDER_ENVIRONMENTS = {
+    "windows-sandbox": "self-hosted",
+    "hosted-ephemeral-vm": "github-hosted",
+}
 
 
 class Hold(ValueError):
@@ -108,18 +119,76 @@ def freeze(assets, out):
         stream.write(payload)
 
 
-def verify(candidate_path, evidence_path):
+def validate_evidence(evidence, hashes, label, *, run_id, run_attempt):
+    """One fail-closed predicate for every promotion evidence type."""
+    if evidence.get("status") != "PASS":
+        raise Hold(f"{label} evidence status is not PASS")
+    for flag in ("cancelled", "skipped"):
+        if evidence.get(flag) is not False:
+            raise Hold(f"{label} evidence is {flag} or has an invalid flag")
+    if _hashes(evidence.get("candidate_sha256s")) != hashes:
+        raise Hold(f"{label} evidence candidate hashes do not match exactly")
+    for field, expected in (("run_id", run_id), ("run_attempt", run_attempt)):
+        if not isinstance(expected, str) or not expected.isdecimal() or int(expected) < 1:
+            raise Hold(f"current promotion {field} is required")
+        if evidence.get(field) != expected:
+            raise Hold(f"{label} evidence {field} differs from current promotion")
+
+
+def verify(candidate_path, evidence_path, upgrade_evidence_path=None, *,
+           winget_evidence_path=None, policy_path=DEFAULT_POLICY,
+           run_id=None, run_attempt=None):
+    if upgrade_evidence_path is None:
+        raise Hold("upgrade evidence is required")
+    if winget_evidence_path is None:
+        raise Hold("WinGet evidence is required")
+    run_id = run_id if run_id is not None else os.environ.get("GITHUB_RUN_ID")
+    run_attempt = run_attempt if run_attempt is not None else os.environ.get("GITHUB_RUN_ATTEMPT")
     candidate = _read(candidate_path)
     _identity(candidate)
     hashes = _hashes(candidate.get("candidate_sha256s"))
     evidence = _read(evidence_path)
-    if evidence.get("status") != "PASS":
-        raise Hold("Sandbox evidence status is not PASS")
-    for flag in ("cancelled", "skipped"):
-        if flag in evidence and evidence[flag] is not False:
-            raise Hold(f"Sandbox evidence is {flag} or has an invalid flag")
-    if _hashes(evidence.get("candidate_sha256s")) != hashes:
-        raise Hold("Sandbox evidence candidate hashes do not match exactly")
+    policy = _read(policy_path)
+    providers = policy.get("sandbox_providers")
+    if (not isinstance(providers, list) or not providers
+            or any(not isinstance(provider, str) or provider not in PROVIDER_ENVIRONMENTS
+                   for provider in providers)):
+        raise Hold("invalid sandbox provider policy")
+    for field in ("provider", "runner_environment", "workflow_run_id", "image"):
+        value = evidence.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise Hold(f"Sandbox evidence {field} is missing or invalid")
+    provider = evidence["provider"]
+    if provider not in providers:
+        raise Hold("Sandbox evidence provider is not allowed by policy")
+    if evidence["runner_environment"] != PROVIDER_ENVIRONMENTS[provider]:
+        raise Hold("Sandbox evidence provider and runner_environment do not match")
+    validate_evidence(evidence, hashes, "Sandbox", run_id=run_id, run_attempt=run_attempt)
+    if evidence["workflow_run_id"] != run_id:
+        raise Hold("Sandbox workflow_run_id differs from current promotion")
+    if upgrade_evidence_path is not None:
+        if not Path(upgrade_evidence_path).is_file():
+            raise Hold("upgrade evidence file is missing")
+        upgrade_evidence = _read(upgrade_evidence_path)
+        validate_evidence(upgrade_evidence, hashes, "upgrade", run_id=run_id, run_attempt=run_attempt)
+        if upgrade_evidence.get("scenarios") != {"upgrade": "PASS", "rollback": "PASS"}:
+            raise Hold("upgrade evidence requires upgrade and rollback scenarios")
+        sources = policy.get("upgrade_updater_sources")
+        if (not isinstance(sources, list) or not sources
+                or any(source not in ("candidate", "previous") for source in sources)):
+            raise Hold("invalid upgrade updater source policy")
+        if upgrade_evidence.get("updater_source") not in sources:
+            raise Hold("upgrade evidence updater source is missing or invalid")
+        prev_tag = upgrade_evidence.get("previous_tag")
+        if not isinstance(prev_tag, str) or not prev_tag.strip() or any(c.isspace() for c in prev_tag) or prev_tag == candidate.get("tag"):
+            raise Hold("upgrade evidence previous tag is missing, invalid, or matches candidate")
+
+    if winget_evidence_path is not None:
+        if not Path(winget_evidence_path).is_file():
+            raise Hold('WinGet evidence file is missing')
+        evidence = _read(winget_evidence_path)
+        validate_evidence(evidence, hashes, "WinGet", run_id=run_id, run_attempt=run_attempt)
+
 
 
 def main(argv=None):
@@ -129,19 +198,30 @@ def main(argv=None):
     freeze_parser.add_argument("--assets", required=True)
     freeze_parser.add_argument("--out", required=True)
     verify_parser = commands.add_parser("verify")
+    verify_parser.add_argument("--run-id", required=True)
+    verify_parser.add_argument("--run-attempt", required=True)
     verify_parser.add_argument("--candidate", required=True)
     verify_parser.add_argument("--evidence", required=True)
+    verify_parser.add_argument("--policy", default=DEFAULT_POLICY,
+                               help="required provider policy (default: tools/release_gate/release_policy.json)")
+    verify_parser.add_argument("--upgrade-evidence", required=True)
+    verify_parser.add_argument("--winget-evidence", required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "freeze":
             freeze(args.assets, args.out)
         else:
-            verify(args.candidate, args.evidence)
+            verify(
+                args.candidate, args.evidence, args.upgrade_evidence,
+                winget_evidence_path=args.winget_evidence,
+                policy_path=args.policy,
+                run_id=args.run_id, run_attempt=args.run_attempt,
+            )
     except (Hold, OSError, ValueError, subprocess.SubprocessError) as exc:
         reason = " ".join(str(exc).split())
         print(f"HOLD: {reason}")
         return 1
-    print("PASS: candidate frozen" if args.command == "freeze" else "PASS: Sandbox evidence matches candidate")
+    print("PASS: candidate frozen" if args.command == "freeze" else "PASS: candidate evidence verified")
     return 0
 
 

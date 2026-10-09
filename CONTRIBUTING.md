@@ -57,20 +57,7 @@ Always verify your changes against the test suite before submitting:
 - **Run pre-commit checks:**
   Static and hygiene checks live in `_sys/checks/` (e.g. `check_encoding.py`, `check_root_hygiene.py`, `check_unreferenced_functions.py`).
 
-- **Run the isolated, real-network release gate (required before a release):**
-  ```cmd
-  _sys\tests\run-sandbox-test.bat
-  ```
-  This creates a fresh Windows Sandbox install, downloads the declared runtimes,
-  installs source-only test dependencies, runs the complete unit/lifecycle/path
-  suite, runs `engram doctor --json`, and forces a live update-discovery refresh.
-  It can consume bandwidth and wall-clock time but never invokes an AI model, so
-  Engram itself has no token-cost test tier. PeerHub owns model dispatch tests.
-  The same command is scheduled weekly by `sandbox-gate.yml` on a dedicated
-  Windows self-hosted runner labelled `engram-sandbox`. GitHub-hosted runners
-  do not expose the nested virtualization required by Windows Sandbox. Start
-  the dedicated runner interactively with `run.cmd`, not as a Windows service;
-  service-mode runners execute in Session 0, where Windows Sandbox cannot run.
+- **Release gate:** For canonical release verification procedures, clean-room gates, and publishing workflows, see [`docs/release_gate.md`](docs/release_gate.md).
 
 ---
 
@@ -120,3 +107,19 @@ code, and the relevant file under `_sys/data/logs/` or
 `_sys/data/state/update/`. Never attach `.engram/` wholesale: it may contain
 credentials and session data. Use the bug-report template so a failure becomes a
 reproducible test or a documented limitation instead of an untracked workaround.
+
+---
+
+## 6. Maintainer Notes
+
+Operational decisions and environment constraints:
+
+- **Release Governance**: Canonical release procedures, mainline ancestry rules, and clean-room gate specifications are documented in [`docs/release_gate.md`](docs/release_gate.md).
+- Peers cannot run the full pytest suite in their sandbox; the maintainer runs it after EVERY change wave and chains the commit with `&&` so a failing suite never commits.
+- Never create scratch or temporary files at the repo root; tests use `tmp_path`.
+- The VDI may force-logoff sessions; commit and push in small steps.
+- **Headless Shell Git Auth**: Pushing from a headless shell requires a GitHub credential helper (`gh auth setup-git` or per-command `-c credential.helper`).
+- **AI-to-AI Collaboration**: Multi-agent collaboration uses English exclusively for all design notes, reviews, and commits.
+  Roles follow peerhub conventions: `cx` (coordinator / architect), `ag` (implementer / test author), and `cc` (reviewer / verification gatekeeper).
+  Independent cross-review and clean-room contract verification are required before changes are merged or promoted.
+

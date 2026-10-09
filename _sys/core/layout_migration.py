@@ -481,7 +481,7 @@ def m2_move_engram_state(base_dir: Path, sys_dir: Path, dry_run: bool = False) -
         "conflicts": conflicts
     }
 # WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 orchestration wiring happens in a follow-up dispatch"
-def migrate_layout(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> int:
+def migrate_layout(base_dir: Path, sys_dir: Path, dry_run: bool = False, *, merge_defaults: bool = True) -> int:
     import datetime
     try:
         from _sys.core.version import load_version_info
@@ -494,7 +494,7 @@ def migrate_layout(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> int:
     m1_ok, m1_report = m1_retire_shipped_files(base_dir, sys_dir, dry_run=dry_run)
     m2_ok, m2_report = m2_move_engram_state(base_dir, sys_dir, dry_run=dry_run)
     
-    m3_report = merge_declarations(dry_run=dry_run, sys_dir=sys_dir)
+    m3_report = merge_declarations(dry_run=dry_run, sys_dir=sys_dir) if merge_defaults else []
     
     version_file = sys_dir / "data" / "state" / "version.json"
     if not version_file.exists():
@@ -571,3 +571,28 @@ def run_pipeline(ctx: dict) -> dict:
         return {"status": "ok"}
     else:
         return {"status": "error"}
+
+
+def update_layout(ctx: dict) -> dict:
+    """Explicit maintenance for confirmed update execution only."""
+    args = ctx.get("args", [])
+    if any(a in args for a in ("--check", "--dry-run", "--help", "-h")):
+        return {"status": "success"}
+    if not ctx.get("update_confirmed") and not any(a in args for a in ("--yes", "-y")):
+        return {"status": "success"}
+    if ctx.get("layout_maintained"):
+        return {"status": "success"}
+    from core import updater
+    try:
+        updater._parse_args(args)
+    except SystemExit as exc:
+        return {"status": "failed", "exit_code": int(exc.code or 0), "quiet": True, "detail": "usage"}
+    # Direct updater callers need not carry dispatcher context keys. Use the
+    # updater's resolved installation roots, never the process working directory.
+    base_dir = Path(ctx.get("base_dir") or updater._PORTABLE_ROOT)
+    sys_dir = Path(ctx.get("sys_dir") or updater._SYS_DIR)
+    # Update discovery/application owns declarations. Maintenance must not add
+    # unrequested components or replace the proposal with shipped defaults.
+    result = migrate_layout(base_dir, sys_dir, merge_defaults=False)
+    ctx["layout_maintained"] = result == 0
+    return {"status": "success" if result == 0 else "failed", "operation": "migration.update_layout"}

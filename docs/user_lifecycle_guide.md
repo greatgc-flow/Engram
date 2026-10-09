@@ -1,147 +1,29 @@
-# [User Guide] Engram & PeerHub Smart Lifecycle (Backup/Restore/Reset) User Manual
+# Personal data lifecycle guide
 
-A practical guide from the user's perspective summarizing how to use commands for **daily operations**, **moving to a new PC**, **recovering from issues/resetting**, and **complete uninstallation**.
+Full command reference: [cli_reference.md](cli_reference.md). Use `engram <command> --help` for command help.
 
-All complex internal defenses (disk space checks, inode cycle detection, atomic SQLite backups, fail-closed safety guards) are **handled 100% automatically in the background**, so users only need to know a few simple commands.
+## Backup
 
----
+Run `engram backup` or `engram backup --out D:\Backups\engram.zip` to archive the declared durable AI settings, memory, rules, skills and sessions. Add `--include-uncovered` for discovered extras such as `.peerhub`.
 
-> Full command reference (English): [`cli_reference.md`](cli_reference.md). Every command also prints its own help with `engram <command> --help`.
+Every copy recursively excludes credential filenames and secret patterns (`.env`, token, secret, credential, id_rsa, `.pem`, `.key`). Declared SQLite database items use the SQLite backup API so committed WAL data is included. Redirected sources and destinations are refused. An existing archive is replaced atomically once the new archive is ready. Copy backups off-drive for drive-failure recovery.
 
----
+## Restore
 
-## ⚡ 3-Second Quick Cheat Sheet (Frequently Used Core Commands)
+Preview with `engram restore PATH`; apply with `engram restore PATH --apply`. Before writing, restore snapshots exactly the existing portable destinations it will overwrite, including extras, to `_sys/data/backups/pre_restore_*.zip`. Existing protected session/project directories are refused unless `--force` is supplied. `--force` also skips the safety snapshot.
 
-| Goal | Command | What Happens? |
-| :--- | :--- | :--- |
-| **Safely back up current state** | `engram backup` | Automatically archives sessions, brain, and settings (uncovered items like `.peerhub` added via `--include-uncovered`) |
-| **Save backup to a specific location** | `engram backup --out D:\MyBackup.zip` | Creates a single `.zip` archive at the specified path |
-| **Restore from a backup file** | `engram restore D:\MyBackup.zip --apply` | Creates a pre-restore safety snapshot, then restores standard + custom extras to original locations (dry-run preview without `--apply`) |
-| **Clean reset (factory restore)** | `engram reset --apply` | Creates an automatic pre-reset snapshot, then fully purges `.engram` and discovered dotfolders like `.peerhub` (dry-run preview without `--apply`) |
-| **Completely uninstall Engram** | `engram uninstall --purge-data` | Unregisters Windows context menu, terminates processes, and cleans up runtime and data |
+Standard directory payloads replace portable files while preserving excluded secret files. Extras merge their portable files into their recorded locations. Source and destination containment/reparse checks run before snapshots or writes. Restore failures can leave partial changes; use the printed snapshot to recover overwritten data.
 
----
+## Reset
 
-## 🛠️ Practical Usage Guide by Scenario
+Preview with `engram reset`; apply with `engram reset --apply`. Add `--yes` to skip confirmation. Reset refuses while a managed AI CLI is running, creates and verifies `_sys/data/backups/safety_pre_reset_*.zip`, then deletes only files covered by that archive.
 
-### Scenario 1: Routine Scheduled Backup or PC Migration Preparation
-> **"I want to safely back up all AI conversations, brain memories, prompts, and tool configurations!"**
+Credentials, secrets, uncovered `.engram/` files and `workspace/` projects remain. Discovered dotfolders share the same recursive exclusions; empty directories may remain. Recover with `engram restore <snapshot> --apply`. Reset does not provide automatic rollback after a partial deletion failure.
 
-#### How to run:
-```powershell
-PS D:\PortableDev> engram backup
-```
+## Uninstall
 
-#### Terminal screen flow:
-```text
-Backing up personal AI-CLI data from D:\PortableDev\.engram to: D:\PortableDev\_sys\data\backups\engram_backup_20260930_173000.zip
+Use `engram uninstall --dry-run` to inspect removal. `engram uninstall --purge-data` requests permanent personal-data removal and requires the typed folder name. See the command reference for its scope.
 
-  [OK]   claude/projects                  <- D:\PortableDev\.engram\claude\projects (2,296 files)
-  [OK]   claude/CLAUDE.md                 <- D:\PortableDev\.engram\claude\CLAUDE.md (1 file)
-  [OK]   claude/settings.json             <- D:\PortableDev\.engram\claude\settings.json (1 file)
-  [OK]   codex/CODEX.md                   <- D:\PortableDev\.engram\codex\CODEX.md (1 file)
-  [OK]   codex/config.toml                <- D:\PortableDev\.engram\codex\config.toml (1 file)
-  [OK]   codex/rules                      <- D:\PortableDev\.engram\codex\rules (12 files)
-  [OK]   codex/skills                     <- D:\PortableDev\.engram\codex\skills (45 files)
-  [OK]   codex/memories_1.sqlite          <- D:\PortableDev\.engram\codex\memories_1.sqlite (1 file)
-  [OK]   agy/AGY.md                       <- D:\PortableDev\.engram\agy\AGY.md (1 file)
-  [OK]   agy/settings.json                <- D:\PortableDev\.engram\agy\settings.json (1 file)
-  [OK]   agy/keybindings.json             <- D:\PortableDev\.engram\agy\keybindings.json (1 file)
-  [OK]   agy/conversation_summaries.db    <- D:\PortableDev\.engram\agy\conversation_summaries.db (1 file)
-  [OK]   agy/knowledge                    <- D:\PortableDev\.engram\agy\knowledge (8 files)
-  [OK]   agy/skills                       <- D:\PortableDev\.engram\agy\skills (30 files)
+For Python/venv recovery, relocation and environment backup management, see [env_resilience_guide.md](env_resilience_guide.md).
 
-Done. Manifest written inside D:\PortableDev\_sys\data\backups\engram_backup_20260930_173000.zip
-
-[NOTE] Same-drive backup created. This protects against accidental local
-resets/config mistakes, NOT drive failure. For disaster recovery, copy
-this backup file off-drive (USB, external drive, cloud storage).
-```
-- By default, `engram backup` safely backs up personal AI data inside `.engram/` (uncovered items like `.peerhub` are not included by default).
-- To include discovered dotfolders or project configurations like `.peerhub`:
-  - `engram backup --include-uncovered`: Appends discovered dotfolders/configs (`.peerhub`, etc.) to the backup archive.
-
----
-
-### Scenario 2: Restoring on a New PC or Rolling Back to an Earlier Point
-> **"Bought a new laptop or encountered issues and want to restore from an earlier backup!"**
-
-#### How to run:
-```powershell
-PS D:\PortableDev> engram restore D:\Backups\engram_backup_20260930_173000.zip --apply
-```
-
-#### Terminal screen flow:
-```text
-[Engram Restore] Inspecting backup archive: D:\Backups\engram_backup_20260930_173000.zip
-Manifest Version: 2 (Created at 2026-09-30 17:30 UTC)
-
-Archive Contents:
-  - Standard: agy, claude, codex
-  - Custom Extras: .peerhub (with --include-uncovered)
-
-[Safety] Creating pre-restore snapshot of current live state...
-[OK] Safety snapshot saved: _sys/data/backups/pre_restore_20260930_173500.zip
-
-Restoring items...
-  [OK] .engram/agy restored (29,620 files)
-  [OK] .engram/claude restored (2,296 files)
-  [OK] .engram/codex restored (810 files)
-  [OK] .peerhub restored
-
-Done! All AI personal data and custom items have been restored.
-```
-- A safety snapshot of the current live state is created before restoring, so accidental restore invocations never destroy existing data.
-- Running without `--apply` performs a dry run to inspect the restore plan without modifying any files.
-- Extra items bundled with `--include-uncovered` (`custom_extras`, e.g., `.peerhub`) are automatically restored to their original locations.
-
----
-
-### Scenario 3: Corrupted Environment Requiring a Clean Reset
-> **"Tool settings or sessions became corrupted and you want to start fresh with a factory clean state!"**
-
-#### How to run:
-```powershell
-PS D:\PortableDev> engram reset --apply
-```
-
-#### Terminal screen flow:
-```text
-[Engram Reset]
-Resetting will completely purge .engram/ and discovered dotfolders like .peerhub/.
-(Your project source codes in workspace/ will be KEPT SAFE).
-
-[Phase 1: Safety Snapshot]
-Creating mandatory safety snapshot before deletion...
-[OK] Snapshot created & verified: _sys/data/backups/safety_pre_reset_20260930_174000.zip
-
-[Phase 2: Clean Sweep]
-  [OK] Atomic rename & purged: .engram/
-  [OK] Atomic rename & purged: .peerhub/
-
-Reset complete. The system is in pristine state.
-Next time you run 'engram' or an AI CLI, empty skeletons will be auto-scaffolded instantly.
-```
-- Even if you forgot to take a backup before resetting, do not worry: a complete pre-deletion snapshot is always saved to `safety_pre_reset_*.zip`.
-- Running without `--apply` performs a dry run to preview the list of targets to be deleted without making changes.
-- After a reset, running `engram` or `peerhub status` self-heals a clean empty folder structure in milliseconds.
-
----
-
-### Scenario 4: Completely Uninstalling Engram
-> **"Completely remove Engram from this machine and clean up the registry!"**
-
-#### How to run:
-```powershell
-PS D:\PortableDev> engram uninstall --purge-data
-```
-- The Windows right-click context menu ("Open in Engram") is completely removed from the registry.
-- Running processes are safely terminated, and `_sys`, `.engram`, and `.peerhub` are cleanly deleted from disk.
-
----
-
-## 📌 Summary: One Sentence to Remember
-
-> **"In daily use run `engram backup`, to revert run `engram restore <path> --apply`, and to clean up run `engram reset --apply`. Disk pre-flight checks and safety nets are handled automatically by the system!"**
-
-> For Python/venv recovery, relocation (`engram relocate`), and backup registry management (`engram snapshots`), see [env_resilience_guide.md](env_resilience_guide.md).
+Backup/restore: empty directories are not preserved. Existing folder backups replace directory payloads, removing stale files. Restore previews create no files or directories. Confirmed updates maintain layout, merge declarations, retire obsolete shipped files, and clean preserved update staging; preview and --check skip this maintenance.
