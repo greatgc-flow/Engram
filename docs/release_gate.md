@@ -1,5 +1,54 @@
 # Release gate (P0-001)
 
+## Post-release closure (EN-GAP-P1-006)
+
+`post-release-closure.yml` runs after a successful tag-push `sandbox-gate`
+completion, independently of promotion, and every Friday at 19:00 UTC.
+Manual dispatch provides an immediate recheck. It downloads the exact
+`candidate-<run_id>-<run_attempt>` artifact, checks its commit against the
+publishing run, and retains its frozen JSON in `closure-ledger`. Every run
+restores the latest ledger and checks all retained candidates; weekly uploads
+renew its 90-day retention. Keep this workflow enabled on the default branch.
+After a retention gap or lost initial download, recover the original promotion
+candidate artifact and rerun the publishing workflow's closure run; never
+reconstruct hashes from the public assets. An empty ledger or API failure fails
+loudly; neither proves closure. This workflow cannot block publication.
+
+`tools/release_gate/post_release_closure.py --candidate release/candidate.json
+--repo OWNER/REPO --out post_release_closure.json` uses only stdlib and `gh`.
+There are no import-time network calls; `check_closure` accepts injectable
+release and WinGet fetchers for offline tests. The tests were authored first
+against the absent module (RED contract); execution belongs to cc.
+
+The release query is `gh api repos/OWNER/REPO/releases/tags/TAG`, followed by
+paginated `releases/ID/assets` inventory queries. It requires a published,
+non-draft release under the exact tag. The [GitHub release asset API](https://docs.github.com/en/rest/releases/assets)
+supplies `digest: sha256:...`; absent digests are errors, with no fallback that
+could silently approve unknown bytes. Frozen relative paths map to uploaded
+basenames because promotion flattens the inventory. Basename collisions,
+missing/extra assets, incomplete uploads, and digest mismatches mean DRIFT.
+This detects the post-publication replacement described in blueprint
+`07_AUDIT/RELEASE_PROVENANCE_FINDING.md` and follows the incident handling in
+`08_LIFECYCLE/RELEASE_PROMOTION_ROLLBACK.md`.
+
+The simplest upstream availability proof is
+`gh api repos/microsoft/winget-pkgs/contents/manifests/g/greatgc-flow/Engram/VERSION/greatgc-flow.Engram.yaml`.
+An existing file on upstream's default branch proves the version manifest has
+merged; no PR search is needed. Only an explicit HTTP 404 means `pending`.
+Auth/rate-limit/network errors or malformed responses never mean CLOSED.
+This checks upstream manifest availability, not client index propagation.
+
+Each candidate gets `post_release_closure.json` containing status, original
+`candidate_sha256s`, `published_digests`, `checked_at`, publication time,
+WinGet availability, deadline, summary, and recheck instructions. CLOSED means
+exact inventory/digest equality and upstream availability. OPEN_PENDING is
+non-failing only while digests match and publication is less than 21 days old.
+Weekly/manual rechecks resolve pending; at 21 days it becomes DRIFT until
+resolved. DRIFT exits nonzero with an issue-ready summary naming missing,
+extra, or replaced assets (or the API error). Workflow summaries and the
+uploaded ledger preserve evidence even on failure. No issue is posted
+automatically, and no release assets are modified.
+
 The `Windows Sandbox release and weekly gate` workflow owns tag publication.
 There was no separate release/publish workflow. CI is reusable via
 `workflow_call`; its checks must pass before the candidate is built. Manual and
