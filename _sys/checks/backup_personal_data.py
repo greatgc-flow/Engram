@@ -305,6 +305,17 @@ def check_running_processes(sys_dir: Path | None = None) -> list[str]:
     return running
 
 
+def _source_matches_kind(path: Path, kind: str) -> bool:
+    """Only an absent source may be skipped; access errors must abort."""
+    try:
+        mode = path.stat().st_mode
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise OSError(f"Cannot inspect backup source {path}: {exc}") from exc
+    return stat.S_ISDIR(mode) if kind == "dir" else stat.S_ISREG(mode)
+
+
 def _sync_item_to_bundle(item: SyncItem, engram_dir: Path, bundle_dir: Path) -> int | None:
     """Copy one item .engram/ -> bundle. Returns a file count, or None if
     the live source doesn't exist (not every item is present on every
@@ -313,7 +324,7 @@ def _sync_item_to_bundle(item: SyncItem, engram_dir: Path, bundle_dir: Path) -> 
     live = engram_dir / item.live_relpath
     dest = bundle_dir / item.bundle_relpath
     if item.kind == "dir":
-        if not live.is_dir():
+        if not _source_matches_kind(live, "dir"):
             return None
         if dest.exists():
             shutil.rmtree(dest)
@@ -321,10 +332,13 @@ def _sync_item_to_bundle(item: SyncItem, engram_dir: Path, bundle_dir: Path) -> 
         shutil.copytree(live, dest)
         return sum(1 for _ in dest.rglob("*") if _.is_file())
     else:
-        if not live.is_file():
+        if not _source_matches_kind(live, "file"):
             return None
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(live, dest)
+        try:
+            shutil.copy2(live, dest)
+        except OSError as exc:
+            raise OSError(f"Cannot back up {live}: {exc}") from exc
         return 1
 
 
@@ -348,7 +362,10 @@ def _restore_item(item: SyncItem, bundle_dir: Path, engram_dir: Path, force: boo
         if not src.is_file():
             return "skip (not in bundle)"
         live.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, live)
+        try:
+            shutil.copy2(src, live)
+        except OSError as exc:
+            raise OSError(f"Cannot restore {live}: {exc}") from exc
         return f"restored -> {live}"
 
 
