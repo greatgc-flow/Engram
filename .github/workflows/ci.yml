@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_call: {}
   push:
     branches: [ "main" ]
   pull_request:
@@ -47,4 +48,3 @@ jobs:
     - name: Verify CP949 emulated tests (no skips)
       run: |
         python -u -m pytest _sys/tests/unit -v -m cp949 --cp949-strict --tb=short
-
