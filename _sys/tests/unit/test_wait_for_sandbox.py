@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import pytest
@@ -22,6 +23,7 @@ pytestmark = pytest.mark.skipif(
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DRIVER_PATH = REPO_ROOT / "tools" / "release_gate" / "wait_for_sandbox_driver.js"
 SCRIPT_PATH = REPO_ROOT / ".github" / "scripts" / "wait_for_sandbox.js"
+WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "sandbox-gate.yml"
 
 
 def run_driver(
@@ -171,3 +173,173 @@ class TestSandboxWaitContract:
         assert data.get("status") == "PASS"
         assert data.get("polls") == 3
         assert data.get("elapsed_ms") == 30000
+
+    def test_hosted_success_resolves_even_if_sandbox_queued(self) -> None:
+        """Hosted job succeeds while sandbox job is still queued => resolves PASS."""
+        config = {
+            "responses": [
+                [
+                    {"name": "clean-room-sandbox", "status": "queued"},
+                    {"name": "clean-room-hosted", "status": "completed", "conclusion": "success"},
+                ]
+            ]
+        }
+        code, data, _ = run_driver(config=config)
+        assert code == 0
+        assert data.get("status") == "PASS"
+        assert any("PASS: Sandbox completed successfully" in msg for msg in data.get("info_messages", []))
+
+    def test_hosted_success_resolves_when_sandbox_failed(self) -> None:
+        """Sandbox job failed but hosted job succeeded => resolves PASS."""
+        config = {
+            "responses": [
+                [
+                    {"name": "clean-room-sandbox", "status": "completed", "conclusion": "failure"},
+                    {"name": "clean-room-hosted", "status": "completed", "conclusion": "success"},
+                ]
+            ]
+        }
+        code, data, _ = run_driver(config=config)
+        assert code == 0
+        assert data.get("status") == "PASS"
+
+    def test_sandbox_success_resolves_when_hosted_failed(self) -> None:
+        """Hosted job failed but sandbox job succeeded => resolves PASS."""
+        config = {
+            "responses": [
+                [
+                    {"name": "clean-room-hosted", "status": "completed", "conclusion": "failure"},
+                    {"name": "clean-room-sandbox", "status": "completed", "conclusion": "success"},
+                ]
+            ]
+        }
+        code, data, _ = run_driver(config=config)
+        assert code == 0
+        assert data.get("status") == "PASS"
+
+    def test_both_candidate_jobs_failed_is_hold(self) -> None:
+        """Both clean-room jobs failed => throws HOLD."""
+        config = {
+            "responses": [
+                [
+                    {"name": "clean-room-sandbox", "status": "completed", "conclusion": "failure"},
+                    {"name": "clean-room-hosted", "status": "completed", "conclusion": "failure"},
+                ]
+            ]
+        }
+        code, data, _ = run_driver(config=config)
+        assert code != 0
+        assert data.get("status") == "HOLD"
+        assert "HOLD: Sandbox concluded failure" in (data.get("error") or "")
+
+    def test_hosted_failure_waits_for_sandbox_in_progress(self) -> None:
+        """Hosted job failed on poll 1 while sandbox is in progress, sandbox succeeds on poll 2 => PASS."""
+        config = {
+            "responses": [
+                [
+                    {"name": "clean-room-hosted", "status": "completed", "conclusion": "failure"},
+                    {"name": "clean-room-sandbox", "status": "in_progress"},
+                ],
+                [
+                    {"name": "clean-room-hosted", "status": "completed", "conclusion": "failure"},
+                    {"name": "clean-room-sandbox", "status": "completed", "conclusion": "success"},
+                ],
+            ]
+        }
+        code, data, _ = run_driver(config=config)
+        assert code == 0
+        assert data.get("status") == "PASS"
+        assert data.get("polls") == 2
+        assert data.get("elapsed_ms") == 15000
+
+    def test_sandbox_skipped_hosted_in_progress_keeps_polling(self) -> None:
+        """Sandbox skipped while hosted is in progress => keeps polling until hosted completes."""
+        config = {
+            "responses": [
+                [
+                    {"name": "clean-room-sandbox", "status": "completed", "conclusion": "skipped"},
+                    {"name": "clean-room-hosted", "status": "in_progress"},
+                ],
+                [
+                    {"name": "clean-room-sandbox", "status": "completed", "conclusion": "skipped"},
+                    {"name": "clean-room-hosted", "status": "in_progress"},
+                ],
+                [
+                    {"name": "clean-room-sandbox", "status": "completed", "conclusion": "skipped"},
+                    {"name": "clean-room-hosted", "status": "completed", "conclusion": "success"},
+                ],
+            ]
+        }
+        code, data, _ = run_driver(config=config)
+        assert code == 0
+        assert data.get("status") == "PASS"
+        assert data.get("polls") == 3
+        assert data.get("elapsed_ms") == 30000
+        assert any("PASS: Sandbox completed successfully" in msg for msg in data.get("info_messages", []))
+
+    def test_sandbox_skipped_hosted_success_resolves(self) -> None:
+        """Sandbox skipped but hosted succeeded => resolves PASS."""
+        config = {
+            "responses": [
+                [
+                    {"name": "clean-room-sandbox", "status": "completed", "conclusion": "skipped"},
+                    {"name": "clean-room-hosted", "status": "completed", "conclusion": "success"},
+                ]
+            ]
+        }
+        code, data, _ = run_driver(config=config)
+        assert code == 0
+        assert data.get("status") == "PASS"
+        assert any("PASS: Sandbox completed successfully" in msg for msg in data.get("info_messages", []))
+
+    def test_sandbox_skipped_hosted_failure_is_hold(self) -> None:
+        """Sandbox skipped and hosted failed => throws HOLD."""
+        config = {
+            "responses": [
+                [
+                    {"name": "clean-room-sandbox", "status": "completed", "conclusion": "skipped"},
+                    {"name": "clean-room-hosted", "status": "completed", "conclusion": "failure"},
+                ]
+            ]
+        }
+        code, data, _ = run_driver(config=config)
+        assert code != 0
+        assert data.get("status") == "HOLD"
+        assert "HOLD: Sandbox concluded" in (data.get("error") or "")
+
+    def test_workflow_clean_room_sandbox_opt_in_guard(self) -> None:
+        """Workflow asserts opt-in 'if' exists on clean-room-sandbox and clean-room-hosted has NO opt-in."""
+        assert WORKFLOW_PATH.is_file(), f"Workflow file not found: {WORKFLOW_PATH}"
+        text = WORKFLOW_PATH.read_text(encoding="utf-8")
+
+        # Parse jobs from workflow text using regex (cheap regex, no yaml lib)
+        sandbox_match = re.search(
+            r"  clean-room-sandbox:\n(.*?)(?=\n  [a-zA-Z0-9_-]+:|\Z)",
+            text,
+            re.DOTALL,
+        )
+        assert sandbox_match is not None, "clean-room-sandbox job not found in workflow"
+        sandbox_block = sandbox_match.group(1)
+
+        hosted_match = re.search(
+            r"  clean-room-hosted:\n(.*?)(?=\n  [a-zA-Z0-9_-]+:|\Z)",
+            text,
+            re.DOTALL,
+        )
+        assert hosted_match is not None, "clean-room-hosted job not found in workflow"
+        hosted_block = hosted_match.group(1)
+
+        # Opt-in 'if' must exist on clean-room-sandbox
+        opt_in_pattern = r"^\s*if:\s*\${{\s*vars\.ENGRAM_SANDBOX_RUNNER\s*==\s*['\"]true['\"]\s*}}"
+        assert re.search(opt_in_pattern, sandbox_block, re.MULTILINE) is not None, (
+            "clean-room-sandbox must have job-level if: ${{ vars.ENGRAM_SANDBOX_RUNNER == 'true' }}"
+        )
+
+        # clean-room-hosted must NOT have any such opt-in
+        assert "ENGRAM_SANDBOX_RUNNER" not in hosted_block, (
+            "clean-room-hosted must not reference ENGRAM_SANDBOX_RUNNER"
+        )
+        hosted_header = hosted_block.split("steps:")[0]
+        assert not re.search(r"^\s*if:", hosted_header, re.MULTILINE), (
+            "clean-room-hosted must not have job-level 'if'"
+        )

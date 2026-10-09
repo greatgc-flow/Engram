@@ -86,6 +86,27 @@ function getMockJobsForPoll(pollIndex) {
       return [{ name: 'clean-room-sandbox', status: 'completed', conclusion: 'cancelled' }];
     case 'skipped':
       return [{ name: 'clean-room-sandbox', status: 'completed', conclusion: 'skipped' }];
+    case 'sandbox_skipped_hosted_in_progress':
+      if (pollIndex === 0) {
+        return [
+          { name: 'clean-room-sandbox', status: 'completed', conclusion: 'skipped' },
+          { name: 'clean-room-hosted', status: 'in_progress' },
+        ];
+      }
+      return [
+        { name: 'clean-room-sandbox', status: 'completed', conclusion: 'skipped' },
+        { name: 'clean-room-hosted', status: 'completed', conclusion: 'success' },
+      ];
+    case 'sandbox_skipped_hosted_success':
+      return [
+        { name: 'clean-room-sandbox', status: 'completed', conclusion: 'skipped' },
+        { name: 'clean-room-hosted', status: 'completed', conclusion: 'success' },
+      ];
+    case 'sandbox_skipped_hosted_failure':
+      return [
+        { name: 'clean-room-sandbox', status: 'completed', conclusion: 'skipped' },
+        { name: 'clean-room-hosted', status: 'completed', conclusion: 'failure' },
+      ];
     case 'runner_never_picks_up':
       return [{ name: 'clean-room-sandbox', status: 'queued' }];
     case 'job_never_appears':

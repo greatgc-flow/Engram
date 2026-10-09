@@ -26,6 +26,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
@@ -35,6 +37,8 @@ jobs:
           if ($env:GITHUB_REF -like 'refs/tags/v*') {
             $version = (Get-Content _sys/core/version.json -Raw | ConvertFrom-Json).version
             if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'HOLD: tag and package version differ' }
+            python tools/release_gate/check_tag_on_main.py --tag $env:GITHUB_REF_NAME --ref origin/main
+            if ($LASTEXITCODE) { throw 'HOLD: tag commit is not on origin/main' }
           }
           python tools/winget/build_exe.py
           if ($LASTEXITCODE) { throw 'HOLD: executable build failed' }
@@ -52,6 +56,7 @@ jobs:
 
   clean-room-sandbox:
     needs: build-candidate
+    if: ${{ vars.ENGRAM_SANDBOX_RUNNER == 'true' }}
     runs-on: [self-hosted, Windows, X64, engram-sandbox]
     timeout-minutes: 40
     steps:
@@ -100,6 +105,7 @@ jobs:
           $candidate = Get-Content release/candidate.json -Raw | ConvertFrom-Json
           $status = 'HOLD'
           if ($env:SANDBOX_OUTCOME -eq 'success' -and $env:JOB_STATUS -eq 'success') { $status = 'PASS' }
+          $image = if ($env:RUNNER_IMAGE_VERSION) { $env:RUNNER_IMAGE_VERSION } elseif ($env:ImageVersion) { $env:ImageVersion } else { 'Windows Sandbox (self-hosted)' }
           @{
             status = $status
             candidate_sha256s = $candidate.candidate_sha256s
@@ -107,12 +113,81 @@ jobs:
             skipped = ($env:SANDBOX_OUTCOME -eq 'skipped')
             run_id = $env:GITHUB_RUN_ID
             run_attempt = $env:GITHUB_RUN_ATTEMPT
+            provider = 'windows-sandbox'
+            runner_environment = 'self-hosted'
+            workflow_run_id = "$env:GITHUB_RUN_ID"
+            image = $image
           } | ConvertTo-Json -Depth 10 | Set-Content release/sandbox_evidence.json -Encoding utf8NoBOM
       - name: Upload Sandbox evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: sandbox-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          name: sandbox-evidence-windows-sandbox-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release/sandbox_evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
+  clean-room-hosted:
+    needs: build-candidate
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release
+      - name: Verify candidate hashes and prepare candidate clean-room root
+        shell: pwsh
+        run: |
+          python .github/scripts/check_candidate_assets.py release/candidate.json release/assets
+          if ($LASTEXITCODE) { throw 'HOLD: candidate mismatch' }
+          $root = Join-Path $env:RUNNER_TEMP "clean-room-hosted-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          if (Test-Path -LiteralPath $root) { throw 'HOLD: clean-room root already exists' }
+          $zip = @(Get-ChildItem release/assets -Filter *.zip)
+          if ($zip.Count -ne 1) { throw 'HOLD: expected one portable archive' }
+          Expand-Archive -LiteralPath $zip[0].FullName -DestinationPath $root
+          "CLEAN_ROOM_ROOT=$root" >> $env:GITHUB_ENV
+      - name: Run hosted clean-room candidate checks
+        id: hosted
+        shell: pwsh
+        run: |
+          python tools/release_gate/hosted_clean_room.py `
+            --candidate release/candidate.json `
+            --clean-root "$env:CLEAN_ROOM_ROOT" `
+            --out release/sandbox_evidence.json
+          if ($LASTEXITCODE) { throw 'HOLD: hosted clean-room checks failed' }
+      - name: Ensure fallback evidence on failure or cancellation
+        if: always()
+        shell: pwsh
+        env:
+          HOSTED_OUTCOME: ${{ steps.hosted.outcome }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          if (!(Test-Path release/sandbox_evidence.json) -or $env:HOSTED_OUTCOME -ne 'success' -or $env:JOB_STATUS -ne 'success') {
+            $candidate = if (Test-Path release/candidate.json) { Get-Content release/candidate.json -Raw | ConvertFrom-Json } else { $null }
+            $image = if ($env:RUNNER_IMAGE_VERSION) { $env:RUNNER_IMAGE_VERSION } elseif ($env:ImageVersion) { $env:ImageVersion } else { 'windows-latest' }
+            @{
+              status = 'HOLD'
+              candidate_sha256s = if ($candidate) { $candidate.candidate_sha256s } else { @{} }
+              cancelled = ($env:JOB_STATUS -eq 'cancelled')
+              skipped = ($env:HOSTED_OUTCOME -eq 'skipped')
+              run_id = $env:GITHUB_RUN_ID
+              run_attempt = $env:GITHUB_RUN_ATTEMPT
+              provider = 'hosted-ephemeral-vm'
+              runner_environment = 'github-hosted'
+              workflow_run_id = "$env:GITHUB_RUN_ID"
+              image = $image
+            } | ConvertTo-Json -Depth 10 | Set-Content release/sandbox_evidence.json -Encoding utf8NoBOM
+          }
+      - name: Upload hosted clean-room evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-evidence-hosted-ephemeral-vm-${{ github.run_id }}-${{ github.run_attempt }}
           path: release/sandbox_evidence.json
           if-no-files-found: error
           retention-days: 30
@@ -292,8 +367,19 @@ jobs:
           path: release
       - uses: actions/download-artifact@v4
         with:
-          name: sandbox-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: evidence
+          pattern: sandbox-evidence-*
+          path: evidence/sandbox_candidates
+      - name: Select clean-room evidence
+        shell: pwsh
+        run: |
+          $evidenceFiles = @(Get-ChildItem -Path evidence/sandbox_candidates -Recurse -Filter "sandbox_evidence.json")
+          if ($evidenceFiles.Count -eq 0) { throw 'HOLD: missing sandbox evidence artifact' }
+          $passEvidence = $evidenceFiles | Where-Object {
+            $content = Get-Content $_.FullName -Raw | ConvertFrom-Json
+            $content.status -eq 'PASS'
+          } | Select-Object -First 1
+          $selected = if ($passEvidence) { $passEvidence } else { $evidenceFiles[0] }
+          Copy-Item $selected.FullName -Destination "evidence/sandbox_evidence.json" -Force
       - uses: actions/download-artifact@v4
         with:
           name: upgrade-evidence-${{ github.run_id }}-${{ github.run_attempt }}
@@ -307,7 +393,7 @@ jobs:
         run: |
           python .github/scripts/check_candidate_assets.py release/candidate.json release/assets evidence/sandbox_evidence.json
           if ($LASTEXITCODE) { throw 'HOLD: candidate mismatch' }
-          python _sys/checks/release_evidence.py verify --candidate release/candidate.json --evidence evidence/sandbox_evidence.json --upgrade-evidence evidence/upgrade_evidence.json --winget-evidence evidence/winget_evidence.json
+          python _sys/checks/release_evidence.py verify --candidate release/candidate.json --evidence evidence/sandbox_evidence.json --policy release_policy.json --upgrade-evidence evidence/upgrade_evidence.json --winget-evidence evidence/winget_evidence.json
           if ($LASTEXITCODE) { throw 'HOLD: Sandbox, upgrade, or WinGet evidence rejected' }
       - name: Publish verified tag assets
         if: startsWith(github.ref, 'refs/tags/v')

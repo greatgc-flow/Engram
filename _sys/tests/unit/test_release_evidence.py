@@ -18,6 +18,8 @@ COMMIT = "a" * 40
 def run_cli(*args):
     if args and args[0] == "verify":
         args = (*args, "--no-winget-evidence")
+        if "--policy" not in args:
+            args = (*args, "--policy", SCRIPT.parents[2] / "release_policy.json")
     env = dict(os.environ, RELEASE_TAG="v1.2.3", GITHUB_SHA=COMMIT)
     return subprocess.run(
         [sys.executable, str(SCRIPT), *map(str, args)],
@@ -82,6 +84,8 @@ def test_freeze_invalid_asset_directory_holds(tmp_path, mode):
 
 def test_exact_pass_evidence_promotes(tmp_path, candidate):
     evidence = write_json(tmp_path / "evidence.json", {
+        "provider": "windows-sandbox", "runner_environment": "self-hosted",
+        "workflow_run_id": "123", "image": "Windows 11",
         "status": "PASS", "candidate_sha256s": {"release.zip": HASH},
     })
     result = run_cli("verify", "--candidate", candidate, "--evidence", evidence, "--no-upgrade-evidence")
@@ -91,6 +95,8 @@ def test_exact_pass_evidence_promotes(tmp_path, candidate):
 @pytest.mark.parametrize("status", [None, "FAIL", "CANCELLED", "SKIPPED", "PENDING", "RUNNING", "UNKNOWN", "STALE", "UNAVAILABLE", "pass"])
 def test_non_pass_status_holds(tmp_path, candidate, status):
     evidence = write_json(tmp_path / "evidence.json", {
+                "provider": "windows-sandbox", "runner_environment": "self-hosted",
+        "workflow_run_id": "123", "image": "Windows 11",
         "status": status, "candidate_sha256s": {"release.zip": HASH},
     })
     result = run_cli("verify", "--candidate", candidate, "--evidence", evidence, "--no-upgrade-evidence")
@@ -102,6 +108,8 @@ def test_non_pass_status_holds(tmp_path, candidate, status):
 @pytest.mark.parametrize("hashes", [{}, {"release.zip": "b" * 64}, {"other.zip": HASH}, {"release.zip": HASH, "extra.zip": HASH}, None, [HASH]])
 def test_missing_extra_or_mismatched_hashes_hold(tmp_path, candidate, hashes):
     evidence = write_json(tmp_path / "evidence.json", {
+        "provider": "windows-sandbox", "runner_environment": "self-hosted",
+        "workflow_run_id": "123", "image": "Windows 11",
         "status": "PASS", "candidate_sha256s": hashes,
     })
     assert run_cli("verify", "--candidate", candidate, "--evidence", evidence, "--no-upgrade-evidence").returncode != 0
@@ -110,6 +118,8 @@ def test_missing_extra_or_mismatched_hashes_hold(tmp_path, candidate, hashes):
 @pytest.mark.parametrize("flag", ["cancelled", "skipped"])
 def test_pass_cannot_override_cancelled_or_skipped(tmp_path, candidate, flag):
     evidence = write_json(tmp_path / "evidence.json", {
+        "provider": "windows-sandbox", "runner_environment": "self-hosted",
+        "workflow_run_id": "123", "image": "Windows 11",
         "status": "PASS", "candidate_sha256s": {"release.zip": HASH}, flag: True,
     })
     assert run_cli("verify", "--candidate", candidate, "--evidence", evidence, "--no-upgrade-evidence").returncode != 0
@@ -132,6 +142,8 @@ def test_invalid_candidate_holds(tmp_path, candidate, field, value):
     data[field] = value
     write_json(candidate, data)
     evidence = write_json(tmp_path / "evidence.json", {
+        "provider": "windows-sandbox", "runner_environment": "self-hosted",
+        "workflow_run_id": "123", "image": "Windows 11",
         "status": "PASS", "candidate_sha256s": data["candidate_sha256s"],
     })
     assert run_cli("verify", "--candidate", candidate, "--evidence", evidence, "--no-upgrade-evidence").returncode != 0
@@ -139,6 +151,8 @@ def test_invalid_candidate_holds(tmp_path, candidate, field, value):
 
 def test_upgrade_evidence_pass_promotes(tmp_path, candidate):
     evidence = write_json(tmp_path / "evidence.json", {
+        "provider": "windows-sandbox", "runner_environment": "self-hosted",
+        "workflow_run_id": "123", "image": "Windows 11",
         "status": "PASS", "candidate_sha256s": {"release.zip": HASH},
     })
     upgrade_evidence = write_json(tmp_path / "upgrade_evidence.json", {
@@ -155,6 +169,8 @@ def test_upgrade_evidence_pass_promotes(tmp_path, candidate):
 @pytest.mark.parametrize("status", [None, "FAIL", "HOLD", "CANCELLED", "SKIPPED"])
 def test_upgrade_evidence_non_pass_holds(tmp_path, candidate, status):
     evidence = write_json(tmp_path / "evidence.json", {
+        "provider": "windows-sandbox", "runner_environment": "self-hosted",
+        "workflow_run_id": "123", "image": "Windows 11",
         "status": "PASS", "candidate_sha256s": {"release.zip": HASH},
     })
     upgrade_evidence = write_json(tmp_path / "upgrade_evidence.json", {
@@ -172,6 +188,8 @@ def test_upgrade_evidence_non_pass_holds(tmp_path, candidate, status):
 @pytest.mark.parametrize("prev_tag", [None, "", "   ", "v1.2.3", "tag with spaces"])
 def test_upgrade_evidence_invalid_or_matching_tag_holds(tmp_path, candidate, prev_tag):
     evidence = write_json(tmp_path / "evidence.json", {
+        "provider": "windows-sandbox", "runner_environment": "self-hosted",
+        "workflow_run_id": "123", "image": "Windows 11",
         "status": "PASS", "candidate_sha256s": {"release.zip": HASH},
     })
     upgrade_evidence = write_json(tmp_path / "upgrade_evidence.json", {
@@ -188,6 +206,8 @@ def test_upgrade_evidence_invalid_or_matching_tag_holds(tmp_path, candidate, pre
 
 def test_upgrade_evidence_hash_mismatch_holds(tmp_path, candidate):
     evidence = write_json(tmp_path / "evidence.json", {
+        "provider": "windows-sandbox", "runner_environment": "self-hosted",
+        "workflow_run_id": "123", "image": "Windows 11",
         "status": "PASS", "candidate_sha256s": {"release.zip": HASH},
     })
     upgrade_evidence = write_json(tmp_path / "upgrade_evidence.json", {
@@ -204,6 +224,8 @@ def test_upgrade_evidence_hash_mismatch_holds(tmp_path, candidate):
 
 def test_upgrade_evidence_missing_file_holds(tmp_path, candidate):
     evidence = write_json(tmp_path / "evidence.json", {
+        "provider": "windows-sandbox", "runner_environment": "self-hosted",
+        "workflow_run_id": "123", "image": "Windows 11",
         "status": "PASS", "candidate_sha256s": {"release.zip": HASH},
     })
     result = run_cli(
@@ -217,6 +239,8 @@ def test_upgrade_evidence_missing_file_holds(tmp_path, candidate):
 
 def test_upgrade_evidence_required_by_default(tmp_path, candidate):
     evidence = write_json(tmp_path / "evidence.json", {
+        "provider": "windows-sandbox", "runner_environment": "self-hosted",
+        "workflow_run_id": "123", "image": "Windows 11",
         "status": "PASS", "candidate_sha256s": {"release.zip": HASH},
     })
     result = run_cli("verify", "--candidate", candidate, "--evidence", evidence)
@@ -237,6 +261,8 @@ def test_upgrade_evidence_options_are_mutually_exclusive(tmp_path, candidate):
 @pytest.mark.parametrize("value", ["missing", None, True, 0, 1, "false"])
 def test_upgrade_evidence_requires_explicit_false_flags(tmp_path, candidate, flag, value):
     evidence = write_json(tmp_path / "evidence.json", {
+        "provider": "windows-sandbox", "runner_environment": "self-hosted",
+        "workflow_run_id": "123", "image": "Windows 11",
         "status": "PASS", "candidate_sha256s": {"release.zip": HASH},
     })
     data = {
@@ -254,3 +280,80 @@ def test_upgrade_evidence_requires_explicit_false_flags(tmp_path, candidate, fla
     )
     assert result.returncode == 1
     assert result.stdout == f"HOLD: upgrade evidence is {flag} or has an invalid flag\n"
+
+
+@pytest.mark.parametrize("provider,environment", [
+    ("windows-sandbox", "self-hosted"),
+    ("hosted-ephemeral-vm", "github-hosted"),
+])
+def test_policy_allows_provider_pairs(tmp_path, candidate, provider, environment):
+    evidence = write_json(tmp_path / "sandbox.json", {
+        "status": "PASS", "candidate_sha256s": {"release.zip": HASH},
+        "provider": provider, "runner_environment": environment,
+        "workflow_run_id": "123", "image": "runner image version",
+    })
+    result = run_cli("verify", "--candidate", candidate, "--evidence", evidence,
+                     "--no-upgrade-evidence")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("field", ["provider", "runner_environment", "workflow_run_id", "image"])
+@pytest.mark.parametrize("value", [None, "", "   ", 123])
+def test_required_sandbox_metadata_holds(tmp_path, candidate, field, value):
+    data = {"status": "PASS", "candidate_sha256s": {"release.zip": HASH},
+            "provider": "windows-sandbox", "runner_environment": "self-hosted",
+            "workflow_run_id": "123", "image": "Windows 11"}
+    if value is None:
+        del data[field]
+    else:
+        data[field] = value
+    evidence = write_json(tmp_path / "sandbox.json", data)
+    assert run_cli("verify", "--candidate", candidate, "--evidence", evidence,
+                   "--no-upgrade-evidence").returncode == 1
+
+
+@pytest.mark.parametrize("provider,environment", [
+    ("unknown", "self-hosted"), ("windows-sandbox", "github-hosted"),
+    ("hosted-ephemeral-vm", "self-hosted"),
+])
+def test_unknown_or_mismatched_provider_holds(tmp_path, candidate, provider, environment):
+    evidence = write_json(tmp_path / "sandbox.json", {
+        "status": "PASS", "candidate_sha256s": {"release.zip": HASH},
+        "provider": provider, "runner_environment": environment,
+        "workflow_run_id": "123", "image": "Windows 11",
+    })
+    assert run_cli("verify", "--candidate", candidate, "--evidence", evidence,
+                   "--no-upgrade-evidence").returncode == 1
+
+
+@pytest.mark.parametrize("policy_data", [None, {}, {"sandbox_providers": []},
+    {"sandbox_providers": "windows-sandbox"}, {"sandbox_providers": ["unknown"]},
+    {"sandbox_providers": ["hosted-ephemeral-vm"]}])
+def test_missing_invalid_or_restrictive_policy_holds(tmp_path, candidate, policy_data):
+    policy = tmp_path / "policy.json"
+    if policy_data is not None:
+        write_json(policy, policy_data)
+    evidence = write_json(tmp_path / "sandbox.json", {
+        "status": "PASS", "candidate_sha256s": {"release.zip": HASH},
+        "provider": "windows-sandbox", "runner_environment": "self-hosted",
+        "workflow_run_id": "123", "image": "Windows 11",
+        "sandbox_providers": ["windows-sandbox", "hosted-ephemeral-vm"],
+    })
+    assert run_cli("verify", "--candidate", candidate, "--evidence", evidence,
+                   "--no-upgrade-evidence", "--policy", policy).returncode == 1
+
+
+def test_repository_policy_is_required_by_default(tmp_path, candidate):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("release_policy_gate", SCRIPT)
+    gate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate)
+    evidence = write_json(tmp_path / "sandbox.json", {
+        "status": "PASS", "candidate_sha256s": {"release.zip": HASH},
+        "provider": "hosted-ephemeral-vm", "runner_environment": "github-hosted",
+        "workflow_run_id": "123", "image": "Windows runner image",
+    })
+    gate.verify(candidate, evidence, no_upgrade_evidence=True, no_winget_evidence=True)
+    with pytest.raises((gate.Hold, OSError)):
+        gate.verify(candidate, evidence, no_upgrade_evidence=True,
+                    no_winget_evidence=True, policy_path=tmp_path / "missing.json")

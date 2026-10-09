@@ -55,23 +55,26 @@ There was no separate release/publish workflow. CI is reusable via
 weekly runs exercise the same gate but do not publish a release.
 
 1. A hosted Windows runner builds Engram.exe and the portable ZIP and WinGet
-   manifests once. `release_evidence.py freeze` records the tag/ref, commit,
-   and every asset SHA256 in `candidate.json`, outside the assets directory.
-   The immutable `candidate-<run_id>-<run_attempt>` artifact contains that JSON
-   and the assets. No downstream job rebuilds assets.
-2. The dedicated interactive `engram-sandbox` runner downloads that exact
-   artifact and checks its complete asset inventory and hashes. It extracts
-   the frozen ZIP into a fresh run-specific directory and adds source-only
-   tests, tools, and test requirements from the same checkout. Runtime
-   files come from the ZIP. The existing Sandbox harness runs bootstrap,
-   tests, doctor, and network update checks with a 30-minute completion wait.
-3. The Sandbox job emits `sandbox_evidence.json`: status is PASS only when
-   the harness and preceding steps succeeded, otherwise HOLD. It includes
-   the identical `candidate_sha256s`, cancellation/skipping flags, and run ID
-   and attempt. The `sandbox-evidence-<run_id>-<run_attempt>` artifact is
-   required; missing files are errors. Hard cancellation can prevent upload;
-   absent evidence is never approval. Detailed reports remain in the runner's
-   run-specific `_archive/test-results` directory.
+   manifests once. On tag pushes, `build-candidate` checks that the tag commit is
+   a verified ancestor of `origin/main` using `tools/release_gate/check_tag_on_main.py`
+   with full checkout (`fetch-depth: 0`). `release_evidence.py freeze` records
+   the tag/ref, commit, and every asset SHA256 in `candidate.json`, outside the
+   assets directory. The immutable `candidate-<run_id>-<run_attempt>` artifact
+   contains that JSON and the assets. No downstream job rebuilds assets.
+2. Two clean-room validation jobs are scheduled in parallel:
+   - `clean-room-sandbox`: Dedicated interactive self-hosted runner (`engram-sandbox`)
+     extracts the candidate ZIP, adds source test harnesses, and launches real
+     Windows Sandbox container isolation (`provider: windows-sandbox`, `runner_environment: self-hosted`).
+   - `clean-room-hosted`: GitHub-hosted ephemeral VM (`windows-latest`) extracts the candidate
+     ZIP into an isolated directory with NO repo checkout or development tree, and runs
+     candidate-contained checks (`bootstrap.bat`, `doctor --json`, and `update --check --refresh`)
+     via `tools/release_gate/hosted_clean_room.py` (`provider: hosted-ephemeral-vm`, `runner_environment: github-hosted`).
+3. Both clean-room jobs emit `sandbox_evidence.json` with required metadata:
+   `status`, `candidate_sha256s`, `cancelled`, `skipped`, `run_id`, `run_attempt`,
+   `provider`, `runner_environment`, `workflow_run_id`, and `image`. Missing,
+   cancelled, or failing jobs emit HOLD. Each uploads its own distinct artifact:
+   `sandbox-evidence-windows-sandbox-<run_id>-<run_attempt>` or
+   `sandbox-evidence-hosted-ephemeral-vm-<run_id>-<run_attempt>`.
 4. A hosted `upgrade-gate` job (`needs: build-candidate`, `windows-latest`)
    downloads the candidate artifact and the latest published stable release
    ZIP via `gh` (`tag != candidate`). It extracts the previous release to an
@@ -84,25 +87,20 @@ weekly runs exercise the same gate but do not publish a release.
    candidate SHA256s and previous tag, and uploads the
    `upgrade-evidence-<run_id>-<run_attempt>` artifact.
 5. A hosted promotion job (`needs: [build-candidate, upgrade-gate, winget-smoke]`) starts
-   after build, upgrade, and WinGet checks succeed, independently of Sandbox runner
-   scheduling. It polls this run's exact attempt Sandbox job every 15 seconds
-   for at most 45 minutes. Missing runners, queued jobs, unsuccessful outcomes,
-   timeout, cancellation, skipped jobs, API errors, or missing artifacts mean
-   HOLD. Sandbox execution itself is limited to 40 minutes; promotion has a
-   55-minute job limit. Workflow concurrency serializes Sandbox host access.
-6. Promotion downloads only this run/attempt's artifacts (`candidate`,
-   `sandbox-evidence`, `upgrade-evidence`, and `winget-evidence`), rechecks asset inventory
-   and SHA256 values, checks candidate ref/commit and evidence run/attempt
-   against workflow identity, and runs `_sys/checks/release_evidence.py verify` with
-   `--evidence`, `--upgrade-evidence`, and required `--winget-evidence`. If any evidence document is missing,
-   non-PASS, or mismatched against candidate hashes or tags, verification
-   fails closed and reports HOLD. Only subsequent `v*` tag runs call
-   `gh release create --draft --verify-tag` with those downloaded assets, then
-   publishes the completed draft. Upload failures leave an unpublished draft. Existing
-   releases are not overwritten; publication failure is HOLD. All manifest
-   files and the ZIP are published without rebuilding.
+   after build, upgrade, and WinGet checks succeed, independently of self-hosted runner
+   scheduling. It executes `.github/scripts/wait_for_sandbox.js` to poll candidate clean-room
+   jobs every 15 seconds up to 45 minutes, accepting evidence from EITHER job (whichever completed PASS).
+   If neither job completes successfully within the deadline, it throws HOLD.
+6. Promotion downloads candidate, upgrade, WinGet, and all candidate clean-room artifacts
+   (`pattern: sandbox-evidence-*`), selects the PASS clean-room evidence, and runs
+   `_sys/checks/release_evidence.py verify` with `--policy release_policy.json`,
+   `--evidence`, `--upgrade-evidence`, and `--winget-evidence`.
+   The policy file at repository root serves as the trust root: evidence provider must
+   exist in policy, runner environment must match provider, and evidence cannot widen policy.
+   If any check fails, promotion fails closed and reports HOLD. Only subsequent `v*` tag runs call
+   `gh release create --draft --verify-tag` with verified assets, then publishes the draft.
 
-A green build or a missing Sandbox/upgrade report does not authorize release. Treat a
+A green build or a missing clean-room/upgrade report does not authorize release. Treat a
 cancelled workflow, a still-queued workflow, and any missing/failed promotion
 check as HOLD. GitHub job execution timeouts do not bound runner queue time;
 this is why the hosted polling job does not have `needs: clean-room-sandbox`.
@@ -114,9 +112,53 @@ publish manually to bypass HOLD. The real ACP=949 proof described in
 
 The offline verifier checks consistency, not authenticity. Evidence trust
 comes from workflow permissions, same-run artifact selection, protected tags,
-and the dedicated runner. Configure repository access so release writers do
-not bypass this workflow. `release_evidence.py verify` was extended to check
-upgrade evidence compatibility, previous tag validity, and hash binding.
+ancestry checks against `origin/main`, the root `release_policy.json` trust root,
+and runner evidence metadata. Configure repository access so release writers do
+not bypass this workflow.
+
+## Provider-agnostic clean-room gate (EN-GAP-P1-005)
+
+### Policy trust root (`release_policy.json`)
+
+The repository root `release_policy.json` defines allowable clean-room providers:
+```json
+{
+  "sandbox_providers": [
+    "windows-sandbox",
+    "hosted-ephemeral-vm"
+  ]
+}
+```
+`_sys/checks/release_evidence.py verify` reads this via `--policy` (defaulting to
+repo root `release_policy.json`). Rules enforced:
+- `evidence.provider` must appear in `policy.sandbox_providers`.
+- Provider / environment pairs are strictly mapped:
+  - `windows-sandbox` requires `runner_environment: self-hosted`.
+  - `hosted-ephemeral-vm` requires `runner_environment: github-hosted`.
+- Required string fields: `provider`, `runner_environment`, `workflow_run_id`, `image`.
+- Evidence cannot widen policy; policy is immutable repository configuration.
+
+### What hosted clean-room proves vs does NOT prove
+
+The hosted clean-room gate (`clean-room-hosted`) executes on GitHub-hosted `windows-latest`
+ephemeral VMs using `tools/release_gate/hosted_clean_room.py`.
+
+**What hosted clean-room PROVES:**
+- **Candidate packaging integrity**: The frozen candidate ZIP extracts cleanly without dev tree dependencies.
+- **Isolated bootstrapping**: In a fresh root with NO Git repository (`.git` absent) and NO dev tree (`requirements-dev.txt` absent), `_sys/core/bootstrap.bat --skip-vscode --skip-claude` installs embedded Python and executes initial setup.
+- **Runtime health**: `engram.cmd doctor --json` succeeds and validates environment invariants.
+- **Network discovery**: `engram.cmd update --check --refresh` succeeds in discovering runtime components.
+- **Asset hash binding**: Evidence strictly binds to frozen candidate digests, workflow run ID, attempt, and runner image version.
+
+**What hosted clean-room does NOT prove:**
+- **No Windows Sandbox hypervisor isolation**: Hosted runs directly inside the ephemeral VM; it does not test execution under disposable Windows Sandbox hypervisor / container isolation.
+- **Network is ON**: Hosted VM retains default network connectivity during bootstrap and checks; it does not test air-gapped isolation.
+- **Shared runner image environment**: The GitHub-hosted image contains pre-installed software and developer runtimes, unlike bare Windows client installations.
+- **Not offline completeness**: Candidate checks exercise network discovery; they do not prove offline self-containment without external mirrors.
+
+### Self-hosted runner opt-in (`ENGRAM_SANDBOX_RUNNER`)
+
+The self-hosted `clean-room-sandbox` job is gated by `if: ${{ vars.ENGRAM_SANDBOX_RUNNER == 'true' }}` to prevent runs from queuing up to 24 hours and blocking the `engram-sandbox` concurrency group when no runner is registered. Once an interactive `engram-sandbox` runner is registered, enable the job by adding repository variable `ENGRAM_SANDBOX_RUNNER` set to `true` under **Settings > Secrets and variables > Actions > Variables**. When unset or set to any other value, the job is skipped immediately and clean-room validation resolves via `clean-room-hosted`.
 
 ## Exact-candidate WinGet smoke (EN-GAP-P1-004)
 

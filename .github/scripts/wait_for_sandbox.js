@@ -1,4 +1,5 @@
 const deadline = Date.now() + 45 * 60 * 1000;
+const CANDIDATE_JOBS = ['clean-room-sandbox', 'clean-room-hosted'];
 while (Date.now() < deadline) {
   let jobs;
   try {
@@ -12,13 +13,15 @@ while (Date.now() < deadline) {
   if (!Array.isArray(jobs) || jobs.length === 0) {
     throw new Error('HOLD: malformed or empty job list');
   }
-  const sandbox = jobs.find(job => job?.name === 'clean-room-sandbox');
-  if (sandbox?.status === 'completed') {
-    if (sandbox.conclusion !== 'success') {
-      throw new Error(`HOLD: Sandbox concluded ${sandbox.conclusion}`);
-    }
+  const candidates = jobs.filter(job => CANDIDATE_JOBS.includes(job?.name));
+  const pass = candidates.find(job => job?.status === 'completed' && job?.conclusion === 'success');
+  if (pass) {
     core.info('PASS: Sandbox completed successfully');
     return;
+  }
+  if (candidates.length > 0 && !candidates.some(job => job?.status !== 'completed')) {
+    const failed = candidates.find(job => job?.conclusion) || candidates[0];
+    throw new Error(`HOLD: Sandbox concluded ${failed?.conclusion || 'failure'}`);
   }
   await new Promise(resolve => setTimeout(resolve, 15000));
 }

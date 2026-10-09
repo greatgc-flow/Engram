@@ -2,6 +2,8 @@
 
 Candidate schema: tag, commit, candidate_sha256s (relative asset name -> SHA256).
 Evidence schema: status=PASS and the identical candidate_sha256s mapping.
+Sandbox provider, runner_environment, workflow_run_id and image are required.
+--policy defaults to the repository release_policy.json and is always enforced.
 Sandbox cancelled/skipped flags, when present, must be exactly false.
 Upgrade and WinGet evidence are required and must include both flags as exactly false.
 --no-winget-evidence is an explicit legacy/test-only opt-out.
@@ -18,6 +20,13 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
+
+
+DEFAULT_POLICY = Path(__file__).resolve().parents[2] / "release_policy.json"
+PROVIDER_ENVIRONMENTS = {
+    "windows-sandbox": "self-hosted",
+    "hosted-ephemeral-vm": "github-hosted",
+}
 
 
 class Hold(ValueError):
@@ -112,7 +121,7 @@ def freeze(assets, out):
 
 
 def verify(candidate_path, evidence_path, upgrade_evidence_path=None, *, no_upgrade_evidence=False,
-           winget_evidence_path=None, no_winget_evidence=False):
+           winget_evidence_path=None, no_winget_evidence=False, policy_path=DEFAULT_POLICY):
     if upgrade_evidence_path is None and not no_upgrade_evidence:
         raise Hold("upgrade evidence is required")
     if upgrade_evidence_path is not None and no_upgrade_evidence:
@@ -125,6 +134,21 @@ def verify(candidate_path, evidence_path, upgrade_evidence_path=None, *, no_upgr
     _identity(candidate)
     hashes = _hashes(candidate.get("candidate_sha256s"))
     evidence = _read(evidence_path)
+    policy = _read(policy_path)
+    providers = policy.get("sandbox_providers")
+    if (not isinstance(providers, list) or not providers
+            or any(not isinstance(provider, str) or provider not in PROVIDER_ENVIRONMENTS
+                   for provider in providers)):
+        raise Hold("invalid sandbox provider policy")
+    for field in ("provider", "runner_environment", "workflow_run_id", "image"):
+        value = evidence.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise Hold(f"Sandbox evidence {field} is missing or invalid")
+    provider = evidence["provider"]
+    if provider not in providers:
+        raise Hold("Sandbox evidence provider is not allowed by policy")
+    if evidence["runner_environment"] != PROVIDER_ENVIRONMENTS[provider]:
+        raise Hold("Sandbox evidence provider and runner_environment do not match")
     if evidence.get("status") != "PASS":
         raise Hold("Sandbox evidence status is not PASS")
     for flag in ("cancelled", "skipped"):
@@ -172,6 +196,8 @@ def main(argv=None):
     verify_parser = commands.add_parser("verify")
     verify_parser.add_argument("--candidate", required=True)
     verify_parser.add_argument("--evidence", required=True)
+    verify_parser.add_argument("--policy", default=DEFAULT_POLICY,
+                               help="required provider policy (default: repository release_policy.json)")
     upgrade_options = verify_parser.add_mutually_exclusive_group()
     upgrade_options.add_argument("--upgrade-evidence", default=None)
     upgrade_options.add_argument(
@@ -192,6 +218,7 @@ def main(argv=None):
                 no_upgrade_evidence=args.no_upgrade_evidence,
                 winget_evidence_path=args.winget_evidence,
                 no_winget_evidence=args.no_winget_evidence,
+                policy_path=args.policy,
             )
     except (Hold, OSError, ValueError, subprocess.SubprocessError) as exc:
         reason = " ".join(str(exc).split())

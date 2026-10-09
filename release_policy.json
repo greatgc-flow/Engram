@@ -1,0 +1,6 @@
+{
+  "sandbox_providers": [
+    "windows-sandbox",
+    "hosted-ephemeral-vm"
+  ]
+}

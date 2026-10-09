@@ -39,7 +39,9 @@ class TestRequiredEvidence:
             sandbox = root / 'sandbox.json'
             winget = root / 'winget.json'
             candidate.write_text(json.dumps({'tag': 'v1.2.3', 'commit': 'b' * 40, 'candidate_sha256s': hashes}))
-            sandbox.write_text(json.dumps({'status': 'PASS', 'candidate_sha256s': hashes}))
+            sandbox.write_text(json.dumps({'status': 'PASS', 'candidate_sha256s': hashes,
+                'provider': 'windows-sandbox', 'runner_environment': 'self-hosted',
+                'workflow_run_id': '12', 'image': 'Windows 11'}))
             good = {'status': 'PASS', 'candidate_sha256s': hashes, 'cancelled': False, 'skipped': False, 'run_id': '12', 'run_attempt': '1'}
             with patch.dict(os.environ, {'GITHUB_RUN_ID': '12', 'GITHUB_RUN_ATTEMPT': '1'}):
                 for change in ({}, {'status': 'HOLD'}, {'status': 'SKIPPED'}, {'skipped': True}, {'cancelled': True}, {'skipped': None}, {'candidate_sha256s': {'release.zip': 'c' * 64}}, {'run_attempt': '2'}):
@@ -177,7 +179,9 @@ def test_winget_requires_explicit_false_flags(flag, value):
         winget = root / "winget.json"
         candidate.write_text(json.dumps({"tag": "v1.2.3", "commit": "b" * 40,
                                          "candidate_sha256s": hashes}))
-        sandbox.write_text(json.dumps({"status": "PASS", "candidate_sha256s": hashes}))
+        sandbox.write_text(json.dumps({"status": "PASS", "candidate_sha256s": hashes,
+            "provider": "windows-sandbox", "runner_environment": "self-hosted",
+            "workflow_run_id": "12", "image": "Windows 11"}))
         evidence = {"status": "PASS", "candidate_sha256s": hashes,
                     "cancelled": False, "skipped": False}
         if value == "missing":
@@ -210,7 +214,9 @@ def test_winget_malformed_evidence_holds(content):
         winget = root / "winget.json"
         candidate.write_text(json.dumps({"tag": "v1.2.3", "commit": "b" * 40,
                                          "candidate_sha256s": hashes}))
-        sandbox.write_text(json.dumps({"status": "PASS", "candidate_sha256s": hashes}))
+        sandbox.write_text(json.dumps({"status": "PASS", "candidate_sha256s": hashes,
+            "provider": "windows-sandbox", "runner_environment": "self-hosted",
+            "workflow_run_id": "12", "image": "Windows 11"}))
         winget.write_text(content)
         assert gate.main(["verify", "--candidate", str(candidate), "--evidence", str(sandbox),
                           "--no-upgrade-evidence", "--winget-evidence", str(winget)]) == 1
