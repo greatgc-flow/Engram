@@ -25,7 +25,10 @@ def fixture_tempdir():
         shutil.rmtree(path)
 from unittest.mock import patch
 
-SYS = Path(__file__).resolve().parents[2]
+from conftest import scratch_dir
+from _sys.core.root import find_root
+
+SYS = find_root(__file__)
 sys.path.insert(0, str(SYS))
 sys.path.insert(0, str(Path(__file__).parent))
 from core import dispatcher
@@ -35,10 +38,7 @@ from test_cli_fault_injection import _invoke
 
 class WaveA1(unittest.TestCase):
     def setUp(self):
-        scratch = SYS.parent / '.wave-a1'
-        scratch.mkdir(exist_ok=True)
-        self.root = scratch / uuid.uuid4().hex
-        self.root.mkdir()
+        self.root = self.enterContext(scratch_dir())
         self.sys = self.root / '_sys'
         (self.sys / 'config').mkdir(parents=True)
         (self.sys / 'config/environment.json').write_text(json.dumps({'paths': {'state': str(self.sys / 'data/state')}}))
@@ -46,7 +46,6 @@ class WaveA1(unittest.TestCase):
         self.patches = [patch.object(dispatcher, 'base_dir', self.root), patch.object(dispatcher, 'sys_dir', self.sys), patch.object(backup, 'check_running_processes', lambda _: []), patch.object(tempfile, 'tempdir', str(self.root)), patch.object(tempfile, 'TemporaryDirectory', fixture_tempdir)]
         for p in self.patches:
             p.start()
-        self.addCleanup(shutil.rmtree, self.root)
         for p in self.patches:
             self.addCleanup(p.stop)
 

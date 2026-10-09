@@ -5,18 +5,18 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import uuid
 import unittest
 
-REPO = Path(__file__).resolve().parents[3]
+from conftest import scratch_dir
+from _sys.core.root import find_root
+
+REPO = find_root(__file__).parent
 
 
 @unittest.skipUnless(os.name == 'nt', 'Windows batch entry point')
 class CliCorrectness(unittest.TestCase):
     def setUp(self):
-        self.root = REPO / ('.wave-c1-' + uuid.uuid4().hex)
-        self.root.mkdir()
-        self.addCleanup(shutil.rmtree, self.root)
+        self.root = self.enterContext(scratch_dir())
         shutil.copy(REPO / 'engram.cmd', self.root)
         core = self.root / '_sys/core'
         core.mkdir(parents=True)

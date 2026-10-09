@@ -13,16 +13,17 @@ avoid percent expansion by the harness. Quotes inside arguments are doubled.
 from __future__ import annotations
 
 import json
-from contextlib import contextmanager
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import unittest
-import uuid
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+from conftest import scratch_dir
+from _sys.core.root import find_root
+
+REPO_ROOT = find_root(__file__).parent
 CASES = {
     "control": "control_ascii",
     "spaces": "name with spaces",
@@ -46,18 +47,6 @@ BATCH_ERRORS = (
 MARKER = "batch_injected.txt"
 
 
-@contextmanager
-def _temporary_root():
-    # Ordinary inherited permissions: restrictive tempfile ACLs can prevent the
-    # child cmd.exe from reading its launchers in a managed Windows workspace.
-    path = REPO_ROOT / ("engram_batch_" + uuid.uuid4().hex)
-    path.mkdir()
-    try:
-        yield path
-    finally:
-        shutil.rmtree(path)
-
-
 def _copy_launchers(root: Path) -> None:
     core = root / "_sys" / "core"
     core.mkdir(parents=True)
@@ -74,7 +63,7 @@ class TestSpecialCharPathsBatch(unittest.TestCase):
         failures = []
         version = json.loads((REPO_ROOT / "_sys/core/version.json").read_text(
             encoding="utf-8"))["version"]
-        with _temporary_root() as temporary:
+        with scratch_dir() as temporary:
             parent = Path(temporary)
             root = parent / name
             _copy_launchers(root)
@@ -104,7 +93,7 @@ class TestSpecialCharPathsBatch(unittest.TestCase):
                     for label, launcher, args, expected_code, expected_text in operations:
                         if name == CASES["control"] and label.endswith("payload"):
                             continue
-                        target = str(root / launcher) if absolute else launcher.replace("/", "\\")
+                        target = str(root / launcher) if absolute else ".\\" + launcher.replace("/", "\\")
                         env["BATCH_TARGET"] = target
                         quoted_args = " ".join('"' + arg.replace('"', '""') + '"'
                                                for arg in args)
