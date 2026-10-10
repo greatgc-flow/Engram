@@ -25,7 +25,7 @@
           "recovery_class": "AUTHORITATIVE"
         }
       ],
-      "notes": "Root/layout/config/version/dispatcher/journal/CLI contracts. Registry is a starting allocation of mixed _sys/core files; component boundary tests and the shared provider port are not implemented. Core imports Optional Extension = 0 remains a target invariant.",
+      "notes": "Root/layout/config/version/dispatcher/journal/CLI contracts. Registry is a starting allocation of mixed _sys/core files; component boundary tests are not implemented. The isolation provider port is registered separately; OS provider implementations remain planned. Core imports Optional Extension = 0 remains a target invariant.",
       "implemented_in": [
         "_sys/core/root.py",
         "_sys/core/layout.py",
@@ -44,6 +44,38 @@
         "_sys/dispatch.json",
         "_sys/env.json",
         "_sys/core/version.json"
+      ]
+    },
+    {
+      "id": "isolation-contract",
+      "plane": "PRODUCT_RUNTIME",
+      "component_class": "CORE",
+      "product_subtype": "CORE_KERNEL",
+      "required_for": [
+        "BASE"
+      ],
+      "boundary_roles": [
+        "NONE"
+      ],
+      "maturity": "IMPLEMENTED",
+      "state_ownership": [
+        {
+          "kind": "CONFIG",
+          "recovery_class": "AUTHORITATIVE"
+        },
+        {
+          "kind": "SCHEMA",
+          "recovery_class": "AUTHORITATIVE"
+        }
+      ],
+      "notes": "Provider-neutral protocol, immutable records, fail-closed declarative profiles and finalized guest evidence validation only. No OS providers, command routing or delivery harness integration are implemented. FakeProvider exists only in offline unit tests; providers own execution evidence.",
+      "implemented_in": [
+        "_sys/core/isolation.py",
+        "_sys/config/isolation-profile.schema.json",
+        "_sys/config/isolation-result.schema.json",
+        "_sys/config/isolation-profiles/clean-room.json",
+        "_sys/config/isolation-profiles/online-test.json",
+        "_sys/config/isolation-profiles/dev.json"
       ]
     },
     {
@@ -318,7 +350,7 @@
           "recovery_class": "AUTHORITATIVE"
         }
       ],
-      "notes": "Historical component ID retained for the provider-agnostic delivery clean-room harness: hosted-ephemeral-vm runs by default; Windows Sandbox is optional via ENGRAM_SANDBOX_RUNNER. Both emit candidate-bound evidence accepted under tools/release_gate/release_policy.json. Separate from the planned product Windows Sandbox Extension; no shared product provider port exists.",
+      "notes": "Historical component ID retained for the provider-agnostic delivery clean-room harness: hosted-ephemeral-vm runs by default; Windows Sandbox is optional via ENGRAM_SANDBOX_RUNNER. Both emit candidate-bound evidence accepted under tools/release_gate/release_policy.json. Separate from the planned product Windows Sandbox Extension; the product isolation contract is not integrated into this delivery harness.",
       "implemented_in": [
         ".github/workflows/sandbox-gate.yml",
         "tools/release_gate/hosted_clean_room.py",
