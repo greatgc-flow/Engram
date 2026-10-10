@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Engram isolation profile version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "name",
+    "network",
+    "clipboard",
+    "vgpu",
+    "input_read_only",
+    "evidence_writable",
+    "workspace_access",
+    "allow_writable_share"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "name": {
+      "enum": [
+        "clean-room",
+        "online-test",
+        "dev"
+      ]
+    },
+    "network": {
+      "type": "boolean"
+    },
+    "clipboard": {
+      "type": "boolean",
+      "const": false
+    },
+    "vgpu": {
+      "type": "boolean",
+      "const": false
+    },
+    "input_read_only": {
+      "type": "boolean",
+      "const": true
+    },
+    "evidence_writable": {
+      "type": "boolean",
+      "const": true
+    },
+    "workspace_access": {
+      "enum": [
+        "none",
+        "read-only",
+        "read-write"
+      ]
+    },
+    "allow_writable_share": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "clean-room"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "network": {
+            "const": false
+          },
+          "workspace_access": {
+            "const": "none"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "name": {
+            "const": "online-test"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "network": {
+            "const": true
+          },
+          "workspace_access": {
+            "const": "none"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "workspace_access": {
+            "const": "read-write"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "name": {
+            "const": "dev"
+          },
+          "allow_writable_share": {
+            "const": true
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "allow_writable_share": {
+            "const": false
+          }
+        }
+      }
+    }
+  ]
+}

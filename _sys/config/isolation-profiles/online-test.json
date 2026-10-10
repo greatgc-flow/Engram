@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "name": "online-test",
+  "network": true,
+  "clipboard": false,
+  "vgpu": false,
+  "input_read_only": true,
+  "evidence_writable": true,
+  "workspace_access": "none",
+  "allow_writable_share": false
+}
