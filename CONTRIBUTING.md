@@ -117,6 +117,8 @@ Set `ENGRAM_TEST_OOM_GUARD=1` to opt into the test memory guard; it is off by de
 Operational decisions and environment constraints:
 
 - **Release Governance**: Canonical release procedures, mainline ancestry rules, and clean-room gate specifications are documented in [`docs/release_gate.md`](docs/release_gate.md).
+- An automatic permission classifier may deny `gh pr merge` after chat approval; the maintainer merges or adds an allow rule (`Bash(gh pr merge:*)`). This is a maintainer-reported operational constraint.
+- The pre-release dry-run procedure lives in [`docs/release_gate.md`](docs/release_gate.md#dry-run-before-a-release).
 - Peers cannot run the full pytest suite in their sandbox; the maintainer runs it after EVERY change wave and chains the commit with `&&` so a failing suite never commits.
 - Never create scratch or temporary files at the repo root; tests use `tmp_path`.
 - The VDI may force-logoff sessions; commit and push in small steps.
