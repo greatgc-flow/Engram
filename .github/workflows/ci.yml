@@ -37,7 +37,7 @@ jobs:
 
     - name: Run unit tests
       run: |
-        python -u -m pytest _sys/tests/unit -v --tb=short --junitxml=contract-results.xml
+        python -X faulthandler -u -m pytest _sys/tests/unit -v --tb=short --junitxml=contract-results.xml
 
     - name: Require release contracts without skips
       if: always()
@@ -51,4 +51,4 @@ jobs:
     # see docs/cp949_verification.md.
     - name: Verify CP949 emulated tests (no skips)
       run: |
-        python -u -m pytest _sys/tests/unit -v -m cp949 --cp949-strict --tb=short
+        python -X faulthandler -u -m pytest _sys/tests/unit -v -m cp949 --cp949-strict --tb=short

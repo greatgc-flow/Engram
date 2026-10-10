@@ -1,76 +1,60 @@
 {
     "_version": "2.0",
-    "_comment": "Pipeline orchestration. 'pipelines' maps CLI commands to ordered operation lists. 'operations' maps op IDs to module+method+config.",
+    "_comment": "Pipeline orchestration. 'pipelines' maps CLI commands to ordered operation lists. 'operations' maps op IDs to module+method+failure policy.",
     "operations": {
         "provision.deploy": {
             "module": "core.provisioner",
             "method": "deploy",
-            "config": "runtimes.json",
-            "idempotent": true,
             "failure_policy": "abort"
         },
         "env.commit_install": {
             "module": "core.env_manifest",
             "method": "commit_install",
-            "idempotent": true,
             "failure_policy": "warn"
         },
         "venv.snapshot": {
             "module": "core.venv_manager",
             "method": "snapshot_op",
-            "idempotent": true,
             "failure_policy": "warn"
         },
         "backups.snapshots": {
             "module": "core.backups",
             "method": "snapshots_main",
-            "idempotent": false,
             "failure_policy": "abort"
         },
         "repair.run": {
             "module": "core.repair",
             "method": "repair_main",
-            "idempotent": false,
             "failure_policy": "abort"
         },
         "relocate.run": {
             "module": "core.repair",
             "method": "relocate_main",
-            "idempotent": false,
             "failure_policy": "abort"
         },
         "registry.apply": {
             "module": "core.registrar",
             "method": "apply",
-            "config": "context_menu.json",
-            "idempotent": true,
-            "failure_policy": "warn",
-            "state_key": "register"
+            "failure_policy": "warn"
         },
         "registry.remove": {
             "module": "core.registrar",
             "method": "remove",
-            "idempotent": true,
             "failure_policy": "continue"
         },
         "registry.clean_orphans": {
             "module": "core.registrar",
             "method": "clean_orphans",
-            "config": "context_menu.json",
-            "idempotent": true,
             "failure_policy": "abort"
         },
         "registry.menu_status": {
             "module": "core.registrar",
             "method": "menu_status",
-            "config": "context_menu.json",
-            "idempotent": true,
             "failure_policy": "abort"
         },
         "tidy.run": {
             "module": "core.tidy_temp",
             "method": "run",
-            "idempotent": true,
             "failure_policy": "abort"
         },
         "env.launch": {
@@ -102,7 +86,6 @@
         "migration.run_layout_migration": {
             "module": "core.layout_migration",
             "method": "run_pipeline",
-            "idempotent": true,
             "failure_policy": "abort"
         },
         "backup.run": {

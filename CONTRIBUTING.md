@@ -112,6 +112,8 @@ reproducible test or a documented limitation instead of an untracked workaround.
 
 ## 6. Maintainer Notes
 
+Set `ENGRAM_TEST_OOM_GUARD=1` to opt into the test memory guard; it is off by default.
+
 Operational decisions and environment constraints:
 
 - **Release Governance**: Canonical release procedures, mainline ancestry rules, and clean-room gate specifications are documented in [`docs/release_gate.md`](docs/release_gate.md).

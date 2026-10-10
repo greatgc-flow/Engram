@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional, Callable, Any
 
 from core import cli_help, env_manifest, venv_manager, env_ops, env_lock
-from core import python_manager, relocation, venv_repair
+from core import python_manager, relocation, venv_repair, layout_migration
 from core.venv_manager import default_runner
 from core.registrar import find_stale_entries
 from core.relocation import RegistryOps
@@ -360,6 +360,9 @@ def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callabl
         return {"status": "success" if e.code == 0 else "failed", "operation": "repair", "detail": "usage", "exit_code": 0 if e.code == 0 else 2}
     if args.dry_run:
         args.apply = False  # --dry-run always wins
+
+    if not layout_migration.supported_layout(base_dir, sys_dir, warning_stream=sys.stderr if args.json else None):
+        return {"status": "failed", "operation": "repair", "detail": layout_migration.UNSUPPORTED_LAYOUT_WARNING, "exit_code": 11}
 
     only_set = set(args.only.split(",")) if args.only else None
     seams = ctx.get("seams", {})

@@ -72,7 +72,7 @@ from core import cli_help  # noqa: E402
 # these names never produces a bundle containing them -- the actual
 # safeguard is that ITEMS below is an explicit named allowlist, so a
 # credential file simply has no entry that would ever copy it. Centralized
-# in _sys/core/state_paths.py, shared with _sys/core/migrate_ais_to_engram.py.
+# in _sys/core/state_paths.py.
 try:
     from _sys.core.state_paths import CREDENTIAL_SHAPED_NAMES  # noqa: E402
 except ImportError:

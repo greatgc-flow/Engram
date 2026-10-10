@@ -234,3 +234,11 @@ def test_backup_restore_reset_dispatch_wiring():
     assert hasattr(backup_personal_data, "run_restore")
     assert hasattr(backup_personal_data, "run_reset")
 
+
+
+def test_dispatch_operation_schema_contains_only_consumed_fields():
+    data = json.loads((SYS_DIR / "dispatch.json").read_text(encoding="utf-8"))
+    allowed = {"module", "method", "failure_policy", "quiet_failure"}
+    for operation in data["operations"].values():
+        assert {"module", "method", "failure_policy"} <= operation.keys()
+        assert operation.keys() <= allowed

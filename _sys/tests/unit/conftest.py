@@ -85,10 +85,11 @@ def pytest_sessionstart(session):
         if not current:
             session.config.option.timeout = 60
 
-    # Start OOM monitor
-    session.memory_guard = MemoryGuard(threshold_mb=512)
-    session.memory_guard.start()
-    print(f"\n[OOM-GUARD] Active (Threshold: 512MB, Interval: 1.0s)")
+    # Start OOM monitor only when explicitly requested by the maintainer.
+    if os.environ.get("ENGRAM_TEST_OOM_GUARD") == "1":
+        session.memory_guard = MemoryGuard(threshold_mb=512)
+        session.memory_guard.start()
+        print("\n[OOM-GUARD] Active (Threshold: 512MB, Interval: 1.0s)")
 
     # CP949 verification tracking
     session.cp949_collected = 0
