@@ -343,10 +343,12 @@ def test_minor_preflight_lists_all_fetch_failures():
 
 
 @pytest.mark.parametrize("force", [False, True])
-def test_minor_jump_requires_preflight_unless_forced(tmp_path, monkeypatch, force):
+@pytest.mark.parametrize("target_flags", [["--to", "3.15.2"], ["--latest"]])
+def test_minor_jump_requires_preflight_unless_forced(tmp_path, monkeypatch, force, target_flags):
+    _discovery(monkeypatch)
     monkeypatch.setattr(repair, "_installed_python", lambda *a: "3.14.8")
     monkeypatch.setattr(repair, "_python_fetch", lambda *a, **k: {"releases": {}})
-    args = ["--to", "3.15.2"] + (["--force"] if force else [])
+    args = target_flags + (["--force"] if force else [])
     result = _plan(tmp_path, args, {"python"})
     if force:
         params = result["plan"]["spec"][0]["params"]
@@ -355,6 +357,104 @@ def test_minor_jump_requires_preflight_unless_forced(tmp_path, monkeypatch, forc
     else:
         assert result["exit_code"] == 11
         assert "pywinpty" in result["detail"] and "Use --force" in result["detail"]
+
+
+@pytest.fixture
+def latest_python(monkeypatch):
+    _discovery(monkeypatch)
+    monkeypatch.setattr(repair, "_installed_python", lambda *a: "3.14.8")
+    monkeypatch.setattr(repair, "detect", lambda *a, **k: {
+        "manifest": "ok", "drift": {"status": "consistent"}, "findings": [], "journal": None})
+    monkeypatch.setattr(python_manager, "plan_python_update", lambda *a, **k: [
+        env_ops.Step("update-python", lambda ctx: pytest.fail("preview must not execute"))])
+    calls = []
+    def fetch(url, *, method="GET"):
+        calls.append((url, method))
+        return None if method == "HEAD" else {"releases": {
+            "1.0.0": [_wheel("pkg-1.0.0-cp39-abi3-win_amd64.whl")]}}
+    monkeypatch.setattr(repair, "_python_fetch", fetch)
+    return calls
+
+
+def test_latest_python_targets_highest_stable_and_preflights_without_applying(
+        tmp_path, latest_python, monkeypatch):
+    monkeypatch.setattr(env_ops, "execute", lambda *a, **k: pytest.fail("must preview"))
+    result = _plan(tmp_path, ["--latest"], {"python"})
+    assert result["exit_code"] == 0 and result["detail"] == "dry run"
+    params = result["plan"]["spec"][0]["params"]
+    assert params["target_version"] == "3.15.2" and not params["allow_major"]
+    assert params["url"].endswith("/3.15.2/python-3.15.2-embed-amd64.zip")
+    assert latest_python == [(params["url"], "HEAD"), *[
+        (f"https://pypi.org/pypi/{package}/json", "GET")
+        for package in ("pywinpty", "pydantic-core", "psutil")]]
+
+
+@pytest.mark.parametrize("preview", [False, True])
+def test_latest_python_short_yes_requests_handoff_unless_previewing(
+        tmp_path, latest_python, monkeypatch, preview):
+    from core import updater
+    handoffs = []
+    monkeypatch.setattr(repair, "_in_runner", lambda: False)
+    monkeypatch.setattr(repair, "_handoff_result", lambda s, label:
+                        handoffs.append(label) or {"status": "success", "exit_code": 75})
+    flags = ["--dry-run"] if preview else []
+    args = updater._env_update_args(["-o", "python", "--latest", "-y", *flags])
+    result = _plan(tmp_path, args, {"python"})
+    assert result["exit_code"] == (0 if preview else 75)
+    assert handoffs == ([] if preview else ["update"])
+
+
+@pytest.mark.parametrize("flags", [[], ["--allow-major-runtime-upgrade"], ["--force"]])
+def test_latest_python_never_downgrades(tmp_path, latest_python, monkeypatch, flags):
+    monkeypatch.setattr(repair, "_installed_python", lambda *a: "3.16.1")
+    result = _plan(tmp_path, ["--latest", *flags], {"python"}, pin_version="3.14.8")
+    assert result["exit_code"] == 0
+    assert latest_python == []
+    assert all(item["params"]["target_version"] == "3.16.1"
+               and not item["params"]["allow_downgrade"] for item in result["plan"]["spec"])
+
+
+@pytest.mark.parametrize("allow", [False, True])
+def test_latest_python_keeps_major_guard(tmp_path, latest_python, monkeypatch, allow):
+    from core import version_resolver
+    monkeypatch.setattr(version_resolver, "resolve_latest", lambda *a, **k: {
+        "status": "ok", "latest_version": "4.0.1"})
+    flags = ["--allow-major-runtime-upgrade"] if allow else []
+    result = _plan(tmp_path, ["--latest", "--force", *flags], {"python"})
+    if allow:
+        assert result["exit_code"] == 0
+        assert result["plan"]["spec"][0]["params"]["allow_major"]
+        assert latest_python[0][1] == "HEAD"
+    else:
+        assert result["exit_code"] == 11 and "Blocked major" in result["detail"]
+        assert latest_python == []
+
+
+@pytest.mark.parametrize("failure", ["offline", "error", "exception", "missing", "prerelease"])
+def test_latest_python_unavailable_never_falls_back_to_pin(
+        tmp_path, latest_python, monkeypatch, failure):
+    from core import version_resolver
+    def resolve(*a, **k):
+        if failure == "offline":
+            pytest.fail("offline must not fetch")
+        if failure == "exception":
+            raise OSError("network unavailable")
+        return {"status": "error" if failure == "error" else "ok",
+                "latest_version": "3.15.0rc1" if failure == "prerelease" else None}
+    monkeypatch.setattr(version_resolver, "resolve_latest", resolve)
+    flags = ["--offline"] if failure == "offline" else []
+    result = _plan(tmp_path, ["--latest", "--force", *flags], {"python"})
+    assert result["exit_code"] == 11 and "latest unavailable" in result["detail"]
+    assert "falling back" not in result["detail"] and latest_python == []
+
+
+@pytest.mark.parametrize("installed", ["3.15.1", "3.15.2"])
+def test_latest_python_patch_or_current_skips_minor_preflight(
+        tmp_path, latest_python, monkeypatch, installed):
+    monkeypatch.setattr(repair, "_installed_python", lambda *a: installed)
+    result = _plan(tmp_path, ["--latest"], {"python"})
+    assert result["exit_code"] == 0 and latest_python == []
+    assert bool(result["plan"]["spec"]) == (installed == "3.15.1")
 
 
 @pytest.mark.parametrize("cached", [False, True])

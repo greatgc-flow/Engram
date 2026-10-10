@@ -12,6 +12,77 @@ if str(_SYS_DIR) not in sys.path:
 from core import updater
 from checks import check_tool_updates
 
+
+@pytest.fixture
+def latest_node(tmp_path, monkeypatch):
+    from core import layout_migration, version_resolver
+    runtimes = {"runtimes": {"nodejs": {
+        "version": "22.14.0", "discovery_provider": "nodejs_lts", "discovery_id": "lts"}}}
+    runtimes_path = tmp_path / "runtimes.json"
+    runtimes_path.write_text(json.dumps(runtimes), encoding="utf-8")
+    monkeypatch.setattr(check_tool_updates, "RUNTIMES_PATH", runtimes_path)
+    monkeypatch.setattr(check_tool_updates, "CATALOG_PATH", tmp_path / "absent.json")
+    monkeypatch.setattr(updater, "_SYS_DIR", tmp_path)
+    monkeypatch.setattr(updater, "_PORTABLE_ROOT", tmp_path)
+    monkeypatch.setattr(layout_migration, "supported_layout", lambda *a, **k: True)
+    monkeypatch.setattr(updater.provisioner, "load_json_with_fallback", lambda path: runtimes)
+    monkeypatch.setattr(updater, "check_components", lambda *a: {})
+    monkeypatch.setattr(version_resolver, "resolve_latest", lambda *a, **k: {
+        "status": "ok", "latest_version": "24.21.0", "url": "https://example.test/node.zip",
+        "checksum_algo": "sha256", "checksum_value": "abc"})
+    calls = []
+    def discover(**kwargs):
+        calls.append(kwargs)
+        payload, *_ = check_tool_updates.discover_updates(
+            only=kwargs.get("only"),
+            allow_major_runtime_upgrade=kwargs.get("allow_major_runtime_upgrade", False))
+        payload["artifact_dir"] = "mock-proposal"
+        return payload
+    monkeypatch.setattr(check_tool_updates, "run", discover)
+    monkeypatch.setattr("builtins.input", lambda *a: pytest.fail("latest must preview without prompting"))
+    monkeypatch.setattr(check_tool_updates, "apply_proposal", lambda *a, **k: pytest.fail("must preview"))
+    return calls
+
+
+@pytest.mark.parametrize("allow", [False, True])
+def test_latest_node_retains_major_guard_and_previews_by_default(latest_node, capsys, allow):
+    flags = ["--allow-major-runtime-upgrade"] if allow else []
+    result = updater.run({"args": ["-o", "nodejs", "--latest", *flags]})
+    assert result["status"] == "success"
+    assert latest_node[0]["only"] == ["nodejs"]
+    assert latest_node[0].get("allow_major_runtime_upgrade", False) == allow
+    output = capsys.readouterr().out
+    assert ("nodejs: 22.14.0 -> 24.21.0" if allow else "requires explicit opt-in") in output
+    if allow:
+        assert result["detail"] == "Dry run complete"
+
+
+def test_latest_node_short_yes_applies_but_dry_run_wins(latest_node, monkeypatch):
+    applied = []
+    monkeypatch.setattr(check_tool_updates, "apply_proposal", lambda *a, **k:
+                        (applied.append((a, k)) or (1, {})))
+    flags = ["-o", "nodejs", "--latest", "--allow-major-runtime-upgrade", "-y"]
+    result = updater.run({"args": [*flags, "--dry-run"]})
+    assert result["status"] == "success" and applied == []
+    result = updater.run({"args": flags})
+    assert len(applied) == 1 and applied[0][1] == {"yes": True}
+    assert result["detail"] == "Apply failed or proposal invalid/stale"
+
+
+@pytest.mark.parametrize("failure", ["offline", "exception", "errors", "rate_limited",
+                                   "could_not_check", "not_checked"])
+def test_latest_node_unavailable_fails_even_with_yes(latest_node, monkeypatch, failure):
+    def discover(**kwargs):
+        if failure == "offline":
+            pytest.fail("offline must not discover")
+        if failure == "exception":
+            raise OSError("network unavailable")
+        return {failure: ["nodejs"], "artifact_dir": "mock-proposal"}
+    monkeypatch.setattr(check_tool_updates, "run", discover)
+    flags = ["--offline"] if failure == "offline" else []
+    result = updater.run({"args": ["--latest", "-o", "nodejs", "-y", *flags]})
+    assert result["status"] == "failed" and "latest unavailable" in result["detail"]
+
 def test_updater_not_checked_in_discover_payload(tmp_path, monkeypatch):
     """not_checked appears in discover payload for the provider-less runtimes."""
     # Create a mock runtimes.json
