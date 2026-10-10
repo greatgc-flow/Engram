@@ -108,7 +108,7 @@ This launches a fresh Windows Sandbox instance, downloads declared runtimes, ins
    isolated root, seeds user data under `.engram/` (structured JSON, Unicode,
    and raw binary content), and runs `tools/release_gate/upgrade_harness.py`
    against the candidate ZIP using the external SHA256 from `candidate.json`.
-   From v3.8.0 on, the gate uses the previous release's updater; candidate-updater
+   From v3.8.1 on, the gate requires the previous release's updater; candidate-updater
    evidence is rejected. The harness fallback remains only for candidate-path tests.
    Before running the updater, the harness enforces that candidate version is strictly newer than the previous installation, and fails fast if the updater exits without starting a core update.
    The harness verifies offline staging, manifest integrity, detached helper
@@ -235,7 +235,7 @@ the list dump before uninstall for the next hosted run. WinGet uninstall must ex
 remove program files and the command alias, and leave `.engram` unchanged.
 If WinGet's portable uninstaller deletes that directory, the gate correctly
 reports HOLD; this change does not alter the installer or runtime to bypass
-that requirement. Installed data preservation needs hosted confirmation.
+that requirement. Installed data preservation passed the tag-triggered WinGet smoke gates for v3.8.0, v3.8.1 and v3.8.2 (cc, `gh`, 2026-10-10).
 
 `winget_evidence.json` records PASS only after every assertion, exact candidate
 hashes, false cancellation/skipping flags, and workflow run/attempt. The
@@ -336,7 +336,8 @@ If its resolver/provisioner lack the external-digest seam, the gate explicitly
 records `updater_source: candidate`: candidate updater and helper code run against
 the previous tree. This proves candidate migration/rollback compatibility, but
 cannot prove that the older release's updater can discover or install the candidate.
-No staging implementation is copied into the harness.
+v3.8.0 first shipped the seam; v3.8.1 first enforced previous-updater-only
+evidence (#20). No staging implementation is copied into the harness.
 
 A separate clone exercises deterministic failure after replacement through a
 PowerShell filesystem boundary wrapper. Undo must expose `ROLLBACK_IN_PROGRESS`,
