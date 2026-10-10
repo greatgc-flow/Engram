@@ -11,3 +11,4 @@ pytest
 hypothesis
 pytest-timeout
 psutil
+jsonschema

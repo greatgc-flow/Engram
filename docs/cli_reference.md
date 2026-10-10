@@ -786,3 +786,36 @@ installation and maintenance callers). Public read-only and preview verbs never 
 Help and version reject surplus operands with exit 2.
 
 Backup/restore: empty directories are not preserved. Existing folder backups replace directory payloads, removing stale files. Restore previews create no files or directories. Confirmed updates maintain layout, merge declarations, retire obsolete shipped files, and clean preserved update staging; preview and --check skip this maintenance.
+
+#### engram isolation
+
+```text
+engram isolation - Check optional isolation providers
+Usage: engram isolation check [--json]
+
+Description:
+  Read-only probes for Windows Sandbox and WSL2. Missing or disabled optional
+  providers are normal. Reports stable codes and setup guidance; changes no
+  features, distributions, or files. WSL2 retains Windows interop and network
+  access and is not security-equivalent to Windows Sandbox.
+
+Options:
+  --json          Emit provider codes and guidance as JSON (default: off).
+  --help, -h, /?  Show this help (default: off).
+
+Examples:
+  engram isolation check
+  engram isolation check --json
+  engram isolation --help
+
+Exit codes:
+  0  Check completed, including UNAVAILABLE providers; or help printed.
+  1  Internal error (for example, unreadable guidance configuration).
+  2  Usage error (unknown action, option, or surplus argument).
+
+See also:
+  engram doctor --help
+  docs/isolation_guide.md
+```
+
+See the [optional isolation guide](isolation_guide.md) for setup and troubleshooting.

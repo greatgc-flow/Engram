@@ -10,6 +10,7 @@ Daily use:
   engram version     Print the Engram version
 
 Health & repair:
+  engram isolation   Check optional Sandbox and WSL2 providers (read-only)
   engram repair      Detect and fix a broken Python/venv, launchers or manifest
   engram relocate    Re-anchor the install after the folder was moved/renamed
   engram tidy        Clean temp files, caches and old environment backups

@@ -44,7 +44,7 @@ def _rows(index_text):
 
 
 def test_all_public_verbs_have_a_help_file():
-    assert set(VERBS) == {"open", "update", "doctor", "menu", "tidy", "snapshots", "repair", "relocate",
+    assert set(VERBS) == {"open", "update", "doctor", "isolation", "menu", "tidy", "snapshots", "repair", "relocate",
                           "uninstall", "backup", "restore", "reset", "version"}
 
 

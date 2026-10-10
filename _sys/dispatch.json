@@ -67,6 +67,12 @@
             "method": "run",
             "failure_policy": "abort"
         },
+        "isolation.check": {
+            "module": "core.isolation_check",
+            "method": "run",
+            "failure_policy": "abort",
+            "quiet_failure": true
+        },
         "doctor.run": {
             "module": "core.doctor",
             "method": "run",
@@ -142,6 +148,7 @@
         ],
         "init": [],
         "update": ["migration.update_layout", "update.run", "venv.snapshot"],
+        "isolation": ["isolation.check"],
         "doctor": [
             "doctor.run"
         ],
