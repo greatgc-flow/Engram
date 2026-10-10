@@ -25,7 +25,7 @@
           "recovery_class": "AUTHORITATIVE"
         }
       ],
-      "notes": "Root/layout/config/version/dispatcher/journal/CLI contracts. Registry is a starting allocation of mixed _sys/core files; component boundary tests are not implemented. The isolation provider port and optional Windows Sandbox implementation are registered separately; WSL2 remains planned. Core imports Optional Extension = 0 remains a target invariant.",
+      "notes": "Root/layout/config/version/dispatcher/journal/CLI contracts. Registry is a starting allocation of mixed _sys/core files; component boundary tests are not implemented. The isolation provider port and optional Windows Sandbox and WSL2 implementations are registered separately. Core imports Optional Extension = 0 remains a target invariant.",
       "implemented_in": [
         "_sys/core/root.py",
         "_sys/core/layout.py",
@@ -68,7 +68,7 @@
           "recovery_class": "AUTHORITATIVE"
         }
       ],
-      "notes": "Provider-neutral protocol, immutable records, fail-closed declarative profiles and finalized guest evidence validation only. The Windows Sandbox implementation is an optional extension; command routing and delivery harness integration are not implemented. FakeProvider exists only in offline unit tests; providers own execution evidence.",
+      "notes": "Provider-neutral protocol, immutable records, fail-closed declarative profiles and finalized guest evidence validation only. Windows Sandbox and WSL2 implementations are optional extensions; command routing and delivery harness integration are not implemented. FakeProvider exists only in offline unit tests; providers own execution evidence.",
       "implemented_in": [
         "_sys/core/isolation.py",
         "_sys/config/isolation-profile.schema.json",
@@ -321,7 +321,7 @@
       "boundary_roles": [
         "PROVIDER"
       ],
-      "maturity": "PLANNED",
+      "maturity": "PARTIAL",
       "state_ownership": [
         {
           "kind": "CONFIG",
@@ -332,8 +332,11 @@
           "recovery_class": "EPHEMERAL"
         }
       ],
-      "notes": "Linux compatibility/reproducible environment provider; not security-equivalent sandbox.",
-      "implemented_in": []
+      "notes": "Optional Linux compatibility/reproducibility provider with unique private rootfs imports, explicit per-distro automount/interop, wslpath translation, host-resident canonical guest evidence and verified unregister/list teardown. Not security-equivalent to Sandbox: Windows filesystem/executable/network interop remains possible; profile network settings are not enforced and guest root can bypass read-only binds. Capture is supported; parallel private distros are possible with a serialized default. Offline tests pass; the opt-in live lifecycle remains unverified on a real host. Detection uses only version/status exit codes; imports explicitly request WSL2. No downloads, product command routing, delivery integration or provider export API.",
+      "implemented_in": [
+        "_sys/extensions/wsl2/__init__.py",
+        "_sys/extensions/wsl2/provider.py"
+      ]
     },
     {
       "id": "windows-sandbox-release-harness",
