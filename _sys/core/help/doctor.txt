@@ -10,6 +10,10 @@ Description:
   (special characters, code page, cloud-sync folders, and path length). It
   never changes anything and uses no network. It also works while an
   interrupted operation blocks other commands.
+  Reports direct ~* pip leftovers in the managed venv's Lib/site-packages.
+  Each path is marked removable or kept; these warnings never fail doctor.
+  Preview safe quarantine with engram repair --only venv. Kept entries need
+  pip install --force-reinstall <name>, or unrecognized, inspect manually.
 
 Options:
   --json           Print machine-readable JSON instead of the report

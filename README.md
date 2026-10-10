@@ -144,6 +144,8 @@ See [2026-09-03_separation-completion-backlog.md](https://github.com/greatgc-flo
 
 ## Known limitations
 
+- Pip's 'Ignoring invalid distribution' can mean interrupted-upgrade ~* leftovers; run `engram doctor` and `engram repair --only venv --apply` (unproven copies are kept).
+
 `engram doctor` evaluates declarative environment limitation warnings (reported, non-fatal):
 - **Path characters**: Root paths with `&`, `%`, `^`, `!`, `(`, `)`, `'` or non-ASCII characters may break batch wrappers, PowerShell, or Node.js AI CLIs.
 - **Console code page**: Non-UTF-8 code pages (e.g. 949) may garble console output (`PYTHONUTF8` is set for Engram's own processes).
