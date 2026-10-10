@@ -135,7 +135,8 @@ This launches a fresh Windows Sandbox instance, downloads declared runtimes, ins
    `id-token: write` and `attestations: write`. Non-tag `workflow_dispatch` dry runs
    exercise attestation too. Attestation failure reports HOLD and prevents publication.
    Closure downloads each published ZIP and runs `gh attestation verify <zip> --repo <repo>`;
-   download or verification failure produces DRIFT. It uses only stdlib and `gh`.
+   Policy `attestation_required_from: "3.8.1"` requires verification from v3.8.1 onward; missing or invalid attestation produces DRIFT.
+   Older releases record `attestation: not-applicable (predates attestation)` and still verify published hashes. It uses only stdlib and `gh`.
    If any check fails, promotion fails closed and reports HOLD. Only subsequent `v*` tag runs call
    `gh release create --draft --verify-tag` with verified assets, then publishes the draft.
 

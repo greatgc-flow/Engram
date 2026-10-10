@@ -9,6 +9,11 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+if __package__:
+    from .version_utils import parse_version
+else:
+    from version_utils import parse_version
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SYS_DIR_DEFAULT = _REPO_ROOT / "_sys"
 if str(_SYS_DIR_DEFAULT) not in sys.path:
@@ -81,24 +86,6 @@ function Copy-Item {
 & $Helper -PlanPath $PlanPath
 exit $LASTEXITCODE
 """
-
-
-def parse_version(v: str | None) -> tuple[int, ...]:
-    """Parse semver-like version string into a tuple of ints for comparison."""
-    if not v:
-        return ()
-    s = str(v).strip()
-    if s.startswith("v") or s.startswith("V"):
-        s = s[1:]
-    import re
-    parts = []
-    for part in s.split("."):
-        m = re.match(r"^(\d+)", part)
-        if m:
-            parts.append(int(m.group(1)))
-        else:
-            break
-    return tuple(parts)
 
 
 def build_subprocess_env(overrides: dict) -> dict:

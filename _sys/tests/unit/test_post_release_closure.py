@@ -42,6 +42,41 @@ class ClosureTests(unittest.TestCase):
         self.release['assets'][0]['digest'] = 'sha256:' + 'b' * 64
         self.assertEqual(self.check()['status'], 'DRIFT')
 
+    def test_attestation_cutoff_404(self):
+        for tag, status in [('v3.8.0', 'CLOSED'), ('v3.8.1', 'DRIFT'), ('v3.10.0', 'DRIFT')]:
+            with self.subTest(tag=tag):
+                self.candidate['tag'] = self.release['tag_name'] = tag
+                with patch.object(closure, 'gh_api', side_effect=[
+                        dict(self.release, id=1), deepcopy(self.release['assets'])]), \
+                        patch.object(closure, 'verify_attestation',
+                                     side_effect=RuntimeError('attestation verification failed: HTTP 404')) as verify:
+                    result = closure.check_closure(self.candidate, now=NOW,
+                        fetch_release=closure.release_fetcher('owner/repo'),
+                        fetch_winget=lambda _: 'available')
+                self.assertEqual(result['status'], status)
+                if tag == 'v3.8.0':
+                    verify.assert_not_called()
+                    self.assertEqual(result['attestation'], 'not-applicable (predates attestation)')
+                    self.assertIn('attestation: not-applicable (predates attestation)', result['summary'])
+                    self.assertEqual(result['published_digests']['app.zip'], HASH)
+                else:
+                    verify.assert_called_once_with('owner/repo', tag, 'app.zip')
+                    self.assertIn('HTTP 404', result['summary'])
+
+    def test_tampered_hash_is_drift_across_attestation_cutoff(self):
+        for tag in ('v3.8.0', 'v3.8.1'):
+            with self.subTest(tag=tag):
+                self.candidate['tag'] = self.release['tag_name'] = tag
+                self.release['assets'][0]['digest'] = 'sha256:' + 'b' * 64
+                with patch.object(closure, 'gh_api', side_effect=[
+                        dict(self.release, id=1), deepcopy(self.release['assets'])]), \
+                        patch.object(closure, 'verify_attestation'):
+                    result = closure.check_closure(self.candidate, now=NOW,
+                        fetch_release=closure.release_fetcher('owner/repo'),
+                        fetch_winget=lambda _: 'available')
+                self.assertEqual(result['status'], 'DRIFT')
+                self.assertIn('published assets differ', result['summary'])
+
     def test_missing_asset(self):
         self.release['assets'].pop()
         self.assertEqual(self.check()['status'], 'DRIFT')

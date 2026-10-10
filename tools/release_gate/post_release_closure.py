@@ -8,6 +8,12 @@ import subprocess
 import sys
 import tempfile
 
+# Support CLI execution and file-based offline test imports.
+_RELEASE_GATE_DIR = str(Path(__file__).resolve().parent)
+if _RELEASE_GATE_DIR not in sys.path:
+    sys.path.insert(0, _RELEASE_GATE_DIR)
+from version_utils import parse_version
+
 DEFAULT_POLICY = Path(__file__).resolve().parent / "release_policy.json"
 
 def read_policy(path=DEFAULT_POLICY):
@@ -36,7 +42,8 @@ def verify_attestation(repo, tag, name):
             raise RuntimeError(f'attestation verification failed: {result.stderr.strip()}')
 
 
-def release_fetcher(repo):
+def release_fetcher(repo, *, policy=None):
+    policy = read_policy() if policy is None else policy
     def fetch(tag):
         release = gh_api(f'repos/{repo}/releases/tags/{quote(tag, safe="")}')
         # Paginate inventory rather than trusting the embedded assets subset.
@@ -55,7 +62,8 @@ def release_fetcher(repo):
             if name.lower().endswith('.zip'):
                 if Path(name).name != name or '/' in name or '\\' in name or ':' in name:
                     raise ValueError('invalid attestation asset name')
-                verify_attestation(repo, tag, name)
+                if parse_version(tag) >= parse_version(policy["attestation_required_from"]):
+                    verify_attestation(repo, tag, name)
         return release
     return fetch
 
@@ -80,9 +88,10 @@ def fetch_winget(version):
     return 'available'
 
 
-def check_closure(candidate, *, fetch_release, fetch_winget, now=None, pending_days=None):
+def check_closure(candidate, *, fetch_release, fetch_winget, now=None, pending_days=None, policy=None):
+    policy = read_policy() if policy is None else policy
     if pending_days is None:
-        pending_days = read_policy()["winget_pending_days"]
+        pending_days = policy["winget_pending_days"]
     now = now or datetime.now(timezone.utc)
     evidence = {'status': 'DRIFT', 'tag': candidate.get('tag'),
                 'candidate_sha256s': candidate.get('candidate_sha256s', {}),
@@ -92,6 +101,9 @@ def check_closure(candidate, *, fetch_release, fetch_winget, now=None, pending_d
         tag = candidate.get('tag')
         if not isinstance(tag, str) or not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?', tag):
             raise ValueError('invalid version tag')
+        predates_attestation = parse_version(tag) < parse_version(policy['attestation_required_from'])
+        if predates_attestation:
+            evidence['attestation'] = 'not-applicable (predates attestation)'
         hashes = evidence['candidate_sha256s']
         if not isinstance(hashes, dict) or not hashes:
             raise ValueError('empty candidate hashes')
@@ -140,6 +152,8 @@ def check_closure(candidate, *, fetch_release, fetch_winget, now=None, pending_d
         else:
             raise ValueError('unknown WinGet availability')
         evidence['summary'] = f'{evidence["status"]}: {tag}; published hashes match; WinGet {winget}'
+        if predates_attestation:
+            evidence['summary'] += '; attestation: ' + evidence['attestation']
     except Exception as exc:
         evidence['status'] = 'DRIFT'
         evidence['summary'] = f'DRIFT: {evidence["tag"]}; {exc}. Investigate release provenance; attach post_release_closure.json.'
@@ -192,8 +206,9 @@ def main(argv=None):
         candidate = json.loads(args.candidate.read_text(encoding='utf-8-sig'))
         if not isinstance(candidate, dict):
             raise ValueError('candidate must be an object')
-        evidence = check_closure(candidate, fetch_release=release_fetcher(args.repo), fetch_winget=fetch_winget,
-                                 pending_days=read_policy(args.policy)["winget_pending_days"])
+        policy = read_policy(args.policy)
+        evidence = check_closure(candidate, fetch_release=release_fetcher(args.repo, policy=policy),
+                                 fetch_winget=fetch_winget, policy=policy)
     except Exception as exc:
         evidence = {'status': 'DRIFT', 'candidate_sha256s': {}, 'published_digests': {},
                     'checked_at': datetime.now(timezone.utc).isoformat(), 'summary': f'DRIFT: {exc}'}
