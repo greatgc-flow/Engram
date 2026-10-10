@@ -7,6 +7,7 @@
   "evidence_poll_seconds": 15,
   "winget_pending_days": 21,
   "closure_retention_days": 90,
+  "attestation_required_from": "3.8.1",
   "required_test_ids": [
     "test_release_evidence::test_exact_pass_evidence_promotes",
     "test_upgrade_gate_offline.UpgradeGateTests::test_upgrade_gate_offline_success",
