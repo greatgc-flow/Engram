@@ -1,9 +1,0 @@
-{
-  "_comment": "Symbolic path aliases. All values are relative to base_dir (<base_dir>). Resolved to absolute paths at runtime by dispatcher.",
-  "root":      "",
-  "sys":       "_sys",
-  "env":       "_sys/env",
-  "tools":     "_sys/tools",
-  "state":     "_sys/data/state",
-  "generated": "_sys/data/generated"
-}

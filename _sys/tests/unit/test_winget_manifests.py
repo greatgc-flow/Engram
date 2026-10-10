@@ -47,6 +47,12 @@ def test_manifest_generation():
     assert "multi-agent" not in l_en_lower
     assert "orchestrates" not in l_en_lower
     
+    # Both locales use English tags for global discoverability.
+    expected_tags = ["portable", "developer-tools", "workflow", "automation", "windows", "virtual-environment"]
+    for generate in (generate_manifest_locale_en, generate_manifest_locale_ko):
+        tags = generate(version).split("Tags:\n", 1)[1].split("ReleaseNotes:", 1)[0]
+        assert [line.strip()[2:] for line in tags.splitlines() if line.startswith("  - ")] == expected_tags
+
     # Check tags
     assert "- ai\n" not in l_en_lower
     assert "- agent\n" not in l_en_lower

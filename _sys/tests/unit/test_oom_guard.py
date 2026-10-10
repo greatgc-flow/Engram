@@ -42,3 +42,27 @@ def test_oom_guard_does_not_fire_above_threshold(monkeypatch, tmp_path):
     
     assert exited is False
     assert not marker_file.exists()
+
+
+def test_session_oom_guard_requires_explicit_opt_in(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    import conftest
+
+    guard = Mock()
+    monkeypatch.setattr(conftest, "MemoryGuard", guard)
+    for value in (None, "0", "true", "1"):
+        if value is None:
+            monkeypatch.delenv("ENGRAM_TEST_OOM_GUARD", raising=False)
+        else:
+            monkeypatch.setenv("ENGRAM_TEST_OOM_GUARD", value)
+        session = SimpleNamespace(config=SimpleNamespace(
+            pluginmanager=SimpleNamespace(hasplugin=lambda name: False)))
+        guard.reset_mock()
+        conftest.pytest_sessionstart(session)
+        assert guard.call_count == (1 if value == "1" else 0)
+        assert hasattr(session, "memory_guard") == (value == "1")
+        if value == "1":
+            guard.return_value.start.assert_called_once()
+        assert session.cp949_collected == 0
+        assert session.cp949_skipped == []

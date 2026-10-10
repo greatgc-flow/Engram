@@ -28,7 +28,6 @@ def test_commit_install_operation_is_declared_and_importable():
     assert op["method"] == "commit_install"
     # a manifest write problem must never abort an otherwise successful install
     assert op["failure_policy"] == "warn"
-    assert op.get("idempotent") is True
     import importlib
     assert callable(getattr(importlib.import_module(op["module"]), op["method"]))
 

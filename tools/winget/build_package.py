@@ -76,15 +76,6 @@ TAGS_EN = [
     "virtual-environment",
 ]
 
-TAGS_KO = [
-    "포터블",
-    "개발도구",
-    "자동화",
-    "윈도우",
-    "가상환경",
-    "워크플로우",
-]
-
 SHORT_DESC_EN = "Portable Developer Runtime & Virtual Environment Engine for Windows"
 DESC_EN = (
     "Engram is a zero-bloat, self-contained Windows portable runtime environment that "
@@ -375,7 +366,7 @@ def generate_manifest_locale_ko(
     version: str,
     schema_version: str = SCHEMA_VERSION,
 ) -> str:
-    tags_formatted = "\n".join(f"  - {tag}" for tag in TAGS_KO)
+    tags_formatted = "\n".join(f"  - {tag}" for tag in TAGS_EN)
     release_notes_indented = "\n".join(f"  {line}" for line in get_release_notes_ko(version).splitlines())
 
     return f"""# yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.{schema_version}.schema.json
