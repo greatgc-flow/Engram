@@ -50,9 +50,9 @@ def test_declared_hash_also_gates_a_cached_zip():
     assert "PY_SHA256" in region and 'set "_CACHE_OK=0"' in region[region.index("PY_SHA256") - 200:]
 
 
-def test_a_version_bump_clears_the_declared_hash_of_the_old_pin():
-    bump = _idx('set "_PY_BUMP=1"')
-    assert 'set "PY_SHA256="' in BOOTSTRAP[bump:bump + 300]
+def test_bootstrap_never_bumps_away_from_the_validated_pin():
+    assert "_PY_BUMP" not in BOOTSTRAP
+    assert "runtimes.python.version=" not in BOOTSTRAP
 
 
 # ---- doctor semantics ------------------------------------------------------------------------------------

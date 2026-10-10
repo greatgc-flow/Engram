@@ -70,7 +70,7 @@ def _env_update_args(args_list: list[str]) -> list[str]:
         if a in ("--yes", "-y"):
             if not dry_run:  # --dry-run always wins: plan only, never execute (no snapshots, no journal)
                 out += ["--apply", "--yes"]
-        elif a in ("--dry-run", "--check", "--refresh", "-r"):
+        elif a in ("--dry-run", "--check"):
             continue
         else:
             out.append(a)

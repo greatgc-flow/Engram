@@ -171,6 +171,18 @@ Description:
   through the journaled repair engine (a backup is taken before the swap,
   dry-run by default, --yes applies) and cannot be mixed with tool names.
 
+  Python defaults to the latest patch in the installed minor. Offline or failed
+  discovery falls back to the pin; automatic updates never downgrade or cross
+  a minor. A minor jump needs --to and checks the embed zip and compatible
+  Windows wheels for pywinpty, pydantic-core and psutil before any swap.
+  Without a pinned SHA-256, a warning and the computed hash are printed;
+  the hash is recorded in the journal and still gates cached archive reuse.
+  Example --check output (versions are illustrative):
+    Python: installed / pin / latest patch (same minor) / latest minor:
+      3.13.7 / 3.13.7 / 3.13.9 / 3.14 (3.14.8)
+    Patch update: engram update --only python --yes
+    Minor update: engram update --only python --to 3.14.8 --yes
+
 Options:
   --yes, -y        Apply without asking (default: ask first)
   --check          Print the plan only; exit 1 if something could not be
@@ -183,11 +195,12 @@ Options:
   --allow-major-runtime-upgrade
                    Let a base runtime cross a major version, e.g. Node.js
                    22 to 24 (default: off; major jumps are shown, not applied)
-  --to X.Y.Z       With --only python: target version (default: pinned one)
+  --to X.Y.Z       With --only python: explicit target (default: latest
+                   patch in the installed minor)
   --all-packages   With --only packages: upgrade every package (default:
                    only Engram's baseline set)
-  --force          With --only python: reinstall even when already current
-                   (default: off)
+  --force          With --only python: reinstall even when already current;
+                   override missing minor pre-flight checks (default: off)
   --offline        With --only python: use only local files (default: off)
   -h, --help, /?   Show this help (default: off)
 
@@ -197,6 +210,7 @@ Examples:
   engram update --check
   engram update --only claude,codex,agy --yes
   engram update --only python --yes
+  engram update --only python --to 3.14.8 --yes
   engram update --only nodejs --allow-major-runtime-upgrade --yes
 
 Exit codes:
@@ -215,6 +229,35 @@ Confirmed updates maintain layout, merge declarations, retire obsolete shipped
 files, and clean preserved update staging. Preview and --check skip this
 maintenance.
 ```
+
+
+Python updates stay within the installed minor by default:
+
+~~~text
+engram update --check --refresh
+Python: installed / pin / latest patch in installed minor / latest stable minor: 3.13.7 / 3.13.7 / 3.13.9 / 3.14 (3.14.8)
+Patch update: engram update --only python --yes
+Minor update: engram update --only python --to 3.14.8 --yes
+~~~
+
+These versions illustrate the output; discovery supplies the actual releases.
+`engram update --only python` previews the patch plan; add `--yes` to apply.
+`--refresh` bypasses the discovery cache. Offline or failed discovery falls back
+to the pin, keeping the installed version if the pin would downgrade or cross
+a minor. Minor changes require explicit `--to`; major changes also require
+`--allow-major-runtime-upgrade --yes`.
+
+Before a minor change, Engram checks the python.org embed zip with HEAD and
+PyPI for compatible Windows amd64 wheels for pywinpty, pydantic-core and psutil.
+Missing checks refuse the update; `--force` overrides that refusal.
+Without a pinned SHA-256, Engram warns that the archive was downloaded over
+HTTPS from python.org and records the computed hash in the journal and output.
+A recorded cache hash still gates reuse; it is not a publisher-provided hash.
+
+Bootstrap installs only the validated `runtimes.json` pin. Newer versions produce
+a notice pointing to `engram update --check`; `--skip-update` skips that notice
+check for compatibility.
+
 
 #### engram doctor
 

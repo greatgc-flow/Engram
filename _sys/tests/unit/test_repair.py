@@ -5,6 +5,14 @@ from pathlib import Path
 from core import env_ops, env_manifest, venv_manager, python_manager, relocation
 import core.repair as repair
 
+
+@pytest.fixture(autouse=True)
+def mock_python_discovery(monkeypatch):
+    from core import version_resolver
+    monkeypatch.setattr(version_resolver, "resolve_latest",
+                        lambda *a, **k: {"status": "error", "detail": "mock network unavailable"})
+
+
 def test_detect_healthy(tmp_path):
     sys_dir = tmp_path / "_sys"
     sys_dir.mkdir()
