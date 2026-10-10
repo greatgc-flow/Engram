@@ -1,4 +1,6 @@
 <div align="center">
+
+Supported update/repair boundary: **v3.2.6+ (layout v2)**. Older or unreadable layouts require reinstalling Engram; your data folders are not touched.
   <h1>📦 Engram</h1>
   <p><b>A clean, portable Windows dev environment. Nothing more.</b></p>
   <p>Virtualized Python/Node/Git/VS Code under one drive-letter-free tree — install it, register it, work, uninstall it without a trace.</p>

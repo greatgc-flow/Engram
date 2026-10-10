@@ -1,5 +1,7 @@
 # Personal data lifecycle guide
 
+Supported update/repair boundary: **v3.2.6+ (layout v2)**. Older or unreadable layouts require reinstalling Engram; your data folders are not touched.
+
 Full command reference: [cli_reference.md](cli_reference.md). Use `engram <command> --help` for command help.
 
 ## Backup

@@ -26,11 +26,7 @@ Consequences:
 
 `.ais/` was this feature's first prototype (built during a same-day parallel-install exercise, `<legacy-install-dir>`) — a folder you pointed `CLAUDE_CONFIG_DIR`/`CODEX_HOME`/`GEMINI_DIR` at yourself, by running `ais-env.bat` in every new shell. `.engram/` is the permanent replacement: the same idea, but automatic (no script to remember to run) and generalized to every tool Engram manages, not just the 3 AI CLIs.
 
-If you still have an `.ais/` folder from before this change, migrate it once:
-```
-python _sys/core/migrate_ais_to_engram.py --base-dir . --apply
-```
-This refuses outright (rather than guessing) if `.ais/` turns out to be a `backup_personal_data.py` *snapshot* rather than a live root (it checks for `MANIFEST.txt`), or if `.engram/` already has real content of its own — inspect both and resolve the conflict by hand in that case. A dry run (the default, no `--apply`) reports the plan without changing anything.
+The prototype `.ais/` converter was removed in October 2026. Supported updates start at v3.2.6 (layout v2); older installs require reinstalling Engram, leaving data folders untouched.
 
 ## Global vs. workspace
 
@@ -40,4 +36,4 @@ This refuses outright (rather than guessing) if `.ais/` turns out to be a `backu
 
 Engram does not use SUBST drives or directory junctions. Earlier versions of Engram supported an optional host-integration step (directory junctions and virtual drive letter mounting), but that machinery has been completely removed in favor of pure environment-variable redirection and clean physical paths. A fresh install creates neither, and no ongoing remounting or link management occurs.
 
-If you are upgrading an older install that has a recorded mapping or junction, `engram doctor` or the layout migration will detect it and provide exact manual teardown instructions (e.g., `subst X: /D` and `rmdir` for the junction host).
+If you are upgrading an older install that has a recorded mapping or junction, `engram doctor` will detect it and provide exact manual teardown instructions (e.g., `subst X: /D` and `rmdir` for the junction host).

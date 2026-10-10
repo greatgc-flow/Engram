@@ -104,6 +104,10 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
             return {"status": "success", "detail": "help displayed"}
         return {"status": "failed", "detail": f"Argument parsing failed with code {e.code}", "exit_code": 2, "quiet": True}
 
+    from core import layout_migration
+    if not layout_migration.supported_layout(_PORTABLE_ROOT, _SYS_DIR):
+        return {"status": "failed", "detail": layout_migration.UNSUPPORTED_LAYOUT_WARNING}
+
     normalized_only = check_tool_updates.normalize_only_list(getattr(args, "only", None))
     only_set = set(normalized_only) if normalized_only is not None else None
 
@@ -429,7 +433,6 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     elif exit_code != 0:
         return {"status": "failed", "detail": f"Unknown exit code {exit_code}", "apply_result": apply_result}
 
-    from core import layout_migration
     maintenance_ctx = {**ctx, "base_dir": _PORTABLE_ROOT, "sys_dir": sys_dir,
                        "update_confirmed": True}
     maintenance = layout_migration.update_layout(maintenance_ctx)

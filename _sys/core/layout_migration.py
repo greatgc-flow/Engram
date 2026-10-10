@@ -210,22 +210,6 @@ def _register_core_update_backups(sys_dir: Path, temp_update_dir: Path) -> bool:
     return ok
 
 
-# WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 orchestration wiring happens in a follow-up dispatch."
-def m0_preflight(base_dir: Path, sys_dir: Path) -> bool:
-    try:
-        from _sys.core.doctor import check_legacy_host_integration
-    except ModuleNotFoundError:
-        from core.doctor import check_legacy_host_integration
-    result = check_legacy_host_integration(base_dir, sys_dir)
-    if result.get("level") == "warning":
-        # Reuse the already-correct instructions from the doctor check itself
-        # (it accounts for both register.state.json's subst_drive AND the
-        # legacy _sys/config.json SUBST_DRIVE_LETTER fallback) rather than
-        # re-deriving a narrower version here that would print a placeholder
-        # drive letter when only the config.json signal is present.
-        print(result.get("detail", "legacy host integration recorded."))
-        return False
-    return True
 # WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 wiring happens in follow-up dispatch."
 def m1_retire_shipped_files(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> tuple[bool, Dict[str, List[str]]]:
     import os
@@ -355,132 +339,27 @@ def m1_retire_shipped_files(base_dir: Path, sys_dir: Path, dry_run: bool = False
 
     return not errors_occurred, {"retired": retired, "kept_modified": kept_modified}
 
-# WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 orchestration wiring happens in a follow-up dispatch"
-def m2_move_engram_state(base_dir: Path, sys_dir: Path, dry_run: bool = False) -> tuple[bool, Dict[str, List[str]]]:
-    import os
-    
-    moved = []
-    external_left = []
-    conflicts = []
-    errors_occurred = False
-    
-    def is_owned(rel_path_str: str) -> bool:
-        if rel_path_str in [".ai/tool_discovery_cache.json", ".ai/tool_deferred_retries.json"]:  # legacy-source: migration only
-            return True
-        if rel_path_str.startswith("_archive/logs/start_") and rel_path_str.endswith(".log"):  # legacy-source: migration only
-            parts = rel_path_str.split("/")
-            if len(parts) == 3:
-                return True
-        if rel_path_str.startswith("_archive/tool-updates/"):  # legacy-source: migration only
-            return True
-        return False
-        
-    def is_base_dir(rel_path_str: str) -> bool:
-        return rel_path_str in [".ai", "_archive", "_archive/logs", "_archive/tool-updates"]  # legacy-source: migration only
-        
-    owned_to_move = []
-    
-    for root_name in [".ai", "_archive"]:  # legacy-source: migration only
-        root_path = base_dir / root_name
-        if root_path.exists() and root_path.is_dir():
-            for p in root_path.rglob("*"):
-                try:
-                    rel = p.relative_to(base_dir).as_posix()
-                except ValueError:
-                    continue
-                
-                if is_base_dir(rel):
-                    continue
-                    
-                if is_owned(rel):
-                    owned_to_move.append(p)
-                else:
-                    external_left.append(rel)
-                    
-    dirs_to_check = set()
-    
-    for p in owned_to_move:
-        try:
-            rel = p.relative_to(base_dir).as_posix()
-        except ValueError:
-            continue
-            
-        if p.is_file():
-            dst = None
-            if rel == ".ai/tool_discovery_cache.json":  # legacy-source: migration only
-                dst = sys_dir / "data" / "state" / "update" / "tool_discovery_cache.json"
-            elif rel == ".ai/tool_deferred_retries.json":  # legacy-source: migration only
-                dst = sys_dir / "data" / "state" / "update" / "tool_deferred_retries.json"
-            elif rel.startswith("_archive/logs/start_"):  # legacy-source: migration only
-                dst = sys_dir / "data" / "logs" / "launcher" / p.name
-            elif rel.startswith("_archive/tool-updates/"):  # legacy-source: migration only
-                sub_rel = p.relative_to(base_dir / "_archive" / "tool-updates")  # legacy-source: migration only
-                dst = sys_dir / "data" / "state" / "update" / "proposals" / sub_rel
-                
-            if dst:
-                if dst.exists():
-                    conflicts.append(rel)
-                else:
-                    try:
-                        if not dry_run:
-                            dst.parent.mkdir(parents=True, exist_ok=True)
-                            os.replace(p, dst)
-                        moved.append(rel)
-                        dirs_to_check.add(p.parent)
-                    except Exception as e:
-                        logger.error(f"Error moving {rel}: {e}")
-                        errors_occurred = True
-                        
-    def _is_dir_allowed_to_remove(d: Path) -> bool:
-        try:
-            rel = d.relative_to(base_dir).as_posix()
-        except ValueError:
-            return False
-        if rel == ".":
-            return False
-        allowed = [".ai", "_archive", "_archive/logs", "_archive/tool-updates"]  # legacy-source: migration only
-        if rel in allowed:
-            return True
-        if rel.startswith("_archive/tool-updates/"):  # legacy-source: migration only
-            return True
-        return False
-        
-    for root_name in [".ai", "_archive/logs", "_archive/tool-updates", "_archive"]:  # legacy-source: migration only
-        p = base_dir / root_name
-        if p.exists() and p.is_dir():
-            dirs_to_check.add(p)
-            
-    if not dry_run:
-        sorted_dirs = sorted(list(dirs_to_check), key=lambda p: len(p.parts), reverse=True)
-        for d in sorted_dirs:
-            curr = d
-            while curr != base_dir and curr.is_relative_to(base_dir):
-                if not _is_dir_allowed_to_remove(curr):
-                    break
-                if curr.exists() and curr.is_dir():
-                    try:
-                        if not any(curr.iterdir()):
-                            curr.rmdir()
-                        else:
-                            break
-                    except Exception as e:
-                        logger.error(f"Error removing dir {curr}: {e}")
-                        errors_occurred = True
-                        break
-                else:
-                    break
-                curr = curr.parent
-            
-    moved.sort()
-    external_left.sort()
-    conflicts.sort()
-    
-    return not errors_occurred, {
-        "moved": moved,
-        "external_left": external_left,
-        "conflicts": conflicts
-    }
-# WIRING-EXEMPT: DYNAMIC_ENTRYPOINT reason="P1-6 orchestration wiring happens in a follow-up dispatch"
+UNSUPPORTED_LAYOUT_WARNING = "Unsupported pre-3.2.6 layout: reinstall Engram (your data folders are not touched)."
+UNSUPPORTED_LAYOUT_MARKERS = (".ais", ".ai", "_archive")  # legacy-source: migration only
+
+
+def supported_layout(base_dir: Path, sys_dir: Path, *, warning_stream=None) -> bool:
+    """Reject old/unreadable layouts; retain clean current-layout initialization."""
+    layout_path = sys_dir / "data" / "state" / "layout.json"
+    try:
+        data = _load_json(layout_path)
+    except FileNotFoundError:
+        supported = not any((base_dir / name).exists() for name in UNSUPPORTED_LAYOUT_MARKERS)
+    except (OSError, ValueError):
+        supported = False
+    else:
+        version = data.get("layout_version") if isinstance(data, dict) else None
+        supported = type(version) is int and version >= 2
+    if not supported:
+        print("WARNING: " + UNSUPPORTED_LAYOUT_WARNING, file=warning_stream)
+    return supported
+
+
 def migrate_layout(base_dir: Path, sys_dir: Path, dry_run: bool = False, *, merge_defaults: bool = True) -> int:
     import datetime
     try:
@@ -488,11 +367,10 @@ def migrate_layout(base_dir: Path, sys_dir: Path, dry_run: bool = False, *, merg
     except ModuleNotFoundError:
         from core.version import load_version_info
     
-    if not m0_preflight(base_dir, sys_dir):
+    if not supported_layout(base_dir, sys_dir):
         return 1
         
     m1_ok, m1_report = m1_retire_shipped_files(base_dir, sys_dir, dry_run=dry_run)
-    m2_ok, m2_report = m2_move_engram_state(base_dir, sys_dir, dry_run=dry_run)
     
     m3_report = merge_declarations(dry_run=dry_run, sys_dir=sys_dir) if merge_defaults else []
     
@@ -507,9 +385,6 @@ def migrate_layout(base_dir: Path, sys_dir: Path, dry_run: bool = False, *, merg
     report = {
         "retired": m1_report["retired"],
         "kept_modified": m1_report["kept_modified"],
-        "moved": m2_report["moved"],
-        "external_left": m2_report["external_left"],
-        "conflicts": m2_report.get("conflicts", []),
         "merged": m3_report
     }
     
@@ -526,9 +401,6 @@ def migrate_layout(base_dir: Path, sys_dir: Path, dry_run: bool = False, *, merg
     print(f"Engram Version: {engram_version}")
     print(f"Retired shipped files: {len(report['retired'])}")
     print(f"Kept modified shipped files: {len(report['kept_modified'])}")
-    print(f"Moved engram state files: {len(report['moved'])}")
-    print(f"Conflicts moving engram state files: {len(report['conflicts'])}")
-    print(f"External/unknown legacy state left behind: {len(report['external_left'])}")
     print(f"Merge actions: {len(report['merged'])}")
     
     if not dry_run:
@@ -551,7 +423,7 @@ def migrate_layout(base_dir: Path, sys_dir: Path, dry_run: bool = False, *, merg
             if _register_core_update_backups(sys_dir, temp_update_dir):
                 shutil.rmtree(temp_update_dir, ignore_errors=True)
         
-    if not m1_ok or not m2_ok:
+    if not m1_ok:
         return 1
         
     return 0

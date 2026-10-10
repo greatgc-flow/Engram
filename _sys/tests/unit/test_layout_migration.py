@@ -183,52 +183,7 @@ def test_atomic_write_exception(migration_env, monkeypatch):
     with open(migration_env["live"] / "runtimes.json") as f:
         assert json.load(f) == ours_json
 
-from _sys.core.layout_migration import m0_preflight, m1_retire_shipped_files
-
-def test_m0_preflight_refusal(tmp_path, capsys):
-    base_dir = tmp_path
-    sys_dir = base_dir / "_sys"
-    sys_dir.mkdir()
-    
-    state_dir = sys_dir / "data" / "state"
-    state_dir.mkdir(parents=True)
-    
-    state_file = state_dir / "register.state.json"
-    state_file.write_text(json.dumps({
-        "subst_drive": "W",
-        "junctions": [{"host": "C:\\some_host"}]
-    }))
-    
-    # Snapshot before
-    before = list(tmp_path.rglob("*"))
-    
-    assert not m0_preflight(base_dir, sys_dir)
-    
-    captured = capsys.readouterr().out
-    assert "subst W: /D" in captured
-    assert "rmdir \"C:\\some_host\"" in captured
-    assert "Delete 'subst_drive' and 'junctions' entries from" in captured
-    assert "register.state.json" in captured
-    
-    # Snapshot after
-    after = list(tmp_path.rglob("*"))
-    assert before == after
-
-def test_m0_preflight_clean(tmp_path, capsys):
-    base_dir = tmp_path
-    sys_dir = base_dir / "_sys"
-    sys_dir.mkdir()
-    
-    # absent state file -> proceeds
-    assert m0_preflight(base_dir, sys_dir)
-    
-    # clean state file
-    state_dir = sys_dir / "data" / "state"
-    state_dir.mkdir(parents=True)
-    state_file = state_dir / "register.state.json"
-    state_file.write_text(json.dumps({"subst_drive": None, "junctions": []}))
-    
-    assert m0_preflight(base_dir, sys_dir)
+from _sys.core.layout_migration import m1_retire_shipped_files
 
 def test_m1_retire_identical_file(tmp_path):
     base_dir = tmp_path
@@ -255,7 +210,7 @@ def test_m1_retire_identical_file(tmp_path):
     # layout file pointing to 3.2.6
     state_dir = sys_dir / "data" / "state"
     state_dir.mkdir(parents=True)
-    (state_dir / "layout.json").write_text(json.dumps({"engram_version": "3.2.6"}))
+    (state_dir / "layout.json").write_text(json.dumps({"layout_version": 2, "engram_version": "3.2.6"}))
     
     target_dir = base_dir / "foo"
     target_dir.mkdir()
@@ -397,183 +352,7 @@ def test_m1_retire_empty_directory_removal(tmp_path):
     assert not (base_dir / "deep").exists()
 
 
-from _sys.core.layout_migration import m2_move_engram_state
-
-def test_m2_tttt_shaped(tmp_path):
-    base_dir = tmp_path
-    sys_dir = base_dir / "_sys"
-    sys_dir.mkdir()
-    
-    ai_dir = base_dir / ".ai"
-    ai_dir.mkdir()
-    (ai_dir / "tool_discovery_cache.json").write_text("{}")
-    
-    ok, report = m2_move_engram_state(base_dir, sys_dir)
-    assert ok
-    assert report["moved"] == [".ai/tool_discovery_cache.json"]
-    assert report["external_left"] == []
-    assert report["conflicts"] == []
-    
-    assert not ai_dir.exists()
-    assert (sys_dir / "data" / "state" / "update" / "tool_discovery_cache.json").exists()
-
-def test_m2_t2_shaped(tmp_path):
-    base_dir = tmp_path
-    sys_dir = base_dir / "_sys"
-    sys_dir.mkdir()
-    
-    ok, report = m2_move_engram_state(base_dir, sys_dir)
-    assert ok
-    assert report["moved"] == []
-    assert report["external_left"] == []
-    assert report["conflicts"] == []
-
-def test_m2_mixed_ai(tmp_path):
-    base_dir = tmp_path
-    sys_dir = base_dir / "_sys"
-    sys_dir.mkdir()
-    
-    ai_dir = base_dir / ".ai"
-    ai_dir.mkdir()
-    (ai_dir / "tool_discovery_cache.json").write_text("{}")
-    (ai_dir / "some_other_hub_state.json").write_text("{}")
-    
-    ok, report = m2_move_engram_state(base_dir, sys_dir)
-    assert ok
-    assert report["moved"] == [".ai/tool_discovery_cache.json"]
-    assert report["external_left"] == [".ai/some_other_hub_state.json"]
-    assert report["conflicts"] == []
-    
-    assert ai_dir.exists()
-    assert (ai_dir / "some_other_hub_state.json").exists()
-    assert not (ai_dir / "tool_discovery_cache.json").exists()
-    assert (sys_dir / "data" / "state" / "update" / "tool_discovery_cache.json").exists()
-
-def test_m2_archive_both(tmp_path):
-    base_dir = tmp_path
-    sys_dir = base_dir / "_sys"
-    sys_dir.mkdir()
-    
-    archive_dir = base_dir / "_archive"
-    logs_dir = archive_dir / "logs"
-    updates_dir = archive_dir / "tool-updates"
-    
-    logs_dir.mkdir(parents=True)
-    updates_dir.mkdir(parents=True)
-    
-    (logs_dir / "start_20260101.log").write_text("log")
-    
-    update_sub = updates_dir / "2026-01-01"
-    update_sub.mkdir()
-    (update_sub / "proposal.json").write_text("{}")
-    
-    ok, report = m2_move_engram_state(base_dir, sys_dir)
-    assert ok
-    
-    assert set(report["moved"]) == {
-        "_archive/logs/start_20260101.log",
-        "_archive/tool-updates/2026-01-01/proposal.json"
-    }
-    assert report["external_left"] == []
-    assert report["conflicts"] == []
-    
-    assert not archive_dir.exists()
-    assert (sys_dir / "data" / "logs" / "launcher" / "start_20260101.log").exists()
-    assert (sys_dir / "data" / "state" / "update" / "proposals" / "2026-01-01" / "proposal.json").exists()
-
-def test_m2_destination_conflict(tmp_path):
-    base_dir = tmp_path
-    sys_dir = base_dir / "_sys"
-    sys_dir.mkdir()
-    
-    ai_dir = base_dir / ".ai"
-    ai_dir.mkdir()
-    (ai_dir / "tool_discovery_cache.json").write_text("src")
-    
-    dst = sys_dir / "data" / "state" / "update" / "tool_discovery_cache.json"
-    dst.parent.mkdir(parents=True)
-    dst.write_text("dst")
-    
-    ok, report = m2_move_engram_state(base_dir, sys_dir)
-    assert ok
-    assert report["moved"] == []
-    assert report["external_left"] == []
-    assert report["conflicts"] == [".ai/tool_discovery_cache.json"]
-    
-    assert ai_dir.exists()
-    assert (ai_dir / "tool_discovery_cache.json").read_text() == "src"
-    assert dst.read_text() == "dst"
-
-def test_m2_untouched_dirs(tmp_path):
-    base_dir = tmp_path
-    sys_dir = base_dir / "_sys"
-    sys_dir.mkdir()
-    
-    engram_dir = base_dir / ".engram"
-    engram_dir.mkdir()
-    (engram_dir / "some_file").write_text("keep")
-    
-    workspace_dir = base_dir / "workspace"
-    workspace_dir.mkdir()
-    (workspace_dir / "project").write_text("keep2")
-    
-    archive_dir = base_dir / "_archive"
-    archive_dir.mkdir()
-    (archive_dir / "keep3").write_text("keep3")
-    
-    import hashlib
-    def get_snapshot():
-        snap = {}
-        for p in base_dir.rglob("*"):
-            if p.is_file():
-                snap[p.relative_to(base_dir).as_posix()] = hashlib.sha256(p.read_bytes()).hexdigest()
-        return snap
-        
-    before = get_snapshot()
-    
-    ok, report = m2_move_engram_state(base_dir, sys_dir)
-    assert ok
-    
-    assert report["moved"] == []
-    assert report["external_left"] == ["_archive/keep3"]
-    assert report["conflicts"] == []
-    
-    after = get_snapshot()
-    assert before == after
 from _sys.core.layout_migration import migrate_layout
-
-def test_migrate_layout_m0_refusal(tmp_path, capsys):
-    base_dir = tmp_path
-    sys_dir = base_dir / "_sys"
-    sys_dir.mkdir()
-    
-    state_dir = sys_dir / "data" / "state"
-    state_dir.mkdir(parents=True)
-    state_file = state_dir / "register.state.json"
-    state_file.write_text(json.dumps({
-        "subst_drive": "W",
-        "junctions": [{"host": "C:\\some_host"}]
-    }))
-    
-    import hashlib
-    def get_snapshot():
-        snap = {}
-        for p in base_dir.rglob("*"):
-            if p.is_file():
-                snap[p.relative_to(base_dir).as_posix()] = hashlib.sha256(p.read_bytes()).hexdigest()
-        return snap
-        
-    before = get_snapshot()
-    
-    result = migrate_layout(base_dir, sys_dir)
-    assert result == 1
-    
-    after = get_snapshot()
-    assert before == after
-    
-    captured = capsys.readouterr().out
-    assert "subst W: /D" in captured
-    assert "Layout Migration Summary" not in captured
 
 def test_migrate_layout_success_and_idempotency(tmp_path, capsys, monkeypatch):
     base_dir = tmp_path
@@ -601,7 +380,7 @@ def test_migrate_layout_success_and_idempotency(tmp_path, capsys, monkeypatch):
     
     state_dir = sys_dir / "data" / "state"
     state_dir.mkdir(parents=True)
-    (state_dir / "layout.json").write_text(json.dumps({"engram_version": "3.2.6"}))
+    (state_dir / "layout.json").write_text(json.dumps({"layout_version": 2, "engram_version": "3.2.6"}))
     
     target_dir = base_dir / "foo"
     target_dir.mkdir()
@@ -635,11 +414,11 @@ def test_migrate_layout_success_and_idempotency(tmp_path, capsys, monkeypatch):
     layout_data = json.loads((state_dir / "layout.json").read_text())
     assert layout_data["layout_version"] == 2
     assert layout_data["report"]["retired"] == ["foo/bar.txt"]
-    assert layout_data["report"]["moved"] == [".ai/tool_discovery_cache.json"]
+    assert (ai_dir / "tool_discovery_cache.json").read_text() == "{}"
     assert len(layout_data["report"]["merged"]) > 0
     
     assert not target_file.exists()
-    assert not ai_dir.exists()
+    assert ai_dir.exists()
     
     with open(sys_dir / "runtimes.json") as f:
         merged_runtimes = json.load(f)
@@ -659,7 +438,6 @@ def test_migrate_layout_success_and_idempotency(tmp_path, capsys, monkeypatch):
     
     layout_data2 = json.loads((state_dir / "layout.json").read_text())
     assert layout_data2["report"]["retired"] == []
-    assert layout_data2["report"]["moved"] == []
     
     end_of_run_2_snap = get_snapshot()
     del end_of_run_1_snap["_sys/data/state/layout.json"]
@@ -694,7 +472,7 @@ def test_migrate_layout_dry_run(tmp_path, capsys, monkeypatch):
     
     state_dir = sys_dir / "data" / "state"
     state_dir.mkdir(parents=True)
-    (state_dir / "layout.json").write_text(json.dumps({"engram_version": "3.2.6"}))
+    (state_dir / "layout.json").write_text(json.dumps({"layout_version": 2, "engram_version": "3.2.6"}))
     
     target_dir = base_dir / "foo"
     target_dir.mkdir()
@@ -736,12 +514,11 @@ def test_migrate_layout_dry_run(tmp_path, capsys, monkeypatch):
     assert before == after
     
     layout_data = json.loads((state_dir / "layout.json").read_text())
-    assert "layout_version" not in layout_data
+    assert layout_data["layout_version"] == 2
     
     captured = capsys.readouterr().out
     assert "[DRY RUN]" in captured
     assert "Retired shipped files: 1" in captured
-    assert "Moved engram state files: 1" in captured
 
 
 def test_run_pipeline(tmp_path, monkeypatch):
@@ -784,22 +561,8 @@ def test_layout_migration_core_update_cleanup(tmp_path):
     temp_update.mkdir(parents=True)
     (temp_update / "update.zip").write_text("zip content")
     
-    # Needs to be valid layout or migration will fail early?
-    # We should just call migrate_layout
-    res = lm.migrate_layout(base_dir, sys_dir)
-    
-    # We only care that the cleanup happened, regardless of migration success,
-    # or at least that it happened if migration reaches that point.
-    # Actually, if m1_ok or m2_ok fails, does it reach the cleanup?
-    # Looking at the code:
-    # m1_ok = _migrate_v20_to_v21(...)
-    # m2_ok = _migrate_tools_to_tool_catalog(...)
-    # layout_data["last_migration"] = "v2.1"
-    # _atomic_write_json(...)
-    # <cleanup>
-    # if not m1_ok or not m2_ok: return 1
-    # So it reaches cleanup regardless of m1/m2 failure.
-    
+    assert lm.migrate_layout(base_dir, sys_dir) == 0
+
     # registered in the backup registry instead of deleted
     assert not old_exe.exists()
     from core import backups
