@@ -247,6 +247,22 @@ def discover_updates(
             clean_kwargs = {k: v for k, v in resolve_kwargs.items() if k not in ("asset_pattern", "force_refresh", "ttl_seconds")}
             discovery = version_resolver.resolve_latest(**clean_kwargs)
 
+        if name == "python":
+            from core import repair
+            status = repair.python_update_status(RUNTIMES_PATH.parent, pin={
+                "version": current_version, "url": cfg.get("url", ""), "sha256": cfg.get("sha256")},
+                discovery=discovery)
+            payload["notices"].append({
+                "component": name, "section": section, "current_version": current_version,
+                "latest_version": discovery.get("latest_version"), "detail": "\n  ".join(status["lines"]),
+            })
+            if discovery.get("status") != "ok":
+                payload.setdefault("could_not_check", []).append({
+                    "component": name, "error_type": discovery.get("error_type", "unavailable"),
+                    "detail": discovery.get("detail", "Python discovery failed"),
+                })
+            continue
+
         status = discovery.get("status")
         if status == "discovery_unavailable":
             payload["rate_limited"].append(name)
@@ -269,13 +285,10 @@ def discover_updates(
             payload["up_to_date"].append(name)
             continue
 
-        if name == "python" or discovery.get("detail") == "notice_only":
+        if discovery.get("detail") == "notice_only":
             payload["notices"].append({
-                "component": name,
-                "section": section,
-                "current_version": current_version,
-                "latest_version": latest_version,
-                "detail": "Python cannot be updated in-place while Engram is running; run 'bootstrap.bat' to update.",
+                "component": name, "section": section, "current_version": current_version,
+                "latest_version": latest_version, "detail": discovery.get("detail"),
             })
             continue
 

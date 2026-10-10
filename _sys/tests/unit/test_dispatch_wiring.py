@@ -167,15 +167,12 @@ def test_install_python_update_cannot_rewrite_pin_while_interpreter_exists():
         "Checking for latest stable Python"
     )
     assert "Python consistency check failed" in content
-    assert "Not auto-applied: safe in-place Python replacement is not implemented" in content
-    assert "New Python version available for first install" in content
-    assert 'set "_PY_BUMP=1"' in content
-    assert content.count("runtimes.python.version='!PY_VER!'") == 1
+    assert "engram update --only python" in content
+    assert "engram update --check" in content
+    assert "_PY_BUMP" not in content
+    assert "runtimes.python.version=" not in content
     assert "Python bootstrap postcondition failed" in content
-    assert content.index("Python bootstrap postcondition failed") < content.index(
-        "runtimes.python.version='!PY_VER!'"
-    )
-    assert "rolling back the bootstrap" in content
+
 
 
 
