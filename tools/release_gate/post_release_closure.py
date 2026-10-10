@@ -6,6 +6,7 @@ from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import sys
+import tempfile
 
 DEFAULT_POLICY = Path(__file__).resolve().parent / "release_policy.json"
 
@@ -22,6 +23,19 @@ def gh_api(endpoint):
     return json.loads(result.stdout)
 
 
+def verify_attestation(repo, tag, name):
+    with tempfile.TemporaryDirectory() as directory:
+        result = subprocess.run(['gh', 'release', 'download', tag, '--repo', repo,
+                                 '--pattern', name, '--dir', directory],
+                                capture_output=True, text=True, timeout=60, check=False)
+        if result.returncode:
+            raise RuntimeError(f'attestation download failed: {result.stderr.strip()}')
+        result = subprocess.run(['gh', 'attestation', 'verify', str(Path(directory) / name),
+                                 '--repo', repo], capture_output=True, text=True, timeout=60, check=False)
+        if result.returncode:
+            raise RuntimeError(f'attestation verification failed: {result.stderr.strip()}')
+
+
 def release_fetcher(repo):
     def fetch(tag):
         release = gh_api(f'repos/{repo}/releases/tags/{quote(tag, safe="")}')
@@ -36,6 +50,12 @@ def release_fetcher(repo):
                 break
             page += 1
         release['assets'] = assets
+        for asset in assets:
+            name = asset['name']
+            if name.lower().endswith('.zip'):
+                if Path(name).name != name or '/' in name or '\\' in name or ':' in name:
+                    raise ValueError('invalid attestation asset name')
+                verify_attestation(repo, tag, name)
         return release
     return fetch
 
