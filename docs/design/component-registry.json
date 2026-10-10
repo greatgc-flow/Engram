@@ -25,7 +25,7 @@
           "recovery_class": "AUTHORITATIVE"
         }
       ],
-      "notes": "Root/layout/config/version/dispatcher/journal/CLI contracts. Registry is a starting allocation of mixed _sys/core files; component boundary tests are not implemented. The isolation provider port is registered separately; OS provider implementations remain planned. Core imports Optional Extension = 0 remains a target invariant.",
+      "notes": "Root/layout/config/version/dispatcher/journal/CLI contracts. Registry is a starting allocation of mixed _sys/core files; component boundary tests are not implemented. The isolation provider port and optional Windows Sandbox implementation are registered separately; WSL2 remains planned. Core imports Optional Extension = 0 remains a target invariant.",
       "implemented_in": [
         "_sys/core/root.py",
         "_sys/core/layout.py",
@@ -68,7 +68,7 @@
           "recovery_class": "AUTHORITATIVE"
         }
       ],
-      "notes": "Provider-neutral protocol, immutable records, fail-closed declarative profiles and finalized guest evidence validation only. No OS providers, command routing or delivery harness integration are implemented. FakeProvider exists only in offline unit tests; providers own execution evidence.",
+      "notes": "Provider-neutral protocol, immutable records, fail-closed declarative profiles and finalized guest evidence validation only. The Windows Sandbox implementation is an optional extension; command routing and delivery harness integration are not implemented. FakeProvider exists only in offline unit tests; providers own execution evidence.",
       "implemented_in": [
         "_sys/core/isolation.py",
         "_sys/config/isolation-profile.schema.json",
@@ -294,7 +294,7 @@
       "boundary_roles": [
         "PROVIDER"
       ],
-      "maturity": "PLANNED",
+      "maturity": "PARTIAL",
       "state_ownership": [
         {
           "kind": "CONFIG",
@@ -305,8 +305,11 @@
           "recovery_class": "EPHEMERAL"
         }
       ],
-      "notes": "User-facing disposable Windows isolation provider; distinct from delivery Sandbox gate.",
-      "implemented_in": []
+      "notes": "Optional protocol provider with raw lifecycle detection, validated profile XML, CLI execution or .wsb LogonCommand fallback, per-user file leases, canonical guest evidence and verified stop/list teardown. Offline tests pass; the opt-in live lifecycle remains unverified. Raw list and stop are required even for fallback. Product command routing and delivery integration remain absent.",
+      "implemented_in": [
+        "_sys/extensions/windows_sandbox/__init__.py",
+        "_sys/extensions/windows_sandbox/provider.py"
+      ]
     },
     {
       "id": "wsl2",
@@ -350,7 +353,7 @@
           "recovery_class": "AUTHORITATIVE"
         }
       ],
-      "notes": "Historical component ID retained for the provider-agnostic delivery clean-room harness: hosted-ephemeral-vm runs by default; Windows Sandbox is optional via ENGRAM_SANDBOX_RUNNER. Both emit candidate-bound evidence accepted under tools/release_gate/release_policy.json. Separate from the planned product Windows Sandbox Extension; the product isolation contract is not integrated into this delivery harness.",
+      "notes": "Historical component ID retained for the provider-agnostic delivery clean-room harness: hosted-ephemeral-vm runs by default; Windows Sandbox is optional via ENGRAM_SANDBOX_RUNNER. Both emit candidate-bound evidence accepted under tools/release_gate/release_policy.json. Separate from the product Windows Sandbox Extension; the product isolation contract is not integrated into this delivery harness.",
       "implemented_in": [
         ".github/workflows/sandbox-gate.yml",
         "tools/release_gate/hosted_clean_room.py",
