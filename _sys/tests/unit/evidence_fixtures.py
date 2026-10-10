@@ -8,7 +8,7 @@ def evidence_fixture(candidate, kind, run_id="12", run_attempt="1"):
     data = dict(status="PASS", candidate_sha256s=hashes, cancelled=False, skipped=False,
                 run_id=run_id, run_attempt=run_attempt)
     if kind == "upgrade":
-        data.update(previous_tag="v0", updater_source="candidate", scenarios={"upgrade": "PASS", "rollback": "PASS"})
+        data.update(previous_tag="v0", updater_source="previous", scenarios={"upgrade": "PASS", "rollback": "PASS"})
     path = candidate.parent / ("fixture-" + kind + ".json")
     path.write_text(json.dumps(data))
     return path

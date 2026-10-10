@@ -17,7 +17,6 @@
     "test_wait_for_sandbox.TestSandboxWaitContract::test_sandbox_success_resolves"
   ],
   "upgrade_updater_sources": [
-    "candidate",
     "previous"
   ]
 }

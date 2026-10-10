@@ -116,14 +116,14 @@ class WaveI(unittest.TestCase):
             upgrade.write_text(json.dumps(dict(base, updater_source=source, previous_tag='v1', scenarios={'upgrade': 'PASS', 'rollback': 'PASS'})))
             args = (candidate, sandbox, upgrade)
             kw = dict(winget_evidence_path=winget, run_id='12', run_attempt='1')
-            if source in ('candidate', 'previous'):
+            if source == 'previous':
                 gate.verify(*args, **kw)
             else:
                 with self.assertRaises(gate.Hold): gate.verify(*args, **kw)
 
     def test_updater_policy_is_explicit(self):
         policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
-        self.assertEqual(policy['upgrade_updater_sources'], ['candidate', 'previous'])
+        self.assertEqual(policy['upgrade_updater_sources'], ['previous'])
 
     def test_artifact_selection_excludes_other_attempts(self):
         script = ROOT / '.github/scripts/select_current_sandbox.js'

@@ -108,6 +108,8 @@ This launches a fresh Windows Sandbox instance, downloads declared runtimes, ins
    isolated root, seeds user data under `.engram/` (structured JSON, Unicode,
    and raw binary content), and runs `tools/release_gate/upgrade_harness.py`
    against the candidate ZIP using the external SHA256 from `candidate.json`.
+   From v3.8.0 on, the gate uses the previous release's updater; candidate-updater
+   evidence is rejected. The harness fallback remains only for candidate-path tests.
    Before running the updater, the harness enforces that candidate version is strictly newer than the previous installation, and fails fast if the updater exits without starting a core update.
    The harness verifies offline staging, manifest integrity, detached helper
    execution, verified failed-update rollback, journal completion, updated installed version, and byte-for-byte
@@ -127,6 +129,13 @@ This launches a fresh Windows Sandbox instance, downloads declared runtimes, ins
    Promotion selects artifacts only from the current run and attempt.
    The policy file at `tools/release_gate/release_policy.json` serves as the trust root: evidence provider must
    exist in policy, runner environment must match provider, and evidence cannot widen policy.
+   After evidence verification, promotion attests `release/assets/*.zip` with
+   `actions/attest-build-provenance` v4.2.2. This proves the build ran in this repo's
+   workflow at this commit; it provides no code signing. Only promotion has
+   `id-token: write` and `attestations: write`. Non-tag `workflow_dispatch` dry runs
+   exercise attestation too. Attestation failure reports HOLD and prevents publication.
+   Closure downloads each published ZIP and runs `gh attestation verify <zip> --repo <repo>`;
+   download or verification failure produces DRIFT. It uses only stdlib and `gh`.
    If any check fails, promotion fails closed and reports HOLD. Only subsequent `v*` tag runs call
    `gh release create --draft --verify-tag` with verified assets, then publishes the draft.
 
