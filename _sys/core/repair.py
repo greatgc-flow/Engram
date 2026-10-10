@@ -548,7 +548,9 @@ def relocate_main(ctx: dict) -> dict:
 def update_env_main(ctx: dict, only: set[str]) -> dict:
     def setup(p):
         p.add_argument("--refresh", "-r", action="store_true")
-        p.add_argument("--to", dest="to_version")
+        target = p.add_mutually_exclusive_group()
+        target.add_argument("--to", dest="to_version")
+        target.add_argument("--latest", action="store_true")
         p.add_argument("--all-packages", action="store_true")
         p.add_argument("--allow-major-runtime-upgrade", action="store_true")
         p.add_argument("--force", action="store_true")
@@ -559,18 +561,24 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
         if "python" in only:
             pin = _python_pin(s)
             explicit = getattr(cli_args, "to_version", None)
+            latest = cli_args.latest
             status = python_update_status(s, pin=pin, offline=cli_args.offline,
                                           refresh=cli_args.refresh, seams=seams)
             installed = status["installed"]
-            summary.extend(status["lines"])
-            target = explicit or status["patch"] or pin["version"]
+            discovery = status["discovery"]
+            if latest and (discovery.get("status") != "ok" or not re.fullmatch(
+                    r"\d+\.\d+\.\d+", discovery.get("latest_version") or "")):
+                raise ValueError("Python latest unavailable: " + (discovery.get("detail") or "discovery failed"))
+            summary.extend(status["lines"][:1] if latest else status["lines"])
+            target = discovery["latest_version"] if latest else explicit or status["patch"] or pin["version"]
             if not re.fullmatch(r"\d+\.\d+\.\d+", target or ""):
                 raise ValueError("Python target must be X.Y.Z; provide --to or a valid runtimes.json pin.")
             if installed and not explicit:
                 change = python_manager.classify_change(installed, target)
-                if change in ("downgrade", "minor", "major"):
-                    summary.append(f"[i] Keeping Python {installed}; automatic target {target} would "
-                                   "downgrade or cross a minor. Use explicit --to for a version change.")
+                if change == "downgrade" or (not latest and change in ("minor", "major")):
+                    reason = ("latest target would downgrade" if latest else
+                              "automatic target would downgrade or cross a minor; use --to or --latest")
+                    summary.append(f"[i] Keeping Python {installed}; {reason} ({target}).")
                     target = installed
             url = pin["url"] if target == pin["version"] and pin["url"] else (
                 f"https://www.python.org/ftp/python/{target}/python-{target}-embed-amd64.zip")
@@ -579,7 +587,7 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
             change = python_manager.classify_change(installed, target)
             if change in ("downgrade", "major") and not getattr(cli_args, "allow_major_runtime_upgrade", False):
                 raise ValueError(f"Blocked {change} update {installed} -> {target}: pass --allow-major-runtime-upgrade and --yes.")
-            if explicit and installed and installed.split(".")[:2] != target.split(".")[:2]:
+            if installed and installed.split(".")[:2] != target.split(".")[:2]:
                 missing = (["online embed zip and wheel checks unavailable in offline mode"] if cli_args.offline
                            else _python_minor_preflight(target, url, fetch=seams.get("fetch", _python_fetch)))
                 if missing:

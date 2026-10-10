@@ -132,6 +132,10 @@ def test_doctor_run_includes_the_journal_check(layout, monkeypatch):
 
 @pytest.mark.parametrize("args,expected_only,expected_args", [
     (["--only", "python"], {"python"}, []),
+    (["-o", "python", "--latest"], {"python"}, ["--latest"]),
+    (["-o", "python", "--latest", "-y"], {"python"}, ["--latest", "--apply", "--yes"]),
+    (["-opython", "--latest", "-y"], {"python"}, ["--latest", "--apply", "--yes"]),
+    (["--only=python", "--latest"], {"python"}, ["--latest"]),
     (["--only", "python,venv"], {"python", "venv"}, []),
     (["--only", "venv", "packages", "--yes"], {"venv", "packages"}, ["--apply", "--yes"]),
     (["--only", "packages", "--dry-run"], {"packages"}, []),
