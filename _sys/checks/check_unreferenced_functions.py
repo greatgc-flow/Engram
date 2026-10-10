@@ -37,6 +37,7 @@ _PRODUCTION_PREFIXES = (
     "_sys/checks/",
     "_sys/cli/",
     "_sys/core/",
+    "_sys/extensions/",
     "_sys/hooks/",
 )
 sys.path.insert(0, str(_CHECKS_DIR))

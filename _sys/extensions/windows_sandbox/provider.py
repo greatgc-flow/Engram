@@ -46,7 +46,7 @@ class SandboxLifecycleError(RuntimeError):
     """Cleanup could not be verified; handle permits an explicit destroy retry."""
 
     def __init__(self, message: str, handle: Handle) -> None:
-        super().__init__(message)
+        super().__init__(message + "; run `engram isolation check`")
         self.handle = handle
 
 
@@ -79,6 +79,7 @@ class WindowsSandboxProvider:
         self.lock_timeout = lock_timeout
         self.poll_interval = poll_interval
         self.observed_concurrency = observed_concurrency
+        self._probing = False
         self._availability: Availability | None = None
         self._cli = False
         self._jobs: dict[str, _Job] = {}
@@ -86,13 +87,26 @@ class WindowsSandboxProvider:
     def _run(self, argv: list[str], timeout: float):
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("process timeout must be finite and positive")
-        return self.runner(argv, timeout=timeout, shell=False, capture_output=True,
-                           text=True, encoding="utf-8", errors="replace", check=False)
+        try:
+            return self.runner(argv, timeout=timeout, shell=False, capture_output=True,
+                               text=True, encoding="utf-8", errors="replace", check=False)
+        except (OSError, subprocess.SubprocessError) as exc:
+            if self._probing:
+                raise
+            hint = "; run `engram isolation check`"
+            if isinstance(exc, OSError) and exc.strerror is not None:
+                exc.strerror += hint
+            elif isinstance(exc, (subprocess.TimeoutExpired, subprocess.CalledProcessError)):
+                exc.cmd = str(exc.cmd) + hint
+            else:
+                exc.args = (str(exc) + hint, *exc.args[1:])
+            raise
 
     def _checked(self, argv: list[str], timeout: float):
         result = self._run(argv, timeout)
         if result.returncode != 0:
-            raise RuntimeError(f"{argv[0]} {argv[1]} failed with process exit {result.returncode}")
+            hint = "" if self._probing else "; run `engram isolation check`"
+            raise RuntimeError(f"{argv[0]} {argv[1]} failed with process exit {result.returncode}{hint}")
         return result
 
     def _instances(self, timeout: float) -> set[str]:
@@ -112,7 +126,27 @@ class WindowsSandboxProvider:
 
     def detect(self) -> Availability:
         def probe():
-            self._instances(self.probe_timeout)
+            try:
+                self._instances(self.probe_timeout)
+            except Exception as exc:
+                code = "WSB_CLI_MISSING" if isinstance(exc, FileNotFoundError) else "PROBE_ERROR"
+                # Supplemental read-only probe returns our own numeric exit codes.
+                # OS SKU and feature State are structured values, not translated text.
+                try:
+                    diagnostic = self._run([
+                        "powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+                        "$ErrorActionPreference='Stop'; try { "
+                        "$sku=(Get-CimInstance Win32_OperatingSystem).OperatingSystemSKU; "
+                        "if ($sku -in 98,99,100,101) { exit 20 }; "
+                        "$feature=Get-WindowsOptionalFeature -Online -FeatureName Containers-DisposableClientVM; "
+                        "if ($feature.State -eq [Microsoft.Dism.Commands.FeatureState]::Disabled) { exit 21 }; "
+                        "exit 0 } catch { exit 22 }",
+                    ], self.probe_timeout)
+                    code = {20: "WSB_UNSUPPORTED_EDITION", 21: "WSB_FEATURE_DISABLED"}.get(diagnostic.returncode, code)
+                except Exception:
+                    pass
+                return Availability("UNAVAILABLE", f"Probe failed: {type(exc).__name__}: {exc}",
+                                    Capabilities("windows-sandbox", False, 0), code)
             self._checked(["wsb.exe", "stop", "--help"], self.probe_timeout)
             self._cli = all([
                 self._run(["wsb.exe", "start", "--help"], self.probe_timeout).returncode == 0,
@@ -124,8 +158,12 @@ class WindowsSandboxProvider:
                               self.probe_timeout)
             mode = "CLI" if self._cli else ".wsb LogonCommand fallback"
             return Availability("AVAILABLE", f"Raw lifecycle probes succeeded; {mode}; guest evidence capture",
-                                Capabilities("windows-sandbox", True, self.observed_concurrency))
-        self._availability = probe_availability(probe, backend="windows-sandbox")
+                                Capabilities("windows-sandbox", True, self.observed_concurrency), "OK")
+        self._probing = True
+        try:
+            self._availability = probe_availability(probe, backend="windows-sandbox")
+        finally:
+            self._probing = False
         return self._availability
 
     def _reserve(self, concurrency: int):
@@ -211,7 +249,7 @@ class WindowsSandboxProvider:
             raise ValueError("mapped inputs and workspace must be existing directories")
         availability = self._availability or self.detect()
         if availability.status != "AVAILABLE":
-            raise RuntimeError(availability.reason)
+            raise RuntimeError(availability.reason + "; run `engram isolation check`")
         lease = self._reserve(availability.capabilities.concurrency)
         handle = Handle(uuid4().hex, evidence / uuid4().hex)
         job = _Job(handle, profile, paths, workspace, lease, self._cli)
@@ -355,7 +393,7 @@ exit $code
             deadline = time.monotonic() + self.lifecycle_timeout
             while job.instance in self._instances(max(0.001, deadline - time.monotonic())):
                 if time.monotonic() >= deadline:
-                    raise RuntimeError("Sandbox remains listed after stop; reservation retained")
+                    raise RuntimeError("Sandbox remains listed after stop; reservation retained; run `engram isolation check`")
                 time.sleep(self.poll_interval)
         job.lease.close()
         job.destroyed = True

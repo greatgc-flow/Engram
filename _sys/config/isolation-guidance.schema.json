@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Engram isolation guidance version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "codes"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "codes": {
+      "type": "object",
+      "required": [
+        "OK",
+        "WSB_CLI_MISSING",
+        "WSB_FEATURE_DISABLED",
+        "WSB_UNSUPPORTED_EDITION",
+        "WSL_NOT_INSTALLED",
+        "WSL_PROBE_FAILED",
+        "PROBE_ERROR",
+        "UNKNOWN"
+      ],
+      "propertyNames": {
+        "pattern": "^[A-Z][A-Z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "why",
+          "steps",
+          "admin_needed",
+          "reboot_needed",
+          "without_it"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "why": {
+            "type": "string",
+            "minLength": 1
+          },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "admin_needed": {
+            "type": "boolean"
+          },
+          "reboot_needed": {
+            "type": "boolean"
+          },
+          "without_it": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

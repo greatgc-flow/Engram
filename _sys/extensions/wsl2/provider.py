@@ -76,7 +76,7 @@ class WSLLifecycleError(RuntimeError):
     """Cleanup failed or ownership is uncertain; reservation remains retained."""
 
     def __init__(self, message: str, handle: Handle) -> None:
-        super().__init__(message)
+        super().__init__(message + "; run `engram isolation check`")
         self.handle = handle
 
 
@@ -101,6 +101,7 @@ class WSL2Provider:
         self.probe_timeout = probe_timeout
         self.lifecycle_timeout = lifecycle_timeout
         self.observed_concurrency = observed_concurrency
+        self._probing = False
         self._availability: Availability | None = None
         self._jobs: dict[str, _Job] = {}
 
@@ -109,12 +110,25 @@ class WSL2Provider:
             raise ValueError("process timeout must be finite and positive")
         # Omit input for ordinary commands to preserve existing runner signatures.
         kwargs = {} if input is None else {"input": input}
-        return self.runner(argv, timeout=timeout, shell=False, capture_output=True, check=False, **kwargs)
+        try:
+            return self.runner(argv, timeout=timeout, shell=False, capture_output=True, check=False, **kwargs)
+        except (OSError, subprocess.SubprocessError) as exc:
+            if self._probing:
+                raise
+            hint = "; run `engram isolation check`"
+            if isinstance(exc, OSError) and exc.strerror is not None:
+                exc.strerror += hint
+            elif isinstance(exc, (subprocess.TimeoutExpired, subprocess.CalledProcessError)):
+                exc.cmd = str(exc.cmd) + hint
+            else:
+                exc.args = (str(exc) + hint, *exc.args[1:])
+            raise
 
     def _checked(self, argv: list[str], timeout: float, input: bytes | None = None):
         result = self._run(argv, timeout, input)
         if result.returncode != 0:
-            raise RuntimeError(f"{argv[0]} {argv[1]} failed with process exit {result.returncode}")
+            hint = "" if self._probing else "; run `engram isolation check`"
+            raise RuntimeError(f"{argv[0]} {argv[1]} failed with process exit {result.returncode}{hint}")
         return result
 
     @staticmethod
@@ -146,14 +160,32 @@ class WSL2Provider:
 
     def detect(self) -> Availability:
         def probe():
-            self._checked(["wsl.exe", "--version"], self.probe_timeout)
-            self._checked(["wsl.exe", "--status"], self.probe_timeout)
+            for command in ("--version", "--status"):
+                try:
+                    result = self._run(["wsl.exe", command], self.probe_timeout)
+                except FileNotFoundError as exc:
+                    return Availability("UNAVAILABLE", f"Probe failed: {type(exc).__name__}: {exc}",
+                                        Capabilities("wsl2", False, 0), "WSL_NOT_INSTALLED")
+                except (OSError, subprocess.SubprocessError) as exc:
+                    code = "WSL_NOT_INSTALLED" if isinstance(exc, subprocess.CalledProcessError) and exc.returncode & 0xffffffff == 0x8007019e else "WSL_PROBE_FAILED"
+                    return Availability("UNAVAILABLE", f"Probe failed: {type(exc).__name__}: {exc}",
+                                        Capabilities("wsl2", False, 0), code)
+                if result.returncode != 0:
+                    # Normalize signed Windows HRESULTs; never inspect localized output.
+                    code = "WSL_NOT_INSTALLED" if result.returncode & 0xffffffff == 0x8007019e else "WSL_PROBE_FAILED"
+                    return Availability("UNAVAILABLE",
+                                        f"Probe failed: RuntimeError: wsl.exe {command} failed with process exit {result.returncode}",
+                                        Capabilities("wsl2", False, 0), code)
             return Availability("AVAILABLE", _LIMITATIONS,
-                                Capabilities("wsl2", True, self.observed_concurrency))
-        availability = probe_availability(probe, backend="wsl2")
+                                Capabilities("wsl2", True, self.observed_concurrency), "OK")
+        self._probing = True
+        try:
+            availability = probe_availability(probe, backend="wsl2")
+        finally:
+            self._probing = False
         if availability.status == "UNAVAILABLE":
             availability = Availability(availability.status, availability.reason + "; " + _LIMITATIONS,
-                                        availability.capabilities)
+                                        availability.capabilities, availability.code)
         self._availability = availability
         return availability
 
@@ -257,7 +289,7 @@ class WSL2Provider:
             raise ValueError("invalid host path")
         availability = self._availability or self.detect()
         if availability.status != "AVAILABLE":
-            raise RuntimeError(availability.reason)
+            raise RuntimeError(availability.reason + "; run `engram isolation check`")
         lease = self._reserve(availability.capabilities.concurrency)
         handle = Handle(uuid4().hex, evidence / uuid4().hex)
         job = _Job(handle, "engram-iso-" + uuid4().hex, lease)

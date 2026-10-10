@@ -193,3 +193,5 @@ starts the bounded clean-room wait.
 - **Conventions:** [`CONVENTION.md`](CONVENTION.md)
 - **Contributing:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - **Validation:** the unit-test suite under [`_sys/tests/unit`](_sys/tests/unit) plus pre-commit consistency checks (`check_encoding`, `check_unreferenced_functions`, `check_root_hygiene`, `check_tool_updates`, `saturation_scan`) under [`_sys/checks`](_sys/checks).
+
+Optional Windows features: [Sandbox and WSL2 isolation guide](docs/isolation_guide.md).

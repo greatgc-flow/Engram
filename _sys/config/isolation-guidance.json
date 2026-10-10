@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "codes": {
+    "OK": {
+      "title": "Provider ready",
+      "why": "The required read-only probes succeeded.",
+      "steps": [
+        "No setup action is needed. Choose the provider explicitly for optional tests."
+      ],
+      "admin_needed": false,
+      "reboot_needed": false,
+      "without_it": "Engram open, doctor, updates, and ordinary host workflows still work; another available provider can be selected explicitly."
+    },
+    "WSB_CLI_MISSING": {
+      "title": "Sandbox CLI missing",
+      "why": "wsb.exe is absent or cannot be found; older Windows builds may have the Sandbox desktop without this CLI.",
+      "steps": [
+        "Check the Windows edition and install current Windows updates. Windows Home does not support Sandbox.",
+        "On a supported edition, enable Sandbox in administrator PowerShell: Enable-WindowsOptionalFeature -Online -FeatureName Containers-DisposableClientVM -All",
+        "Restart if Windows requests it; confirm virtualization is enabled in BIOS/UEFI.",
+        "Verify the CLI: wsb list --raw"
+      ],
+      "admin_needed": true,
+      "reboot_needed": true,
+      "without_it": "Engram open, doctor, updates, and ordinary host workflows still work; another available provider can be selected explicitly."
+    },
+    "WSB_FEATURE_DISABLED": {
+      "title": "Sandbox feature disabled",
+      "why": "The structured Windows feature probe reports Sandbox is disabled.",
+      "steps": [
+        "Enable Sandbox in administrator PowerShell: Enable-WindowsOptionalFeature -Online -FeatureName Containers-DisposableClientVM -All",
+        "Restart Windows after enabling the feature; confirm virtualization is enabled in BIOS/UEFI.",
+        "Verify: wsb list --raw"
+      ],
+      "admin_needed": true,
+      "reboot_needed": true,
+      "without_it": "Engram open, doctor, updates, and ordinary host workflows still work; another available provider can be selected explicitly."
+    },
+    "WSB_UNSUPPORTED_EDITION": {
+      "title": "Sandbox unavailable on this edition",
+      "why": "The Windows operating system SKU identifies a Home edition, which does not support Sandbox.",
+      "steps": [
+        "Use a supported Windows edition if you need Sandbox security isolation.",
+        "For Linux compatibility tests, check WSL instead: wsl --version",
+        "WSL2 is not a security substitute for Sandbox; Windows interop and network access remain."
+      ],
+      "admin_needed": false,
+      "reboot_needed": false,
+      "without_it": "Engram open, doctor, updates, and ordinary host workflows still work; another available provider can be selected explicitly."
+    },
+    "WSL_NOT_INSTALLED": {
+      "title": "Install or enable WSL",
+      "why": "wsl.exe is missing or returned the HRESULT for a missing WSL optional component.",
+      "steps": [
+        "Install WSL without a user distribution in administrator PowerShell: wsl --install --no-distribution",
+        "Restart if requested and confirm virtualization is enabled in BIOS/UEFI.",
+        "Update WSL: wsl --update",
+        "Verify: wsl --version"
+      ],
+      "admin_needed": true,
+      "reboot_needed": true,
+      "without_it": "Engram open, doctor, updates, and ordinary host workflows still work; another available provider can be selected explicitly."
+    },
+    "WSL_PROBE_FAILED": {
+      "title": "WSL probe failed",
+      "why": "WSL could not complete its version/status probes; this may be transient or an older WSL installation.",
+      "steps": [
+        "Retry: wsl --version",
+        "Update WSL: wsl --update",
+        "If WSL is not installed, use administrator PowerShell: wsl --install --no-distribution",
+        "Complete any requested restart and check BIOS/UEFI virtualization.",
+        "Retry: engram isolation check"
+      ],
+      "admin_needed": true,
+      "reboot_needed": true,
+      "without_it": "Engram open, doctor, updates, and ordinary host workflows still work; another available provider can be selected explicitly."
+    },
+    "PROBE_ERROR": {
+      "title": "Provider probe failed",
+      "why": "A probe failed or returned invalid structured data; the cause is not known.",
+      "steps": [
+        "Retry: engram isolation check",
+        "Check Sandbox: wsb list --raw",
+        "Check WSL: wsl --version",
+        "Check pending Windows restarts, Windows updates, and BIOS/UEFI virtualization."
+      ],
+      "admin_needed": false,
+      "reboot_needed": false,
+      "without_it": "Engram open, doctor, updates, and ordinary host workflows still work; another available provider can be selected explicitly."
+    },
+    "UNKNOWN": {
+      "title": "Optional provider unavailable",
+      "why": "No specific diagnosis is available for this code.",
+      "steps": [
+        "Retry: engram isolation check",
+        "Check Sandbox: wsb list --raw",
+        "Check WSL: wsl --version",
+        "Consult docs/isolation_guide.md for optional feature setup."
+      ],
+      "admin_needed": false,
+      "reboot_needed": false,
+      "without_it": "Engram open, doctor, updates, and ordinary host workflows still work; another available provider can be selected explicitly."
+    }
+  }
+}

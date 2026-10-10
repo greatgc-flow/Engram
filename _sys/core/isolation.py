@@ -63,6 +63,7 @@ class Availability:
     status: AvailabilityStatus
     reason: str
     capabilities: Capabilities
+    code: str | None = None
 
     def __post_init__(self) -> None:
         if self.status not in ("AVAILABLE", "UNAVAILABLE"):
@@ -71,11 +72,12 @@ class Availability:
             raise ValueError("availability requires a reason")
         if not isinstance(self.capabilities, Capabilities):
             raise ValueError("invalid capabilities")
+        if self.code is not None and (not isinstance(self.code, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*", self.code)):
+            raise ValueError("invalid availability code")
         if self.status == "AVAILABLE" and self.capabilities.concurrency == 0:
             raise ValueError("available providers require positive concurrency")
 
 
-# WIRING-EXEMPT: EXPORTED_API reason="Isolation provider detect API for planned PR 2/3 providers; roadmap: docs/design/blueprint-engram-architecture.md A2/A3"
 def probe_availability(
     probe: Callable[[], Availability], *, backend: str,
 ) -> Availability:
@@ -97,7 +99,7 @@ def probe_availability(
             detail = "probe exception has no readable message"
         return Availability(
             "UNAVAILABLE", f"Probe failed: {type(exc).__name__}: {detail}",
-            Capabilities(safe_backend, False, 0),
+            Capabilities(safe_backend, False, 0), "PROBE_ERROR",
         )
 
 
@@ -166,7 +168,7 @@ def _read_json(path: Path) -> object:
     )
 
 
-# WIRING-EXEMPT: EXPORTED_API reason="Isolation profile loader for planned PR 2/3 providers; roadmap: docs/design/blueprint-engram-architecture.md A2/A3"
+# WIRING-EXEMPT: EXPORTED_API reason="Provider clients load and validate profiles before create(Profile); public IsolationProvider contract in this module"
 def load_profile(path: Path, *, overrides: Mapping[str, object] | None = None) -> Profile:
     """Load version 1 JSON, rejecting unknown/missing fields and unsafe settings.
 
@@ -237,7 +239,6 @@ def _contained_path(root: Path, reference: str) -> Path:
     return path
 
 
-# WIRING-EXEMPT: EXPORTED_API reason="Canonical evidence collector for planned PR 2/3 providers; roadmap: docs/design/blueprint-engram-architecture.md A2/A3"
 def collect_guest_evidence(handle: Handle, execution_id: str) -> Evidence:
     """Read only the finalized guest result and validate schema, IDs and paths.
 
