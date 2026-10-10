@@ -1,0 +1,393 @@
+{
+  "schema_version": 1,
+  "product": "Engram",
+  "as_of": "2026-10-10",
+  "components": [
+    {
+      "id": "kernel",
+      "plane": "PRODUCT_RUNTIME",
+      "component_class": "CORE",
+      "product_subtype": "CORE_KERNEL",
+      "required_for": [
+        "BASE"
+      ],
+      "boundary_roles": [
+        "NONE"
+      ],
+      "maturity": "IMPLEMENTED",
+      "state_ownership": [
+        {
+          "kind": "DOMAIN_DATA",
+          "recovery_class": "AUTHORITATIVE"
+        },
+        {
+          "kind": "SCHEMA",
+          "recovery_class": "AUTHORITATIVE"
+        }
+      ],
+      "notes": "Root/layout/config/version/dispatcher/journal/CLI contracts. Registry is a starting allocation of mixed _sys/core files; component boundary tests and the shared provider port are not implemented. Core imports Optional Extension = 0 remains a target invariant.",
+      "implemented_in": [
+        "_sys/core/root.py",
+        "_sys/core/layout.py",
+        "_sys/core/state_paths.py",
+        "_sys/core/env_loader.py",
+        "_sys/core/env_manifest.py",
+        "_sys/core/env_lock.py",
+        "_sys/core/env_ops.py",
+        "_sys/core/version.py",
+        "_sys/core/version_resolver.py",
+        "_sys/core/dispatcher.py",
+        "_sys/core/dispatch.bat",
+        "_sys/core/cli_help.py",
+        "_sys/cli/engram.cmd",
+        "_sys/config/environment.json",
+        "_sys/dispatch.json",
+        "_sys/env.json",
+        "_sys/core/version.json"
+      ]
+    },
+    {
+      "id": "environment-lifecycle",
+      "plane": "PRODUCT_RUNTIME",
+      "component_class": "MODULE",
+      "product_subtype": "CORE_MODULE",
+      "required_for": [
+        "BASE"
+      ],
+      "boundary_roles": [
+        "NONE"
+      ],
+      "maturity": "IMPLEMENTED",
+      "state_ownership": [
+        {
+          "kind": "DOMAIN_DATA",
+          "recovery_class": "AUTHORITATIVE"
+        }
+      ],
+      "notes": "bootstrap/provision/Python/venv/launcher/start",
+      "implemented_in": [
+        "_sys/core/bootstrap.bat",
+        "_sys/core/provisioner.py",
+        "_sys/core/setup.py",
+        "_sys/core/python_manager.py",
+        "_sys/core/venv_manager.py",
+        "_sys/core/launcher.py",
+        "_sys/start.bat"
+      ]
+    },
+    {
+      "id": "update",
+      "plane": "PRODUCT_RUNTIME",
+      "component_class": "MODULE",
+      "product_subtype": "CORE_MODULE",
+      "required_for": [
+        "BASE"
+      ],
+      "boundary_roles": [
+        "NONE"
+      ],
+      "maturity": "IMPLEMENTED",
+      "state_ownership": [
+        {
+          "kind": "DOMAIN_DATA",
+          "recovery_class": "AUTHORITATIVE"
+        }
+      ],
+      "notes": "update/download/verify/apply/recovery",
+      "implemented_in": [
+        "_sys/core/updater.py",
+        "_sys/core/core_update_helper.ps1",
+        "_sys/checks/check_tool_updates.py",
+        "_sys/core/network_tls.py"
+      ]
+    },
+    {
+      "id": "recovery",
+      "plane": "PRODUCT_RUNTIME",
+      "component_class": "MODULE",
+      "product_subtype": "CORE_MODULE",
+      "required_for": [
+        "BASE"
+      ],
+      "boundary_roles": [
+        "NONE"
+      ],
+      "maturity": "IMPLEMENTED",
+      "state_ownership": [
+        {
+          "kind": "DOMAIN_DATA",
+          "recovery_class": "AUTHORITATIVE"
+        }
+      ],
+      "notes": "repair/relocate/layout migration/resume/rollback",
+      "implemented_in": [
+        "_sys/core/repair.py",
+        "_sys/core/venv_repair.py",
+        "_sys/core/relocation.py",
+        "_sys/core/layout_migration.py",
+        "_sys/core/env_ops.py"
+      ]
+    },
+    {
+      "id": "data-safety",
+      "plane": "PRODUCT_RUNTIME",
+      "component_class": "MODULE",
+      "product_subtype": "CORE_MODULE",
+      "required_for": [
+        "BASE"
+      ],
+      "boundary_roles": [
+        "NONE"
+      ],
+      "maturity": "IMPLEMENTED",
+      "state_ownership": [
+        {
+          "kind": "BACKUP",
+          "recovery_class": "DURABLE_DERIVED"
+        },
+        {
+          "kind": "EVIDENCE",
+          "recovery_class": "AUTHORITATIVE"
+        }
+      ],
+      "notes": "backup/restore/reset/snapshots and environment backup registry; backup copies are durable derived recovery state while manifests/postcondition evidence are authoritative evidence. Reset deletes snapshot-covered files; --all is rejected.",
+      "implemented_in": [
+        "_sys/core/backups.py",
+        "_sys/checks/backup_personal_data.py"
+      ]
+    },
+    {
+      "id": "doctor",
+      "plane": "PRODUCT_RUNTIME",
+      "component_class": "MODULE",
+      "product_subtype": "CORE_MODULE",
+      "required_for": [
+        "BASE"
+      ],
+      "boundary_roles": [
+        "NONE"
+      ],
+      "maturity": "IMPLEMENTED",
+      "state_ownership": [],
+      "notes": "Read-only diagnostics module; owns no authoritative persistent state. Diagnostic output may be captured as evidence by the evidence layer.",
+      "implemented_in": [
+        "_sys/core/doctor.py"
+      ]
+    },
+    {
+      "id": "uninstall",
+      "plane": "PRODUCT_RUNTIME",
+      "component_class": "MODULE",
+      "product_subtype": "CORE_MODULE",
+      "required_for": [
+        "BASE"
+      ],
+      "boundary_roles": [
+        "NONE"
+      ],
+      "maturity": "IMPLEMENTED",
+      "state_ownership": [
+        {
+          "kind": "DOMAIN_DATA",
+          "recovery_class": "AUTHORITATIVE"
+        }
+      ],
+      "notes": "closed install/uninstall lifecycle",
+      "implemented_in": [
+        "_sys/core/uninstaller.py",
+        "_sys/core/uninstall_helper.ps1"
+      ]
+    },
+    {
+      "id": "shell-menu",
+      "plane": "PRODUCT_RUNTIME",
+      "component_class": "EXTENSION",
+      "required_for": [
+        "OPTIONAL"
+      ],
+      "boundary_roles": [
+        "ADAPTER"
+      ],
+      "maturity": "IMPLEMENTED",
+      "state_ownership": [
+        {
+          "kind": "CONFIG",
+          "recovery_class": "AUTHORITATIVE"
+        },
+        {
+          "kind": "EXTERNAL_REF",
+          "recovery_class": "EXTERNAL"
+        }
+      ],
+      "notes": "Built-in optional Windows shell integration; config is owned locally while Registry/relay effects are external OS integration state.",
+      "implemented_in": [
+        "_sys/core/registrar.py",
+        "_sys/context_menu.json"
+      ]
+    },
+    {
+      "id": "tidy",
+      "plane": "PRODUCT_RUNTIME",
+      "component_class": "EXTENSION",
+      "required_for": [
+        "OPTIONAL"
+      ],
+      "boundary_roles": [
+        "NONE"
+      ],
+      "maturity": "IMPLEMENTED",
+      "state_ownership": [
+        {
+          "kind": "CONFIG",
+          "recovery_class": "AUTHORITATIVE"
+        },
+        {
+          "kind": "TEMP",
+          "recovery_class": "EPHEMERAL"
+        }
+      ],
+      "notes": "Built-in optional maintenance capability; operates on temporary/cleanup targets and owns no durable domain authority.",
+      "implemented_in": [
+        "_sys/core/tidy_temp.py",
+        "_sys/core/backups.py"
+      ]
+    },
+    {
+      "id": "windows-sandbox",
+      "plane": "PRODUCT_RUNTIME",
+      "component_class": "EXTENSION",
+      "required_for": [
+        "OPTIONAL"
+      ],
+      "boundary_roles": [
+        "PROVIDER"
+      ],
+      "maturity": "PLANNED",
+      "state_ownership": [
+        {
+          "kind": "CONFIG",
+          "recovery_class": "AUTHORITATIVE"
+        },
+        {
+          "kind": "DOMAIN_DATA",
+          "recovery_class": "EPHEMERAL"
+        }
+      ],
+      "notes": "User-facing disposable Windows isolation provider; distinct from delivery Sandbox gate.",
+      "implemented_in": []
+    },
+    {
+      "id": "wsl2",
+      "plane": "PRODUCT_RUNTIME",
+      "component_class": "EXTENSION",
+      "required_for": [
+        "OPTIONAL"
+      ],
+      "boundary_roles": [
+        "PROVIDER"
+      ],
+      "maturity": "PLANNED",
+      "state_ownership": [
+        {
+          "kind": "CONFIG",
+          "recovery_class": "AUTHORITATIVE"
+        },
+        {
+          "kind": "DOMAIN_DATA",
+          "recovery_class": "EPHEMERAL"
+        }
+      ],
+      "notes": "Linux compatibility/reproducible environment provider; not security-equivalent sandbox.",
+      "implemented_in": []
+    },
+    {
+      "id": "windows-sandbox-release-harness",
+      "plane": "DELIVERY",
+      "component_class": "MODULE",
+      "product_subtype": "TEST_HARNESS",
+      "required_for": [
+        "BASE"
+      ],
+      "boundary_roles": [
+        "PROVIDER"
+      ],
+      "maturity": "IMPLEMENTED",
+      "state_ownership": [
+        {
+          "kind": "EVIDENCE",
+          "recovery_class": "AUTHORITATIVE"
+        }
+      ],
+      "notes": "Historical component ID retained for the provider-agnostic delivery clean-room harness: hosted-ephemeral-vm runs by default; Windows Sandbox is optional via ENGRAM_SANDBOX_RUNNER. Both emit candidate-bound evidence accepted under tools/release_gate/release_policy.json. Separate from the planned product Windows Sandbox Extension; no shared product provider port exists.",
+      "implemented_in": [
+        ".github/workflows/sandbox-gate.yml",
+        "tools/release_gate/hosted_clean_room.py",
+        "tools/release_gate/sandbox_installed_suite.py",
+        "tools/release_gate/installed_artifact_suite.py",
+        "tools/release_gate/installed_artifact_suite.json",
+        "_sys/tests/run-sandbox-test.bat",
+        "_sys/tests/sandbox-unit-test.wsb"
+      ]
+    },
+    {
+      "id": "release-gate",
+      "plane": "DELIVERY",
+      "component_class": "MODULE",
+      "product_subtype": "RELEASE_GATE",
+      "required_for": [
+        "BASE"
+      ],
+      "boundary_roles": [
+        "NONE"
+      ],
+      "maturity": "IMPLEMENTED",
+      "state_ownership": [
+        {
+          "kind": "EVIDENCE",
+          "recovery_class": "AUTHORITATIVE"
+        }
+      ],
+      "notes": "Implemented exact-candidate build/freeze, policy-approved clean-room, previous-updater upgrade/rollback, local WinGet and promotion workflow. Evidence is required by default and bound to candidate/run/attempt under tools/release_gate/release_policy.json. Build provenance attestation precedes publication; post-release closure verifies it for versions >= 3.8.1. Hosted-ephemeral-vm is the default clean-room provider; Windows Sandbox is optional via ENGRAM_SANDBOX_RUNNER. Native ACP=949 proof, complete capability-skip discharge and WinGet client-index availability remain open.",
+      "implemented_in": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/sandbox-gate.yml",
+        ".github/workflows/post-release-closure.yml",
+        "_sys/checks/release_evidence.py",
+        "tools/release_gate/release_policy.json",
+        "tools/release_gate/check_required_tests.py",
+        "tools/release_gate/check_tag_on_main.py",
+        "tools/release_gate/upgrade_harness.py",
+        "tools/release_gate/winget_smoke.py",
+        "tools/release_gate/wait_for_sandbox_driver.js",
+        "tools/release_gate/post_release_closure.py",
+        "tools/release_gate/version_utils.py",
+        "tools/winget/build_package.py",
+        "tools/winget/build_exe.py",
+        "tools/winget/wrapper.cs",
+        "tools/winget/import_legacy_manifest.py"
+      ]
+    }
+  ],
+  "unmapped": [
+    {
+      "path": "_sys/checks/_common.py",
+      "reason": "Shared check utilities have no dedicated component in the retained registry."
+    },
+    {
+      "path": "_sys/checks/check_encoding.py",
+      "reason": "Static source encoding assurance is outside the listed runtime and release components."
+    },
+    {
+      "path": "_sys/checks/check_root_hygiene.py",
+      "reason": "Repository hygiene assurance has no dedicated component in the retained registry."
+    },
+    {
+      "path": "_sys/checks/check_unreferenced_functions.py",
+      "reason": "Source reachability audit has no dedicated component in the retained registry."
+    },
+    {
+      "path": "_sys/checks/saturation_scan.py",
+      "reason": "Repository saturation audit has no dedicated component in the retained registry."
+    }
+  ]
+}
