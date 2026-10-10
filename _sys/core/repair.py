@@ -137,6 +137,8 @@ def build_plan(
                 "kind": "venv",
                 "params": {
                     "allow_rebuild": allow_rebuild,
+                    "pip_candidates": [r["leftover"] for r in venv_manager.pip_leftovers(
+                        sys_dir / "env" / "venv" / "Lib" / "site-packages") if r["removable"]],
                     "findings": findings
                 }
             })
@@ -149,6 +151,8 @@ def build_plan(
                 "kind": "venv",
                 "params": {
                     "allow_rebuild": allow_rebuild,
+                    "pip_candidates": [r["leftover"] for r in venv_manager.pip_leftovers(
+                        sys_dir / "env" / "venv" / "Lib" / "site-packages") if r["removable"]],
                     "findings": findings or [{"name": "console_scripts", "level": "warning",
                                           "detail": "stale-launchers: after relocation"}]
                 }
@@ -208,7 +212,8 @@ def steps_from_spec(sys_dir: Path | str, base_dir: Path | str, spec: list[dict],
             runner = seams.get("runner", default_runner)
             m = env_manifest.read_manifest(sys_dir).data
             v_steps = venv_repair.plan_venv_repair(
-                sys_dir, findings, manifest=m, runner=runner, allow_rebuild=allow_rebuild
+                sys_dir, findings, manifest=m, runner=runner, allow_rebuild=allow_rebuild,
+                pip_candidates=params.get("pip_candidates")
             )
             out.extend(v_steps)
             

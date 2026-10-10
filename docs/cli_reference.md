@@ -231,6 +231,10 @@ Description:
   (special characters, code page, cloud-sync folders, and path length). It
   never changes anything and uses no network. It also works while an
   interrupted operation blocks other commands.
+  Reports direct ~* pip leftovers in the managed venv's Lib/site-packages.
+  Each path is marked removable or kept; these warnings never fail doctor.
+  Preview safe quarantine with engram repair --only venv. Kept entries need
+  pip install --force-reinstall <name>, or unrecognized, inspect manually.
 
 Options:
   --json           Print machine-readable JSON instead of the report
@@ -337,6 +341,18 @@ Description:
   backup registry (see 'engram snapshots'), never deleted. If a run is
   interrupted, other commands refuse to run (exit 14) until you finish it
   with --resume or undo it with --rollback.
+  --only venv also previews ~* pip leftovers in managed Lib/site-packages.
+  --apply quarantines recognized pip duplicates only when sibling RECORD files
+  verify a healthy install. Shared namespace directories alone are not proof.
+  Bytecode, INSTALLER and RECORD-self entries are ignored; missing optional
+  REQUESTED, direct_url.json and top_level.txt metadata is tolerated.
+  Unknown, inconclusive or broken copies stay; inspect unrecognized dirs
+  manually.
+  Destinations over 240 characters stay: path too long to quarantine safely.
+  Kept entries need pip install --force-reinstall <name>, or manual inspection.
+  Active pip/python holders block quarantine. Move failures roll back earlier
+  moves and fail repair; rollback verifies backup operation and source
+  identity.
 
 Options:
   --apply          Execute the plan (default: off, preview only)
