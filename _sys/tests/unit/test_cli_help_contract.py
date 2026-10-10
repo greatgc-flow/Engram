@@ -193,6 +193,36 @@ def test_update_parser_accepts_every_documented_flag():
                                 "--allow-major-runtime-upgrade", "--to", "3.13.1", "--all-packages",
                                 "--force", "--offline"])
     assert args.to_version == "3.13.1" and args.offline and args.force and args.all_packages
+    args = updater._parse_args(["-o", "python", "--latest", "-y"])
+    assert args.latest and args.only == ["python"] and args.yes
+    assert {"--latest", "-o", "-y"} <= cli_help.option_names("update")
+
+
+@pytest.mark.parametrize("flags", [[], ["--only", "venv"], ["-o", "python,nodejs"],
+                                   ["-o", "python", "packages"], ["-o", "claude"]])
+def test_latest_requires_one_supported_component(flags, capsys):
+    from core import updater
+    with pytest.raises(SystemExit) as exc:
+        updater._parse_args(["--latest", *flags])
+    assert exc.value.code == 2
+    output = capsys.readouterr().out
+    assert "engram update --latest --only python" in output
+    assert "engram update --latest --only nodejs" in output
+
+
+def test_latest_rejects_explicit_target(capsys):
+    from core import updater
+    with pytest.raises(SystemExit) as exc:
+        updater._parse_args(["-o", "python", "--latest", "--to", "3.14.8"])
+    assert exc.value.code == 2
+    assert "--latest" in capsys.readouterr().out
+
+
+def test_dispatch_latest_usage_error_lists_valid_forms():
+    proc = _dispatch("update", "--latest")
+    assert proc.returncode == 2
+    assert "--latest --only python" in proc.stdout
+    assert "--latest --only nodejs" in proc.stdout
 
 
 @pytest.mark.parametrize("command", ["repair", "relocate"])

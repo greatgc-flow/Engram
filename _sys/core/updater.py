@@ -61,8 +61,10 @@ def _env_update_args(args_list: list[str]) -> list[str]:
     skipping_only = False
     dry_run = any(a in ("--dry-run", "--check") for a in args_list)
     for a in args_list:
-        if a == "--only":
+        if a in ("--only", "-o"):
             skipping_only = True
+            continue
+        if a.startswith("--only=") or (a.startswith("-o") and not a.startswith("--")):
             continue
         if skipping_only and not a.startswith("-"):
             continue
@@ -83,14 +85,21 @@ def _parse_args(args: list[str]) -> argparse.Namespace:
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--refresh", "-r", action="store_true")
-    parser.add_argument("--only", nargs="+")
+    parser.add_argument("--only", "-o", nargs="+")
     parser.add_argument("--allow-major-runtime-upgrade", action="store_true")
     # python/venv/packages only (forwarded to the repair engine by _env_update_args)
-    parser.add_argument("--to", dest="to_version")
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument("--to", dest="to_version")
+    target.add_argument("--latest", action="store_true")
     parser.add_argument("--all-packages", action="store_true")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--offline", action="store_true")
-    return parser.parse_args(args)
+    parsed = parser.parse_args(args)
+    if parsed.latest and check_tool_updates.normalize_only_list(parsed.only) not in (["python"], ["nodejs"]):
+        parser.error("--latest requires exactly one component: "
+                     "engram update --latest --only python or "
+                     "engram update --latest --only nodejs")
+    return parsed
 
 
 def run(ctx: dict[str, Any]) -> dict[str, Any]:
@@ -121,6 +130,11 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                     "detail": "python/venv/packages cannot be combined with tool names in --only"}
         from core import repair
         return repair.update_env_main({**ctx, "args": _env_update_args(args_list)}, env_components)
+
+    if args.latest and args.offline:
+        return {"status": "failed", "detail": "Node.js latest unavailable: offline mode", "exit_code": 1}
+    if args.latest and not args.yes:
+        args.dry_run = True
 
     live_runtimes = provisioner.load_json_with_fallback(provisioner.resolve_declared_config(_SYS_DIR, "runtimes.json"))
     catalog = provisioner.load_json_with_fallback(provisioner.resolve_declared_config(_SYS_DIR, provisioner.TOOL_CATALOG_FILENAME))
@@ -165,7 +179,12 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
             run_kwargs.pop("force_refresh", None)
             payload = check_tool_updates.run(**run_kwargs)
     except Exception as e:
-        return {"status": "failed", "detail": f"Update discovery failed: {e}"}
+        detail = f"Node.js latest unavailable: {e}" if args.latest else f"Update discovery failed: {e}"
+        return {"status": "failed", "detail": detail}
+
+    if args.latest and any(payload.get(key) for key in
+                           ("errors", "rate_limited", "could_not_check", "not_checked")):
+        return {"status": "failed", "detail": "Node.js latest unavailable", "exit_code": 1}
 
     if payload.get("errors"):
         return {"status": "failed", "detail": "Update discovery encountered errors", "errors": payload["errors"]}

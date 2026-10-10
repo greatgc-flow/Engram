@@ -160,6 +160,8 @@ Usage: engram update [--yes] [--check | --dry-run] [--refresh]
                      [--only NAME[,NAME...]] [--allow-major-runtime-upgrade]
        engram update --only python|venv|packages [--to X.Y.Z]
                      [--all-packages] [--force] [--offline] [--yes]
+       engram update -o python|nodejs --latest [-y]
+                     [--allow-major-runtime-upgrade] [--refresh]
 
 Description:
   Discovers newer versions of Engram, its runtimes (Node.js, Git, VS Code,
@@ -170,10 +172,15 @@ Description:
   python, venv and packages are managed environment components: they run
   through the journaled repair engine (a backup is taken before the swap,
   dry-run by default, --yes applies) and cannot be mixed with tool names.
+  --latest requires --only python or --only nodejs and defaults to a dry-run
+  plan; add --yes to apply. It cannot be combined with --to.
 
   Python defaults to the latest patch in the installed minor. Offline or failed
-  discovery falls back to the pin; automatic updates never downgrade or cross
-  a minor. A minor jump needs --to and checks the embed zip and compatible
+  discovery falls back to the pin; default updates never downgrade or cross
+  a minor. --latest selects the highest stable Python, including minor jumps,
+  and never downgrades. Failed/offline discovery reports latest unavailable
+  and fails without falling back to the pin. Major jumps still need
+  --allow-major-runtime-upgrade. Every minor jump checks the embed zip and
   Windows wheels for pywinpty, pydantic-core and psutil before any swap.
   Without a pinned SHA-256, a warning and the computed hash are printed;
   the hash is recorded in the journal and still gates cached archive reuse.
@@ -184,19 +191,23 @@ Description:
     Minor update: engram update --only python --to 3.14.8 --yes
 
 Options:
-  --yes, -y        Apply without asking (default: ask first)
+  --yes, -y        Apply without asking (default: plan for Python or --latest;
+                   otherwise ask first)
   --check          Print the plan only; exit 1 if something could not be
                    checked (default: off; for scripts and CI)
   --dry-run        Discover and show the plan, apply nothing (default: off)
   --refresh, -r    Ignore the discovery cache and re-check online (default:
                    use the cache)
-  --only LIST      Update only these components, comma- or space-separated;
+  --only, -o LIST  Update only these components, comma- or space-separated;
                    aliases cc, cx, ag work (default: everything)
   --allow-major-runtime-upgrade
                    Let a base runtime cross a major version, e.g. Node.js
                    22 to 24 (default: off; major jumps are shown, not applied)
   --to X.Y.Z       With --only python: explicit target (default: latest
                    patch in the installed minor)
+  --latest         With --only python or nodejs: discover the latest version;
+                   Python uses the highest stable release, Node its existing
+                   channel and major guard. No pin fallback (default: off)
   --all-packages   With --only packages: upgrade every package (default:
                    only Engram's baseline set)
   --force          With --only python: reinstall even when already current;
@@ -211,6 +222,8 @@ Examples:
   engram update --only claude,codex,agy --yes
   engram update --only python --yes
   engram update --only python --to 3.14.8 --yes
+  engram update -o python --latest -y
+  engram update -o nodejs --latest
   engram update --only nodejs --allow-major-runtime-upgrade --yes
 
 Exit codes:
@@ -244,8 +257,12 @@ These versions illustrate the output; discovery supplies the actual releases.
 `engram update --only python` previews the patch plan; add `--yes` to apply.
 `--refresh` bypasses the discovery cache. Offline or failed discovery falls back
 to the pin, keeping the installed version if the pin would downgrade or cross
-a minor. Minor changes require explicit `--to`; major changes also require
-`--allow-major-runtime-upgrade --yes`.
+a minor. Use `engram update -o python --latest -y` to upgrade to the highest
+stable Python, including minor jumps. Omit `-y` to preview the plan.
+`--latest` requires `--only python` or `--only nodejs`, cannot be combined
+with `--to`, and fails with "latest unavailable" when discovery fails or is
+offline; it never falls back to the pin or downgrades Python. Explicit `--to`
+remains available. Major changes still require `--allow-major-runtime-upgrade`.
 
 Before a minor change, Engram checks the python.org embed zip with HEAD and
 PyPI for compatible Windows amd64 wheels for pywinpty, pydantic-core and psutil.
