@@ -37,11 +37,3 @@ The prototype `.ais/` converter was removed in October 2026. Supported updates s
 Engram does not use SUBST drives or directory junctions. Earlier versions of Engram supported an optional host-integration step (directory junctions and virtual drive letter mounting), but that machinery has been completely removed in favor of pure environment-variable redirection and clean physical paths. A fresh install creates neither, and no ongoing remounting or link management occurs.
 
 If you are upgrading an older install that has a recorded mapping or junction, `engram doctor` will detect it and provide exact manual teardown instructions (e.g., `subst X: /D` and `rmdir` for the junction host).
-
-## Rejection of shared cross-AI memory schemes
-
-A shared cross-AI memory folder, directory junction, or standing instruction approach was evaluated and **REJECTED** by the maintainer. Engram uses no directory junctions, mounts no `subst` virtual drives, and injects no standing AI instructions across tools. Do not retry or propose junction-, subst-, or instruction-based cross-AI memory architectures.
-
-## Claude Code project folders pitfall
-
-Claude Code creates a separate project directory per working directory under `.engram/claude/projects/`. When executing live tests or running commands from temporary directories (`tmp_path`), each unique temporary working directory litters a new project folder under `.engram/claude/projects/`.
