@@ -12,3 +12,4 @@ hypothesis
 pytest-timeout
 psutil
 jsonschema
+pytest-xdist
