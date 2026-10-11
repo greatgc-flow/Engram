@@ -164,8 +164,9 @@ Usage: engram update [--yes] [--check | --dry-run] [--refresh]
                      [--allow-major-runtime-upgrade] [--refresh]
 
 Description:
-  Discovers newer versions of Engram, its runtimes (Node.js, Git, VS Code,
-  ...) and the AI CLIs, shows a plan, asks for confirmation, then applies it.
+  Bare update, --check and --dry-run show what is outdated and exact next
+  commands. Core and tools apply here after confirmation (or with -y).
+  Python, venv and packages need their own -o invocation, without tool names.
   Anything that cannot be checked is listed under "Not checked" and is never
   counted as up to date. Unlike tidy/repair, update is plan + prompt rather
   than dry-run + --apply: --yes is what skips the prompt.
@@ -184,11 +185,23 @@ Description:
   Windows wheels for pywinpty, pydantic-core and psutil before any swap.
   Without a pinned SHA-256, a warning and the computed hash are printed;
   the hash is recorded in the journal and still gates cached archive reuse.
+  Python shows installed, latest patch (same minor) and latest minor only
+  when newer versions exist; otherwise it says up to date or could not check.
+  Next steps lists applicable update commands and an optional baseline venv
+  package upgrade. No extra pip discovery is performed for the report.
   Example --check output (versions are illustrative):
-    Python: installed / pin / latest patch (same minor) / latest minor:
-      3.13.7 / 3.13.7 / 3.13.9 / 3.14 (3.14.8)
-    Patch update: engram update --only python --yes
-    Minor update: engram update --only python --to 3.14.8 --yes
+    Python:
+      Installed: 3.13.7
+      Latest patch (same minor): 3.13.9
+      Latest minor: 3.14 (3.14.8)
+      Patch update: engram update -o python -y
+      Minor update: engram update -o python --latest -y
+    Next steps:
+      engram update     Apply core + tools after confirmation
+      engram update -y  Apply core + tools without prompting
+      engram update -o python -y
+      engram update -o python --latest -y
+      engram update -o packages -y  Upgrade baseline venv packages (optional)
 
 Options:
   --yes, -y        Apply without asking (default: plan for Python or --latest;
@@ -248,9 +261,19 @@ Python updates stay within the installed minor by default:
 
 ~~~text
 engram update --check --refresh
-Python: installed / pin / latest patch in installed minor / latest stable minor: 3.13.7 / 3.13.7 / 3.13.9 / 3.14 (3.14.8)
-Patch update: engram update --only python --yes
-Minor update: engram update --only python --to 3.14.8 --yes
+Core/tools apply here; python/venv/packages need -o, without tool names.
+
+Python:
+  Installed: 3.13.7
+  Latest patch (same minor): 3.13.9
+  Latest minor: 3.14 (3.14.8)
+  Patch update: engram update -o python -y
+  Minor update: engram update -o python --latest -y
+
+Next steps:
+  engram update -o python -y
+  engram update -o python --latest -y
+  engram update -o packages -y  Upgrade baseline venv packages (optional)
 ~~~
 
 These versions illustrate the output; discovery supplies the actual releases.

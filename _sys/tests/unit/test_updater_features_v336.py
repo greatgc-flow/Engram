@@ -120,7 +120,7 @@ def test_nodejs_major_upgrade_requires_opt_in(tmp_path, monkeypatch):
     assert payload["updates_discovered"][0]["latest_version"] == "24.21.0"
 
 
-def test_python_is_notice_only(tmp_path, monkeypatch):
+def test_python_has_status_without_tool_proposal(tmp_path, monkeypatch):
     mock_runtimes = {
         "runtimes": {
             "python": {
@@ -145,7 +145,8 @@ def test_python_is_notice_only(tmp_path, monkeypatch):
 
     payload, runtimes, proposed, catalog, proposed_catalog = check_tool_updates.discover_updates()
     assert not payload["updates_discovered"]
-    assert any(n.get("component") == "python" for n in payload["notices"])
+    assert "python_status" in payload
+    assert not any(n.get("component") == "python" for n in payload["notices"])
 
 
 def test_self_update_peer_agy(tmp_path, monkeypatch):
@@ -284,5 +285,6 @@ def test_updater_run_agy_self_update(tmp_path, monkeypatch, capsys):
     assert updated_called
     out = capsys.readouterr().out
     assert "Updating agy (in-place)..." in out
+    assert "agy 1.1.5: self-updating; engram update runs 'agy update'" in out
     assert "[OK] agy updated: 1.1.5 -> 1.2.8" in out
 

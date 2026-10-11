@@ -252,11 +252,8 @@ def discover_updates(
             status = repair.python_update_status(RUNTIMES_PATH.parent, pin={
                 "version": current_version, "url": cfg.get("url", ""), "sha256": cfg.get("sha256")},
                 discovery=discovery)
-            payload["notices"].append({
-                "component": name, "section": section, "current_version": current_version,
-                "latest_version": discovery.get("latest_version"), "detail": "\n  ".join(status["lines"]),
-            })
-            if discovery.get("status") != "ok":
+            payload["python_status"] = status
+            if status["installed"] and discovery.get("status") != "ok":
                 payload.setdefault("could_not_check", []).append({
                     "component": name, "error_type": discovery.get("error_type", "unavailable"),
                     "detail": discovery.get("detail", "Python discovery failed"),

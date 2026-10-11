@@ -78,9 +78,19 @@ Python updates stay within the installed minor by default:
 
 ~~~text
 engram update --check --refresh
-Python: installed / pin / latest patch in installed minor / latest stable minor: 3.13.7 / 3.13.7 / 3.13.9 / 3.14 (3.14.8)
-Patch update: engram update --only python --yes
-Minor update: engram update --only python --to 3.14.8 --yes
+Core/tools apply here; python/venv/packages need -o, without tool names.
+
+Python:
+  Installed: 3.13.7
+  Latest patch (same minor): 3.13.9
+  Latest minor: 3.14 (3.14.8)
+  Patch update: engram update -o python -y
+  Minor update: engram update -o python --latest -y
+
+Next steps:
+  engram update -o python -y
+  engram update -o python --latest -y
+  engram update -o packages -y  Upgrade baseline venv packages (optional)
 ~~~
 
 These versions illustrate the output; discovery supplies the actual releases.
