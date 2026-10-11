@@ -6,6 +6,7 @@ import os
 import sys
 import shutil
 import json
+import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -201,6 +202,9 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(update, dict):
             print(f"  [Warning] Malformed update item in payload: {update} — skipped")
             continue
+        if update.get("tool") == "python":
+            # Python replacement belongs to the managed environment engine.
+            continue
         section = update.get("section")
         if section not in ("runtimes", "tools", "catalog"):
             tool = update.get("tool")
@@ -239,8 +243,21 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                 filtered_repairs.append(rep)
         repairs_needed = filtered_repairs
 
-    not_checked = payload.get("not_checked", [])
-    could_not_check = payload.get("could_not_check", [])
+    not_checked = list(payload.get("not_checked", []))
+    could_not_check = list(payload.get("could_not_check", []))
+    python_status = None
+    if only_set is None:
+        from core import repair
+        python_status = payload.get("python_status")
+        if python_status is None or args.offline:
+            python_status = repair.python_update_status(
+                sys_dir, offline=args.offline, refresh=force_refresh)
+        # Replace legacy Python notices and unchecked entries with this check.
+        not_checked = [n for n in not_checked if n.get("component") != "python"]
+        could_not_check = [n for n in could_not_check if n.get("component") != "python"]
+        if not python_status["checked"] and python_status["installed"]:
+            not_checked.append({"component": "Python",
+                                "reason": python_status["reason"]})
     
     # ---------------------------------------------------------
     # Engram Core Channel Detection & Discovery
@@ -340,14 +357,19 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                             cur_ver = m_data.get("observed_version")
                     except Exception:
                         pass
+                update_argv = u_cfg.get("argv", ["update"])
+                if update_argv and update_argv[0] in (tid, bin_name):
+                    update_argv = update_argv[1:]
                 self_update_tools.append({
                     "tool": tid,
                     "name": tool.get("name", tid),
                     "current_version": cur_ver,
                     "mechanism": "self_update",
+                    "command": " ".join([tid, *update_argv]),
                 })
 
-    notices = payload.get("notices", [])
+    notices = [n for n in payload.get("notices", [])
+               if n.get("component") != "python"]
     has_actionable = bool(
         core_updates
         or runtimes_updates
@@ -357,11 +379,10 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
         or self_update_tools
     )
     
-    if not has_actionable and not could_not_check and not not_checked and not notices:
-        print("Everything Engram can check is up to date.")
-        if args.check:
-            sys.exit(0)
-        return {"status": "success", "detail": "No updates discovered"}
+    python_commands = python_status["commands"] if python_status else []
+    print("\nCore/tools apply here; python/venv/packages need -o, without tool names.")
+    if python_status:
+        print("\n" + "\n".join(python_status["report_lines"]))
 
     if could_not_check:
         print("\nCould not check (provider failures):")
@@ -392,7 +413,8 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     if self_update_tools:
         print("\nSelf-updating tools (delegated in-place update):")
         for su in self_update_tools:
-            print(f"  {su.get('tool')}: active version {su.get('current_version')} (runs '{su.get('tool')} update')")
+            print(f"  {su.get('tool')} {su.get('current_version')}: self-updating; "
+                  f"engram update runs '{su['command']}'")
             
     if repairs_needed:
         print("\nRepairs (missing components planned for reinstall):")
@@ -407,17 +429,36 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     if not_checked:
         print("\nNot checked:")
         for nc in not_checked:
-            print(f"  - {nc.get('component')} ({nc.get('reason')})")
+            line = f"  - {nc.get('component')} ({nc.get('reason')})"
+            if nc.get("component") == "Python":
+                line = "\n".join(textwrap.wrap(
+                    line.strip(), width=80, initial_indent="  ",
+                    subsequent_indent="    "))
+            print(line)
+
+    if has_actionable or python_commands:
+        print("\nNext steps:")
+        if has_actionable:
+            print("  engram update     Apply core + tools after confirmation")
+            print("  engram update -y  Apply core + tools without prompting")
+        for command in python_commands:
+            print(f"  {command}")
+        # Cheap guidance, not an assertion that pip packages are outdated.
+        print("  engram update -o packages -y  Upgrade baseline venv packages (optional)")
+    elif not could_not_check and not not_checked and not notices:
+        print("\nEverything is up to date.")
+    else:
+        print("\nNo updates found among checked components.")
 
     if args.check:
-        if could_not_check:
+        if could_not_check or (python_status and not python_status["checked"]
+                               and python_status["installed"]):
             sys.exit(1)
             return {"status": "failed", "detail": "Update discovery encountered provider failures"}
         sys.exit(0)
         return {"status": "success", "detail": "Update check complete"}
 
     if not has_actionable:
-        print("\nEverything Engram can check is up to date.")
         return {"status": "success", "detail": "No updates discovered"}
 
     total_changes = (

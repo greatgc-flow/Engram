@@ -268,8 +268,8 @@ def test_default_target_is_latest_installed_minor_patch(tmp_path, monkeypatch, p
     assert params["sha256"] is None
     summary = "\n".join(result["plan"]["summary"])
     assert "3.14.8 / " + pin + " / 3.14.9 / 3.15 (3.15.2)" in summary
-    assert "engram update --only python --yes" in summary
-    assert "engram update --only python --to 3.15.2 --yes" in summary
+    assert "engram update -o python -y" in summary
+    assert "engram update -o python --latest -y" in summary
     assert "downloaded over HTTPS from python.org; no pinned SHA-256" in summary
 
 

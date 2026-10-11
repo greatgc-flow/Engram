@@ -13,6 +13,16 @@ from core import updater
 from checks import check_tool_updates
 
 
+@pytest.fixture(autouse=True)
+def current_python_report(monkeypatch):
+    """Keep legacy tool pipeline tests independent of Python/network discovery."""
+    from core import repair
+    monkeypatch.setattr(repair, "python_update_status", lambda *a, **k: {
+        "installed": "3.14.8", "checked": True, "commands": [],
+        "report_lines": ["Python: 3.14.8 is up to date."],
+    })
+
+
 @pytest.fixture
 def latest_node(tmp_path, monkeypatch):
     from core import layout_migration, version_resolver

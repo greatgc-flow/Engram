@@ -289,12 +289,15 @@ def python_update_status(sys_dir: Path, *, installed: str | None = None,
                          offline: bool = False, refresh: bool = False, seams: dict | None = None) -> dict:
     """Shared discovery and display data for Python checks and managed plans."""
     from core import version_resolver, state_paths
+    import textwrap
     seams = seams or {}
     pin = pin if pin is not None else _python_pin(sys_dir)
     installed = installed or _installed_python(sys_dir, seams)
+    if offline:
+        discovery = {"status": "offline", "detail": "offline mode (--offline)"}
     if discovery is None:
         try:
-            discovery = {"status": "offline", "detail": "offline mode"} if offline else seams.get(
+            discovery = seams.get(
                 "resolve_python", version_resolver.resolve_latest)(
                     "python", "endoflife_python", installed or pin["version"], "python",
                     cache_path=state_paths.discovery_cache(sys_dir), force_refresh=refresh)
@@ -310,13 +313,64 @@ def python_update_status(sys_dir: Path, *, installed: str | None = None,
     if discovery.get("status") != "ok" or (installed and not patch):
         lines.append(f"[i] Python discovery unavailable ({discovery.get('detail') or 'installed minor not found'}); "
                      f"falling back to pin {pin['version'] or 'none'}.")
-    if patch and installed and python_manager.classify_change(installed, patch) == "patch":
-        lines.append("Patch update: engram update --only python --yes")
+    patch_newer = bool(patch and installed and
+                       python_manager.classify_change(installed, patch) == "patch")
+    commands = []
+    if patch_newer:
+        commands.append("engram update -o python -y")
+        lines.append("Patch update: engram update -o python -y")
     elif installed and pin["version"] and python_manager.classify_change(installed, pin["version"]) == "patch":
-        lines.append("Patch update: engram update --only python --yes")
+        lines.append("Patch update: engram update -o python -y")
+    minor_newer = False
     if minor and cycle and tuple(map(int, minor.split("."))) > tuple(map(int, cycle.split("."))) and latest:
-        lines.append(f"Minor update: engram update --only python --to {latest} --yes")
-    return {"installed": installed, "patch": patch, "discovery": discovery, "lines": lines}
+        minor_newer = True
+        commands.append("engram update -o python --latest -y")
+        lines.append("Minor update: engram update -o python --latest -y")
+    checked = bool(discovery.get("status") == "ok" and installed and patch and minor and latest)
+    reason = None
+    if not installed:
+        notice = (f"Python: not installed under {Path(sys_dir) / 'env' / 'python'}; "
+                  "run _sys\\core\\bootstrap.bat")
+        report_lines = textwrap.wrap(
+            notice.encode("ascii", "backslashreplace").decode(), width=80,
+            subsequent_indent="  ")
+        commands = []
+    elif not checked:
+        if offline:
+            reason = "offline mode (--offline)"
+        elif discovery.get("status") != "ok":
+            detail = (discovery.get("detail") or
+                      discovery.get("status") or "unknown error")
+            detail = " ".join(str(detail).split())
+            detail = detail.encode("ascii", "backslashreplace").decode()
+            if len(detail) > 48:
+                detail = detail[:45] + "..."
+            reason = f"discovery failed: {detail}"
+        elif not patch:
+            reason = f"installed minor {cycle} not in release list"
+        else:
+            missing = "minor" if not minor else "version"
+            reason = f"discovery failed: release list missing latest {missing}"
+        reason = reason.encode("ascii", "backslashreplace").decode()
+        report_lines = textwrap.wrap(f"Python: {reason}", width=80,
+                                     subsequent_indent="  ")
+        commands = []
+    elif not patch_newer and not minor_newer:
+        report_lines = [f"Python: {installed} is up to date."]
+    else:
+        report_lines = [
+            "Python:",
+            f"  Installed: {installed}",
+            f"  Latest patch (same minor): {patch}",
+            f"  Latest minor: {minor} ({latest})",
+        ]
+        if patch_newer:
+            report_lines.append("  Patch update: engram update -o python -y")
+        if minor_newer:
+            report_lines.append("  Minor update: engram update -o python --latest -y")
+    return {"installed": installed, "patch": patch, "discovery": discovery,
+            "lines": lines, "checked": checked, "report_lines": report_lines,
+            "commands": commands, "reason": reason}
 
 
 def _python_fetch(url: str, *, method: str = "GET"):
