@@ -5,6 +5,8 @@ import os
 import sys
 import contextlib
 import io
+import re
+import urllib.request
 from pathlib import Path
 from typing import Optional, Callable, Any
 
@@ -282,6 +284,88 @@ def _installed_python(sys_dir: Path, seams: dict) -> Optional[str]:
     return m.group(1) if rc == 0 and m else None
 
 
+def python_update_status(sys_dir: Path, *, installed: str | None = None,
+                         pin: dict | None = None, discovery: dict | None = None,
+                         offline: bool = False, refresh: bool = False, seams: dict | None = None) -> dict:
+    """Shared discovery and display data for Python checks and managed plans."""
+    from core import version_resolver, state_paths
+    seams = seams or {}
+    pin = pin if pin is not None else _python_pin(sys_dir)
+    installed = installed or _installed_python(sys_dir, seams)
+    if discovery is None:
+        try:
+            discovery = {"status": "offline", "detail": "offline mode"} if offline else seams.get(
+                "resolve_python", version_resolver.resolve_latest)(
+                    "python", "endoflife_python", installed or pin["version"], "python",
+                    cache_path=state_paths.discovery_cache(sys_dir), force_refresh=refresh)
+        except Exception as exc:
+            discovery = {"status": "error", "detail": str(exc)}
+    cycle = ".".join(installed.split(".")[:2]) if installed else None
+    patch = (discovery.get("latest_patch_by_cycle") or {}).get(cycle)
+    minor = discovery.get("latest_minor_cycle")
+    latest = discovery.get("latest_version")
+    lines = [f"Python: installed / pin / latest patch in installed minor / latest stable minor: "
+             f"{installed or 'none'} / {pin['version'] or 'none'} / {patch or 'unknown'} / "
+             f"{minor or 'unknown'}" + (f" ({latest})" if latest else "")]
+    if discovery.get("status") != "ok" or (installed and not patch):
+        lines.append(f"[i] Python discovery unavailable ({discovery.get('detail') or 'installed minor not found'}); "
+                     f"falling back to pin {pin['version'] or 'none'}.")
+    if patch and installed and python_manager.classify_change(installed, patch) == "patch":
+        lines.append("Patch update: engram update --only python --yes")
+    elif installed and pin["version"] and python_manager.classify_change(installed, pin["version"]) == "patch":
+        lines.append("Patch update: engram update --only python --yes")
+    if minor and cycle and tuple(map(int, minor.split("."))) > tuple(map(int, cycle.split("."))) and latest:
+        lines.append(f"Minor update: engram update --only python --to {latest} --yes")
+    return {"installed": installed, "patch": patch, "discovery": discovery, "lines": lines}
+
+
+def _python_fetch(url: str, *, method: str = "GET"):
+    request = urllib.request.Request(url, method=method, headers={"User-Agent": "engram-python-update"})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        if response.getcode() != 200:
+            raise ValueError(f"HTTP {response.getcode()}")
+        return json.loads(response.read()) if method == "GET" else None
+
+
+def _python_minor_preflight(target: str, url: str, *, fetch: Callable = _python_fetch) -> list[str]:
+    """Return missing embed archive / compatible wheel checks, without mutation."""
+    missing = []
+    major, minor, _ = map(int, target.split("."))
+    tag = f"cp{major}{minor}"
+    try:
+        fetch(url, method="HEAD")
+    except Exception as exc:
+        missing.append(f"embed zip ({exc})")
+    for package in ("pywinpty", "pydantic-core", "psutil"):
+        try:
+            data = fetch(f"https://pypi.org/pypi/{package}/json")
+            compatible = False
+            for version, files in data.get("releases", {}).items():
+                if not re.fullmatch(r"\d+(?:\.\d+)*", version):
+                    continue
+                for file in files:
+                    if file.get("yanked"):
+                        continue
+                    parts = file.get("filename", "").removesuffix(".whl").split("-")
+                    if not file.get("filename", "").endswith(".whl") or len(parts) < 5:
+                        continue
+                    python_tags, abi_tags, platforms = (part.split(".") for part in parts[-3:])
+                    if "win_amd64" not in platforms:
+                        continue
+                    if tag in python_tags and tag in abi_tags:
+                        compatible = True
+                    elif "abi3" in abi_tags:
+                        for python_tag in python_tags:
+                            match = re.fullmatch(r"cp(\d)(\d+)", python_tag)
+                            if match and int(match[1]) == major and int(match[2]) <= minor:
+                                compatible = True
+            if not compatible:
+                missing.append(f"{package}: no win_amd64 wheel for {tag} or compatible abi3")
+        except Exception as exc:
+            missing.append(f"{package}: wheel check failed ({exc})")
+    return missing
+
+
 def _spec_needs_runner(spec: list[dict]) -> bool:
     """A python swap renames env/python, which the engine process itself is running on (design 6.1)."""
     return any(item.get("kind") == "python" for item in spec)
@@ -424,7 +508,7 @@ def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callabl
     if not args.apply:
         if not args.json:
             _print_plan(plan)
-            print("Run with --apply to execute.")
+            print("Run with --yes to execute." if plan.get("kind") == "update" else "Run with --apply to execute.")
         return {"status": "success", "operation": "repair", "detail": "dry run", "exit_code": 0,
                 "plan": _plan_json(plan)}
         
@@ -463,6 +547,7 @@ def relocate_main(ctx: dict) -> dict:
 
 def update_env_main(ctx: dict, only: set[str]) -> dict:
     def setup(p):
+        p.add_argument("--refresh", "-r", action="store_true")
         p.add_argument("--to", dest="to_version")
         p.add_argument("--all-packages", action="store_true")
         p.add_argument("--allow-major-runtime-upgrade", action="store_true")
@@ -473,15 +558,35 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
         summary = []
         if "python" in only:
             pin = _python_pin(s)
-            target = getattr(cli_args, "to_version", None) or pin["version"]
+            explicit = getattr(cli_args, "to_version", None)
+            status = python_update_status(s, pin=pin, offline=cli_args.offline,
+                                          refresh=cli_args.refresh, seams=seams)
+            installed = status["installed"]
+            summary.extend(status["lines"])
+            target = explicit or status["patch"] or pin["version"]
+            if not re.fullmatch(r"\d+\.\d+\.\d+", target or ""):
+                raise ValueError("Python target must be X.Y.Z; provide --to or a valid runtimes.json pin.")
+            if installed and not explicit:
+                change = python_manager.classify_change(installed, target)
+                if change in ("downgrade", "minor", "major"):
+                    summary.append(f"[i] Keeping Python {installed}; automatic target {target} would "
+                                   "downgrade or cross a minor. Use explicit --to for a version change.")
+                    target = installed
             url = pin["url"] if target == pin["version"] and pin["url"] else (
                 f"https://www.python.org/ftp/python/{target}/python-{target}-embed-amd64.zip")
             sha = pin["sha256"] if target == pin["version"] else None
-            installed = _installed_python(s, seams)
             had_venv = (Path(s) / "env" / "venv" / "Scripts" / "python.exe").is_file()
             change = python_manager.classify_change(installed, target)
             if change in ("downgrade", "major") and not getattr(cli_args, "allow_major_runtime_upgrade", False):
                 raise ValueError(f"Blocked {change} update {installed} -> {target}: pass --allow-major-runtime-upgrade and --yes.")
+            if explicit and installed and installed.split(".")[:2] != target.split(".")[:2]:
+                missing = (["online embed zip and wheel checks unavailable in offline mode"] if cli_args.offline
+                           else _python_minor_preflight(target, url, fetch=seams.get("fetch", _python_fetch)))
+                if missing:
+                    message = "Python minor pre-flight missing: " + "; ".join(missing)
+                    if not cli_args.force:
+                        raise ValueError(message + ". Use --force to override.")
+                    summary.append("[Warning] --force overrides: " + message)
             if change == "same" and not getattr(cli_args, "force", False):
                 summary.append(f"Python already at {target}")
             else:
@@ -489,9 +594,11 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
                     "name": "update-python", "group": "A", "kind": "python",
                     "params": {"target_version": target, "url": url, "sha256": sha,
                                "allow_downgrade": change == "downgrade", "allow_major": change == "major",
-                               "offline": getattr(cli_args, "offline", False),
+                               "offline": getattr(cli_args, "offline", False), "force": cli_args.force,
                                "installed": installed, "had_venv": had_venv},
                 })
+                if not sha:
+                    summary.append("[Warning] downloaded over HTTPS from python.org; no pinned SHA-256")
                 summary.append(f"Update python {installed or 'none'} -> {target} ({change})")
 
         if "venv" in only:

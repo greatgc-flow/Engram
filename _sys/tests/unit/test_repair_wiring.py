@@ -12,6 +12,14 @@ sys.path.insert(0, str(find_root(__file__)))
 from core import env_ops, repair, python_manager  # noqa: E402
 
 
+
+@pytest.fixture(autouse=True)
+def mock_python_discovery(monkeypatch):
+    from core import version_resolver
+    monkeypatch.setattr(version_resolver, "resolve_latest",
+                        lambda *a, **k: {"status": "error", "detail": "mock network unavailable"})
+
+
 def _tree(tmp_path, pin_version="3.14.8", sha=None, installed=None):
     sys_dir = tmp_path / "_sys"
     (sys_dir / "data" / "state").mkdir(parents=True)
@@ -237,3 +245,138 @@ def test_steps_from_spec_without_installed_had_venv_works(tmp_path, monkeypatch)
     repair.steps_from_spec(sys_dir, tmp_path, spec)
     assert captured_kwargs.get("installed") is None
     assert captured_kwargs.get("had_venv") is None
+
+
+def _discovery(monkeypatch, patches=None):
+    from core import version_resolver
+    calls = []
+    def resolve(*args, **kwargs):
+        calls.append(kwargs)
+        return {"status": "ok", "latest_version": "3.15.2", "latest_minor_cycle": "3.15",
+                "latest_patch_by_cycle": patches or {"3.14": "3.14.9", "3.15": "3.15.2"}}
+    monkeypatch.setattr(version_resolver, "resolve_latest", resolve)
+    return calls
+
+
+@pytest.mark.parametrize("pin", ["3.14.7", "3.15.2"])
+def test_default_target_is_latest_installed_minor_patch(tmp_path, monkeypatch, pin):
+    _discovery(monkeypatch)
+    monkeypatch.setattr(repair, "_installed_python", lambda *a: "3.14.8")
+    result = _plan(tmp_path, [], {"python"}, pin_version=pin)
+    params = result["plan"]["spec"][0]["params"]
+    assert params["target_version"] == "3.14.9"
+    assert params["sha256"] is None
+    summary = "\n".join(result["plan"]["summary"])
+    assert "3.14.8 / " + pin + " / 3.14.9 / 3.15 (3.15.2)" in summary
+    assert "engram update --only python --yes" in summary
+    assert "engram update --only python --to 3.15.2 --yes" in summary
+    assert "downloaded over HTTPS from python.org; no pinned SHA-256" in summary
+
+
+@pytest.mark.parametrize("pin", ["3.14.7", "3.15.2"])
+def test_failed_discovery_never_downgrades_or_crosses_minor(tmp_path, monkeypatch, pin):
+    monkeypatch.setattr(repair, "_installed_python", lambda *a: "3.14.8")
+    result = _plan(tmp_path, [], {"python"}, pin_version=pin)
+    assert result["plan"]["spec"] == []
+    assert "falling back to pin" in "\n".join(result["plan"]["summary"])
+    assert "Keeping Python 3.14.8" in "\n".join(result["plan"]["summary"])
+
+
+def test_offline_falls_back_to_pin_without_fetching(tmp_path, monkeypatch):
+    from core import version_resolver
+    def unexpected(*args, **kwargs):
+        raise AssertionError("network must not run")
+    monkeypatch.setattr(version_resolver, "resolve_latest", unexpected)
+    monkeypatch.setattr(repair, "_installed_python", lambda *a: "3.14.7")
+    result = _plan(tmp_path, ["--offline"], {"python"})
+    assert result["plan"]["spec"][0]["params"]["target_version"] == "3.14.8"
+    assert "offline mode" in "\n".join(result["plan"]["summary"])
+
+
+def test_refresh_is_forwarded_through_update_dispatch(tmp_path, monkeypatch):
+    from core import updater
+    calls = _discovery(monkeypatch)
+    monkeypatch.setattr(repair, "_installed_python", lambda *a: "3.14.8")
+    result = _plan(tmp_path, updater._env_update_args(["--only", "python", "--refresh", "--check"]),
+                   {"python"})
+    assert result["exit_code"] == 0 and calls[0]["force_refresh"] is True
+
+
+def _wheel(filename, **kwargs):
+    return {"filename": filename, **kwargs}
+
+
+def test_minor_preflight_accepts_target_tag_and_older_abi3():
+    calls = []
+    def fetch(url, *, method="GET"):
+        calls.append((url, method))
+        if method == "HEAD":
+            return None
+        tag = "cp314-cp314" if "/pywinpty/" in url else "cp39-abi3"
+        return {"releases": {"1.0.0": [_wheel(f"pkg-1.0.0-{tag}-win_amd64.whl")]}}
+    assert repair._python_minor_preflight("3.14.8", "https://www.python.org/embed.zip", fetch=fetch) == []
+    assert calls[0][1] == "HEAD"
+    assert [url for url, method in calls[1:]] == [
+        f"https://pypi.org/pypi/{package}/json" for package in ("pywinpty", "pydantic-core", "psutil")]
+
+
+@pytest.mark.parametrize("filename", [
+    "pkg-1.0.0-cp313-cp313-win_amd64.whl",
+    "pkg-1.0.0-cp315-abi3-win_amd64.whl",
+    "pkg-1.0.0-cp314-cp314-win_arm64.whl",
+    "pkg-1.0.0-py3-none-any.whl",
+])
+def test_minor_preflight_rejects_incompatible_wheels(filename):
+    def fetch(url, *, method="GET"):
+        return None if method == "HEAD" else {"releases": {"1.0.0": [_wheel(filename)]}}
+    missing = repair._python_minor_preflight("3.14.8", "embed", fetch=fetch)
+    assert len(missing) == 3 and all("cp314" in item for item in missing)
+
+
+def test_minor_preflight_lists_all_fetch_failures():
+    def fail(url, *, method="GET"):
+        raise OSError("mock offline")
+    missing = repair._python_minor_preflight("3.14.8", "embed", fetch=fail)
+    assert len(missing) == 4
+    assert all(any(name in item for item in missing)
+               for name in ("embed zip", "pywinpty", "pydantic-core", "psutil"))
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_minor_jump_requires_preflight_unless_forced(tmp_path, monkeypatch, force):
+    monkeypatch.setattr(repair, "_installed_python", lambda *a: "3.14.8")
+    monkeypatch.setattr(repair, "_python_fetch", lambda *a, **k: {"releases": {}})
+    args = ["--to", "3.15.2"] + (["--force"] if force else [])
+    result = _plan(tmp_path, args, {"python"})
+    if force:
+        params = result["plan"]["spec"][0]["params"]
+        assert params["target_version"] == "3.15.2" and params["force"] is True
+        assert "--force overrides" in "\n".join(result["plan"]["summary"])
+    else:
+        assert result["exit_code"] == 11
+        assert "pywinpty" in result["detail"] and "Use --force" in result["detail"]
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_unpinned_download_records_hash_and_warning(tmp_path, capsys, cached):
+    from core import provisioner
+    sys_dir = _tree(tmp_path)
+    archive, checksum = python_manager.cache_paths(sys_dir, "3.14.9")
+    if cached:
+        archive.parent.mkdir(parents=True)
+        archive.write_bytes(b"mock archive")
+        checksum.write_text(provisioner._hash_file(archive, "sha256"))
+    calls = []
+    def download(url, destination):
+        calls.append(url)
+        destination.write_bytes(b"mock archive")
+    steps = python_manager.plan_python_update(
+        sys_dir, "3.14.9", url="https://www.python.org/embed.zip",
+        installed="3.14.8", downloader=download)
+    ctx = env_ops.OpContext(sys_dir, "hash-test", "update", {}, {})
+    next(step for step in steps if "download" in step.name).do(ctx)
+    actual = provisioner._hash_file(archive, "sha256")
+    assert ctx.data["python_download_sha256"] == actual == checksum.read_text()
+    assert bool(calls) is not cached
+    output = capsys.readouterr().out
+    assert actual in output and "downloaded over HTTPS from python.org; no pinned SHA-256" in output

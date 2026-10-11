@@ -414,3 +414,45 @@ def test_gh_auth_memoization(monkeypatch):
     # Second call must reuse _GH_AUTH_STATUS without calling 'gh auth status' again
     assert call_count == 1
 
+
+
+def test_python_cycles_are_numeric_and_stable_not_api_order(monkeypatch):
+    entries = [
+        {"cycle": "3.9", "latest": "3.9.99", "eol": False},
+        {"cycle": "3.14", "latest": "3.14.8", "eol": False},
+        {"cycle": "3.13", "latest": "3.13.9", "eol": False},
+        {"cycle": "3.15", "latest": "3.15.0rc1", "eol": False},
+        {"cycle": "3.16", "latest": "3.16.0", "releaseDate": "2099-01-01"},
+        {"cycle": "3.8", "latest": "3.8.20", "eol": "2024-01-01"},
+    ]
+    monkeypatch.setattr(vr.urllib.request, "urlopen",
+                        lambda *a, **k: FakeResponse(json.dumps(entries)))
+    result = vr._resolve_python()
+    assert result["latest_version"] == "3.14.8"
+    assert result["latest_minor_cycle"] == "3.14"
+    assert result["latest_patch_by_cycle"] == {
+        "3.14": "3.14.8", "3.13": "3.13.9", "3.9": "3.9.99", "3.8": "3.8.20"}
+
+
+def test_python_refresh_bypasses_cache_and_preserves_cycle_metadata(monkeypatch, tmp_path):
+    calls = []
+    def fetch(*args, **kwargs):
+        calls.append(args)
+        return FakeResponse(json.dumps([{"cycle": "3.14", "latest": f"3.14.{len(calls)}"}]))
+    monkeypatch.setattr(vr.urllib.request, "urlopen", fetch)
+    cache = tmp_path / "discovery.json"
+    first = vr.resolve_latest("python", "endoflife_python", "3.14.0", "python", cache)
+    second = vr.resolve_latest("python", "endoflife_python", "3.14.0", "python", cache)
+    refreshed = vr.resolve_latest("python", "endoflife_python", "3.14.0", "python", cache,
+                                  force_refresh=True)
+    assert len(calls) == 2
+    assert first["latest_patch_by_cycle"] == second["latest_patch_by_cycle"] == {"3.14": "3.14.1"}
+    assert refreshed["latest_patch_by_cycle"] == {"3.14": "3.14.2"}
+
+
+def test_python_network_failure_is_reported(monkeypatch):
+    def fail(*args, **kwargs):
+        raise urllib.error.URLError("mock offline")
+    monkeypatch.setattr(vr.urllib.request, "urlopen", fail)
+    result = vr._resolve_python()
+    assert result["status"] == "error" and result["error_type"] == "network_error"

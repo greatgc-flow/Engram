@@ -19,7 +19,7 @@ Design record: [`design/engram-env-resilience-design-2026-10-02.md`](design/engr
 
 | Situation | What to run |
 |---|---|
-| `_sys\env\python` deleted, venv kept | `engram repair`, `doctor` and `snapshots` cannot run without the managed Python (they print where to go). Run `_sys\core\bootstrap.bat` first: it keeps the venv, restores Python from the pinned, hash-verified download and re-verifies the venv. Then run `engram repair` (plan) and `engram repair --apply` if it reports drift. (An interrupted swap with a journal is different: `engram repair --resume/--rollback` runs on the alternate interpreter.) |
+| `_sys\env\python` deleted, venv kept | `engram repair`, `doctor` and `snapshots` cannot run without the managed Python (they print where to go). Run `_sys\core\bootstrap.bat` first: it keeps the venv, restores Python from the pinned download (verified against a declared hash when available, with a recorded cache hash) and re-verifies the venv. Then run `engram repair` (plan) and `engram repair --apply` if it reports drift. (An interrupted swap with a journal is different: `engram repair --resume/--rollback` runs on the alternate interpreter.) |
 | venv broken or points at a missing interpreter | `engram repair --apply` (venv is quarantined as a backup, rebuilt, packages restored from the recorded list) |
 | Folder moved or renamed | `engram relocate` (plan) then `engram relocate --apply`; pass `--from <old path>` if the old path cannot be detected; `--remap-ai-state` rewrites path references in AI CLI state |
 | Python version change | `engram update --only python [--to X.Y.Z] [--force]` (snapshot, swap, venv refresh/rebuild, packages) |
@@ -72,3 +72,31 @@ The full command reference is [`cli_reference.md`](cli_reference.md); every comm
 
 - Core-update's PowerShell helper still stages its backup under `data/temp/core-update`; the next layout migration run registers it (a later release may write straight into the registry).
 - A root-move hint is only cleared once `engram relocate` / `engram repair` completes.
+
+
+Python updates stay within the installed minor by default:
+
+~~~text
+engram update --check --refresh
+Python: installed / pin / latest patch in installed minor / latest stable minor: 3.13.7 / 3.13.7 / 3.13.9 / 3.14 (3.14.8)
+Patch update: engram update --only python --yes
+Minor update: engram update --only python --to 3.14.8 --yes
+~~~
+
+These versions illustrate the output; discovery supplies the actual releases.
+`engram update --only python` previews the patch plan; add `--yes` to apply.
+`--refresh` bypasses the discovery cache. Offline or failed discovery falls back
+to the pin, keeping the installed version if the pin would downgrade or cross
+a minor. Minor changes require explicit `--to`; major changes also require
+`--allow-major-runtime-upgrade --yes`.
+
+Before a minor change, Engram checks the python.org embed zip with HEAD and
+PyPI for compatible Windows amd64 wheels for pywinpty, pydantic-core and psutil.
+Missing checks refuse the update; `--force` overrides that refusal.
+Without a pinned SHA-256, Engram warns that the archive was downloaded over
+HTTPS from python.org and records the computed hash in the journal and output.
+A recorded cache hash still gates reuse; it is not a publisher-provided hash.
+
+Bootstrap installs only the validated `runtimes.json` pin. Newer versions produce
+a notice pointing to `engram update --check`; `--skip-update` skips that notice
+check for compatibility.

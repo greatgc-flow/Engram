@@ -641,8 +641,15 @@ def _resolve_sqlite(discovery_id: str = "sqlite-tools-win-x64") -> dict[str, Any
     )
 
 
-def _resolve_python() -> dict[str, Any]:
+def _resolve_python(
+    cache_path: Path | None = None, *, force_refresh: bool = False,
+    ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS,
+) -> dict[str, Any]:
     provider = "endoflife_python"
+    cache = _load_cache(cache_path) if cache_path else {}
+    cached = _cache_get(cache, provider, "python")
+    if not force_refresh and _is_cache_fresh(cached, ttl_seconds) and cached.get("result"):
+        return dict(cached["result"])
     req = urllib.request.Request(
         "https://endoflife.date/api/python.json",
         headers={"User-Agent": "portable-dev-version-resolver"},
@@ -684,15 +691,24 @@ def _resolve_python() -> dict[str, Any]:
         )
 
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    latest = None
+    patches = {}
+    if not isinstance(data, list):
+        data = []
     for entry in data:
-        eol = entry.get("eol")
-        if eol is False or eol is None or (isinstance(eol, str) and eol > now_str):
-            version = entry.get("latest")
-            if version and re.match(r"^\d+\.\d+\.\d+$", str(version)):
-                latest = str(version)
-                break
-    
+        if not isinstance(entry, dict):
+            continue
+        cycle = str(entry.get("cycle", ""))
+        version = str(entry.get("latest", ""))
+        if (re.fullmatch(r"\d+\.\d+", cycle)
+                and re.fullmatch(r"\d+\.\d+\.\d+", version)
+                and version.startswith(cycle + ".")
+                and str(entry.get("releaseDate", "")) <= now_str):
+            previous = patches.get(cycle)
+            if previous is None or tuple(map(int, version.split("."))) > tuple(map(int, previous.split("."))):
+                patches[cycle] = version
+    cycles = sorted(patches, key=lambda cycle: tuple(map(int, cycle.split("."))), reverse=True)
+    latest = patches[cycles[0]] if cycles else None
+
     if not latest:
         return _result(
             status="error",
@@ -702,7 +718,7 @@ def _resolve_python() -> dict[str, Any]:
             error_type="missing_version",
         )
     
-    return _result(
+    result = _result(
         status="ok",
         provider=provider,
         discovery_id="python",
@@ -710,6 +726,12 @@ def _resolve_python() -> dict[str, Any]:
         source="endoflife.date",
         detail="notice_only",
     )
+    result["latest_minor_cycle"] = cycles[0]
+    result["latest_patch_by_cycle"] = {cycle: patches[cycle] for cycle in cycles}
+    if cache_path:
+        _cache_put(cache_path, cache, provider, "python",
+                   {"cached_latest_version": latest, "result": result})
+    return result
 
 
 def _resolve_vscode(discovery_id: str, cache_path: Path | None = None) -> dict[str, Any]:
@@ -1111,7 +1133,7 @@ def resolve_latest(
     elif provider == "sqlite_org_page":
         result = _resolve_sqlite(discovery_id)
     elif provider == "endoflife_python":
-        result = _resolve_python()
+        result = _resolve_python(cache_path, force_refresh=force_refresh, ttl_seconds=ttl_seconds)
     elif provider == "engram_release":
         result = _resolve_engram_release(
             discovery_id,

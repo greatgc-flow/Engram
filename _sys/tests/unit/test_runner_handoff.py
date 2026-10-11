@@ -27,6 +27,14 @@ from core import dispatcher, env_ops, python_manager, repair  # noqa: E402
 DISPATCH = SYS_SRC / "core" / "dispatch.bat"
 
 
+
+@pytest.fixture(autouse=True)
+def mock_python_discovery(monkeypatch):
+    from core import version_resolver
+    monkeypatch.setattr(version_resolver, "resolve_latest",
+                        lambda *a, **k: {"status": "error", "detail": "mock network unavailable"})
+
+
 def tree_hash(root: Path) -> dict:
     out = {}
     for p in sorted(root.rglob("*")):

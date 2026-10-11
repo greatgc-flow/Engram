@@ -1,7 +1,6 @@
 """Static contracts for bootstrap.bat's Python policy (design sections 4.1 P9 and 6.4).
 
-- Auto-bump to "latest stable" is allowed ONLY on a truly fresh root (no venv, no state).
-  Anywhere else the pinned runtimes.json version is used and upgrades go through `engram update`.
+- Bootstrap installs only the validated pin; discovery is notice-only.
 - The Python zip cache is versioned and carries a recorded sha256, so an offline re-bootstrap
   can reuse a verified cache and never trusts an unverified file.
 """
@@ -26,34 +25,25 @@ def _line_no(text: str, needle: str) -> int:
     raise AssertionError(f"{needle!r} not found in bootstrap.bat")
 
 
-# ---- fresh-root gate ------------------------------------------------------------
+# ---- pin-only bootstrap ------------------------------------------------------------
 
-def test_fresh_root_gate_is_defined_from_venv_and_state(text):
-    assert 'set "_FRESH_ROOT=1"' in text
-    assert re.search(r'if exist "!SYS_DIR!\\env\\venv" set "_FRESH_ROOT=0"', text)
-    assert re.search(r'if exist "!SYS_DIR!\\data\\state" set "_FRESH_ROOT=0"', text)
-
-
-def test_gate_is_defined_before_the_bump_decision(text):
-    assert _line_no(text, 'set "_FRESH_ROOT=1"') < _line_no(text, 'set "_PY_BUMP=1"')
+def test_bootstrap_never_auto_bumps_or_rewrites_the_pin(text):
+    assert "_FRESH_ROOT" not in text
+    assert "_PY_BUMP" not in text
+    assert "runtimes.python.version=" not in text
+    assert "ConvertTo-Json -Depth 10" not in text
 
 
-def test_bump_is_conditional_on_fresh_root(text):
-    lines = text.splitlines()
-    bump = _line_no(text, 'set "_PY_BUMP=1"')
-    window = "\n".join(lines[max(0, bump - 12):bump])
-    assert '"!_FRESH_ROOT!"=="1"' in window, "the bump must sit inside the fresh-root condition"
+def test_bootstrap_points_to_managed_updates(text):
+    assert "engram update --only python" in text
+    assert "engram update --check" in text
+    assert "remove !SYS_DIR!\\env\\python" not in text
 
 
-def test_non_fresh_root_explains_how_to_upgrade(text):
-    assert "engram update" in text
-    assert "Not auto-applied" in text
-
-
-def test_pin_is_never_rewritten_without_a_bump(text):
-    # the runtimes.json rewrite is the only place that persists a new version
-    assert text.count("ConvertTo-Json -Depth 10") == 1
-    assert 'if "!_PY_BUMP!"=="1" (' in text
+def test_skip_update_skips_only_the_notice_check(text):
+    assert '--skip-update' in text
+    assert 'if "!_SKIP_UPDATE!"=="0" (' in text
+    assert "skips only this notice check" in text
 
 
 # ---- versioned, verified cache -------------------------------------------------------

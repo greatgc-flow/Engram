@@ -391,7 +391,11 @@ def plan_python_update(
                 (not sha256 or cached_hash == sha256)
                 and provisioner._hash_file(archive, "sha256") == cached_hash
             )
+        if not sha256:
+            print("[Warning] downloaded over HTTPS from python.org; no pinned SHA-256")
         if valid_cache:
+            ctx.data["python_download_sha256"] = cached_hash
+            print(f"[i] Python archive SHA-256: {cached_hash}")
             return
         if offline:
             raise RuntimeError("Offline mode but cache missing or invalid")
@@ -412,6 +416,8 @@ def plan_python_update(
         preserve_file(ctx, checksum)
         robust_rename(partial, archive)
         write_text(checksum, actual_hash)
+        ctx.data["python_download_sha256"] = actual_hash
+        print(f"[i] Python archive SHA-256: {actual_hash}")
 
     def do_stage(ctx):
         work = workspace(ctx)
@@ -447,7 +453,7 @@ def plan_python_update(
             for member in members:
                 package.extract(member, staged_python)
 
-        for pth in staged_python.glob("python*._pth"):
+        for pth in staged_python.glob("python3*._pth"):
             text = pth.read_text()
             pth.write_text(text.replace("#import site", "import site"))
 
