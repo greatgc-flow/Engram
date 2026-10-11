@@ -22,7 +22,7 @@ Engram bootstraps a self-contained Windows dev environment — Python, Node.js, 
 - **Portable runtime virtualization** — Python, Node.js, Git, VS Code, and PowerShell are downloaded, pinned by version+hash in `_sys/runtimes.json`, and run entirely from inside the portable folder. Nothing touches `C:\Program Files` or the registry.
 - **Generic tool catalog** — dev CLI tools (ripgrep, bat, fd, delta, fzf, jq, gh, sqlite, oh-my-posh) install/update through one pinned, hash-verified pipeline (`_sys/runtimes.json`'s `tools` section).
 - **AI-CLI lifecycle management** — a separate catalog (`_sys/tool-catalog.v1.json`) tracks Claude Code / Codex / agy the same way: install, version-pin, canary-verify. Engram never talks to these tools' models or protocols — it only manages the binaries.
-- **No junctions or SUBST drive** — Engram uses no directory junctions and mounts no virtual drive: AI-CLI personal config is redirected via plain environment variables instead (see `docs/engram-dotdir.md`), and paths are always resolved physical.
+- **No junctions or SUBST drive** — Engram uses no directory junctions and mounts no virtual drive: AI-CLI personal config is redirected via plain environment variables instead (see `docs/engram-dotdir.md`), and paths are always resolved physical. A shared cross-AI memory folder/junction/instruction approach was tried and rejected by the owner (no junctions or subst, no standing AI instructions); do not retry.
 - **Real uninstall** — `engram uninstall` computes an installation-scoped ID, writes a journal outside the install directory (survives the directory's own deletion), and hands off to an external helper that waits for the running process to exit before purging the folder — so a running instance never tries to delete the directory it's executing from.
 - **On-demand tool updates** — `engram update` discovers newer versions of every catalog entry and applies them through the same pinned, hash-verified install path used for first-time setup.
 - **Zero-bloat by construction** — the packaging pipeline (`tools/winget/build_package.py`) only bundles an explicit root-file allowlist plus the runtime-owned subset of `_sys/`; source-only tests, maintainer tools, caches, temporary files, and mutable state are excluded.
@@ -132,7 +132,7 @@ pip install peerhub
 peerhub adapter discover   # you can run this yourself to confirm which AI CLIs Engram installed are reachable
 ```
 
-See [peerhub's own README](https://github.com/greatgc-flow/peerhub#readme) for the full command set.
+See [peerhub's own README](https://github.com/greatgc-flow/peerhub#readme) for the full command set; for collaboration rules and working with peers, see the PeerHub repo CONTRIBUTING 'Working with AI peers'.
 
 ## AI CLI personal config: `.engram/`
 
@@ -145,6 +145,8 @@ See [2026-09-03_separation-completion-backlog.md](https://github.com/greatgc-flo
 ## Known limitations
 
 - Pip's 'Ignoring invalid distribution' can mean interrupted-upgrade ~* leftovers; run `engram doctor` and `engram repair --only venv --apply` (unproven copies are kept).
+- **No `_archive` directory in repo root**: Never create an `_archive` directory in the Engram root (it is a legacy-layout marker that breaks updater tests).
+- **Claude Code project folders**: Claude Code creates a project directory per working directory under `.engram/claude/projects/`; running live tests with temporary working directories litters project folders there.
 
 `engram doctor` evaluates declarative environment limitation warnings (reported, non-fatal):
 - **Path characters**: Root paths with `&`, `%`, `^`, `!`, `(`, `)`, `'` or non-ASCII characters may break batch wrappers, PowerShell, or Node.js AI CLIs.
