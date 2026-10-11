@@ -126,4 +126,5 @@ Operational decisions and environment constraints:
 - **AI-to-AI Collaboration**: Multi-agent collaboration uses English exclusively for all design notes, reviews, and commits.
   Roles follow peerhub conventions: `cx` (coordinator / architect), `ag` (implementer / test author), and `cc` (reviewer / verification gatekeeper).
   Independent cross-review and clean-room contract verification are required before changes are merged or promoted.
+- Maintainer handoff notes: [docs/maintainer_handoff.md](docs/maintainer_handoff.md)
 
