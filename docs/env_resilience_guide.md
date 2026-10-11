@@ -87,8 +87,12 @@ These versions illustrate the output; discovery supplies the actual releases.
 `engram update --only python` previews the patch plan; add `--yes` to apply.
 `--refresh` bypasses the discovery cache. Offline or failed discovery falls back
 to the pin, keeping the installed version if the pin would downgrade or cross
-a minor. Minor changes require explicit `--to`; major changes also require
-`--allow-major-runtime-upgrade --yes`.
+a minor. Use `engram update -o python --latest -y` to upgrade to the highest
+stable Python, including minor jumps. Omit `-y` to preview the plan.
+`--latest` requires `--only python` or `--only nodejs`, cannot be combined
+with `--to`, and fails with "latest unavailable" when discovery fails or is
+offline; it never falls back to the pin or downgrades Python. Explicit `--to`
+remains available. Major changes still require `--allow-major-runtime-upgrade`.
 
 Before a minor change, Engram checks the python.org embed zip with HEAD and
 PyPI for compatible Windows amd64 wheels for pywinpty, pydantic-core and psutil.
