@@ -72,32 +72,12 @@ This launches a fresh Windows Sandbox instance, downloads declared runtimes, ins
   holds the `engram-sandbox` concurrency group and blocks other runs. Cancel it
   with `gh run cancel <id>`. This only affects workflows from before the sandbox
   job became opt-in via `ENGRAM_SANDBOX_RUNNER`.
-- Rerun failed jobs with `gh run rerun <id> --failed`. Known one-off flakes
-  that pass on rerun include `test_upgrade_gate_offline` and `test_wave_c1` (a
-  runner process has also occasionally exited at ~89% without message and passed
-  on rerun). Rerun once; investigate if it repeats. If promotion needs a fresh candidate
+- Rerun failed jobs with `gh run rerun <id> --failed`. One runner flake was seen:
+  the pytest process ended without a message at about 89%, then passed on rerun.
+  Rerun once; investigate if it repeats. If promotion needs a fresh candidate
   artifact for the new attempt, rerun all jobs as required below.
 - The first hosted run catches root-hygiene and WinGet source-agreement
   (`0x8A150046`) problems that local tests cannot catch.
-
-### Maintainer release recipe (v3.9.0 / v3.9.1)
-
-The canonical release recipe as actually performed for v3.9.0 and v3.9.1:
-
-1. **Bump version first**: Bump `_sys/core/version.json` FIRST before generating any release manifests or archives.
-2. **Generate release manifests**: Call `tools.winget.build_package.create_portable_archive()` directly to generate `_sys/core/release-manifests/<ver>.json`. Verify file hashes against the working checkout, then delete the temporary ZIP archive and unversioned manifest.
-3. **Open release PR**: Submit a pull request titled `chore(release): vX.Y.Z` targeting `main`. Ensure the full unit test suite passes cleanly and CI is completely green.
-4. **Squash-merge**: Squash-merge the release PR into `main`.
-5. **Annotated tag on main**: Switch to updated `main` and create an annotated tag:
-   ```cmd
-   git tag -a vX.Y.Z -m "vX.Y.Z"
-   ```
-   Push the tag to GitHub. When pushing from a headless shell or if the standard Windows credential helper fails, use the fallback:
-   ```cmd
-   git -c credential.helper= -c "credential.helper=!gh auth git-credential" push origin vX.Y.Z
-   ```
-6. **Tag publishing workflow**: The tag push triggers the automated release workflow (`build-candidate`, `upgrade-gate`, `winget-smoke`, `clean-room-hosted`, `promotion`; `clean-room-sandbox` is skipped without a self-hosted runner). On success, the promotion job publishes the non-draft GitHub Release with build provenance attestations.
-7. **WinGet manifests PR**: Open a separate `chore(release): winget manifests for vX.Y.Z` PR copying the release's `greatgc-flow.Engram*.yaml` assets into `manifests/g/greatgc-flow/Engram/<ver>/` after confirming that `InstallerSha256` in the WinGet manifest matches the published release ZIP digest.
 
 ### Automated release workflow
 
@@ -219,8 +199,6 @@ ephemeral VMs using `tools/release_gate/hosted_clean_room.py`.
 ### Self-hosted runner opt-in (`ENGRAM_SANDBOX_RUNNER`)
 
 The self-hosted `clean-room-sandbox` job is gated by `if: ${{ vars.ENGRAM_SANDBOX_RUNNER == 'true' }}` to prevent runs from queuing up to 24 hours and blocking the `engram-sandbox` concurrency group when no runner is registered. Once an interactive `engram-sandbox` runner is registered, enable the job by adding repository variable `ENGRAM_SANDBOX_RUNNER` set to `true` under **Settings > Secrets and variables > Actions > Variables**. When unset or set to any other value, the job is skipped immediately and clean-room validation resolves via `clean-room-hosted`.
-
-Runtime isolation providers (`engram isolation check`, covering Windows Sandbox and WSL2 user environments; see [`docs/isolation_guide.md`](isolation_guide.md)) are distinct from release gates and are not wired into release verification. Candidate release verification relies strictly on candidate packaging checks, `clean-room-hosted`, `clean-room-sandbox`, `upgrade-gate`, and `winget-smoke`.
 
 ## Exact-candidate WinGet smoke (EN-GAP-P1-004)
 
