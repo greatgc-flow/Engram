@@ -74,7 +74,14 @@ The full command reference is [`cli_reference.md`](cli_reference.md); every comm
 - A root-move hint is only cleared once `engram relocate` / `engram repair` completes.
 
 
-Python updates stay within the installed minor by default:
+## Python update flow (v3.9.0 / v3.9.1)
+
+The managed Python update flow operates through `engram update -o python [--latest] -y`:
+
+- **Default update scope**: Stays within the installed minor version by default (e.g. updating 3.13.7 to 3.13.9).
+- **Minor jumps**: Upgrading across minor versions requires `--latest` (or explicit `--to X.Y.Z`) and executes a mandatory pre-flight check verifying the python.org embed zip with HTTP HEAD and PyPI for compatible Windows amd64 wheels for `pywinpty`, `pydantic-core`, and `psutil`.
+- **Hash verification & warning**: No SHA-256 is pinned upstream for dynamic Python releases on python.org, so Engram prints an explicit warning, downloads over HTTPS, and records the computed hash in the journal and terminal output.
+- **Bootstrap behavior**: `_sys/core/bootstrap.bat` installs only the validated `runtimes.json` pin and no longer auto-bumps Python (it outputs a notice pointing to `engram update --check`).
 
 ~~~text
 engram update --check --refresh

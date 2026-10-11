@@ -125,4 +125,14 @@ Alpine distribution site. Availability is not proof that a supplied rootfs or a
 particular guest command will work. Lifecycle tool failures retain their exception
 types and include the hint "run `engram isolation check`".
 
+## Architectural decisions and deferred scope
+
+- **Provider verification vs runtime execution**: Engram implements read-only provider discovery and diagnostics via `engram isolation check` (and `--json`) for Windows Sandbox and WSL2 without modifying host state.
+- **`isolation run` and AI Skill deferred**: `engram isolation run` and an isolation AI Skill are explicitly **DEFERRED** until all of the following are established:
+  1. A tracked issue or request.
+  2. A concrete caller and command workload.
+  3. Clear justification of why existing workflows (direct host execution or standard clean-room runners) fail or are insufficient.
+  4. A supported, accessible host environment for automated live acceptance testing.
+- **Release gate boundary**: Runtime isolation providers (`engram isolation`) are not wired into automated release verification gates. Release gating relies exclusively on candidate packaging integrity and dedicated clean-room validation harnesses (see [`docs/release_gate.md`](release_gate.md)).
+
 See the [CLI reference](cli_reference.md) for the command's complete help.

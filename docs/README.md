@@ -11,6 +11,7 @@ This directory contains architectural specifications, design decision records, a
 | **[`env_resilience_guide.md`](env_resilience_guide.md)** | **User Guide** | Python/venv repair, root folder relocation, Python updates, and the backup registry. |
 | **[`engram-dotdir.md`](engram-dotdir.md)** | **Technical Specification** | Normative specification for `.engram/` dotdir isolation, path resolution, and AI CLI environment redirection. |
 | **[`cp949_verification.md`](cp949_verification.md)** | **Technical Specification** | Architecture and test procedures for CP949 Korean-locale and non-ASCII path resilience. |
+| **[`isolation_guide.md`](isolation_guide.md)** | **Technical Specification** | Windows Sandbox and WSL2 isolation provider checks, diagnostics, opt-in live tests, and deferred execution scope. |
 | **[`release_gate.md`](release_gate.md)** | **Release & Governance** | Policy trust root, clean-room verification gates, candidate packaging, and post-release closure audits. |
 | **[`design/`](design/)** | **Architecture Decisions (ADRs)** | Ratified architectural design specifications and decision records (UX simplification, system rename, environment resilience). |
 | [`design/blueprint-engram-architecture.md`](design/blueprint-engram-architecture.md) | Architecture Design | Retained Core/Module/Extension classification, invariants, contracts, and G0-G8 gate model with implementation status per rule. |
