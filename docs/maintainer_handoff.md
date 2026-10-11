@@ -16,7 +16,7 @@ For AI peer collaboration rules, see [PeerHub docs/HANDOFF.md](https://github.co
 
 - `engram` on PATH runs the INSTALLED copy (`D:\PkgDev\_sys`), not a dev checkout (call module code directly to test dev changes).
 - Never create `_archive` in the Engram root (legacy-layout marker breaks updater tests).
-- Peers cannot run pytest (temp-dir ACL): run `python -m pytest -q _sys/tests -p no:cacheprovider` yourself (~9 min).
+- Peers cannot run pytest (temp-dir ACL): run `python -m pytest -q _sys/tests -p no:cacheprovider` yourself (~9 min; fast parallel: `python -m pytest -q _sys/tests -p no:cacheprovider -n auto`, ~2 min on 12 cores; rerun serially before treating a parallel-only failure as a bug).
 - One-off flakes that pass on rerun: `test_upgrade_gate_offline`, `test_wave_c1`.
 - Help files must be ASCII and <=80 columns and are embedded verbatim in `docs/cli_reference.md`.
 - Claude Code creates a project folder per working directory (tests using a temp cwd litter `.engram/claude/projects`).

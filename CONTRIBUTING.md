@@ -43,6 +43,11 @@ Always verify your changes against the test suite before submitting:
   ```cmd
   _sys\tests\run-tests.bat --unit
   ```
+  or fast parallel (`pytest-xdist`):
+  ```cmd
+  python -m pytest -q _sys/tests -p no:cacheprovider -n auto
+  ```
+  (~2 min on 12 cores). Rerun serially before treating a parallel-only failure as a bug.
 
 - **Run a specific test file:**
   ```cmd
