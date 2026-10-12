@@ -27,6 +27,15 @@ Design record: [`design/engram-env-resilience-design-2026-10-02.md`](design/engr
 | Interrupted operation (journal not terminal) | `engram repair --resume` (roll forward) or `engram repair --rollback` (undo); both hand off to the runner automatically when Python is involved |
 | Unsure | `engram doctor` reports drift, journal state, stale registry entries |
 
+
+For Python swaps, a PATCH keeps `env/venv` and its packages and refreshes
+its interpreter link. A MINOR rebuilds it with `virtualenv` (embedded Python
+has no stdlib `venv`), reinstalls the baseline for the new interpreter,
+restores requested packages at recorded versions, and reinstalls editable
+installs whose paths exist; missing paths are skipped and reported. Failures
+before commit roll back both trees. See the Venv paragraph and package flags
+in [`engram update` help](../_sys/core/help/update.txt).
+
 Useful flags: `--apply`, `--dry-run` (no-op alias of the default), `--yes`/`-y` (skip prompt), `--offline` (use cached download only), `--json`, `--only`. See [`cli_reference.md`](cli_reference.md).
 
 Exit codes: `0` ok, `2` usage, `10` declined, `11` failed/precondition, `12` verification failed, `13` rolled back,
@@ -85,12 +94,12 @@ Python:
   Latest patch (same minor): 3.13.9
   Latest minor: 3.14 (3.14.8)
   Patch update: engram update -o python -y
-  Minor update: engram update -o python --latest -y
+Python 3.14 dependency readiness verified. Next:
+  engram update -o python --latest -y
 
 Next steps:
   engram update -o python -y
   engram update -o python --latest -y
-  engram update -o packages -y  Upgrade baseline venv packages (optional)
 ~~~
 
 These versions illustrate the output; discovery supplies the actual releases.

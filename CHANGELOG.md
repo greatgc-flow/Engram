@@ -1,0 +1,60 @@
+# Changelog
+
+All notable changes to Engram are documented here.
+The format follows Keep a Changelog. Versions follow Semantic Versioning.
+Historical entries are reconstructed from git commits and merged PR titles.
+
+## [3.9.2] - 2026-10-12
+
+### Fixed
+
+- Advertise Python minor updates only after archive and baseline dependency
+  readiness is verified; reuse readiness for execution preflight.
+- Report blocked and unverifiable targets without executable update advice.
+- Print one dispatcher failure and preserve preflight refusal exit 11.
+- Suppress empty layout maintenance output and state writes.
+- Remove unsupported package update advice, fix change-count prompts, and fail
+  update checks when requested components remain unchecked.
+
+### Changed
+
+- Share baseline package declarations and use managed pip for target resolution.
+- Use the selected changelog section for GitHub and WinGet release notes.
+- Retain CI contract reports on success and failure; document the strict
+  single-pass CP949 gate.
+
+## [3.9.1]
+
+### Added
+
+- Make bare `engram update` a single point of contact for core, tools and
+  managed Python advice (#38).
+
+### Changed
+
+- Publish version 3.9.1 and its WinGet manifests (#39, #40).
+
+## [3.9.0]
+
+### Added
+
+- Make managed Python updates discover newer patches and guard minor jumps (#34).
+- Add `--latest` and the `-y` / `-o` update shortcuts (#35).
+- Add isolation provider contracts, Windows Sandbox, WSL2 and actionable
+  isolation checks (#30-#33).
+
+### Changed
+
+- Publish version 3.9.0 and its WinGet manifests (#36, #37).
+
+## [3.8.2]
+
+- Detect and conservatively quarantine pip `~` leftovers (#25-#27).
+
+## [3.8.1]
+
+- Require attestation only from the first attested release (#23, #24).
+
+## [3.8.0]
+
+- Add provenance and upgrade gates; prune legacy migration (#11, #17-#21).

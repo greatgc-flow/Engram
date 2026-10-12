@@ -437,11 +437,9 @@ def test_migrate_layout_success_and_idempotency(tmp_path, capsys, monkeypatch):
     assert result2 == 0
     
     layout_data2 = json.loads((state_dir / "layout.json").read_text())
-    assert layout_data2["report"]["retired"] == []
+    assert layout_data2 == layout_data
     
     end_of_run_2_snap = get_snapshot()
-    del end_of_run_1_snap["_sys/data/state/layout.json"]
-    del end_of_run_2_snap["_sys/data/state/layout.json"]
     
     assert end_of_run_1_snap == end_of_run_2_snap
 
@@ -569,3 +567,49 @@ def test_layout_migration_core_update_cleanup(tmp_path):
     kept = [r for r in backups.scan(sys_dir).valid if r.kind == "core-update"]
     assert len(kept) == 1 and (kept[0].path / backups.PAYLOAD / "Engram.exe.old").read_text() == "old"
     assert not (sys_dir / "data" / "temp" / "core-update").exists()
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_empty_migration_suppresses_summary_and_state(tmp_path, capsys, existing):
+    sys_dir = tmp_path / "_sys"
+    state = sys_dir / "data" / "state" / "layout.json"
+    if existing:
+        state.parent.mkdir(parents=True)
+        state.write_text('{"layout_version": 2, "engram_version": "3.9.1"}')
+    else:
+        sys_dir.mkdir()
+    before = {p.relative_to(tmp_path): p.read_bytes()
+              for p in tmp_path.rglob("*") if p.is_file()}
+    from _sys.core.layout_migration import migrate_layout
+    assert migrate_layout(tmp_path, sys_dir) == 0
+    assert "Layout Migration Summary" not in capsys.readouterr().out
+    after = {p.relative_to(tmp_path): p.read_bytes()
+             for p in tmp_path.rglob("*") if p.is_file()}
+    assert after == before
+    assert state.exists() == existing
+
+
+def test_kept_modified_only_does_not_rewrite_layout(tmp_path, monkeypatch, capsys):
+    from _sys.core import layout_migration as lm
+    sys_dir = tmp_path / "_sys"
+    sys_dir.mkdir()
+    monkeypatch.setattr(lm, "m1_retire_shipped_files", lambda *a, **k:
+                        (True, {"retired": [], "kept_modified": ["local.txt"]}))
+    monkeypatch.setattr(lm, "merge_declarations", lambda **k: [])
+    assert lm.migrate_layout(tmp_path, sys_dir) == 0
+    assert "Layout Migration Summary" not in capsys.readouterr().out
+    assert not (sys_dir / "data/state/layout.json").exists()
+
+
+def test_unchanged_declarations_do_not_write_state_or_backups(migration_env, monkeypatch):
+    import _sys.core.layout_migration as lm
+    for filename, data in [("runtimes.json", {"runtimes": {"python": {"version": "3.14"}}}),
+                           ("tool-catalog.v1.json", {"tools": []})]:
+        for directory in ["live", "defaults", "base_state"]:
+            (migration_env[directory] / filename).write_text(json.dumps(data))
+    monkeypatch.setattr(lm, "_atomic_write_json", lambda *a: pytest.fail("idle write"))
+    monkeypatch.setattr(lm.backups, "create_file", lambda *a, **k: pytest.fail("idle backup"))
+    report = lm.merge_declarations_impl(
+        migration_env["defaults"], migration_env["live"], migration_env["base_state"],
+        migration_env["manifest"], ["runtimes.json", "tool-catalog.v1.json"])
+    assert report == []

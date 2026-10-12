@@ -95,8 +95,6 @@ def merge_declarations(dry_run: bool = False, sys_dir: Path | None = None) -> Li
 def merge_declarations_impl(defaults_dir: Path, live_dir: Path, base_state_dir: Path, manifest_base_dir: Path, files: List[str], dry_run: bool = False, sys_dir: Path | None = None) -> List[str]:
     # <sys>/data/state/defaults-base -> <sys>
     registry_sys = Path(sys_dir) if sys_dir is not None else Path(base_state_dir).parents[2]
-    if not dry_run:
-        base_state_dir.mkdir(parents=True, exist_ok=True)
     
     all_reports = []
     
@@ -105,8 +103,10 @@ def merge_declarations_impl(defaults_dir: Path, live_dir: Path, base_state_dir: 
         default_path = defaults_dir / filename
         
         if not live_path.exists():
-            if default_path.exists() and not dry_run:
-                shutil.copy2(default_path, live_path)
+            if default_path.exists():
+                all_reports.append(f"{filename}: adopted defaults")
+                if not dry_run:
+                    shutil.copy2(default_path, live_path)
             continue
             
         try:
@@ -170,12 +170,18 @@ def merge_declarations_impl(defaults_dir: Path, live_dir: Path, base_state_dir: 
                         
                 merged["tools"] = list(merged_flat.values())
                 
-            if reports:
+            base_changed = default_path.exists() and base != theirs
+            if merged != ours and not reports:
+                reports.append(f"{filename}: merged declarations")
+            if base_changed:
+                reports.append(f"{filename}: updated defaults base")
+            if reports and (merged != ours or base_changed):
                 for r in reports:
                     logger.info(r)
                 all_reports.extend(reports)
                     
-            if not dry_run:
+            if not dry_run and (merged != ours or base_changed):
+                base_state_dir.mkdir(parents=True, exist_ok=True)
                 # design section 8.2: the pre-merge copy lives in the backup registry (copy: the live file is rewritten next)
                 backups.create_file(registry_sys, "state", live_path, reason="pre-merge copy of declarations",
                                     op_id="merge-declarations", label=f"{Path(filename).stem}-pre-merge", copy=True)
@@ -395,6 +401,11 @@ def migrate_layout(base_dir: Path, sys_dir: Path, dry_run: bool = False, *, merg
         "report": report
     }
     
+    maintenance = ((base_dir / "Engram.exe.old").exists() or
+                   (sys_dir / "data" / "temp" / "core-update").exists())
+    if not report["retired"] and not report["merged"] and not maintenance:
+        return 0 if m1_ok else 1
+
     print("\n--- Layout Migration Summary ---")
     if dry_run:
         print("[DRY RUN] No changes were made.")

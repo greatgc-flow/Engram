@@ -182,11 +182,12 @@ def _run_operation(op_id: str, op_cfg: dict, ctx: dict):
         raise PipelineFailure(f"operation '{op_id}' failed", 1, quiet=True)
     if _result_failed(result):
         detail = (result.get("detail") or result.get("failed") or result) if isinstance(result, dict) else result
-        print(f"  [Error] Operation '{op_id}' returned failure: {detail}")
         if failure not in ("continue", "warn"):
             code = _cli_exit_code(result)
             if code is not None:
                 raise PipelineFailure(f"operation '{op_id}' failed: {detail}", code)
+        print(f"  [Error] Operation '{op_id}' returned failure: {detail}")
+        if failure not in ("continue", "warn"):
             raise RuntimeError(f"operation '{op_id}' failed: {detail}")
         if not isinstance(result, dict):
             result = {"status": "failed", "operation": op_id, "detail": detail}

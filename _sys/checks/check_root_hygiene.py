@@ -37,6 +37,7 @@ ALLOWLIST = {
     "AGENTS.md",
     "CLAUDE.md",
     "CONVENTION.md",
+    "CHANGELOG.md",
     "CONTRIBUTING.md",
     "dist",
     "docs",

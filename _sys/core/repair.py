@@ -329,22 +329,39 @@ def python_update_status(sys_dir: Path, *, installed: str | None = None,
     minor_newer = False
     if minor and cycle and tuple(map(int, minor.split("."))) > tuple(map(int, cycle.split("."))) and latest:
         minor_newer = True
-        commands.append("engram update -o python --latest -y")
-        lines.append("Minor update: engram update -o python --latest -y")
     readiness = None
     if (minor_newer and discovery.get("status") == "ok" and verify_minor
             and re.fullmatch(r"\d+\.\d+\.\d+", latest)):
         url = pin["url"] if latest == pin["version"] and pin["url"] else (
             f"https://www.python.org/ftp/python/{latest}/python-{latest}-embed-amd64.zip")
         readiness = _minor_readiness(Path(sys_dir), latest, url, offline=offline, seams=seams)
+    minor_ok = bool(readiness and readiness.state == "ok")
+    readiness_lines = []
+    if minor_newer:
+        if readiness is None:
+            readiness = PythonReadiness(latest, "", (), "unverifiable",
+                                        "readiness not checked")
+        if minor_ok:
+            commands.append("engram update -o python --latest -y")
+            notice = f"Python {minor} dependency readiness verified."
+        else:
+            label = ("blocked" if readiness.state == "blocked" else
+                     "readiness unverifiable")
+            notice = (f"[Warning] Python {minor} {label}: "
+                      f"{_readiness_reason(readiness.reason).rstrip('.')}.")
+        readiness_lines = textwrap.wrap(notice, width=80, subsequent_indent="  ")
+        if minor_ok:
+            # Wrap prose only; executable advice must remain copyable.
+            readiness_lines.append("  Next: engram update -o python --latest -y")
+        lines.extend(readiness_lines)
     checked = bool(discovery.get("status") == "ok" and installed and patch and minor and latest)
     reason = None
     if not installed:
-        notice = (f"Python: not installed under {Path(sys_dir) / 'env' / 'python'}; "
-                  "run _sys\\core\\bootstrap.bat")
+        notice = f"Python: not installed under {Path(sys_dir) / 'env' / 'python'}."
         report_lines = textwrap.wrap(
             notice.encode("ascii", "backslashreplace").decode(), width=80,
             subsequent_indent="  ")
+        report_lines.append("  Next: _sys\\core\\bootstrap.bat")
         commands = []
     elif not checked:
         if offline:
@@ -366,7 +383,7 @@ def python_update_status(sys_dir: Path, *, installed: str | None = None,
         report_lines = textwrap.wrap(f"Python: {reason}", width=80,
                                      subsequent_indent="  ")
         commands = []
-    elif not patch_newer and not minor_newer:
+    elif not patch_newer and not minor_ok:
         report_lines = [f"Python: {installed} is up to date."]
     else:
         report_lines = [
@@ -377,8 +394,8 @@ def python_update_status(sys_dir: Path, *, installed: str | None = None,
         ]
         if patch_newer:
             report_lines.append("  Patch update: engram update -o python -y")
-        if minor_newer:
-            report_lines.append("  Minor update: engram update -o python --latest -y")
+    if checked:
+        report_lines.extend(readiness_lines)
     return {"installed": installed, "patch": patch, "discovery": discovery,
             "lines": lines, "checked": checked, "report_lines": report_lines,
             "commands": commands, "reason": reason, "readiness": readiness}

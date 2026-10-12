@@ -266,6 +266,8 @@ def _discovery(monkeypatch, patches=None):
 
 @pytest.mark.parametrize("pin", ["3.14.7", "3.15.2"])
 def test_default_target_is_latest_installed_minor_patch(tmp_path, monkeypatch, pin):
+    monkeypatch.setattr(repair, "_minor_readiness", lambda s, target, url, **k:
+                        repair.PythonReadiness(target, url, (), "ok"))
     _discovery(monkeypatch)
     monkeypatch.setattr(repair, "_installed_python", lambda *a: "3.14.8")
     result = _plan(tmp_path, [], {"python"}, pin_version=pin)
@@ -276,6 +278,8 @@ def test_default_target_is_latest_installed_minor_patch(tmp_path, monkeypatch, p
     assert "3.14.8 / " + pin + " / 3.14.9 / 3.15 (3.15.2)" in summary
     assert "engram update -o python -y" in summary
     assert "engram update -o python --latest -y" in summary
+    assert ("Python 3.15 dependency readiness verified.\n"
+            "  Next: engram update -o python --latest -y") in summary
     assert "downloaded over HTTPS from python.org; no pinned SHA-256" in summary
 
 
@@ -300,6 +304,8 @@ def test_offline_falls_back_to_pin_without_fetching(tmp_path, monkeypatch):
 
 
 def test_refresh_is_forwarded_through_update_dispatch(tmp_path, monkeypatch):
+    monkeypatch.setattr(repair, "_minor_readiness", lambda s, target, url, **k:
+                        repair.PythonReadiness(target, url, (), "ok"))
     from core import updater
     calls = _discovery(monkeypatch)
     monkeypatch.setattr(repair, "_installed_python", lambda *a: "3.14.8")
@@ -456,6 +462,7 @@ def test_minor_readiness_shared_by_status_and_guard_once_per_plan(monkeypatch, c
                 repair.update_env_main({}, {"python"})
         readiness = statuses[-1]["readiness"]
         assert readiness.state == state
+        assert ("engram update -o python --latest -y" in statuses[-1]["commands"]) == (state == "ok")
         assert "psutil==7.0" in readiness.specs
         assert tuple(calls[-1][-len(readiness.specs):]) == readiness.specs
         assert len(heads) == len(calls) == invocation + 1
@@ -522,6 +529,8 @@ def test_latest_python_targets_highest_stable_and_preflights_without_applying(
 @pytest.mark.parametrize("preview", [False, True])
 def test_latest_python_short_yes_requests_handoff_unless_previewing(
         tmp_path, latest_python, monkeypatch, preview):
+    monkeypatch.setattr(repair, "_minor_readiness", lambda s, target, url, **k:
+                        repair.PythonReadiness(target, url, (), "ok"))
     from core import updater
     handoffs = []
     monkeypatch.setattr(repair, "_in_runner", lambda: False)
@@ -610,3 +619,43 @@ def test_unpinned_download_records_hash_and_warning(tmp_path, capsys, cached):
     assert bool(calls) is not cached
     output = capsys.readouterr().out
     assert actual in output and "downloaded over HTTPS from python.org; no pinned SHA-256" in output
+
+
+@pytest.mark.parametrize("state,reason", [
+    ("ok", ""), ("blocked", "no compatible dependency set"),
+    ("unverifiable", "network unavailable"),
+])
+def test_latest_execution_reuses_advice_readiness_before_mutation(
+        tmp_path, latest_python, monkeypatch, state, reason):
+    original = repair.python_update_status
+    statuses, calls = [], []
+    def status(*a, **k):
+        result = original(*a, **k)
+        statuses.append(result)
+        return result
+    def resolve(*a, **k):
+        calls.append(True)
+        return repair.PythonReadiness("3.15.2", a[2], (), state, reason)
+    monkeypatch.setattr(repair, "python_update_status", status)
+    monkeypatch.setattr(repair, "_minor_readiness", resolve)
+    monkeypatch.setattr(repair, "_in_runner", lambda: True)
+    executions = []
+    monkeypatch.setattr(env_ops, "execute", lambda *a, **k:
+                        executions.append(True) or {"status": "success"})
+    result = _plan(tmp_path, ["--latest", "--apply", "--yes"], {"python"})
+    assert len(calls) == 1
+    assert statuses[0]["readiness"].state == state
+    for key in ("lines", "report_lines"):
+        advice = statuses[0][key]
+        assert ("  Next: engram update -o python --latest -y" in advice) == (
+            state == "ok")
+        if state == "ok":
+            index = advice.index("  Next: engram update -o python --latest -y")
+            assert advice[index - 1] == (
+                "Python 3.15 dependency readiness verified.")
+    assert ("engram update -o python --latest -y" in statuses[0]["commands"]) == (state == "ok")
+    assert result["exit_code"] == (0 if state == "ok" else 11)
+    assert bool(executions) == (state == "ok")
+    if state != "ok":
+        assert reason in result["detail"]
+        assert not (tmp_path / "_sys/env.ops.json").exists()

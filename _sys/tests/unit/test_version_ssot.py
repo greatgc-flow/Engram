@@ -153,3 +153,9 @@ def test_build_package_refuses_unknown_version():
     rc = build_package_main(["--version", "unknown", "--skip-zip", "--no-validate"])
     assert rc != 0, "build_package.py must refuse to package when version is 'unknown'"
 
+
+
+def test_pr_b_version_has_selected_changelog_section():
+    from tools.winget.build_package import get_release_notes_en
+    assert load_version_info()["version"] == "3.9.2"
+    assert "readiness" in get_release_notes_en("3.9.2")

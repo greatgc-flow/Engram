@@ -42,3 +42,11 @@ jobs:
     - name: Require release contracts without skips
       if: always()
       run: python tools/release_gate/check_required_tests.py --report contract-results.xml
+
+    - name: Upload contract results
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: contract-results-${{ github.run_id }}-${{ github.run_attempt }}
+        path: contract-results.xml
+        if-no-files-found: warn
