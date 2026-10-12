@@ -299,7 +299,9 @@ def test_minor_readiness_controls_headline_and_next_steps(
                 "  Next: engram update -o python --latest -y\n") in output
         assert "engram update -o python --latest -y" in output.split("Next steps:")[1]
     else:
-        assert "Python: 3.14.8 is up to date." in output
+        assert "Python: 3.14.8 is up to date." not in output
+        assert "Installed: 3.14.8" in output
+        assert "Latest minor: 3.15 (3.15.0)" in output
         label = "blocked" if state == "blocked" else "readiness unverifiable"
         assert f"[Warning] Python 3.15 {label}: {reason}." in output
         assert "Next steps:" not in output
@@ -340,3 +342,69 @@ def test_unverifiable_readiness_fails_check(report, monkeypatch):
     with pytest.raises(SystemExit) as exc:
         updater.run({"args": ["--check"]})
     assert exc.value.code == 1
+
+
+def test_python_newer_minor_never_prints_up_to_date_next_to_warning(report, monkeypatch):
+    """F-04: Newer minor must show discovery table, never 'is up to date' alongside blocked warning."""
+    discovery, _ = report
+    discovery.update(latest_version="3.15.0", latest_minor_cycle="3.15",
+                     latest_patch_by_cycle={"3.14": "3.14.8"})
+    readiness = repair.PythonReadiness("3.15.0", "url", (), "blocked", "no compatible dependency set")
+    monkeypatch.setattr(repair, "_installed_python", lambda *a: "3.14.8")
+    monkeypatch.setattr(repair, "_minor_readiness", lambda *a, **k: readiness)
+    status = repair.python_update_status(updater._SYS_DIR, discovery=discovery)
+    joined_lines = "\n".join(status["report_lines"])
+    assert "up to date" not in joined_lines
+    assert "Installed: 3.14.8" in joined_lines
+    assert "Latest minor: 3.15 (3.15.0)" in joined_lines
+    assert "[Warning] Python 3.15 blocked: no compatible dependency set." in joined_lines
+
+
+def test_env_update_args_preserves_check_flag():
+    """F-06: updater._env_update_args must preserve --check intent and not drop it."""
+    out = updater._env_update_args(["-o", "python", "--check"])
+    assert "--check" in out
+    out_yes = updater._env_update_args(["-o", "python", "--check", "--yes"])
+    assert "--check" in out_yes
+    assert "--apply" not in out_yes  # checks never apply
+
+
+@pytest.fixture
+def managed_report(report, monkeypatch):
+    """Use the real repair parser/planner with isolated discovery and no execution."""
+    monkeypatch.setattr(layout_migration, "supported_layout", lambda *a, **kw: True)
+    monkeypatch.setattr(repair, "detect", lambda *a, **kw: {
+        "manifest": "ok", "drift": {"status": "consistent"}, "findings": [],
+        "journal": None, "stale_registry": [],
+    })
+
+    def unexpected(*a, **kw):
+        pytest.fail("managed check must not prompt, execute, fetch, or run real pip")
+
+    monkeypatch.setattr(repair.env_ops, "execute", unexpected)
+    monkeypatch.setattr(repair, "_handoff_result", unexpected)
+    monkeypatch.setattr(repair, "_python_fetch", unexpected)
+    monkeypatch.setattr(repair.subprocess, "run", unexpected)
+    monkeypatch.setattr("builtins.input", unexpected)
+    return {"sys_dir": updater._SYS_DIR, "base_dir": updater._PORTABLE_ROOT,
+            "command": "update", "seams": {"runner": unexpected}}
+
+
+@pytest.mark.parametrize("extra", [[], ["--yes"], ["--latest", "--yes"]])
+def test_update_python_check_offline_exits_1_and_never_applies(managed_report, monkeypatch, extra):
+    """F-06: engram update -o python --check --offline must exit 1, not 0, and never apply."""
+    monkeypatch.setattr(version_resolver, "resolve_latest",
+                        lambda *a, **kw: pytest.fail("offline check must not discover online"))
+    res = updater.run({**managed_report, "args": ["-o", "python", "--check", "--offline", *extra]})
+    assert res.get("exit_code") == 1
+    assert res.get("status") == "failed"
+
+
+@pytest.mark.parametrize("extra", [[], ["--yes"], ["--latest", "--yes"]])
+def test_update_python_check_unchecked_discovery_exits_1(report, managed_report, extra):
+    """F-06: engram update -o python --check must exit 1 when discovery failed/unchecked."""
+    discovery, _ = report
+    discovery.update(status="error", detail="network down")
+    res = updater.run({**managed_report, "args": ["-o", "python", "--check", *extra]})
+    assert res.get("exit_code") == 1
+    assert res.get("status") == "failed"

@@ -139,3 +139,27 @@ def test_public_cli_body_failure_reports_error_and_preserves_recovery(
     # Exercise the documented recovery command using the real snapshot.
     assert _invoke("restore", snapshot, "--apply") == 0
     assert original_file.read_bytes() == before["claude/settings.json"]
+
+
+def test_dispatcher_only_clean_failure_and_managed_exit_codes_are_promoted():
+    """F-02: Add clean exit 1 while preserving ordinary failures for codes 2..9."""
+    assert dispatcher._cli_exit_code({"exit_code": 1}) == 1
+    for code in range(2, 10):
+        assert dispatcher._cli_exit_code({"exit_code": code}) is None
+    assert dispatcher._cli_exit_code({"exit_code": 11}) == 11
+    assert dispatcher._cli_exit_code({"exit_code": 0}) is None
+    assert dispatcher._cli_exit_code({"exit_code": -1}) is None
+    assert dispatcher._cli_exit_code({"exit_code": "1"}) is None
+    assert dispatcher._cli_exit_code("not a dict") is None
+
+
+def test_dispatcher_node_latest_offline_exits_1_cleanly(cli_root, capsys):
+    """F-02: Node.js latest/offline failure must exit 1 cleanly without uncaught RuntimeError."""
+    root, sys_dir = cli_root
+    exit_code = dispatcher.main(["dispatcher.py", "update", "-o", "nodejs", "--latest", "--offline"])
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "Traceback" not in captured.err
+    assert "Traceback" not in captured.out
+    assert captured.out.count("Node.js latest unavailable: offline mode") == 1
+    assert "Node.js latest unavailable: offline mode" in captured.out or "Node.js latest unavailable: offline mode" in captured.err

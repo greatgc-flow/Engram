@@ -210,6 +210,8 @@ Venv:
   installs whose path still exists. Missing paths are skipped and reported.
   Minor restore preflight checks editable builds and dependencies before
   any managed change. Rebuilt venvs must pass pip check before commit.
+  --force can waive planning readiness checks; actual staging, package
+  restore failures and dependency-integrity checks still block the update.
   Both swaps quarantine metadata-proven pip ~ duplicates with a healthy
   canonical RECORD; ambiguous or unsafe entries stay with warnings.
   Snapshots ignore ~* distribution metadata. Patch packages and offline
@@ -240,7 +242,8 @@ Options:
                    non-editable extras (default: baseline only). Does not
                    affect Python swaps.
   --force          With --only python: reinstall even when already current;
-                   override missing minor pre-flight checks (default: off)
+                   override minor planning readiness checks (default: off).
+                   Restore preflight and pip check remain mandatory.
   --offline        With --only python: use only local files (default: off)
   -h, --help, /?   Show this help (default: off)
 
@@ -304,8 +307,9 @@ offline; it never falls back to the pin or downgrades Python. Explicit `--to`
 remains available. Major changes still require `--allow-major-runtime-upgrade`.
 
 Before a minor change, Engram checks the python.org embed zip with HEAD and
-PyPI for compatible Windows amd64 wheels for pywinpty, pydantic-core and psutil.
-Missing checks refuse the update; `--force` overrides that refusal.
+managed pip resolution of the complete baseline for the target interpreter.
+`--force` can override planning readiness refusal. Actual staging and package
+restore failures still block the update, and rebuilt venvs must pass pip check.
 Without a pinned SHA-256, Engram warns that the archive was downloaded over
 HTTPS from python.org and records the computed hash in the journal and output.
 A recorded cache hash still gates reuse; it is not a publisher-provided hash.

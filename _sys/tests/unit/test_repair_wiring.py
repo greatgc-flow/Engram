@@ -484,7 +484,7 @@ def test_applied_minor_update_always_plans_target_restore_preflight(tmp_path, mo
                         {"version": "3.14.8", "url": "", "sha256": None})
     monkeypatch.setattr(repair, "python_update_status", lambda *a, **k: {
         "installed": "3.14.8", "discovery": {}, "lines": [],
-        "patch": None, "readiness": None})
+        "patch": None, "readiness": None, "checked": False})
 
     readiness_calls = []
     def readiness(s, target, url, **kw):
@@ -717,3 +717,94 @@ def test_committed_state_write_failure_keeps_cli_and_json_contract(mode, capsys,
         dispatcher._run_operation("repair", {"module": "core.repair", "method": "repair_main"}, {})
     assert raised.value.exit_code == 1 and raised.value.quiet is True
     assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_applied_minor_update_force_does_not_override_restore_failure(tmp_path, monkeypatch, capsys, force):
+    """F-03: Missing planning readiness can be waived; actual restore failures cannot."""
+    import zipfile
+
+    sys_dir = tmp_path / "_sys"
+    (sys_dir / "env" / "python").mkdir(parents=True)
+    (sys_dir / "env" / "venv" / "Scripts").mkdir(parents=True)
+    (sys_dir / "data" / "state").mkdir(parents=True)
+
+    archive, _ = python_manager.cache_paths(sys_dir, "3.15.2")
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(archive, "w") as package:
+        package.writestr("python.exe", "fake target interpreter")
+
+    def unexpected(*a, **kw):
+        pytest.fail("preflight test must not download or run real pip")
+
+    def runner(argv, timeout):
+        assert argv[1:] == ["--version"]
+        return 0, "Python 3.15.2"
+
+    steps = python_manager.plan_python_update(
+        sys_dir, "3.15.2", url="https://example.invalid/py.zip", force=force,
+        installed="3.14.8", had_venv=True, runner=runner, downloader=unexpected,
+    )
+    preflight_step = next(s for s in steps if s.name == "minor-restore-preflight")
+    monkeypatch.setattr(python_manager.venv_manager, "build_snapshot", lambda *a, **kw: {})
+    calls = []
+
+    def failing_restore(*a, **kw):
+        calls.append(a)
+        raise RuntimeError("required artifacts unavailable offline")
+
+    monkeypatch.setattr(python_manager, "preflight_restore", failing_restore)
+    ctx = SimpleNamespace(op_id="test-force-op", data={}, paths={})
+    with pytest.raises(RuntimeError, match="preflight failed"):
+        preflight_step.do(ctx)
+    assert len(calls) == 1
+    assert "preflight_snapshot" not in ctx.data
+    out = capsys.readouterr().out
+    assert "--force overrides" not in out
+    assert "Managed Python and venv unchanged" in out
+
+
+def test_forced_minor_update_still_requires_dependency_integrity(tmp_path):
+    sys_dir = tmp_path / "_sys"
+    executable = sys_dir / "env" / "venv" / "Scripts" / "python.exe"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("fake")
+    calls = []
+
+    def runner(argv, timeout):
+        calls.append(argv)
+        if argv[1:] == ["--version"]:
+            return 0, "Python 3.15.2"
+        assert argv == [str(executable), "-m", "pip", "check"]
+        return 1, "dependency conflict"
+
+    steps = python_manager.plan_python_update(
+        sys_dir, "3.15.2", url="https://example.invalid/py.zip", force=True,
+        installed="3.14.8", had_venv=True, runner=runner,
+    )
+    with pytest.raises(RuntimeError, match="dependency"):
+        next(s for s in steps if s.name == "verify").do(SimpleNamespace(data={}))
+    assert calls[-1] == [str(executable), "-m", "pip", "check"]
+
+
+
+def test_update_env_main_accepts_check_flag_and_exits_1_when_unchecked(tmp_path, monkeypatch):
+    """F-06: update_env_main parser accepts --check and exits 1 when discovery is unchecked."""
+    sys_dir = tmp_path / "_sys"
+    (sys_dir / "env" / "python").mkdir(parents=True)
+    (sys_dir / "env" / "python" / "python.exe").write_text("fake")
+    (sys_dir / "data" / "state").mkdir(parents=True)
+
+    monkeypatch.setattr(repair, "_installed_python", lambda *a: "3.14.8")
+    monkeypatch.setattr(repair, "_python_pin", lambda *a: {"version": "3.14.8", "url": "", "sha256": None})
+    monkeypatch.setattr(repair.layout_migration, "supported_layout", lambda *a, **k: True)
+    monkeypatch.setattr(repair, "detect", lambda *a, **k: {
+        "manifest": "ok", "drift": {"status": "consistent"}, "findings": [], "journal": None,
+        "stale_registry": []
+    })
+
+    # Unchecked discovery (e.g. offline)
+    ctx = {"sys_dir": sys_dir, "base_dir": tmp_path, "command": "update", "args": ["--check", "--offline"]}
+    res = repair.update_env_main(ctx, {"python"})
+    assert res.get("exit_code") == 1
+    assert res.get("status") == "failed"
