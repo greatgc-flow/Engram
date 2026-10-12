@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
+
+PackageIdentifier: greatgc-flow.Engram
+PackageVersion: 3.9.3
+PackageLocale: en-US
+Publisher: greatgc-flow
+PublisherUrl: https://github.com/greatgc-flow
+PublisherSupportUrl: https://github.com/greatgc-flow/Engram/issues
+PackageName: Engram
+PackageUrl: https://github.com/greatgc-flow/Engram
+License: MIT
+LicenseUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+Copyright: Copyright (c) 2026 greatgc-flow
+CopyrightUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+ShortDescription: Portable Developer Runtime & Virtual Environment Engine for Windows
+Description: Engram is a zero-bloat, self-contained Windows portable runtime environment that provides isolated Python/Node/Git environments without requiring host installation or registry changes. It can optionally install, update, and manage the status of third-party AI CLI tools, but all AI-to-AI collaboration itself is handled by the separate peerhub package.
+Moniker: engram
+Tags:
+  - portable
+  - developer-tools
+  - workflow
+  - automation
+  - windows
+  - virtual-environment
+ReleaseNotes: |-
+  ### Fixed
+  
+  - Preflight complete minor restores, including editable build/runtime dependencies;
+    restore editables with dependency resolution and build isolation.
+  - Block rebuilt venv commits on failed pip check and roll back Python and venv.
+  - Exclude pip ~ metadata from snapshots and conservatively quarantine proven
+    duplicates before patch and minor swaps, with journaled resume and undo.
+  - Report committed pin/manifest write failures with exit 1 and exact resume
+    recovery guidance; retain pending writes and backups.
+  
+  ### Changed
+  
+  - Preserve patch packages and offline capability; ambiguous pip remnants stay
+    with warnings.
+ReleaseNotesUrl: https://github.com/greatgc-flow/Engram/releases/tag/v3.9.3
+ManifestType: defaultLocale
+ManifestVersion: 1.12.0
