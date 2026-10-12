@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.1.12.0.schema.json
+
+PackageIdentifier: greatgc-flow.Engram
+PackageVersion: 3.9.5
+PackageLocale: ko-KR
+Publisher: greatgc-flow
+PublisherUrl: https://github.com/greatgc-flow
+PublisherSupportUrl: https://github.com/greatgc-flow/Engram/issues
+PackageName: Engram
+PackageUrl: https://github.com/greatgc-flow/Engram
+License: MIT
+LicenseUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+Copyright: Copyright (c) 2026 greatgc-flow
+CopyrightUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+ShortDescription: Windows용 무설치 포터블 개발 런타임 및 가상 환경 엔진
+Description: Engram은 호스트 설치나 레지스트리 수정 없이 격리된 Python/Node/Git 환경을 제공하는 Windows 전용 독립형 무설치 포터블 런타임 환경입니다. 서드파티 AI CLI 도구의 설치·업데이트·상태 확인을 선택적으로 지원하며, AI 간 협업 자체는 별도의 peerhub 패키지가 담당합니다.
+Tags:
+  - portable
+  - developer-tools
+  - workflow
+  - automation
+  - windows
+  - virtual-environment
+ReleaseNotes: |-
+  ### Fixed
+  
+  - Layout migration defaults-base idempotence (F-05): adopt baseline when
+    defaults are adopted so subsequent runs are pure no-ops with no backup,
+    rewrite, or summary; suppress rewriting and backing up live declarations
+    when unchanged, while changed declarations, stale baselines, and
+    downgrades still execute migration.
+  - Guidance for unrecognized pip leftovers: clarify in doctor and repair that
+    Engram will not move unrecognized package directories automatically,
+    printing the exact manual recovery steps (stop python/peerhub processes,
+    move to <sys>/data/backups/venv/manual/<timestamp>/ instead of deleting,
+    and run pip check).
+ReleaseNotesUrl: https://github.com/greatgc-flow/Engram/releases/tag/v3.9.5
+ManifestType: locale
+ManifestVersion: 1.12.0
