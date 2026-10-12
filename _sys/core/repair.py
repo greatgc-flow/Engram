@@ -7,9 +7,12 @@ import contextlib
 import io
 import re
 import urllib.request
+import urllib.error
+import subprocess
 from pathlib import Path
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, NamedTuple
 
+from core.baseline_packages import BASELINE_PACKAGES
 from core import cli_help, env_manifest, venv_manager, env_ops, env_lock
 from core import python_manager, relocation, venv_repair, layout_migration
 from core.venv_manager import default_runner
@@ -18,7 +21,8 @@ from core.relocation import RegistryOps
 
 
 # Engram's baseline venv packages by DISTRIBUTION name (pip installs pywinpty; its module is winpty).
-_BASELINE_PIP_NAMES = frozenset({"filelock", "psutil", "pydantic", "pywinpty"})
+_BASELINE_PIP_NAMES = frozenset(re.split(r"[<>=!~\[]", spec, maxsplit=1)[0].lower()
+                                for spec, _ in BASELINE_PACKAGES)
 # Seams python_manager.plan_python_update understands (other seams belong to other building blocks).
 _PYTHON_SEAMS = frozenset({"downloader", "runner", "free_space", "holders", "rename", "sleep", "now", "venv_policy"})
 
@@ -286,7 +290,8 @@ def _installed_python(sys_dir: Path, seams: dict) -> Optional[str]:
 
 def python_update_status(sys_dir: Path, *, installed: str | None = None,
                          pin: dict | None = None, discovery: dict | None = None,
-                         offline: bool = False, refresh: bool = False, seams: dict | None = None) -> dict:
+                         offline: bool = False, refresh: bool = False, seams: dict | None = None,
+                         verify_minor: bool = True) -> dict:
     """Shared discovery and display data for Python checks and managed plans."""
     from core import version_resolver, state_paths
     import textwrap
@@ -326,6 +331,12 @@ def python_update_status(sys_dir: Path, *, installed: str | None = None,
         minor_newer = True
         commands.append("engram update -o python --latest -y")
         lines.append("Minor update: engram update -o python --latest -y")
+    readiness = None
+    if (minor_newer and discovery.get("status") == "ok" and verify_minor
+            and re.fullmatch(r"\d+\.\d+\.\d+", latest)):
+        url = pin["url"] if latest == pin["version"] and pin["url"] else (
+            f"https://www.python.org/ftp/python/{latest}/python-{latest}-embed-amd64.zip")
+        readiness = _minor_readiness(Path(sys_dir), latest, url, offline=offline, seams=seams)
     checked = bool(discovery.get("status") == "ok" and installed and patch and minor and latest)
     reason = None
     if not installed:
@@ -370,7 +381,7 @@ def python_update_status(sys_dir: Path, *, installed: str | None = None,
             report_lines.append("  Minor update: engram update -o python --latest -y")
     return {"installed": installed, "patch": patch, "discovery": discovery,
             "lines": lines, "checked": checked, "report_lines": report_lines,
-            "commands": commands, "reason": reason}
+            "commands": commands, "reason": reason, "readiness": readiness}
 
 
 def _python_fetch(url: str, *, method: str = "GET"):
@@ -381,43 +392,89 @@ def _python_fetch(url: str, *, method: str = "GET"):
         return json.loads(response.read()) if method == "GET" else None
 
 
-def _python_minor_preflight(target: str, url: str, *, fetch: Callable = _python_fetch) -> list[str]:
-    """Return missing embed archive / compatible wheel checks, without mutation."""
-    missing = []
-    major, minor, _ = map(int, target.split("."))
-    tag = f"cp{major}{minor}"
+class PythonReadiness(NamedTuple):
+    """JSON-compatible result reused only inside its originating invocation."""
+    target: str
+    url: str
+    specs: tuple[str, ...]
+    state: str
+    reason: str = ""
+
+
+def _readiness_reason(value: Any) -> str:
+    text = " ".join(str(value).split()).encode("ascii", "backslashreplace").decode()
+    return text[:237] + "..." if len(text) > 240 else text
+
+
+def _python_minor_preflight(target: str, url: str, *, managed_python: Path,
+                            specs: tuple[str, ...], fetch: Callable | None = None,
+                            run: Callable | None = None) -> PythonReadiness:
+    """HEAD the archive and let managed pip resolve the complete target baseline."""
+    def result(state, reason=""):
+        return PythonReadiness(target, url, specs, state, _readiness_reason(reason))
+
+    fetch = fetch or _python_fetch
+    run = run or subprocess.run
     try:
         fetch(url, method="HEAD")
+    except urllib.error.HTTPError as exc:
+        if exc.code in (404, 410):
+            return result("blocked", "embed archive unavailable")
+        return result("unverifiable", f"embed archive check failed: {exc}")
     except Exception as exc:
-        missing.append(f"embed zip ({exc})")
-    for package in ("pywinpty", "pydantic-core", "psutil"):
-        try:
-            data = fetch(f"https://pypi.org/pypi/{package}/json")
-            compatible = False
-            for version, files in data.get("releases", {}).items():
-                if not re.fullmatch(r"\d+(?:\.\d+)*", version):
-                    continue
-                for file in files:
-                    if file.get("yanked"):
-                        continue
-                    parts = file.get("filename", "").removesuffix(".whl").split("-")
-                    if not file.get("filename", "").endswith(".whl") or len(parts) < 5:
-                        continue
-                    python_tags, abi_tags, platforms = (part.split(".") for part in parts[-3:])
-                    if "win_amd64" not in platforms:
-                        continue
-                    if tag in python_tags and tag in abi_tags:
-                        compatible = True
-                    elif "abi3" in abi_tags:
-                        for python_tag in python_tags:
-                            match = re.fullmatch(r"cp(\d)(\d+)", python_tag)
-                            if match and int(match[1]) == major and int(match[2]) <= minor:
-                                compatible = True
-            if not compatible:
-                missing.append(f"{package}: no win_amd64 wheel for {tag} or compatible abi3")
-        except Exception as exc:
-            missing.append(f"{package}: wheel check failed ({exc})")
-    return missing
+        return result("unverifiable", f"embed archive check failed: {exc}")
+
+    major, minor, _ = target.split(".")
+    argv = [str(managed_python), "-m", "pip", "install", "--dry-run",
+            "--ignore-installed", "--only-binary=:all:", "--platform", "win_amd64",
+            "--python-version", target, "--implementation", "cp",
+            "--abi", f"cp{major}{minor}", *specs]
+    try:
+        resolved = run(argv, capture_output=True, encoding="utf-8", errors="replace", timeout=120)
+    except subprocess.TimeoutExpired:
+        return result("unverifiable", "pip resolver timed out")
+    except Exception as exc:
+        return result("unverifiable", f"pip resolver unavailable: {exc}")
+    output = (resolved.stdout or "") + "\n" + (resolved.stderr or "")
+    lower = output.lower()
+    if resolved.returncode == 0:
+        return result("ok")
+    # Index outages can end with 'No matching distribution'; they take precedence.
+    network_markers = ("retrying", "connectionerror", "connection error", "connection refused",
+                       "connection reset", "network is unreachable", "network unavailable",
+                       "name resolution", "getaddrinfo", "timed out", "timeout",
+                       "proxyerror", "sslerror", "certificate verify failed",
+                       "could not fetch url", "401 client error", "403 client error",
+                       "429 client error", "500 server error", "503 server error")
+    if any(marker in lower for marker in network_markers):
+        return result("unverifiable", "network unavailable")
+    incompatibility = ("resolutionimpossible", "no matching distribution found",
+                       "could not find a version that satisfies the requirement",
+                       "conflicting dependencies")
+    if (any(marker in lower for marker in incompatibility)
+            or re.search(r"error:.*requires a different python", lower)):
+        return result("blocked", "no compatible dependency set")
+    return result("unverifiable", "pip resolver failed: " + (output.strip() or
+                  f"exit {resolved.returncode}"))
+
+
+def _minor_readiness(sys_dir: Path, target: str, url: str, *,
+                     offline: bool, seams: dict) -> PythonReadiness:
+    if offline:
+        return PythonReadiness(target, url, (), "unverifiable", "offline mode (--offline)")
+    try:
+        # Same read-only metadata snapshot and T1 pins as the execution restore.
+        snapshot = venv_manager.build_snapshot(sys_dir, now=env_ops.utc_now())
+        specs = tuple(python_manager.baseline_install_specs(snapshot))
+    except Exception as exc:
+        return PythonReadiness(target, url, (), "unverifiable",
+                               _readiness_reason(f"baseline snapshot unavailable: {exc}"))
+    managed_python = sys_dir / "env" / "venv" / "Scripts" / "python.exe"
+    if not managed_python.is_file():
+        managed_python = sys_dir / "env" / "python" / "python.exe"
+    return _python_minor_preflight(target, url, managed_python=managed_python, specs=specs,
+                                   fetch=seams.get("fetch", _python_fetch),
+                                   run=seams.get("resolver_run", subprocess.run))
 
 
 def _spec_needs_runner(spec: list[dict]) -> bool:
@@ -617,7 +674,8 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
             explicit = getattr(cli_args, "to_version", None)
             latest = cli_args.latest
             status = python_update_status(s, pin=pin, offline=cli_args.offline,
-                                          refresh=cli_args.refresh, seams=seams)
+                                          refresh=cli_args.refresh, seams=seams,
+                                          verify_minor=not bool(explicit))
             installed = status["installed"]
             discovery = status["discovery"]
             if latest and (discovery.get("status") != "ok" or not re.fullmatch(
@@ -642,10 +700,12 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
             if change in ("downgrade", "major") and not getattr(cli_args, "allow_major_runtime_upgrade", False):
                 raise ValueError(f"Blocked {change} update {installed} -> {target}: pass --allow-major-runtime-upgrade and --yes.")
             if installed and installed.split(".")[:2] != target.split(".")[:2]:
-                missing = (["online embed zip and wheel checks unavailable in offline mode"] if cli_args.offline
-                           else _python_minor_preflight(target, url, fetch=seams.get("fetch", _python_fetch)))
-                if missing:
-                    message = "Python minor pre-flight missing: " + "; ".join(missing)
+                readiness = status["readiness"]
+                if readiness is None or readiness.target != target or readiness.url != url:
+                    readiness = _minor_readiness(Path(s), target, url,
+                                                 offline=cli_args.offline, seams=seams)
+                if readiness.state != "ok":
+                    message = f"Python minor pre-flight {readiness.state}: {readiness.reason}"
                     if not cli_args.force:
                         raise ValueError(message + ". Use --force to override.")
                     summary.append("[Warning] --force overrides: " + message)

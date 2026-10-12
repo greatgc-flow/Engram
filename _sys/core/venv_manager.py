@@ -16,13 +16,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
+from core.baseline_packages import BASELINE_PACKAGES
 from core import backups, env_lock
 from core.env_manifest import _atomic_write_text
 
 Runner = Callable[[list[str], float], tuple[int, str]]
 
 # Importable MODULE names of the baseline packages (pywinpty is the distribution; its module is winpty).
-BASELINE_MODULES = ("filelock", "psutil", "pydantic", "winpty")
+BASELINE_MODULES = tuple(module for _, module in sorted(BASELINE_PACKAGES))
 
 
 def default_runner(argv: list[str], timeout_s: float) -> tuple[int, str]:

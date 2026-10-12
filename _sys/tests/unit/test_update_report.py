@@ -1,6 +1,7 @@
-"""Update's single report: discovery only, no network, subprocesses or applies."""
+"""Update report with deterministic discovery and readiness; no applies."""
 import pytest
 import textwrap
+from types import SimpleNamespace
 
 from core import repair, updater, version_resolver, version, layout_migration
 from checks import check_tool_updates
@@ -8,6 +9,9 @@ from checks import check_tool_updates
 
 @pytest.fixture
 def report(monkeypatch, tmp_path):
+    monkeypatch.setattr(repair, "_python_fetch", lambda *a, **k: None)
+    monkeypatch.setattr(repair.subprocess, "run",
+                        lambda *a, **k: SimpleNamespace(returncode=0, stdout="", stderr=""))
     discovery = {
         "status": "ok", "latest_version": "3.14.8",
         "latest_minor_cycle": "3.14",
@@ -217,8 +221,12 @@ def test_report_tool_and_python_footer_before_prompt(report, monkeypatch, capsys
 
 def test_report_reuses_discovered_python_status(report, monkeypatch, capsys):
     discovery, payload = report
+    resolver_calls = []
+    monkeypatch.setattr(repair.subprocess, "run", lambda argv, **k:
+                        resolver_calls.append(argv) or SimpleNamespace(returncode=0, stdout="", stderr=""))
     payload["python_status"] = repair.python_update_status(
         updater._SYS_DIR, installed="3.13.7", discovery=discovery)
+    assert payload["python_status"]["readiness"].state == "ok"
     payload["notices"] = [{"component": "python", "detail":
                            "Python cannot be updated in-place while Engram is running; "
                            "run 'bootstrap.bat' to update."}]
@@ -226,6 +234,7 @@ def test_report_reuses_discovered_python_status(report, monkeypatch, capsys):
     monkeypatch.setattr(repair, "python_update_status", lambda *a, **k:
                         pytest.fail("must reuse discovery"))
     updater.run({"args": ["--dry-run"]})
+    assert len(resolver_calls) == 1
     output = capsys.readouterr().out
     assert "Installed: 3.13.7" in output
     assert "bootstrap.bat" not in output

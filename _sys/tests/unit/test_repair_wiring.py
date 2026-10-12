@@ -1,6 +1,9 @@
 """Glue-level guarantees of core.repair that the ag-drafted suite did not pin down
 (placeholder URL/version, fictional package names, exit-code mapping, pin handling)."""
 import json
+import subprocess
+import urllib.error
+from types import SimpleNamespace
 import sys
 from pathlib import Path
 
@@ -15,6 +18,9 @@ from core import env_ops, repair, python_manager  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def mock_python_discovery(monkeypatch):
+    monkeypatch.setattr(repair.subprocess, "run",
+                        lambda *a, **k: SimpleNamespace(returncode=0, stdout="", stderr=""))
+    monkeypatch.setattr(repair, "_python_fetch", lambda *a, **k: None)
     from core import version_resolver
     monkeypatch.setattr(version_resolver, "resolve_latest",
                         lambda *a, **k: {"status": "error", "detail": "mock network unavailable"})
@@ -302,44 +308,165 @@ def test_refresh_is_forwarded_through_update_dispatch(tmp_path, monkeypatch):
     assert result["exit_code"] == 0 and calls[0]["force_refresh"] is True
 
 
-def _wheel(filename, **kwargs):
-    return {"filename": filename, **kwargs}
+def _resolve(target="3.15.2", *, code=0, output="", fetch=None, run=None):
+    return repair._python_minor_preflight(
+        target, "embed", managed_python=Path("managed/python.exe"),
+        specs=("filelock", "psutil==7.0", "pydantic", "pywinpty"),
+        fetch=fetch or (lambda *a, **k: None),
+        run=run or (lambda *a, **k: SimpleNamespace(returncode=code, stdout="", stderr=output)))
 
 
-def test_minor_preflight_accepts_target_tag_and_older_abi3():
-    calls = []
-    def fetch(url, *, method="GET"):
-        calls.append((url, method))
-        if method == "HEAD":
-            return None
-        tag = "cp314-cp314" if "/pywinpty/" in url else "cp39-abi3"
-        return {"releases": {"1.0.0": [_wheel(f"pkg-1.0.0-{tag}-win_amd64.whl")]}}
-    assert repair._python_minor_preflight("3.14.8", "https://www.python.org/embed.zip", fetch=fetch) == []
-    assert calls[0][1] == "HEAD"
-    assert [url for url, method in calls[1:]] == [
-        f"https://pypi.org/pypi/{package}/json" for package in ("pywinpty", "pydantic-core", "psutil")]
+def test_minor_preflight_resolves_target_patch_and_complete_baseline_once():
+    heads, calls = [], []
+    def fetch(url, *, method):
+        heads.append((url, method))
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return SimpleNamespace(returncode=0, stdout="Would install baseline", stderr="")
+    result = _resolve(fetch=fetch, run=run)
+    assert result.state == "ok" and not result.reason
+    assert heads == [("embed", "HEAD")] and len(calls) == 1
+    argv, options = calls[0]
+    assert argv[:4] == [str(Path("managed/python.exe")), "-m", "pip", "install"]
+    assert "--dry-run" in argv and "--ignore-installed" in argv
+    assert "--only-binary=:all:" in argv
+    assert argv[argv.index("--python-version") + 1] == "3.15.2"
+    assert argv[argv.index("--abi") + 1] == "cp315"
+    assert argv[argv.index("--platform") + 1] == "win_amd64"
+    assert argv[argv.index("--implementation") + 1] == "cp"
+    assert tuple(argv[-4:]) == result.specs
+    assert options["timeout"] == 120
 
 
-@pytest.mark.parametrize("filename", [
-    "pkg-1.0.0-cp313-cp313-win_amd64.whl",
-    "pkg-1.0.0-cp315-abi3-win_amd64.whl",
-    "pkg-1.0.0-cp314-cp314-win_arm64.whl",
-    "pkg-1.0.0-py3-none-any.whl",
+@pytest.mark.parametrize("output", [
+    "ERROR: ResolutionImpossible: conflicting dependencies",
+    "ERROR: No matching distribution found for pywinpty",
+    "ERROR: Package 'psutil' requires a different Python: 3.15.2 not in '<3.15'",
+    "Ignored the following versions that require a different python version: "
+    "1.0 Requires-Python <3.15; ERROR: Could not find a version that satisfies the requirement pydantic",
 ])
-def test_minor_preflight_rejects_incompatible_wheels(filename):
-    def fetch(url, *, method="GET"):
-        return None if method == "HEAD" else {"releases": {"1.0.0": [_wheel(filename)]}}
-    missing = repair._python_minor_preflight("3.14.8", "embed", fetch=fetch)
-    assert len(missing) == 3 and all("cp314" in item for item in missing)
+def test_minor_preflight_dependency_and_requires_python_exclusion_block(output):
+    result = _resolve(code=1, output=output)
+    assert result.state == "blocked"
+    assert result.reason == "no compatible dependency set"
 
 
-def test_minor_preflight_lists_all_fetch_failures():
-    def fail(url, *, method="GET"):
-        raise OSError("mock offline")
-    missing = repair._python_minor_preflight("3.14.8", "embed", fetch=fail)
-    assert len(missing) == 4
-    assert all(any(name in item for item in missing)
-               for name in ("embed zip", "pywinpty", "pydantic-core", "psutil"))
+@pytest.mark.parametrize("output", [
+    "WARNING: Retrying after connection broken\nERROR: No matching distribution found for psutil",
+    "ERROR: Could not fetch URL: 503 Server Error",
+    "No module named pip",
+    "no such option: --dry-run",
+    "unexpected resolver error",
+    "Ignored versions that require a different Python: <3.15\nERROR: unexpected resolver error",
+])
+def test_minor_preflight_network_and_tool_failures_are_unverifiable(output):
+    assert _resolve(code=1, output=output).state == "unverifiable"
+
+
+@pytest.mark.parametrize("failure", [
+    OSError("network unavailable"),
+    subprocess.TimeoutExpired(["pip"], 120),
+])
+def test_minor_preflight_subprocess_failures_are_unverifiable(failure):
+    def run(*a, **k):
+        raise failure
+    assert _resolve(run=run).state == "unverifiable"
+
+
+@pytest.mark.parametrize("code,state", [(404, "blocked"), (410, "blocked"), (503, "unverifiable")])
+def test_minor_preflight_archive_http_failure_skips_pip(code, state):
+    def fetch(url, **k):
+        raise urllib.error.HTTPError(url, code, "failure", {}, None)
+    def run(*a, **k):
+        pytest.fail("archive failure must skip pip")
+    assert _resolve(fetch=fetch, run=run).state == state
+
+
+def test_minor_preflight_archive_network_failure_skips_pip():
+    def fetch(*a, **k):
+        raise OSError("offline")
+    def run(*a, **k):
+        pytest.fail("archive failure must skip pip")
+    assert _resolve(fetch=fetch, run=run).state == "unverifiable"
+
+
+def test_minor_preflight_pip_can_exclude_versions_and_still_resolve():
+    result = _resolve(output="Ignored versions that require a different Python: <3.15\nWould install pydantic")
+    assert result.state == "ok"
+
+
+def test_minor_preflight_success_after_network_retry_is_verified():
+    assert _resolve(output="WARNING: Retrying connection\nWould install baseline").state == "ok"
+
+
+def test_minor_preflight_normalizes_tool_failure_reason():
+    result = _resolve(code=1, output="broken tool\n\uac00 " + "x" * 300)
+    assert result.state == "unverifiable"
+    assert result.reason.isascii() and "\n" not in result.reason
+    assert "\\uac00" in result.reason and len(result.reason) == 240
+
+
+def test_readiness_status_remains_json_serializable():
+    readiness = _resolve()
+    assert json.loads(json.dumps({"readiness": readiness}))["readiness"][3] == "ok"
+
+
+@pytest.mark.parametrize("code,output,state", [
+    (0, "", "ok"),
+    (1, "ERROR: ResolutionImpossible", "blocked"),
+    (1, "No module named pip", "unverifiable"),
+])
+def test_minor_readiness_shared_by_status_and_guard_once_per_plan(monkeypatch, code, output, state):
+    heads, calls, statuses = [], [], []
+    sys_dir = Path("unused-managed-tree")
+    monkeypatch.setattr(repair, "_python_pin", lambda *a:
+                        {"version": "3.14.8", "url": "", "sha256": None})
+    monkeypatch.setattr(repair, "_installed_python", lambda *a: "3.14.8")
+    monkeypatch.setattr(repair.venv_manager, "build_snapshot", lambda *a, **k: {
+        "packages": [{"name": "psutil", "version": "7.0"}]})
+    monkeypatch.setattr(repair, "steps_from_spec", lambda *a, **k: [])
+    original_status = repair.python_update_status
+    def status(*a, **k):
+        result = original_status(*a, **k)
+        statuses.append(result)
+        return result
+    monkeypatch.setattr(repair, "python_update_status", status)
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return SimpleNamespace(returncode=code, stdout="", stderr=output)
+    seams = {
+        "resolve_python": lambda *a, **k: {
+            "status": "ok", "latest_version": "3.15.2", "latest_minor_cycle": "3.15",
+            "latest_patch_by_cycle": {"3.14": "3.14.9"}},
+        "fetch": lambda url, **k: heads.append((url, k["method"])),
+        "resolver_run": run,
+    }
+    def engine(ctx, builder, setup):
+        args = SimpleNamespace(to_version=None, latest=True, offline=False,
+                               refresh=False, force=False, allow_major_runtime_upgrade=False)
+        return builder(sys_dir, sys_dir.parent, {}, cli_args=args, seams=seams)
+    monkeypatch.setattr(repair, "_repair_engine_main", engine)
+    # A later invocation must check again; no process/global cache.
+    for invocation in range(2):
+        if state == "ok":
+            plan = repair.update_env_main({}, {"python"})
+            assert plan["spec"][0]["params"]["target_version"] == "3.15.2"
+        else:
+            with pytest.raises(ValueError, match=f"pre-flight {state}"):
+                repair.update_env_main({}, {"python"})
+        readiness = statuses[-1]["readiness"]
+        assert readiness.state == state
+        assert "psutil==7.0" in readiness.specs
+        assert tuple(calls[-1][-len(readiness.specs):]) == readiness.specs
+        assert len(heads) == len(calls) == invocation + 1
+
+
+def test_minor_readiness_offline_does_not_fetch_or_resolve(monkeypatch):
+    def unexpected(*a, **k):
+        pytest.fail("offline readiness must not access network or pip")
+    result = repair._minor_readiness(Path("unused-managed-tree"), "3.15.2", "embed",
+                                     offline=True, seams={"fetch": unexpected, "resolver_run": unexpected})
+    assert result.state == "unverifiable" and "offline" in result.reason
 
 
 @pytest.mark.parametrize("force", [False, True])
@@ -347,7 +474,8 @@ def test_minor_preflight_lists_all_fetch_failures():
 def test_minor_jump_requires_preflight_unless_forced(tmp_path, monkeypatch, force, target_flags):
     _discovery(monkeypatch)
     monkeypatch.setattr(repair, "_installed_python", lambda *a: "3.14.8")
-    monkeypatch.setattr(repair, "_python_fetch", lambda *a, **k: {"releases": {}})
+    monkeypatch.setattr(repair.subprocess, "run", lambda *a, **k:
+                        SimpleNamespace(returncode=1, stdout="", stderr="ERROR: No matching distribution found for pywinpty"))
     args = target_flags + (["--force"] if force else [])
     result = _plan(tmp_path, args, {"python"})
     if force:
@@ -356,7 +484,7 @@ def test_minor_jump_requires_preflight_unless_forced(tmp_path, monkeypatch, forc
         assert "--force overrides" in "\n".join(result["plan"]["summary"])
     else:
         assert result["exit_code"] == 11
-        assert "pywinpty" in result["detail"] and "Use --force" in result["detail"]
+        assert "no compatible dependency set" in result["detail"] and "Use --force" in result["detail"]
 
 
 @pytest.fixture
@@ -370,8 +498,8 @@ def latest_python(monkeypatch):
     calls = []
     def fetch(url, *, method="GET"):
         calls.append((url, method))
-        return None if method == "HEAD" else {"releases": {
-            "1.0.0": [_wheel("pkg-1.0.0-cp39-abi3-win_amd64.whl")]}}
+        assert method == "HEAD"
+        return None
     monkeypatch.setattr(repair, "_python_fetch", fetch)
     return calls
 
@@ -379,14 +507,16 @@ def latest_python(monkeypatch):
 def test_latest_python_targets_highest_stable_and_preflights_without_applying(
         tmp_path, latest_python, monkeypatch):
     monkeypatch.setattr(env_ops, "execute", lambda *a, **k: pytest.fail("must preview"))
+    resolver_calls = []
+    monkeypatch.setattr(repair.subprocess, "run", lambda argv, **k:
+                        resolver_calls.append(argv) or SimpleNamespace(returncode=0, stdout="", stderr=""))
     result = _plan(tmp_path, ["--latest"], {"python"})
     assert result["exit_code"] == 0 and result["detail"] == "dry run"
     params = result["plan"]["spec"][0]["params"]
     assert params["target_version"] == "3.15.2" and not params["allow_major"]
     assert params["url"].endswith("/3.15.2/python-3.15.2-embed-amd64.zip")
-    assert latest_python == [(params["url"], "HEAD"), *[
-        (f"https://pypi.org/pypi/{package}/json", "GET")
-        for package in ("pywinpty", "pydantic-core", "psutil")]]
+    assert latest_python == [(params["url"], "HEAD")]
+    assert len(resolver_calls) == 1
 
 
 @pytest.mark.parametrize("preview", [False, True])
