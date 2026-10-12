@@ -405,7 +405,7 @@ def python_update_status(sys_dir: Path, *, installed: str | None = None,
         report_lines = textwrap.wrap(f"Python: {reason}", width=80,
                                      subsequent_indent="  ")
         commands = []
-    elif not patch_newer and not minor_ok:
+    elif not patch_newer and not minor_newer:
         report_lines = [f"Python: {installed} is up to date."]
     else:
         report_lines = [
@@ -597,8 +597,8 @@ def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callabl
             p.error("--only requires comma-separated names: " + ",".join(sorted(valid_only)))
     except SystemExit as e:
         return {"status": "success" if e.code == 0 else "failed", "operation": "repair", "detail": "usage", "exit_code": 0 if e.code == 0 else 2}
-    if args.dry_run:
-        args.apply = False  # --dry-run always wins
+    if args.dry_run or getattr(args, "check", False):
+        args.apply = False  # --dry-run and --check always win: checks never apply
 
     if not layout_migration.supported_layout(base_dir, sys_dir, warning_stream=sys.stderr if args.json else None):
         return {"status": "failed", "operation": "repair", "detail": layout_migration.UNSUPPORTED_LAYOUT_WARNING, "exit_code": 11}
@@ -647,18 +647,26 @@ def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callabl
     try:
         plan = build_plan_fn(sys_dir, base_dir, detection, only=only_set, remap_ai_state=args.remap_ai_state, offline=args.offline, cli_args=args, seams=seams)
     except ValueError as ve:
-        return {"status": "failed", "operation": "repair", "detail": str(ve), "exit_code": 11}
+        return {"status": "failed", "operation": "repair", "detail": str(ve),
+                "exit_code": 1 if getattr(args, "check", False) else 11}
         
     if not plan["steps"]:
         if not args.json:
             _print_plan(plan)
+        if getattr(args, "check", False) and plan.get("checked") is False:
+            return {"status": "failed", "operation": "repair", "detail": "unchecked requested components",
+                    "exit_code": 1, "quiet": True, "plan": _plan_json(plan)}
         return {"status": "success", "operation": "repair", "detail": "nothing to repair", "exit_code": 0,
                 "plan": _plan_json(plan)}
         
     if not args.apply:
         if not args.json:
             _print_plan(plan)
-            print("Run with --yes to execute." if plan.get("kind") == "update" else "Run with --apply to execute.")
+            if not getattr(args, "check", False):
+                print("Run with --yes to execute." if plan.get("kind") == "update" else "Run with --apply to execute.")
+        if getattr(args, "check", False) and plan.get("checked") is False:
+            return {"status": "failed", "operation": "repair", "detail": "unchecked requested components",
+                    "exit_code": 1, "quiet": True, "plan": _plan_json(plan)}
         return {"status": "success", "operation": "repair", "detail": "dry run", "exit_code": 0,
                 "plan": _plan_json(plan)}
         
@@ -697,6 +705,7 @@ def relocate_main(ctx: dict) -> dict:
 
 def update_env_main(ctx: dict, only: set[str]) -> dict:
     def setup(p):
+        p.add_argument("--check", action="store_true")
         p.add_argument("--refresh", "-r", action="store_true")
         target = p.add_mutually_exclusive_group()
         target.add_argument("--to", dest="to_version")
@@ -708,6 +717,7 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
     def update_plan(s, b, d, *, cli_args, seams, **kw):
         spec = []
         summary = []
+        checked = True
         if "python" in only:
             pin = _python_pin(s)
             explicit = getattr(cli_args, "to_version", None)
@@ -717,6 +727,11 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
                                           verify_minor=not bool(explicit))
             installed = status["installed"]
             discovery = status["discovery"]
+            if not status["checked"]:
+                checked = False
+            readiness = status.get("readiness")
+            if readiness and readiness.state == "unverifiable":
+                checked = False
             if latest and (discovery.get("status") != "ok" or not re.fullmatch(
                     r"\d+\.\d+\.\d+", discovery.get("latest_version") or "")):
                 raise ValueError("Python latest unavailable: " + (discovery.get("detail") or "discovery failed"))
@@ -745,6 +760,8 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
                 if readiness is None or readiness.target != target or readiness.url != url:
                     readiness = _minor_readiness(Path(s), target, url,
                                                  offline=cli_args.offline, seams=seams)
+                if readiness.state == "unverifiable":
+                    checked = False
                 if readiness.state != "ok":
                     message = f"Python minor pre-flight {readiness.state}: {readiness.reason}"
                     if not cli_args.force:
@@ -779,6 +796,6 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
             summary.append("Upgrade packages")
             
         steps = steps_from_spec(s, b, spec, **seams)
-        return {"steps": steps, "spec": spec, "summary": summary, "kind": "update"}
+        return {"steps": steps, "spec": spec, "summary": summary, "kind": "update", "checked": checked}
         
     return _repair_engine_main(ctx, update_plan, setup)

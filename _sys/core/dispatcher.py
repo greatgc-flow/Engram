@@ -137,7 +137,7 @@ class PipelineHandoff(Exception):
 
 
 class PipelineFailure(RuntimeError):
-    """A failed operation that carries a CLI exit code (>= 10: preflight, rolled back, rollback failed, journal)."""
+    """A failed operation that carries a CLI exit code (e.g. 1, 2, or >= 10: preflight, rolled back, journal)."""
 
     def __init__(self, message: str, exit_code: int, quiet: bool = False):
         super().__init__(message)
@@ -148,7 +148,7 @@ class PipelineFailure(RuntimeError):
 def _cli_exit_code(result) -> int | None:
     if isinstance(result, dict):
         code = result.get("exit_code")
-        if isinstance(code, int) and code >= 10:
+        if isinstance(code, int) and (code == 1 or code >= 10):
             return code
     return None
 
@@ -257,7 +257,7 @@ def run_pipeline(cmd: str, extra_args: list) -> None:
 
 
 def main(argv: list[str]) -> int:
-    """CLI entry. Returns the process exit code; a PipelineFailure with a CLI code (>= 10) is reported
+    """CLI entry. Returns the process exit code; a PipelineFailure with a CLI exit code is reported
     and returned instead of surfacing as a traceback with exit code 1."""
     if len(argv) < 2:
         print("Usage: dispatcher.py <command> [args...]")

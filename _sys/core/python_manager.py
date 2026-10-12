@@ -565,6 +565,7 @@ def plan_python_update(
         preserve_dir(ctx, staging, "state", "python-stage-residuals")
 
     def do_restore_preflight(ctx):
+        # --force waives planning readiness, never an actual restore failure.
         run_early_check(ctx, lambda c: do_stage(c, prepare_only=True))
 
     def run_early_check(ctx, action):

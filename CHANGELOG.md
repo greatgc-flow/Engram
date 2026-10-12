@@ -4,6 +4,26 @@ All notable changes to Engram are documented here.
 The format follows Keep a Changelog. Versions follow Semantic Versioning.
 Historical entries are reconstructed from git commits and merged PR titles.
 
+## [3.9.4] - 2026-10-12
+
+### Fixed
+
+- Route clean operation failure exit code 1 through PipelineFailure in
+  dispatcher, ensuring Node.js latest/offline failures exit with one message
+  and no traceback; preserve ordinary failures for non-usage codes 2-9.
+- Preserve `--check` intent when delegating environment updates to the repair
+  engine; ensure managed Python preview exits with code 1 for unchecked
+  requested components, and offline checks never apply.
+- Clarify that `--force` overrides minor Python planning readiness checks;
+  staged restore failures and dependency-integrity verification still block
+  execution.
+- Condition Python up-to-date reporting on newer minor availability to prevent
+  displaying "up to date" alongside newer-minor warnings.
+
+### Deferred
+
+- Layout migration defaults-base idempotence (F-05) deferred.
+
 ## [3.9.3] - 2026-10-12
 
 ### Fixed
