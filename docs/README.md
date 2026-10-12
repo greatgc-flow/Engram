@@ -14,6 +14,7 @@ This directory contains architectural specifications, design decision records, a
 | **[`release_gate.md`](release_gate.md)** | **Release & Governance** | Policy trust root, clean-room verification gates, candidate packaging, and post-release closure audits. |
 | **[`design/`](design/)** | **Architecture Decisions (ADRs)** | Ratified architectural design specifications and decision records (UX simplification, system rename, environment resilience). |
 | [`design/plan-update-advice-parity-2026-10-12.md`](design/plan-update-advice-parity-2026-10-12.md) | Implementation Plan | Engram PR-B advice/guard parity, baseline SSOT, 3.9.2 release scope, and audit gates (reference only). |
+| [`design/plan-venv-hardening-2026-10-12.md`](design/plan-venv-hardening-2026-10-12.md) | Implementation Plan | Engram PR-B2 unanimous P3 venv hardening, 3.9.3 scope, fault matrix, and recovery contracts (reference only). |
 | [`design/blueprint-engram-architecture.md`](design/blueprint-engram-architecture.md) | Architecture Design | Retained Core/Module/Extension classification, invariants, contracts, and G0-G8 gate model with implementation status per rule. |
 | [`design/blueprint-method-and-lifecycle.md`](design/blueprint-method-and-lifecycle.md) | Method & Lifecycle Design | Retained method rules and release lifecycle with implementation status. |
 | [`design/component-registry.json`](design/component-registry.json) | Component Classification Data | Starting point for the unimplemented component boundary tests. |

@@ -52,7 +52,15 @@ Venv:
   no stdlib venv), reinstalls the baseline for the new interpreter, restores
   requested packages at their recorded versions, and reinstalls editable
   installs whose path still exists. Missing paths are skipped and reported.
+  Minor restore preflight checks editable builds and dependencies before
+  any managed change. Rebuilt venvs must pass pip check before commit.
+  Both swaps quarantine metadata-proven pip ~ duplicates with a healthy
+  canonical RECORD; ambiguous or unsafe entries stay with warnings.
+  Snapshots ignore ~* distribution metadata. Patch packages and offline
+  capability remain preserved.
   Failures before commit roll back both Python and venv trees.
+  Failed pin/manifest writes after commit exit 1 and keep the update.
+  Fix write access or available disk space, then run engram repair --resume.
 
 Options:
   --yes, -y        Apply without asking (default: plan for Python or --latest;
@@ -93,7 +101,7 @@ Examples:
 
 Exit codes:
   0   success or nothing to do; --check completed all requested checks
-  1   a component failed, or --check found something unchecked
+  1   a component/state write failed, or --check found something unchecked
   2   usage error (unknown option or component)
   3   declined at the prompt
   10-14  managed environment codes; 11 is preflight refusal before mutation

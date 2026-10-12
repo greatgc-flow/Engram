@@ -4,6 +4,7 @@ import ntpath
 import os
 import re
 import shutil
+import tempfile
 import time
 import zipfile
 from pathlib import Path
@@ -14,6 +15,62 @@ from core import backups, env_manifest, env_ops, provisioner, venv_manager, venv
 
 Runner = Callable[[list[str], float], tuple[int, str]]
 Downloader = Callable[[str, Path], None]
+
+
+def failure_reason(value) -> str:
+    text = venv_manager.sanitize_url(" ".join(str(value).split()))
+    text = text.encode("ascii", "backslashreplace").decode()
+    return text[:237] + "..." if len(text) > 240 else text
+
+
+def preflight_restore(executable: Path, snapshot: dict, *, runner: Runner,
+                      offline=False, parent: Path | None = None) -> None:
+    """Resolve on the target interpreter, with isolated editable metadata builds.
+
+    A fresh disposable venv prevents the old environment's backends or installed
+    dependencies from satisfying requirements accidentally. Pip discovers both
+    declared and backend-provided build requirements using its normal isolation.
+    """
+    plan = venv_repair.restore_packages_step_data(snapshot)
+    with tempfile.TemporaryDirectory(prefix="restore-preflight-", dir=parent) as work:
+        work = Path(work)
+        probe = work / "venv"
+        create = [str(executable), "-m", "virtualenv"]
+        if offline:
+            create += ["--no-download", "--no-periodic-update"]
+        rc, output = runner(create + [str(probe)], 60.0)
+        if rc:
+            raise RuntimeError("required artifacts unavailable offline" if offline
+                               else "staged virtualenv unavailable: " + failure_reason(output))
+        probe_python = probe / "Scripts" / "python.exe"
+        if not probe_python.is_file():
+            raise RuntimeError("required artifacts unavailable offline" if offline
+                               else "staged virtualenv interpreter missing")
+        constraints = work / "constraints.txt"
+        constraints.write_text(plan["constraints_text"], encoding="utf-8")
+        command = [str(probe_python), "-m", "pip", "install",
+                   "--dry-run", "--ignore-installed", f"--constraint={constraints}"]
+        if offline:
+            command.append("--no-index")
+        command += baseline_install_specs(snapshot) + plan["t2"]
+        for source in plan["t3"]:
+            command += ["-e", source]
+        rc, output = runner(command, 300.0)
+        if rc:
+            lower = output.lower()
+            if offline:
+                reason = "required artifacts unavailable offline"
+            elif any(token in lower for token in (
+                    "backendunavailable", "cannot import", "build dependencies",
+                    "get_requires_for_build_editable", "get_requires_for_build_wheel")):
+                reason = "editable build backend unavailable"
+            elif any(token in lower for token in (
+                    "resolutionimpossible", "conflicting dependencies",
+                    "no matching distribution", "different python")):
+                reason = "no compatible dependency set"
+            else:
+                reason = "pip resolver failed: " + failure_reason(output or f"exit {rc}")
+            raise RuntimeError(reason)
 
 
 def baseline_install_specs(snapshot: dict) -> list[str]:
@@ -431,7 +488,7 @@ def plan_python_update(
         ctx.data["python_download_sha256"] = actual_hash
         print(f"[i] Python archive SHA-256: {actual_hash}")
 
-    def do_stage(ctx):
+    def do_stage(ctx, *, prepare_only=False):
         work = workspace(ctx)
         owned = work / "stage-owned"
         ready = work / "stage-ready"
@@ -443,6 +500,14 @@ def plan_python_update(
                 if ready.read_text().strip() == target_version:
                     return
             raise RuntimeError(f"unowned staging directory already exists: {new_dir}")
+
+        if rebuild and not prepare_only and ctx.data.get("preflight_snapshot") is not None:
+            check_version(staged_python / "python.exe", "Staged python")
+            write_text(ready, f"{target_version}\n")
+            env_dir.mkdir(parents=True, exist_ok=True)
+            robust_rename(staged_python, new_dir)
+            preserve_dir(ctx, staging, "state", "python-stage-residuals")
+            return
 
         # Bootstrap in an isolated parent. Even runners that infer their package
         # prefix as executable.parent.parent cannot write into the live env.
@@ -472,10 +537,10 @@ def plan_python_update(
         executable = staged_python / "python.exe"
         pip_script = sys_dir / "data" / "setup-files" / "get-pip.py"
         if pip_script.exists():
-            rc, output = runner(
-                [str(executable), str(pip_script), "--no-warn-script-location"],
-                60.0,
-            )
+            bootstrap = [str(executable), str(pip_script), "--no-warn-script-location"]
+            if offline:
+                bootstrap.append("--no-index")
+            rc, output = runner(bootstrap, 60.0)
             if rc != 0:
                 raise RuntimeError(f"get-pip failed: {output}")
             command = [str(executable), "-m", "pip", "install"]
@@ -486,10 +551,38 @@ def plan_python_update(
                 raise RuntimeError(f"virtualenv install failed: {output}")
 
         check_version(executable, "Staged python")
+        if prepare_only:
+            snapshot = venv_manager.build_snapshot(
+                sys_dir, now=now(), python_version=installed
+            )
+            preflight_restore(executable, snapshot, runner=runner,
+                              offline=offline, parent=work)
+            ctx.data["preflight_snapshot"] = snapshot
+            return
         write_text(ready, f"{target_version}\n")
         env_dir.mkdir(parents=True, exist_ok=True)
         robust_rename(staged_python, new_dir)
         preserve_dir(ctx, staging, "state", "python-stage-residuals")
+
+    def do_restore_preflight(ctx):
+        run_early_check(ctx, lambda c: do_stage(c, prepare_only=True))
+
+    def run_early_check(ctx, action):
+        try:
+            action(ctx)
+        except Exception as exc:
+            reason = ("required artifacts unavailable offline" if offline
+                      else failure_reason(exc))
+            message = (f"[Warning] Python minor update preflight failed: {reason}. "
+                       "Managed Python and venv unchanged.")
+            print(message)
+            raise RuntimeError(message) from exc
+
+    def do_early_download(ctx):
+        run_early_check(ctx, do_download)
+
+    def do_early_preflight(ctx):
+        run_early_check(ctx, do_preflight)
 
     def undo_stage(ctx):
         if not (workspace(ctx) / "stage-owned").is_file():
@@ -628,6 +721,8 @@ def plan_python_update(
             shutil.copytree(payload, venv_dir)
 
         command = [str(py_dir / "python.exe"), "-m", "virtualenv"]
+        if offline:
+            command += ["--no-download", "--no-periodic-update"]
         if refresh:
             command.append("--no-seed")
         command.append(str(venv_dir))
@@ -644,6 +739,8 @@ def plan_python_update(
 
         def install(arguments, timeout):
             command = [str(executable), "-m", "pip", "install"]
+            constraints = destination(ctx, "freeze_backup") / backups.PAYLOAD / "constraints.txt"
+            command.append(f"--constraint={constraints}")
             if offline:
                 command.append("--no-index")
             return runner(command + arguments, timeout)
@@ -655,16 +752,7 @@ def plan_python_update(
                 raise RuntimeError(f"T1 baseline install failed: {output}")
 
         if plan["t2"]:
-            constraints = (
-                destination(ctx, "freeze_backup")
-                / backups.PAYLOAD
-                / "constraints.txt"
-            )
-            # One option token also prevents simplistic injected runners from
-            # mistaking the constraints filename for an install requirement.
-            rc, output = install(
-                [f"--constraint={constraints}"] + plan["t2"], 300.0
-            )
+            rc, output = install(plan["t2"], 300.0)
             if rc != 0:
                 failures = []
                 for package in plan["t2"]:
@@ -682,8 +770,6 @@ def plan_python_update(
                     "-e",
                     path,
                     "--force-reinstall",
-                    "--no-deps",
-                    "--no-build-isolation",
                 ],
                 120.0,
             )
@@ -716,6 +802,9 @@ def plan_python_update(
             if not executable.is_file():
                 raise RuntimeError("Verify failed: venv interpreter missing")
             check_version(executable, "Verify venv")
+
+        if rebuild:
+            venv_manager.verify_dependencies(executable, runner=runner)
 
         for finding in venv_manager.probe_venv(sys_dir, runner=runner):
             if finding.level == "error":
@@ -752,13 +841,20 @@ def plan_python_update(
                 backups.commit(ref, now=now())
 
     steps = [
-        env_ops.Step("preflight", do_preflight, group="A"),
-        env_ops.Step("download-verify", do_download, group="A"),
+        env_ops.Step("preflight", do_early_preflight if rebuild else do_preflight, group="A"),
+        env_ops.Step("download-verify", do_early_download if rebuild else do_download, group="A"),
         env_ops.Step("stage", do_stage, undo=undo_stage, group="A"),
         env_ops.Step(
             "snapshot-packages", do_snapshot, undo=undo_snapshot, group="A"
         ),
     ]
+    if rebuild:
+        steps.insert(2, env_ops.Step("minor-restore-preflight", do_restore_preflight, group="A"))
+    # Minor restore preflight must finish before any leftover is moved.
+    # Persist candidates under the operation lock before the authoritative scan.
+    if rebuild or refresh:
+        index = next(i for i, step in enumerate(steps) if step.name == "snapshot-packages")
+        steps[index:index] = venv_repair.plan_pip_leftover_quarantine(sys_dir)
     if rebuild or refresh:
         steps.append(env_ops.Step(
             "quarantine-venv" if rebuild else "backup-interpreter-files",

@@ -20,7 +20,7 @@ import pytest
 from _sys.core.root import find_root
 
 sys.path.insert(0, str(find_root(__file__)))
-from core import backups, env_manifest, env_ops, python_manager  # noqa: E402
+from core import backups, env_manifest, env_ops, python_manager, repair  # noqa: E402
 
 TARGET_PATCH = "3.14.9"
 TARGET_MINOR = "3.15.0"
@@ -108,11 +108,13 @@ class World:
         if a[:2] == ["-m", "pip"] and "install" in a:
             if self.fail_pip:
                 return 1, "pip failed"
+            if "--dry-run" in a:
+                return 0, "Would install restored packages"
             sp = exe.parent.parent / "Lib" / "site-packages"
             for name in a[a.index("install") + 1:]:
                 if name.startswith("-"):
                     continue
-                base = name.split("==")[0].split(">=")[0]
+                base = Path(name).name if Path(name).is_dir() else name.split("==")[0].split(">=")[0]
                 di = sp / f"{base}-1.0.dist-info"
                 di.mkdir(parents=True, exist_ok=True)
                 (di / "METADATA").write_text(f"Name: {base}\nVersion: 1.0\n")
@@ -371,6 +373,148 @@ def test_default_holders_report_processes_running_from_the_swap_targets(tmp_path
 
 # ---- env_ops: torn tail, failed rotation -----------------------------------------------------------------------------------
 
+def add_editable(world):
+    source = world.root / "editable-project"
+    source.mkdir()
+    (source / "pyproject.toml").write_text(
+        '[build-system]\nrequires = ["missing-build-backend"]\n'
+        'build-backend = "missing_backend"\n', encoding="utf-8")
+    metadata = world.venv / "Lib" / "site-packages" / "editable-1.0.dist-info"
+    metadata.mkdir()
+    (metadata / "METADATA").write_text("Name: editable\nVersion: 1.0\nRequires-Dist: runtime-dep\n")
+    (metadata / "direct_url.json").write_text(json.dumps(
+        {"url": source.as_uri(), "dir_info": {"editable": True}}))
+    return source
+
+
+@pytest.mark.parametrize("output,offline,reason", [
+    ("BackendUnavailable: Cannot import missing_backend", False, "editable build backend unavailable"),
+    ("get_requires_for_build_editable: installing build dependencies failed", False, "editable build backend unavailable"),
+    ("ResolutionImpossible: conflicting dependencies runtime-dep", False, "no compatible dependency set"),
+    ("No matching distribution found for runtime-dep", True, "required artifacts unavailable offline"),
+])
+def test_minor_restore_preflight_faults_do_not_mutate_managed_state(minor_world, capsys, output, offline, reason):
+    w = minor_world
+    source = add_editable(w)
+    before = w.snapshot()
+    fake = w.runner
+
+    def resolver_fault(argv, timeout):
+        if "--dry-run" in argv:
+            w.calls.append(argv)
+            assert "-e" in argv and str(source) in argv and "pkg1==1.0" in argv
+            assert "--ignore-installed" in argv
+            assert "--no-build-isolation" not in argv and "--no-deps" not in argv
+            assert ("--no-index" in argv) == offline
+            assert str(w.venv) not in argv[0]
+            return 1, output
+        return fake(argv, timeout)
+
+    w.runner = resolver_fault
+    res = repair._cli_result(run(w, w.plan(offline=offline)), mode="apply", sys_dir=w.sys)
+    assert res["exit_code"] == 11 and res["phase"] == "ROLLED_BACK"
+    message = f"[Warning] Python minor update preflight failed: {reason}. Managed Python and venv unchanged."
+    assert capsys.readouterr().out.count(message) == 1
+    assert res["detail"] == message
+    assert w.snapshot() == before
+    assert not (w.sys / "env" / "python.new").exists()
+    assert not backups.scan(w.sys).valid
+    assert env_ops.active_journal(w.sys) is None
+
+
+def test_offline_virtualenv_artifact_failure_precedes_swap(minor_world, capsys):
+    w = minor_world
+    before = w.snapshot()
+    fake = w.runner
+
+    def missing_artifact(argv, timeout):
+        if "install" in argv and "virtualenv" in argv:
+            assert "--no-index" in argv
+            return 1, "virtualenv wheel unavailable"
+        return fake(argv, timeout)
+
+    w.runner = missing_artifact
+    res = repair._cli_result(run(w, w.plan(offline=True)), mode="apply", sys_dir=w.sys)
+    assert res["exit_code"] == 11
+    assert w.snapshot() == before and not backups.scan(w.sys).valid
+    assert "required artifacts unavailable offline" in capsys.readouterr().out
+
+
+def test_offline_missing_python_archive_is_early_failure(minor_world, capsys):
+    w = minor_world
+    python_manager.cache_paths(w.sys, w.target)[0].unlink()
+    before = w.snapshot()
+    res = repair._cli_result(run(w, w.plan(offline=True)), mode="apply", sys_dir=w.sys)
+    assert res["exit_code"] == 11
+    assert w.snapshot() == before and not backups.scan(w.sys).valid
+    assert not w.calls
+    assert capsys.readouterr().out.count("[Warning] Python minor update preflight failed:") == 1
+
+
+def test_cached_offline_minor_restore_checks_full_set_and_restores_editable(minor_world):
+    w = minor_world
+    source = add_editable(w)
+    assert run(w, w.plan(offline=True))["phase"] == "COMMITTED"
+    resolution = [c for c in w.calls if "--dry-run" in c]
+    assert len(resolution) == 1 and str(source) in resolution[0]
+    installs = [c for c in w.calls if "install" in c]
+    assert all("--no-index" in c for c in installs)
+    editable = [c for c in installs if "-e" in c and "--dry-run" not in c]
+    assert editable and all("--no-deps" not in c and "--no-build-isolation" not in c for c in editable)
+
+
+@pytest.mark.parametrize("fault", ["conflict", "timeout", "tool"])
+@pytest.mark.parametrize("undo_fails", [False, True])
+def test_minor_pip_check_blocks_commit_and_uses_existing_rollback(minor_world, capsys, fault, undo_fails):
+    import subprocess
+    w = minor_world
+    before = w.snapshot()
+    fake = w.runner
+
+    def check_fault(argv, timeout):
+        if argv[1:] == ["-m", "pip", "check"]:
+            if fault == "timeout":
+                raise subprocess.TimeoutExpired(argv, timeout)
+            if fault == "tool":
+                raise OSError("pip unavailable")
+            return 1, "runtime-dep 2.0 conflicts with editable"
+        return fake(argv, timeout)
+
+    w.runner = check_fault
+    steps = w.plan()
+    if undo_fails:
+        def fail_undo(ctx):
+            raise OSError("injected undo failure")
+        next(s for s in steps if s.name == "quarantine-python").undo = fail_undo
+    res = repair._cli_result(run(w, steps), mode="apply", sys_dir=w.sys)
+    assert res["exit_code"] == (13 if undo_fails else 12)
+    assert res["phase"] == ("ROLLBACK_FAILED" if undo_fails else "ROLLED_BACK")
+    assert capsys.readouterr().out.count("[Warning] Venv dependency verification failed:") == 1
+    assert env_manifest.read_manifest(w.sys).data["python"]["version"] == w.installed
+    if not undo_fails:
+        assert w.snapshot() == before
+        assert any(r.kind == "venv" and "failed-rebuild" in r.path.name for r in backups.scan(w.sys).valid)
+
+
+def test_offline_patch_preserves_editable_and_keeps_dependency_warning_nonblocking(patch_world):
+    w = patch_world
+    add_editable(w)
+    before = tree_hash(w.venv / "Lib" / "site-packages")
+    fake = w.runner
+
+    def patch_conflict(argv, timeout):
+        if argv[1:] == ["-m", "pip", "check"]:
+            w.calls.append(argv)
+            return 1, "pre-existing dependency conflict"
+        assert "--dry-run" not in argv and "-e" not in argv
+        return fake(argv, timeout)
+
+    w.runner = patch_conflict
+    assert run(w, w.plan(offline=True))["phase"] == "COMMITTED"
+    assert tree_hash(w.venv / "Lib" / "site-packages") == before
+    assert not any("install" in c and Path(c[0]) == w.venv / "Scripts" / "python.exe" for c in w.calls)
+    assert any(c[1:] == ["-m", "pip", "check"] for c in w.calls)
+
 def _noop_steps(log):
     return [env_ops.Step(f"s{i}", (lambda ctx, i=i: log.append(i)), group="A") for i in range(1, 4)]
 
@@ -408,3 +552,119 @@ def test_a_failed_journal_rotation_refuses_to_start_instead_of_appending_to_the_
     with pytest.raises(env_ops.JournalError):
         env_ops.execute(sys_dir, "t", _noop_steps(log), op_id="op-2")
     assert env_ops.journal_path(sys_dir).read_bytes() == old                # old journal untouched
+
+
+def add_pip_leftovers(world):
+    site = world.venv / "Lib" / "site-packages"
+    (site / "pkg1.py").write_text("original payload")
+    (site / "pkg1-1.0.dist-info" / "RECORD").write_text("pkg1.py,,\n")
+    for name in ("~stale.dist-info", "~older.egg-info"):
+        info = site / name
+        info.mkdir()
+        (info / "METADATA").write_text("Name: pkg1\nVersion: 0.9\n")
+        (info / "REQUESTED").touch()
+    (site / "~").mkdir()
+    return site
+
+
+@pytest.mark.parametrize("target", [TARGET_PATCH, TARGET_MINOR])
+def test_swap_quarantines_only_proven_duplicates_before_snapshot(tmp_path, monkeypatch, capsys, target):
+    w = World(tmp_path, target=target)
+    site = add_pip_leftovers(w)
+    monkeypatch.setattr(python_manager, "default_holders", lambda paths: [])
+    steps = w.plan(offline=True)
+    names = [step.name for step in steps]
+    assert names.index("quarantine-pip-leftovers") < names.index("snapshot-packages")
+    if target == TARGET_MINOR:
+        assert names.index("minor-restore-preflight") < names.index("plan-pip-leftovers")
+    result = run(w, steps)
+    assert result["status"] == "success"
+    refs = [r for r in backups.scan(w.sys).valid if r.meta["reason"] == "quarantine pip leftover"]
+    assert len(refs) == 2
+    assert {Path(r.meta["source_path"]).name for r in refs} == {"~stale.dist-info", "~older.egg-info"}
+    assert all((r.path / backups.PAYLOAD / "METADATA").read_text() ==
+               "Name: pkg1\nVersion: 0.9\n" for r in refs)
+    freeze = next(r for r in backups.scan(w.sys).valid if r.kind == "venv-freeze")
+    packages = json.loads((freeze.path / backups.PAYLOAD / "snapshot.json").read_text())["packages"]
+    assert [(p["name"], p["version"]) for p in packages] == [("pkg1", "1.0")]
+    text = capsys.readouterr().out
+    assert text.count("[Warning] Pip leftover quarantined:") == 2
+    assert f"[Warning] Pip leftover kept: {site / '~'}." in text
+    if target == TARGET_PATCH:
+        assert (site / "~").exists() and (site / "pkg1.py").read_text() == "original payload"
+        assert not any("--dry-run" in call or "-e" in call for call in w.calls)
+    else:
+        old = next(r for r in backups.scan(w.sys).valid if r.meta["source_path"] == str(w.venv))
+        assert (old.path / backups.PAYLOAD / "Lib" / "site-packages" / "~").exists()
+
+
+@pytest.mark.parametrize("target", [TARGET_PATCH, TARGET_MINOR])
+@pytest.mark.parametrize("action", ["move-failure", "rollback", "resume", "mid-move-resume", "mid-move-rollback"])
+def test_swap_leftover_faults_preserve_identity(tmp_path, monkeypatch, target, action):
+    w = World(tmp_path, target=target)
+    site = add_pip_leftovers(w)
+    before = w.snapshot()
+    monkeypatch.setattr(python_manager, "default_holders", lambda paths: [])
+    move = backups._move_dir
+    hit = []
+
+    def fault(src, dst, **kwargs):
+        if Path(src).parent == site and Path(src).name.startswith("~"):
+            hit.append(str(src))
+            if len(hit) == 2 and action == "move-failure":
+                raise OSError("mock move failure")
+            if len(hit) == 2 and action.startswith("mid-move"):
+                raise env_ops.SimulatedCrash("crash between leftover moves")
+        return move(src, dst, **kwargs)
+
+    monkeypatch.setattr(backups, "_move_dir", fault)
+    if action == "move-failure":
+        result = run(w, w.plan())
+        assert result["exit_code"] == 12 and result["phase"] == "ROLLED_BACK"
+        assert w.snapshot() == before
+        assert not any(call[1:3] == ["-m", "virtualenv"] and call[-1] == str(w.venv)
+                       for call in w.calls)
+        return
+    with pytest.raises(env_ops.SimulatedCrash):
+        run(w, w.plan(), crash_after=None if action.startswith("mid-move") else "swap")
+    monkeypatch.setattr(backups, "_move_dir", move)
+    active = env_ops.active_journal(w.sys)
+    assert set(active["data"]["pip_swap_candidates"]) == {
+        str(site / "~stale.dist-info"), str(site / "~older.egg-info")}
+    if action.endswith("rollback"):
+        result = env_ops.rollback(w.sys, lambda active: w.plan())
+        assert result["exit_code"] == 12 and w.snapshot() == before
+    else:
+        result = env_ops.resume(w.sys, lambda active: w.plan())
+        assert result["status"] == "success"
+        assert not (site / "~stale.dist-info").exists()
+        refs = [r for r in backups.scan(w.sys).valid if r.meta["reason"] == "quarantine pip leftover"]
+        assert len(refs) == 2 and all(r.meta["op_id"] == "op-1" for r in refs)
+        assert all((r.path / backups.PAYLOAD / "METADATA").read_text() ==
+                   "Name: pkg1\nVersion: 0.9\n" for r in refs)
+
+
+@pytest.mark.parametrize("failed", [("write-pin",), ("write-manifest",),
+                                   ("write-pin", "write-manifest")])
+def test_swap_post_write_failure_stays_committed_and_retries_only_pending(patch_world, capsys, failed):
+    w = patch_world
+    steps = w.plan()
+    for step in steps:
+        if step.name in failed:
+            step.do = lambda ctx: (_ for _ in ()).throw(PermissionError("mock disk full"))
+    result = repair._cli_result(run(w, steps), mode="apply", sys_dir=w.sys)
+    assert result["status"] == "failed" and result["exit_code"] == 1
+    assert result["phase"] == "COMMITTED" and result["post_failed"] == list(failed)
+    assert "engram repair --resume (operation op-1)" in result["recovery"]
+    assert "[Warning] Python update committed, but state writes failed:" in capsys.readouterr().out
+    assert (w.sys / "env" / "python" / "python.exe").read_text() == TARGET_PATCH
+    assert (w.venv / "Scripts" / "python.exe").read_text() == TARGET_PATCH
+    refs = backups.scan(w.sys).valid
+    assert refs and all((r.path / backups.PAYLOAD).exists() for r in refs)
+    calls = list(w.calls)
+    recovered = repair._cli_result(env_ops.resume(w.sys, lambda active: w.plan()), mode="resume", sys_dir=w.sys)
+    assert recovered["status"] == "success" and recovered["exit_code"] == 0
+    assert calls == w.calls
+    assert json.loads((w.sys / "runtimes.json").read_text())["runtimes"]["python"]["version"] == TARGET_PATCH
+    assert env_manifest.read_manifest(w.sys).data["python"]["version"] == TARGET_PATCH
+    assert env_ops.active_journal(w.sys) is None

@@ -119,6 +119,22 @@ def _norm(p: str | Path) -> str:
     return ntpath.normcase(ntpath.normpath(str(p)))
 
 
+def verify_dependencies(python_exe: Path, *, runner: Runner = default_runner) -> None:
+    """Blocking gate for rebuilt/restored venvs; doctor keeps its own policy."""
+    from core.python_manager import failure_reason
+    try:
+        rc, output = runner([str(python_exe), "-m", "pip", "check"], 60.0)
+        if rc == 0:
+            return
+        reason = failure_reason(output or f"pip check exited {rc}")
+    except Exception as exc:
+        reason = failure_reason(exc)
+    message = (f"[Warning] Venv dependency verification failed: {reason}. "
+               "Rolling back Python and venv.")
+    print(message)
+    raise RuntimeError(message)
+
+
 def _pip_check(python_exe: Path, runner: Runner) -> Finding:
     """``pip check`` (design 5.1 step 8): informational - dependency problems never fail doctor."""
     rc, out = runner([str(python_exe), "-m", "pip", "check"], 60.0)
@@ -460,6 +476,8 @@ def scan_installed_packages(site_packages: Path) -> list[dict]:
         return packages
         
     for d in site_packages.iterdir():
+        if d.name.startswith("~"):
+            continue
         if d.is_dir() and d.name.endswith(".dist-info"):
             metadata_file = d / "METADATA"
             if not metadata_file.exists():
@@ -512,7 +530,8 @@ def build_snapshot(sys_dir: Path, *, now: str, python_version: Optional[str] = N
     packages = []
     if site_packages.exists():
         for d in site_packages.iterdir():
-            if d.is_dir() and d.name.endswith(".dist-info") and not (d / "METADATA").exists():
+            if (not d.name.startswith("~") and d.is_dir()
+                    and d.name.endswith(".dist-info") and not (d / "METADATA").exists()):
                 skipped.append(d.name)
         packages = scan_installed_packages(site_packages)
         

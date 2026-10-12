@@ -208,7 +208,7 @@ def test_standalone_venv_repair_allocates_backup_paths(sys_dir, monkeypatch):
         return {"status": "committed", "phase": "COMMITTED"}
 
     monkeypatch.setattr(repair.env_ops, "execute", fake)
-    monkeypatch.setattr(repair, "_cli_result", lambda res, mode: {"exit_code": 0})
+    monkeypatch.setattr(repair, "_cli_result", lambda res, *, mode, sys_dir=None: {"exit_code": 0})
     monkeypatch.setattr(repair, "detect", lambda *a, **k: _det())
     monkeypatch.setattr(repair, "build_plan", lambda *a, **k: {"kind": "repair", "steps": [object()], "spec": [{"name": "x", "kind": "venv"}], "summary": []})
     ctx = {"sys_dir": sys_dir, "base_dir": sys_dir.parent, "args": ["--apply", "--yes"], "command": "engram repair"}

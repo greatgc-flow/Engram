@@ -476,6 +476,43 @@ def test_minor_readiness_offline_does_not_fetch_or_resolve(monkeypatch):
     assert result.state == "unverifiable" and "offline" in result.reason
 
 
+@pytest.mark.parametrize("offline", [False, True])
+@pytest.mark.parametrize("force", [False, True])
+def test_applied_minor_update_always_plans_target_restore_preflight(tmp_path, monkeypatch, offline, force):
+    sys_dir = tmp_path / "_sys"
+    monkeypatch.setattr(repair, "_python_pin", lambda *a:
+                        {"version": "3.14.8", "url": "", "sha256": None})
+    monkeypatch.setattr(repair, "python_update_status", lambda *a, **k: {
+        "installed": "3.14.8", "discovery": {}, "lines": [],
+        "patch": None, "readiness": None})
+
+    readiness_calls = []
+    def readiness(s, target, url, **kw):
+        readiness_calls.append(kw["offline"])
+        return repair.PythonReadiness(target, url, (), "ok", "")
+
+    monkeypatch.setattr(repair, "_minor_readiness", readiness)
+
+    def unexpected(*a, **k):
+        raise AssertionError("planning must not run the staged preflight")
+
+    def engine(ctx, builder, setup):
+        args = SimpleNamespace(to_version="3.15.2", latest=False, offline=offline,
+                               refresh=False, force=force, apply=True,
+                               allow_major_runtime_upgrade=False)
+        return builder(sys_dir, tmp_path, {}, cli_args=args, seams={"runner": unexpected})
+
+    monkeypatch.setattr(repair, "_repair_engine_main", engine)
+    plan = repair.update_env_main({}, {"python"})
+    assert readiness_calls == [offline]
+    names = [s.name for s in plan["steps"]]
+    assert names.index("minor-restore-preflight") < names.index("stage")
+    assert names.index("minor-restore-preflight") < names.index("quarantine-venv")
+    assert names.index("minor-restore-preflight") < names.index("quarantine-python")
+    assert plan["spec"][0]["params"]["offline"] == offline
+    assert plan["spec"][0]["params"]["force"] == force
+
+
 @pytest.mark.parametrize("force", [False, True])
 @pytest.mark.parametrize("target_flags", [["--to", "3.15.2"], ["--latest"]])
 def test_minor_jump_requires_preflight_unless_forced(tmp_path, monkeypatch, force, target_flags):
@@ -659,3 +696,24 @@ def test_latest_execution_reuses_advice_readiness_before_mutation(
     if state != "ok":
         assert reason in result["detail"]
         assert not (tmp_path / "_sys/env.ops.json").exists()
+
+
+@pytest.mark.parametrize("mode", ["apply", "resume"])
+def test_committed_state_write_failure_keeps_cli_and_json_contract(mode, capsys, monkeypatch):
+    from core import dispatcher
+    failure = {"status": "failed", "phase": "COMMITTED", "exit_code": 1,
+               "detail": "state writes failed", "post_failed": ["write-manifest"],
+               "op_id": "write-fault", "failed_step": "write-manifest",
+               "recovery": "engram repair --resume", "quiet": True}
+    result = repair._cli_result(failure, mode=mode)
+    assert result["status"] == "failed" and result["exit_code"] == 1
+    assert result["phase"] == "COMMITTED" and result["op_id"] == "write-fault"
+    assert result["post_failed"] == ["write-manifest"]
+    assert json.loads(json.dumps(result))["recovery"] == "engram repair --resume"
+    assert result["quiet"] is True
+    assert dispatcher._result_failed(result)
+    monkeypatch.setattr(repair, "repair_main", lambda ctx: result)
+    with pytest.raises(dispatcher.PipelineFailure) as raised:
+        dispatcher._run_operation("repair", {"module": "core.repair", "method": "repair_main"}, {})
+    assert raised.value.exit_code == 1 and raised.value.quiet is True
+    assert capsys.readouterr().out == ""

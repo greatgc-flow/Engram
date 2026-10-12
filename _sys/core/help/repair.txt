@@ -12,6 +12,9 @@ Description:
   backup registry (see 'engram snapshots'), never deleted. If a run is
   interrupted, other commands refuse to run (exit 14) until you finish it
   with --resume or undo it with --rollback.
+  Failed writes after commit exit 1 and keep the updated environment.
+  Fix write access or available disk space, then run engram repair --resume.
+  Pending writes block new operations; committed swaps cannot be rolled back.
   --only venv also previews ~* pip leftovers in managed Lib/site-packages.
   --apply quarantines recognized pip duplicates only when sibling RECORD files
   verify a healthy install. Shared namespace directories alone are not proof.
@@ -35,7 +38,8 @@ Options:
   --offline        Never download anything (default: off)
   --remap-ai-state Also rewrite folder paths inside AI CLI state after a move
                    (default: off)
-  --resume         Continue an interrupted operation (default: off;
+  --resume         Retry pending writes or continue an interrupted operation
+                   (default: off;
                    mutually exclusive with --rollback)
   --rollback       Undo an interrupted operation (default: off)
   --json           One final JSON plan/result in every mode (default: off)
@@ -51,6 +55,7 @@ Examples:
 
 Exit codes:
   0   ok, or nothing to repair, or preview shown
+  1   committed environment has pending state writes (use --resume)
   2   usage error, including invalid --only or conflicting recovery flags
   10  declined at the prompt
   11  precondition failed, or no terminal and no --yes (nothing was changed)

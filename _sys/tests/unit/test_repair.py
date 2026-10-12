@@ -350,3 +350,41 @@ def test_build_plan_ignores_ok_and_info_findings(tmp_path):
     plan = repair.build_plan(tmp_path / "_sys", tmp_path, det)
     assert not plan["steps"]
     assert plan["summary"] == ["nothing to repair"]
+
+
+@pytest.mark.parametrize("json_mode", [False, True])
+def test_cli_resume_reports_committed_write_failure_then_recovers(tmp_path, monkeypatch, capsys, json_mode):
+    sys_dir = tmp_path / "_sys"
+    broken = [True]
+    calls = []
+
+    def write_manifest(ctx):
+        calls.append("write-manifest")
+        if broken[0]:
+            raise PermissionError("mock write denied")
+
+    steps = [env_ops.Step("swap", lambda ctx: calls.append("swap")),
+             env_ops.Step("write-pin", lambda ctx: calls.append("write-pin"), group="B"),
+             env_ops.Step("write-manifest", write_manifest, group="B")]
+    env_ops.execute(sys_dir, "update", steps, op_id="cli-post-fault")
+    capsys.readouterr()
+    monkeypatch.setattr(repair, "detect", lambda *a, **kw: {"journal": env_ops.active_journal(sys_dir)})
+    monkeypatch.setattr(repair, "steps_from_spec", lambda *a, **kw: steps)
+    monkeypatch.setattr(repair.layout_migration, "supported_layout", lambda *a, **kw: True)
+    args = ["--resume"] + (["--json"] if json_mode else [])
+    ctx = {"sys_dir": sys_dir, "base_dir": tmp_path, "args": args}
+    result = repair.repair_main(ctx)
+    assert result["status"] == "failed" and result["exit_code"] == 1
+    assert result["phase"] == "COMMITTED" and result["post_failed"] == ["write-manifest"]
+    text = capsys.readouterr().out
+    if json_mode:
+        reported = json.loads(text)
+        assert reported["exit_code"] == 1 and reported["phase"] == "COMMITTED"
+        assert reported["recovery"] == result["recovery"]
+    else:
+        assert text.count("[Warning] Python update committed, but state writes failed:") == 1
+        assert "engram repair --resume (operation cli-post-fault)" in text
+        assert "[OK]" not in text
+    broken[0] = False
+    assert repair.repair_main(ctx)["exit_code"] == 0
+    assert calls == ["swap", "write-pin", "write-manifest", "write-manifest", "write-manifest"]

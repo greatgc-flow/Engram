@@ -104,7 +104,8 @@ def test_group_b_failure(tmp_path):
     
     steps = [Step("s1", do_s1), Step("p1", do_post, group="B")]
     res = execute(sys_dir, "test-op", steps)
-    assert res["status"] == "success"
+    assert res["status"] == "failed"
+    assert res["exit_code"] == 1
     assert res["phase"] == "COMMITTED"
     assert res["failed_step"] == "p1"
     assert res["post_failed"] == ["p1"]
@@ -334,10 +335,11 @@ def test_post_step_failure_and_retry(tmp_path):
     steps = [Step("s1", lambda c: None), Step("p1", do_p1, group="B")]
     
     res = execute(sys_dir, "test", steps)
-    assert res["status"] == "success"
+    assert res["status"] == "failed"
+    assert res["exit_code"] == 1
     assert res["post_failed"] == ["p1"]
     
-    assert active_journal(sys_dir) is None
+    assert active_journal(sys_dir)["pending_post"] == ["p1"]
     
     res_resume = resume(sys_dir, lambda d: steps)
     assert res_resume["status"] == "success"
@@ -360,3 +362,49 @@ def test_read_journal_oserror(tmp_path, monkeypatch):
     
     with pytest.raises(JournalError, match="Access denied"):
         read_journal(sys_dir)
+
+
+@pytest.mark.parametrize("failed", [("write-pin",), ("write-manifest",),
+                                   ("write-pin", "write-manifest")])
+def test_state_write_faults_execute_resume_and_recovery(tmp_path, capsys, failed):
+    sys_dir = tmp_path / "sys"
+    calls = []
+    broken = set(failed)
+
+    def write(name):
+        def action(ctx):
+            calls.append(name)
+            if name in broken:
+                raise PermissionError("mock write denied")
+        return action
+
+    steps = [Step("swap", lambda ctx: calls.append("swap"),
+                  lambda ctx: calls.append("undo-swap"))]
+    steps += [Step(name, write(name), group="B") for name in
+              ("write-pin", "write-manifest", "record-snapshot-commit")]
+    op_id = "state-write-fault"
+    for attempt in ("execute", "resume"):
+        result = (execute(sys_dir, "python-update", steps, op_id=op_id)
+                  if attempt == "execute" else resume(sys_dir, lambda active: steps))
+        assert result["status"] == "failed" and result["exit_code"] == 1
+        assert result["phase"] == current_phase(sys_dir) == "COMMITTED"
+        assert result["op_id"] == op_id and result["post_failed"] == list(failed)
+        assert active_journal(sys_dir)["pending_post"] == list(failed)
+        text = capsys.readouterr().out
+        assert text == (
+            "[Warning] Python update committed, but state writes failed: "
+            + ", ".join(failed) + ". Exit 1; pin/manifest may be stale.\n"
+            + "Recovery: fix write access or available disk space, then run "
+            + f"engram repair --resume (operation {op_id}).\n")
+        assert result["recovery"] in text and result["quiet"] is True
+        with pytest.raises(JournalError, match="active journal"):
+            execute(sys_dir, "other", [])
+    assert calls.count("swap") == 1 and "undo-swap" not in calls
+    assert calls.count("record-snapshot-commit") == 1
+    before = list(calls)
+    broken.clear()
+    recovered = resume(sys_dir, lambda active: steps)
+    assert recovered["status"] == "success" and recovered["exit_code"] == 0
+    assert calls[len(before):] == list(failed)
+    assert active_journal(sys_dir) is None
+    assert capsys.readouterr().out == ""
