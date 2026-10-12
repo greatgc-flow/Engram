@@ -245,22 +245,31 @@ def pip_leftovers(site_packages: Path) -> list[dict]:
             name, tops = _pip_metadata(info)
             if name and _pip_record_healthy(info, site, tops):
                 canonical[normalize(name)] = True
+
         rows = []
         for leftover in entries:
             if not leftover.name.startswith("~") or not _pip_plain(leftover):
                 continue
             metadata = leftover / "METADATA"
+            record = leftover / "RECORD"
             recognizable = leftover.is_dir() and (
                 leftover.name.endswith((".dist-info", ".egg-info")) or
                 (_pip_plain(metadata) and metadata.is_file() and
-                 _pip_plain(leftover / "RECORD") and (leftover / "RECORD").is_file()))
+                 _pip_plain(record) and record.is_file()))
             infos = [leftover] if recognizable else []
             names = {name for info in infos for name, _ in [_pip_metadata(info)] if name}
             name = next(iter(names)) if len(names) == 1 else None
-            plain_tree = leftover.is_dir() and all(
-                _pip_plain(Path(root) / child)
-                for root, dirs, files in os.walk(leftover, followlinks=False)
-                for child in dirs + files)
+
+            plain_tree = True
+            if leftover.is_dir():
+                for root, dirs, files in os.walk(leftover, followlinks=False):
+                    for child in dirs + files:
+                        if not _pip_plain(Path(root) / child):
+                            plain_tree = False
+                    dirs[:] = [d for d in dirs if _pip_plain(Path(root) / d)]
+            else:
+                plain_tree = False
+
             removable = bool(name and canonical.get(normalize(name)) and plain_tree)
             rows.append({"leftover": str(leftover), "real_name": name,
                          "removable": removable,
@@ -287,9 +296,20 @@ def probe_venv(
     findings = []
     leftovers = pip_leftovers(venv_dir / "Lib" / "site-packages")
     if leftovers:
-        detail = "; ".join(
-            f"{r['leftover']}: {'removable' if r['removable'] else 'kept'}; {r['remedy']}"
-            for r in leftovers)
+        items = []
+        has_unrecognized = False
+        for r in leftovers:
+            items.append(f"{r['leftover']}: {'removable' if r['removable'] else 'kept'}; {r['remedy']}")
+            if r["remedy"] == "unrecognized, inspect manually":
+                has_unrecognized = True
+        detail = "; ".join(items)
+        if has_unrecognized:
+            detail += (
+                ". Engram will not move it automatically. Manual steps: "
+                "stop running python/peerhub processes, "
+                "move the directory to <sys>/data/backups/venv/manual/<timestamp>/ instead of deleting, "
+                "run pip check"
+            )
         findings.append(Finding("pip_leftovers", "warning",
                                 detail + "; preview: engram repair --only venv"))
     

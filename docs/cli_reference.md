@@ -453,7 +453,8 @@ Description:
   Bytecode, INSTALLER and RECORD-self entries are ignored; missing optional
   REQUESTED, direct_url.json and top_level.txt metadata is tolerated.
   Unknown, inconclusive or broken copies stay; inspect unrecognized dirs
-  manually.
+  manually (Engram will not move them automatically; stop running processes,
+  move to <sys>/data/backups/venv/manual/<timestamp>/, and run pip check).
   Destinations over 240 characters stay: path too long to quarantine safely.
   Kept entries need pip install --force-reinstall <name>, or manual inspection.
   Active pip/python holders block quarantine. Move failures roll back earlier

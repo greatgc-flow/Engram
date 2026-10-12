@@ -101,31 +101,32 @@ def merge_declarations_impl(defaults_dir: Path, live_dir: Path, base_state_dir: 
     for filename in files:
         live_path = live_dir / filename
         default_path = defaults_dir / filename
-        
+        base_path = base_state_dir / filename
+        manifest_path = manifest_base_dir / filename
+
         if not live_path.exists():
             if default_path.exists():
                 all_reports.append(f"{filename}: adopted defaults")
                 if not dry_run:
+                    base_state_dir.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(default_path, live_path)
+                    shutil.copy2(default_path, base_path)
             continue
-            
+
         try:
             ours = _load_json(live_path)
             theirs = _load_json(default_path) if default_path.exists() else {}
-            
-            base_path = base_state_dir / filename
-            manifest_path = manifest_base_dir / filename
-            
+
             if base_path.exists():
                 base = _load_json(base_path)
             elif manifest_path.exists():
                 base = _load_json(manifest_path)
             else:
                 base = {}
-                
+
             reports = []
             merged = {}
-            
+
             if filename == "runtimes.json":
                 def flatten(d):
                     flat = {}
@@ -134,42 +135,42 @@ def merge_declarations_impl(defaults_dir: Path, live_dir: Path, base_state_dir: 
                             for name, val in d[section].items():
                                 flat[f"{section}/{name}"] = val
                     return flat
-                
+
                 our_flat = flatten(ours)
                 base_flat = flatten(base)
                 their_flat = flatten(theirs)
-                
+
                 merged_flat = _merge_component_maps(our_flat, base_flat, their_flat, reports, filename)
-                
+
                 for k, v in theirs.items():
                     if k not in ["runtimes", "tools"]:
                         merged[k] = v
-                        
+
                 for comp_key, val in merged_flat.items():
                     section, name = comp_key.split("/", 1)
                     if section not in merged:
                         merged[section] = {}
                     merged[section][name] = val
-                    
+
             elif filename == "tool-catalog.v1.json":
                 def flatten(d):
                     flat = {}
                     for tool in d.get("tools", []):
                         flat[tool["tool_id"]] = tool
                     return flat
-                    
+
                 our_flat = flatten(ours)
                 base_flat = flatten(base)
                 their_flat = flatten(theirs)
-                
+
                 merged_flat = _merge_component_maps(our_flat, base_flat, their_flat, reports, filename)
-                
+
                 for k, v in theirs.items():
                     if k != "tools":
                         merged[k] = v
-                        
+
                 merged["tools"] = list(merged_flat.values())
-                
+
             base_changed = default_path.exists() and base != theirs
             if merged != ours and not reports:
                 reports.append(f"{filename}: merged declarations")
@@ -179,15 +180,15 @@ def merge_declarations_impl(defaults_dir: Path, live_dir: Path, base_state_dir: 
                 for r in reports:
                     logger.info(r)
                 all_reports.extend(reports)
-                    
+
             if not dry_run and (merged != ours or base_changed):
                 base_state_dir.mkdir(parents=True, exist_ok=True)
-                # design section 8.2: the pre-merge copy lives in the backup registry (copy: the live file is rewritten next)
-                backups.create_file(registry_sys, "state", live_path, reason="pre-merge copy of declarations",
-                                    op_id="merge-declarations", label=f"{Path(filename).stem}-pre-merge", copy=True)
-                
-                _atomic_write_json(live_path, merged)
-                
+                if merged != ours:
+                    # design section 8.2: the pre-merge copy lives in the backup registry (copy: the live file is rewritten next)
+                    backups.create_file(registry_sys, "state", live_path, reason="pre-merge copy of declarations",
+                                        op_id="merge-declarations", label=f"{Path(filename).stem}-pre-merge", copy=True)
+                    _atomic_write_json(live_path, merged)
+
                 if default_path.exists():
                     shutil.copy2(default_path, base_path)
                 

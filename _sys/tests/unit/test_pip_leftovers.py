@@ -162,3 +162,60 @@ def test_apply_revalidates_health(install, monkeypatch):
     result = env_ops.execute(install, "repair", plan["steps"])
     assert result["status"] == "success" and leftover.exists()
     assert not backups.scan(install).valid
+
+
+def test_unrecognized_leftover_doctor_and_repair_manual_steps_message(install, capsys):
+    site = install / "env/venv/Lib/site-packages"
+    (site / "~unknown_tool").mkdir(parents=True)
+    (site / "~unknown_tool" / "data.txt").write_text("user data", encoding="utf-8")
+
+    rows = venv_manager.pip_leftovers(site)
+    assert len(rows) == 1
+    assert rows[0]["removable"] is False
+    assert rows[0]["remedy"] == "unrecognized, inspect manually"
+
+    checks = venv_manager.run_checks(install, runner=lambda *a: (1, "offline"))
+    warning = next(c for c in checks if c["name"] == "pip_leftovers")
+    detail = warning["detail"]
+    assert "Engram will not move it automatically" in detail
+    assert "stop running python/peerhub processes" in detail
+    assert "move the directory to <sys>/data/backups/venv/manual/<timestamp>/ instead of deleting" in detail
+    assert "run pip check" in detail
+
+    from core import venv_repair
+    steps = venv_repair.plan_pip_leftover_quarantine(install)
+    ctx = env_ops.OpContext(install, "test-op", "update", {}, {})
+    steps[0].do(ctx)
+    out = capsys.readouterr().out
+    assert "[Warning] Pip leftover kept:" in out
+    assert "Engram will not move it automatically" in out
+    assert "stop running python/peerhub processes" in out
+    assert "move the directory to <sys>/data/backups/venv/manual/<timestamp>/ instead of deleting" in out
+    assert "run pip check" in out
+
+
+def test_nested_link_inside_leftover_is_pruned_and_unrecognized(install):
+    site = install / "env/venv/Lib/site-packages"
+    outside = install / "outside_dir"
+    outside.mkdir(parents=True)
+    (outside / "secret.txt").write_text("secret", encoding="utf-8")
+
+    leftover = site / "~dangerous"
+    leftover.mkdir(parents=True)
+
+    # Create a nested symlink or junction inside the leftover tree
+    nested_link = leftover / "nested_link"
+    try:
+        os.symlink(outside, nested_link, target_is_directory=True)
+    except OSError:
+        import subprocess
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(nested_link),
+                        str(outside)], check=True, capture_output=True)
+
+    rows = venv_manager.pip_leftovers(site)
+    assert len(rows) == 1
+    # Because of the nested link, plain_tree must be False and it must NOT be removable
+    assert rows[0]["removable"] is False
+    assert rows[0]["remedy"] == "unrecognized, inspect manually"
+
+
