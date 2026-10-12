@@ -167,7 +167,7 @@ def active_journal(sys_dir: Path | str) -> Optional[dict]:
     if not j or j["phase"] == "ROLLED_BACK":
         return None
 
-    blocking_posts = [p for p in j["planned_posts"] if j["steps"].get(p) not in ("done", "failed")]
+    blocking_posts = j["pending_post"]
 
     if j["phase"] == "COMMITTED" and not blocking_posts:
         return None
@@ -271,6 +271,21 @@ def _peek_op_id(sys_dir: Path) -> str:
             return r["op_id"]
     return "unknown"
 
+
+def _post_failure(ctx: OpContext, post_failed: list[str], posts: list[Step]) -> dict:
+    subject = "Python update" if any(s.name == "write-pin" for s in posts) else "Environment operation"
+    warning = (f"[Warning] {subject} committed, but state writes failed: "
+               f"{', '.join(post_failed)}. Exit 1; pin/manifest may be stale.")
+    recovery = ("Recovery: fix write access or available disk space, then run "
+                f"engram repair --resume (operation {ctx.op_id}).")
+    print(warning)
+    print(recovery)
+    return {"status": "failed", "operation": ctx.kind, "op_id": ctx.op_id,
+            "phase": "COMMITTED", "detail": warning, "failure": warning,
+            "failed_step": post_failed[0], "post_failed": post_failed,
+            "exit_code": 1, "recovery": recovery, "quiet": True}
+
+
 def execute(
     sys_dir: Path | str, kind: str, steps: list[Step], *, paths: Optional[dict[str, Path]] = None,
     op_id: Optional[str] = None, now: Callable[[], str] = utc_now, crash_after: Optional[str] = None,
@@ -357,7 +372,7 @@ def execute(
                 raise SimulatedCrash(f"Crash after {step.name}")
 
         if post_failed:
-            return {"status": "success", "operation": kind, "op_id": op_id, "phase": "COMMITTED", "detail": f"post steps failed: {post_failed}", "failed_step": post_failed[0], "post_failed": post_failed, "exit_code": 0}
+            return _post_failure(ctx, post_failed, group_b)
         return {"status": "success", "operation": kind, "op_id": op_id, "phase": "COMMITTED", "detail": "success", "failed_step": None, "exit_code": 0}
 
     finally:
@@ -460,7 +475,7 @@ def resume(
                 if crash_after == step.name:
                     raise SimulatedCrash(f"Crash after {step.name}")
             if post_failed:
-                return {"status": "success", "operation": kind, "op_id": op_id, "phase": "COMMITTED", "detail": f"post steps failed: {post_failed}", "failed_step": post_failed[0], "post_failed": post_failed, "exit_code": 0}
+                return _post_failure(ctx, post_failed, group_b)
             return {"status": "success", "operation": kind, "op_id": op_id, "phase": "COMMITTED", "detail": "success", "failed_step": None, "exit_code": 0}
 
         if phase in ("ROLLING_BACK", "ROLLBACK_FAILED"):

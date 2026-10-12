@@ -11,6 +11,8 @@ Description:
   It runs the same engine and plan as 'engram repair' (plus --from), so the
   safety is identical: preview by default, environment lock, crash-safe
   journal, backups moved into the registry and never deleted.
+  Failed writes after commit exit 1; fix write access or available disk
+  space, then run engram repair --resume to retry pending writes.
 
 Options:
   --from OLD_PATH  The previous location, if Engram cannot detect it
@@ -36,6 +38,7 @@ Examples:
 
 Exit codes:
   0   ok, nothing to do, or preview shown
+  1   committed environment has pending state writes (use --resume)
   2   usage error, including invalid --only or conflicting recovery flags
   10  declined at the prompt
   11  precondition failed, or no terminal and no --yes (nothing was changed)

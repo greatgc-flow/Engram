@@ -476,6 +476,8 @@ def scan_installed_packages(site_packages: Path) -> list[dict]:
         return packages
         
     for d in site_packages.iterdir():
+        if d.name.startswith("~"):
+            continue
         if d.is_dir() and d.name.endswith(".dist-info"):
             metadata_file = d / "METADATA"
             if not metadata_file.exists():
@@ -528,7 +530,8 @@ def build_snapshot(sys_dir: Path, *, now: str, python_version: Optional[str] = N
     packages = []
     if site_packages.exists():
         for d in site_packages.iterdir():
-            if d.is_dir() and d.name.endswith(".dist-info") and not (d / "METADATA").exists():
+            if (not d.name.startswith("~") and d.is_dir()
+                    and d.name.endswith(".dist-info") and not (d / "METADATA").exists()):
                 skipped.append(d.name)
         packages = scan_installed_packages(site_packages)
         

@@ -539,3 +539,69 @@ def test_combined_skew_and_stale_commits_only_after_regen(tmp_path):
     with pytest.raises(RuntimeError):
         by_name["regenerate-console-scripts"].do(ctx)
     assert st() == ["pending"]
+
+
+def _leftover_quarantine_tree(tmp_path):
+    sys_dir = tmp_path / "_sys"
+    site = sys_dir / "env" / "venv" / "Lib" / "site-packages"
+    info = site / "pkg-1.dist-info"
+    info.mkdir(parents=True)
+    (info / "METADATA").write_text("Name: pkg\nVersion: 1\n")
+    (info / "RECORD").write_text("pkg.py,,\n")
+    (site / "pkg.py").write_text("payload")
+    old = site / "~duplicate.dist-info"
+    old.mkdir()
+    (old / "METADATA").write_text("Name: pkg\nVersion: 0\n")
+    return sys_dir, site, info, old
+
+
+@pytest.mark.parametrize("case", ["bare", "guessed", "unhealthy", "namespace", "unsafe"])
+def test_swap_quarantine_keeps_unproven_ownership(tmp_path, monkeypatch, capsys, case):
+    from core import backups, env_ops, python_manager, venv_manager, venv_repair
+    sys_dir, site, info, old = _leftover_quarantine_tree(tmp_path)
+    if case in ("bare", "guessed"):
+        (old / "METADATA").unlink()
+    elif case == "unhealthy":
+        (info / "RECORD").write_text("pkg/missing.py,,\n")
+    elif case == "namespace":
+        (site / "pkg").mkdir()
+        (info / "RECORD").write_text("pkg/,,\n")
+    else:
+        plain = venv_manager._pip_plain
+        monkeypatch.setattr(venv_manager, "_pip_plain", lambda path: path != old and plain(path))
+    monkeypatch.setattr(python_manager, "default_holders", lambda paths: [])
+    result = env_ops.execute(sys_dir, "update", venv_repair.plan_pip_leftover_quarantine(sys_dir))
+    assert result["status"] == "success" and old.exists()
+    assert not backups.scan(sys_dir).valid
+    assert f"[Warning] Pip leftover kept: {old}." in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("fault", ["health-race", "long-path", "wrong-op", "wrong-source"])
+def test_swap_quarantine_revalidates_paths_and_backup_identity(tmp_path, monkeypatch, capsys, fault):
+    from core import backups, env_ops, python_manager, venv_repair
+    sys_dir, site, info, old = _leftover_quarantine_tree(tmp_path)
+    monkeypatch.setattr(python_manager, "default_holders", lambda paths: [])
+    steps = venv_repair.plan_pip_leftover_quarantine(sys_dir)
+    ctx = env_ops.OpContext(sys_dir, "identity-op", "update", {}, {})
+    steps[0].do(ctx)
+    if fault == "health-race":
+        (site / "pkg.py").unlink()
+    elif fault == "long-path":
+        monkeypatch.setattr(backups, "backups_root", lambda sys_dir: sys_dir / ("x" * 220))
+    steps[1].do(ctx)
+    if fault in ("health-race", "long-path"):
+        assert old.exists() and not backups.scan(sys_dir).valid
+        assert "[Warning] Pip leftover kept:" in capsys.readouterr().out
+        return
+    ref = backups.scan(sys_dir).valid[0]
+    key = "op_id" if fault == "wrong-op" else "source_path"
+    value = ref.meta[key]
+    ref.meta[key] = "wrong"
+    backups._write_meta(ref.path, ref.meta)
+    with pytest.raises(RuntimeError, match="identity mismatch"):
+        steps[1].undo(ctx)
+    assert not old.exists() and (ref.path / backups.PAYLOAD / "METADATA").exists()
+    ref.meta[key] = value
+    backups._write_meta(ref.path, ref.meta)
+    steps[1].undo(ctx)
+    assert (old / "METADATA").read_text() == "Name: pkg\nVersion: 0\n"

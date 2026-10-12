@@ -261,6 +261,107 @@ def _commit_op_backups(ctx) -> None:
             backups.commit(ref)
 
 
+def plan_pip_leftover_quarantine(sys_dir: Path, pip_candidates: list | None = None) -> list:
+    """Reuse repair ownership/backup checks; journal dynamic candidates before moving.
+
+    Fixed step names and journaled candidates survive a crash after any move,
+    including when the rebuilt plan sees no leftovers in the live venv.
+    """
+    from core.env_ops import Step
+    from core.venv_manager import pip_leftovers, _pip_plain
+    from core import backups, python_manager
+    site = Path(sys_dir) / "env" / "venv" / "Lib" / "site-packages"
+
+    def candidates(ctx):
+        return pip_candidates if pip_candidates is not None else ctx.data["pip_swap_candidates"]
+
+    def plan_candidates(ctx):
+        rows = pip_leftovers(site)
+        ctx.data["pip_swap_candidates"] = [r["leftover"] for r in rows if r["removable"]]
+        for row in rows:
+            if not row["removable"]:
+                print(f"[Warning] Pip leftover kept: {row['leftover']}. {row['remedy']}.")
+        # Unsafe entries are deliberately absent from the ownership detector.
+        if _pip_plain(site) and site.is_dir():
+            for entry in site.iterdir():
+                if entry.name.startswith("~") and not _pip_plain(entry):
+                    print(f"[Warning] Pip leftover kept: {entry}. unsafe path.")
+
+    def destination(ctx, source):
+        import hashlib
+        token = hashlib.sha256((ctx.op_id + str(source)).encode()).hexdigest()[:24]
+        return backups.backups_root(ctx.sys_dir) / "venv" / (token + "-pip-leftover")
+
+    def do_leftovers(ctx):
+        if not candidates(ctx):
+            return
+        if python_manager.default_holders([site.parent.parent]):
+            raise RuntimeError("venv is busy: stop pip/python before repair")
+        for value in candidates(ctx):
+            source = Path(value)
+            if source.parent != site or not source.name.startswith("~"):
+                raise RuntimeError("invalid pip leftover path")
+            dest = destination(ctx, source)
+            meta = backups._read_meta(dest)
+            if meta and (dest / backups.PAYLOAD).exists():
+                if meta.get("source_path") != value or meta.get("op_id") != ctx.op_id:
+                    raise RuntimeError("pip leftover backup identity mismatch")
+                backups.commit(backups.BackupRef("venv", dest, meta))
+                continue
+            current = {r["leftover"] for r in pip_leftovers(site) if r["removable"]}
+            if value not in current:
+                print(f"[Warning] Pip leftover kept: {source}. ownership or canonical RECORD no longer verified.")
+                continue
+            payload = dest / backups.PAYLOAD
+            if any(len(str(p.absolute())) > 240 for p in (
+                    dest / backups.MARKER, payload,
+                    *(payload / p.relative_to(source) for p in source.rglob("*")))):
+                message = f"[Warning] Pip leftover kept: {source}. path too long to quarantine safely."
+                ctx.data.setdefault("pip_leftovers_kept", []).append(message)
+                print(message)
+                continue
+            try:
+                ref = backups.create(ctx.sys_dir, "venv", source,
+                                     reason="quarantine pip leftover", op_id=ctx.op_id,
+                                     label="pip-leftover", dest=dest)
+            except OSError as exc:
+                message = f"pip leftover quarantine failed for {source}: {exc}"
+                ctx.data["pip_leftovers_error"] = message
+                print(message)
+                raise RuntimeError(message) from exc
+            backups.commit(ref)
+            print(f"[Warning] Pip leftover quarantined: {source}. Backup: {dest}.")
+
+    def undo_leftovers(ctx):
+        for value in reversed(candidates(ctx)):
+            source = Path(value)
+            if source.parent != site or not source.name.startswith("~") or not _pip_plain(site):
+                raise RuntimeError("unsafe pip leftover restore path")
+            dest = destination(ctx, source)
+            meta = backups._read_meta(dest)
+            if meta:
+                if meta.get("op_id") != ctx.op_id or meta.get("source_path") != value:
+                    raise RuntimeError(f"pip leftover backup identity mismatch: {dest}")
+            if meta and (dest / backups.PAYLOAD).exists():
+                if python_manager.default_holders([site.parent.parent]):
+                    raise RuntimeError("venv is busy: stop pip/python before rollback")
+                backups.restore(backups.BackupRef("venv", dest, meta))
+            elif meta and source.is_dir() and meta.get("state") == "pending":
+                # A failed rename left only our write-ahead marker; no payload to restore.
+                if set(p.name for p in dest.iterdir()) != {backups.MARKER}:
+                    raise RuntimeError(f"unexpected files in failed pip backup: {dest}")
+                (dest / backups.MARKER).unlink()
+                dest.rmdir()
+
+    steps = []
+    if pip_candidates is None:
+        steps.append(Step("plan-pip-leftovers", plan_candidates, group="A"))
+    if pip_candidates is None or pip_candidates:
+        steps.append(Step("quarantine-pip-leftovers", do_leftovers,
+                          undo=undo_leftovers, group="A"))
+    return steps
+
+
 def plan_venv_repair(sys_dir: Path, findings: list, *, manifest: dict | None = None, runner: Runner = default_runner, allow_rebuild: bool = True, pip_candidates: list | None = None) -> list:
     findings_by_name = {f["name"]: f for f in findings}
     
@@ -366,79 +467,13 @@ def plan_venv_repair(sys_dir: Path, findings: list, *, manifest: dict | None = N
         steps.append(Step("regenerate-console-scripts", do=do_regen, group="A"))
         return steps
 
-    # Not rebuilding
+    # Not rebuilding: use the same quarantine as Python swaps.
     if "pip_leftovers" in findings_by_name:
-        from core.venv_manager import pip_leftovers, _pip_plain
-        from core import backups, python_manager
+        from core.venv_manager import pip_leftovers
         site = Path(sys_dir) / "env" / "venv" / "Lib" / "site-packages"
         candidates = pip_candidates if pip_candidates is not None else [
             r["leftover"] for r in pip_leftovers(site) if r["removable"]]
-
-        def destination(ctx, source):
-            import hashlib
-            token = hashlib.sha256((ctx.op_id + str(source)).encode()).hexdigest()[:24]
-            return backups.backups_root(ctx.sys_dir) / "venv" / (token + "-pip-leftover")
-
-        def do_leftovers(ctx):
-            if python_manager.default_holders([site.parent.parent]):
-                raise RuntimeError("venv is busy: stop pip/python before repair")
-            for value in candidates:
-                source = Path(value)
-                if source.parent != site or not source.name.startswith("~"):
-                    raise RuntimeError("invalid pip leftover path")
-                dest = destination(ctx, source)
-                meta = backups._read_meta(dest)
-                if meta and (dest / backups.PAYLOAD).exists():
-                    if meta.get("source_path") != value or meta.get("op_id") != ctx.op_id:
-                        raise RuntimeError("pip leftover backup identity mismatch")
-                    backups.commit(backups.BackupRef("venv", dest, meta))
-                    continue
-                current = {r["leftover"] for r in pip_leftovers(site) if r["removable"]}
-                if value not in current:
-                    continue
-                payload = dest / backups.PAYLOAD
-                if any(len(str(p.absolute())) > 240 for p in (
-                        dest / backups.MARKER, payload,
-                        *(payload / p.relative_to(source) for p in source.rglob("*")))):
-                    message = f"{source}: kept; path too long to quarantine safely"
-                    ctx.data.setdefault("pip_leftovers_kept", []).append(message)
-                    print(message)
-                    continue
-                try:
-                    ref = backups.create(ctx.sys_dir, "venv", source,
-                                         reason="quarantine pip leftover", op_id=ctx.op_id,
-                                         label="pip-leftover", dest=dest)
-                except OSError as exc:
-                    message = f"pip leftover quarantine failed for {source}: {exc}"
-                    ctx.data["pip_leftovers_error"] = message
-                    print(message)
-                    raise RuntimeError(message) from exc
-                backups.commit(ref)
-
-        def undo_leftovers(ctx):
-            for value in reversed(candidates):
-                source = Path(value)
-                if source.parent != site or not _pip_plain(site):
-                    raise RuntimeError("unsafe pip leftover restore path")
-                dest = destination(ctx, source)
-                meta = backups._read_meta(dest)
-                if meta:
-                    if meta.get("op_id") != ctx.op_id or meta.get("source_path") != value:
-                        raise RuntimeError(f"pip leftover backup identity mismatch: {dest}")
-                if meta and (dest / backups.PAYLOAD).exists():
-                    if python_manager.default_holders([site.parent.parent]):
-                        raise RuntimeError("venv is busy: stop pip/python before rollback")
-                    backups.restore(backups.BackupRef("venv", dest, meta))
-                elif meta and source.is_dir() and meta.get("state") == "pending":
-                    # A failed rename left only our write-ahead marker; no payload to restore.
-                    if set(p.name for p in dest.iterdir()) != {backups.MARKER}:
-                        raise RuntimeError(f"unexpected files in failed pip backup: {dest}")
-                    (dest / backups.MARKER).unlink()
-                    dest.rmdir()
-
-        if candidates:
-            steps.append(Step("quarantine-pip-leftovers", do_leftovers,
-                              undo=undo_leftovers, group="A"))
+        steps.extend(plan_pip_leftover_quarantine(sys_dir, candidates))
 
     pyvenv_home = findings_by_name.get("pyvenv_home", {})
     if pyvenv_home.get("level") == "error" or pyvenv_home.get("detail") == "skew":

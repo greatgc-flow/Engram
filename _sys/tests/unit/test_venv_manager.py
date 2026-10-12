@@ -489,3 +489,27 @@ def test_snapshot_op_is_noop_for_dry_run_or_check(tmp_path, flag):
     res = venv_manager.snapshot_op(ctx, now="2026-10-02T10:00:00Z")
     assert res["status"] == "success" and res.get("skipped") is True
     assert venv_manager.latest_snapshot(sys_dir) is None
+
+
+@pytest.mark.parametrize("leftover", ["~pkg-0.9.dist-info", "~pkg.egg-info",
+                                      "~unknown.dist-info", "~unknown.egg-info"])
+def test_snapshot_excludes_all_tilde_metadata(tmp_path, leftover):
+    site = tmp_path / "env" / "venv" / "Lib" / "site-packages"
+    canonical = site / "pkg-1.0.dist-info"
+    canonical.mkdir(parents=True)
+    (canonical / "METADATA").write_text("Name: pkg\nVersion: 1.0\n")
+    (canonical / "REQUESTED").touch()
+    (site / "pkg.py").write_text("healthy")
+    (canonical / "RECORD").write_text("pkg.py,,\n")
+    stale = site / leftover
+    stale.mkdir()
+    (stale / "METADATA").write_text(
+        "Name: " + ("unknown" if "unknown" in leftover else "pkg") + "\nVersion: 0.9\n")
+    (stale / "REQUESTED").touch()
+    (stale / "direct_url.json").write_text(
+        '{"url":"file:///stale","dir_info":{"editable":true}}')
+    snapshot = venv_manager.build_snapshot(tmp_path, now="2026-10-12T00:00:00Z")
+    assert snapshot["packages"] == [{"name": "pkg", "version": "1.0",
+                                     "requested": True, "editable": False}]
+    (canonical / "METADATA").unlink()
+    assert venv_manager.scan_installed_packages(site) == []

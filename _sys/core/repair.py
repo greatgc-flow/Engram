@@ -44,7 +44,9 @@ def _cli_result(res: dict, *, mode: str, sys_dir: Path | None = None) -> dict:
                          "[Warning] Venv dependency verification failed:"))]
         if failures:
             failure_detail = failures[-1]["error"]
-    if phase == "ROLLBACK_FAILED":
+    if phase == "COMMITTED" and res.get("post_failed"):
+        code = 1
+    elif phase == "ROLLBACK_FAILED":
         code = 13
     elif mode == "rollback" and phase == "ROLLED_BACK":
         return {"status": "success", "operation": "repair", "detail": "rolled back", "exit_code": 0,
@@ -62,6 +64,9 @@ def _cli_result(res: dict, *, mode: str, sys_dir: Path | None = None) -> dict:
         code = 12
     result = {"status": "success" if code == 0 else "failed", "operation": "repair", "detail": detail,
               "exit_code": code, "op_id": res.get("op_id"), "phase": phase, "failed_step": res.get("failed_step")}
+    for key in ("post_failed", "recovery", "failure", "quiet"):
+        if key in res:
+            result[key] = res[key]
     if failure_detail:
         result["failure"] = failure_detail
         if code == 11:

@@ -208,7 +208,15 @@ Venv:
   no stdlib venv), reinstalls the baseline for the new interpreter, restores
   requested packages at their recorded versions, and reinstalls editable
   installs whose path still exists. Missing paths are skipped and reported.
+  Minor restore preflight checks editable builds and dependencies before
+  any managed change. Rebuilt venvs must pass pip check before commit.
+  Both swaps quarantine metadata-proven pip ~ duplicates with a healthy
+  canonical RECORD; ambiguous or unsafe entries stay with warnings.
+  Snapshots ignore ~* distribution metadata. Patch packages and offline
+  capability remain preserved.
   Failures before commit roll back both Python and venv trees.
+  Failed pin/manifest writes after commit exit 1 and keep the update.
+  Fix write access or available disk space, then run engram repair --resume.
 
 Options:
   --yes, -y        Apply without asking (default: plan for Python or --latest;
@@ -249,7 +257,7 @@ Examples:
 
 Exit codes:
   0   success or nothing to do; --check completed all requested checks
-  1   a component failed, or --check found something unchecked
+  1   a component/state write failed, or --check found something unchecked
   2   usage error (unknown option or component)
   3   declined at the prompt
   10-14  managed environment codes; 11 is preflight refusal before mutation
@@ -432,6 +440,9 @@ Description:
   backup registry (see 'engram snapshots'), never deleted. If a run is
   interrupted, other commands refuse to run (exit 14) until you finish it
   with --resume or undo it with --rollback.
+  Failed writes after commit exit 1 and keep the updated environment.
+  Fix write access or available disk space, then run engram repair --resume.
+  Pending writes block new operations; committed swaps cannot be rolled back.
   --only venv also previews ~* pip leftovers in managed Lib/site-packages.
   --apply quarantines recognized pip duplicates only when sibling RECORD files
   verify a healthy install. Shared namespace directories alone are not proof.
@@ -455,7 +466,8 @@ Options:
   --offline        Never download anything (default: off)
   --remap-ai-state Also rewrite folder paths inside AI CLI state after a move
                    (default: off)
-  --resume         Continue an interrupted operation (default: off;
+  --resume         Retry pending writes or continue an interrupted operation
+                   (default: off;
                    mutually exclusive with --rollback)
   --rollback       Undo an interrupted operation (default: off)
   --json           One final JSON plan/result in every mode (default: off)
@@ -471,6 +483,7 @@ Examples:
 
 Exit codes:
   0   ok, or nothing to repair, or preview shown
+  1   committed environment has pending state writes (use --resume)
   2   usage error, including invalid --only or conflicting recovery flags
   10  declined at the prompt
   11  precondition failed, or no terminal and no --yes (nothing was changed)
@@ -500,6 +513,8 @@ Description:
   It runs the same engine and plan as 'engram repair' (plus --from), so the
   safety is identical: preview by default, environment lock, crash-safe
   journal, backups moved into the registry and never deleted.
+  Failed writes after commit exit 1; fix write access or available disk
+  space, then run engram repair --resume to retry pending writes.
 
 Options:
   --from OLD_PATH  The previous location, if Engram cannot detect it
@@ -525,6 +540,7 @@ Examples:
 
 Exit codes:
   0   ok, nothing to do, or preview shown
+  1   committed environment has pending state writes (use --resume)
   2   usage error, including invalid --only or conflicting recovery flags
   10  declined at the prompt
   11  precondition failed, or no terminal and no --yes (nothing was changed)

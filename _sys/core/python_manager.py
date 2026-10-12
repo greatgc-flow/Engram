@@ -612,7 +612,7 @@ def plan_python_update(
         if scratch.exists():
             preserve_dir(ctx, scratch, "state", "interrupted-package-snapshot")
         scratch.mkdir(parents=True)
-        snapshot = ctx.data.get("preflight_snapshot") or venv_manager.build_snapshot(
+        snapshot = venv_manager.build_snapshot(
             sys_dir, now=now(), python_version=installed
         )
         plan = venv_repair.restore_packages_step_data(snapshot)
@@ -850,6 +850,11 @@ def plan_python_update(
     ]
     if rebuild:
         steps.insert(2, env_ops.Step("minor-restore-preflight", do_restore_preflight, group="A"))
+    # Minor restore preflight must finish before any leftover is moved.
+    # Persist candidates under the operation lock before the authoritative scan.
+    if rebuild or refresh:
+        index = next(i for i, step in enumerate(steps) if step.name == "snapshot-packages")
+        steps[index:index] = venv_repair.plan_pip_leftover_quarantine(sys_dir)
     if rebuild or refresh:
         steps.append(env_ops.Step(
             "quarantine-venv" if rebuild else "backup-interpreter-files",

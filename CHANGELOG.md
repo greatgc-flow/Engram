@@ -4,6 +4,23 @@ All notable changes to Engram are documented here.
 The format follows Keep a Changelog. Versions follow Semantic Versioning.
 Historical entries are reconstructed from git commits and merged PR titles.
 
+## [3.9.3] - 2026-10-12
+
+### Fixed
+
+- Preflight complete minor restores, including editable build/runtime dependencies;
+  restore editables with dependency resolution and build isolation.
+- Block rebuilt venv commits on failed pip check and roll back Python and venv.
+- Exclude pip ~ metadata from snapshots and conservatively quarantine proven
+  duplicates before patch and minor swaps, with journaled resume and undo.
+- Report committed pin/manifest write failures with exit 1 and exact resume
+  recovery guidance; retain pending writes and backups.
+
+### Changed
+
+- Preserve patch packages and offline capability; ambiguous pip remnants stay
+  with warnings.
+
 ## [3.9.2] - 2026-10-12
 
 ### Fixed

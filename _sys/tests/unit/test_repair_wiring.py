@@ -696,3 +696,24 @@ def test_latest_execution_reuses_advice_readiness_before_mutation(
     if state != "ok":
         assert reason in result["detail"]
         assert not (tmp_path / "_sys/env.ops.json").exists()
+
+
+@pytest.mark.parametrize("mode", ["apply", "resume"])
+def test_committed_state_write_failure_keeps_cli_and_json_contract(mode, capsys, monkeypatch):
+    from core import dispatcher
+    failure = {"status": "failed", "phase": "COMMITTED", "exit_code": 1,
+               "detail": "state writes failed", "post_failed": ["write-manifest"],
+               "op_id": "write-fault", "failed_step": "write-manifest",
+               "recovery": "engram repair --resume", "quiet": True}
+    result = repair._cli_result(failure, mode=mode)
+    assert result["status"] == "failed" and result["exit_code"] == 1
+    assert result["phase"] == "COMMITTED" and result["op_id"] == "write-fault"
+    assert result["post_failed"] == ["write-manifest"]
+    assert json.loads(json.dumps(result))["recovery"] == "engram repair --resume"
+    assert result["quiet"] is True
+    assert dispatcher._result_failed(result)
+    monkeypatch.setattr(repair, "repair_main", lambda ctx: result)
+    with pytest.raises(dispatcher.PipelineFailure) as raised:
+        dispatcher._run_operation("repair", {"module": "core.repair", "method": "repair_main"}, {})
+    assert raised.value.exit_code == 1 and raised.value.quiet is True
+    assert capsys.readouterr().out == ""
