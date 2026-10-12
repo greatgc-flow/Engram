@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
+
+PackageIdentifier: greatgc-flow.Engram
+PackageVersion: 3.9.2
+PackageLocale: en-US
+Publisher: greatgc-flow
+PublisherUrl: https://github.com/greatgc-flow
+PublisherSupportUrl: https://github.com/greatgc-flow/Engram/issues
+PackageName: Engram
+PackageUrl: https://github.com/greatgc-flow/Engram
+License: MIT
+LicenseUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+Copyright: Copyright (c) 2026 greatgc-flow
+CopyrightUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+ShortDescription: Portable Developer Runtime & Virtual Environment Engine for Windows
+Description: Engram is a zero-bloat, self-contained Windows portable runtime environment that provides isolated Python/Node/Git environments without requiring host installation or registry changes. It can optionally install, update, and manage the status of third-party AI CLI tools, but all AI-to-AI collaboration itself is handled by the separate peerhub package.
+Moniker: engram
+Tags:
+  - portable
+  - developer-tools
+  - workflow
+  - automation
+  - windows
+  - virtual-environment
+ReleaseNotes: |-
+  ### Fixed
+  
+  - Advertise Python minor updates only after archive and baseline dependency
+    readiness is verified; reuse readiness for execution preflight.
+  - Report blocked and unverifiable targets without executable update advice.
+  - Print one dispatcher failure and preserve preflight refusal exit 11.
+  - Suppress empty layout maintenance output and state writes.
+  - Remove unsupported package update advice, fix change-count prompts, and fail
+    update checks when requested components remain unchecked.
+  
+  ### Changed
+  
+  - Share baseline package declarations and use managed pip for target resolution.
+  - Use the selected changelog section for GitHub and WinGet release notes.
+  - Retain CI contract reports on success and failure; document the strict
+    single-pass CP949 gate.
+ReleaseNotesUrl: https://github.com/greatgc-flow/Engram/releases/tag/v3.9.2
+ManifestType: defaultLocale
+ManifestVersion: 1.12.0
