@@ -613,3 +613,161 @@ def test_unchanged_declarations_do_not_write_state_or_backups(migration_env, mon
         migration_env["defaults"], migration_env["live"], migration_env["base_state"],
         migration_env["manifest"], ["runtimes.json", "tool-catalog.v1.json"])
     assert report == []
+
+
+def test_adopted_defaults_sets_baseline_and_second_run_is_pure_noop(tmp_path, capsys, monkeypatch):
+    import _sys.core.layout_migration as lm
+    from _sys.core import backups
+    sys_dir = tmp_path / "_sys"
+    defaults_dir = sys_dir / "defaults"
+    defaults_dir.mkdir(parents=True)
+
+    runtimes_data = {"runtimes": {"python": {"version": "3.14"}}}
+    catalog_data = {"tools": []}
+    (defaults_dir / "runtimes.json").write_text(json.dumps(runtimes_data))
+    (defaults_dir / "tool-catalog.v1.json").write_text(json.dumps(catalog_data))
+
+    core_dir = sys_dir / "core"
+    core_dir.mkdir(parents=True)
+    (core_dir / "version.json").write_text(json.dumps({"version": "3.9.5"}))
+
+    # Run 1: live declarations missing, defaults adopted
+    res1 = lm.migrate_layout(tmp_path, sys_dir)
+    assert res1 == 0
+    assert "Layout Migration Summary" in capsys.readouterr().out
+
+    base_state_dir = sys_dir / "data" / "state" / "defaults-base"
+    assert (sys_dir / "runtimes.json").exists()
+    assert (sys_dir / "tool-catalog.v1.json").exists()
+    assert (base_state_dir / "runtimes.json").exists()
+    assert (base_state_dir / "tool-catalog.v1.json").exists()
+
+    snap_before = {p.relative_to(tmp_path): p.read_bytes()
+                   for p in tmp_path.rglob("*") if p.is_file() and "backups" not in p.parts}
+
+    monkeypatch.setattr(lm, "_atomic_write_json", lambda *a: pytest.fail("unexpected write on second run"))
+    monkeypatch.setattr(backups, "create_file", lambda *a, **k: pytest.fail("unexpected backup on second run"))
+
+    res2 = lm.migrate_layout(tmp_path, sys_dir)
+    assert res2 == 0
+    assert "Layout Migration Summary" not in capsys.readouterr().out
+
+    snap_after = {p.relative_to(tmp_path): p.read_bytes()
+                  for p in tmp_path.rglob("*") if p.is_file() and "backups" not in p.parts}
+    assert snap_after == snap_before
+
+
+def test_unchanged_live_declarations_do_not_backup_when_base_updated(migration_env, monkeypatch):
+    import _sys.core.layout_migration as lm
+    data = {"runtimes": {"python": {"version": "3.14"}}}
+    (migration_env["live"] / "runtimes.json").write_text(json.dumps(data))
+    (migration_env["defaults"] / "runtimes.json").write_text(json.dumps(data))
+
+    monkeypatch.setattr(lm.backups, "create_file", lambda *a, **k: pytest.fail("idle backup of unchanged live file"))
+    monkeypatch.setattr(lm, "_atomic_write_json", lambda *a: pytest.fail("idle write of unchanged live file"))
+
+    report = lm.merge_declarations_impl(
+        migration_env["defaults"], migration_env["live"], migration_env["base_state"],
+        migration_env["manifest"], ["runtimes.json"])
+    assert "runtimes.json: updated defaults base" in report
+    assert (migration_env["base_state"] / "runtimes.json").exists()
+
+    report2 = lm.merge_declarations_impl(
+        migration_env["defaults"], migration_env["live"], migration_env["base_state"],
+        migration_env["manifest"], ["runtimes.json"])
+    assert report2 == []
+
+
+def test_migration_runs_when_declarations_changed(tmp_path, capsys):
+    import _sys.core.layout_migration as lm
+    from _sys.core import backups
+    sys_dir = tmp_path / "_sys"
+    defaults_dir = sys_dir / "defaults"
+    defaults_dir.mkdir(parents=True)
+    core_dir = sys_dir / "core"
+    core_dir.mkdir(parents=True)
+    (core_dir / "version.json").write_text(json.dumps({"version": "3.9.5"}))
+
+    # Initial state: python 3.14
+    data_v1 = {"runtimes": {"python": {"version": "3.14"}}}
+    (defaults_dir / "runtimes.json").write_text(json.dumps(data_v1))
+    lm.migrate_layout(tmp_path, sys_dir)
+    capsys.readouterr()
+
+    # Second run without changes is a no-op
+    res_noop = lm.migrate_layout(tmp_path, sys_dir)
+    assert res_noop == 0
+    assert "Layout Migration Summary" not in capsys.readouterr().out
+
+    # Declarations change in defaults: python upgraded to 3.15
+    data_v2 = {"runtimes": {"python": {"version": "3.15"}}}
+    (defaults_dir / "runtimes.json").write_text(json.dumps(data_v2))
+
+    res_changed = lm.migrate_layout(tmp_path, sys_dir)
+    assert res_changed == 0
+    out = capsys.readouterr().out
+    assert "Layout Migration Summary" in out
+    assert json.loads((sys_dir / "runtimes.json").read_text())["runtimes"]["python"]["version"] == "3.15"
+    base_state_dir = sys_dir / "data" / "state" / "defaults-base"
+    assert json.loads((base_state_dir / "runtimes.json").read_text())["runtimes"]["python"]["version"] == "3.15"
+    # Pre-merge backup of live declarations was created
+    assert any("runtimes-pre-merge" in r.path.name for r in backups.scan(sys_dir).valid)
+
+
+def test_migration_runs_when_baseline_stale(tmp_path, capsys, monkeypatch):
+    import _sys.core.layout_migration as lm
+    sys_dir = tmp_path / "_sys"
+    defaults_dir = sys_dir / "defaults"
+    defaults_dir.mkdir(parents=True)
+    core_dir = sys_dir / "core"
+    core_dir.mkdir(parents=True)
+    (core_dir / "version.json").write_text(json.dumps({"version": "3.9.5"}))
+
+    data_current = {"runtimes": {"python": {"version": "3.14"}}}
+    data_stale = {"runtimes": {"python": {"version": "3.13"}}}
+    (defaults_dir / "runtimes.json").write_text(json.dumps(data_current))
+    (sys_dir / "runtimes.json").write_text(json.dumps(data_current))
+    base_state_dir = sys_dir / "data" / "state" / "defaults-base"
+    base_state_dir.mkdir(parents=True)
+    (base_state_dir / "runtimes.json").write_text(json.dumps(data_stale))
+
+    res = lm.migrate_layout(tmp_path, sys_dir)
+    assert res == 0
+    out = capsys.readouterr().out
+    assert "Layout Migration Summary" in out
+    assert "Merge actions: 1" in out
+    # Stale baseline updated to match defaults
+    assert json.loads((base_state_dir / "runtimes.json").read_text())["runtimes"]["python"]["version"] == "3.14"
+
+
+def test_migration_runs_on_downgrade(tmp_path, capsys):
+    import _sys.core.layout_migration as lm
+    from _sys.core import backups
+    sys_dir = tmp_path / "_sys"
+    defaults_dir = sys_dir / "defaults"
+    defaults_dir.mkdir(parents=True)
+    core_dir = sys_dir / "core"
+    core_dir.mkdir(parents=True)
+    (core_dir / "version.json").write_text(json.dumps({"version": "3.9.5"}))
+
+    data_v2 = {"runtimes": {"python": {"version": "3.15"}}}
+    data_v1 = {"runtimes": {"python": {"version": "3.14"}}}
+
+    # Setup base and live at 3.15
+    (sys_dir / "runtimes.json").write_text(json.dumps(data_v2))
+    base_state_dir = sys_dir / "data" / "state" / "defaults-base"
+    base_state_dir.mkdir(parents=True)
+    (base_state_dir / "runtimes.json").write_text(json.dumps(data_v2))
+
+    # Downgrade: defaults is now 3.14
+    (defaults_dir / "runtimes.json").write_text(json.dumps(data_v1))
+
+    res = lm.migrate_layout(tmp_path, sys_dir)
+    assert res == 0
+    out = capsys.readouterr().out
+    assert "Layout Migration Summary" in out
+    assert json.loads((sys_dir / "runtimes.json").read_text())["runtimes"]["python"]["version"] == "3.14"
+    assert json.loads((base_state_dir / "runtimes.json").read_text())["runtimes"]["python"]["version"] == "3.14"
+    assert any("runtimes-pre-merge" in r.path.name for r in backups.scan(sys_dir).valid)
+
+

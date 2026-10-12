@@ -4,6 +4,21 @@ All notable changes to Engram are documented here.
 The format follows Keep a Changelog. Versions follow Semantic Versioning.
 Historical entries are reconstructed from git commits and merged PR titles.
 
+## [3.9.5] - 2026-10-12
+
+### Fixed
+
+- Layout migration defaults-base idempotence (F-05): adopt baseline when
+  defaults are adopted so subsequent runs are pure no-ops with no backup,
+  rewrite, or summary; suppress rewriting and backing up live declarations
+  when unchanged, while changed declarations, stale baselines, and
+  downgrades still execute migration.
+- Guidance for unrecognized pip leftovers: clarify in doctor and repair that
+  Engram will not move unrecognized package directories automatically,
+  printing the exact manual recovery steps (stop python/peerhub processes,
+  move to <sys>/data/backups/venv/manual/<timestamp>/ instead of deleting,
+  and run pip check).
+
 ## [3.9.4] - 2026-10-12
 
 ### Fixed

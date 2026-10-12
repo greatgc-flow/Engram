@@ -281,6 +281,13 @@ def plan_pip_leftover_quarantine(sys_dir: Path, pip_candidates: list | None = No
         for row in rows:
             if not row["removable"]:
                 print(f"[Warning] Pip leftover kept: {row['leftover']}. {row['remedy']}.")
+                if row["remedy"] == "unrecognized, inspect manually":
+                    print(
+                        "[Warning] Engram will not move it automatically. "
+                        "Manual steps: stop running python/peerhub processes, "
+                        "move the directory to <sys>/data/backups/venv/manual/<timestamp>/ instead of deleting, "
+                        "run pip check."
+                    )
         # Unsafe entries are deliberately absent from the ownership detector.
         if _pip_plain(site) and site.is_dir():
             for entry in site.iterdir():
