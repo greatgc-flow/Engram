@@ -99,3 +99,35 @@ def test_doctor_operation_is_marked_quiet_in_dispatch_json():
     import json
     cfg = json.loads((find_root(__file__) / "dispatch.json").read_text(encoding="utf-8"))
     assert cfg["operations"]["doctor.run"]["quiet_failure"] is True
+
+
+@pytest.mark.parametrize("code", [11, 12, 13, 14])
+def test_abort_failure_printed_once_preserves_exit(monkeypatch, capsys, code):
+    from core import dispatcher
+    mod = types.ModuleType("failure_mod")
+    mod.run = lambda ctx: {"status": "failed", "exit_code": code,
+                           "detail": "no compatible dependency set"}
+    monkeypatch.setitem(sys.modules, "failure_mod", mod)
+    cfg = {"pipelines": {"update": ["update.run"]},
+           "operations": {"update.run": {"module": "failure_mod", "method": "run"}}}
+    monkeypatch.setattr(dispatcher, "_load_json", lambda path: cfg)
+    monkeypatch.setattr(dispatcher, "_build_ctx", lambda *a: {})
+    monkeypatch.setattr(Path, "exists", lambda self: True)
+    assert dispatcher.main(["dispatcher.py", "update"]) == code
+    output = capsys.readouterr().out
+    assert output.count("[Error]") == 1
+    assert "no compatible dependency set" in output
+    assert "returned failure" not in output
+
+
+@pytest.mark.parametrize("policy", ["continue", "warn"])
+def test_continue_or_warn_failure_keeps_operation_notice(monkeypatch, capsys, policy):
+    from core import dispatcher
+    cfg = {"pipelines": {"testcmd": ["op1"]},
+           "operations": {"op1": {"module": "dummy_mod", "failure_policy": policy}}}
+    monkeypatch.setattr(dispatcher, "_load_json", lambda path: cfg)
+    monkeypatch.setattr(dispatcher, "_build_ctx", lambda *a: {})
+    monkeypatch.setattr(Path, "exists", lambda self: True)
+    with pytest.raises(RuntimeError, match="pipeline 'testcmd' incomplete; failed operations: op1"):
+        dispatcher.main(["dispatcher.py", "testcmd"])
+    assert capsys.readouterr().out == "  [Error] Operation 'op1' returned failure: False\n"

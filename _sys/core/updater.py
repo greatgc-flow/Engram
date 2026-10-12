@@ -252,13 +252,17 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
         if python_status is None or args.offline:
             python_status = repair.python_update_status(
                 sys_dir, offline=args.offline, refresh=force_refresh)
+        readiness = python_status.get("readiness")
         # Replace legacy Python notices and unchecked entries with this check.
         not_checked = [n for n in not_checked if n.get("component") != "python"]
         could_not_check = [n for n in could_not_check if n.get("component") != "python"]
         if not python_status["checked"] and python_status["installed"]:
             not_checked.append({"component": "Python",
                                 "reason": python_status["reason"]})
-    
+        if readiness and readiness.state == "unverifiable":
+            not_checked.append({"component": "Python readiness",
+                                "reason": readiness.reason})
+
     # ---------------------------------------------------------
     # Engram Core Channel Detection & Discovery
     # ---------------------------------------------------------
@@ -430,7 +434,7 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
         print("\nNot checked:")
         for nc in not_checked:
             line = f"  - {nc.get('component')} ({nc.get('reason')})"
-            if nc.get("component") == "Python":
+            if str(nc.get("component", "")).startswith("Python"):
                 line = "\n".join(textwrap.wrap(
                     line.strip(), width=80, initial_indent="  ",
                     subsequent_indent="    "))
@@ -443,15 +447,13 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
             print("  engram update -y  Apply core + tools without prompting")
         for command in python_commands:
             print(f"  {command}")
-        # Cheap guidance, not an assertion that pip packages are outdated.
-        print("  engram update -o packages -y  Upgrade baseline venv packages (optional)")
     elif not could_not_check and not not_checked and not notices:
         print("\nEverything is up to date.")
     else:
         print("\nNo updates found among checked components.")
 
     if args.check:
-        if could_not_check or (python_status and not python_status["checked"]
+        if could_not_check or not_checked or (python_status and not python_status["checked"]
                                and python_status["installed"]):
             sys.exit(1)
             return {"status": "failed", "detail": "Update discovery encountered provider failures"}
@@ -476,7 +478,7 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
 
     if not args.yes:
         try:
-            choice = input(f"\nApply {total_changes} changes? [y/N] ")
+            choice = input(f"\nApply {total_changes} {'change' if total_changes == 1 else 'changes'}? [y/N] ")
         except (EOFError, OSError):
             choice = "n"
         if choice.strip().lower() != "y":

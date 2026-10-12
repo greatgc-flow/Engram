@@ -27,8 +27,10 @@ if str(_CORE_DIR) not in sys.path:
 from root import find_root  # noqa: E402
 
 try:  # Support both ``core.provisioner`` and ``_sys.core.provisioner`` imports.
+    from .baseline_packages import BASELINE_PACKAGES
     from .network_tls import install_urllib_platform_trust
 except ImportError:  # pragma: no cover - exercised by the bootstrap import path
+    from baseline_packages import BASELINE_PACKAGES
     from network_tls import install_urllib_platform_trust
 
 install_urllib_platform_trust()
@@ -1570,7 +1572,7 @@ def deploy(ctx: dict) -> dict:
         # Re-check on disk rather than trusting the exit code above: creation can
         # report success without actually leaving a working interpreter behind.
         if venv_py.exists():
-            for pkg in ["filelock", "pywinpty", "psutil", "pydantic"]:
+            for pkg, _ in BASELINE_PACKAGES:
                 try:
                     subprocess.run([str(venv_py), "-m", "pip", "install", pkg, "--quiet"], check=True)
                     print(f"  [OK] {pkg} installed")

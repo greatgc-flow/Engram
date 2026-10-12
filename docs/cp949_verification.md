@@ -27,11 +27,14 @@ To ensure regressions in path encoding, sidecar writing, and batch relay executi
    Relay `.bat` scripts and environment handoff batch routines are executed with console codepage set to 949 (`chcp 949 >nul && ...`) to verify that `set /p` and `cmd.exe` path expansions work end-to-end.
 
 ### Strict CI Verification Step
-In `.github/workflows/ci.yml`, a dedicated verification step runs:
+In `.github/workflows/ci.yml`, the main unit-test pass runs the strict gate once:
 
 ```powershell
-python -u -m pytest _sys/tests/unit -v -m cp949 --cp949-strict --tb=short
+python -X faulthandler -u -m pytest _sys/tests/unit -v --cp949-strict --tb=short --junitxml=contract-results.xml
 ```
+
+There is no second CP949-only CI run. The required-contract gate reads the
+same JUnit report, which CI uploads on success and failure.
 
 The `--cp949-strict` flag (handled in `conftest.py`) enforces:
 - **Zero skips**: Fails unconditionally if any test marked `cp949` is skipped.

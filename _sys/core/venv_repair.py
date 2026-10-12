@@ -7,6 +7,7 @@ import urllib.request
 from pathlib import Path
 from typing import Callable, Optional
 
+from core.baseline_packages import BASELINE_PACKAGES
 from core.env_ops import Step, OpContext
 from core.venv_manager import sanitize_url, interpreter_file_set, hash_files, default_runner
 
@@ -199,7 +200,8 @@ def rebase_path(path: str, old_root: str, new_root: str) -> str | None:
 def restore_packages_step_data(snapshot: dict, *, wheelhouse: Path | None = None) -> dict:
     t1, t2, t3, skipped_editable, constraints = [], [], [], [], []
     rebase = snapshot.get("rebase")
-    BASELINE_PACKAGES = {"filelock", "psutil", "pydantic", "pywinpty", "winpty"}
+    baseline_names = {re.split(r"[<>=!~\[]", spec, maxsplit=1)[0].lower()
+                      for pair in BASELINE_PACKAGES for spec in pair}
     
     for pkg in snapshot.get("packages", []):
         name = pkg.get("name", "")
@@ -209,7 +211,7 @@ def restore_packages_step_data(snapshot: dict, *, wheelhouse: Path | None = None
         version = pkg.get("version", "")
         spec = f"{name}=={version}" if version else name
         
-        if name.lower() in BASELINE_PACKAGES:
+        if name.lower() in baseline_names:
             t1.append(spec)
             continue
             

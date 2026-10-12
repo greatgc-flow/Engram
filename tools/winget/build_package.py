@@ -93,22 +93,19 @@ DESC_KO = (
 )
 
 
-def get_release_notes_en(version: str) -> str:
-    return (
-        f"Engram v{version}:\n"
-        f"- Complete recursive help for root, open, version, and menu commands\n"
-        f"- Consolidated release/Sandbox test harness with real failure propagation\n"
-        f"- Smaller portable archive excluding source-only tests and retired code"
-    )
+def get_release_notes_en(version: str, changelog: Path | None = None) -> str:
+    """Extract exactly the selected Keep a Changelog section body."""
+    path = changelog if changelog is not None else _REPO_ROOT / "CHANGELOG.md"
+    text = path.read_text(encoding="utf-8")
+    pattern = rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## |\Z)"
+    match = re.search(pattern, text, re.MULTILINE | re.DOTALL)
+    if not match or not match.group(1).strip():
+        raise ValueError(f"CHANGELOG section [{version}] is missing or empty: {path}")
+    return match.group(1).strip()
 
 
 def get_release_notes_ko(version: str) -> str:
-    return (
-        f"Engram v{version} 릴리즈:\n"
-        f"- 루트·open·version·menu 명령의 재귀적 도움말 완결\n"
-        f"- 릴리스/Sandbox 테스트 진입점 통합 및 실패 코드 전파\n"
-        f"- 소스 전용 테스트와 폐기 코드를 제외한 경량 포터블 아카이브"
-    )
+    return get_release_notes_en(version)
 
 
 # ── File Filter Rules for Clean Portable Archive ───────────────────────────
@@ -525,6 +522,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Setup directories
     dist_dir = (repo_root / args.dist_dir).resolve()
     version = args.version
+    try:
+        get_release_notes_en(version)
+    except (OSError, ValueError) as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 1
     if not version or version.lower() == "unknown":
         print(
             "[ERROR] Cannot package build with version 'unknown'. Ensure _sys/core/version.json is valid or specify --version.",

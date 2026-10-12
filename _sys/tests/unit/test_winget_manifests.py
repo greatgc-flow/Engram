@@ -26,17 +26,17 @@ create_portable_archive = _BUILD_PACKAGE.create_portable_archive
 ROOT_FILES_ALLOW = _BUILD_PACKAGE.ROOT_FILES_ALLOW
 
 def test_manifest_generation():
-    version = "3.0.0"
+    version = "3.9.0"
     sha256 = "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
     url = "https://example.com/installer.zip"
     
     # 1. Version manifest
     v_yaml = generate_manifest_version(version)
-    assert "PackageVersion: 3.0.0" in v_yaml
+    assert "PackageVersion: 3.9.0" in v_yaml
 
     # 2. Installer manifest
     i_yaml = generate_manifest_installer(version, sha256, url)
-    assert "PackageVersion: 3.0.0" in i_yaml
+    assert "PackageVersion: 3.9.0" in i_yaml
     assert f"InstallerSha256: {sha256}" in i_yaml
 
     # 3. Locale EN manifest
@@ -190,3 +190,40 @@ def test_collect_package_files_excludes_backups_and_runtime_data(tmp_path: Path)
     assert not any(a.startswith("_sys/tests/") for a in arcnames)
     assert "_sys/data/operational_errors.jsonl" not in arcnames
     assert not any(a.endswith(".jsonl") for a in arcnames)
+
+
+def test_changelog_extraction_selects_exact_version(tmp_path):
+    import pytest
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text(
+        "# Changelog\n\n## [3.9.2] - Unreleased\n\n### Fixed\n\n- New fix.\n\n"
+        "## [3.9.1]\n\n- Previous fix.\n\n## [3.9.0]\n\n- Older fix.\n",
+        encoding="utf-8")
+    notes = _BUILD_PACKAGE.get_release_notes_en("3.9.1", changelog)
+    assert notes == "- Previous fix."
+    with pytest.raises(ValueError, match=r"section \[3.8.9\] is missing"):
+        _BUILD_PACKAGE.get_release_notes_en("3.8.9", changelog)
+    changelog.write_text("## [3.9.1]\n\n## [3.9.0]\n- Older fix.\n")
+    with pytest.raises(ValueError, match="missing or empty"):
+        _BUILD_PACKAGE.get_release_notes_en("3.9.1", changelog)
+
+
+def test_release_body_and_both_manifest_locales_share_changelog():
+    notes = _BUILD_PACKAGE.get_release_notes_en("3.9.2")
+    for generate in (generate_manifest_locale_en, generate_manifest_locale_ko):
+        manifest = generate("3.9.2")
+        body = manifest.split("ReleaseNotes: |-\n", 1)[1].split("ReleaseNotesUrl:", 1)[0]
+        assert "\n".join(line[2:] for line in body.splitlines()) == notes
+    workflow = (repo_root / ".github/workflows/sandbox-gate.yml").read_text(encoding="utf-8")
+    assert "get_release_notes_en(sys.argv[1])" in workflow
+    assert "--notes-file release/release-notes.md" in workflow
+    assert "--generate-notes" not in workflow
+    assert "GITHUB_REF_NAME -replace '^v', ''" in workflow
+
+
+def test_package_missing_changelog_fails_before_archive(monkeypatch, capsys):
+    def unexpected(*a, **k):
+        raise AssertionError("archive must not be created")
+    monkeypatch.setattr(_BUILD_PACKAGE, "create_portable_archive", unexpected)
+    assert _BUILD_PACKAGE.main(["--version", "999.0.0"]) == 1
+    assert "CHANGELOG section [999.0.0] is missing" in capsys.readouterr().err

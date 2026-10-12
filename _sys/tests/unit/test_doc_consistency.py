@@ -78,3 +78,27 @@ class TestDocConsistency:
             if item.is_dir():
                 # Conventions say lowercase kebab-case for sys folders
                 assert item.name == item.name.lower(), f"System folder name must be lowercase: {item.name}"
+
+
+def test_update_help_is_ascii_wrapped_and_verbatim_in_reference():
+    root = find_root(__file__).parent
+    help_text = (root / "_sys/core/help/update.txt").read_text(encoding="utf-8")
+    reference = (root / "docs/cli_reference.md").read_text(encoding="utf-8")
+    assert help_text.strip() in reference
+    assert all(line.isascii() and len(line) <= 80 for line in help_text.splitlines())
+    assert "requested components" in help_text
+    assert "11 is preflight refusal" in help_text
+    assert "packages -y  Upgrade baseline venv packages (optional)" not in reference
+
+
+def test_ci_retains_single_pass_contract_report_even_on_failure():
+    root = find_root(__file__).parent
+    ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert ci.count("-m pytest") == 1
+    assert "--cp949-strict --tb=short --junitxml=contract-results.xml" in ci
+    upload = ci.split("- name: Upload contract results", 1)[1]
+    assert "if: always()" in upload
+    assert "actions/upload-artifact@" in upload and "# v7." in upload
+    assert "path: contract-results.xml" in upload
+    guide = (root / "docs/cp949_verification.md").read_text(encoding="utf-8")
+    assert "There is no second CP949-only CI run." in guide

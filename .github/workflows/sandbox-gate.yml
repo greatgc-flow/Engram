@@ -414,7 +414,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $assets = @(Get-ChildItem release/assets -Recurse -File | ForEach-Object FullName)
-          gh release create "$env:GITHUB_REF_NAME" @assets --draft --verify-tag --title "$env:GITHUB_REF_NAME" --generate-notes
+          python -c "import sys; from pathlib import Path; from tools.winget.build_package import get_release_notes_en; Path('release/release-notes.md').write_text(get_release_notes_en(sys.argv[1]), encoding='utf-8')" "$($env:GITHUB_REF_NAME -replace '^v', '')"
+          if ($LASTEXITCODE) { throw 'HOLD: changelog section missing' }
+          gh release create "$env:GITHUB_REF_NAME" @assets --draft --verify-tag --title "$env:GITHUB_REF_NAME" --notes-file release/release-notes.md
           if ($LASTEXITCODE) { throw 'HOLD: draft creation or asset upload failed' }
           gh release edit "$env:GITHUB_REF_NAME" --draft=false
           if ($LASTEXITCODE) { throw 'HOLD: publication failed' }

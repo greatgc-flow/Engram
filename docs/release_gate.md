@@ -346,3 +346,12 @@ handoff, excluding only `_sys/data/temp` helper artifacts. Public updater
 bookkeeping before handoff remains in that inventory. Success must install the
 candidate version and preserve seeded user data. Promotion requires both
 `scenarios: {upgrade: PASS, rollback: PASS}` and the recorded updater source.
+
+## Release notes source
+
+The release workflow extracts the tagged version's `CHANGELOG.md` section with
+`tools.winget.build_package.get_release_notes_en` and passes that exact body to
+`gh release create --notes-file`. Both WinGet locales use the same English
+section. A missing or empty section blocks packaging and release creation.
+Update the selected section before tagging; no separate manual release body
+is required.

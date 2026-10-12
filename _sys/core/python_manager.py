@@ -9,10 +9,22 @@ import zipfile
 from pathlib import Path
 from typing import Callable
 
+from core.baseline_packages import BASELINE_PACKAGES
 from core import backups, env_manifest, env_ops, provisioner, venv_manager, venv_repair
 
 Runner = Callable[[list[str], float], tuple[int, str]]
 Downloader = Callable[[str, Path], None]
+
+
+def baseline_install_specs(snapshot: dict) -> list[str]:
+    """The T1 restore requirements, including pinned baseline and missing specs."""
+    baseline = list(venv_repair.restore_packages_step_data(snapshot)["t1"])
+    names = {re.split(r"[<>=!~\[]", spec, maxsplit=1)[0].lower() for spec in baseline}
+    for spec, _ in sorted(BASELINE_PACKAGES):
+        name = re.split(r"[<>=!~\[]", spec, maxsplit=1)[0].lower()
+        if name not in names:
+            baseline.append(spec)
+    return baseline
 
 
 def classify_change(installed: str | None, target: str) -> str:
@@ -636,14 +648,7 @@ def plan_python_update(
                 command.append("--no-index")
             return runner(command + arguments, timeout)
 
-        baseline = list(plan["t1"])
-        baseline_names = {
-            re.split(r"[<>=!~\[]", spec, maxsplit=1)[0].lower()
-            for spec in baseline
-        }
-        for name in ("filelock", "psutil", "pydantic", "pywinpty"):
-            if name not in baseline_names:
-                baseline.append(name)
+        baseline = baseline_install_specs(snapshot)
         if baseline:
             rc, output = install(baseline, 120.0)
             if rc != 0:
