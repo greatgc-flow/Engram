@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
+
+PackageIdentifier: greatgc-flow.Engram
+PackageVersion: 3.9.4
+PackageLocale: en-US
+Publisher: greatgc-flow
+PublisherUrl: https://github.com/greatgc-flow
+PublisherSupportUrl: https://github.com/greatgc-flow/Engram/issues
+PackageName: Engram
+PackageUrl: https://github.com/greatgc-flow/Engram
+License: MIT
+LicenseUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+Copyright: Copyright (c) 2026 greatgc-flow
+CopyrightUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+ShortDescription: Portable Developer Runtime & Virtual Environment Engine for Windows
+Description: Engram is a zero-bloat, self-contained Windows portable runtime environment that provides isolated Python/Node/Git environments without requiring host installation or registry changes. It can optionally install, update, and manage the status of third-party AI CLI tools, but all AI-to-AI collaboration itself is handled by the separate peerhub package.
+Moniker: engram
+Tags:
+  - portable
+  - developer-tools
+  - workflow
+  - automation
+  - windows
+  - virtual-environment
+ReleaseNotes: |-
+  ### Fixed
+  
+  - Route clean operation failure exit code 1 through PipelineFailure in
+    dispatcher, ensuring Node.js latest/offline failures exit with one message
+    and no traceback; preserve ordinary failures for non-usage codes 2-9.
+  - Preserve `--check` intent when delegating environment updates to the repair
+    engine; ensure managed Python preview exits with code 1 for unchecked
+    requested components, and offline checks never apply.
+  - Clarify that `--force` overrides minor Python planning readiness checks;
+    staged restore failures and dependency-integrity verification still block
+    execution.
+  - Condition Python up-to-date reporting on newer minor availability to prevent
+    displaying "up to date" alongside newer-minor warnings.
+  
+  ### Deferred
+  
+  - Layout migration defaults-base idempotence (F-05) deferred.
+ReleaseNotesUrl: https://github.com/greatgc-flow/Engram/releases/tag/v3.9.4
+ManifestType: defaultLocale
+ManifestVersion: 1.12.0
