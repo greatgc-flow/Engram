@@ -20,7 +20,7 @@ import pytest
 from _sys.core.root import find_root
 
 sys.path.insert(0, str(find_root(__file__)))
-from core import backups, env_manifest, env_ops, python_manager  # noqa: E402
+from core import backups, env_manifest, env_ops, python_manager, repair  # noqa: E402
 
 TARGET_PATCH = "3.14.9"
 TARGET_MINOR = "3.15.0"
@@ -108,11 +108,13 @@ class World:
         if a[:2] == ["-m", "pip"] and "install" in a:
             if self.fail_pip:
                 return 1, "pip failed"
+            if "--dry-run" in a:
+                return 0, "Would install restored packages"
             sp = exe.parent.parent / "Lib" / "site-packages"
             for name in a[a.index("install") + 1:]:
                 if name.startswith("-"):
                     continue
-                base = name.split("==")[0].split(">=")[0]
+                base = Path(name).name if Path(name).is_dir() else name.split("==")[0].split(">=")[0]
                 di = sp / f"{base}-1.0.dist-info"
                 di.mkdir(parents=True, exist_ok=True)
                 (di / "METADATA").write_text(f"Name: {base}\nVersion: 1.0\n")
@@ -370,6 +372,148 @@ def test_default_holders_report_processes_running_from_the_swap_targets(tmp_path
 
 
 # ---- env_ops: torn tail, failed rotation -----------------------------------------------------------------------------------
+
+def add_editable(world):
+    source = world.root / "editable-project"
+    source.mkdir()
+    (source / "pyproject.toml").write_text(
+        '[build-system]\nrequires = ["missing-build-backend"]\n'
+        'build-backend = "missing_backend"\n', encoding="utf-8")
+    metadata = world.venv / "Lib" / "site-packages" / "editable-1.0.dist-info"
+    metadata.mkdir()
+    (metadata / "METADATA").write_text("Name: editable\nVersion: 1.0\nRequires-Dist: runtime-dep\n")
+    (metadata / "direct_url.json").write_text(json.dumps(
+        {"url": source.as_uri(), "dir_info": {"editable": True}}))
+    return source
+
+
+@pytest.mark.parametrize("output,offline,reason", [
+    ("BackendUnavailable: Cannot import missing_backend", False, "editable build backend unavailable"),
+    ("get_requires_for_build_editable: installing build dependencies failed", False, "editable build backend unavailable"),
+    ("ResolutionImpossible: conflicting dependencies runtime-dep", False, "no compatible dependency set"),
+    ("No matching distribution found for runtime-dep", True, "required artifacts unavailable offline"),
+])
+def test_minor_restore_preflight_faults_do_not_mutate_managed_state(minor_world, capsys, output, offline, reason):
+    w = minor_world
+    source = add_editable(w)
+    before = w.snapshot()
+    fake = w.runner
+
+    def resolver_fault(argv, timeout):
+        if "--dry-run" in argv:
+            w.calls.append(argv)
+            assert "-e" in argv and str(source) in argv and "pkg1==1.0" in argv
+            assert "--ignore-installed" in argv
+            assert "--no-build-isolation" not in argv and "--no-deps" not in argv
+            assert ("--no-index" in argv) == offline
+            assert str(w.venv) not in argv[0]
+            return 1, output
+        return fake(argv, timeout)
+
+    w.runner = resolver_fault
+    res = repair._cli_result(run(w, w.plan(offline=offline)), mode="apply", sys_dir=w.sys)
+    assert res["exit_code"] == 11 and res["phase"] == "ROLLED_BACK"
+    message = f"[Warning] Python minor update preflight failed: {reason}. Managed Python and venv unchanged."
+    assert capsys.readouterr().out.count(message) == 1
+    assert res["detail"] == message
+    assert w.snapshot() == before
+    assert not (w.sys / "env" / "python.new").exists()
+    assert not backups.scan(w.sys).valid
+    assert env_ops.active_journal(w.sys) is None
+
+
+def test_offline_virtualenv_artifact_failure_precedes_swap(minor_world, capsys):
+    w = minor_world
+    before = w.snapshot()
+    fake = w.runner
+
+    def missing_artifact(argv, timeout):
+        if "install" in argv and "virtualenv" in argv:
+            assert "--no-index" in argv
+            return 1, "virtualenv wheel unavailable"
+        return fake(argv, timeout)
+
+    w.runner = missing_artifact
+    res = repair._cli_result(run(w, w.plan(offline=True)), mode="apply", sys_dir=w.sys)
+    assert res["exit_code"] == 11
+    assert w.snapshot() == before and not backups.scan(w.sys).valid
+    assert "required artifacts unavailable offline" in capsys.readouterr().out
+
+
+def test_offline_missing_python_archive_is_early_failure(minor_world, capsys):
+    w = minor_world
+    python_manager.cache_paths(w.sys, w.target)[0].unlink()
+    before = w.snapshot()
+    res = repair._cli_result(run(w, w.plan(offline=True)), mode="apply", sys_dir=w.sys)
+    assert res["exit_code"] == 11
+    assert w.snapshot() == before and not backups.scan(w.sys).valid
+    assert not w.calls
+    assert capsys.readouterr().out.count("[Warning] Python minor update preflight failed:") == 1
+
+
+def test_cached_offline_minor_restore_checks_full_set_and_restores_editable(minor_world):
+    w = minor_world
+    source = add_editable(w)
+    assert run(w, w.plan(offline=True))["phase"] == "COMMITTED"
+    resolution = [c for c in w.calls if "--dry-run" in c]
+    assert len(resolution) == 1 and str(source) in resolution[0]
+    installs = [c for c in w.calls if "install" in c]
+    assert all("--no-index" in c for c in installs)
+    editable = [c for c in installs if "-e" in c and "--dry-run" not in c]
+    assert editable and all("--no-deps" not in c and "--no-build-isolation" not in c for c in editable)
+
+
+@pytest.mark.parametrize("fault", ["conflict", "timeout", "tool"])
+@pytest.mark.parametrize("undo_fails", [False, True])
+def test_minor_pip_check_blocks_commit_and_uses_existing_rollback(minor_world, capsys, fault, undo_fails):
+    import subprocess
+    w = minor_world
+    before = w.snapshot()
+    fake = w.runner
+
+    def check_fault(argv, timeout):
+        if argv[1:] == ["-m", "pip", "check"]:
+            if fault == "timeout":
+                raise subprocess.TimeoutExpired(argv, timeout)
+            if fault == "tool":
+                raise OSError("pip unavailable")
+            return 1, "runtime-dep 2.0 conflicts with editable"
+        return fake(argv, timeout)
+
+    w.runner = check_fault
+    steps = w.plan()
+    if undo_fails:
+        def fail_undo(ctx):
+            raise OSError("injected undo failure")
+        next(s for s in steps if s.name == "quarantine-python").undo = fail_undo
+    res = repair._cli_result(run(w, steps), mode="apply", sys_dir=w.sys)
+    assert res["exit_code"] == (13 if undo_fails else 12)
+    assert res["phase"] == ("ROLLBACK_FAILED" if undo_fails else "ROLLED_BACK")
+    assert capsys.readouterr().out.count("[Warning] Venv dependency verification failed:") == 1
+    assert env_manifest.read_manifest(w.sys).data["python"]["version"] == w.installed
+    if not undo_fails:
+        assert w.snapshot() == before
+        assert any(r.kind == "venv" and "failed-rebuild" in r.path.name for r in backups.scan(w.sys).valid)
+
+
+def test_offline_patch_preserves_editable_and_keeps_dependency_warning_nonblocking(patch_world):
+    w = patch_world
+    add_editable(w)
+    before = tree_hash(w.venv / "Lib" / "site-packages")
+    fake = w.runner
+
+    def patch_conflict(argv, timeout):
+        if argv[1:] == ["-m", "pip", "check"]:
+            w.calls.append(argv)
+            return 1, "pre-existing dependency conflict"
+        assert "--dry-run" not in argv and "-e" not in argv
+        return fake(argv, timeout)
+
+    w.runner = patch_conflict
+    assert run(w, w.plan(offline=True))["phase"] == "COMMITTED"
+    assert tree_hash(w.venv / "Lib" / "site-packages") == before
+    assert not any("install" in c and Path(c[0]) == w.venv / "Scripts" / "python.exe" for c in w.calls)
+    assert any(c[1:] == ["-m", "pip", "check"] for c in w.calls)
 
 def _noop_steps(log):
     return [env_ops.Step(f"s{i}", (lambda ctx, i=i: log.append(i)), group="A") for i in range(1, 4)]

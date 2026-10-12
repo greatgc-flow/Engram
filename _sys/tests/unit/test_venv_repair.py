@@ -42,6 +42,43 @@ class FakeRunner:
         self.calls.append(argv)
         return self.rc, self.out
 
+
+@pytest.mark.parametrize("fault", ["conflict", "timeout", "tool"])
+def test_repaired_venv_pip_check_failure_rolls_back_and_retains_failed_tree(tmp_path, capsys, fault):
+    import subprocess
+    from core import backups, env_ops, python_manager, repair
+    sys_dir = tmp_path / "_sys"
+    venv = sys_dir / "env" / "venv"
+    venv.mkdir(parents=True)
+    (venv / "original-package").write_bytes(b"original package identity")
+
+    def runner(argv, timeout):
+        if argv[1:3] == ["-m", "virtualenv"]:
+            (venv / "Scripts").mkdir(parents=True)
+            (venv / "Scripts" / "python.exe").write_text("rebuilt interpreter")
+            (venv / "failed-package").write_bytes(b"failed rebuild identity")
+            return 0, ""
+        if argv[1:] == ["-m", "pip", "check"]:
+            assert Path(argv[0]) == venv / "Scripts" / "python.exe"
+            if fault == "timeout":
+                raise subprocess.TimeoutExpired(argv, timeout)
+            if fault == "tool":
+                raise OSError("pip unavailable")
+            return 1, "package dependency conflict"
+        return 0, json.dumps({"regenerated": 0, "failed": []})
+
+    steps = plan_venv_repair(sys_dir, [{"name": "venv_interpreter", "level": "error"}], runner=runner)
+    paths = python_manager.allocate_paths(sys_dir, "repair-check", env_ops.utc_now)
+    res = repair._cli_result(env_ops.execute(sys_dir, "repair", steps, paths=paths,
+                                            op_id="repair-check"), mode="apply", sys_dir=sys_dir)
+    assert res["exit_code"] == 12 and res["phase"] == "ROLLED_BACK"
+    assert (venv / "original-package").read_bytes() == b"original package identity"
+    assert not (venv / "failed-package").exists()
+    failed = [r for r in backups.scan(sys_dir).valid if "failed-rebuild" in r.path.name]
+    assert len(failed) == 1
+    assert (failed[0].path / backups.PAYLOAD / "failed-package").read_bytes() == b"failed rebuild identity"
+    assert capsys.readouterr().out.count("[Warning] Venv dependency verification failed:") == 1
+
 def test_rewrite_pyvenv_cfg(tmp_path):
     venv_dir = tmp_path / "venv"
     venv_dir.mkdir()

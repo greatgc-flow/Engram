@@ -27,7 +27,7 @@ _BASELINE_PIP_NAMES = frozenset(re.split(r"[<>=!~\[]", spec, maxsplit=1)[0].lowe
 _PYTHON_SEAMS = frozenset({"downloader", "runner", "free_space", "holders", "rename", "sleep", "now", "venv_policy"})
 
 
-def _cli_result(res: dict, *, mode: str) -> dict:
+def _cli_result(res: dict, *, mode: str, sys_dir: Path | None = None) -> dict:
     """Map an env_ops result dict onto the CLI result contract (design section 10 exit codes).
 
     0 ok | 11 preflight / zero mutation | 12 verification failed and rolled back | 13 rollback failed
@@ -36,6 +36,14 @@ def _cli_result(res: dict, *, mode: str) -> dict:
     phase = res.get("phase")
     status = res.get("status")
     detail = res.get("detail", "")
+    failure_detail = ""
+    if sys_dir is not None and status != "success":
+        failures = [r for r in env_ops.read_journal(sys_dir)
+                    if r.get("state") == "failed" and r.get("error", "").startswith(
+                        ("[Warning] Python minor update preflight failed:",
+                         "[Warning] Venv dependency verification failed:"))]
+        if failures:
+            failure_detail = failures[-1]["error"]
     if phase == "ROLLBACK_FAILED":
         code = 13
     elif mode == "rollback" and phase == "ROLLED_BACK":
@@ -43,14 +51,23 @@ def _cli_result(res: dict, *, mode: str) -> dict:
                 "op_id": res.get("op_id"), "phase": phase}
     elif status == "success":
         code = 0
+    elif phase == "ROLLED_BACK" and (res.get("failed_step") == "minor-restore-preflight"
+            or failure_detail.startswith("[Warning] Python minor update preflight failed:")):
+        code = 11
     elif phase == "ROLLED_BACK":
         code = 12
     elif phase is None:
         code = 14 if "journal" in detail.lower() else 11
     else:
         code = 12
-    return {"status": "success" if code == 0 else "failed", "operation": "repair", "detail": detail,
-            "exit_code": code, "op_id": res.get("op_id"), "phase": phase, "failed_step": res.get("failed_step")}
+    result = {"status": "success" if code == 0 else "failed", "operation": "repair", "detail": detail,
+              "exit_code": code, "op_id": res.get("op_id"), "phase": phase, "failed_step": res.get("failed_step")}
+    if failure_detail:
+        result["failure"] = failure_detail
+        if code == 11:
+            result["detail"] = failure_detail
+            result["quiet"] = True  # The preflight printed its single failure summary.
+    return result
 
 
 def detect(
@@ -606,7 +623,7 @@ def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callabl
         if _spec_needs_runner(spec) and not _in_runner():
             return _handoff_result(sys_dir, "resume")
         def steps_for(a): return steps_from_spec(sys_dir, base_dir, spec, **seams)
-        return _cli_result(env_ops.resume(sys_dir, steps_for), mode="resume")
+        return _cli_result(env_ops.resume(sys_dir, steps_for), mode="resume", sys_dir=sys_dir)
         
     if args.rollback:
         active = detection["journal"]
@@ -620,7 +637,7 @@ def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callabl
             res = env_ops.rollback(sys_dir, steps_for)
         except env_ops.JournalError as exc:
             return {"status": "failed", "operation": "repair", "detail": str(exc), "exit_code": 11}
-        return _cli_result(res, mode="rollback")
+        return _cli_result(res, mode="rollback", sys_dir=sys_dir)
 
     try:
         plan = build_plan_fn(sys_dir, base_dir, detection, only=only_set, remap_ai_state=args.remap_ai_state, offline=args.offline, cli_args=args, seams=seams)
@@ -660,7 +677,7 @@ def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callabl
                               initial_data={"spec": plan["spec"]})
     except env_ops.JournalError as exc:
         return {"status": "failed", "operation": "repair", "detail": str(exc), "exit_code": 14}
-    return _cli_result(res, mode="apply")
+    return _cli_result(res, mode="apply", sys_dir=sys_dir)
 
 
 def repair_main(ctx: dict) -> dict:
@@ -716,6 +733,8 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
             change = python_manager.classify_change(installed, target)
             if change in ("downgrade", "major") and not getattr(cli_args, "allow_major_runtime_upgrade", False):
                 raise ValueError(f"Blocked {change} update {installed} -> {target}: pass --allow-major-runtime-upgrade and --yes.")
+            # Reuse advice readiness to refuse before execution. Applied swaps
+            # also pass the target-interpreter restore preflight under the lock.
             if installed and installed.split(".")[:2] != target.split(".")[:2]:
                 readiness = status["readiness"]
                 if readiness is None or readiness.target != target or readiness.url != url:

@@ -346,7 +346,9 @@ def plan_venv_repair(sys_dir: Path, findings: list, *, manifest: dict | None = N
                     os.remove(c_path)
                     
             for path in plan["t3"]:
-                runner([str(venv_python), "-m", "pip", "install", "-e", path, "--force-reinstall", "--no-deps", "--no-build-isolation"], 120.0)
+                rc, out = runner([str(venv_python), "-m", "pip", "install", "-e", path, "--force-reinstall"], 120.0)
+                if rc:
+                    raise RuntimeError(f"editable package restore failed: {out}")
                 
         def do_regen(ctx):
             venv_dir = ctx.sys_dir / "env" / "venv"
@@ -354,6 +356,8 @@ def plan_venv_repair(sys_dir: Path, findings: list, *, manifest: dict | None = N
             ctx.data["regenerated_scripts"] = res
             if res.get("failed"):
                 raise RuntimeError(f"console script regeneration failed: {res['failed']}")
+            from core.venv_manager import verify_dependencies
+            verify_dependencies(venv_dir / "Scripts" / "python.exe", runner=runner)
             _commit_op_backups(ctx)
             
         steps.append(Step("quarantine-venv", do=do_quarantine, undo=undo_quarantine, group="A"))
