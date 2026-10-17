@@ -917,3 +917,22 @@ def test_updater_help_flag_prints_help_and_returns_success(flag, capsys):
 
 
 
+
+
+@pytest.mark.parametrize("source,expect_hint", [("cache_ttl", True), ("github_api", False)])
+def test_core_update_hints_refresh_only_for_cached_result(latest_node, monkeypatch, capsys, source, expect_hint):
+    from core import version_resolver
+    real = version_resolver.resolve_latest
+
+    def fake(*args, **kwargs):
+        if kwargs.get("provider") == "engram_release":
+            return {"status": "ok", "provider": "engram_release", "latest_version": "99.0.0",
+                    "url": "https://example.test/e.zip", "checksum_algo": "sha256",
+                    "checksum_value": "abc", "source": source}
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(version_resolver, "resolve_latest", fake)
+    updater.run({"args": ["--dry-run"]})
+    out = capsys.readouterr().out
+    assert "-> 99.0.0" in out
+    assert ("engram update --refresh" in out) is expect_hint

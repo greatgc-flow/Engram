@@ -149,6 +149,17 @@ def test_dynamic_root_write_locations(tmp_path, monkeypatch):
     monkeypatch.setattr(updater, "_PORTABLE_ROOT", portable_root)
     monkeypatch.setattr(updater, "_SYS_DIR", sys_dir)
     
+    # Pin discovery: no live release lookups (the guard in conftest forbids real network calls).
+    import core.version_resolver as core_vr
+    import version_resolver as top_vr  # distinct module object imported by check_tool_updates
+    def fake_latest(*args, **kwargs):
+        # Report "already current" so nothing is applied to the live runtimes.json / catalog.
+        cur = str(kwargs.get("current_version") or "0.0.0")
+        return {"status": "ok", "provider": kwargs.get("provider", "pinned"), "latest_version": cur,
+                "url": None, "checksum_algo": None, "checksum_value": None, "source": "pinned"}
+    monkeypatch.setattr(core_vr, "resolve_latest", fake_latest)
+    monkeypatch.setattr(top_vr, "resolve_latest", fake_latest)
+
     # Run the sequence
     dispatcher.run_pipeline("update", ["--check"])
     dispatcher.run_pipeline("update", ["--yes"])

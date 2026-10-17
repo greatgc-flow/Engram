@@ -155,3 +155,25 @@ def scratch_dir():
                     time.sleep(0.1 * (attempt + 1))
                 else:
                     shutil.rmtree(path, ignore_errors=True)
+
+
+# --- Network guard: unit tests must never reach the real network ---
+
+@pytest.fixture(autouse=True)
+def _block_real_network(monkeypatch, request):
+    """Fail fast on non-loopback connections (a live call once broke CI when Node 24.22.0 shipped).
+
+    Opt out with @pytest.mark.network for tests that truly need the network.
+    """
+    if request.node.get_closest_marker("network"):
+        return
+    import socket
+    real_connect = socket.socket.connect
+
+    def guarded(self, address, *args, **kwargs):
+        host = address[0] if isinstance(address, tuple) else address
+        if isinstance(host, str) and host not in ("127.0.0.1", "::1", "localhost") and not host.startswith("/"):
+            raise RuntimeError(f"unit test attempted a real network connection to {host!r}; mock it or mark @pytest.mark.network")
+        return real_connect(self, address, *args, **kwargs)
+
+    monkeypatch.setattr(socket.socket, "connect", guarded)
