@@ -52,6 +52,7 @@ def build_wrapper_exe(source_path: Path | None = None, output_path: Path | None 
         csc,
         "/target:exe",
         "/optimize+",
+        f"/win32manifest:{_TOOLS_WINGET_DIR / 'wrapper.manifest'}",
         f"/out:{target}",
         str(source),
     ]

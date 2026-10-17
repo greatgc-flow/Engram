@@ -1,9 +1,18 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
+
+[assembly: AssemblyTitle("Engram")]
+[assembly: AssemblyProduct("Engram")]
+[assembly: AssemblyDescription("Engram portable dev environment launcher")]
+[assembly: AssemblyCompany("greatgc-flow")]
+[assembly: AssemblyCopyright("Copyright (c) greatgc-flow")]
+[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyFileVersion("1.0.0.0")]
 
 namespace Engram {
     static class Program {

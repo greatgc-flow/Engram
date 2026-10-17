@@ -4,6 +4,21 @@ All notable changes to Engram are documented here.
 The format follows Keep a Changelog. Versions follow Semantic Versioning.
 Historical entries are reconstructed from git commits and merged PR titles.
 
+## [3.9.6] - 2026-10-17
+
+### Fixed
+
+- Antivirus false positives on download: `Engram.exe` launcher now embeds
+  product/version metadata and an asInvoker manifest (it was a bare unsigned
+  6 KB stub that spawns `cmd.exe`, a common heuristic trigger).
+- `test_updater` no longer queries the live Node.js index (patched the
+  top-level `version_resolver` module), removing a CI flake on new releases.
+
+### Changed
+
+- Bundled defaults refreshed to latest: VS Code 1.142.0, PowerShell 7.6.7,
+  SQLite 3.54.1, Git 2.56.0, Claude Code 2.1.302, Codex 0.163.0.
+
 ## [3.9.5] - 2026-10-12
 
 ### Fixed
