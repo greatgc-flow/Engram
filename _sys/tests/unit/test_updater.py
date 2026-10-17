@@ -37,9 +37,12 @@ def latest_node(tmp_path, monkeypatch):
     monkeypatch.setattr(layout_migration, "supported_layout", lambda *a, **k: True)
     monkeypatch.setattr(updater.provisioner, "load_json_with_fallback", lambda path: runtimes)
     monkeypatch.setattr(updater, "check_components", lambda *a: {})
-    monkeypatch.setattr(version_resolver, "resolve_latest", lambda *a, **k: {
+    fake_latest = lambda *a, **k: {
         "status": "ok", "latest_version": "24.21.0", "url": "https://example.test/node.zip",
-        "checksum_algo": "sha256", "checksum_value": "abc"})
+        "checksum_algo": "sha256", "checksum_value": "abc"}
+    monkeypatch.setattr(version_resolver, "resolve_latest", fake_latest)
+    # check_tool_updates imports the top-level module, a distinct object from core.version_resolver.
+    monkeypatch.setattr(check_tool_updates.version_resolver, "resolve_latest", fake_latest)
     calls = []
     def discover(**kwargs):
         calls.append(kwargs)
