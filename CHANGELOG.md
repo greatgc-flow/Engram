@@ -4,6 +4,21 @@ All notable changes to Engram are documented here.
 The format follows Keep a Changelog. Versions follow Semantic Versioning.
 Historical entries are reconstructed from git commits and merged PR titles.
 
+## [3.9.7] - 2026-10-17
+
+### Changed
+
+- `engram update` now notes when the Engram core result came from the discovery
+  cache (up to 4 h old) and points to `engram update --refresh`, so a release
+  published minutes ago is not mistaken for missing.
+
+### Fixed
+
+- Unit tests can no longer reach the real network: an autouse guard in
+  `conftest.py` rejects non-loopback connections (opt out with
+  `@pytest.mark.network`). `test_root_write_locations` now pins discovery
+  instead of calling live release APIs.
+
 ## [3.9.6] - 2026-10-17
 
 ### Fixed
