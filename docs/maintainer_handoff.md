@@ -31,3 +31,15 @@ For AI peer collaboration rules, see [PeerHub docs/HANDOFF.md](https://github.co
 - Isolation `run` and an AI Skill are DEFERRED until a tracked request, a concrete caller/command, a reason existing workflows fail, and a supported host for live acceptance exist.
 - Isolation is not in release gates.
 - A shared cross-AI memory folder/junction/standing-instruction scheme was tried and rejected by the owner (no junctions or subst) - do not retry.
+
+## 4. State as of 2026-10-17 (v3.9.6)
+
+- Released v3.9.6 (Latest). Engram.exe now embeds version info and an asInvoker manifest to reduce AV false positives (still unsigned; a code-signing cert or a Microsoft Defender false-positive submission is the durable fix).
+- Remote and local branches pruned to `main` (full backup bundle was made before deletion). Keep it that way: delete release/feature branches after merge.
+- Open backlog:
+  - Dependabot PR #54 (upload-artifact 7.0.2): update-branch, wait for CI, merge.
+  - Code signing for Engram.exe / Defender false-positive submission.
+  - winget manifests for 3.9.6 deliberately not generated (owner excluded winget this round).
+  - `agy` "mkdir ...\.gemini\antigravity-cli: file already exists" is external to Engram: a stale file/dangling link at that path; delete it and agy recreates it.
+- Pitfall: `check_tool_updates` imports top-level `version_resolver`, a different module object from `core.version_resolver`; tests must patch both or they hit the live network.
+- Run `check_tool_updates --refresh --propose-diff` then `--apply`, and copy the live `_sys/runtimes.json` / `tool-catalog.v1.json` into `_sys/defaults/` before every release (live copies are gitignored).
