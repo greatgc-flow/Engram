@@ -8,9 +8,9 @@
                 "claude",
                 "cc"
             ],
-            "version": "2.1.280",
+            "version": "2.1.302",
             "source": {
-                "url": "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.280.tgz",
+                "url": "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.302.tgz",
                 "archive_type": "npm_peer",
                 "discovery_provider": "npm",
                 "discovery_id": "@anthropic-ai/claude-code"
@@ -38,9 +38,9 @@
                 "codex",
                 "cx"
             ],
-            "version": "0.156.1",
+            "version": "0.163.0",
             "source": {
-                "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.156.1.tgz",
+                "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.163.0.tgz",
                 "archive_type": "npm_peer",
                 "discovery_provider": "npm",
                 "discovery_id": "@openai/codex"
