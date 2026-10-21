@@ -6,6 +6,30 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+## [3.10.0] - 2026-10-21
+
+### Added
+
+- `refresh-runtimes` workflow (weekly and manual): discovers the latest validated
+  Python, Node.js LTS, Git, VS Code and PowerShell, computes SHA-256 for every
+  artifact, bootstraps and tests the result, then maintains one pull request.
+- Dependabot pip updates for dev and runtime pins (grouped, weekly) in addition
+  to GitHub Actions. Runtime pins live in `_sys/defaults/requirements-runtime.txt`
+  and apply to fresh provisioning only.
+- CI bootstraps the managed Python after the unit suite and requires the real venv
+  refresh/regeneration test to run (`ENGRAM_REQUIRE_REAL_VENV=1`).
+
+### Changed
+
+- Shipped defaults refreshed: Python 3.15.0, Node.js 24.22.0 LTS; SHA-256 now
+  pinned for all five base runtimes.
+- `bootstrap.bat` no longer carries a hardcoded Python fallback and fails closed
+  on missing or invalid runtime declarations.
+- `engram isolation check` reports a missing optional extension as UNAVAILABLE
+  instead of failing.
+- Documentation reconciled with current status (CP949 gate policy, audit record,
+  maintainer handoff, blueprint).
+
 ### Fixed
 
 - Remove the inert `GEMINI_DIR` override and automatic `.engram/agy`

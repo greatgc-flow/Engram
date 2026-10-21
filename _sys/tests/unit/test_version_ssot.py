@@ -157,6 +157,6 @@ def test_build_package_refuses_unknown_version():
 
 def test_pr_b2_version_has_selected_changelog_section():
     from tools.winget.build_package import get_release_notes_en
-    assert load_version_info()["version"] == "3.9.7"
-    assert "cache" in get_release_notes_en("3.9.7")
+    assert load_version_info()["version"] == "3.10.0"
+    assert "refresh-runtimes" in get_release_notes_en("3.10.0")
 
