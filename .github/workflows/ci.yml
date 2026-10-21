@@ -59,7 +59,7 @@ jobs:
       env:
         ENGRAM_REQUIRE_REAL_VENV: "1"
       run: |
-        python -X faulthandler -u -m pytest "_sys/tests/unit/test_venv_repair.py::test_real_venv_refresh_and_regen" -v -rs --tb=short
+        pytest -p no:cacheprovider "_sys/tests/unit/test_venv_repair.py::test_real_venv_refresh_and_regen" -v -rs --tb=short
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Upload contract results
