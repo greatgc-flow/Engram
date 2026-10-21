@@ -1,4 +1,4 @@
-"""backup_personal_data.py -- copy-based backup of the 3 AI CLIs' personal/
+"""backup_personal_data.py -- copy-based backup of allowlisted AI CLI personal/
 durable data, sourced from the single `.engram/` live root (item 11,
 dotdir consolidation, ratified 2026-09-09 -- see
 docs/design/dotdir-consolidation-RATIFIED-2026-09-09.md in the peerhub
@@ -6,18 +6,12 @@ repo). Extended 2026-09-19 for first-class engram backup/restore/reset
 CLI verbs with zip archives, process-liveness safety invariants, and
 pre-restore snapshots.
 
-Context: an earlier, separate legacy environment (P:, frozen, not this
-repo) has a same-named script that reads from 3 scattered
-`_sys/{claude,codex,antigravity}/config` directories, because that
-environment predates the env.json-driven redirect and never adopted it.
-This repo already puts every AI CLI's live config under one root --
-`.engram/{claude,codex,agy}` (items 5-7, this repo's `_sys/core/
-launcher.py` + `_sys/env.json`) -- so this version has exactly one source
-tree to filter, not three, and the `ai-config` member of the legacy
-version (a bundle of a separate, since-removed orchestration CLI's own
-`_sys/ai/` config) is dropped entirely: this repo has no such CLI and no
-`_sys/ai/` (see the Engram/PeerHub full-separation goal -- that CLI was
-deliberately removed from Engram).
+Claude Code and Codex live config is redirected to `.engram/{claude,codex}`
+by `_sys/core/launcher.py` and `_sys/env.json`. Antigravity CLI ignores
+GEMINI_DIR: its state remains under the user profile at
+`~/.gemini/antigravity-cli`, with login tokens in the OS keyring. Neither
+is covered here; the legacy agy/* allowlist entries only copy files
+already present under `.engram/agy`.
 
 `.engram/` itself is explicitly a LIVE root (ratified doc, item 2.3): it
 accumulates real caches and credentials over time, so it is never itself

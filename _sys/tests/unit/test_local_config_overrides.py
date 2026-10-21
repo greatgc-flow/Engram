@@ -116,12 +116,7 @@ def _make_engram_sys_dir(tmp_path: Path) -> Path:
     sys_dir = tmp_path / "_sys"
     sys_dir.mkdir()
     (sys_dir / "env.json").write_text(
-        '{"env_vars": {}, "tool_env_vars": {'
-        '"CLAUDE_CONFIG_DIR": {"base": "engram", "sub": "claude"}, '
-        '"CODEX_HOME": {"base": "engram", "sub": "codex"}, '
-        '"GEMINI_DIR": {"base": "engram", "sub": "agy"}, '
-        '"GH_CONFIG_DIR": {"base": "engram", "sub": "gh"}'
-        '}, "path_entries": []}',
+        (SYS / "env.json").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
     return sys_dir
@@ -129,11 +124,16 @@ def _make_engram_sys_dir(tmp_path: Path) -> Path:
 
 def test_build_env_resolves_ai_cli_vars_under_engram_dotdir(tmp_path, monkeypatch):
     monkeypatch.delenv("PEERHUB_CONFIG_HOME", raising=False)
+    monkeypatch.delenv("GEMINI_DIR", raising=False)
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "host-profile"))
+    monkeypatch.setenv("HOME", str(tmp_path / "host-home"))
     sys_dir = _make_engram_sys_dir(tmp_path)
     env = build_env(tmp_path, sys_dir)
     assert env["CLAUDE_CONFIG_DIR"] == str(tmp_path / ".engram" / "claude")
     assert env["CODEX_HOME"] == str(tmp_path / ".engram" / "codex")
-    assert env["GEMINI_DIR"] == str(tmp_path / ".engram" / "agy")
+    assert "GEMINI_DIR" not in env
+    assert env["USERPROFILE"] == str(tmp_path / "host-profile")
+    assert env["HOME"] == str(tmp_path / "host-home")
     assert env["GH_CONFIG_DIR"] == str(tmp_path / ".engram" / "gh")
     assert "PEERHUB_CONFIG_HOME" not in env
 
@@ -142,8 +142,9 @@ def test_build_env_creates_engram_subdirs_idempotently(tmp_path):
     sys_dir = _make_engram_sys_dir(tmp_path)
     build_env(tmp_path, sys_dir)
     build_env(tmp_path, sys_dir)  # must not raise the second time
-    for sub in ("claude", "codex", "agy", "gh"):
+    for sub in ("claude", "codex", "gh"):
         assert (tmp_path / ".engram" / sub).is_dir()
+    assert not (tmp_path / ".engram" / "agy").exists()
     assert not (tmp_path / ".engram" / "peerhub").exists()
 
 
