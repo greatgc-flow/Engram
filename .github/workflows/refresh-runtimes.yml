@@ -17,7 +17,6 @@ jobs:
       contents: write
       pull-requests: write
     env:
-      ENGRAM_REQUIRE_REAL_VENV: '1'
       GH_TOKEN: ${{ github.token }}
       ENGRAM_REFRESH_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
@@ -37,12 +36,6 @@ jobs:
           python tools/refresh_runtime_defaults.py --body-file "$env:RUNNER_TEMP/refresh-body.md"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           (Get-FileHash _sys/defaults/runtimes.json -Algorithm SHA256).Hash | Set-Content "$env:RUNNER_TEMP/tested-defaults.sha256"
-      - name: Bootstrap managed Python
-        shell: pwsh
-        run: |
-          cmd /d /c _sys\core\bootstrap.bat --skip-update --skip-ai
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (!(Test-Path _sys/env/python/python.exe)) { throw 'Managed Python missing' }
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -64,6 +57,19 @@ jobs:
       - name: Require release contracts without skips
         if: always()
         run: python tools/release_gate/check_required_tests.py --report contract-results.xml
+      - name: Bootstrap managed Python
+        shell: pwsh
+        run: |
+          cmd /d /c _sys\core\bootstrap.bat --skip-update --skip-ai
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (!(Test-Path _sys/env/python/python.exe)) { throw 'Managed Python missing' }
+      - name: Require real venv proof
+        shell: pwsh
+        env:
+          ENGRAM_REQUIRE_REAL_VENV: '1'
+        run: |
+          python -X faulthandler -u -m pytest "_sys/tests/unit/test_venv_repair.py::test_real_venv_refresh_and_regen" -v -rs --tb=short
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Publish tested defaults
         shell: pwsh
         run: |
