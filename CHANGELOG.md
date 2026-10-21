@@ -4,6 +4,14 @@ All notable changes to Engram are documented here.
 The format follows Keep a Changelog. Versions follow Semantic Versioning.
 Historical entries are reconstructed from git commits and merged PR titles.
 
+## [Unreleased]
+
+### Fixed
+
+- Remove the inert `GEMINI_DIR` override and automatic `.engram/agy`
+  directory creation. Document Antigravity CLI state in the user profile
+  (`~/.gemini/antigravity-cli`) and non-portable login tokens in the OS keyring.
+
 ## [3.9.7] - 2026-10-17
 
 ### Changed

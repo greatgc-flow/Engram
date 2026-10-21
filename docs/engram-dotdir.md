@@ -4,9 +4,11 @@ Ratified 2026-09-09: [`docs/design/dotdir-consolidation-RATIFIED-2026-09-09.md`]
 
 ## What it is
 
-Every AI CLI Engram manages (Claude Code, Codex, Antigravity) reads and writes its personal, durable config — memory, settings, session history, rules, skills — from one consolidated root: `<portable-root>/.engram/{claude,codex,agy}/`. Git's global config is also redirected to `.engram/git/.gitconfig` when one exists. PeerHub is a separate product and its configuration and state are deliberately outside Engram's ownership.
+Claude Code and Codex read and write their personal, durable config — memory, settings, session history, rules, skills — from `<portable-root>/.engram/{claude,codex}/`. Git's global config is also redirected to `.engram/git/.gitconfig` when one exists. PeerHub is a separate product and its configuration and state are deliberately outside Engram's ownership.
 
-This happens **automatically**, at every `engram`/`engram open`/environment build — there is nothing to run by hand. It works by setting each managed tool's own config-root environment variable for the launched session (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_DIR`, `GH_CONFIG_DIR`), declared in [`_sys/env.json`](../_sys/env.json)'s `tool_env_vars` and resolved by [`_sys/core/launcher.py`](../_sys/core/launcher.py)'s `build_env()`. **No `subst` drive and no directory junction is used for this** — pure environment-variable redirection, so it works identically wherever the portable root happens to sit, with no host-registry or filesystem side effect to clean up on uninstall.
+This happens **automatically**, at every `engram`/`engram open`/environment build — there is nothing to run by hand. It works by setting each managed tool's own config-root environment variable for the launched session (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GH_CONFIG_DIR`), declared in [`_sys/env.json`](../_sys/env.json)'s `tool_env_vars` and resolved by [`_sys/core/launcher.py`](../_sys/core/launcher.py)'s `build_env()`. **No `subst` drive and no directory junction is used for this** — pure environment-variable redirection, so it works identically wherever the portable root happens to sit, with no host-registry or filesystem side effect to clean up on uninstall.
+
+Antigravity CLI (`agy` 1.4.3, verified 2026-10-21) ignores `GEMINI_DIR`. Its settings and state live in the user profile under `~/.gemini/antigravity-cli`; login tokens live in the OS keyring (Windows Credential Manager on Windows). See the [official authentication documentation](https://www.antigravity.google/docs/install?tab=cli). Engram does not redirect this state, and Antigravity login is not portable. Overriding `USERPROFILE`/`HOME` relocates only `~/.gemini`, not the keyring; Engram leaves those profile variables unchanged. Legacy `agy/*` backup allowlist entries only cover files already placed in `.engram/agy`; they do not back up the user-profile state or keyring.
 
 ## `.engram/` is a live root, not a backup
 
@@ -24,7 +26,7 @@ Consequences:
 
 ## Retired: `.ais/` and `ais-env.bat`
 
-`.ais/` was this feature's first prototype (built during a same-day parallel-install exercise, `<legacy-install-dir>`) — a folder you pointed `CLAUDE_CONFIG_DIR`/`CODEX_HOME`/`GEMINI_DIR` at yourself, by running `ais-env.bat` in every new shell. `.engram/` is the permanent replacement: the same idea, but automatic (no script to remember to run) and generalized to every tool Engram manages, not just the 3 AI CLIs.
+`.ais/` was this feature's first prototype (built during a same-day parallel-install exercise, `<legacy-install-dir>`) — a folder you pointed `CLAUDE_CONFIG_DIR`/`CODEX_HOME` at yourself, by running `ais-env.bat` in every new shell. `.engram/` is the permanent replacement for supported tool config roots, applied automatically (no script to remember to run).
 
 The prototype `.ais/` converter was removed in October 2026. Supported updates start at v3.2.6 (layout v2); older installs require reinstalling Engram, leaving data folders untouched.
 
