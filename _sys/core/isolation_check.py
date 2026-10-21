@@ -6,9 +6,15 @@ from dataclasses import asdict
 from pathlib import Path
 
 from core import cli_help
-from _sys.core.isolation import probe_availability
-from _sys.extensions.windows_sandbox import WindowsSandboxProvider
-from _sys.extensions.wsl2 import WSL2Provider
+from _sys.core.isolation import Availability, Capabilities, probe_availability
+def WindowsSandboxProvider():
+    from _sys.extensions.windows_sandbox import WindowsSandboxProvider as provider
+    return provider()
+
+
+def WSL2Provider():
+    from _sys.extensions.wsl2 import WSL2Provider as provider
+    return provider()
 
 
 def run(ctx: dict) -> dict:
@@ -28,10 +34,18 @@ def run(ctx: dict) -> dict:
         guidance = json.loads((Path(ctx["sys_dir"]) / "config" / "isolation-guidance.json").read_text(encoding="utf-8"))
         if guidance["schema_version"] != 1:
             raise ValueError("unsupported isolation guidance schema_version")
-        providers = [("windows-sandbox", WindowsSandboxProvider()), ("wsl2", WSL2Provider())]
+        providers = [("windows-sandbox", WindowsSandboxProvider), ("wsl2", WSL2Provider)]
         checks = []
         for backend, provider in providers:
-            availability = probe_availability(provider.detect, backend=backend)
+            try:
+                instance = provider()
+            except ModuleNotFoundError as exc:
+                if not exc.name or not (exc.name == "_sys.extensions" or exc.name.startswith("_sys.extensions.")):
+                    raise
+                availability = Availability("UNAVAILABLE", f"Optional extension missing: {exc.name}",
+                                            Capabilities(backend, False, 0), "UNKNOWN")
+            else:
+                availability = probe_availability(instance.detect, backend=backend)
             record = asdict(availability)
             record["provider"] = backend
             record["guidance"] = guidance["codes"].get(availability.code, guidance["codes"]["UNKNOWN"])

@@ -397,12 +397,19 @@ def test_lockprobe_leftover_recovery(tmp_path):
     assert (scripts / "python.exe").exists()
     assert not leftover.exists()
 
-@pytest.mark.skipif(os.environ.get("ENGRAM_SKIP_REAL_VENV_TESTS") == "1", reason="Skip real venv tests")
+def _require_real_venv(managed_py):
+    reason = ("Explicit real venv skip requested" if os.environ.get("ENGRAM_SKIP_REAL_VENV_TESTS") == "1"
+              else f"Embedded python not found at {managed_py}" if not managed_py.exists() else None)
+    if reason:
+        if os.environ.get("ENGRAM_REQUIRE_REAL_VENV") == "1":
+            pytest.fail(reason)
+        pytest.skip(reason)
+
+
 def test_real_venv_refresh_and_regen(tmp_path):
     repo_root = Path(__file__).parent.parent.parent.parent
     managed_py = repo_root / "_sys" / "env" / "python" / "python.exe"
-    if not managed_py.exists():
-        pytest.skip(f"Embedded python not found at {managed_py}")
+    _require_real_venv(managed_py)
         
     venv_dir = tmp_path / "venv"
     import subprocess
@@ -605,3 +612,12 @@ def test_swap_quarantine_revalidates_paths_and_backup_identity(tmp_path, monkeyp
     backups._write_meta(ref.path, ref.meta)
     steps[1].undo(ctx)
     assert (old / "METADATA").read_text() == "Name: pkg\nVersion: 0\n"
+
+
+@pytest.mark.parametrize('skip,missing', [(True, False), (False, True)])
+def test_required_real_venv_cannot_skip(monkeypatch, skip, missing):
+    monkeypatch.setenv('ENGRAM_REQUIRE_REAL_VENV', '1')
+    monkeypatch.setenv('ENGRAM_SKIP_REAL_VENV_TESTS', '1' if skip else '0')
+    monkeypatch.setattr(Path, 'exists', lambda self: not missing)
+    with pytest.raises(pytest.fail.Exception):
+        _require_real_venv(Path('managed-python.exe'))

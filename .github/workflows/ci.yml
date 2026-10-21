@@ -10,7 +10,7 @@ on:
 jobs:
   test:
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -27,13 +27,18 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         pip install -r requirements-dev.txt
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Run consistency checks
       run: |
         python _sys/checks/check_encoding.py
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         python _sys/checks/check_root_hygiene.py
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         python _sys/checks/check_unreferenced_functions.py
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Run unit tests
       run: |
@@ -42,6 +47,20 @@ jobs:
     - name: Require release contracts without skips
       if: always()
       run: python tools/release_gate/check_required_tests.py --report contract-results.xml
+
+    - name: Bootstrap managed Python
+      shell: pwsh
+      run: |
+        cmd /d /c _sys\core\bootstrap.bat --skip-update --skip-ai
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        if (!(Test-Path _sys/env/python/python.exe)) { throw "Managed Python missing" }
+
+    - name: Require real venv proof
+      env:
+        ENGRAM_REQUIRE_REAL_VENV: "1"
+      run: |
+        pytest -p no:cacheprovider "_sys/tests/unit/test_venv_repair.py::test_real_venv_refresh_and_regen" -v -rs --tb=short
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Upload contract results
       if: always()
