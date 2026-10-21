@@ -25,7 +25,7 @@
           "recovery_class": "AUTHORITATIVE"
         }
       ],
-      "notes": "Root/layout/config/version/dispatcher/journal/CLI contracts. Registry is a starting allocation of mixed _sys/core files; component boundary tests are not implemented. The isolation provider port and optional Windows Sandbox and WSL2 implementations are registered separately. Core imports Optional Extension = 0 remains a target invariant.",
+      "notes": "Root/layout/config/version/dispatcher/journal/CLI contracts. Registry describes the mixed _sys/core allocation; no general boundary-test framework is planned. The isolation provider port and optional Windows Sandbox and WSL2 implementations are registered separately. The composition entry loads optional providers lazily; missing extensions yield UNAVAILABLE (one removal regression).",
       "implemented_in": [
         "_sys/core/root.py",
         "_sys/core/layout.py",
@@ -68,7 +68,7 @@
           "recovery_class": "AUTHORITATIVE"
         }
       ],
-      "notes": "Provider-neutral protocol, immutable records, fail-closed declarative profiles and finalized guest evidence validation only. Windows Sandbox and WSL2 implementations are optional extensions; command routing and delivery harness integration are not implemented. FakeProvider exists only in offline unit tests; providers own execution evidence.",
+      "notes": "Provider-neutral protocol, immutable records, fail-closed declarative profiles and finalized guest evidence validation only. Windows Sandbox and WSL2 implementations are optional extensions; read-only isolation check is routed; execution routing and delivery harness integration are deferred. FakeProvider exists only in offline unit tests; providers own execution evidence.",
       "implemented_in": [
         "_sys/core/isolation.py",
         "_sys/config/isolation-profile.schema.json",
@@ -305,7 +305,7 @@
           "recovery_class": "EPHEMERAL"
         }
       ],
-      "notes": "Optional protocol provider with raw lifecycle detection, validated profile XML, CLI execution or .wsb LogonCommand fallback, per-user file leases, canonical guest evidence and verified stop/list teardown. Offline tests pass; the opt-in live lifecycle remains unverified. Raw list and stop are required even for fallback. Product command routing and delivery integration remain absent.",
+      "notes": "Optional protocol provider with raw lifecycle detection, validated profile XML, CLI execution or .wsb LogonCommand fallback, per-user file leases, canonical guest evidence and verified stop/list teardown. Offline tests pass; the opt-in live lifecycle remains unverified. Raw list and stop are required even for fallback. Read-only isolation check is routed; execution routing and delivery integration remain deferred.",
       "implemented_in": [
         "_sys/extensions/windows_sandbox/__init__.py",
         "_sys/extensions/windows_sandbox/provider.py"
@@ -332,7 +332,7 @@
           "recovery_class": "EPHEMERAL"
         }
       ],
-      "notes": "Optional Linux compatibility/reproducibility provider with unique private rootfs imports, explicit per-distro automount/interop, wslpath translation, host-resident canonical guest evidence and verified unregister/list teardown. Not security-equivalent to Sandbox: Windows filesystem/executable/network interop remains possible; profile network settings are not enforced and guest root can bypass read-only binds. Capture is supported; parallel private distros are possible with a serialized default. Offline tests pass; the opt-in live lifecycle remains unverified on a real host. Detection uses only version/status exit codes; imports explicitly request WSL2. No downloads, product command routing, delivery integration or provider export API.",
+      "notes": "Optional Linux compatibility/reproducibility provider with unique private rootfs imports, explicit per-distro automount/interop, wslpath translation, host-resident canonical guest evidence and verified unregister/list teardown. Not security-equivalent to Sandbox: Windows filesystem/executable/network interop remains possible; profile network settings are not enforced and guest root can bypass read-only binds. Capture is supported; parallel private distros are possible with a serialized default. Offline tests pass; the opt-in live lifecycle remains unverified on a real host. Detection uses only version/status exit codes; imports explicitly request WSL2. Read-only isolation check is routed. No downloads, execution routing, delivery integration or provider export API.",
       "implemented_in": [
         "_sys/extensions/wsl2/__init__.py",
         "_sys/extensions/wsl2/provider.py"

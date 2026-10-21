@@ -42,6 +42,20 @@ EXIT_CONFIRMATION_REQUIRED = 3
 EXIT_INSTALL_FAILED = 4
 
 
+# WIRING-EXEMPT: EXPORTED_API reason="Called by tools/refresh_runtime_defaults.py outside the production scanner prefixes."
+def discover_release_runtime(name: str, config: dict) -> dict:
+    """Uncached shipped-default discovery, independent of installed-user policy."""
+    result = version_resolver.resolve_latest(
+        tool_name=name, provider=config["discovery_provider"],
+        current_version=config["version"], discovery_id=config["discovery_id"],
+        asset_pattern=config.get("asset_pattern"), force_refresh=True,
+    )
+    if name == "python" and result.get("status") == "ok":
+        version = result["latest_version"]
+        result["url"] = f"https://www.python.org/ftp/python/{version}/python-{version}-embed-amd64.zip"
+    return result
+
+
 def _utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
 

@@ -50,17 +50,18 @@ if exist "!_JF!" (
 if not exist "!SYS_DIR!\runtimes.json" copy /y "!SYS_DIR!\defaults\runtimes.json" "!SYS_DIR!\runtimes.json" >nul
 if not exist "!SYS_DIR!\tool-catalog.v1.json" copy /y "!SYS_DIR!\defaults\tool-catalog.v1.json" "!SYS_DIR!\tool-catalog.v1.json" >nul
 
-:: -- Runtime config from runtimes.json (fallback if missing) --
+:: -- Runtime declaration validation before any network/install --
 set "_RT=!SYS_DIR!\runtimes.json"
-set "PY_VER=3.14.5"
-set "PY_URL=https://www.python.org/ftp/python/3.14.5/python-3.14.5-embed-amd64.zip"
-set "GET_PIP_URL=https://bootstrap.pypa.io/get-pip.py"
+set "PY_VER="
+set "PY_URL="
+set "GET_PIP_URL="
 set "PY_SHA256="
-if exist "!_RT!" (
-    for /f "usebackq delims=" %%s in (`powershell -NoProfile -Command "((Get-Content '!_RT!')|ConvertFrom-Json).runtimes.python.sha256"`) do set "PY_SHA256=%%s"
-    for /f "usebackq delims=" %%v in (`powershell -NoProfile -Command "((Get-Content '!_RT!')|ConvertFrom-Json).runtimes.python.version"`) do set "PY_VER=%%v"
-    for /f "usebackq delims=" %%u in (`powershell -NoProfile -Command "((Get-Content '!_RT!')|ConvertFrom-Json).runtimes.python.url"`) do set "PY_URL=%%u"
-    for /f "usebackq delims=" %%p in (`powershell -NoProfile -Command "((Get-Content '!_RT!')|ConvertFrom-Json).runtimes.python.get_pip_url"`) do set "GET_PIP_URL=%%p"
+set "_DECL_OK="
+:: Environment lookup avoids embedding a metacharacter-containing path in PowerShell code.
+for /f "tokens=1,* delims==" %%K in ('powershell -NoProfile -Command "$ErrorActionPreference='Stop'; try { $p=(Get-Content -LiteralPath $env:_RT -Raw -EA Stop | ConvertFrom-Json -EA Stop).runtimes.python; if ($p.version -isnot [string] -or $p.version -notmatch '^3\.[0-9]+\.[0-9]+$') { throw 'invalid Python version' }; foreach ($u in @($p.url,$p.get_pip_url)) { if ($u -isnot [string] -or $u -notmatch '^https://[A-Za-z0-9./_?=%%+~-]+$') { throw 'invalid HTTPS URL' } }; if ($p.sha256 -and ($p.sha256 -isnot [string] -or $p.sha256 -notmatch '^[a-fA-F0-9]{64}$')) { throw 'invalid SHA-256' }; 'PY_VER='+$p.version; 'PY_URL='+$p.url; 'GET_PIP_URL='+$p.get_pip_url; 'PY_SHA256='+$p.sha256; '_DECL_OK=1' } catch { [Console]::Error.WriteLine('[Error] Invalid Python declaration in '+$env:_RT+': '+$_.Exception.Message); exit 1 }"') do set "%%K=%%L"
+if not defined _DECL_OK (
+    echo [Error] Invalid or missing Python declaration in !_RT!.
+    exit /b 1
 )
 
 set "PY_DIR=!SYS_DIR!\env\python"

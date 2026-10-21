@@ -4,3 +4,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+  - package-ecosystem: "pip"
+    directories: ["/", "/_sys/defaults"]
+    schedule:
+      interval: "weekly"
+    groups:
+      pip-dependencies:
+        patterns: ["*"]

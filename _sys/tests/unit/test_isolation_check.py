@@ -228,3 +228,21 @@ def test_isolation_documentation_links():
     assert "docs/isolation_guide.md" in (SYS.parent / "README.md").read_text()
     assert "(isolation_guide.md)" in (SYS.parent / "docs/cli_reference.md").read_text()
     assert (SYS.parent / "docs/isolation_guide.md").is_file()
+
+
+def test_missing_optional_extensions_remain_available_as_a_command(monkeypatch):
+    import builtins
+    import importlib.util
+    original = builtins.__import__
+    def without_extensions(name, *args, **kwargs):
+        if name.startswith('_sys.extensions'):
+            raise ModuleNotFoundError(name, name=name)
+        return original(name, *args, **kwargs)
+    monkeypatch.setattr(builtins, '__import__', without_extensions)
+    spec = importlib.util.spec_from_file_location('isolated_check', SYS / 'core/isolation_check.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    result = module.run({'sys_dir': SYS, 'args': ['check', '--json']})
+    assert result['status'] == 'success'
+    assert len(result['providers']) == 2
+    assert all(p['status'] == 'UNAVAILABLE' and p['reason'] and p['guidance']['steps'] for p in result['providers'])

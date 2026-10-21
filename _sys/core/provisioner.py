@@ -27,10 +27,10 @@ if str(_CORE_DIR) not in sys.path:
 from root import find_root  # noqa: E402
 
 try:  # Support both ``core.provisioner`` and ``_sys.core.provisioner`` imports.
-    from .baseline_packages import BASELINE_PACKAGES
+    from .baseline_packages import BASELINE_PACKAGES, runtime_pins
     from .network_tls import install_urllib_platform_trust
 except ImportError:  # pragma: no cover - exercised by the bootstrap import path
-    from baseline_packages import BASELINE_PACKAGES
+    from baseline_packages import BASELINE_PACKAGES, runtime_pins
     from network_tls import install_urllib_platform_trust
 
 install_urllib_platform_trust()
@@ -1459,12 +1459,12 @@ def _record_deploy_outcome(
         print(f"  [!] {component} failed: {detail}")
 
 
-def ensure_virtualenv_module() -> None:
+def ensure_virtualenv_module(spec: str = "virtualenv") -> None:
     """Install virtualenv into the embedded Python (sys.executable) only when it cannot be imported."""
     probe = subprocess.run([sys.executable, "-c", "import virtualenv"], capture_output=True)
     if probe.returncode == 0:
         return
-    subprocess.run([sys.executable, "-m", "pip", "install", "virtualenv", "--quiet"], check=True)
+    subprocess.run([sys.executable, "-m", "pip", "install", spec, "--quiet"], check=True)
     print("  [OK] virtualenv installed into the embedded Python")
 
 
@@ -1479,6 +1479,8 @@ def deploy(ctx: dict) -> dict:
     sys_dir    = ctx["sys_dir"]
     base_dir   = ctx["base_dir"]
     env_dir    = sys_dir / "env"
+    fresh_venv = not (env_dir / "venv").exists()
+    pins = runtime_pins() if fresh_venv else {}
     setup_dir  = sys_dir / "data" / "setup-files"
     setup_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1545,7 +1547,7 @@ def deploy(ctx: dict) -> dict:
         venv_creation_failed = False
         if force or not venv_py.exists():
             try:
-                ensure_virtualenv_module()
+                ensure_virtualenv_module(pins["virtualenv"] if fresh_venv else "virtualenv")
                 subprocess.run([sys.executable, "-m", "virtualenv", str(env_dir / "venv")], check=True)
                 print("  [OK] venv created")
             except (subprocess.CalledProcessError, OSError) as exc:
@@ -1561,7 +1563,7 @@ def deploy(ctx: dict) -> dict:
             # Later `repair`/`relocate` venv rebuilds run `python -m virtualenv` on the embedded Python, so it
             # must be present even when the venv itself survived a Python re-extraction.
             try:
-                ensure_virtualenv_module()
+                ensure_virtualenv_module(pins["virtualenv"] if fresh_venv else "virtualenv")
             except (subprocess.CalledProcessError, OSError) as exc:
                 print(f"  [Fail] virtualenv install failed: {exc}")
                 failed.append({
@@ -1574,7 +1576,7 @@ def deploy(ctx: dict) -> dict:
         if venv_py.exists():
             for pkg, _ in BASELINE_PACKAGES:
                 try:
-                    subprocess.run([str(venv_py), "-m", "pip", "install", pkg, "--quiet"], check=True)
+                    subprocess.run([str(venv_py), "-m", "pip", "install", pins[pkg] if fresh_venv else pkg, "--quiet"], check=True)
                     print(f"  [OK] {pkg} installed")
                 except (subprocess.CalledProcessError, OSError) as exc:
                     print(f"  [Fail] {pkg} install failed: {exc}")

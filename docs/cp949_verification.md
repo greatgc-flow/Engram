@@ -50,18 +50,18 @@ The `--cp949-strict` flag (handled in `conftest.py`) enforces:
 
 ---
 
-## 4. Pre-Release Local Verification Gate (Real System ACP)
+## 4. Deferred Native ACP Evidence (D10)
 
-To close the residual gap, proof under a **real system ACP** (ACP = 949) is maintained as a **mandatory release-time gate** (run prior to tagging releases), rather than a per-commit CI gate.
+Native ACP=949 proof remains deferred by decision D10; it is not an enforced release gate. Hosted CP949 emulation remains required and must not be reported as native Windows ACP evidence. Obtain candidate-bound evidence on a prepared Korean Windows host before strengthening the native-support claim.
 
 ### Pre-Release Verification Procedure
 
 1. **Verify Local Machine Codepage**:
    Run the following in PowerShell on the release machine:
    ```powershell
-   [System.Text.Encoding]::Default.CodePage
+   python -c "import ctypes; print(ctypes.windll.kernel32.GetACP())"
    ```
-   Confirm that the output is `949`.
+   Confirm that the output is `949`. Console `chcp` and PowerShell 7's default UTF-8 encoding do not establish the system ACP.
 
 2. **Execute the CP949 Test Suite**:
    Execute the full suite of CP949 tests:
@@ -75,4 +75,4 @@ To close the residual gap, proof under a **real system ACP** (ACP = 949) is main
    - Native MBCS roundtripping must succeed without monkeypatching or emulation.
 
 4. **Record the Result**:
-   Attach the test run output to the release checklist or audit record for the target release.
+   Record GetACP, host identity, candidate commit/archive SHA-256, exact command and complete no-skip output in the audit record. Until this exists, retain D10 as blocked on host evidence.

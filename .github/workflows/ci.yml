@@ -10,7 +10,9 @@ on:
 jobs:
   test:
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
+    env:
+      ENGRAM_REQUIRE_REAL_VENV: "1"
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -24,16 +26,28 @@ jobs:
         cache: "pip"
         cache-dependency-path: requirements-dev.txt
 
+    - name: Bootstrap managed Python
+      shell: pwsh
+      run: |
+        cmd /d /c _sys\core\bootstrap.bat --skip-update --skip-ai
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        if (!(Test-Path _sys/env/python/python.exe)) { throw "Managed Python missing" }
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         pip install -r requirements-dev.txt
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Run consistency checks
       run: |
         python _sys/checks/check_encoding.py
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         python _sys/checks/check_root_hygiene.py
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         python _sys/checks/check_unreferenced_functions.py
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     - name: Run unit tests
       run: |

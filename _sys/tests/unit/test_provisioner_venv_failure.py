@@ -3,6 +3,7 @@ history: deploy()'s venv step referenced a `venv_failed` flag that had been
 removed, which only crashed on the path where venv_py doesn't exist AND
 creation fails - a path no existing test exercised (test_provisioner_autoinstall
 always pre-creates a fake venv_py, so it never reaches this branch)."""
+import pytest
 import json
 import subprocess
 import sys
@@ -74,3 +75,26 @@ def test_deploy_skips_virtualenv_install_when_already_importable(monkeypatch, tm
                         lambda args, **kw: calls.append(list(args)) or subprocess.CompletedProcess(args, 0))
     pv.deploy(ctx)
     assert not [c for c in calls if "virtualenv" in c and "pip" in c]
+
+
+@pytest.mark.parametrize('existing,force,broken', [
+    (False, False, False), (True, False, False), (True, True, False), (True, False, True)])
+def test_runtime_pins_apply_only_to_fresh_targets(monkeypatch, tmp_path, existing, force, broken):
+    ctx = _ctx_with_existing_venv(tmp_path) if existing else _make_deploy_ctx_no_venv(tmp_path)
+    if broken:
+        (ctx['sys_dir'] / 'env/venv/Scripts/python.exe').unlink()
+    ctx['args'] = ['--force'] if force else []
+    ctx['only'] = {'venv'}
+    calls = []
+    def run(args, **kwargs):
+        calls.append(list(args))
+        if args[1:3] == ['-m', 'virtualenv']:
+            target = Path(args[3]) / 'Scripts/python.exe'
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.touch()
+        return subprocess.CompletedProcess(args, 1 if args[1:3] == ['-c', 'import virtualenv'] else 0)
+    monkeypatch.setattr(pv.subprocess, 'run', run)
+    pv.deploy(ctx)
+    specs = [c[4] for c in calls if c[1:4] == ['-m', 'pip', 'install']]
+    assert len(specs) == 5
+    assert all(('==' in spec) == (not existing) for spec in specs)
