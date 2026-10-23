@@ -8,7 +8,7 @@
 # Install into the portable venv with:
 #   _sys\env\venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 pytest==9.1.1
-hypothesis==6.170.1
+hypothesis==6.170.5
 pytest-timeout==2.4.0
 psutil==7.2.2
 jsonschema==4.26.0
