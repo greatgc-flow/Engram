@@ -1414,3 +1414,22 @@ class TestRequiredPayload:
         assert result["status"] == "error"
         assert "required" in result["detail"].lower()
         assert (active / "tool.exe").read_bytes() == b"old"
+
+
+class TestShippedCanaryPatterns:
+    """Real `--version` output of each added tool (captured from the pinned releases) must satisfy its canary regex."""
+
+    SAMPLES = {
+        "exiftool": "perl: warning: Setting locale failed.\n13.59\n",
+        "yq": "yq (https://github.com/mikefarah/yq/) version v4.54.1\n",
+        "sd": "sd 1.0.0\n",
+        "hyperfine": "hyperfine 2.0.0\n",
+        "dust": "Dust 1.2.6\n",
+        "ouch": "ouch 0.8.3\n",
+    }
+
+    @pytest.mark.parametrize("name", sorted(SAMPLES))
+    def test_sample_output_matches_canary_regex(self, name):
+        import re
+        tools = json.loads((SYS_DIR / "defaults" / "runtimes.json").read_text(encoding="utf-8"))["tools"]
+        assert re.search(tools[name]["canary"]["expect_regex"], self.SAMPLES[name])
