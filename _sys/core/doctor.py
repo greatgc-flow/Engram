@@ -155,8 +155,9 @@ def _tool_present(sys_dir: Path, name: str, cfg: dict) -> bool:
     or as an npm-global .cmd (claude/codex and other npm-backed tools install
     to _sys/env/nodejs/npm-global, not tools/)."""
     bin_name = cfg.get("bin", f"{name}.exe")
-    if (sys_dir / "tools" / name / bin_name).exists():
-        return True
+    tool_dir = sys_dir / "tools" / name
+    if (tool_dir / bin_name).exists():
+        return provisioner._required_paths_present(tool_dir, cfg)
     if (provisioner.npm_global_dir(sys_dir) / f"{name}.cmd").exists():
         return True
     return False

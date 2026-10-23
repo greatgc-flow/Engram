@@ -178,6 +178,8 @@ def _update_entry_from_discovery(entry: dict[str, Any], discovery: dict[str, Any
     algo = discovery.get("checksum_algo")
     value = discovery.get("checksum_value")
     if algo and value and algo in {"sha256", "sha512", "sha3_256"}:
+        for old_algo in ("sha256", "sha512", "sha3_256"):
+            entry.pop(old_algo, None)
         entry[algo] = value
 
 
@@ -324,6 +326,15 @@ def discover_updates(
                         ),
                     })
                     continue
+
+        # A pinned artifact must never inherit the previous artifact's hash or
+        # silently fall back to computed TLS trust when discovery lacks a digest.
+        if any(cfg.get(a) for a in ("sha256", "sha512", "sha3_256")) and not (
+            discovery.get("checksum_algo") in {"sha256", "sha512", "sha3_256"}
+            and discovery.get("checksum_value")
+        ):
+            payload["errors"].append({"tool": name, "error": "pinned update missing checksum"})
+            continue
 
         update = {
             "tool": name,

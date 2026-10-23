@@ -248,3 +248,16 @@ def test_doctor_help_flag_prints_help_without_running_checks(flag, tmp_path, mon
 
 
 
+
+
+@pytest.mark.parametrize("payload", ["present", "missing", "file"])
+def test_required_payload_directory(tmp_path, payload):
+    root = tmp_path / "tools/tool"
+    root.mkdir(parents=True)
+    (root / "tool.exe").write_bytes(b"exe")
+    if payload == "present":
+        (root / "payload").mkdir()
+    elif payload == "file":
+        (root / "payload").write_bytes(b"damaged")
+    assert doctor._tool_present(tmp_path, "tool", {
+        "bin": "tool.exe", "required_paths": ["payload"]}) is (payload == "present")

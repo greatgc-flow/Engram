@@ -366,3 +366,12 @@ def _collect_plan(now=None, deep=False, targets=None):
         if targets is None or key in targets:
             items.extend(paths)
     return items
+
+
+def test_tidy_keeps_companion_payload_caches(mock_env):
+    payload = mock_env / "_sys/tools/exiftool/exiftool_files/__pycache__/lib.pyc"
+    payload.parent.mkdir(parents=True)
+    payload.write_bytes(b"required packaged data")
+    with patch.object(tidy_temp, "ROOT", mock_env):
+        assert tidy_temp.run({"args": ["--apply"]})["status"] == "success"
+    assert payload.read_bytes() == b"required packaged data"

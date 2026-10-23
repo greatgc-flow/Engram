@@ -6,6 +6,25 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+### Added
+
+- Managed ExifTool 13.59, yq 4.54.1, sd 1.1.0, hyperfine 2.0.0, dust 1.2.6,
+  and ouch 0.8.3 with declared SHA-256 pins and PATH entries. Ouch supplies
+  archive operations using its own CLI, replacing the proposed 7-Zip addition.
+- Generic `required_paths` for companion payload directories, checked during
+  staging, already-current detection, deployment verification, and doctor.
+  ExifTool preserves its adjacent `exiftool_files` payload. Its pin is manual:
+  no automatic version discovery; recompute SHA-256 by hand for each bump.
+- Existing installations can adopt the new declarations with
+  `engram migrate-layout`, followed by `engram update` to install the tools.
+
+### Fixed
+
+- Canaries now require exit code zero as well as matching output. Pinned tool
+  updates require a fresh discovered checksum and discard obsolete algorithms.
+- Deliberately manual tool pins remain visible as unchecked advisories without
+  causing `engram update --check` to report a provider failure.
+
 ## [3.10.0] - 2026-10-21
 
 ### Added

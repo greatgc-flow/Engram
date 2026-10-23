@@ -936,3 +936,47 @@ def test_core_update_hints_refresh_only_for_cached_result(latest_node, monkeypat
     out = capsys.readouterr().out
     assert "-> 99.0.0" in out
     assert ("engram update --refresh" in out) is expect_hint
+
+
+def test_reconcile_old_live_declaration_adds_managed_tools(tmp_path):
+    from core import layout_migration
+    shipped = json.loads((_SYS_DIR / "defaults/runtimes.json").read_text(encoding="utf-8"))
+    names = {"exiftool", "yq", "sd", "hyperfine", "dust", "ouch"}
+    assert names <= shipped["tools"].keys()
+    import copy
+    old = copy.deepcopy(shipped)
+    for name in names:
+        old["tools"].pop(name)
+    sd = tmp_path / "_sys"
+    (sd / "defaults").mkdir(parents=True)
+    (sd / "data/state/defaults-base").mkdir(parents=True)
+    (sd / "defaults/runtimes.json").write_text(json.dumps(shipped), encoding="utf-8")
+    (sd / "data/state/defaults-base/runtimes.json").write_text(json.dumps(old), encoding="utf-8")
+    old["tools"]["jq"]["version"] = "local-pin"
+    (sd / "runtimes.json").write_text(json.dumps(old), encoding="utf-8")
+    # Exercise the actual migrate-layout reconciliation entrypoint, not a merge mock.
+    assert layout_migration.run_pipeline({"base_dir": tmp_path, "sys_dir": sd, "args": []})["status"] == "ok"
+    live = json.loads((sd / "runtimes.json").read_text(encoding="utf-8"))
+    assert names <= live["tools"].keys()
+    for name in names:
+        assert live["tools"][name] == shipped["tools"][name]
+    assert live["tools"]["jq"]["version"] == "local-pin"
+    assert layout_migration.run_pipeline({"base_dir": tmp_path, "sys_dir": sd, "args": []})["status"] == "ok"
+    assert json.loads((sd / "runtimes.json").read_text(encoding="utf-8")) == live
+
+
+@pytest.mark.parametrize("reason,exit_code", [("manual", 0), ("rate limited", 1)])
+def test_update_check_manual_pin_is_advisory(tmp_path, monkeypatch, capsys, reason, exit_code):
+    sd = tmp_path / "_sys"
+    sd.mkdir()
+    (sd / "runtimes.json").write_text(json.dumps({"tools": {"exiftool": {
+        "version": "13.59", "discovery_provider": "manual"}}}), encoding="utf-8")
+    monkeypatch.setattr(updater, "_SYS_DIR", sd)
+    monkeypatch.setattr(updater, "check_components", lambda *a: {})
+    monkeypatch.setattr(check_tool_updates, "run", lambda **kw: {
+        "artifact_dir": "mock", "updates_discovered": [],
+        "not_checked": [{"component": "exiftool", "reason": reason}]})
+    with pytest.raises(SystemExit) as exc:
+        updater.run({"args": ["--check", "--only", "exiftool"]})
+    assert exc.value.code == exit_code
+    assert "exiftool" in capsys.readouterr().out

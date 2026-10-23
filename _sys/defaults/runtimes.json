@@ -218,6 +218,128 @@
                     "sha256": "6871d273435e067e40136839467f8c01fc9f123a59535964dbe9287f17740d91"
                 }
             ]
+        },
+        "exiftool": {
+            "version": "13.59",
+            "url": "https://oliverbetz.de/cms/files/Artikel/ExifTool-for-Windows/exiftool-13.59_64.zip",
+            "sha256": "577257dd22baebe77157d905792d6ed2c5916cd03aa627f40b2175db12110ac6",
+            "type": "zip",
+            "bin": "ExifTool.exe",
+            "install_mechanism": "zip_tool",
+            "archive_layout": "preserve_tree",
+            "strip_components": 0,
+            "required_paths": [
+                "exiftool_files"
+            ],
+            "discovery_provider": "manual",
+            "_comment": "Manual pin: no automatic version discovery. Recompute SHA-256 by hand when bumping the version.",
+            "canary": {
+                "argv": [
+                    "ExifTool.exe",
+                    "-ver"
+                ],
+                "timeout_sec": 5,
+                "expect_regex": "^\\d+\\.\\d+"
+            }
+        },
+        "yq": {
+            "version": "4.54.1",
+            "url": "https://github.com/mikefarah/yq/releases/download/v4.54.1/yq_windows_amd64.exe",
+            "sha256": "b645f47ebb3a0d2fbab52998550bbd0a1706f23b5ca5f5b48e638c580bb70928",
+            "type": "exe",
+            "bin": "yq.exe",
+            "install_mechanism": "exe_tool",
+            "discovery_provider": "github_releases",
+            "discovery_id": "mikefarah/yq",
+            "asset_pattern": "^yq_windows_amd64\\.exe$",
+            "canary": {
+                "argv": [
+                    "yq.exe",
+                    "--version"
+                ],
+                "timeout_sec": 5,
+                "expect_regex": "yq"
+            }
+        },
+        "sd": {
+            "version": "1.1.0",
+            "url": "https://github.com/chmln/sd/releases/download/v1.1.0/sd-v1.1.0-x86_64-pc-windows-msvc.zip",
+            "sha256": "59837c2e7c911099aca1cc46b663bcdc5a949fd3e9fbbaf34fc73e5d5d71007c",
+            "type": "zip",
+            "bin": "sd.exe",
+            "install_mechanism": "zip_tool",
+            "discovery_provider": "github_releases",
+            "discovery_id": "chmln/sd",
+            "asset_pattern": "^sd-v[0-9.]+-x86_64-pc-windows-msvc\\.zip$",
+            "canary": {
+                "argv": [
+                    "sd.exe",
+                    "--version"
+                ],
+                "timeout_sec": 5,
+                "expect_regex": "sd"
+            },
+            "archive_layout": "flatten_exes"
+        },
+        "hyperfine": {
+            "version": "2.0.0",
+            "url": "https://github.com/sharkdp/hyperfine/releases/download/v2.0.0/hyperfine-v2.0.0-x86_64-pc-windows-msvc.zip",
+            "sha256": "3dec51acee1060908e67948838d6bc0a7aacde0774acebfa4afb220dcf0bc078",
+            "type": "zip",
+            "bin": "hyperfine.exe",
+            "install_mechanism": "zip_tool",
+            "discovery_provider": "github_releases",
+            "discovery_id": "sharkdp/hyperfine",
+            "asset_pattern": "^hyperfine-v[0-9.]+-x86_64-pc-windows-msvc\\.zip$",
+            "canary": {
+                "argv": [
+                    "hyperfine.exe",
+                    "--version"
+                ],
+                "timeout_sec": 5,
+                "expect_regex": "hyperfine"
+            },
+            "archive_layout": "flatten_exes"
+        },
+        "dust": {
+            "version": "1.2.6",
+            "url": "https://github.com/bootandy/dust/releases/download/v1.2.6/dust-v1.2.6-x86_64-pc-windows-msvc.zip",
+            "sha256": "6a73222902d6960ce7183cd833a5d3ea99a3e3ff3cfb33720c1939a41cb7744d",
+            "type": "zip",
+            "bin": "dust.exe",
+            "install_mechanism": "zip_tool",
+            "discovery_provider": "github_releases",
+            "discovery_id": "bootandy/dust",
+            "asset_pattern": "^dust-v[0-9.]+-x86_64-pc-windows-msvc\\.zip$",
+            "canary": {
+                "argv": [
+                    "dust.exe",
+                    "--version"
+                ],
+                "timeout_sec": 5,
+                "expect_regex": "dust"
+            },
+            "archive_layout": "flatten_exes"
+        },
+        "ouch": {
+            "version": "0.8.3",
+            "url": "https://github.com/ouch-org/ouch/releases/download/0.8.3/ouch-x86_64-pc-windows-msvc.zip",
+            "sha256": "6383a95987894412d5c9c4172e3d1d87c86aa322acb2b7ffcad42f492abc5dfe",
+            "type": "zip",
+            "bin": "ouch.exe",
+            "install_mechanism": "zip_tool",
+            "discovery_provider": "github_releases",
+            "discovery_id": "ouch-org/ouch",
+            "asset_pattern": "^ouch-x86_64-pc-windows-msvc\\.zip$",
+            "canary": {
+                "argv": [
+                    "ouch.exe",
+                    "--version"
+                ],
+                "timeout_sec": 5,
+                "expect_regex": "ouch"
+            },
+            "archive_layout": "flatten_exes"
         }
     }
 }

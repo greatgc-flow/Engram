@@ -20,7 +20,9 @@ Engram bootstraps a self-contained Windows dev environment — Python, Node.js, 
 ## What it does
 
 - **Portable runtime virtualization** — Python, Node.js, Git, VS Code, and PowerShell are downloaded, pinned by version+hash in `_sys/runtimes.json`, and run entirely from inside the portable folder. Nothing touches `C:\Program Files` or the registry.
-- **Generic tool catalog** — dev CLI tools (ripgrep, bat, fd, delta, fzf, jq, gh, sqlite, oh-my-posh) install/update through one pinned, hash-verified pipeline (`_sys/runtimes.json`'s `tools` section).
+- **Generic tool catalog** — dev CLI tools (ripgrep, bat, fd, delta, fzf, jq, gh, sqlite, oh-my-posh, exiftool, yq, sd, hyperfine, dust, ouch) install/update through one pinned, hash-verified pipeline (`_sys/runtimes.json`'s `tools` section).
+  Existing installations adopt newly shipped tool entries with `engram migrate-layout`, then install them with `engram update`. ExifTool is manually pinned: version discovery is disabled and its SHA-256 must be recomputed by hand on each bump. Ouch provides archive operations with its own CLI; it does not provide `7z.exe` compatibility. `required_paths` declares companion payload directories checked before activation and by doctor; it detects missing directories, not corruption of individual files.
+
 - **AI-CLI lifecycle management** — a separate catalog (`_sys/tool-catalog.v1.json`) tracks Claude Code / Codex / agy the same way: install, version-pin, canary-verify. Engram never talks to these tools' models or protocols — it only manages the binaries.
 - **No junctions or SUBST drive** — Engram uses no directory junctions and mounts no virtual drive: AI-CLI personal config is redirected via plain environment variables instead (see `docs/engram-dotdir.md`), and paths are always resolved physical.
 - **Real uninstall** — `engram uninstall` computes an installation-scoped ID, writes a journal outside the install directory (survives the directory's own deletion), and hands off to an external helper that waits for the running process to exit before purging the folder — so a running instance never tries to delete the directory it's executing from.

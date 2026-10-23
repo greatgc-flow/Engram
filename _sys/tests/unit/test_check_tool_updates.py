@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import pytest
 import sys
 from pathlib import Path
 
@@ -561,3 +562,54 @@ def test_main_forwards_refresh_flag(monkeypatch):
 
 
 
+
+
+@pytest.mark.parametrize("digest", ["b" * 64, None])
+def test_pinned_update_requires_new_digest(monkeypatch, tmp_path, digest):
+    path = tmp_path / "runtimes.json"
+    original = {"tools": {"tool": {"version": "1", "url": "https://example/old.exe",
+        "sha256": "a" * 64, "discovery_provider": "github_releases", "discovery_id": "org/tool"}}}
+    path.write_text(json.dumps(original), encoding="utf-8")
+    monkeypatch.setattr(ctu, "RUNTIMES_PATH", path)
+    monkeypatch.setattr(ctu, "CATALOG_PATH", tmp_path / "absent.json")
+    monkeypatch.setattr(ctu.version_resolver, "resolve_latest", lambda **kw: {
+        "status": "ok", "latest_version": "2", "url": "https://example/new.exe",
+        "checksum_algo": "sha256" if digest else None, "checksum_value": digest})
+    payload, _, proposed, _, _ = ctu.discover_updates(only=["tool"])
+    if digest:
+        assert proposed["tools"]["tool"]["sha256"] == digest
+        assert proposed["tools"]["tool"]["version"] == "2"
+        assert proposed["tools"]["tool"]["url"] == "https://example/new.exe"
+        assert not payload["errors"]
+    else:
+        assert payload["errors"]
+        assert not payload["updates_discovered"]
+        assert proposed == original
+
+
+def test_checksum_algorithm_change_clears_obsolete_hash():
+    entry = {"version": "1", "url": "old", "sha512": "a" * 128}
+    ctu._update_entry_from_discovery(entry, {"latest_version": "2", "url": "new",
+        "checksum_algo": "sha256", "checksum_value": "b" * 64})
+    assert "sha512" not in entry
+    assert entry["sha256"] == "b" * 64
+
+
+@pytest.mark.parametrize("name", ["yq", "sd", "hyperfine", "dust", "ouch"])
+def test_managed_tool_release_selects_pinned_asset(name, tmp_path):
+    cfg = json.loads((SYS_DIR / "defaults/runtimes.json").read_text(encoding="utf-8"))["tools"][name]
+    asset = cfg["url"].rsplit("/", 1)[-1]
+    assets = [{"name": "tool-aarch64-pc-windows-msvc.zip", "browser_download_url": "wrong-arm"},
+              {"name": asset + ".sha256", "browser_download_url": "wrong-checksum"},
+              {"name": "yq_windows_amd64.zip", "browser_download_url": "wrong-yq-zip"},
+              {"name": asset, "browser_download_url": cfg["url"], "digest": "sha256:" + cfg["sha256"]}]
+    # The general selector must identify Windows x64; the explicit pattern must
+    # select the exact intended artifact, including yq's raw exe rather than zip.
+    assert ctu.version_resolver._pick_windows_asset({"assets": [assets[0], assets[-1]]}) == cfg["url"]
+    result = ctu.version_resolver._github_from_http_result(
+        discovery_id=cfg["discovery_id"], status_code=200, headers={},
+        body=json.dumps({"tag_name": "v" + cfg["version"], "assets": assets}),
+        cached={}, cache={}, cache_path=tmp_path / "cache.json", asset_pattern=cfg["asset_pattern"])
+    assert result["url"] == cfg["url"]
+    assert result["checksum_value"] == cfg["sha256"]
+    assert result["latest_version"] == cfg["version"]
