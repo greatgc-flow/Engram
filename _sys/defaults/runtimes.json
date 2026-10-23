@@ -317,7 +317,7 @@
                     "--version"
                 ],
                 "timeout_sec": 5,
-                "expect_regex": "dust"
+                "expect_regex": "(?i)dust"
             },
             "archive_layout": "flatten_exes"
         },
