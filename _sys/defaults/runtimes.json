@@ -2,16 +2,16 @@
     "_comment": "Runtime version and download URL registry. Single source of truth for _sys/core/bootstrap.bat and setup.py.",
     "runtimes": {
         "python": {
-            "version": "3.15.0",
-            "url": "https://www.python.org/ftp/python/3.15.0/python-3.15.0-embed-amd64.zip",
+            "version": "3.15.1",
+            "url": "https://www.python.org/ftp/python/3.15.1/python-3.15.1-embed-amd64.zip",
             "get_pip_url": "https://bootstrap.pypa.io/get-pip.py",
             "discovery_provider": "endoflife_python",
             "discovery_id": "python",
-            "sha256": "a6999bcbcbe56f937159ef79c2630260eca99f65f7860bc5cd20430324079a44"
+            "sha256": "352e232f25b5120508f11a6dfc1bd9076d3e70c30977d552a63338838c2ae8fb"
         },
         "nodejs": {
-            "version": "24.22.0",
-            "url": "https://nodejs.org/dist/v24.22.0/node-v24.22.0-win-x64.zip",
+            "version": "24.22.1",
+            "url": "https://nodejs.org/dist/v24.22.1/node-v24.22.1-win-x64.zip",
             "install_mechanism": "zip_tool",
             "archive_layout": "preserve_tree",
             "strip_components": 1,
@@ -20,20 +20,20 @@
             ],
             "discovery_provider": "nodejs_lts",
             "discovery_id": "lts",
-            "sha256": "f9683a19877e12a9b167305c8db71040d812876359de21f0d2e97c3f321f80c3"
+            "sha256": "d2046d28c2c3dcd211ac5145c0bf30e2047ef9dfb306693c8c6e2eccd8b95fa5"
         },
         "git": {
-            "version": "2.56.0.windows.2",
-            "url": "https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.2/PortableGit-2.56.0.2-64-bit.7z.exe",
+            "version": "2.56.0.windows.3",
+            "url": "https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.3/PortableGit-2.56.0.3-64-bit.7z.exe",
             "install_mechanism": "sfx_exe",
             "discovery_provider": "github_releases_exact",
             "discovery_id": "git-for-windows/git",
             "asset_pattern": "^PortableGit-[0-9.]+.*-64-bit\\.7z\\.exe$",
-            "sha256": "075e158ef8e1f0ab80b347e245405d3eca735c2dc88fd8e032e137d0ca61f61b"
+            "sha256": "4fc27b779829a36df77911e3f4dea09c66c790dd6c5f7dfa3b6a5479f1fe354f"
         },
         "vscode": {
-            "version": "1.142.0",
-            "url": "https://vscode.download.prss.microsoft.com/dbazure/download/stable/6d62b1d5dace93a33b3a6d3eca1317bd5e15bcb1/VSCode-win32-x64-1.142.0.zip",
+            "version": "1.143.1",
+            "url": "https://vscode.download.prss.microsoft.com/dbazure/download/stable/e646868227c3e3a9e3f24277c8c7220be42c0be7/VSCode-win32-x64-1.143.1.zip",
             "install_mechanism": "zip_tool",
             "archive_layout": "preserve_tree",
             "strip_components": 0,
@@ -42,18 +42,18 @@
             ],
             "discovery_provider": "vscode_official",
             "discovery_id": "win32-x64-archive",
-            "sha256": "ace1da7d1432d43c1ab4b2bbf643f6494f6d25dec07494976755eac522cd50d9"
+            "sha256": "b4f9643b8a549ca2c85a1bbc9063fc76f1e08fc0036a7f6a1a181cdc05235eca"
         },
         "pwsh": {
-            "version": "7.6.7",
-            "url": "https://github.com/PowerShell/PowerShell/releases/download/v7.6.7/PowerShell-7.6.7-win-x64.zip",
+            "version": "7.6.8",
+            "url": "https://github.com/PowerShell/PowerShell/releases/download/v7.6.8/PowerShell-7.6.8-win-x64.zip",
             "install_mechanism": "zip_tool",
             "archive_layout": "preserve_tree",
             "strip_components": 0,
             "discovery_provider": "github_releases_exact",
             "discovery_id": "PowerShell/PowerShell",
             "asset_pattern": "^PowerShell-[0-9.]+-win-x64\\.zip$",
-            "sha256": "d2f952ebdbf24386cb8923553aa58e41a846db35a6155ea04c58142a4b16dbb7"
+            "sha256": "b9f074f923c499b51ec99d313da8e9ae90d17a9f3adf00c73d6189f34d908528"
         }
     },
     "tools": {
