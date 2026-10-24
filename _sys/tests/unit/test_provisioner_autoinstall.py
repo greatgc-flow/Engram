@@ -7,6 +7,7 @@ mocked; extraction, flattening, checksum, and manifest logic run for real.
 import json
 import sys
 import zipfile
+import pytest
 from pathlib import Path
 
 from _sys.core.root import find_root
@@ -1363,3 +1364,72 @@ def test_load_tool_catalog_and_runtimes_defaults_fallback(tmp_path):
     V, URLS, tools = pv._load_runtimes(sys_dir)
     assert V["Python"] == "3.14.5"
     assert "test_tool" in tools
+
+
+class TestRequiredPayload:
+    @pytest.mark.parametrize("code,output,expected", [(7, b"tool 1.0", False),
+                                                        (0, b"wrong", False),
+                                                        (0, b"tool 1.0", True)])
+    def test_canary_requires_exit_zero_and_matching_output(self, tmp_path, monkeypatch, code, output, expected):
+        import subprocess
+        monkeypatch.setattr(pv.subprocess, "run", lambda *a, **k:
+                            subprocess.CompletedProcess(a, code, output, b""))
+        ok, detail = pv._run_canary(tmp_path, {"argv": ["tool.exe"], "expect_regex": "tool"})
+        assert ok is expected
+        if code:
+            assert str(code) in detail
+
+    def test_required_directory_install_and_damage(self, tmp_path, monkeypatch):
+        cfg = {"version": "1", "url": "https://example/tool.zip", "bin": "tool.exe",
+               "install_mechanism": "zip_tool", "archive_layout": "preserve_tree",
+               "strip_components": 0, "required_paths": ["payload"]}
+        sd = _make_sys_dir(tmp_path, {"tool": cfg})
+        def download(url, dest):
+            with zipfile.ZipFile(dest, "w") as z:
+                z.writestr("tool.exe", b"exe")
+                z.writestr("payload/lib.dll", b"dependency")
+        monkeypatch.setattr(pv, "_secure_download", download)
+        assert pv.ensure_tool("tool", sys_dir=sd)["status"] == "success"
+        root = sd / "tools/tool"
+        manifest = root / ".install_manifest.json"
+        assert (root / "payload/lib.dll").read_bytes() == b"dependency"
+        assert pv._already_current(root, manifest, cfg, "1", "tool.exe")
+        import shutil
+        shutil.rmtree(root / "payload")
+        assert not pv._already_current(root, manifest, cfg, "1", "tool.exe")
+        (root / "payload").write_text("damaged: directory replaced by file")
+        assert not pv._already_current(root, manifest, cfg, "1", "tool.exe")
+
+    def test_incomplete_staging_preserves_active_install(self, tmp_path, monkeypatch):
+        cfg = {"version": "2", "url": "https://example/tool.zip", "bin": "tool.exe",
+               "install_mechanism": "zip_tool", "archive_layout": "preserve_tree",
+               "required_paths": ["payload"]}
+        sd = _make_sys_dir(tmp_path, {"tool": cfg})
+        active = sd / "tools/tool"
+        active.mkdir()
+        (active / "tool.exe").write_bytes(b"old")
+        monkeypatch.setattr(pv, "_secure_download", lambda url, dest:
+                            _make_fixture_zip(dest, "tool.exe", nested=False))
+        result = pv.ensure_tool("tool", sys_dir=sd)
+        assert result["status"] == "error"
+        assert "required" in result["detail"].lower()
+        assert (active / "tool.exe").read_bytes() == b"old"
+
+
+class TestShippedCanaryPatterns:
+    """Real `--version` output of each added tool (captured from the pinned releases) must satisfy its canary regex."""
+
+    SAMPLES = {
+        "exiftool": "perl: warning: Setting locale failed.\n13.59\n",
+        "yq": "yq (https://github.com/mikefarah/yq/) version v4.54.1\n",
+        "sd": "sd 1.0.0\n",
+        "hyperfine": "hyperfine 2.0.0\n",
+        "dust": "Dust 1.2.6\n",
+        "ouch": "ouch 0.8.3\n",
+    }
+
+    @pytest.mark.parametrize("name", sorted(SAMPLES))
+    def test_sample_output_matches_canary_regex(self, name):
+        import re
+        tools = json.loads((SYS_DIR / "defaults" / "runtimes.json").read_text(encoding="utf-8"))["tools"]
+        assert re.search(tools[name]["canary"]["expect_regex"], self.SAMPLES[name])
