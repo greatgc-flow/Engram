@@ -650,6 +650,8 @@ def _run_canary(tmp_dir: Path, canary: dict | None, env: dict | None = None) -> 
         output = res.stdout.decode("utf-8", errors="replace") + res.stderr.decode("utf-8", errors="replace")
     except (OSError, subprocess.SubprocessError) as e:
         return False, str(e)
+    if res.returncode != 0:
+        return False, f"Canary exited with code {res.returncode}: {output!r}"
     if regex and not re.search(regex, output):
         return False, f"expect_regex {regex!r} not matched in canary output: {output!r}"
     return True, output
@@ -787,6 +789,10 @@ def _install_atomic(name: str, cfg: dict, manifest_path: Path, target_root: Path
                 shutil.rmtree(tmp_dir, ignore_errors=True)
                 return {"status": "error", "detail": f"Failed to install extra: {e}"}
 
+        if not _required_paths_present(tmp_dir, cfg):
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            return {"status": "error", "detail": "Missing required payload directory"}
+
         canary = cfg.get("canary")
         ok, canary_output = _run_canary(tmp_dir, canary)
         if not ok:
@@ -864,11 +870,17 @@ def _install_atomic(name: str, cfg: dict, manifest_path: Path, target_root: Path
         return {"status": "error", "detail": str(e)}
 
 
+def _required_paths_present(root: Path, cfg: dict) -> bool:
+    """Declared companion payload directories must exist alongside the binary."""
+    return all((root / rel).is_dir() for rel in cfg.get("required_paths", []))
+
+
 def _already_current(dest_dir: Path, manifest_path: Path, cfg: dict, declared_version, bin_name: str | None) -> bool:
-    """Three-condition already-current check (D11-ratified): declared_version
-    match, source_config_hash match (catches a URL/checksum/canary change
-    with no version bump), and the installed binary still physically
-    exists on disk (catches manual deletion)."""
+    """Require matching version/config and the binary plus companion directories.
+
+    Config hashes catch URL/checksum/canary changes without a version bump;
+    physical checks catch missing payloads even when the manifest matches.
+    """
     if not manifest_path.exists():
         return False
     try:
@@ -878,6 +890,8 @@ def _already_current(dest_dir: Path, manifest_path: Path, cfg: dict, declared_ve
     if manifest.get("declared_version") != declared_version:
         return False
     if manifest.get("source_config_hash") != _canon_hash(cfg):
+        return False
+    if not _required_paths_present(dest_dir, cfg):
         return False
     if bin_name and not (dest_dir / bin_name).exists():
         return False
@@ -1415,7 +1429,8 @@ def _runtime_postcondition(sys_dir: Path, name: str, cfg: dict) -> bool:
 
 def _tool_postcondition(sys_dir: Path, name: str, cfg: dict) -> bool:
     bin_name = cfg.get("bin", f"{name}.exe")
-    return (sys_dir / "tools" / name / bin_name).exists()
+    root = sys_dir / "tools" / name
+    return (root / bin_name).exists() and _required_paths_present(root, cfg)
 
 
 def _peer_postcondition(sys_dir: Path, peer_id: str, cfg: dict) -> bool:

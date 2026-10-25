@@ -458,7 +458,9 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
         print("\nNo updates found among checked components.")
 
     if args.check:
-        if could_not_check or not_checked or (python_status and not python_status["checked"]
+        # Manual pins deliberately skip discovery; keep the advisory visible
+        # without reporting a provider failure for an otherwise healthy check.
+        if could_not_check or any(n.get("reason") != "manual" for n in not_checked) or (python_status and not python_status["checked"]
                                and python_status["installed"]):
             sys.exit(1)
             return {"status": "failed", "detail": "Update discovery encountered provider failures"}
