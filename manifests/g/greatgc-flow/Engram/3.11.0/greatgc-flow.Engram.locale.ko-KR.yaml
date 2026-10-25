@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.1.12.0.schema.json
+
+PackageIdentifier: greatgc-flow.Engram
+PackageVersion: 3.11.0
+PackageLocale: ko-KR
+Publisher: greatgc-flow
+PublisherUrl: https://github.com/greatgc-flow
+PublisherSupportUrl: https://github.com/greatgc-flow/Engram/issues
+PackageName: Engram
+PackageUrl: https://github.com/greatgc-flow/Engram
+License: MIT
+LicenseUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+Copyright: Copyright (c) 2026 greatgc-flow
+CopyrightUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+ShortDescription: Windows용 무설치 포터블 개발 런타임 및 가상 환경 엔진
+Description: Engram은 호스트 설치나 레지스트리 수정 없이 격리된 Python/Node/Git 환경을 제공하는 Windows 전용 독립형 무설치 포터블 런타임 환경입니다. 서드파티 AI CLI 도구의 설치·업데이트·상태 확인을 선택적으로 지원하며, AI 간 협업 자체는 별도의 peerhub 패키지가 담당합니다.
+Tags:
+  - portable
+  - developer-tools
+  - workflow
+  - automation
+  - windows
+  - virtual-environment
+ReleaseNotes: |-
+  ### Added
+  
+  - Managed ExifTool 13.59, yq 4.54.1, sd 1.1.0, hyperfine 2.0.0, dust 1.2.6,
+    and ouch 0.8.3 with declared SHA-256 pins and PATH entries. Ouch supplies
+    archive operations using its own CLI, replacing the proposed 7-Zip addition.
+  - Generic `required_paths` for companion payload directories, checked during
+    staging, already-current detection, deployment verification, and doctor.
+    ExifTool preserves its adjacent `exiftool_files` payload. Its pin is manual:
+    no automatic version discovery; recompute SHA-256 by hand for each bump.
+  - Existing installations can adopt the new declarations with
+    `engram migrate-layout`, followed by `engram update` to install the tools.
+  
+  ### Changed
+  
+  - Shipped defaults refreshed to the latest validated releases: Git 2.56.0.windows.3,
+    VS Code 1.143.1, PowerShell 7.6.8, Node.js 24.22.1 LTS, Python 3.15.1.
+  
+  ### Fixed
+  
+  - Canaries now require exit code zero as well as matching output. Pinned tool
+    updates require a fresh discovered checksum and discard obsolete algorithms.
+  - Deliberately manual tool pins remain visible as unchecked advisories without
+    causing `engram update --check` to report a provider failure.
+ReleaseNotesUrl: https://github.com/greatgc-flow/Engram/releases/tag/v3.11.0
+ManifestType: locale
+ManifestVersion: 1.12.0
