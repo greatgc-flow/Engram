@@ -1025,12 +1025,45 @@ def test_new_default_tools_advisory_preserves_results_and_proposals(default_tool
     defaults_path.write_text(json.dumps(shipped), encoding="utf-8")
     defaults_before = defaults_path.read_bytes()
     assert invoke() == baseline
-    assert "2 default tool(s) not in your declaration: alpha, zeta. Run 'engram migrate-layout', then 'engram update' to adopt them." in capsys.readouterr().out
+    assert ("2 default tool(s) not in your declaration: alpha, zeta. "
+            f"Run '{updater._MIGRATE_LAYOUT_COMMAND}', then 'engram update' to adopt them."
+            in capsys.readouterr().out)
     assert (sd / "runtimes.json").read_bytes() == before
     assert defaults_path.read_bytes() == defaults_before
     proposals = list((sd / "data/tool-updates").rglob("runtimes.proposed.json"))
     assert proposals
     assert all(json.loads(p.read_text(encoding="utf-8")) == live for p in proposals)
+
+
+def test_advised_migration_command_is_dispatchable():
+    import importlib
+    import re
+
+    entrypoint, verb = updater._MIGRATE_LAYOUT_COMMAND.split()
+    root = _SYS_DIR.parent
+    batch = root.joinpath(*entrypoint.split("\\")).read_text(encoding="utf-8")
+    assert '"%PY%" "%SYS_DIR%\\core\\dispatcher.py" %*' in batch
+    registry = json.loads((_SYS_DIR / "dispatch.json").read_text(encoding="utf-8"))
+    pipeline = registry["pipelines"][verb]
+    assert pipeline
+    for op_id in pipeline:
+        operation = registry["operations"][op_id]
+        module = importlib.import_module(operation["module"])
+        assert callable(getattr(module, operation.get("method", "main")))
+
+    # engram.cmd accepts only explicit SUBCMD routes before cmd_unknown.
+    cli = (root / "engram.cmd").read_text(encoding="utf-8")
+    routes = re.findall(r'if /i "%SUBCMD%"=="([^"]+)" goto :', cli)
+    assert "update" in routes
+    assert verb not in routes
+    assert 'goto :cmd_unknown' in cli
+
+
+@pytest.mark.parametrize("filename", ["README.md", "CHANGELOG.md"])
+def test_documented_migration_command(filename):
+    text = (_SYS_DIR.parent / filename).read_text(encoding="utf-8")
+    assert "engram migrate-layout" not in text
+    assert updater._MIGRATE_LAYOUT_COMMAND in text
 
 
 @pytest.mark.parametrize("case", ["equal", "fallback", "only", "missing", "invalid", "unreadable", "wrong_shape"])

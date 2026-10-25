@@ -6,6 +6,13 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+## [3.11.2] - 2026-10-25
+
+### Fixed
+
+- Corrected the layout migration command in the update advisory, README, and
+  3.11.0 notes to `_sys\core\dispatch.bat migrate-layout`.
+
 ## [3.11.1] - 2026-10-25
 
 ### Added
@@ -26,7 +33,7 @@ Historical entries are reconstructed from git commits and merged PR titles.
   ExifTool preserves its adjacent `exiftool_files` payload. Its pin is manual:
   no automatic version discovery; recompute SHA-256 by hand for each bump.
 - Existing installations can adopt the new declarations with
-  `engram migrate-layout`, followed by `engram update` to install the tools.
+  `_sys\core\dispatch.bat migrate-layout`, followed by `engram update` to install the tools.
 
 ### Changed
 

@@ -54,6 +54,7 @@ def _download_and_stage_core_update(
 
 
 _ENV_COMPONENTS = frozenset({"python", "venv", "packages"})
+_MIGRATE_LAYOUT_COMMAND = r"_sys\core\dispatch.bat migrate-layout"
 
 
 def _env_update_args(args_list: list[str]) -> list[str]:
@@ -152,7 +153,7 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
             missing_tools = []
         if missing_tools:
             print(f"{len(missing_tools)} default tool(s) not in your declaration: "
-                  f"{', '.join(missing_tools)}. Run 'engram migrate-layout', "
+                  f"{', '.join(missing_tools)}. Run '{_MIGRATE_LAYOUT_COMMAND}', "
                   "then 'engram update' to adopt them.")
 
     if only_set is not None:
