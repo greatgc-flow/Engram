@@ -6,6 +6,8 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+## [3.11.1] - 2026-10-25
+
 ### Added
 
 - `engram update` advises when shipped default tools are not in the effective

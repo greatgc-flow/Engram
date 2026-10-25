@@ -157,6 +157,6 @@ def test_build_package_refuses_unknown_version():
 
 def test_pr_b2_version_has_selected_changelog_section():
     from tools.winget.build_package import get_release_notes_en
-    assert load_version_info()["version"] == "3.11.0"
-    assert "ExifTool" in get_release_notes_en("3.11.0")
+    assert load_version_info()["version"] == "3.11.1"
+    assert "advises" in get_release_notes_en("3.11.1")
 
