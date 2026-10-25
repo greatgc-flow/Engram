@@ -6,6 +6,8 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+## [3.11.0] - 2026-10-25
+
 ### Added
 
 - Managed ExifTool 13.59, yq 4.54.1, sd 1.1.0, hyperfine 2.0.0, dust 1.2.6,
@@ -17,6 +19,11 @@ Historical entries are reconstructed from git commits and merged PR titles.
   no automatic version discovery; recompute SHA-256 by hand for each bump.
 - Existing installations can adopt the new declarations with
   `engram migrate-layout`, followed by `engram update` to install the tools.
+
+### Changed
+
+- Shipped defaults refreshed to the latest validated releases: Git 2.56.0.windows.3,
+  VS Code 1.143.1, PowerShell 7.6.8, Node.js 24.22.1 LTS, Python 3.15.1.
 
 ### Fixed
 
