@@ -72,3 +72,10 @@ For AI peer collaboration rules, see [PeerHub docs/HANDOFF.md](https://github.co
 - Core update on a live install finishes only after the terminal/VS Code that started it closes (`core_update_helper.ps1`); Git and VS Code components are deferred ("in_use_retry_at_session_boundary") while those processes run.
 - Lessons: (1) execute every user-facing command string once on a real install before release (cause of #72); (2) peers cannot reach the network or push, and a peer sandbox may have a read-only `.git`: use a fresh clone as the peer workspace, set `git config user.name/user.email` in it before committing, and push/PR from the orchestrator; (3) the auto-mode classifier blocks merges, force-pushes and some `rm -rf $(...)` until the owner says so explicitly; (4) a dependabot PR that failed CI on an old base (Bootstrap managed Python, tests green) passed after `@dependabot rebase`.
 - Open: issue #72 (above); dependabot PR #69 (virtualenv 21.14.12 -> 21.14.13 in `_sys/defaults`, CI green, shipped-default pin, not yet reviewed); the owner's live install still needs the terminal restart that completes core 3.11.1.
+
+## 8. v3.11.2 (2026-10-25)
+
+- Released v3.11.2 (PR #74 fix + release, #75 WinGet manifests): README, CHANGELOG 3.11.0 entry and the `engram update` advisory now say `_sys\core\dispatch.bat migrate-layout` (single constant `updater._MIGRATE_LAYOUT_COMMAND`; tests assert the verb is dispatchable and the `engram` CLI does not route it). Closes #72. Dependabot PR #69 (virtualenv 21.14.13) merged first and ships in 3.11.2. ZIP SHA-256 == `InstallerSha256`, attestation verified, post-release closure green.
+- Lessons: `peerhub ask` no longer has `--resume` (stream reuse is automatic); cx cannot write `.git/index.lock`, so the orchestrator commits; full suite in a cx sandbox needs a temp dir outside the worktree.
+- Open: the owner's live install still needs core 3.11.1 -> 3.11.2 (`engram update`, finishes after the terminal/VS Code closes).
+
