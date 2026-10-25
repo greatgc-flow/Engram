@@ -142,6 +142,19 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     live_runtimes = provisioner.load_json_with_fallback(provisioner.resolve_declared_config(_SYS_DIR, "runtimes.json"))
     catalog = provisioner.load_json_with_fallback(provisioner.resolve_declared_config(_SYS_DIR, provisioner.TOOL_CATALOG_FILENAME))
 
+    if only_set is None:
+        try:
+            shipped_tools = json.loads(
+                (_SYS_DIR / "defaults" / "runtimes.json").read_text(encoding="utf-8")
+            ).get("tools", {})
+            missing_tools = sorted(shipped_tools.keys() - live_runtimes.get("tools", {}).keys())
+        except (OSError, ValueError, AttributeError):
+            missing_tools = []
+        if missing_tools:
+            print(f"{len(missing_tools)} default tool(s) not in your declaration: "
+                  f"{', '.join(missing_tools)}. Run 'engram migrate-layout', "
+                  "then 'engram update' to adopt them.")
+
     if only_set is not None:
         valid_names: set[str] = {"engram", "core"}
         for s in ("runtimes", "tools"):
