@@ -6,6 +6,12 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+### Added
+
+- `engram update` advises when shipped default tools are not in the effective
+  live declaration, with the explicit commands to adopt them. The advisory is
+  suppressed with `--only` and leaves declarations and update proposals unchanged.
+
 ## [3.11.0] - 2026-10-25
 
 ### Added

@@ -980,3 +980,97 @@ def test_update_check_manual_pin_is_advisory(tmp_path, monkeypatch, capsys, reas
         updater.run({"args": ["--check", "--only", "exiftool"]})
     assert exc.value.code == exit_code
     assert "exiftool" in capsys.readouterr().out
+
+
+@pytest.fixture
+def default_tools_advisory_env(tmp_path, monkeypatch):
+    from core import version_resolver
+    sd = tmp_path / "_sys"
+    (sd / "defaults").mkdir(parents=True)
+    (sd / "core").mkdir()
+    (sd / "core/version.json").write_text('{"version": "1.0.0"}', encoding="utf-8")
+    live = {"tools": {"jq": {"version": "1.0.0", "url": "https://example.test/jq.exe",
+        "discovery_provider": "github_releases", "discovery_id": "org/jq"}}}
+    (sd / "runtimes.json").write_text(json.dumps(live), encoding="utf-8")
+    monkeypatch.setattr(updater, "_SYS_DIR", sd)
+    monkeypatch.setattr(updater, "_PORTABLE_ROOT", tmp_path)
+    monkeypatch.setattr(updater, "check_components", lambda *a: {})
+    monkeypatch.setattr(check_tool_updates, "RUNTIMES_PATH", sd / "runtimes.json")
+    monkeypatch.setattr(check_tool_updates, "CATALOG_PATH", sd / "tool-catalog.v1.json")
+    monkeypatch.setattr(check_tool_updates, "ARCHIVE_ROOT", sd / "data/tool-updates")
+    monkeypatch.setattr(check_tool_updates, "DISCOVERY_CACHE_PATH", sd / "data/cache.json")
+    def current_release(**kwargs):
+        return {"status": "ok", "latest_version": kwargs["current_version"],
+                "url": "https://example.test/jq.exe"}
+    monkeypatch.setattr(version_resolver, "resolve_latest", current_release)
+    monkeypatch.setattr(check_tool_updates.version_resolver, "resolve_latest", current_release)
+    monkeypatch.setattr(check_tool_updates, "apply_proposal", lambda *a, **kw:
+                        pytest.fail("advisory must not apply a proposal"))
+    return sd, live
+
+
+@pytest.mark.parametrize("flags", [[], ["--check"], ["--dry-run"]])
+def test_new_default_tools_advisory_preserves_results_and_proposals(default_tools_advisory_env, capsys, flags):
+    sd, live = default_tools_advisory_env
+    def invoke():
+        try:
+            return updater.run({"args": flags})
+        except SystemExit as exc:
+            return {"exit_code": exc.code}
+    before = (sd / "runtimes.json").read_bytes()
+    baseline = invoke()
+    capsys.readouterr()
+    shipped = {"tools": {"zeta": {}, "jq": {}, "alpha": {}}}
+    defaults_path = sd / "defaults/runtimes.json"
+    defaults_path.write_text(json.dumps(shipped), encoding="utf-8")
+    defaults_before = defaults_path.read_bytes()
+    assert invoke() == baseline
+    assert "2 default tool(s) not in your declaration: alpha, zeta. Run 'engram migrate-layout', then 'engram update' to adopt them." in capsys.readouterr().out
+    assert (sd / "runtimes.json").read_bytes() == before
+    assert defaults_path.read_bytes() == defaults_before
+    proposals = list((sd / "data/tool-updates").rglob("runtimes.proposed.json"))
+    assert proposals
+    assert all(json.loads(p.read_text(encoding="utf-8")) == live for p in proposals)
+
+
+@pytest.mark.parametrize("case", ["equal", "fallback", "only", "missing", "invalid", "unreadable", "wrong_shape"])
+def test_new_default_tools_advisory_suppression(default_tools_advisory_env, monkeypatch, capsys, case):
+    sd, live = default_tools_advisory_env
+    path = sd / "defaults/runtimes.json"
+    path.write_text(json.dumps(live if case in {"equal", "fallback"} else
+                               {"tools": {"jq": {}, "alpha": {}}}), encoding="utf-8")
+    flags = []
+    if case == "fallback":
+        (sd / "runtimes.json").unlink()
+    elif case == "only":
+        flags = ["--only", "jq"]
+    elif case == "missing":
+        path.unlink()
+    elif case == "invalid":
+        path.write_text("{invalid", encoding="utf-8")
+    elif case == "wrong_shape":
+        path.write_text("[]", encoding="utf-8")
+    elif case == "unreadable":
+        real_read = Path.read_text
+        def read_text(p, *a, **kw):
+            if p == path:
+                raise PermissionError("test unreadable shipped defaults")
+            return real_read(p, *a, **kw)
+        monkeypatch.setattr(Path, "read_text", read_text)
+    assert updater.run({"args": flags}) == {"status": "success", "detail": "No updates discovered"}
+    assert "not in your declaration" not in capsys.readouterr().out
+
+
+def test_new_default_tools_advisory_in_actionable_dry_run(default_tools_advisory_env, monkeypatch, capsys):
+    sd, _ = default_tools_advisory_env
+    (sd / "defaults/runtimes.json").write_text(json.dumps({"tools": {"new-tool": {}}}), encoding="utf-8")
+    original = check_tool_updates.version_resolver.resolve_latest
+    def latest(**kwargs):
+        if kwargs["tool_name"] == "jq":
+            return {"status": "ok", "latest_version": "2.0.0", "url": "https://example.test/new.exe"}
+        return original(**kwargs)
+    monkeypatch.setattr(check_tool_updates.version_resolver, "resolve_latest", latest)
+    assert updater.run({"args": ["--dry-run"]}) == {"status": "success", "detail": "Dry run complete"}
+    output = capsys.readouterr().out
+    assert "1 default tool(s) not in your declaration: new-tool." in output
+    assert "Dry run complete" in output
