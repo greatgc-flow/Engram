@@ -57,6 +57,11 @@ jobs:
       - name: Require release contracts without skips
         if: always()
         run: python tools/release_gate/check_required_tests.py --report contract-results.xml
+      - name: Remove runner-preinstalled Python 3.15
+        # A hosted-toolcache 3.15.x leaks its Lib into the managed 3.15.y venv's sys.path
+        # (ABI mismatch on _socket) whenever the refresh bumps the pin past the image's patch.
+        shell: pwsh
+        run: Remove-Item C:\hostedtoolcache\windows\Python\3.15* -Recurse -Force -ErrorAction SilentlyContinue
       - name: Bootstrap managed Python
         shell: pwsh
         run: |
