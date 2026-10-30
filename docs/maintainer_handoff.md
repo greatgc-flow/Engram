@@ -79,3 +79,9 @@ For AI peer collaboration rules, see [PeerHub docs/HANDOFF.md](https://github.co
 - Lessons: `peerhub ask` no longer has `--resume` (stream reuse is automatic); cx cannot write `.git/index.lock`, so the orchestrator commits; full suite in a cx sandbox needs a temp dir outside the worktree.
 - Open: the owner's live install still needs core 3.11.1 -> 3.11.2 (`engram update`, finishes after the terminal/VS Code closes).
 
+## 9. v3.11.3 (2026-10-30)
+
+- Released v3.11.3 (PR #80 release, #81 WinGet manifests): refreshed runtime defaults (#77: Python 3.15.2, Node 26.13.0, Git 2.56.0.windows.4, VS Code 1.144.0, pwsh 7.6.9) plus the weekly-refresh fix (#78). ZIP SHA-256 == `InstallerSha256`, `gh attestation verify` passed.
+- Root cause of the failed 2026-10-26 refresh: the hosted windows image preinstalls Python 3.15.1; its `Lib` leaked into the managed 3.15.2 venv `sys.path` (`_socket` ABI mismatch, pip dead). Workflows (`refresh-runtimes`, `ci`, and the `sandbox-gate` hosted jobs) now delete `C:\hostedtoolcache\windows\Python\3.15*` before bootstrap. Robust fix pending in #79 (`-E`/`-I` on venv pip calls). If a future pin bump fails the same way on another minor, extend the glob.
+- Lessons: a refresh dispatch on a branch really opens the automation PR (#77); bot PRs get no CI checks. Python string escapes corrupted `\3` in workflow paths twice (use `chr(92)`/raw bytes). Flaky 10 s/60 s timeouts (`test_release_gate_b1::test_wait_reads_policy_numbers`, `test_python_swap_hardening::test_crash_anywhere...`) passed on rerun; see the flake issue.
+- Open: owner live install needs `engram update` (core 3.11.3); #79.
