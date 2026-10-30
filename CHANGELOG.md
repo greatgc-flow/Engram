@@ -6,6 +6,18 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+## [3.11.3] - 2026-10-30
+
+### Changed
+
+- Refreshed runtime defaults: Python 3.15.2, Node.js 26.13.0, Git
+  2.56.0.windows.4, VS Code 1.144.0, and PowerShell 7.6.9.
+
+### Fixed
+
+- The weekly runtime-defaults refresh workflow no longer fails when the hosted
+  runner has a different Python 3.15 patch preinstalled.
+
 ## [3.11.2] - 2026-10-25
 
 ### Fixed
