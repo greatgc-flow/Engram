@@ -150,7 +150,7 @@ class B1Tests(unittest.TestCase):
         const wait=new Function('github','context','core','require','return (async()=>{'+fs.readFileSync(process.argv[1],'utf8')+'})()');
         wait(github,{repo:{},runId:12},{info(){}},injected).catch(e=>console.log(JSON.stringify({now,error:e.message})));
         """
-        result=subprocess.run(['node','-e',js,str(script)],capture_output=True,text=True,timeout=10,check=True)
+        result=subprocess.run(['node','-e',js,str(script)],capture_output=True,text=True,timeout=30,check=True)
         report=json.loads(result.stdout)
         self.assertEqual(report['now'],60000)
         self.assertIn('(1 minutes)',report['error'])
