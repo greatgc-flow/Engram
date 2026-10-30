@@ -118,6 +118,7 @@ def _result(
     checksum_value: str | None = None,
     checksum_source: str | None = None,
     source: str | None = None,
+    checked_at: str | None = None,
     detail: str | None = None,
     error_type: str | None = None,
 ) -> dict[str, Any]:
@@ -138,6 +139,8 @@ def _result(
         out["checksum_source"] = checksum_source
     if source is not None:
         out["source"] = source
+    if checked_at is not None:
+        out["checked_at"] = checked_at
     if detail is not None:
         out["detail"] = detail
     if error_type is not None:
@@ -929,6 +932,7 @@ def _resolve_engram_release(
             checksum_value=cached.get("checksum_value"),
             checksum_source=cached.get("checksum_source"),
             source="cache_ttl",
+            checked_at=cached.get("last_checked_at"),
         )
 
     etag = cached.get("etag")

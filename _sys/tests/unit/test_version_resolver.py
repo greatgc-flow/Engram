@@ -303,13 +303,15 @@ def test_engram_release_missing_asset(monkeypatch, tmp_path):
     assert result["error_type"] == "missing_asset"
 
 
-def test_ttl_cache_hit_returns_cache_ttl_without_network(monkeypatch, tmp_path):
+@pytest.mark.parametrize("provider", ["github_releases", "engram_release"])
+def test_ttl_cache_hit_returns_cache_ttl_without_network(monkeypatch, tmp_path, provider):
     cache_path = tmp_path / "cache.json"
+    checked_at = vr._now_utc()
     cache_path.write_text(json.dumps({
-        "github_releases": {
+        provider: {
             "owner/repo": {
                 "etag": '"abc"',
-                "last_checked_at": vr._now_utc(),
+                "last_checked_at": checked_at,
                 "cached_latest_version": "2.1.0",
                 "cached_url": "https://example/tool-2.1.0.zip",
             }
@@ -322,11 +324,13 @@ def test_ttl_cache_hit_returns_cache_ttl_without_network(monkeypatch, tmp_path):
     monkeypatch.setattr(vr.shutil, "which", lambda name: None)
     monkeypatch.setattr(vr.urllib.request, "urlopen", _should_not_be_called)
 
-    result = vr.resolve_latest("tool", "github_releases", "1.0.0", "owner/repo", cache_path)
+    result = vr.resolve_latest("tool", provider, "1.0.0", "owner/repo", cache_path)
     assert result["status"] == "ok"
     assert result["latest_version"] == "2.1.0"
     assert result["source"] == "cache_ttl"
     assert result["url"] == "https://example/tool-2.1.0.zip"
+    if provider == "engram_release":
+        assert result["checked_at"] == checked_at
 
 
 def test_ttl_cache_force_refresh_bypasses_cache(monkeypatch, tmp_path):
