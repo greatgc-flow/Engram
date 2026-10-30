@@ -919,23 +919,42 @@ def test_updater_help_flag_prints_help_and_returns_success(flag, capsys):
 
 
 
-@pytest.mark.parametrize("source,expect_hint", [("cache_ttl", True), ("github_api", False)])
-def test_core_update_hints_refresh_only_for_cached_result(latest_node, monkeypatch, capsys, source, expect_hint):
+@pytest.mark.parametrize("source,latest,checked_at", [
+    ("cache_ttl", "1.0.0", "2026-10-31T00:00:00Z"),
+    ("cache_ttl", "99.0.0", "2026-10-31T00:00:00Z"),
+    ("github_api", "99.0.0", None),
+    ("cache_ttl", "1.0.0", None),
+])
+def test_core_discovery_cache_visibility(latest_node, monkeypatch, capsys, source, latest, checked_at):
     from core import version_resolver
+    from core import version
+    monkeypatch.setattr(version, "load_version_info", lambda *a: {"version": "1.0.0"})
     real = version_resolver.resolve_latest
 
     def fake(*args, **kwargs):
         if kwargs.get("provider") == "engram_release":
-            return {"status": "ok", "provider": "engram_release", "latest_version": "99.0.0",
+            result = {"status": "ok", "provider": "engram_release", "latest_version": latest,
                     "url": "https://example.test/e.zip", "checksum_algo": "sha256",
                     "checksum_value": "abc", "source": source}
+            if checked_at is not None:
+                result["checked_at"] = checked_at
+            return result
         return real(*args, **kwargs)
 
     monkeypatch.setattr(version_resolver, "resolve_latest", fake)
-    updater.run({"args": ["--dry-run"]})
+    result = updater.run({"args": ["--dry-run", "--only", "core"]})
+    assert result["status"] == "success"
     out = capsys.readouterr().out
-    assert "-> 99.0.0" in out
-    assert ("engram update --refresh" in out) is expect_hint
+    assert ("-> 99.0.0" in out) is (latest == "99.0.0")
+    expected = (f"Core discovery: cached ({checked_at or 'unknown'}); "
+                "run 'engram update --refresh' to check for newer.")
+    if source == "cache_ttl":
+        assert out.splitlines().count(expected) == 1
+        assert out.count("engram update --refresh") == 1
+    else:
+        assert "Core discovery: cached" not in out
+        assert "engram update --refresh" not in out
+    assert "cached result, up to 4 h old" not in out
 
 
 def test_reconcile_old_live_declaration_adds_managed_tools(tmp_path):

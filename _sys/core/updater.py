@@ -331,6 +331,10 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                         "detail": core_discovery.get("detail", "unknown error")
                     }
             else:
+                if core_discovery.get("source") == "cache_ttl":
+                    checked_at = core_discovery.get("checked_at") or "unknown"
+                    print(f"Core discovery: cached ({checked_at}); "
+                          "run 'engram update --refresh' to check for newer.")
                 latest = core_discovery.get("latest_version")
                 if latest and is_newer_release(latest, current_engram_version):
                     core_update = {
@@ -341,7 +345,6 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                         "url": core_discovery.get("url"),
                         "checksum_algo": core_discovery.get("checksum_algo"),
                         "checksum_value": core_discovery.get("checksum_value"),
-                        "cached": core_discovery.get("source") == "cache_ttl",
                     }
                 
     if core_not_checked:
@@ -415,8 +418,6 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
         for update in core_updates:
             display_name = update.get("component") or update.get("tool") or "Engram core"
             print(f"  {display_name}: {update.get('current_version')} -> {update.get('latest_version')}")
-            if update.get("cached"):
-                print("  (cached result, up to 4 h old; run 'engram update --refresh' to check for newer)")
             
     if runtimes_updates:
         print("\nRuntimes:")

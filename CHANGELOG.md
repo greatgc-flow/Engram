@@ -6,6 +6,13 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+### Fixed
+
+- Every successful Engram core discovery cache hit now prints one quiet
+  `Core discovery: cached (<UTC check time or unknown>)` notice with the
+  `engram update --refresh` command, including when already up to date.
+  This replaces the old hard-coded "up to 4 h old" hint; cache behavior is unchanged.
+
 ## [3.11.3] - 2026-10-30
 
 ### Changed

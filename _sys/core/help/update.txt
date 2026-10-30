@@ -72,6 +72,8 @@ Options:
   --dry-run        Discover and show the plan, apply nothing (default: off)
   --refresh, -r    Ignore the discovery cache and re-check online (default:
                    use the cache)
+                   Core cache hits show the UTC check time (or unknown),
+                   including when no core update is available.
   --only, -o LIST  Update only these components, comma- or space-separated;
                    aliases cc, cx, ag work (default: everything)
   --allow-major-runtime-upgrade
