@@ -6,6 +6,8 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+## [3.11.4] - 2026-10-31
+
 ### Fixed
 
 - Every successful Engram core discovery cache hit now prints one quiet
