@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.1.12.0.schema.json
+
+PackageIdentifier: greatgc-flow.Engram
+PackageVersion: 3.11.3
+PackageLocale: ko-KR
+Publisher: greatgc-flow
+PublisherUrl: https://github.com/greatgc-flow
+PublisherSupportUrl: https://github.com/greatgc-flow/Engram/issues
+PackageName: Engram
+PackageUrl: https://github.com/greatgc-flow/Engram
+License: MIT
+LicenseUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+Copyright: Copyright (c) 2026 greatgc-flow
+CopyrightUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+ShortDescription: Windows용 무설치 포터블 개발 런타임 및 가상 환경 엔진
+Description: Engram은 호스트 설치나 레지스트리 수정 없이 격리된 Python/Node/Git 환경을 제공하는 Windows 전용 독립형 무설치 포터블 런타임 환경입니다. 서드파티 AI CLI 도구의 설치·업데이트·상태 확인을 선택적으로 지원하며, AI 간 협업 자체는 별도의 peerhub 패키지가 담당합니다.
+Tags:
+  - portable
+  - developer-tools
+  - workflow
+  - automation
+  - windows
+  - virtual-environment
+ReleaseNotes: |-
+  ### Changed
+  
+  - Refreshed runtime defaults: Python 3.15.2, Node.js 26.13.0, Git
+    2.56.0.windows.4, VS Code 1.144.0, and PowerShell 7.6.9.
+  
+  ### Fixed
+  
+  - The weekly runtime-defaults refresh workflow no longer fails when the hosted
+    runner has a different Python 3.15 patch preinstalled.
+ReleaseNotesUrl: https://github.com/greatgc-flow/Engram/releases/tag/v3.11.3
+ManifestType: locale
+ManifestVersion: 1.12.0
