@@ -245,6 +245,7 @@ def test_failure_at_any_group_a_step_rolls_back_bit_for_bit(tmp_path, which):
 
 # ---- crash at every step => rollback (or resume) with a REBUILT plan -------------------------------------------
 
+@pytest.mark.timeout(180)  # loops over every crash point; slow hosted runners exceed the 60 s default
 @pytest.mark.parametrize("which", ["patch", "minor"])
 def test_crash_anywhere_then_rollback_with_a_rebuilt_plan_restores_everything(tmp_path, which):
     target = TARGET_PATCH if which == "patch" else TARGET_MINOR
@@ -261,6 +262,7 @@ def test_crash_anywhere_then_rollback_with_a_rebuilt_plan_restores_everything(tm
         assert w.snapshot() == before, f"rollback after a crash at {crash} did not restore the tree"
 
 
+@pytest.mark.timeout(180)  # loops over every crash point; slow hosted runners exceed the 60 s default
 @pytest.mark.parametrize("which", ["patch", "minor"])
 def test_crash_anywhere_then_resume_converges_to_the_uninterrupted_result(tmp_path, which):
     target = TARGET_PATCH if which == "patch" else TARGET_MINOR
