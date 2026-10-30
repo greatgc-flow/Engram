@@ -138,6 +138,11 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14"
+      - name: Remove runner-preinstalled Python 3.15
+        # A hosted-toolcache 3.15.x leaks its Lib into the managed 3.15.y venv's sys.path
+        # (ABI mismatch on _socket) once the pinned patch differs from the image's.
+        shell: pwsh
+        run: Remove-Item C:\hostedtoolcache\windows\Python\3.15* -Recurse -Force -ErrorAction SilentlyContinue
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: candidate-${{ github.run_id }}-${{ github.run_attempt }}
@@ -200,6 +205,11 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14"
+      - name: Remove runner-preinstalled Python 3.15
+        # A hosted-toolcache 3.15.x leaks its Lib into the managed 3.15.y venv's sys.path
+        # (ABI mismatch on _socket) once the pinned patch differs from the image's.
+        shell: pwsh
+        run: Remove-Item C:\hostedtoolcache\windows\Python\3.15* -Recurse -Force -ErrorAction SilentlyContinue
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: candidate-${{ github.run_id }}-${{ github.run_attempt }}
@@ -293,6 +303,11 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14"
+      - name: Remove runner-preinstalled Python 3.15
+        # A hosted-toolcache 3.15.x leaks its Lib into the managed 3.15.y venv's sys.path
+        # (ABI mismatch on _socket) once the pinned patch differs from the image's.
+        shell: pwsh
+        run: Remove-Item C:\hostedtoolcache\windows\Python\3.15* -Recurse -Force -ErrorAction SilentlyContinue
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: candidate-${{ github.run_id }}-${{ github.run_attempt }}
