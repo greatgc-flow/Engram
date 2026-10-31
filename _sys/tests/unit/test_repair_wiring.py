@@ -835,7 +835,8 @@ def test_strict_python_policy_refuses_unpinned_or_invalid_digest(
     assert "trusted source" in out["detail"]
 
 
-def test_strict_python_policy_accepts_pin_for_selected_target(tmp_path, monkeypatch):
+@pytest.mark.parametrize("pin_digest", ["ab" * 32, "AB" * 32])
+def test_strict_python_policy_accepts_pin_for_selected_target(tmp_path, monkeypatch, pin_digest):
     monkeypatch.setattr(repair, "_installed_python", lambda s, seams: "3.14.8")
     monkeypatch.setattr(repair, "detect", lambda *a, **k: {
         "manifest": "ok", "drift": {"status": "consistent"},
@@ -843,7 +844,7 @@ def test_strict_python_policy_accepts_pin_for_selected_target(tmp_path, monkeypa
     })
     out = _plan(
         tmp_path, ["--to", "3.14.9", "--require-pinned-sha256"],
-        {"python"}, pin_version="3.14.9", sha="ab" * 32,
+        {"python"}, pin_version="3.14.9", sha=pin_digest,
     )
     assert out["status"] == "success"
     assert out["plan"]["spec"][0]["params"]["sha256"] == "ab" * 32
