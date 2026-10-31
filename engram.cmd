@@ -7,6 +7,7 @@ setlocal DisableDelayedExpansion
 :: Discovery Hierarchy for Engram System Directory
 :: ============================================================================
 set "ENGRAM_SYS_DIR_NAME="
+set "SYS_PATH="
 
 :: Tier 1: Explicit caller override via environment variable
 if defined ENGRAM_SYS_DIR (
@@ -16,6 +17,8 @@ if defined ENGRAM_SYS_DIR (
     )
     if exist "%ENGRAM_SYS_DIR%\core\dispatch.bat" (
         set "ENGRAM_SYS_DIR_NAME=%ENGRAM_SYS_DIR%"
+        rem Direct absolute override: do not prefix the portable root a second time.
+        set "SYS_PATH=%ENGRAM_SYS_DIR%"
         goto :sys_dir_resolved
     )
     if exist "%~dp0%ENGRAM_SYS_DIR%\" (
@@ -49,7 +52,7 @@ exit /b 1
 
 :sys_dir_resolved
 set "ENGRAM_SYS_DIR=%ENGRAM_SYS_DIR_NAME%"
-set "SYS_PATH=%~dp0%ENGRAM_SYS_DIR%"
+if not defined SYS_PATH set "SYS_PATH=%~dp0%ENGRAM_SYS_DIR%"
 
 :: ============================================================================
 :: Engram Portable CLI Entrypoint
