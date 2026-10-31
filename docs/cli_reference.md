@@ -182,6 +182,13 @@ Description:
   managed pip resolution of the complete baseline before any swap.
   Without a pinned SHA-256, a warning and the computed hash are printed;
   the hash is recorded in the journal and still gates cached archive reuse.
+  For controlled unattended Python updates, explicitly pass
+  --require-pinned-sha256. This refuses an unpinned *selected target*
+  before installing, including an already cached unpinned archive. Set a
+  trusted SHA-256 for that exact version in runtimes.json first; an observed
+  cache hash is not a substitute for an independently verified pin. The
+  digest is checked against the bytes at reuse/download. Without this
+  flag, legacy interactive/preview behavior is unchanged.
   Python shows installed, latest patch (same minor) and latest minor only
   when newer versions exist; otherwise it says up to date or could not check.
   Minor update advice requires verified archive and dependency readiness.
@@ -246,6 +253,10 @@ Options:
   --force          With --only python: reinstall even when already current;
                    override minor planning readiness checks (default: off).
                    Restore preflight and pip check remain mandatory.
+  --require-pinned-sha256
+                   With --only python: refuse a Python swap unless the
+                   exact target has a trusted 64-hex SHA-256 pin; opt-in
+                   strict enterprise policy (default: off).
   --offline        With --only python: use only local files (default: off)
   -h, --help, /?   Show this help (default: off)
 
@@ -256,6 +267,7 @@ Examples:
   engram update --only claude,codex,agy --yes
   engram update --only python --yes
   engram update --only python --to 3.14.8 --yes
+  engram update --only python --to 3.14.8 --require-pinned-sha256 --yes
   engram update -o python --latest -y
   engram update -o nodejs --latest
   engram update --only nodejs --allow-major-runtime-upgrade --yes
