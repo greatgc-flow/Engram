@@ -22,8 +22,15 @@ def _interpolate_braces(value: str, resolved: dict) -> str:
 
 
 class EnvironmentLoader:
-    def __init__(self, config_path: str, root_drive: str):
+    def __init__(self, config_path: str, root_drive: str, path_overrides: dict = None):
+        """Resolve dependent path aliases and env vars from one physical root.
+
+        path_overrides are applied *before* interpolating child paths, so a
+        renamed _sys directory never exports stale PYTHON/NPM/cache paths.
+        Existing callers that omit the option retain the legacy config behavior.
+        """
         self.config_path = config_path
+        self.path_overrides = path_overrides or {}
         self.root_drive = root_drive.rstrip('\\/')
         if not self.root_drive:
             self.root_drive = root_drive # fallback if it was just "\"
@@ -59,7 +66,7 @@ class EnvironmentLoader:
         raw_paths = self.config.get("paths", {})
         # iterative resolution
         for k, v in raw_paths.items():
-            self.paths[k] = self._interpolate(v)
+            self.paths[k] = self._interpolate(self.path_overrides.get(k, v))
             # Re-interpolate all previously resolved paths just in case they depended on later ones? 
             # Usually top-down is fine.
 
