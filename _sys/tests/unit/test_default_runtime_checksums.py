@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 DEFAULTS = Path(__file__).resolve().parents[2] / "defaults" / "runtimes.json"
 
 
-def test_all_default_url_binaries_are_pinned_by_sha256():
+def test_all_default_url_binaries_have_a_valid_declared_digest():
     defaults = json.loads(DEFAULTS.read_text(encoding="utf-8"))
     rows = {}
     for group in ("runtimes", "tools"):
@@ -20,10 +20,13 @@ def test_all_default_url_binaries_are_pinned_by_sha256():
             if not spec.get("url"):
                 continue
             rows[f"{group}/{name}"] = spec
-            checksum = spec.get("sha256")
+            lengths = {"sha256": 64, "sha3_256": 64, "sha512": 128}
+            declared = [(algo, spec[algo]) for algo in lengths if spec.get(algo)]
+            assert len(declared) == 1, f"{group}/{name} requires one pinned digest"
+            algorithm, checksum = declared[0]
             assert isinstance(checksum, str) and re.fullmatch(
-                r"[0-9a-f]{64}", checksum
-            ), f"{group}/{name} has no valid pinned SHA-256"
+                rf"[0-9a-f]{{{lengths[algorithm]}}}", checksum
+            ), f"{group}/{name} has malformed {algorithm}"
             assert urlparse(spec["url"]).scheme == "https"
     assert rows, "missing default artifact inventory"
 
