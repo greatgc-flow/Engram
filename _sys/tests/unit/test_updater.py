@@ -1153,5 +1153,8 @@ def test_strict_python_integrity_option_forwards_to_repair(monkeypatch):
     assert len(seen) == 1
     assert seen[0][1] == {"python"}
     assert "--require-pinned-sha256" in seen[0][0]["args"]
-    assert "--dry-run" in seen[0][0]["args"]
+    # updater strips --dry-run before handing off because the repair
+    # engine is plan-only unless --apply is explicitly present.
+    assert "--dry-run" not in seen[0][0]["args"]
+    assert "--apply" not in seen[0][0]["args"]
     assert "--to" in seen[0][0]["args"]
