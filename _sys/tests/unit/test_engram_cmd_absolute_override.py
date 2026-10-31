@@ -68,6 +68,20 @@ def test_absolute_override_selects_renamed_system_path(tmp_path: Path) -> None:
     assert "0.0.0-shadow" not in result.stdout
 
 
+def test_relative_override_still_selects_renamed_system_path(tmp_path: Path) -> None:
+    root = tmp_path / "portable root"
+    root.mkdir()
+    shutil.copy2(ROOT / "engram.cmd", root / "engram.cmd")
+    _write_sys(root / "_sys", "0.0.0-shadow")
+    _write_sys(root / "renamed runtime", "9.8.7-relative")
+
+    result = _run_version(root, "renamed runtime")
+
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert "Engram 9.8.7-relative (Portable Dev Runtime)" in result.stdout
+    assert "0.0.0-shadow" not in result.stdout
+
+
 def test_invalid_absolute_override_falls_back_to_default(tmp_path: Path) -> None:
     root = tmp_path / "portable root"
     root.mkdir()
