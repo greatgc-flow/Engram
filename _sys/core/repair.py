@@ -712,12 +712,15 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
         target.add_argument("--latest", action="store_true")
         p.add_argument("--all-packages", action="store_true")
         p.add_argument("--allow-major-runtime-upgrade", action="store_true")
+        p.add_argument("--require-pinned-sha256", action="store_true")
         p.add_argument("--force", action="store_true")
         
     def update_plan(s, b, d, *, cli_args, seams, **kw):
         spec = []
         summary = []
         checked = True
+        if cli_args.require_pinned_sha256 and "python" not in only:
+            raise ValueError("--require-pinned-sha256 requires --only python")
         if "python" in only:
             pin = _python_pin(s)
             explicit = getattr(cli_args, "to_version", None)
@@ -749,6 +752,19 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
             url = pin["url"] if target == pin["version"] and pin["url"] else (
                 f"https://www.python.org/ftp/python/{target}/python-{target}-embed-amd64.zip")
             sha = pin["sha256"] if target == pin["version"] else None
+            # An observed archive hash (including a cached .sha256 sidecar)
+            # is NOT an independently trusted pin on its first download.
+            # This is opt-in to preserve existing interactive update workflows.
+            if (cli_args.require_pinned_sha256
+                    and (installed != target or cli_args.force)
+                    and (not isinstance(sha, str) or
+                         re.fullmatch(r"[0-9a-fA-F]{64}", sha) is None)):
+                raise ValueError(
+                    "Python update blocked: --require-pinned-sha256 needs "
+                    "a 64-character SHA-256 pin for the selected target in "
+                    "runtimes.json. Verify the pin from an independent "
+                    "trusted source before unattended updates."
+                )
             had_venv = (Path(s) / "env" / "venv" / "Scripts" / "python.exe").is_file()
             change = python_manager.classify_change(installed, target)
             if change in ("downgrade", "major") and not getattr(cli_args, "allow_major_runtime_upgrade", False):
@@ -779,6 +795,9 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
                 })
                 if not sha:
                     summary.append("[Warning] downloaded over HTTPS from python.org; no pinned SHA-256")
+                    summary.append("[i] Python integrity: OBSERVED_SHA256_ONLY (not a trusted pin)")
+                else:
+                    summary.append("[i] Python integrity: PINNED_SHA256 (verify on cache/download)")
                 summary.append(f"Update python {installed or 'none'} -> {target} ({change})")
 
         if "venv" in only:
