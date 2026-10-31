@@ -1138,14 +1138,14 @@ def test_update_discovery_internal_typeerror_is_not_retried(monkeypatch, tmp_pat
         raise TypeError("internal parser defect")
 
     monkeypatch.setattr(check_tool_updates, "run", broken_discovery)
-    result = updater.run({"args": ["--only", "nodejs", "--refresh",
+    result = updater.run({"args": ["--only", "core", "--refresh",
                                    "--allow-major-runtime-upgrade", "--dry-run"]})
     assert result["status"] == "failed"
     assert "internal parser defect" in result["detail"]
     assert len(calls) == 1
     assert calls[0]["force_refresh"] is True
     assert calls[0]["allow_major_runtime_upgrade"] is True
-    assert calls[0]["only"] == ["nodejs"]
+    assert calls[0]["only"] == ["core"]
 
 
 def test_update_discovery_unsupported_requested_flag_fails_before_invocation(
