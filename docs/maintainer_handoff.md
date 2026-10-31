@@ -85,3 +85,9 @@ For AI peer collaboration rules, see [PeerHub docs/HANDOFF.md](https://github.co
 - Root cause of the failed 2026-10-26 refresh: the hosted windows image preinstalls Python 3.15.1; its `Lib` leaked into the managed 3.15.2 venv `sys.path` (`_socket` ABI mismatch, pip dead). Workflows (`refresh-runtimes`, `ci`, and the `sandbox-gate` hosted jobs) now delete `C:\hostedtoolcache\windows\Python\3.15*` before bootstrap. Robust fix pending in #79 (`-E`/`-I` on venv pip calls). If a future pin bump fails the same way on another minor, extend the glob.
 - Lessons: a refresh dispatch on a branch really opens the automation PR (#77); bot PRs get no CI checks. Python string escapes corrupted `\3` in workflow paths twice (use `chr(92)`/raw bytes). Flaky 10 s/60 s timeouts (`test_release_gate_b1::test_wait_reads_policy_numbers`, `test_python_swap_hardening::test_crash_anywhere...`) passed on rerun; see the flake issue.
 - Open: owner live install needs `engram update` (core 3.11.3); #79.
+
+## 10. v3.11.4 (2026-10-31)
+
+- Released v3.11.4 (PR #88 release, #89 WinGet manifests): every core discovery cache hit prints `Core discovery: cached (<time>)` (#84). ZIP SHA-256 == `InstallerSha256`, `gh attestation verify` passed. Full suite 2227 passed; `test_windows_sandbox_provider::test_serialization_across_processes` failed once under `-n auto` and passed serially.
+- Lesson: Dependabot PRs #86 (setup-python 7.1.0) and #87 (pytest, hypothesis, pywinpty 3.1.1, virtualenv 21.15.0) arrived while the release was in flight and were NOT included; check `gh pr list` right before tagging. A merge outside the release PRs needs a separate owner go-ahead.
+- Open: #79 (deferred); #86/#87 await owner merge; live install needs `engram update --refresh` (core 3.11.4).
