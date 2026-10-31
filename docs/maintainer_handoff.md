@@ -91,3 +91,9 @@ For AI peer collaboration rules, see [PeerHub docs/HANDOFF.md](https://github.co
 - Released v3.11.4 (PR #88 release, #89 WinGet manifests): every core discovery cache hit prints `Core discovery: cached (<time>)` (#84). ZIP SHA-256 == `InstallerSha256`, `gh attestation verify` passed. Full suite 2227 passed; `test_windows_sandbox_provider::test_serialization_across_processes` failed once under `-n auto` and passed serially.
 - Lesson: Dependabot PRs #86 (setup-python 7.1.0) and #87 (pytest, hypothesis, pywinpty 3.1.1, virtualenv 21.15.0) arrived while the release was in flight and were NOT included; check `gh pr list` right before tagging. A merge outside the release PRs needs a separate owner go-ahead.
 - Open: #79 (deferred); #86/#87 await owner merge; live install needs `engram update --refresh` (core 3.11.4).
+
+## 11. v3.11.5 (2026-11-01)
+
+- Released v3.11.5 (PR #99 release, #101 WinGet manifests): `engram.cmd` honors an absolute `ENGRAM_SYS_DIR` (#98), update discovery never retries an internal `TypeError` with altered options (#93), dependent paths follow the physical system folder (#96), pywinpty 3.1.1 / virtualenv 21.15.0 (#87). ZIP SHA-256 == `InstallerSha256`, `gh attestation verify` passed. Full suite 2238 passed; `test_windows_sandbox_provider::test_serialization_across_processes` fails only under `-n auto`.
+- Another AI session filed draft PRs and umbrella issues (#91, #92, #94, #97): only the minimal fixes were merged; the opt-in `--require-pinned-sha256` flag (#94) and a bespoke installed-layout evidence log (#97) were closed as not planned. Start triggers: unattended upgrades installing an unpinned Python; a user-reported failure on a renamed install.
+- Open: none (#79 is closed as not planned, start trigger in its comment). Live install needs `engram update --refresh` (core 3.11.5).
