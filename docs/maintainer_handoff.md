@@ -96,4 +96,4 @@ For AI peer collaboration rules, see [PeerHub docs/HANDOFF.md](https://github.co
 
 - Released v3.11.5 (PR #99 release, #101 WinGet manifests): `engram.cmd` honors an absolute `ENGRAM_SYS_DIR` (#98), update discovery never retries an internal `TypeError` with altered options (#93), dependent paths follow the physical system folder (#96), pywinpty 3.1.1 / virtualenv 21.15.0 (#87). ZIP SHA-256 == `InstallerSha256`, `gh attestation verify` passed. Full suite 2238 passed; `test_windows_sandbox_provider::test_serialization_across_processes` fails only under `-n auto`.
 - Another AI session filed draft PRs and umbrella issues (#91, #92, #94, #97): only the minimal fixes were merged; the opt-in `--require-pinned-sha256` flag (#94) and a bespoke installed-layout evidence log (#97) were closed as not planned. Start triggers: unattended upgrades installing an unpinned Python; a user-reported failure on a renamed install.
-- Open: #79 (deferred, start trigger in its comment). Live install needs `engram update --refresh` (core 3.11.5).
+- Open: none (#79 is closed as not planned, start trigger in its comment). Live install needs `engram update --refresh` (core 3.11.5).
