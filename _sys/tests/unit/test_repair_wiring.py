@@ -808,3 +808,69 @@ def test_update_env_main_accepts_check_flag_and_exits_1_when_unchecked(tmp_path,
     res = repair.update_env_main(ctx, {"python"})
     assert res.get("exit_code") == 1
     assert res.get("status") == "failed"
+
+
+# First-download trust policy: strict mode is opt-in, rejects unpinned
+# targets *before* a Python swap; default operation remains compatible.
+
+@pytest.mark.parametrize(
+    "sha",
+    [None, "", "not-a-sha", "a" * 63, "z" * 64],
+)
+def test_strict_python_policy_refuses_unpinned_or_invalid_digest(
+    tmp_path, monkeypatch, sha
+):
+    monkeypatch.setattr(repair, "_installed_python", lambda s, seams: "3.14.8")
+    monkeypatch.setattr(repair, "detect", lambda *a, **k: {
+        "manifest": "ok", "drift": {"status": "consistent"},
+        "findings": [], "stale_registry": [], "journal": None, "lock": None,
+    })
+    out = _plan(
+        tmp_path, ["--to", "3.14.9", "--require-pinned-sha256"],
+        {"python"}, pin_version="3.14.9", sha=sha,
+    )
+    assert out["status"] == "failed"
+    assert out["exit_code"] == 11
+    assert "--require-pinned-sha256" in out["detail"]
+    assert "trusted source" in out["detail"]
+
+
+def test_strict_python_policy_accepts_pin_for_selected_target(tmp_path, monkeypatch):
+    monkeypatch.setattr(repair, "_installed_python", lambda s, seams: "3.14.8")
+    monkeypatch.setattr(repair, "detect", lambda *a, **k: {
+        "manifest": "ok", "drift": {"status": "consistent"},
+        "findings": [], "stale_registry": [], "journal": None, "lock": None,
+    })
+    out = _plan(
+        tmp_path, ["--to", "3.14.9", "--require-pinned-sha256"],
+        {"python"}, pin_version="3.14.9", sha="ab" * 32,
+    )
+    assert out["status"] == "success"
+    assert out["plan"]["spec"][0]["params"]["sha256"] == "ab" * 32
+    assert any("PINNED_SHA256" in line for line in out["plan"]["summary"])
+
+
+def test_strict_python_policy_rejects_different_target_even_with_pin(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(repair, "_installed_python", lambda s, seams: "3.14.8")
+    monkeypatch.setattr(repair, "detect", lambda *a, **k: {
+        "manifest": "ok", "drift": {"status": "consistent"},
+        "findings": [], "stale_registry": [], "journal": None, "lock": None,
+    })
+    out = _plan(
+        tmp_path, ["--to", "3.14.9", "--require-pinned-sha256"],
+        {"python"}, pin_version="3.14.8", sha="ab" * 32,
+    )
+    assert out["status"] == "failed"
+    assert "--require-pinned-sha256" in out["detail"]
+
+
+def test_strict_python_policy_requires_python_selection(tmp_path, monkeypatch):
+    monkeypatch.setattr(repair, "detect", lambda *a, **k: {
+        "manifest": "ok", "drift": {"status": "consistent"},
+        "findings": [], "stale_registry": [], "journal": None, "lock": None,
+    })
+    out = _plan(tmp_path, ["--require-pinned-sha256"], {"packages"})
+    assert out["status"] == "failed"
+    assert "--only python" in out["detail"]
