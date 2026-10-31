@@ -17,7 +17,7 @@ if defined ENGRAM_SYS_DIR (
     )
     if exist "%ENGRAM_SYS_DIR%\core\dispatch.bat" (
         set "ENGRAM_SYS_DIR_NAME=%ENGRAM_SYS_DIR%"
-        :: Direct absolute override: do not prefix the portable root a second time.
+        rem Direct absolute override: do not prefix the portable root a second time.
         set "SYS_PATH=%ENGRAM_SYS_DIR%"
         goto :sys_dir_resolved
     )
