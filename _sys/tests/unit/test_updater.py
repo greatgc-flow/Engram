@@ -1126,3 +1126,32 @@ def test_new_default_tools_advisory_in_actionable_dry_run(default_tools_advisory
     output = capsys.readouterr().out
     assert "1 default tool(s) not in your declaration: new-tool." in output
     assert "Dry run complete" in output
+
+
+def test_strict_python_integrity_option_rejects_non_python_tool_request():
+    result = updater.run({"args": ["--only", "nodejs", "--require-pinned-sha256", "--dry-run"]})
+    assert result["status"] == "failed"
+    assert result["exit_code"] == 2
+    assert "--only python" in result["detail"]
+
+
+def test_strict_python_integrity_option_forwards_to_repair(monkeypatch):
+    from core import repair, layout_migration
+    monkeypatch.setattr(layout_migration, "supported_layout", lambda *a, **k: True)
+    seen = []
+
+    def fake_repair(ctx, only):
+        seen.append((ctx, only))
+        return {"status": "success", "detail": "proposal only"}
+
+    monkeypatch.setattr(repair, "update_env_main", fake_repair)
+    result = updater.run({"args": [
+        "--only", "python", "--to", "3.14.9",
+        "--require-pinned-sha256", "--dry-run",
+    ]})
+    assert result["status"] == "success"
+    assert len(seen) == 1
+    assert seen[0][1] == {"python"}
+    assert "--require-pinned-sha256" in seen[0][0]["args"]
+    assert "--dry-run" in seen[0][0]["args"]
+    assert "--to" in seen[0][0]["args"]
