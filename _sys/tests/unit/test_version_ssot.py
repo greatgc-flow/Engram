@@ -157,6 +157,6 @@ def test_build_package_refuses_unknown_version():
 
 def test_pr_b2_version_has_selected_changelog_section():
     from tools.winget.build_package import get_release_notes_en
-    assert load_version_info()["version"] == "3.11.4"
-    assert "discovery cache" in get_release_notes_en("3.11.4")
+    assert load_version_info()["version"] == "3.11.5"
+    assert "absolute `ENGRAM_SYS_DIR`" in get_release_notes_en("3.11.5")
 
