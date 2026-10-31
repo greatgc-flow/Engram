@@ -719,7 +719,7 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
         spec = []
         summary = []
         checked = True
-        if cli_args.require_pinned_sha256 and "python" not in only:
+        if getattr(cli_args, "require_pinned_sha256", False) and "python" not in only:
             raise ValueError("--require-pinned-sha256 requires --only python")
         if "python" in only:
             pin = _python_pin(s)
@@ -755,7 +755,7 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
             # An observed archive hash (including a cached .sha256 sidecar)
             # is NOT an independently trusted pin on its first download.
             # This is opt-in to preserve existing interactive update workflows.
-            if (cli_args.require_pinned_sha256
+            if (getattr(cli_args, "require_pinned_sha256", False)
                     and (installed != target or cli_args.force)
                     and (not isinstance(sha, str) or
                          re.fullmatch(r"[0-9a-fA-F]{64}", sha) is None)):
