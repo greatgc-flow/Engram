@@ -3,6 +3,12 @@
 Does not install, download, execute tools, or attest current executable bytes.
 Exit codes: 0 recorded provenance matches; 2 HOLD; 1 input/evidence I/O error.
 Only --evidence writes a file, with bytes identical to console JSON output.
+
+Windows example (from Engram root; Python 3.14+):
+    python _sys/checks/audit_installed_tool_provenance.py --sys-dir _sys --evidence tool-audit.json
+
+PASS_RECORDED is historical-manifest consistency, not cryptographic verification
+of installed executable bytes. HOLD does not install, repair or delete anything.
 """
 from __future__ import annotations
 
