@@ -6,9 +6,17 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+## [3.11.5] - 2026-11-01
+
 ### Fixed
 
+- `engram.cmd` honors an absolute `ENGRAM_SYS_DIR` instead of prefixing the portable root a second time (#98).
+- Update discovery checks the discoverer signature before calling it and never retries an internal `TypeError` with altered options (#93).
 - Dispatcher paths follow the physical system directory even when `paths.sys` is configured; explicit external child paths remain unchanged (#95).
+
+### Changed
+
+- Shipped runtime defaults: pywinpty 3.1.1 and virtualenv 21.15.0 (Dependabot #87).
 
 ## [3.11.4] - 2026-10-31
 
