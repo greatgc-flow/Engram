@@ -189,12 +189,36 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
         run_kwargs["allow_major_runtime_upgrade"] = True
 
     try:
-        try:
-            payload = check_tool_updates.run(**run_kwargs)
-        except TypeError:
-            run_kwargs.pop("allow_major_runtime_upgrade", None)
-            run_kwargs.pop("force_refresh", None)
-            payload = check_tool_updates.run(**run_kwargs)
+        # Signature compatibility is checked *before* execution. Catching TypeError
+        # from the invocation would also catch a bug inside the discoverer and
+        # silently drop an explicitly requested refresh or major-version guard.
+        import inspect
+
+        signature = inspect.signature(check_tool_updates.run)
+        accepts_extra = any(
+            param.kind == inspect.Parameter.VAR_KEYWORD
+            for param in signature.parameters.values()
+        )
+        unsupported = [
+            key for key in run_kwargs
+            if not accepts_extra and key not in signature.parameters
+        ]
+        requested = {
+            "only": normalized_only is not None,
+            "force_refresh": bool(force_refresh),
+            "allow_major_runtime_upgrade": bool(allow_major),
+        }
+        blocked = [key for key in unsupported if requested.get(key, True)]
+        if blocked:
+            raise TypeError(
+                "Update discovery does not support requested option(s): "
+                + ", ".join(sorted(blocked))
+            )
+        compatible_kwargs = {
+            key: value for key, value in run_kwargs.items()
+            if key not in unsupported
+        }
+        payload = check_tool_updates.run(**compatible_kwargs)
     except Exception as e:
         detail = f"Node.js latest unavailable: {e}" if args.latest else f"Update discovery failed: {e}"
         return {"status": "failed", "detail": detail}
