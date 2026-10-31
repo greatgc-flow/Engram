@@ -793,11 +793,14 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
                                "offline": getattr(cli_args, "offline", False), "force": cli_args.force,
                                "installed": installed, "had_venv": had_venv},
                 })
-                if not sha:
-                    summary.append("[Warning] downloaded over HTTPS from python.org; no pinned SHA-256")
-                    summary.append("[i] Python integrity: OBSERVED_SHA256_ONLY (not a trusted pin)")
-                else:
+                if isinstance(sha, str) and re.fullmatch(r"[0-9a-fA-F]{64}", sha):
                     summary.append("[i] Python integrity: PINNED_SHA256 (verify on cache/download)")
+                else:
+                    if sha:
+                        summary.append("[Warning] Python SHA-256 pin has invalid format")
+                    else:
+                        summary.append("[Warning] downloaded over HTTPS from python.org; no pinned SHA-256")
+                    summary.append("[i] Python integrity: OBSERVED_SHA256_ONLY (not a trusted pin)")
                 summary.append(f"Update python {installed or 'none'} -> {target} ({change})")
 
         if "venv" in only:
