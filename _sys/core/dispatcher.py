@@ -31,7 +31,12 @@ def _resolve_paths(base_dir: Path, target_sys_dir: Path | None = None) -> dict:
     from core.env_loader import EnvironmentLoader
     effective_sys = target_sys_dir if target_sys_dir is not None else sys_dir
     config_path = effective_sys / "config" / "environment.json"
-    loader = EnvironmentLoader(str(config_path), str(base_dir))
+    # The system directory on disk is authoritative; resolve aliases and
+    # exported environment variables together before mutating os.environ.
+    loader = EnvironmentLoader(
+        str(config_path), str(base_dir),
+        path_overrides={"sys": str(effective_sys)},
+    )
     loader.apply_to_os()
     paths = loader.get_paths()
     resolved = {"localappdata": Path(os.environ.get("LOCALAPPDATA", ""))}
@@ -40,13 +45,6 @@ def _resolve_paths(base_dir: Path, target_sys_dir: Path | None = None) -> dict:
     # Also inject root and sys for legacy compat
     resolved["root"] = base_dir
     resolved["sys"] = effective_sys
-    # If sys_dir was renamed, ensure all sys-relative paths map to effective_sys
-    if effective_sys.name != "_sys":
-        sys_str = str(base_dir / "_sys")
-        target_str = str(effective_sys)
-        for k, v in list(resolved.items()):
-            if k not in ("root", "localappdata") and isinstance(v, Path):
-                v_str = str(v)
     # Inject portable path_entries from env.json into os.environ["PATH"] so subcommands
     # have access to bundled tools (gh, git, etc.) even when invoked outside launcher.py
     env_json_path = effective_sys / "env.json"
