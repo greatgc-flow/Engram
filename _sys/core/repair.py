@@ -752,6 +752,10 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
             url = pin["url"] if target == pin["version"] and pin["url"] else (
                 f"https://www.python.org/ftp/python/{target}/python-{target}-embed-amd64.zip")
             sha = pin["sha256"] if target == pin["version"] else None
+            # Hashes are case-insensitive hex; the existing download/cache
+            # comparators use lowercase hashlib.hexdigest() values.
+            if isinstance(sha, str) and re.fullmatch(r"[0-9a-fA-F]{64}", sha):
+                sha = sha.lower()
             # An observed archive hash (including a cached .sha256 sidecar)
             # is NOT an independently trusted pin on its first download.
             # This is opt-in to preserve existing interactive update workflows.
