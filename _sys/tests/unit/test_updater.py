@@ -1126,3 +1126,57 @@ def test_new_default_tools_advisory_in_actionable_dry_run(default_tools_advisory
     output = capsys.readouterr().out
     assert "1 default tool(s) not in your declaration: new-tool." in output
     assert "Dry run complete" in output
+
+
+def test_update_discovery_internal_typeerror_is_not_retried(monkeypatch, tmp_path):
+    """An exception inside discovery must not silently remove requested guards."""
+    monkeypatch.setattr(updater, "_SYS_DIR", tmp_path)
+    calls = []
+
+    def broken_discovery(**kwargs):
+        calls.append(dict(kwargs))
+        raise TypeError("internal parser defect")
+
+    monkeypatch.setattr(check_tool_updates, "run", broken_discovery)
+    result = updater.run({"args": ["--only", "core", "--refresh",
+                                   "--allow-major-runtime-upgrade", "--dry-run"]})
+    assert result["status"] == "failed"
+    assert "internal parser defect" in result["detail"]
+    assert len(calls) == 1
+    assert calls[0]["force_refresh"] is True
+    assert calls[0]["allow_major_runtime_upgrade"] is True
+    assert calls[0]["only"] == ["core"]
+
+
+def test_update_discovery_unsupported_requested_flag_fails_before_invocation(
+    monkeypatch, tmp_path
+):
+    """Legacy discoverers may omit default-false flags, not user-requested flags."""
+    monkeypatch.setattr(updater, "_SYS_DIR", tmp_path)
+    calls = []
+
+    def old_discovery(propose_diff=False):
+        calls.append(propose_diff)
+        return {"artifact_dir": "mock", "updates_discovered": []}
+
+    monkeypatch.setattr(check_tool_updates, "run", old_discovery)
+    result = updater.run({"args": ["--refresh", "--dry-run"]})
+    assert result["status"] == "failed"
+    assert "force_refresh" in result["detail"]
+    assert calls == []
+
+
+def test_update_discovery_old_default_signature_is_supported(monkeypatch, tmp_path):
+    """Do not break older injected no-option discoverers when no guard requested."""
+    monkeypatch.setattr(updater, "_SYS_DIR", tmp_path)
+    monkeypatch.setattr(updater, "check_components", lambda *args: {})
+    calls = []
+
+    def old_discovery(propose_diff=False):
+        calls.append(propose_diff)
+        return {"artifact_dir": "mock", "updates_discovered": [], "not_checked": []}
+
+    monkeypatch.setattr(check_tool_updates, "run", old_discovery)
+    result = updater.run({"args": ["--dry-run"]})
+    assert result["status"] == "success"
+    assert calls == [True]
