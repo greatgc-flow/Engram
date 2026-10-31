@@ -31,8 +31,7 @@ def _resolve_paths(base_dir: Path, target_sys_dir: Path | None = None) -> dict:
     from core.env_loader import EnvironmentLoader
     effective_sys = target_sys_dir if target_sys_dir is not None else sys_dir
     config_path = effective_sys / "config" / "environment.json"
-    # The system directory on disk is authoritative; resolve aliases and
-    # exported environment variables together before mutating os.environ.
+    # The physical dispatcher directory overrides even an explicit paths.sys.
     loader = EnvironmentLoader(
         str(config_path), str(base_dir),
         path_overrides={"sys": str(effective_sys)},

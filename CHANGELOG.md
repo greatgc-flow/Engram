@@ -6,6 +6,10 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+### Fixed
+
+- Dispatcher paths follow the physical system directory even when `paths.sys` is configured; explicit external child paths remain unchanged (#95).
+
 ## [3.11.4] - 2026-10-31
 
 ### Fixed

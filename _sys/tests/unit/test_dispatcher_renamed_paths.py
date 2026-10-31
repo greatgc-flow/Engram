@@ -30,6 +30,8 @@ def test_dispatcher_paths_and_exports_follow_physical_sys(tmp_path, monkeypatch,
     shutil.copy2(_SYS / "config" / "environment.json", config)
 
     cfg = json.loads(config.read_text(encoding="utf-8"))
+    cfg["paths"]["sys"] = "{base}/configured-sys"
+    config.write_text(json.dumps(cfg), encoding="utf-8")
     for key in cfg["env_vars"]:
         # Track all exported variables so the fixture restores the process
         # environment after this test even when _resolve_paths applies them.
@@ -57,13 +59,31 @@ def test_explicit_external_state_is_not_overwritten_by_sys_override(tmp_path, mo
     config = physical_sys / "config" / "environment.json"
     config.parent.mkdir(parents=True)
     cfg = json.loads((_SYS / "config" / "environment.json").read_text(encoding="utf-8"))
-    cfg["paths"]["state"] = "{base}/external-state"
+    cfg["paths"]["state"] = str(tmp_path / "external-state")
     config.write_text(json.dumps(cfg), encoding="utf-8")
     for key in cfg["env_vars"]:
         monkeypatch.setenv(key, "before-" + key)
 
     paths = dispatcher._resolve_paths(root, physical_sys)
 
-    assert paths["state"] == root / "external-state"
+    assert paths["state"] == tmp_path / "external-state"
     assert paths["python"] == physical_sys / "env" / "python"
     assert paths["shared"] == root / "_shared"
+
+
+def test_missing_config_fails_without_mutations(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    sentinel = root / "keep.txt"
+    sentinel.write_bytes(b"unchanged")
+    before_env = dict(os.environ)
+    before_tree = {p.relative_to(tmp_path): p.read_bytes() if p.is_file() else None
+                   for p in tmp_path.rglob("*")}
+
+    with pytest.raises(FileNotFoundError):
+        dispatcher._resolve_paths(root, root / "_sys_custom")
+
+    assert dict(os.environ) == before_env
+    assert {p.relative_to(tmp_path): p.read_bytes() if p.is_file() else None
+            for p in tmp_path.rglob("*")} == before_tree
+    assert not (root / "_sys_custom").exists()
