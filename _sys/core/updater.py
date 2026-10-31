@@ -91,6 +91,7 @@ def _parse_args(args: list[str]) -> argparse.Namespace:
     parser.add_argument("--refresh", "-r", action="store_true")
     parser.add_argument("--only", "-o", nargs="+")
     parser.add_argument("--allow-major-runtime-upgrade", action="store_true")
+    parser.add_argument("--require-pinned-sha256", action="store_true")
     # python/venv/packages only (forwarded to the repair engine by _env_update_args)
     target = parser.add_mutually_exclusive_group()
     target.add_argument("--to", dest="to_version")
@@ -127,6 +128,12 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     # Managed environment components (design section 10): python / venv / packages go through the
     # journaled repair engine (dry-run by default; --yes applies), never through tool discovery.
     env_components = only_set & _ENV_COMPONENTS if only_set else set()
+    if args.require_pinned_sha256 and "python" not in env_components:
+        return {
+            "status": "failed",
+            "detail": "--require-pinned-sha256 requires --only python",
+            "exit_code": 2,
+        }
     if env_components:
         if only_set - _ENV_COMPONENTS:
             print("[Error] python/venv/packages cannot be combined with tool names in --only")
