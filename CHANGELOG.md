@@ -6,6 +6,12 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+## [3.11.6] - 2026-11-01
+
+### Changed
+
+- Shipped runtime defaults now pin SHA-256 digests for the 8 GitHub-release tools that had none (ripgrep, bat, fd, delta, fzf, jq, gh, oh-my-posh), so downloads are verified before install (#100).
+
 ## [3.11.5] - 2026-11-01
 
 ### Fixed
