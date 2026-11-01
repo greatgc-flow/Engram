@@ -60,6 +60,7 @@
         "ripgrep": {
             "version": "15.2.0",
             "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-pc-windows-msvc.zip",
+            "sha256": "71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5",
             "type": "zip",
             "bin": "rg.exe",
             "discovery_provider": "github_releases",
@@ -77,6 +78,7 @@
         "bat": {
             "version": "0.26.1",
             "url": "https://github.com/sharkdp/bat/releases/download/v0.26.1/bat-v0.26.1-x86_64-pc-windows-msvc.zip",
+            "sha256": "0f729b4b6f5f28d395c641eacc2e9ff68d0096b85aa0eec344aa62425144b69b",
             "type": "zip",
             "bin": "bat.exe",
             "discovery_provider": "github_releases",
@@ -94,6 +96,7 @@
         "fd": {
             "version": "10.5.0",
             "url": "https://github.com/sharkdp/fd/releases/download/v10.5.0/fd-v10.5.0-x86_64-pc-windows-gnu.zip",
+            "sha256": "1720ed5b2f5b09870ea9580eb0653d87972e8e7039d5d2f39ea2f54fbfda9f42",
             "type": "zip",
             "bin": "fd.exe",
             "discovery_provider": "github_releases",
@@ -111,6 +114,7 @@
         "delta": {
             "version": "0.20.1",
             "url": "https://github.com/dandavison/delta/releases/download/0.20.1/delta-0.20.1-x86_64-pc-windows-msvc.zip",
+            "sha256": "c9af7484b33f1dbc1312a892fc7d5753a6d3365140a4000d49e575a2de742c25",
             "type": "zip",
             "bin": "delta.exe",
             "discovery_provider": "github_releases",
@@ -128,6 +132,7 @@
         "fzf": {
             "version": "0.74.5",
             "url": "https://github.com/junegunn/fzf/releases/download/v0.74.5/fzf-0.74.5-windows_amd64.zip",
+            "sha256": "01f854ec8b9b47c99a7d78023638f7d2056cfb0af56b72dabd112032eed3993e",
             "type": "zip",
             "bin": "fzf.exe",
             "discovery_provider": "github_releases",
@@ -145,6 +150,7 @@
         "jq": {
             "version": "jq-1.8.2",
             "url": "https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-windows-amd64.exe",
+            "sha256": "a6fc67fedaf9128a3309a1e2ebb8b986aeccf70122ee46d2cb4849e423f0c627",
             "type": "exe",
             "bin": "jq.exe",
             "discovery_provider": "github_releases",
@@ -162,6 +168,7 @@
         "gh": {
             "version": "2.102.0",
             "url": "https://github.com/cli/cli/releases/download/v2.102.0/gh_2.102.0_windows_amd64.zip",
+            "sha256": "ae64e556ecc240b200f7eba60d550e4bb60d78e860e69dd88c449405b86067f4",
             "type": "zip",
             "bin": "gh.exe",
             "discovery_provider": "github_releases",
@@ -197,6 +204,7 @@
         "oh-my-posh": {
             "version": "31.8.0",
             "url": "https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v31.8.0/posh-windows-amd64.exe",
+            "sha256": "a6ed521aa9b1668e3169a9eb72da969fadf20e898bda80083e0f7e0688816027",
             "type": "exe",
             "bin": "oh-my-posh.exe",
             "discovery_provider": "github_releases",
