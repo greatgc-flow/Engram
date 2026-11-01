@@ -42,3 +42,15 @@ def test_newly_pinned_github_assets_use_immutable_versioned_paths():
         assert version in spec["url"], name
         assert "/releases/download/" in spec["url"], name
         assert spec["sha256"], name
+
+
+def test_pinned_github_release_tools_can_discover_a_digest_for_updates():
+    # A newer upstream release of a pinned tool is only accepted when discovery can
+    # select the exact asset (and so read its digest); otherwise update discovery fails.
+    tools = json.loads(DEFAULTS.read_text(encoding="utf-8"))["tools"]
+    for name, spec in tools.items():
+        if spec.get("discovery_provider") != "github_releases" or not spec.get("sha256"):
+            continue
+        pattern = spec.get("asset_pattern")
+        assert pattern, f"{name} is pinned but declares no asset_pattern"
+        assert re.search(pattern, spec["url"].rsplit("/", 1)[-1], re.IGNORECASE), name

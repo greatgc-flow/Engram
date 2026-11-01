@@ -65,6 +65,7 @@
             "bin": "rg.exe",
             "discovery_provider": "github_releases",
             "discovery_id": "BurntSushi/ripgrep",
+            "asset_pattern": "^ripgrep-[0-9.]+-x86_64-pc-windows-msvc\\.zip$",
             "install_mechanism": "zip_tool",
             "canary": {
                 "argv": [
@@ -83,6 +84,7 @@
             "bin": "bat.exe",
             "discovery_provider": "github_releases",
             "discovery_id": "sharkdp/bat",
+            "asset_pattern": "^bat-v[0-9.]+-x86_64-pc-windows-msvc\\.zip$",
             "install_mechanism": "zip_tool",
             "canary": {
                 "argv": [
@@ -101,6 +103,7 @@
             "bin": "fd.exe",
             "discovery_provider": "github_releases",
             "discovery_id": "sharkdp/fd",
+            "asset_pattern": "^fd-v[0-9.]+-x86_64-pc-windows-gnu\\.zip$",
             "install_mechanism": "zip_tool",
             "canary": {
                 "argv": [
@@ -119,6 +122,7 @@
             "bin": "delta.exe",
             "discovery_provider": "github_releases",
             "discovery_id": "dandavison/delta",
+            "asset_pattern": "^delta-[0-9.]+-x86_64-pc-windows-msvc\\.zip$",
             "install_mechanism": "zip_tool",
             "canary": {
                 "argv": [
@@ -137,6 +141,7 @@
             "bin": "fzf.exe",
             "discovery_provider": "github_releases",
             "discovery_id": "junegunn/fzf",
+            "asset_pattern": "^fzf-[0-9.]+-windows_amd64\\.zip$",
             "install_mechanism": "zip_tool",
             "canary": {
                 "argv": [
@@ -155,6 +160,7 @@
             "bin": "jq.exe",
             "discovery_provider": "github_releases",
             "discovery_id": "jqlang/jq",
+            "asset_pattern": "^jq-windows-amd64\\.exe$",
             "install_mechanism": "exe_tool",
             "canary": {
                 "argv": [
@@ -173,6 +179,7 @@
             "bin": "gh.exe",
             "discovery_provider": "github_releases",
             "discovery_id": "cli/cli",
+            "asset_pattern": "^gh_[0-9.]+_windows_amd64\\.zip$",
             "install_mechanism": "zip_tool",
             "canary": {
                 "argv": [
@@ -209,6 +216,7 @@
             "bin": "oh-my-posh.exe",
             "discovery_provider": "github_releases",
             "discovery_id": "JanDeDobbeleer/oh-my-posh",
+            "asset_pattern": "^posh-windows-amd64\\.exe$",
             "install_mechanism": "exe_tool",
             "canary": {
                 "argv": [
