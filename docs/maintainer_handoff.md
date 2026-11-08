@@ -14,7 +14,7 @@ For AI peer collaboration rules, see [PeerHub docs/HANDOFF.md](https://github.co
 - Release promotion requires successful clean-room evidence as defined by [`.github/workflows/sandbox-gate.yml`](../.github/workflows/sandbox-gate.yml) (step "Verify before promotion or publish"); do not release without it. A held run must be rerun whole: `gh run rerun --failed` cannot reuse the candidate artifact. A tagged but held version stays burned (CHANGELOG marks it YANKED); never move published tags.
 - Open a separate `chore(release): winget manifests for vX.Y.Z` PR copying the release's `greatgc-flow.Engram*.yaml` assets into `manifests/g/greatgc-flow/Engram/<ver>/` after checking `InstallerSha256` equals the release ZIP digest.
 - Rollback of a bad dependency refresh: disable the refresh automation, revert the dependency PR, rerun checks and publish a corrective release if already shipped.
-- Afterwards the owner's live install needs `engram update --refresh`. A core update finishes only after the updater process that started it exits (`core_update_helper.ps1` waits for that PID, `updater.py`), which in practice means closing the terminal/VS Code that ran it; Git/VS Code components use separate in-use locks and are deferred while those processes run.
+- Afterwards the owner's live install needs `engram update --refresh`. A core update finishes only after the updater process that started it exits (`core_update_helper.ps1` waits for that PID, `updater.py`); closing the terminal or VS Code is not what completes it. Git/VS Code components use separate in-use locks and are deferred while those processes run.
 
 ## 2. Pitfalls
 

@@ -8,12 +8,13 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ### Changed
 
-- `engram repair` / `engram relocate` reject `--dry-run` together with `--resume` or `--rollback` (exit 2) instead of silently previewing; recovery always executes directly.
+- `engram repair` / `engram relocate` reject `--dry-run` together with `--resume` or `--rollback` (exit 2) instead of executing recovery despite `--dry-run`; recovery always executes directly.
 - Option abbreviations (for example `--j` for `--json`) are rejected with exit 2 on `update`, `repair`, `relocate`, `tidy` and `isolation`.
-- `engram open PATH` exits 1 when VS Code is missing or cannot be launched (previously a warning with exit 0).
+- `engram open PATH` exits 1 when VS Code is missing (previously a warning with exit 0); a VS Code launch failure also exits 1 with an `[Error]` line instead of a traceback.
 - `engram snapshots list` rejects surplus operands (exit 2) before scanning the registry.
-- Runner and recovery hand-off notices and config-load warnings go to stderr, so `--json` output on stdout stays parseable.
-- Help: "Engram is not set up" (exit 1) is stated once as a rule for every command instead of per verb; exit 1 causes added for `repair`, `relocate`, `tidy`, `reset`; `engram help` Safety model rewritten; `isolation` listed under Health & repair in README and the CLI reference.
+- Runner and recovery hand-off notices, the "Engram is not set up" error, the other `dispatch.bat` `[Error]` lines and config-load warnings go to stderr, so `--json` output on stdout stays parseable.
+- The `engram update` notice no longer claims the core update finishes when the terminal/VS Code closes; the helper waits for the updater process itself to exit.
+- Help: "Engram is not set up" (exit 1) is stated once as a rule for every command instead of per verb; exit 1 causes added for `open`, `tidy`, `reset`; `engram help` Safety model rewritten; `isolation` listed under Health & repair in README and the CLI reference.
 - Docs consolidated (one fact, one place): maintainer handoff split into current state plus `docs/history/handoff-2026-10.md`; README, CONVENTION, CONTRIBUTING and the guides de-duplicated and corrected.
 
 ### Removed

@@ -63,6 +63,7 @@ Common workflows:
 
 Exit codes (common): 0 ok, 1 failed (including "Engram is not set up" when
 initialization is required), 2 usage error (unknown command or option),
-3 declined at a prompt, 10-14 environment operations (see
-'engram repair --help'). Command help adds verb-specific meanings.
+3 declined at a prompt (repair and relocate: 10), 10-14 environment
+operations (see 'engram repair --help'). Command help adds verb-specific
+meanings.
 Full reference: docs/cli_reference.md

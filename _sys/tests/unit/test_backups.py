@@ -7,6 +7,7 @@ import errno
 import json
 import os
 import shutil
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
@@ -43,6 +44,26 @@ def _make(sys_dir, tmp_path, kind="venv", label="x", when=NOW, committed=True, s
     if committed:
         backups.commit(ref, now=when)
     return ref
+
+
+@pytest.mark.parametrize("lock_busy", [False, True])
+def test_snapshots_restore_open_journal_does_not_block_but_lock_returns_11(sys_dir, tmp_path, lock_busy):
+    from core import env_lock
+
+    ref = _make(sys_dir, tmp_path, kind="state", label="restore")
+    target = Path(ref.meta["source_path"])
+    state = sys_dir / "data" / "state"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "env-op.journal.jsonl").write_text(
+        '{"event":"PHASE","name":"STEPS_RUNNING","op_id":"pending"}\n', encoding="utf-8")
+    with env_lock.guard(sys_dir, "other-operation") if lock_busy else nullcontext():
+        result = backups.snapshots_main({"sys_dir": sys_dir, "args": ["restore", ref.path.name, "--apply"]})
+    if lock_busy:
+        assert result["exit_code"] == 11
+        assert not target.exists()
+    else:
+        assert result["status"] == "success"
+        assert (target / "a.txt").read_text(encoding="utf-8") == "content of a.txt"
 
 
 # ---- create / commit ---------------------------------------------------------------

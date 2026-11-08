@@ -34,7 +34,7 @@ if not "%_RC%"=="75" exit /b %_RC%
 :: prepared a runner copy and exited. Re-run the same command line on that runner (design 6.1).
 if "%ENGRAM_IN_RUNNER%"=="1" exit /b 75
 if not exist "%SYS_DIR%\data\state\env-op\handoff.txt" (
-    echo [Error] A runner handoff was requested but no handoff file was written.
+    echo [Error] A runner handoff was requested but no handoff file was written. 1>&2
     exit /b 1
 )
 set "_REL="
@@ -44,16 +44,16 @@ for /f "usebackq skip=1 delims=" %%Y in ("%SYS_DIR%\data\state\env-op\handoff.tx
 del /q "%SYS_DIR%\data\state\env-op\handoff.txt" >nul 2>&1
 :: The handoff names the runner RELATIVE to the sys dir (ASCII): immune to console code pages. Refuse traversal.
 if not defined _REL (
-    echo [Error] The runner handoff file is empty.
+    echo [Error] The runner handoff file is empty. 1>&2
     exit /b 1
 )
 if not "%_REL:..=%"=="%_REL%" (
-    echo [Error] The runner handoff path is not allowed.
+    echo [Error] The runner handoff path is not allowed. 1>&2
     exit /b 1
 )
 set "_RUNNER=%SYS_DIR%\%_REL%"
 if not exist "%_RUNNER%" (
-    echo [Error] The runner interpreter named by the handoff file does not exist.
+    echo [Error] The runner interpreter named by the handoff file does not exist. 1>&2
     exit /b 1
 )
 set "ENGRAM_IN_RUNNER=1"
@@ -88,7 +88,7 @@ if exist "%SYS_DIR%\env\python.new\python.exe" (
 
 :alt_found
 if not defined PY (
-    echo [Error] No usable Python interpreter was found to recover the interrupted operation.
+    echo [Error] No usable Python interpreter was found to recover the interrupted operation. 1>&2
     exit /b 1
 )
 echo [i] Recovering an interrupted environment operation with an alternate interpreter: %_KIND% 1>&2

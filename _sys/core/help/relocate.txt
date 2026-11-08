@@ -23,7 +23,8 @@ Options:
   --apply          Execute the plan (default: off, preview only)
   --dry-run        Preview only; wins over --apply (default: on for new plans;
                    cannot combine with --resume or --rollback)
-  --yes, -y        Do not ask for confirmation with --apply (default: ask)
+  --yes, -y        Do not ask for confirmation with --apply (default: ask;
+                   without a terminal --yes is required)
   --remap-ai-state Also rewrite folder paths in AI CLI state (default: off)
   --only LIST      Limit to: python,venv,registry,state,ai-state,manifest,
                    packages (default: everything found)

@@ -760,7 +760,7 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                 helper_dest, plan_file, temp_update_dir
             )
             
-            print(f"\nEngram will finish updating to {target_version} when this window closes.")
+            print(f"\nEngram will finish updating to {target_version} after this updater process exits.")
             receipt["core_handoff"] = True
             check_tool_updates._atomic_write_json(receipt_path, receipt)
             

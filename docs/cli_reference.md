@@ -101,7 +101,7 @@ exists, and a pointer to the right help (`Run 'engram <command> --help' for usag
 | 0 | success, nothing to do, or a preview was shown |
 | 1 | failure, including "Engram is not set up" when initialization is required; also AI CLI running refusals and `doctor` findings |
 | 2 | usage error (unknown command, option or argument) |
-| 3 | declined at a prompt (`update`, `reset`, `uninstall`, `tidy --purge-legacy`) |
+| 3 | declined at a prompt (`update`, `reset`, `uninstall`, `tidy --purge-legacy`); repair and relocate use 10 |
 | 10 | declined at the prompt (`repair`, `relocate`, `update --only python|venv|packages`) |
 | 11 | precondition failed, nothing was changed (also: no terminal and no `--yes`; `tidy --purge-legacy` refused by the lock or the running interpreter) |
 | 12 | verification failed and the change was rolled back |
@@ -541,7 +541,8 @@ Options:
   --apply          Execute the plan (default: off, preview only)
   --dry-run        Preview only; wins over --apply (default: on for new plans;
                    cannot combine with --resume or --rollback)
-  --yes, -y        Do not ask for confirmation with --apply (default: ask)
+  --yes, -y        Do not ask for confirmation with --apply (default: ask;
+                   without a terminal --yes is required)
   --remap-ai-state Also rewrite folder paths in AI CLI state (default: off)
   --only LIST      Limit to: python,venv,registry,state,ai-state,manifest,
                    packages (default: everything found)

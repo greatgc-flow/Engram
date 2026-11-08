@@ -6,8 +6,10 @@ Design record: [`design/engram-env-resilience-design-2026-10-02.md`](design/engr
 
 ## Principles
 
-- **Detect, plan, confirm, apply, verify, commit or roll back.** Every new plan is a dry run until you pass `--apply`.
-  Recovery (`repair`/`relocate` `--resume` or `--rollback`) executes directly and rejects `--dry-run` (exit 2).
+- **Detect, plan, confirm, apply, verify, commit or roll back.** New plans for `repair`, `relocate`, `tidy`, `restore`,
+  `reset` and `snapshots restore` are a dry run until you pass `--apply`. Managed `engram update` executes after a
+  prompt (`--yes` skips it). Recovery (`repair`/`relocate` `--resume` or `--rollback`) executes directly and rejects
+  `--dry-run` (exit 2).
 - **Move, never delete.** Anything replaced (Python tree, venv, package list) is moved into a registered backup first.
 - **One commit point.** Each operation writes a journal (`_sys/data/state/env-op.journal.jsonl`). Until it reaches `COMMITTED`
   (or `ROLLED_BACK`), only `help`, `version`, `doctor`, `isolation`, `repair`, `relocate` and `snapshots` run.
@@ -20,7 +22,7 @@ Design record: [`design/engram-env-resilience-design-2026-10-02.md`](design/engr
 
 | Situation | What to run |
 |---|---|
-| `_sys\env\python` deleted, venv kept | `engram repair`, `doctor` and `snapshots` cannot run without the managed Python (they print where to go). Run `_sys\core\bootstrap.bat` first: it keeps the venv, restores Python from the pinned download (verified against a declared hash when available, with a recorded cache hash) and re-verifies the venv. Then run `engram repair` (plan) and `engram repair --apply` if it reports drift. (An interrupted swap with a journal is different: `engram repair --resume/--rollback` runs on the alternate interpreter.) |
+| `_sys\env\python` deleted, venv kept | `engram repair`, `relocate`, `snapshots`, `doctor` and `isolation` cannot run without the managed Python (they print where to go). Run `_sys\core\bootstrap.bat` first: it keeps the venv, restores Python from the pinned download (verified against a declared hash when available, with a recorded cache hash) and re-verifies the venv. Then run `engram repair` (plan) and `engram repair --apply` if it reports drift. (An interrupted swap with a journal is different: `engram repair --resume/--rollback` runs on the alternate interpreter.) |
 | venv broken or points at a missing interpreter | `engram repair --apply` (venv is quarantined as a backup, rebuilt, packages restored from the recorded list) |
 | Folder moved or renamed | `engram relocate` (plan) then `engram relocate --apply`; pass `--from <old path>` if the old path cannot be detected; `--remap-ai-state` rewrites path references in AI CLI state |
 | Python version change | `engram update --only python [--to X.Y.Z] [--force]` (snapshot, swap, venv refresh/rebuild, packages) |
