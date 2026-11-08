@@ -6,6 +6,24 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+### Changed
+
+- `engram repair` / `engram relocate` reject `--dry-run` together with `--resume` or `--rollback` (exit 2) instead of silently previewing; recovery always executes directly.
+- Option abbreviations (for example `--j` for `--json`) are rejected with exit 2 on `update`, `repair`, `relocate`, `tidy` and `isolation`.
+- `engram open PATH` exits 1 when VS Code is missing or cannot be launched (previously a warning with exit 0).
+- `engram snapshots list` rejects surplus operands (exit 2) before scanning the registry.
+- Runner and recovery hand-off notices and config-load warnings go to stderr, so `--json` output on stdout stays parseable.
+- Help: "Engram is not set up" (exit 1) is stated once as a rule for every command instead of per verb; exit 1 causes added for `repair`, `relocate`, `tidy`, `reset`; `engram help` Safety model rewritten; `isolation` listed under Health & repair in README and the CLI reference.
+- Docs consolidated (one fact, one place): maintainer handoff split into current state plus `docs/history/handoff-2026-10.md`; README, CONVENTION, CONTRIBUTING and the guides de-duplicated and corrected.
+
+### Removed
+
+- Undocumented `tidy --base-dir` / `--sys-dir` options.
+
+### Maintainers
+
+- Sandbox test results write to `_sys/data/test-results/` (gitignored) instead of the legacy `_archive/` marker directory.
+
 ## [3.11.7] - 2026-11-01
 
 ### Changed
@@ -264,5 +282,5 @@ Historical entries are reconstructed from git commits and merged PR titles.
 ## Before 3.8.0
 
 Releases 1.0.0 to 3.7.0 predate this file; their notes are the GitHub release
-notes and annotated tags. Known gaps there: 3.2.7 has no checked-in release
+notes and tags. Known gaps there: 3.2.7 has no checked-in release
 manifest, and 3.6.0 was published without assets (superseded by 3.6.1).

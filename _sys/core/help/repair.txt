@@ -59,8 +59,7 @@ Examples:
 
 Exit codes:
   0   ok, or nothing to repair, or preview shown
-  1   environment not initialized, or committed environment has pending
-      state writes (use --resume)
+  1   committed environment has pending state writes (use --resume)
   2   usage error, including invalid --only or conflicting recovery flags
   10  declined at the prompt
   11  precondition failed, or no terminal and no --yes (nothing was changed)

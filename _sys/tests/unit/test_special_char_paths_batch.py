@@ -80,7 +80,7 @@ class TestSpecialCharPathsBatch(unittest.TestCase):
                 ("backup_help", "engram.cmd", ["backup", "--help"], 0,
                  "Usage: engram backup"),
                 ("dispatch", "_sys/core/dispatch.bat", ["backup", "--help"], 1,
-                 "Portable environment not initialized."),
+                 "Engram is not set up."),
                 ("ampersand_payload", "engram.cmd",
                  ["help", f"missing & echo injected>{MARKER} & rem"], 2,
                  "Unknown command"),

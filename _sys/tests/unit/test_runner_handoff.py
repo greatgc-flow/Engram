@@ -306,6 +306,15 @@ def test_dispatch_bat_without_exit_75_does_not_rerun(bat_root):
     assert proc.returncode == 0 and "PLAIN" in proc.stdout and "IN_RUNNER" not in proc.stdout
 
 
+def test_dispatch_uninitialized_diagnostics_leave_stdout_empty(bat_root):
+    (bat_root / "_sys" / "env" / "python" / "python.exe").unlink()
+    proc = _run_bat(bat_root / "_sys" / "core" / "dispatch.bat", ["doctor", "--json"], bat_root)
+    assert proc.returncode == 1
+    assert proc.stdout == ""
+    assert "Engram is not set up" in proc.stderr
+    assert "bootstrap.bat" in proc.stderr
+
+
 @pytest.mark.parametrize("verb", ["repair", "relocate"])
 def test_dispatch_runner_handoff_preserves_json_stdout(bat_root, verb):
     stub = bat_root / "_sys" / "core" / "dispatcher.py"

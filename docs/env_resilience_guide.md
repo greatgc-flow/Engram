@@ -6,10 +6,11 @@ Design record: [`design/engram-env-resilience-design-2026-10-02.md`](design/engr
 
 ## Principles
 
-- **Detect, plan, confirm, apply, verify, commit or roll back.** Every command is a dry run until you pass `--apply`.
+- **Detect, plan, confirm, apply, verify, commit or roll back.** Every new plan is a dry run until you pass `--apply`.
+  Recovery (`repair`/`relocate` `--resume` or `--rollback`) executes directly and rejects `--dry-run` (exit 2).
 - **Move, never delete.** Anything replaced (Python tree, venv, package list) is moved into a registered backup first.
 - **One commit point.** Each operation writes a journal (`_sys/data/state/env-op.journal.jsonl`). Until it reaches `COMMITTED`
-  (or `ROLLED_BACK`), only `help`, `version`, `doctor`, `repair`, `relocate` and `snapshots` run.
+  (or `ROLLED_BACK`), only `help`, `version`, `doctor`, `isolation`, `repair`, `relocate` and `snapshots` run.
 - **Idempotent and resumable.** Re-running a command after a crash is safe.
 - **Python swaps run from a runner copy.** The running interpreter cannot replace itself on Windows, so the engine
   copies it to `data/temp/env-op/<op>/runner`, exits with code 75, and `dispatch.bat` re-runs the same command there.
@@ -36,10 +37,10 @@ installs whose paths exist; missing paths are skipped and reported. Failures
 before commit roll back both trees. See the Venv paragraph and package flags
 in [`engram update` help](../_sys/core/help/update.txt).
 
-Useful flags: `--apply`, `--dry-run` (no-op alias of the default), `--yes`/`-y` (skip prompt), `--offline` (use cached download only), `--json`, `--only`. See [`cli_reference.md`](cli_reference.md).
+Useful flags: `--apply`, `--dry-run` (no-op alias of the default for new plans; rejected with recovery flags), `--yes`/`-y` (skip prompt), `--offline` (use cached download only), `--json`, `--only`.
 
-Exit codes: `0` ok, `2` usage, `10` declined, `11` failed/precondition, `12` verification failed, `13` rolled back,
-`14` blocked by a journal or lock, `75` handoff to runner (handled by `dispatch.bat`; not an error).
+Exit codes are listed per command in [`cli_reference.md`](cli_reference.md#exit-codes) (`engram <command> --help`).
+`75` is a hand-off to the runner interpreter, handled by `dispatch.bat`, not an error.
 
 ## Backups and `engram snapshots`
 

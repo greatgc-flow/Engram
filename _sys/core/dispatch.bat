@@ -19,8 +19,8 @@ if not exist "%PY%" (
     if exist "%SYS_DIR%\data\state\env-op.journal.jsonl" (
         if /i "%~1"=="repair" goto :alt_python
     )
-    echo [Error] Portable environment not initialized.
-    echo Please run _sys/core/bootstrap.bat first.
+    echo [Error] Engram is not set up. 1>&2
+    echo Please run _sys/core/bootstrap.bat first. 1>&2
     exit /b 1
 )
 

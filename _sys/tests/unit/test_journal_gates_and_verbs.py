@@ -273,7 +273,7 @@ def test_dispatch_does_not_use_an_alternate_interpreter_for_other_commands(dispa
     alt.mkdir(parents=True)
     copy_python(alt / "python.exe")
     proc = run_dispatch(r, "tidy")
-    assert proc.returncode == 1 and "not initialized" in proc.stdout
+    assert proc.returncode == 1 and "Engram is not set up" in proc.stderr
 
 
 def test_dispatch_without_a_journal_never_uses_python_new(dispatch_root):
@@ -282,7 +282,7 @@ def test_dispatch_without_a_journal_never_uses_python_new(dispatch_root):
     alt.mkdir(parents=True)
     copy_python(alt / "python.exe")
     proc = run_dispatch(r, "repair")
-    assert proc.returncode == 1 and "not initialized" in proc.stdout
+    assert proc.returncode == 1 and "Engram is not set up" in proc.stderr
 
 
 def test_alternate_recovery_preserves_json_stdout(dispatch_root):

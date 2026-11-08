@@ -36,7 +36,7 @@ Engram bootstraps a self-contained Windows dev environment — Python, Node.js, 
 **Option A (Portable Zip):**
 1. Download the latest `Engram-vX.Y.Z-portable-x64.zip` release.
 2. Extract the zip to a folder on your drive (recommended: a clean path without `&`, `%`, or `^` characters, e.g. `C:\Engram`).
-3. Double-click `Engram.exe` or run `engram` from a terminal. 
+3. Double-click `Engram.exe` or run `engram` from a terminal. `engram open PATH` opens the folder in the managed VS Code and exits 1 if VS Code is missing.
 
 **Option B (WinGet):**
 ```powershell
@@ -84,9 +84,10 @@ the complete reference is [`docs/cli_reference.md`](docs/cli_reference.md).
 | | `uninstall` | Remove Engram's program files; your data is kept unless `--purge-data`. |
 
 Shared flags mean the same everywhere: `--apply` executes (the commands marked above preview first), `--dry-run`
-previews and always wins over `--apply`, `--yes`/`-y` skips a prompt, `--json` gives machine-readable output
-(`doctor`, `repair`, `relocate`, `snapshots list`). Nothing is deleted without a preview or a prompt, and replaced
-Python/venv copies are moved into a backup registry, never deleted outright.
+previews, `--yes`/`-y` skips a prompt, `--json` gives machine-readable output (`doctor`, `isolation check`, `repair`,
+`relocate`, `snapshots list`). Which commands ask before executing, and how recovery differs, is stated once in the
+Safety model of `engram help` ([`docs/cli_reference.md`](docs/cli_reference.md#safety-model)). Replaced Python/venv
+copies are moved into a backup registry, never deleted outright.
 
 Common workflows:
 

@@ -6,7 +6,7 @@ All source code and scripts in this repository must comply with the rules in thi
 
 ## 1. Language Policy (CRITICAL)
 
-- **Everything in English**: All code, JSON artifacts, configuration files, comments, commit messages, documentation and console output MUST be in **English only**.
+- **Everything in English**: All code, JSON artifacts, configuration files, comments, commit messages, documentation and console output MUST be in **English only**. Exempt: localization payloads (such as the Korean WinGet locale manifest) and non-ASCII path fixtures in tests.
 - **Rationale**: Preserves token efficiency across developer tooling and prevents encoding/parser defects across multi-byte environments (English messages avoid incidental encoding failures on non-UTF-8 code pages, see `docs/history/audit-2026-10.md` lessons).
 
 ---

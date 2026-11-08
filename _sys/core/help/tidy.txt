@@ -78,7 +78,7 @@ Examples:
 
 Exit codes:
   0   done, or preview shown
-  1   environment not initialized, or a legacy purge deletion failed
+  1   a legacy purge deletion failed
   2   usage error (unknown option or category)
   3   --purge-legacy declined at the prompt
   11  --purge-legacy refused: environment lock held, or the running Python

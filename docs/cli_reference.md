@@ -55,32 +55,35 @@ explicit `engram open PATH`; relative paths use the caller directory.
 
 ## Safety model
 
-- **Preview first.** `tidy`, `repair`, `relocate`, `restore`, `reset` and `snapshots restore` only print a plan until
-  you pass `--apply`. `update` shows its plan and asks; `uninstall` lists what it removes and keeps, then asks.
-  `backup`, `open`, `doctor`, `menu status` and `snapshots list` do not delete anything.
+- **Preview first.** New plans for `tidy`, `repair`, `relocate`, `restore`, `reset` and `snapshots restore` preview
+  until `--apply`. Recovery (`--resume`/`--rollback`) executes directly and rejects `--dry-run` with exit 2.
+  Update core/tools and uninstall execute after a prompt, skipped by `--yes`; managed environment updates and
+  `update --latest` preview until `--yes`. Update offers `--dry-run`/`--check`; uninstall offers `--dry-run`.
+  `backup`, `open`, `doctor`, `isolation check`, `menu status` and `snapshots list` do not delete anything.
 - **Move, never delete.** Replaced Python trees, venvs, package lists and state files are moved into the backup
   registry (`_sys/data/backups/env/<kind>/<name>`, each with a `BACKUP.json` marker) before anything is changed.
   Only `engram tidy` removes registry entries, only expired ones, never pinned or still-pending ones, and
   `tidy --purge-legacy` only ever touches `legacy-old` entries.
 - **Journal and lock.** Environment changes (`repair`, `relocate`, `update --only python|venv|packages`) run under
   the environment lock and write a crash-safe journal (`_sys/data/state/env-op.journal.jsonl`). If one is
-  interrupted, every command except `help`, `version`, `doctor`, `repair`, `relocate` and `snapshots` refuses with
-  exit 14 until you run `engram repair --resume` or `--rollback`. `tidy` also skips backups while the lock is held
+  interrupted, every command except `help`, `version`, `doctor`, `isolation`, `repair`, `relocate` and `snapshots`
+  refuses with exit 14 until you run `engram repair --resume` or `--rollback`. `tidy` also skips backups while the lock is held
   or a journal is open.
 - **Personal data reset is limited to snapshot coverage.** `reset` deletes only archived portable files;
   credentials, secrets, uncovered `.engram/` files and workspace projects remain.
   `uninstall --purge-data` requires the folder name typed, even with `--yes`.
-- **Layout migration is explicit.** `_sys\core\dispatch.bat migrate-layout` (for installation and maintenance
-  callers) is the only way to migrate the layout; public read-only and preview verbs never trigger it.
+- **Default adoption and layout maintenance.** `_sys\core\dispatch.bat migrate-layout` explicitly adopts new
+  shipped defaults. Confirmed `engram update` runs layout maintenance automatically without adding new default
+  components (`merge_defaults=False`). Public read-only and preview verbs never trigger this maintenance.
 
 ### Shared flags
 
 | Flag | Meaning everywhere it exists | Where it differs |
 |---|---|---|
-| `--apply` | Execute the planned change. | `update` and `uninstall` have no preview mode, so they do not need it (`uninstall` accepts it as a no-op). |
-| `--dry-run` | Preview only; always wins over `--apply`. A harmless no-op alias on preview-by-default commands. | Not offered on read-only or non-destructive commands (`doctor`, `menu`, `backup`, `open`). |
-| `--yes`, `-y` | Skip the confirmation prompt (for scripts). | `tidy`: only the `--purge-legacy` prompt. `uninstall --purge-data` still require the typed folder name. `update --yes` is what applies the plan. |
-| `--json` | Machine-readable output. | `doctor`, `repair`, `relocate` and `snapshots list` only. |
+| `--apply` | Execute a new plan. | `repair`, `relocate` and `reset` still ask unless `--yes`. Ordinary `tidy`, `restore` and `snapshots restore` do not ask; `tidy --purge-legacy` does. Update uses `--yes` for managed environment plans; uninstall accepts `--apply` as a no-op. |
+| `--dry-run` | Preview only; always wins over `--apply`. | With repair/relocate `--resume` or `--rollback`, usage error (exit 2). Update also offers `--check`; uninstall offers only `--dry-run`. Not offered by `doctor`, `isolation`, `menu`, `backup` or `open`. |
+| `--yes`, `-y` | Skip ordinary confirmation prompts. | Also authorizes managed environment updates and `update --latest`. For tidy, only the legacy-purge prompt. `uninstall --purge-data` still requires the typed folder name. |
+| `--json` | Machine-readable output. | `doctor`, `isolation check`, `repair`, `relocate` and `snapshots list`. |
 | `--only LIST` | Limit to the named parts (comma-separated). | `update`: tools/components; `repair`/`relocate`: python,venv,registry,state,ai-state,manifest,packages; `tidy`: cleanup categories. |
 | `-h`, `--help`, `/?` | Show help; never changes anything. | none |
 
@@ -96,7 +99,7 @@ exists, and a pointer to the right help (`Run 'engram <command> --help' for usag
 | Code | Meaning |
 |---|---|
 | 0 | success, nothing to do, or a preview was shown |
-| 1 | failure (also: not set up, refused because an AI CLI is running, `doctor` needs attention) |
+| 1 | failure, including "Engram is not set up" when initialization is required; also AI CLI running refusals and `doctor` findings |
 | 2 | usage error (unknown command, option or argument) |
 | 3 | declined at a prompt (`update`, `reset`, `uninstall`, `tidy --purge-legacy`) |
 | 10 | declined at the prompt (`repair`, `relocate`, `update --only python|venv|packages`) |
@@ -105,7 +108,8 @@ exists, and a pointer to the right help (`Run 'engram <command> --help' for usag
 | 13 | rollback failed |
 | 14 | an unfinished operation (journal) blocks the request |
 
-Each command lists the codes it can return in its own section below.
+The initialization-failure meaning is common to commands that require setup. Each command adds its specific
+exit-code meanings below.
 
 ## Retired commands
 
@@ -283,48 +287,12 @@ maintenance.
 ```
 
 
-Python updates stay within the installed minor by default:
+Minor-update readiness probes the embed archive with HEAD and resolves the complete baseline for
+`win_amd64` using managed pip for the target interpreter. A locally computed hash is not a publisher-provided
+digest; unpinned Python archives are fetched over HTTPS from python.org.
 
-~~~text
-engram update --check --refresh
-Core/tools apply here; python/venv/packages need -o, without tool names.
-
-Python:
-  Installed: 3.13.7
-  Latest patch (same minor): 3.13.9
-  Latest minor: 3.14 (3.14.8)
-  Patch update: engram update -o python -y
-Python 3.14 dependency readiness verified. Next:
-  engram update -o python --latest -y
-
-Next steps:
-  engram update -o python -y
-  engram update -o python --latest -y
-~~~
-
-These versions illustrate the output; discovery supplies the actual releases.
-`engram update --only python` previews the patch plan; add `--yes` to apply.
-`--refresh` bypasses the discovery cache. Offline or failed discovery falls back
-to the pin, keeping the installed version if the pin would downgrade or cross
-a minor. Use `engram update -o python --latest -y` to upgrade to the highest
-stable Python, including minor jumps. Omit `-y` to preview the plan.
-`--latest` requires `--only python` or `--only nodejs`, cannot be combined
-with `--to`, and fails with "latest unavailable" when discovery fails or is
-offline; it never falls back to the pin or downgrades Python. Explicit `--to`
-remains available. Major changes still require `--allow-major-runtime-upgrade`.
-
-Before a minor change, Engram checks the python.org embed zip with HEAD and
-managed pip resolution of the complete baseline for the target interpreter.
-`--force` can override planning readiness refusal. Actual staging and package
-restore failures still block the update, and rebuilt venvs must pass pip check.
-Without a pinned SHA-256, Engram warns that the archive was downloaded over
-HTTPS from python.org and records the computed hash in the journal and output.
-A recorded cache hash still gates reuse; it is not a publisher-provided hash.
-
-Bootstrap installs only the validated `runtimes.json` pin. Newer versions produce
-a notice pointing to `engram update --check`; `--skip-update` skips that notice
-check for compatibility.
-
+Bootstrap installs only the validated `runtimes.json` pin. Its newer-version notice points to
+`engram update --check`; `--skip-update` skips that notice check for compatibility.
 
 #### engram doctor
 
@@ -394,7 +362,7 @@ Examples:
 
 Exit codes:
   0   ok
-  1   not set up, or the registry change failed
+  1   the registry change failed
   2   unknown subcommand
   14  an interrupted environment operation blocks Engram (run: engram repair)
 
@@ -531,8 +499,7 @@ Examples:
 
 Exit codes:
   0   ok, or nothing to repair, or preview shown
-  1   environment not initialized, or committed environment has pending
-      state writes (use --resume)
+  1   committed environment has pending state writes (use --resume)
   2   usage error, including invalid --only or conflicting recovery flags
   10  declined at the prompt
   11  precondition failed, or no terminal and no --yes (nothing was changed)
@@ -593,8 +560,7 @@ Examples:
 
 Exit codes:
   0   ok, nothing to do, or preview shown
-  1   environment not initialized, or committed environment has pending
-      state writes (use --resume)
+  1   committed environment has pending state writes (use --resume)
   2   usage error, including invalid --only or conflicting recovery flags
   10  declined at the prompt
   11  precondition failed, or no terminal and no --yes (nothing was changed)
@@ -691,7 +657,7 @@ Examples:
 
 Exit codes:
   0   done, or preview shown
-  1   environment not initialized, or a legacy purge deletion failed
+  1   a legacy purge deletion failed
   2   usage error (unknown option or category)
   3   --purge-legacy declined at the prompt
   11  --purge-legacy refused: environment lock held, or the running Python
@@ -835,7 +801,6 @@ Examples:
 
 Exit codes:
   0   ok, or preview shown
-  1   environment not initialized
   2   usage error (unknown action or option)
   11  failed: no such backup, ambiguous name, target exists, lock busy, or
       restoring this backup kind is not supported yet
