@@ -27,15 +27,20 @@ Removal:
 Run 'engram <command> --help' (or 'engram help <command>') for the full
 options, examples and exit codes of one command.
 
-Safety model (same words mean the same thing everywhere):
-  --apply      do it. Verbs that change things preview first: tidy, repair,
-               relocate, restore, reset and 'snapshots restore' only show a
-               plan until you pass --apply.
-  --dry-run    preview only; always wins over --apply.
-  --yes, -y    skip the confirmation prompt (for scripts).
-  --json       machine-readable output (doctor, repair, relocate, snapshots).
-  Nothing is deleted without a preview or a prompt; replaced Python/venv
-  copies are moved into a backup registry, never deleted outright.
+Safety model (shared flags and execution rules):
+  --apply      execute new plans for tidy, repair, relocate, restore, reset
+               and 'snapshots restore'; these preview by default.
+  --dry-run    preview only; always wins over --apply. Cannot be combined
+               with repair/relocate --resume or --rollback.
+  --yes, -y    skip ordinary confirmation prompts. For managed environment
+               updates, also execute the plan. Uninstall --purge-data still
+               requires the typed folder name.
+  --json       machine-readable output (doctor, isolation check, repair,
+               relocate and snapshots list).
+  Recovery (--resume/--rollback) executes directly. Ordinary tidy --apply
+  deletes without a prior preview or prompt; --purge-legacy asks unless
+  --yes. Menu disable/clean remove entries immediately. Replaced Python/venv
+  copies move into a backup registry, never deleted outright.
 
 Common workflows:
   First time in a new folder:       engram

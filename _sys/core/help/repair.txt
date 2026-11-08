@@ -6,12 +6,14 @@ Usage: engram repair [--apply] [--dry-run] [--yes] [--only LIST] [--offline]
 
 Description:
   Finds a broken venv, stale launchers, a missing Python, a missing manifest
-  or stale registry entries and plans the fix. It previews by default: nothing
-  changes until --apply. Every change runs under the environment lock and a
-  crash-safe journal, and replaced Python/venv copies are moved into the
-  backup registry (see 'engram snapshots'), never deleted. If a run is
-  interrupted, other commands refuse to run (exit 14) until you finish it
-  with --resume or undo it with --rollback.
+  or stale registry entries and plans the fix. New plans preview by default:
+  nothing changes until --apply. Recovery executes directly. Every change
+  runs under the environment lock and a crash-safe journal. Replaced
+  Python/venv copies move into the backup registry (see 'engram snapshots'),
+  never deleted. If a run is interrupted, other commands refuse to run
+  (exit 14) until you finish it with --resume or undo it with --rollback.
+  If managed Python is missing, only repair can recover using an alternate
+  interpreter; use engram repair --resume or engram repair --rollback.
   Failed writes after commit exit 1 and keep the updated environment.
   Fix write access or available disk space, then run engram repair --resume.
   Pending writes block new operations; committed swaps cannot be rolled back.
@@ -31,7 +33,8 @@ Description:
 
 Options:
   --apply          Execute the plan (default: off, preview only)
-  --dry-run        Preview only; wins over --apply (default: on)
+  --dry-run        Preview only; wins over --apply (default: on for new plans;
+                   cannot combine with --resume or --rollback)
   --yes, -y        Do not ask for confirmation with --apply (default: ask;
                    without a terminal --yes is required)
   --only LIST      Limit to: python,venv,registry,state,ai-state,manifest,
@@ -56,7 +59,8 @@ Examples:
 
 Exit codes:
   0   ok, or nothing to repair, or preview shown
-  1   committed environment has pending state writes (use --resume)
+  1   environment not initialized, or committed environment has pending
+      state writes (use --resume)
   2   usage error, including invalid --only or conflicting recovery flags
   10  declined at the prompt
   11  precondition failed, or no terminal and no --yes (nothing was changed)

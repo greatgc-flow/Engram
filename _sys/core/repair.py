@@ -592,6 +592,9 @@ def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callabl
     
     try:
         args = p.parse_args(args_list)
+        if args.dry_run and (args.resume or args.rollback):
+            recovery_flag = "--resume" if args.resume else "--rollback"
+            p.error(f"--dry-run cannot be combined with {recovery_flag}")
         valid_only = {"python", "venv", "registry", "state", "ai-state", "manifest", "packages"}
         if args.only is not None and (not args.only or set(args.only.split(",")) - valid_only):
             p.error("--only requires comma-separated names: " + ",".join(sorted(valid_only)))

@@ -731,6 +731,8 @@ def snapshots_main(ctx: dict) -> dict:
                             "exit_code": 2, "quiet": True}
 
     if action == "list":
+        if any(not arg.startswith("-") for arg in rest):
+            return _fail("'list' accepts no positional operands", 2)
         found = scan(sys_dir)
         rows = [{
             "kind": r.kind, "name": r.path.name, "state": r.meta["state"], "pinned": bool(r.meta.get("pinned")),

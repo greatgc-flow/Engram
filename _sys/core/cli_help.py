@@ -135,6 +135,7 @@ class CliParser(argparse.ArgumentParser):
     def __init__(self, verb: str, **kwargs):
         kwargs.setdefault("prog", f"engram {verb}")
         kwargs["add_help"] = False
+        kwargs.setdefault("allow_abbrev", False)
         super().__init__(**kwargs)
         self.verb = verb
 

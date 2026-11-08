@@ -306,6 +306,22 @@ def test_dispatch_bat_without_exit_75_does_not_rerun(bat_root):
     assert proc.returncode == 0 and "PLAIN" in proc.stdout and "IN_RUNNER" not in proc.stdout
 
 
+@pytest.mark.parametrize("verb", ["repair", "relocate"])
+def test_dispatch_runner_handoff_preserves_json_stdout(bat_root, verb):
+    stub = bat_root / "_sys" / "core" / "dispatcher.py"
+    source = stub.read_text(encoding="utf-8")
+    source = source.replace("    print('IN_RUNNER exe=' + sys.executable)\n",
+                            "    print('{\"status\": \"success\"}')\n")
+    source = source.replace("    print('ASSUME_YES=' + os.environ.get('ENGRAM_ASSUME_YES', ''))\n", "")
+    source = source.replace("    print('ARGS=' + ' '.join(sys.argv[1:]))\n", "")
+    source = source.replace("    sys.exit(7)", "    sys.exit(0)").replace("print('FIRST_RUN')\n", "")
+    stub.write_text(source, encoding="utf-8")
+    proc = _run_bat(bat_root / "_sys" / "core" / "dispatch.bat", [verb, "--apply", "--json"], bat_root)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert json.loads(proc.stdout) == {"status": "success"}
+    assert "Continuing on the runner" in proc.stderr
+
+
 def test_dispatch_bat_exit_75_without_a_handoff_file_is_an_error(bat_root):
     (bat_root / "_sys" / "core" / "dispatcher.py").write_text("import sys\nsys.exit(75)\n", encoding="utf-8")
     proc = _run_bat(bat_root / "_sys" / "core" / "dispatch.bat", ["update"], bat_root)

@@ -147,7 +147,7 @@ Examples:
 
 Exit codes:
   0   opened (or help shown); scripts return their child exit code
-  1   not set up and setup was declined or failed
+  1   setup declined/failed, or the requested editor could not launch
   2   path not found or unknown option
   14  an interrupted environment operation blocks Engram (run: engram repair)
 
@@ -478,12 +478,14 @@ Usage: engram repair [--apply] [--dry-run] [--yes] [--only LIST] [--offline]
 
 Description:
   Finds a broken venv, stale launchers, a missing Python, a missing manifest
-  or stale registry entries and plans the fix. It previews by default: nothing
-  changes until --apply. Every change runs under the environment lock and a
-  crash-safe journal, and replaced Python/venv copies are moved into the
-  backup registry (see 'engram snapshots'), never deleted. If a run is
-  interrupted, other commands refuse to run (exit 14) until you finish it
-  with --resume or undo it with --rollback.
+  or stale registry entries and plans the fix. New plans preview by default:
+  nothing changes until --apply. Recovery executes directly. Every change
+  runs under the environment lock and a crash-safe journal. Replaced
+  Python/venv copies move into the backup registry (see 'engram snapshots'),
+  never deleted. If a run is interrupted, other commands refuse to run
+  (exit 14) until you finish it with --resume or undo it with --rollback.
+  If managed Python is missing, only repair can recover using an alternate
+  interpreter; use engram repair --resume or engram repair --rollback.
   Failed writes after commit exit 1 and keep the updated environment.
   Fix write access or available disk space, then run engram repair --resume.
   Pending writes block new operations; committed swaps cannot be rolled back.
@@ -503,7 +505,8 @@ Description:
 
 Options:
   --apply          Execute the plan (default: off, preview only)
-  --dry-run        Preview only; wins over --apply (default: on)
+  --dry-run        Preview only; wins over --apply (default: on for new plans;
+                   cannot combine with --resume or --rollback)
   --yes, -y        Do not ask for confirmation with --apply (default: ask;
                    without a terminal --yes is required)
   --only LIST      Limit to: python,venv,registry,state,ai-state,manifest,
@@ -528,7 +531,8 @@ Examples:
 
 Exit codes:
   0   ok, or nothing to repair, or preview shown
-  1   committed environment has pending state writes (use --resume)
+  1   environment not initialized, or committed environment has pending
+      state writes (use --resume)
   2   usage error, including invalid --only or conflicting recovery flags
   10  declined at the prompt
   11  precondition failed, or no terminal and no --yes (nothing was changed)
@@ -558,6 +562,9 @@ Description:
   It runs the same engine and plan as 'engram repair' (plus --from), so the
   safety is identical: preview by default, environment lock, crash-safe
   journal, backups moved into the registry and never deleted.
+  Recovery (--resume/--rollback) executes directly. If managed Python is
+  missing, alternate-interpreter recovery is available only via repair:
+  use engram repair --resume or engram repair --rollback.
   Failed writes after commit exit 1; fix write access or available disk
   space, then run engram repair --resume to retry pending writes.
 
@@ -565,7 +572,8 @@ Options:
   --from OLD_PATH  The previous location, if Engram cannot detect it
                    (default: auto-detected from the manifest)
   --apply          Execute the plan (default: off, preview only)
-  --dry-run        Preview only; wins over --apply (default: on)
+  --dry-run        Preview only; wins over --apply (default: on for new plans;
+                   cannot combine with --resume or --rollback)
   --yes, -y        Do not ask for confirmation with --apply (default: ask)
   --remap-ai-state Also rewrite folder paths in AI CLI state (default: off)
   --only LIST      Limit to: python,venv,registry,state,ai-state,manifest,
@@ -585,7 +593,8 @@ Examples:
 
 Exit codes:
   0   ok, nothing to do, or preview shown
-  1   committed environment has pending state writes (use --resume)
+  1   environment not initialized, or committed environment has pending
+      state writes (use --resume)
   2   usage error, including invalid --only or conflicting recovery flags
   10  declined at the prompt
   11  precondition failed, or no terminal and no --yes (nothing was changed)
@@ -682,6 +691,7 @@ Examples:
 
 Exit codes:
   0   done, or preview shown
+  1   environment not initialized, or a legacy purge deletion failed
   2   usage error (unknown option or category)
   3   --purge-legacy declined at the prompt
   11  --purge-legacy refused: environment lock held, or the running Python
@@ -825,6 +835,7 @@ Examples:
 
 Exit codes:
   0   ok, or preview shown
+  1   environment not initialized
   2   usage error (unknown action or option)
   11  failed: no such backup, ambiguous name, target exists, lock busy, or
       restoring this backup kind is not supported yet
@@ -865,7 +876,8 @@ Examples:
 
 Exit codes:
   0   reset done, or preview shown
-  1   refused (an AI CLI is running)
+  1   refused (an AI CLI is running), safety snapshot verification failed,
+      or deletion failed
   2   usage error
   3   declined at a prompt
   14  an interrupted environment operation blocks Engram (run: engram repair)
