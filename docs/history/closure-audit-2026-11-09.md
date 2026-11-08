@@ -13,10 +13,13 @@ Frozen record. Owner goal: a mutually recursive MECE audit that checks vertical 
 | Round | Script | cx V/H/M | fable V/H/M | ag H/M |
 |---|---|---|---|---|
 | Baseline | 56 (10/18) | - | - | - |
-| 2 (after fixes) | 100 (24/24) | 88/85/90 | - | - |
-| 4 | 100 | 96/98/100 | 96/95/98 | 82/84 |
-| 6 | 100 | 98/98/99 | 98/97/99 | 100/100 |
-| 7 (final) | 100 | 100/100/100 | 100/100/100 | 100/100 |
+| 2 (after fixes) | 24/24 | 88/85/90 | 85/72/85 | - |
+| 4 | 23/24 | 96/98/100 | 96/95/98 | 82/84 |
+| 6 | 23/24 | 98/98/99 | 98/97/99 | 100/100 |
+| 7 | 23/24 | 99/99/100 | 99/100/100 | - |
+| 8 (confirm) | 23/24 | 100/100/100 | 100/100/100 | - |
+
+From round 4 the one script failure is G2 ("only `main` on the remote"). The PR branch itself causes it, and it clears when the branch is deleted after merge. Round 7 findings were record-accuracy items only (handoff currency, this table), fixed before round 8.
 
 ## Main findings fixed
 
