@@ -10,6 +10,7 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ### Changed
 
+- Default VS Code 1.145.2 (validated by the refresh-runtimes workflow; Python 3.15.2, Node.js 26.13.0, Git 2.56.0.windows.4 and PowerShell 7.6.9 were already current).
 - `engram repair` / `engram relocate` reject `--dry-run` together with `--resume` or `--rollback` (exit 2) instead of executing recovery despite `--dry-run`; recovery always executes directly.
 - Option abbreviations (for example `--j` for `--json`) are rejected with exit 2 on `update`, `repair`, `relocate`, `tidy` and `isolation`.
 - `engram open PATH` exits 1 when VS Code is missing (previously a warning with exit 0); a VS Code launch failure also exits 1 with an `[Error]` line instead of a traceback.
