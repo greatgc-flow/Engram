@@ -49,6 +49,6 @@ For AI peer collaboration rules, see [PeerHub docs/HANDOFF.md](https://github.co
 
 - Latest release: v3.11.8 (2026-11-09; closure audit, [`history/closure-audit-2026-11-09.md`](history/closure-audit-2026-11-09.md)), see [`CHANGELOG.md`](../CHANGELOG.md). v3.11.6 was tagged but never published (YANKED).
 - Open issues: #112 (snapshots restore with an open journal: policy decision). Owner follow-ups: live install `engram update --refresh`; T92 per-item host clutter triage ([`history/migrated-backlog-open-items.md`](history/migrated-backlog-open-items.md)); native ACP=949 and prepared-host Sandbox/WSL acceptance need real hosts ([audit D10](history/audit-2026-10.md#4-open-decisions-for-the-maintainer)).
-- Remote has only `main`; delete release/feature branches after merge.
+- Keep the remote at `main` only: delete release/feature/automation branches after merge.
 - One-time owner setup is done: Actions PR creation, dependency graph/alerts/security updates, Dependabot pip for `/` and `/_sys/defaults`.
 - Per-release notes v3.9.6-v3.11.7 are archived in [`history/handoff-2026-10.md`](history/handoff-2026-10.md).

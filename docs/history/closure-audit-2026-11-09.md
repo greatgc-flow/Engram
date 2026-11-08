@@ -17,9 +17,10 @@ Frozen record. Owner goal: a mutually recursive MECE audit that checks vertical 
 | 4 | 23/24 | 96/98/100 | 96/95/98 | 82/84 |
 | 6 | 23/24 | 98/98/99 | 98/97/99 | 100/100 |
 | 7 | 23/24 | 99/99/100 | 99/100/100 | - |
-| 8 (confirm) | 23/24 | 100/100/100 | 100/100/100 | - |
+| 8 | 23/24 | 99/99/100 | 100/100/100 | - |
+| 9 (confirm) | 21/24 (pre-tag) | 100/100/100 | 100/100/100 | - |
 
-From round 4 the one script failure is G2 ("only `main` on the remote"). The PR branch itself causes it, and it clears when the branch is deleted after merge. Round 7 findings were record-accuracy items only (handoff currency, this table), fixed before round 8.
+From round 4 the one script failure is G2 ("only `main` on the remote"). The PR branch caused it, together with `automation/refresh-runtimes` from round 8 (PR #113, whose VS Code 1.145.2 bump was cherry-picked into PR #111). It clears once both branches are deleted after merge. V1/V2 stay red until the v3.11.8 tag exists. Round 7 findings were record-accuracy items only (handoff currency, this table), fixed before round 8.
 
 ## Main findings fixed
 
