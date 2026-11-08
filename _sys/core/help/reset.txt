@@ -24,7 +24,8 @@ Examples:
 
 Exit codes:
   0   reset done, or preview shown
-  1   refused (an AI CLI is running)
+  1   refused (an AI CLI is running), safety snapshot verification failed,
+      or deletion failed
   2   usage error
   3   declined at a prompt
   14  an interrupted environment operation blocks Engram (run: engram repair)

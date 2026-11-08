@@ -558,8 +558,6 @@ def _purge_refusal(paths: list[Path]) -> tuple[int, str] | None:
 
 def main() -> int:
     ap = cli_help.CliParser("tidy")
-    ap.add_argument("--base-dir", default=None)
-    ap.add_argument("--sys-dir", default=None)
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--yes", "-y", action="store_true")
@@ -574,9 +572,6 @@ def main() -> int:
         args.apply = False  # --dry-run always wins
     if args.deep or args.purge_legacy:
         args.adopt_legacy = True  # --deep also adopts <name>_old dirs; --purge-legacy adopts then deletes
-
-    if args.base_dir or args.sys_dir:
-        configure_paths(root=args.base_dir, sys_dir=args.sys_dir)
 
     targets = set((args.only or ALL_TARGETS).split(","))
     unknown = sorted(t for t in targets if t not in ALL_TARGETS.split(","))

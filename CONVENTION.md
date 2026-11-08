@@ -263,7 +263,7 @@ Provides host-specific overrides (e.g. custom workspace directory, proxy setting
 Script and environment lifecycle tests should run inside Windows Sandbox whenever possible:
 - `_sys\tests\run-sandbox-test.bat` (injects `__PORTABLE_ROOT__` into the `.wsb` template — do not launch `sandbox-unit-test.wsb` directly).
 - Host repository is mounted read-only at `C:\PortableDev`.
-- Test outputs write to host `_archive\test-results\` (writable), mapped at `C:\TestResults` inside the sandbox.
+- Test outputs write to host `_sys\data\test-results\` (writable), mapped at `C:\TestResults` inside the sandbox.
 
 ---
 

@@ -34,6 +34,7 @@ Examples:
 
 Exit codes:
   0   ok, or preview shown
+  1   environment not initialized
   2   usage error (unknown action or option)
   11  failed: no such backup, ambiguous name, target exists, lock busy, or
       restoring this backup kind is not supported yet

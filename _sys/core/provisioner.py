@@ -93,7 +93,7 @@ def load_json_with_fallback(
         return json.loads(path.read_text(encoding="utf-8"))
     except exceptions as e:
         if warn_label:
-            print(f"[Warning] Failed to load {warn_label}: {e}")
+            print(f"[Warning] Failed to load {warn_label}: {e}", file=sys.stderr)
         return default
 
 

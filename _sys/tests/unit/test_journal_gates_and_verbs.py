@@ -206,7 +206,7 @@ def test_dispatch_falls_back_to_python_new_for_repair_when_a_journal_is_active(d
     copy_python(alt / "python.exe")
     proc = run_dispatch(r, "repair", "--resume")
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    recover_line = next((line for line in proc.stdout.splitlines() if line.startswith("[i] Recover")), "")
+    recover_line = next((line for line in proc.stderr.splitlines() if line.startswith("[i] Recover")), "")
     assert "python.new" in recover_line and "ARGS=repair --resume" in proc.stdout
     assert str(alt / "python.exe") not in recover_line
     assert f"RAN_WITH={alt / 'python.exe'}" in proc.stdout.splitlines()
@@ -220,7 +220,7 @@ def test_dispatch_falls_back_to_the_runner_copy(dispatch_root):
     copy_python(runner / "python.exe")
     proc = run_dispatch(r, "repair", "--rollback")
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    recover_line = next((line for line in proc.stdout.splitlines() if line.startswith("[i] Recover")), "")
+    recover_line = next((line for line in proc.stderr.splitlines() if line.startswith("[i] Recover")), "")
     assert "runner" in recover_line
     assert str(runner / "python.exe") not in recover_line
     assert f"RAN_WITH={runner / 'python.exe'}" in proc.stdout.splitlines()
@@ -239,7 +239,7 @@ def test_dispatch_falls_back_to_backup_payload_over_python_new(dispatch_root):
     
     proc = run_dispatch(r, "repair", "--rollback")
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    recover_line = next((line for line in proc.stdout.splitlines() if line.startswith("[i] Recover")), "")
+    recover_line = next((line for line in proc.stderr.splitlines() if line.startswith("[i] Recover")), "")
     assert "backup" in recover_line
     assert str(backup / "python.exe") not in recover_line
     assert f"RAN_WITH={backup / 'python.exe'}" in proc.stdout.splitlines()
@@ -262,8 +262,8 @@ def test_dispatch_runner_preferred_over_all(dispatch_root):
     copy_python(alt / "python.exe")
     
     proc = run_dispatch(r, "repair", "--rollback")
-    assert proc.returncode == 0 and "runner" in proc.stdout
-    assert "backup" not in proc.stdout and "python.new" not in proc.stdout
+    assert proc.returncode == 0 and "runner" in proc.stderr
+    assert "backup" not in proc.stderr and "python.new" not in proc.stderr
 
 
 def test_dispatch_does_not_use_an_alternate_interpreter_for_other_commands(dispatch_root):
@@ -283,6 +283,20 @@ def test_dispatch_without_a_journal_never_uses_python_new(dispatch_root):
     copy_python(alt / "python.exe")
     proc = run_dispatch(r, "repair")
     assert proc.returncode == 1 and "not initialized" in proc.stdout
+
+
+def test_alternate_recovery_preserves_json_stdout(dispatch_root):
+    r = dispatch_root
+    write_journal(r, ["PLANNED", "STEPS_RUNNING"])
+    alt = r / "_sys" / "env" / "python.new"
+    alt.mkdir(parents=True)
+    copy_python(alt / "python.exe")
+    (r / "_sys" / "core" / "dispatcher.py").write_text(
+        'print(\'{"status": "success"}\')\n', encoding="utf-8")
+    proc = run_dispatch(r, "repair", "--resume", "--json")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert json.loads(proc.stdout) == {"status": "success"}
+    assert "Recovering an interrupted" in proc.stderr
 
 
 @pytest.mark.cp949

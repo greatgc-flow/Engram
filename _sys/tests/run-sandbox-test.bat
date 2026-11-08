@@ -6,7 +6,7 @@
 :: Windows Sandbox. Requires: Windows 11 Pro/Enterprise/Education,
 :: Windows Sandbox feature enabled (optionalfeatures.exe).
 ::
-:: Results: _archive\test-results\test_YYYYMMDD_HHMMSS.txt
+:: Results: _sys\data\test-results\test_YYYYMMDD_HHMMSS.txt
 :: ================================================================
 
 :: --- Resolve the repository root from this script's own location ---
@@ -23,7 +23,7 @@ if exist "%~dp0..\local.config.bat" (
 set "TEMPLATE=%~dp0sandbox-unit-test.wsb"
 :: Use %SystemRoot%\Temp so the generated configuration is host-local.
 set "GENERATED=%SystemRoot%\Temp\porta_sandbox_test_%RANDOM%.wsb"
-set "RESULTS_DIR=%BASE_PHYS%\_archive\test-results"
+set "RESULTS_DIR=%BASE_PHYS%\_sys\data\test-results"
 set "RESULT_FILE=%RESULTS_DIR%\result.txt"
 
 echo [sandbox-test] Physical base: %BASE_PHYS%

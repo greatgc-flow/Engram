@@ -58,7 +58,7 @@ if not exist "%_RUNNER%" (
 )
 set "ENGRAM_IN_RUNNER=1"
 if "%_YES%"=="1" set "ENGRAM_ASSUME_YES=1"
-echo [i] Continuing on the runner interpreter so the Python tree can be replaced.
+echo [i] Continuing on the runner interpreter so the Python tree can be replaced. 1>&2
 "%_RUNNER%" "%SYS_DIR%\core\dispatcher.py" %*
 exit /b %errorlevel%
 
@@ -91,7 +91,7 @@ if not defined PY (
     echo [Error] No usable Python interpreter was found to recover the interrupted operation.
     exit /b 1
 )
-echo [i] Recovering an interrupted environment operation with an alternate interpreter: %_KIND%
+echo [i] Recovering an interrupted environment operation with an alternate interpreter: %_KIND% 1>&2
 :: an alternate interpreter is already outside the swap targets: never hand off again
 set "ENGRAM_IN_RUNNER=1"
 "%PY%" "%SYS_DIR%\core\dispatcher.py" %*
