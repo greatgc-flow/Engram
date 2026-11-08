@@ -70,6 +70,8 @@ explicit `engram open PATH`; relative paths use the caller directory.
 - **Personal data reset is limited to snapshot coverage.** `reset` deletes only archived portable files;
   credentials, secrets, uncovered `.engram/` files and workspace projects remain.
   `uninstall --purge-data` requires the folder name typed, even with `--yes`.
+- **Layout migration is explicit.** `_sys\core\dispatch.bat migrate-layout` (for installation and maintenance
+  callers) is the only way to migrate the layout; public read-only and preview verbs never trigger it.
 
 ### Shared flags
 
@@ -86,7 +88,8 @@ explicit `engram open PATH`; relative paths use the caller directory.
 
 An unknown command or option prints one `[Error] ...` line, a `Did you mean '...'?` line when something similar
 exists, and a pointer to the right help (`Run 'engram <command> --help' for usage.`), then exits with code `2`.
-There is never a traceback for a usage mistake. `--help` always works, even when Engram is not set up.
+`help` and `version` reject surplus operands the same way. There is never a traceback for a usage mistake.
+`--help` always works, even when Engram is not set up.
 
 ### Exit codes
 
@@ -929,9 +932,3 @@ When Engram replaces a runtime (Python, Node.js, Git, VS Code, ...) the previous
    asks `[y/N]` (or use `--yes`), then adopts and deletes all `legacy-old` backups at once. Pinned entries and all
    other backup kinds are never touched. It refuses, and says why, while an operation journal is open (exit 14),
    while the environment lock is held, or if the running Python lives inside what it would delete (exit 11).
-
-Layout migration is explicit: `_sys\core\dispatch.bat migrate-layout` (available to
-installation and maintenance callers). Public read-only and preview verbs never trigger it.
-Help and version reject surplus operands with exit 2.
-
-Backup/restore: empty directories are not preserved. Existing folder backups replace directory payloads, removing stale files. Restore previews create no files or directories. Confirmed updates maintain layout, merge declarations, retire obsolete shipped files, and clean preserved update staging; preview and --check skip this maintenance.

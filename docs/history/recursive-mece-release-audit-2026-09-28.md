@@ -1,5 +1,8 @@
 # Recursive MECE release audit — 2026-09-28
 
+Historical record frozen at the v3.4.4 release (2026-09-28). Test counts, WinGet PR status and the Sandbox runner
+statement describe that date; the current gate is [`../release_gate.md`](../release_gate.md).
+
 ## Decision
 
 Engram 3.4.4 is released. Its scope remains deliberately

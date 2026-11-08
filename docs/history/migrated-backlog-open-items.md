@@ -1,5 +1,7 @@
 # Open Items Preserved from Migrated Backlog
 
+Frozen as of 2026-10-21. This file is the single place that records the T92 verdict (deferred, owner per-item triage).
+
 On 2026-09-20, `_sys/data/backlog.json` (129 items) was migrated from the Engram product repo to the PeerHub repository (`docs/history/from-engram-repo/backlog.json`).
 
 Of the 129 items, 127 were closed (`done`, `dropped`, or `superseded`). Exactly 2 items had a non-closed status (`deferred`). They are recorded here to ensure no operational or housekeeping items are lost.

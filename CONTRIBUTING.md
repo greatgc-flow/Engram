@@ -124,12 +124,12 @@ Operational decisions and environment constraints:
 - **Release Governance**: Canonical release procedures, mainline ancestry rules, and clean-room gate specifications are documented in [`docs/release_gate.md`](docs/release_gate.md).
 - An automatic permission classifier may deny `gh pr merge` after chat approval; the maintainer merges or adds an allow rule (`Bash(gh pr merge:*)`). This is a maintainer-reported operational constraint.
 - The pre-release dry-run procedure lives in [`docs/release_gate.md`](docs/release_gate.md#dry-run-before-a-release).
-- Peers cannot run the full pytest suite in their sandbox; the maintainer runs it after EVERY change wave and chains the commit with `&&` so a failing suite never commits.
+- The maintainer runs the full suite after EVERY change wave and chains the commit with `&&` so a failing suite never commits (who can run pytest where: [docs/maintainer_handoff.md](docs/maintainer_handoff.md#2-pitfalls)).
 - Never create scratch or temporary files at the repo root; tests use `tmp_path`.
 - The VDI may force-logoff sessions; commit and push in small steps.
 - **Headless Shell Git Auth**: Pushing from a headless shell requires a GitHub credential helper (`gh auth setup-git` or per-command `-c credential.helper`).
 - **AI-to-AI Collaboration**: Multi-agent collaboration uses English exclusively for all design notes, reviews, and commits.
-  Roles follow peerhub conventions: `cx` (coordinator / architect), `ag` (implementer / test author), and `cc` (reviewer / verification gatekeeper).
+  Peer roles and rules are PeerHub's domain: [PeerHub docs/HANDOFF.md](https://github.com/greatgc-flow/peerhub/blob/main/docs/HANDOFF.md).
   Independent cross-review and clean-room contract verification are required before changes are merged or promoted.
 - Maintainer handoff notes: [docs/maintainer_handoff.md](docs/maintainer_handoff.md)
 

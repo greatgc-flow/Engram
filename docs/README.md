@@ -10,7 +10,7 @@ This directory contains architectural specifications, design decision records, a
 | **[`user_lifecycle_guide.md`](user_lifecycle_guide.md)** | **User Guide** | Personal settings, AI session data, backup, restore, reset, and uninstallation workflows. |
 | **[`isolation_guide.md`](isolation_guide.md)** | **User Guide** | Optional Windows Sandbox and WSL2 isolation features and setup. |
 | **[`env_resilience_guide.md`](env_resilience_guide.md)** | **User Guide** | Python/venv repair, root folder relocation, Python updates, and the backup registry. |
-| **[`maintainer_handoff.md`](maintainer_handoff.md)** | **Maintainer Reference** | Current release recipe, operational pitfalls, and historical handoff notes. |
+| **[`maintainer_handoff.md`](maintainer_handoff.md)** | **Maintainer Reference** | Release recipe, operational pitfalls, decisions, and the current state. |
 | **[`engram-dotdir.md`](engram-dotdir.md)** | **Technical Specification** | Normative specification for `.engram/` dotdir isolation, path resolution, and AI CLI environment redirection. |
 | **[`cp949_verification.md`](cp949_verification.md)** | **Technical Specification** | Architecture and test procedures for CP949 Korean-locale and non-ASCII path resilience. |
 | **[`release_gate.md`](release_gate.md)** | **Release & Governance** | Policy trust root, clean-room verification gates, candidate packaging, and post-release closure audits. |
@@ -25,7 +25,8 @@ This directory contains architectural specifications, design decision records, a
 | [`design/engram-env-resilience-design-2026-10-02.md`](design/engram-env-resilience-design-2026-10-02.md) | Implemented Design | Python/venv lifecycle, root relocation and backup retention (v3.6.1). |
 | [`design/plan-deps-latest-2026-10-21.md`](design/plan-deps-latest-2026-10-21.md) | Implementation Plan | Latest validated runtime defaults and dependency PRs (v3.10.0, reference only). |
 | **[`history/`](history/)** | **Historical Archives** | Historical records, backlog migrations, and audit artifacts preserved from repository milestones. |
-| [`history/audit-2026-10.md`](history/audit-2026-10.md) | Historical Audit | October 2026 findings, dispositions, hosted-run lessons, and open maintainer decisions. |
+| [`history/audit-2026-10.md`](history/audit-2026-10.md) | Historical Audit | October 2026 findings, dispositions, hosted-run lessons, and maintainer decisions (frozen 2026-10-21). |
+| [`history/handoff-2026-10.md`](history/handoff-2026-10.md) | Historical Record | Per-release maintainer handoff notes v3.9.6 to v3.11.7 (frozen 2026-11-09). |
 | [`history/recursive-mece-release-audit-2026-09-28.md`](history/recursive-mece-release-audit-2026-09-28.md) | Historical Audit | Whole-package recursive MECE release review (2026-09-28). |
 | [`history/migrated-backlog-open-items.md`](history/migrated-backlog-open-items.md) | Historical Record | The two deferred items kept when the backlog moved to PeerHub (2026-09-20). |
 
@@ -33,4 +34,4 @@ This directory contains architectural specifications, design decision records, a
 
 1. **Normative Separation**: User-facing entrypoints are [`README.md`](../README.md), [`CONTRIBUTING.md`](../CONTRIBUTING.md), and [`CONVENTION.md`](../CONVENTION.md) in the repository root. Technical deep-dives and ADRs live under `docs/`.
 2. **Zero-Bloat Packaging**: Files under `docs/` are development and governance references tracked in Git; they are never bundled into the production release archive by `tools/winget/build_package.py`.
-3. **Immutability of Ratified Specs**: Ratified documents in `design/` record decisions made at specific milestones. Revisions are proposed via new ADRs rather than silently mutating historical rulings.
+3. **Immutability of Ratified Specs**: Ratified documents and implementation plans in `design/` record decisions made at specific milestones. Revisions are proposed via new ADRs rather than silently mutating historical rulings. The two `blueprint-*.md` files and `component-registry.json` are living status documents: their rules are fixed, their implementation-status columns are updated as code changes.
