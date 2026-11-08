@@ -16,6 +16,10 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 - The same 8 tools now declare an asset pattern, so update discovery can read the new release digest; without it `engram update --check` failed as soon as upstream was newer than a pinned version (found by the release clean-room gate; v3.11.6 was tagged but never published).
 
+## [3.11.6] - YANKED
+
+- Tagged but never published: the release clean-room gate held it. Its fixes ship in 3.11.7.
+
 ## [3.11.5] - 2026-11-01
 
 ### Fixed
@@ -256,3 +260,9 @@ Historical entries are reconstructed from git commits and merged PR titles.
 ## [3.8.0]
 
 - Add provenance and upgrade gates; prune legacy migration (#11, #17-#21).
+
+## Before 3.8.0
+
+Releases 1.0.0 to 3.7.0 predate this file; their notes are the GitHub release
+notes and annotated tags. Known gaps there: 3.2.7 has no checked-in release
+manifest, and 3.6.0 was published without assets (superseded by 3.6.1).

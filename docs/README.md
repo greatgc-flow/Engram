@@ -20,11 +20,14 @@ This directory contains architectural specifications, design decision records, a
 | [`design/blueprint-engram-architecture.md`](design/blueprint-engram-architecture.md) | Architecture Design | Retained Core/Module/Extension classification, invariants, contracts, and G0-G8 gate model with implementation status per rule. |
 | [`design/blueprint-method-and-lifecycle.md`](design/blueprint-method-and-lifecycle.md) | Method & Lifecycle Design | Retained method rules and release lifecycle with implementation status. |
 | [`design/component-registry.json`](design/component-registry.json) | Component Classification Data | Starting point for the unimplemented component boundary tests. |
+| [`design/engram-ux-simplification-RATIFIED-2026-09-12.md`](design/engram-ux-simplification-RATIFIED-2026-09-12.md) | Ratified ADR | UX and structure simplification (round-2 ratification). |
+| [`design/engram-sys-rename-phase4-batch-entrypoint-design-2026-09-20.md`](design/engram-sys-rename-phase4-batch-entrypoint-design-2026-09-20.md) | Implemented Design | `_sys` folder renameability and batch-entrypoint discovery (phase 4). |
+| [`design/engram-env-resilience-design-2026-10-02.md`](design/engram-env-resilience-design-2026-10-02.md) | Implemented Design | Python/venv lifecycle, root relocation and backup retention (v3.6.1). |
+| [`design/plan-deps-latest-2026-10-21.md`](design/plan-deps-latest-2026-10-21.md) | Implementation Plan | Latest validated runtime defaults and dependency PRs (v3.10.0, reference only). |
 | **[`history/`](history/)** | **Historical Archives** | Historical records, backlog migrations, and audit artifacts preserved from repository milestones. |
 | [`history/audit-2026-10.md`](history/audit-2026-10.md) | Historical Audit | October 2026 findings, dispositions, hosted-run lessons, and open maintainer decisions. |
-
-The latest whole-package release review is
-[`history/recursive-mece-release-audit-2026-09-28.md`](history/recursive-mece-release-audit-2026-09-28.md).
+| [`history/recursive-mece-release-audit-2026-09-28.md`](history/recursive-mece-release-audit-2026-09-28.md) | Historical Audit | Whole-package recursive MECE release review (2026-09-28). |
+| [`history/migrated-backlog-open-items.md`](history/migrated-backlog-open-items.md) | Historical Record | The two deferred items kept when the backlog moved to PeerHub (2026-09-20). |
 
 ## Guiding Principles
 
