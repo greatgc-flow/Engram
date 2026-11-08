@@ -67,8 +67,9 @@ explicit `engram open PATH`; relative paths use the caller directory.
 - **Journal and lock.** Environment changes (`repair`, `relocate`, `update --only python|venv|packages`) run under
   the environment lock and write a crash-safe journal (`_sys/data/state/env-op.journal.jsonl`). If one is
   interrupted, every command except `help`, `version`, `doctor`, `isolation`, `repair`, `relocate` and `snapshots`
-  refuses with exit 14 until you run `engram repair --resume` or `--rollback`. `tidy` also skips backups while the lock is held
-  or a journal is open.
+  refuses with exit 14 until you run `engram repair --resume` or `--rollback`.
+  `snapshots restore --apply` runs while a journal is open; the environment lock serialises it (busy: exit 11),
+  and it never overwrites an existing target. `tidy` skips backups while the lock is held or a journal is open.
 - **Personal data reset is limited to snapshot coverage.** `reset` deletes only archived portable files;
   credentials, secrets, uncovered `.engram/` files and workspace projects remain.
   `uninstall --purge-data` requires the folder name typed, even with `--yes`.
@@ -101,7 +102,7 @@ exists, and a pointer to the right help (`Run 'engram <command> --help' for usag
 | 0 | success, nothing to do, or a preview was shown |
 | 1 | failure, including "Engram is not set up" when initialization is required; also AI CLI running refusals and `doctor` findings |
 | 2 | usage error (unknown command, option or argument) |
-| 3 | declined at a prompt (`update`, `reset`, `uninstall`, `tidy --purge-legacy`); repair and relocate use 10 |
+| 3 | declined at a prompt (`update`, `reset`, `uninstall`, `tidy --purge-legacy`); repair, relocate and managed environment updates use 10 |
 | 10 | declined at the prompt (`repair`, `relocate`, `update --only python|venv|packages`) |
 | 11 | precondition failed, nothing was changed (also: no terminal and no `--yes`; `tidy --purge-legacy` refused by the lock or the running interpreter) |
 | 12 | verification failed and the change was rolled back |
@@ -778,8 +779,9 @@ Description:
   moves it into a backup registry under _sys/data/backups/env first. This
   command shows what is there. NAME is the folder name from 'list', or
   KIND/NAME when two kinds share a name. Pinned entries are never removed by
-  'engram tidy'. restore previews by default, never overwrites an existing
-  target, and holds the environment lock. Python and venv backups are
+  'engram tidy'. restore previews by default. It runs while an operation
+  journal is open; the environment lock serialises it (busy: exit 11),
+  and it never overwrites an existing target. Python and venv backups are
   not restorable yet. Keep them; repair fixes the current environment.
 
 Options:

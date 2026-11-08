@@ -7,9 +7,9 @@ Design record: [`design/engram-env-resilience-design-2026-10-02.md`](design/engr
 ## Principles
 
 - **Detect, plan, confirm, apply, verify, commit or roll back.** New plans for `repair`, `relocate`, `tidy`, `restore`,
-  `reset` and `snapshots restore` are a dry run until you pass `--apply`. Managed `engram update` executes after a
-  prompt (`--yes` skips it). Recovery (`repair`/`relocate` `--resume` or `--rollback`) executes directly and rejects
-  `--dry-run` (exit 2).
+  `reset` and `snapshots restore` are a dry run until you pass `--apply`. `engram update` for core, runtimes and
+  tools asks then executes (`--yes` skips the prompt); `--only python|venv|packages` and `--latest` preview until
+  `--yes`. Recovery (`repair`/`relocate` `--resume` or `--rollback`) executes directly and rejects `--dry-run` (exit 2).
 - **Move, never delete.** Anything replaced (Python tree, venv, package list) is moved into a registered backup first.
 - **One commit point.** Each operation writes a journal (`_sys/data/state/env-op.journal.jsonl`). Until it reaches `COMMITTED`
   (or `ROLLED_BACK`), only `help`, `version`, `doctor`, `isolation`, `repair`, `relocate` and `snapshots` run.

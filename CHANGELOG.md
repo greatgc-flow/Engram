@@ -6,6 +6,8 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+## [3.11.8] - 2026-11-09
+
 ### Changed
 
 - `engram repair` / `engram relocate` reject `--dry-run` together with `--resume` or `--rollback` (exit 2) instead of executing recovery despite `--dry-run`; recovery always executes directly.

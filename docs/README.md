@@ -25,6 +25,7 @@ This directory contains architectural specifications, design decision records, a
 | [`design/engram-env-resilience-design-2026-10-02.md`](design/engram-env-resilience-design-2026-10-02.md) | Implemented Design | Python/venv lifecycle, root relocation and backup retention (v3.6.1). |
 | [`design/plan-deps-latest-2026-10-21.md`](design/plan-deps-latest-2026-10-21.md) | Implementation Plan | Latest validated runtime defaults and dependency PRs (v3.10.0, reference only). |
 | **[`history/`](history/)** | **Historical Archives** | Historical records, backlog migrations, and audit artifacts preserved from repository milestones. |
+| [`history/closure-audit-2026-11-09.md`](history/closure-audit-2026-11-09.md) | Historical Audit | November 2026 recursive closure audit: method, per-round scores, fixes and deferrals (v3.11.8). |
 | [`history/audit-2026-10.md`](history/audit-2026-10.md) | Historical Audit | October 2026 findings, dispositions, hosted-run lessons, and maintainer decisions (frozen 2026-10-21). |
 | [`history/handoff-2026-10.md`](history/handoff-2026-10.md) | Historical Record | Per-release maintainer handoff notes v3.9.6 to v3.11.7 (frozen 2026-11-09). |
 | [`history/recursive-mece-release-audit-2026-09-28.md`](history/recursive-mece-release-audit-2026-09-28.md) | Historical Audit | Whole-package recursive MECE release review (2026-09-28). |
