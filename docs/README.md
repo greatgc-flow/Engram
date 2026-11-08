@@ -8,7 +8,9 @@ This directory contains architectural specifications, design decision records, a
 | :--- | :--- | :--- |
 | **[`cli_reference.md`](cli_reference.md)** | **User Guide** | Complete command reference covering every engram verb, option, example, exit code, and safety guarantee. |
 | **[`user_lifecycle_guide.md`](user_lifecycle_guide.md)** | **User Guide** | Personal settings, AI session data, backup, restore, reset, and uninstallation workflows. |
+| **[`isolation_guide.md`](isolation_guide.md)** | **User Guide** | Optional Windows Sandbox and WSL2 isolation features and setup. |
 | **[`env_resilience_guide.md`](env_resilience_guide.md)** | **User Guide** | Python/venv repair, root folder relocation, Python updates, and the backup registry. |
+| **[`maintainer_handoff.md`](maintainer_handoff.md)** | **Maintainer Reference** | Current release recipe, operational pitfalls, and historical handoff notes. |
 | **[`engram-dotdir.md`](engram-dotdir.md)** | **Technical Specification** | Normative specification for `.engram/` dotdir isolation, path resolution, and AI CLI environment redirection. |
 | **[`cp949_verification.md`](cp949_verification.md)** | **Technical Specification** | Architecture and test procedures for CP949 Korean-locale and non-ASCII path resilience. |
 | **[`release_gate.md`](release_gate.md)** | **Release & Governance** | Policy trust root, clean-room verification gates, candidate packaging, and post-release closure audits. |
