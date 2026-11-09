@@ -46,16 +46,78 @@ def _make(sys_dir, tmp_path, kind="venv", label="x", when=NOW, committed=True, s
     return ref
 
 
+def _open_journal(sys_dir, phase="STEPS_RUNNING"):
+    from core import env_ops
+
+    jpath = env_ops.journal_path(sys_dir)
+    jpath.parent.mkdir(parents=True, exist_ok=True)
+    append = env_ops._append_record_fn(jpath, [0], lambda: NOW)  # real writer: records carry a valid CRC
+    append("PHASE", name=phase, op_id="pending", kind="venv")
+    assert (env_ops.active_journal(sys_dir) is not None) == (phase != "ROLLED_BACK")
+
+
+@pytest.mark.parametrize("committed", [True, False])
+def test_snapshots_restore_apply_is_refused_with_14_while_a_journal_is_open(sys_dir, tmp_path, capsys, committed):
+    """#112: an open journal blocks restore --apply (exit 14) and leaves backup and target untouched."""
+    ref = _make(sys_dir, tmp_path, kind="state", label="restore", committed=committed)
+    target = Path(ref.meta["source_path"])
+    _open_journal(sys_dir)
+    result = backups.snapshots_main({"sys_dir": sys_dir, "args": ["restore", ref.path.name, "--apply"]})
+    assert result["exit_code"] == 14
+    out = capsys.readouterr().out
+    assert "engram repair --resume" in out and "engram repair --rollback" in out
+    assert not target.exists() and (ref.path / backups.PAYLOAD / "a.txt").exists()
+
+
+def test_snapshots_restore_dry_run_list_and_show_stay_allowed_while_a_journal_is_open(sys_dir, tmp_path):
+    ref = _make(sys_dir, tmp_path, kind="state", label="restore")
+    _open_journal(sys_dir)
+    for args in (["restore", ref.path.name], ["restore", ref.path.name, "--dry-run"],
+                 ["restore", ref.path.name, "--apply", "--dry-run"], ["list"], ["show", ref.path.name],
+                 ["pin", ref.path.name], ["unpin", ref.path.name]):
+        assert backups.snapshots_main({"sys_dir": sys_dir, "args": args})["status"] == "success", args
+    assert not Path(ref.meta["source_path"]).exists()
+
+
+def test_snapshots_restore_rechecks_the_journal_under_the_lock(sys_dir, tmp_path, monkeypatch):
+    """A journal opened between the first check and taking the lock still refuses (exit 14)."""
+    from core import env_ops
+
+    ref = _make(sys_dir, tmp_path, kind="state", label="restore")
+    answers = iter([None, {"op_id": "started-meanwhile"}])
+    monkeypatch.setattr(env_ops, "active_journal", lambda _sys_dir: next(answers))
+    result = backups.snapshots_main({"sys_dir": sys_dir, "args": ["restore", ref.path.name, "--apply"]})
+    assert result["exit_code"] == 14
+    assert not Path(ref.meta["source_path"]).exists()
+
+
+def test_snapshots_restore_open_journal_wins_over_a_busy_lock(sys_dir, tmp_path):
+    """Order pinned end to end: with a real open journal and the lock held, restore --apply returns 14, not 11."""
+    from core import env_lock
+
+    ref = _make(sys_dir, tmp_path, kind="state", label="restore")
+    _open_journal(sys_dir)
+    with env_lock.guard(sys_dir, "other-operation"):
+        result = backups.snapshots_main({"sys_dir": sys_dir, "args": ["restore", ref.path.name, "--apply"]})
+    assert result["exit_code"] == 14
+    assert not Path(ref.meta["source_path"]).exists()
+
+
+def test_snapshots_restore_validation_errors_precede_the_journal_check(sys_dir, tmp_path):
+    """Precedence: name/kind validation (11) first, then the open-journal refusal (14), then lock/restore (11)."""
+    venv = _make(sys_dir, tmp_path, kind="venv", label="engine-only")
+    _open_journal(sys_dir)
+    assert backups.snapshots_main({"sys_dir": sys_dir, "args": ["restore", "no-such", "--apply"]})["exit_code"] == 11
+    assert backups.snapshots_main({"sys_dir": sys_dir, "args": ["restore", venv.path.name, "--apply"]})["exit_code"] == 11
+
+
 @pytest.mark.parametrize("lock_busy", [False, True])
-def test_snapshots_restore_open_journal_does_not_block_but_lock_returns_11(sys_dir, tmp_path, lock_busy):
+def test_snapshots_restore_after_journal_rolled_back_proceeds_but_lock_returns_11(sys_dir, tmp_path, lock_busy):
     from core import env_lock
 
     ref = _make(sys_dir, tmp_path, kind="state", label="restore")
     target = Path(ref.meta["source_path"])
-    state = sys_dir / "data" / "state"
-    state.mkdir(parents=True, exist_ok=True)
-    (state / "env-op.journal.jsonl").write_text(
-        '{"event":"PHASE","name":"STEPS_RUNNING","op_id":"pending"}\n', encoding="utf-8")
+    _open_journal(sys_dir, phase="ROLLED_BACK")
     with env_lock.guard(sys_dir, "other-operation") if lock_busy else nullcontext():
         result = backups.snapshots_main({"sys_dir": sys_dir, "args": ["restore", ref.path.name, "--apply"]})
     if lock_busy:

@@ -298,6 +298,7 @@ Moves within the same volume are renames. Cross-volume backups fall back to copy
 - **Entry-point gates:** `engram.cmd`, `bootstrap.bat`, `dispatch.bat` check the journal first (X2). At launch only cheap file checks run (journal present -> refuse to launch mutating flows and print the resume command; root mismatch -> one-line hint); no Python probes at launch (D8).
 - **Resume/rollback:** `repair --resume` continues from the last durable record; `--rollback` undoes in reverse using journaled paths. Idempotency: every step has a precondition probe ("already done?").
 - `doctor` never takes the lock and never writes. `engram snapshots restore` for `python`/`venv`/`venv-interp` kinds goes through the same lock + journal (cc.deepthink D10).
+- Current behaviour (v3.11.9, #112): `engram.cmd` lets `snapshots` pass the journal gate for list/show/pin/unpin/preview, but `snapshots restore --apply` itself refuses with exit 14 while a journal is open (checked before and again under the lock); python/venv/venv-interp restores are still refused (engine-only).
 
 ## 10. Commands and UX
 

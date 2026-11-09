@@ -10,10 +10,12 @@ Description:
   moves it into a backup registry under _sys/data/backups/env first. This
   command shows what is there. NAME is the folder name from 'list', or
   KIND/NAME when two kinds share a name. Pinned entries are never removed by
-  'engram tidy'. restore previews by default. It runs while an operation
-  journal is open; the environment lock serialises it (busy: exit 11),
-  and it never overwrites an existing target. Python and venv backups are
-  not restorable yet. Keep them; repair fixes the current environment.
+  'engram tidy'. restore previews by default. restore --apply is refused
+  (exit 14) while an operation journal is open; finish or undo it first
+  (engram repair --resume | --rollback). The environment lock serialises
+  it (busy: exit 11), and it never overwrites an existing target. Python
+  and venv backups are not restorable yet. Keep them; repair fixes the
+  current environment.
 
 Options:
   list             One line per backup: kind, name, state, size, pin
@@ -38,6 +40,8 @@ Exit codes:
   2   usage error (unknown action or option)
   11  failed: no such backup, ambiguous name, target exists, lock busy, or
       restoring this backup kind is not supported yet
+  14  restore --apply refused: an operation journal is open (engram repair);
+      name/kind errors (11) are reported first, the lock (11) is taken after
 
 See also:
   engram tidy      removes expired, unpinned backups

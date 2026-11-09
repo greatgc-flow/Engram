@@ -4,7 +4,7 @@ For AI peer collaboration rules, see [PeerHub docs/HANDOFF.md](https://github.co
 
 ## 1. Release recipe
 
-- Dispatch `refresh-runtimes.yml` from main first (`gh workflow run refresh-runtimes.yml --ref main`). It discovers tracked defaults, bootstraps, runs the full unit suite and required contracts, then creates/updates one PR only on success. Review its versions, hashes, fallback reasons, run URL and exact head before merging; main has no required checks. Never copy developer live declarations into shipped defaults.
+- Dispatch `refresh-runtimes.yml` from main first (`gh workflow run refresh-runtimes.yml --ref main`). It discovers tracked defaults, bootstraps, runs the full unit suite and required contracts, then creates/updates one PR only on success. Review its versions, hashes, fallback reasons, run URL and exact head before merging; main has no required checks. Never copy developer live declarations into shipped defaults. An upstream 5xx (for example HTTP 504) during refresh is not a release hold: rerun it once or twice, then release on the last merged defaults and say so in the release PR (v3.11.9).
 - Check `gh pr list` right before tagging: Dependabot PRs that arrive while a release is in flight are not included, and a merge outside the release PR needs a separate owner go-ahead.
 - Bump `_sys/core/version.json` and write the `CHANGELOG.md` section (it is the release-notes source, see [`release_gate.md`](release_gate.md#release-notes-source)).
 - Generate `_sys/core/release-manifests/<ver>.json` by calling `tools.winget.build_package.create_portable_archive()` directly, verify hashes against the checkout, and delete the temporary ZIP and unversioned manifest.
@@ -45,10 +45,10 @@ For AI peer collaboration rules, see [PeerHub docs/HANDOFF.md](https://github.co
 - Not added as managed tools: zoxide (needs shell init) and 7-Zip (NSIS installer); ouch covers archives but is not `7z.exe`-compatible.
 - Closed as not planned with recorded start triggers: `--require-pinned-sha256` (#94), installed-layout evidence log (#97), `-E`/`-I` on venv pip calls (#79).
 
-## 4. Current state (3.11.8, as of 2026-11-09)
+## 4. Current state (3.11.9, as of 2026-11-09)
 
-- Latest release: v3.11.8 (2026-11-09; closure audit, [`history/closure-audit-2026-11-09.md`](history/closure-audit-2026-11-09.md)), see [`CHANGELOG.md`](../CHANGELOG.md). v3.11.6 was tagged but never published (YANKED).
-- Open issues: #112 (snapshots restore with an open journal: policy decision). Owner follow-ups: live install `engram update --refresh`; T92 per-item host clutter triage ([`history/migrated-backlog-open-items.md`](history/migrated-backlog-open-items.md)); native ACP=949 and prepared-host Sandbox/WSL acceptance need real hosts ([audit D10](history/audit-2026-10.md#4-open-decisions-for-the-maintainer)).
+- Latest published release: v3.11.8. Pending: v3.11.9 (tagged on merge of PR `chore(release): v3.11.9`, 2026-11-09; runtime defaults from the last successful refresh 2026-11-08 16:30Z because three refresh dispatches hit upstream HTTP 504; #112: `snapshots restore --apply` refused with exit 14 while a journal is open, cx/ag/cc unanimous option a). v3.11.8: closure audit ([`history/closure-audit-2026-11-09.md`](history/closure-audit-2026-11-09.md)). See [`CHANGELOG.md`](../CHANGELOG.md). v3.11.6 was tagged but never published (YANKED).
+- Open issues: #112 (closed by the v3.11.9 release PR). Owner follow-ups: live install `engram update --refresh`; T92 per-item host clutter triage ([`history/migrated-backlog-open-items.md`](history/migrated-backlog-open-items.md)); native ACP=949 and prepared-host Sandbox/WSL acceptance need real hosts ([audit D10](history/audit-2026-10.md#4-open-decisions-for-the-maintainer)).
 - Keep the remote at `main` only: delete release/feature/automation branches after merge.
 - One-time owner setup is done: Actions PR creation, dependency graph/alerts/security updates, Dependabot pip for `/` and `/_sys/defaults`.
 - Per-release notes v3.9.6-v3.11.7 are archived in [`history/handoff-2026-10.md`](history/handoff-2026-10.md).
