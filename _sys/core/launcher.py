@@ -248,10 +248,16 @@ def main(ctx: dict) -> None:
         if vscode_exe.exists():
             (vscode_exe.parent / "data").mkdir(parents=True, exist_ok=True)
             provisioner.seed_vscode_default_settings(vscode_exe.parent)
+            try:
+                subprocess.Popen([str(vscode_exe), "."], env=env)
+            except OSError as exc:
+                log(f"[Error] Could not launch VS Code: {exc}")
+                sys.exit(1)
             log(f"[OK] VS Code: {target_dir}")
-            subprocess.Popen([str(vscode_exe), "."], env=env)
         else:
             log(f"[Warning] VS Code not found: {vscode_exe}")
+            if raw_target:
+                sys.exit(1)
 
         if not raw_target:
             print(f"[Sandbox] Ready at {base_dir}")

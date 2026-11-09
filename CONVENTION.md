@@ -1,4 +1,4 @@
-# Portable Dev Environment — Coding Conventions
+# Engram — Coding Conventions
 
 All source code and scripts in this repository must comply with the rules in this document.
 
@@ -6,9 +6,8 @@ All source code and scripts in this repository must comply with the rules in thi
 
 ## 1. Language Policy (CRITICAL)
 
-- **Internal Source & Artifacts**: All code, JSON artifacts, configuration files, comments, commit messages, and system documentation MUST be in **English only**.
-- **User-Facing Output Exception**: User-facing console output (e.g. interactive PowerShell / console prompts delivered directly to the human user) MAY be in Korean.
-- **Rationale**: Preserves token efficiency across developer tooling and prevents encoding/parser defects across multi-byte environments.
+- **Everything in English**: All code, JSON artifacts, configuration files, comments, commit messages, documentation and console output MUST be in **English only**. Exempt: localization payloads (such as the Korean WinGet locale manifest) and non-ASCII path fixtures in tests.
+- **Rationale**: Preserves token efficiency across developer tooling and prevents encoding/parser defects across multi-byte environments (English messages avoid incidental encoding failures on non-UTF-8 code pages, see `docs/history/audit-2026-10.md` lessons).
 
 ---
 
@@ -211,9 +210,7 @@ set "TMP=%DATA_DIR%\temp"
 ```
 
 ### 4.2.1 AI CLI Personal Config: `.engram/`
-Claude Code and Codex's own personal/durable config (memory, settings, session history — not their transient caches, which stay tool-managed inside the same root) is redirected the same way, via `CLAUDE_CONFIG_DIR`/`CODEX_HOME` pointed at `%BASE_DIR%\.engram\{claude,codex}` (declared in `_sys/env.json`'s `tool_env_vars`, applied by `_sys/core/launcher.py`'s `build_env()` — pure env-var redirection, never `subst`/junction). See [`docs/engram-dotdir.md`](docs/engram-dotdir.md) for the full picture, including why `.engram/` is gitignored and never copied wholesale.
-
-Antigravity CLI ignores `GEMINI_DIR`: its settings and state remain under the user profile at `~/.gemini/antigravity-cli`, with login tokens in the OS keyring (Windows Credential Manager). This state and authentication are not portable through `.engram/`; do not override `USERPROFILE`/`HOME` to relocate them.
+AI CLI personal config is redirected the same way (pure env-var redirection into `%BASE_DIR%\.engram\`, never `subst`/junction). Which tools, which variables, and the Antigravity exception are specified once in [`docs/engram-dotdir.md`](docs/engram-dotdir.md).
 
 ### 4.3 Prohibition of Hardcoded Paths
 Do not use literal drive letters (`C:\`, `D:\`). All paths must be dynamically resolved relative to `%BASE_DIR%` or `%SYS_DIR%`.
@@ -230,7 +227,7 @@ When parsing large or untrusted JSON files from PowerShell, avoid `ConvertFrom-J
 - Exceptions (standard repository roots): `README.md`, `CONVENTION.md`, `CONTRIBUTING.md`, `LICENSE`.
 
 ### 5.2 Script Files
-- **PowerShell**: PascalCase (`Install_Menu.ps1`, `Remove_Menu.ps1`).
+- **PowerShell**: lowercase snake_case, like Python modules (`core_update_helper.ps1`, `uninstall_helper.ps1`).
 - **Batch**: All batch files (all under `_sys/`) use lowercase kebab-case (`dispatch.bat`, `bootstrap.bat`).
 
 ### 5.3 Tools Subfolders
@@ -263,15 +260,11 @@ Provides host-specific overrides (e.g. custom workspace directory, proxy setting
 Script and environment lifecycle tests should run inside Windows Sandbox whenever possible:
 - `_sys\tests\run-sandbox-test.bat` (injects `__PORTABLE_ROOT__` into the `.wsb` template — do not launch `sandbox-unit-test.wsb` directly).
 - Host repository is mounted read-only at `C:\PortableDev`.
-- Test outputs write to host `_archive\test-results\` (writable), mapped at `C:\TestResults` inside the sandbox.
+- Test outputs write to host `_sys\data\test-results\` (writable), mapped at `C:\TestResults` inside the sandbox.
 
 ---
 
 ## 8. Known Limitations
 
-Engram surfaces limitation warnings declaratively via `engram doctor`:
-- **Special Characters and Non-ASCII in Install Path**: Paths containing `&`, `%`, `^`, `!`, `(`, `)`, `'` or non-ASCII characters may trigger parsing or expansion failures in batch wrappers, PowerShell, or Node.js-based AI CLIs. Use plain ASCII paths.
-- **Console Code Page**: Non-UTF-8 console code pages (e.g. 949) can cause output garbling in external tools. While Engram sets `PYTHONUTF8=1` for its own processes, host shells should use UTF-8 (`chcp 65001`).
-- **Cloud-Sync Folders**: Installing in folders managed by OneDrive, Dropbox, or Google Drive introduces file locks from sync engines or antivirus scanners, which cause backup, restore, and reset operations to fail closed.
-- **Path Length Near MAX_PATH**: Install paths approaching Windows `MAX_PATH` (260 characters) can exceed limits when deep nested dependencies are unpacked. Maintain short install paths near drive roots.
+Environment limitations are declared once in `_sys/limitations.json`, evaluated by `engram doctor`, and listed for users in [`README.md`](README.md#known-limitations). Add a new limitation there, not here.
 

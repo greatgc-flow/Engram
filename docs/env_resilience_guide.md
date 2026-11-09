@@ -6,10 +6,13 @@ Design record: [`design/engram-env-resilience-design-2026-10-02.md`](design/engr
 
 ## Principles
 
-- **Detect, plan, confirm, apply, verify, commit or roll back.** Every command is a dry run until you pass `--apply`.
+- **Detect, plan, confirm, apply, verify, commit or roll back.** New plans for `repair`, `relocate`, `tidy`, `restore`,
+  `reset` and `snapshots restore` are a dry run until you pass `--apply`. `engram update` for core, runtimes and
+  tools asks then executes (`--yes` skips the prompt); `--only python|venv|packages` and `--latest` preview until
+  `--yes`. Recovery (`repair`/`relocate` `--resume` or `--rollback`) executes directly and rejects `--dry-run` (exit 2).
 - **Move, never delete.** Anything replaced (Python tree, venv, package list) is moved into a registered backup first.
-- **One commit point.** Each operation writes a journal (`_sys/data/state/env-op/`). Until it reaches `COMMITTED`
-  (or `ROLLED_BACK`), only `help`, `version`, `doctor`, `repair`, `relocate` and `snapshots` run.
+- **One commit point.** Each operation writes a journal (`_sys/data/state/env-op.journal.jsonl`). Until it reaches `COMMITTED`
+  (or `ROLLED_BACK`), only `help`, `version`, `doctor`, `isolation`, `repair`, `relocate` and `snapshots` run.
 - **Idempotent and resumable.** Re-running a command after a crash is safe.
 - **Python swaps run from a runner copy.** The running interpreter cannot replace itself on Windows, so the engine
   copies it to `data/temp/env-op/<op>/runner`, exits with code 75, and `dispatch.bat` re-runs the same command there.
@@ -19,7 +22,7 @@ Design record: [`design/engram-env-resilience-design-2026-10-02.md`](design/engr
 
 | Situation | What to run |
 |---|---|
-| `_sys\env\python` deleted, venv kept | `engram repair`, `doctor` and `snapshots` cannot run without the managed Python (they print where to go). Run `_sys\core\bootstrap.bat` first: it keeps the venv, restores Python from the pinned download (verified against a declared hash when available, with a recorded cache hash) and re-verifies the venv. Then run `engram repair` (plan) and `engram repair --apply` if it reports drift. (An interrupted swap with a journal is different: `engram repair --resume/--rollback` runs on the alternate interpreter.) |
+| `_sys\env\python` deleted, venv kept | `engram repair`, `relocate`, `snapshots`, `doctor` and `isolation` cannot run without the managed Python (they print where to go). Run `_sys\core\bootstrap.bat` first: it keeps the venv, restores Python from the pinned download (verified against a declared hash when available, with a recorded cache hash) and re-verifies the venv. Then run `engram repair` (plan) and `engram repair --apply` if it reports drift. (An interrupted swap with a journal is different: `engram repair --resume/--rollback` runs on the alternate interpreter.) |
 | venv broken or points at a missing interpreter | `engram repair --apply` (venv is quarantined as a backup, rebuilt, packages restored from the recorded list) |
 | Folder moved or renamed | `engram relocate` (plan) then `engram relocate --apply`; pass `--from <old path>` if the old path cannot be detected; `--remap-ai-state` rewrites path references in AI CLI state |
 | Python version change | `engram update --only python [--to X.Y.Z] [--force]` (snapshot, swap, venv refresh/rebuild, packages) |
@@ -36,14 +39,14 @@ installs whose paths exist; missing paths are skipped and reported. Failures
 before commit roll back both trees. See the Venv paragraph and package flags
 in [`engram update` help](../_sys/core/help/update.txt).
 
-Useful flags: `--apply`, `--dry-run` (no-op alias of the default), `--yes`/`-y` (skip prompt), `--offline` (use cached download only), `--json`, `--only`. See [`cli_reference.md`](cli_reference.md).
+Useful flags: `--apply`, `--dry-run` (no-op alias of the default for new plans; rejected with recovery flags), `--yes`/`-y` (skip prompt), `--offline` (use cached download only), `--json`, `--only`.
 
-Exit codes: `0` ok, `2` usage, `10` declined, `11` failed/precondition, `12` verification failed, `13` rolled back,
-`14` blocked by a journal or lock, `75` handoff to runner (handled by `dispatch.bat`; not an error).
+Exit codes are listed per command in [`cli_reference.md`](cli_reference.md#exit-codes) (`engram <command> --help`).
+`75` is a hand-off to the runner interpreter, handled by `dispatch.bat`, not an error.
 
 ## Backups and `engram snapshots`
 
-Every replaced item is registered under `_sys/data/backups/<kind>/<name>` with a marker file. Kinds include
+Every replaced item is registered under `_sys/data/backups/env/<kind>/<name>` with a `BACKUP.json` marker. Kinds include
 `python`, `venv`, `venv-freeze` (package list), `venv-interp`, and `state`.
 
 ```
@@ -82,44 +85,7 @@ The full command reference is [`cli_reference.md`](cli_reference.md); every comm
 - Core-update's PowerShell helper still stages its backup under `data/temp/core-update`; the next layout migration run registers it (a later release may write straight into the registry).
 - A root-move hint is only cleared once `engram relocate` / `engram repair` completes.
 
+## Python version updates
 
-Python updates stay within the installed minor by default:
-
-~~~text
-engram update --check --refresh
-Core/tools apply here; python/venv/packages need -o, without tool names.
-
-Python:
-  Installed: 3.13.7
-  Latest patch (same minor): 3.13.9
-  Latest minor: 3.14 (3.14.8)
-  Patch update: engram update -o python -y
-Python 3.14 dependency readiness verified. Next:
-  engram update -o python --latest -y
-
-Next steps:
-  engram update -o python -y
-  engram update -o python --latest -y
-~~~
-
-These versions illustrate the output; discovery supplies the actual releases.
-`engram update --only python` previews the patch plan; add `--yes` to apply.
-`--refresh` bypasses the discovery cache. Offline or failed discovery falls back
-to the pin, keeping the installed version if the pin would downgrade or cross
-a minor. Use `engram update -o python --latest -y` to upgrade to the highest
-stable Python, including minor jumps. Omit `-y` to preview the plan.
-`--latest` requires `--only python` or `--only nodejs`, cannot be combined
-with `--to`, and fails with "latest unavailable" when discovery fails or is
-offline; it never falls back to the pin or downgrades Python. Explicit `--to`
-remains available. Major changes still require `--allow-major-runtime-upgrade`.
-
-Before a minor change, Engram checks the python.org embed zip with HEAD and
-PyPI for compatible Windows amd64 wheels for pywinpty, pydantic-core and psutil.
-Missing checks refuse the update; `--force` overrides that refusal.
-Without a pinned SHA-256, Engram warns that the archive was downloaded over
-HTTPS from python.org and records the computed hash in the journal and output.
-A recorded cache hash still gates reuse; it is not a publisher-provided hash.
-
-Bootstrap installs only the validated `runtimes.json` pin. Newer versions produce
-a notice pointing to `engram update --check`; `--skip-update` skips that notice
-check for compatibility.
+Patch vs minor selection, `--latest`/`--to`, the minor-jump readiness check and the unpinned-hash warning are
+documented once, in the `engram update` section of [`cli_reference.md`](cli_reference.md#engram-update).

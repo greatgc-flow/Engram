@@ -1,6 +1,6 @@
-# Release gate (P0-001)
+# Release gate
 
-## Post-release closure (EN-GAP-P1-006)
+## Post-release closure
 
 `post-release-closure.yml` runs after a successful tag-push `sandbox-gate`
 completion, independently of promotion, and every Friday at 19:00 UTC.
@@ -26,9 +26,8 @@ supplies `digest: sha256:...`; absent digests are errors, with no fallback that
 could silently approve unknown bytes. Frozen relative paths map to uploaded
 basenames because promotion flattens the inventory. Basename collisions,
 missing/extra assets, incomplete uploads, and digest mismatches mean DRIFT.
-This detects the post-publication replacement described in blueprint
-`07_AUDIT/RELEASE_PROVENANCE_FINDING.md` and follows the incident handling in
-`08_LIFECYCLE/RELEASE_PROMOTION_ROLLBACK.md`.
+This detects post-publication asset replacement (gate G8 in
+[`design/blueprint-engram-architecture.md`](design/blueprint-engram-architecture.md)).
 
 The simplest upstream availability proof is
 `gh api repos/microsoft/winget-pkgs/contents/manifests/g/greatgc-flow/Engram/VERSION/greatgc-flow.Engram.yaml`.
@@ -48,10 +47,10 @@ extra, or replaced assets (or the API error). Workflow summaries and the
 uploaded ledger preserve evidence even on failure. No issue is posted
 automatically, and no release assets are modified.
 
-The `Windows Sandbox release and weekly gate` workflow owns tag publication.
-There was no separate release/publish workflow. CI is reusable via
+The `Windows Sandbox release and weekly gate` workflow (`sandbox-gate.yml`) owns tag publication;
+there is no separate release/publish workflow. CI is reusable via
 `workflow_call`; its checks must pass before the candidate is built. Manual and
-weekly runs exercise the same gate but do not publish a release.
+weekly (Saturday 03:00 Asia/Seoul) runs exercise the same gate but do not publish a release.
 
 ### Local pre-release verification
 
@@ -156,7 +155,7 @@ ancestry checks against `origin/main`, the `tools/release_gate/release_policy.js
 and runner evidence metadata. Configure repository access so release writers do
 not bypass this workflow.
 
-## Provider-agnostic clean-room gate (EN-GAP-P1-005)
+## Provider-agnostic clean-room gate
 
 ### Policy trust root (`tools/release_gate/release_policy.json`)
 
@@ -200,7 +199,7 @@ ephemeral VMs using `tools/release_gate/hosted_clean_room.py`.
 
 The self-hosted `clean-room-sandbox` job is gated by `if: ${{ vars.ENGRAM_SANDBOX_RUNNER == 'true' }}` to prevent runs from queuing up to 24 hours and blocking the `engram-sandbox` concurrency group when no runner is registered. Once an interactive `engram-sandbox` runner is registered, enable the job by adding repository variable `ENGRAM_SANDBOX_RUNNER` set to `true` under **Settings > Secrets and variables > Actions > Variables**. When unset or set to any other value, the job is skipped immediately and clean-room validation resolves via `clean-room-hosted`.
 
-## Exact-candidate WinGet smoke (EN-GAP-P1-004)
+## Exact-candidate WinGet smoke
 
 The hosted `winget-smoke` job requires `build-candidate` and runs on
 `windows-latest`. It downloads the frozen artifact, verifies provenance and
@@ -224,18 +223,16 @@ data and snapshots its inventory and bytes. It records a `winget list --scope us
 dump, then uses `winget uninstall --manifest <temp-dir> --scope user
 --accept-source-agreements --disable-interactivity`. Local manifest matching avoids
 relying on a catalog ID or display name; no source filter or force is needed, and
-`--purge` is never used. Hosted run 37993728437 reached uninstall but returned
-0x8A150046: [source agreements were not accepted](https://github.com/microsoft/winget-cli/blob/master/doc/windows/package-manager/winget/returnCodes.md).
-The [uninstall documentation](https://learn.microsoft.com/en-us/windows/package-manager/winget/uninstall)
-supports local manifests and source-agreement acceptance; the specific source
-was not captured in that run (Microsoft Store is a possible cause). Each command
+`--purge` is never used. Source agreements must be accepted on uninstall too (the
+[uninstall documentation](https://learn.microsoft.com/en-us/windows/package-manager/winget/uninstall)
+supports local manifests and source-agreement acceptance; the hosted-run incident behind this rule is in
+[`history/audit-2026-10.md`](history/audit-2026-10.md#field-findings-from-hosted-runs)). Each command
 records its arguments, exit code, stdout and stderr (bounded to 2 KiB per stream)
-in evidence; failure and timeout HOLD reasons include both streams. This retains
-the list dump before uninstall for the next hosted run. WinGet uninstall must exit zero,
+in evidence; failure and timeout HOLD reasons include both streams, and the
+`winget list` dump is retained for the next hosted run. WinGet uninstall must exit zero,
 remove program files and the command alias, and leave `.engram` unchanged.
 If WinGet's portable uninstaller deletes that directory, the gate correctly
-reports HOLD; this change does not alter the installer or runtime to bypass
-that requirement. Installed data preservation passed the tag-triggered WinGet smoke gates for v3.8.0, v3.8.1 and v3.8.2 (cc, `gh`, 2026-10-10).
+reports HOLD; the installer and runtime are never altered to bypass that requirement.
 
 `winget_evidence.json` records PASS only after every assertion, exact candidate
 hashes, false cancellation/skipping flags, and workflow run/attempt. The
@@ -256,7 +253,7 @@ Tests stub CLI execution and cover success, unavailable WinGet, failed settings,
 install/uninstall, incorrect installed bytes/version, remaining files, lost
 user data, evidence hash/identity mismatch, missing flags/files, and timeouts.
 
-## Bounded-HOLD clean-room wait contract (EN-GAP-P1-005)
+## Bounded-HOLD clean-room wait contract
 
 The promotion job executes `.github/scripts/wait_for_sandbox.js` to poll candidate clean-room jobs (`clean-room-sandbox` and `clean-room-hosted`) every 15 seconds up to the policy-defined 45-minute deadline, accepting evidence from either clean-room provider:
 - Successful completion (`status: completed`, `conclusion: success`) on either candidate job logs PASS and resolves immediately.

@@ -6,6 +6,28 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+## [3.11.8] - 2026-11-09
+
+### Changed
+
+- Default VS Code 1.145.2 (validated by the refresh-runtimes workflow; Python 3.15.2, Node.js 26.13.0, Git 2.56.0.windows.4 and PowerShell 7.6.9 were already current).
+- `engram repair` / `engram relocate` reject `--dry-run` together with `--resume` or `--rollback` (exit 2) instead of executing recovery despite `--dry-run`; recovery always executes directly.
+- Option abbreviations (for example `--j` for `--json`) are rejected with exit 2 on `update`, `repair`, `relocate`, `tidy` and `isolation`.
+- `engram open PATH` exits 1 when VS Code is missing (previously a warning with exit 0); a VS Code launch failure also exits 1 with an `[Error]` line instead of a traceback.
+- `engram snapshots list` rejects surplus operands (exit 2) before scanning the registry.
+- Runner and recovery hand-off notices, the "Engram is not set up" error, the other `dispatch.bat` `[Error]` lines and config-load warnings go to stderr, so `--json` output on stdout stays parseable.
+- The `engram update` notice no longer claims the core update finishes when the terminal/VS Code closes; the helper waits for the updater process itself to exit.
+- Help: "Engram is not set up" (exit 1) is stated once as a rule for every command instead of per verb; exit 1 causes added for `open`, `tidy`, `reset`; `engram help` Safety model rewritten; `isolation` listed under Health & repair in README and the CLI reference.
+- Docs consolidated (one fact, one place): maintainer handoff split into current state plus `docs/history/handoff-2026-10.md`; README, CONVENTION, CONTRIBUTING and the guides de-duplicated and corrected.
+
+### Removed
+
+- Undocumented `tidy --base-dir` / `--sys-dir` options.
+
+### Maintainers
+
+- Sandbox test results write to `_sys/data/test-results/` (gitignored) instead of the legacy `_archive/` marker directory.
+
 ## [3.11.7] - 2026-11-01
 
 ### Changed
@@ -15,6 +37,10 @@ Historical entries are reconstructed from git commits and merged PR titles.
 ### Fixed
 
 - The same 8 tools now declare an asset pattern, so update discovery can read the new release digest; without it `engram update --check` failed as soon as upstream was newer than a pinned version (found by the release clean-room gate; v3.11.6 was tagged but never published).
+
+## [3.11.6] - YANKED
+
+- Tagged but never published: the release clean-room gate held it. Its fixes ship in 3.11.7.
 
 ## [3.11.5] - 2026-11-01
 
@@ -256,3 +282,9 @@ Historical entries are reconstructed from git commits and merged PR titles.
 ## [3.8.0]
 
 - Add provenance and upgrade gates; prune legacy migration (#11, #17-#21).
+
+## Before 3.8.0
+
+Releases 1.0.0 to 3.7.0 predate this file; their notes are the GitHub release
+notes and tags. Known gaps there: 3.2.7 has no checked-in release
+manifest, and 3.6.0 was published without assets (superseded by 3.6.1).

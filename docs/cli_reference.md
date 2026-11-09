@@ -17,6 +17,7 @@ Every command belongs to exactly one group.
 | Daily use | [`engram doctor`](#engram-doctor) | Report environment health (read-only) |
 | Daily use | [`engram menu`](#engram-menu) | Manage the Explorer right-click "Open in Engram" entry |
 | Daily use | [`engram version`](#engram-version) | Print the Engram version |
+| Health & repair | [`engram isolation`](#engram-isolation) | Check optional Sandbox and WSL2 providers (read-only) |
 | Health & repair | [`engram repair`](#engram-repair) | Detect and fix environment drift |
 | Health & repair | [`engram relocate`](#engram-relocate) | Re-anchor Engram after the folder moved |
 | Health & repair | [`engram tidy`](#engram-tidy) | Clean temp files, caches and old environment backups |
@@ -42,6 +43,7 @@ explicit `engram open PATH`; relative paths use the caller directory.
 | Fix a broken Python/venv, launchers or manifest | `engram repair`, then `engram repair --apply` |
 | Fix things after moving or renaming the folder | `engram relocate`, then `engram relocate --apply` |
 | Finish or undo an interrupted operation | `engram repair --resume` or `engram repair --rollback` |
+| Check whether Windows Sandbox / WSL2 isolation is available | `engram isolation check` |
 | Reclaim disk space | `engram tidy`, then `engram tidy --apply` |
 | Get rid of leftover `_sys\env\<name>_old` folders | `engram tidy --adopt-legacy --apply` (kept 14 days) or `engram tidy --purge-legacy --apply` (now) |
 | See, protect or restore environment backups | `engram snapshots list`, `pin NAME`, `restore NAME` |
@@ -53,30 +55,36 @@ explicit `engram open PATH`; relative paths use the caller directory.
 
 ## Safety model
 
-- **Preview first.** `tidy`, `repair`, `relocate`, `restore`, `reset` and `snapshots restore` only print a plan until
-  you pass `--apply`. `update` shows its plan and asks; `uninstall` lists what it removes and keeps, then asks.
-  `backup`, `open`, `doctor`, `menu status` and `snapshots list` do not delete anything.
+- **Preview first.** New plans for `tidy`, `repair`, `relocate`, `restore`, `reset` and `snapshots restore` preview
+  until `--apply`. Recovery (`--resume`/`--rollback`) executes directly and rejects `--dry-run` with exit 2.
+  Update core/tools and uninstall execute after a prompt, skipped by `--yes`; managed environment updates and
+  `update --latest` preview until `--yes`. Update offers `--dry-run`/`--check`; uninstall offers `--dry-run`.
+  `backup`, `open`, `doctor`, `isolation check`, `menu status` and `snapshots list` do not delete anything.
 - **Move, never delete.** Replaced Python trees, venvs, package lists and state files are moved into the backup
   registry (`_sys/data/backups/env/<kind>/<name>`, each with a `BACKUP.json` marker) before anything is changed.
   Only `engram tidy` removes registry entries, only expired ones, never pinned or still-pending ones, and
   `tidy --purge-legacy` only ever touches `legacy-old` entries.
 - **Journal and lock.** Environment changes (`repair`, `relocate`, `update --only python|venv|packages`) run under
   the environment lock and write a crash-safe journal (`_sys/data/state/env-op.journal.jsonl`). If one is
-  interrupted, every command except `help`, `version`, `doctor`, `repair`, `relocate` and `snapshots` refuses with
-  exit 14 until you run `engram repair --resume` or `--rollback`. `tidy` also skips backups while the lock is held
-  or a journal is open.
+  interrupted, every command except `help`, `version`, `doctor`, `isolation`, `repair`, `relocate` and `snapshots`
+  refuses with exit 14 until you run `engram repair --resume` or `--rollback`.
+  `snapshots restore --apply` runs while a journal is open; the environment lock serialises it (busy: exit 11),
+  and it never overwrites an existing target. `tidy` skips backups while the lock is held or a journal is open.
 - **Personal data reset is limited to snapshot coverage.** `reset` deletes only archived portable files;
   credentials, secrets, uncovered `.engram/` files and workspace projects remain.
   `uninstall --purge-data` requires the folder name typed, even with `--yes`.
+- **Default adoption and layout maintenance.** `_sys\core\dispatch.bat migrate-layout` explicitly adopts new
+  shipped defaults. Confirmed `engram update` runs layout maintenance automatically without adding new default
+  components (`merge_defaults=False`). Public read-only and preview verbs never trigger this maintenance.
 
 ### Shared flags
 
 | Flag | Meaning everywhere it exists | Where it differs |
 |---|---|---|
-| `--apply` | Execute the planned change. | `update` and `uninstall` have no preview mode, so they do not need it (`uninstall` accepts it as a no-op). |
-| `--dry-run` | Preview only; always wins over `--apply`. A harmless no-op alias on preview-by-default commands. | Not offered on read-only or non-destructive commands (`doctor`, `menu`, `backup`, `open`). |
-| `--yes`, `-y` | Skip the confirmation prompt (for scripts). | `tidy`: only the `--purge-legacy` prompt. `uninstall --purge-data` still require the typed folder name. `update --yes` is what applies the plan. |
-| `--json` | Machine-readable output. | `doctor`, `repair`, `relocate` and `snapshots list` only. |
+| `--apply` | Execute a new plan. | `repair`, `relocate` and `reset` still ask unless `--yes`. Ordinary `tidy`, `restore` and `snapshots restore` do not ask; `tidy --purge-legacy` does. Update uses `--yes` for managed environment plans; uninstall accepts `--apply` as a no-op. |
+| `--dry-run` | Preview only; always wins over `--apply`. | With repair/relocate `--resume` or `--rollback`, usage error (exit 2). Update also offers `--check`; uninstall offers only `--dry-run`. Not offered by `doctor`, `isolation`, `menu`, `backup` or `open`. |
+| `--yes`, `-y` | Skip ordinary confirmation prompts. | Also authorizes managed environment updates and `update --latest`. For tidy, only the legacy-purge prompt. `uninstall --purge-data` still requires the typed folder name. |
+| `--json` | Machine-readable output. | `doctor`, `isolation check`, `repair`, `relocate` and `snapshots list`. |
 | `--only LIST` | Limit to the named parts (comma-separated). | `update`: tools/components; `repair`/`relocate`: python,venv,registry,state,ai-state,manifest,packages; `tidy`: cleanup categories. |
 | `-h`, `--help`, `/?` | Show help; never changes anything. | none |
 
@@ -84,23 +92,25 @@ explicit `engram open PATH`; relative paths use the caller directory.
 
 An unknown command or option prints one `[Error] ...` line, a `Did you mean '...'?` line when something similar
 exists, and a pointer to the right help (`Run 'engram <command> --help' for usage.`), then exits with code `2`.
-There is never a traceback for a usage mistake. `--help` always works, even when Engram is not set up.
+`help` and `version` reject surplus operands the same way. There is never a traceback for a usage mistake.
+`--help` always works, even when Engram is not set up.
 
 ### Exit codes
 
 | Code | Meaning |
 |---|---|
 | 0 | success, nothing to do, or a preview was shown |
-| 1 | failure (also: not set up, refused because an AI CLI is running, `doctor` needs attention) |
+| 1 | failure, including "Engram is not set up" when initialization is required; also AI CLI running refusals and `doctor` findings |
 | 2 | usage error (unknown command, option or argument) |
-| 3 | declined at a prompt (`update`, `reset`, `uninstall`, `tidy --purge-legacy`) |
+| 3 | declined at a prompt (`update`, `reset`, `uninstall`, `tidy --purge-legacy`); repair, relocate and managed environment updates use 10 |
 | 10 | declined at the prompt (`repair`, `relocate`, `update --only python|venv|packages`) |
 | 11 | precondition failed, nothing was changed (also: no terminal and no `--yes`; `tidy --purge-legacy` refused by the lock or the running interpreter) |
 | 12 | verification failed and the change was rolled back |
 | 13 | rollback failed |
 | 14 | an unfinished operation (journal) blocks the request |
 
-Each command lists the codes it can return in its own section below.
+The initialization-failure meaning is common to commands that require setup. Each command adds its specific
+exit-code meanings below.
 
 ## Retired commands
 
@@ -142,7 +152,7 @@ Examples:
 
 Exit codes:
   0   opened (or help shown); scripts return their child exit code
-  1   not set up and setup was declined or failed
+  1   setup declined/failed, or the requested editor could not launch
   2   path not found or unknown option
   14  an interrupted environment operation blocks Engram (run: engram repair)
 
@@ -278,48 +288,12 @@ maintenance.
 ```
 
 
-Python updates stay within the installed minor by default:
+Minor-update readiness probes the embed archive with HEAD and resolves the complete baseline for
+`win_amd64` using managed pip for the target interpreter. A locally computed hash is not a publisher-provided
+digest; unpinned Python archives are fetched over HTTPS from python.org.
 
-~~~text
-engram update --check --refresh
-Core/tools apply here; python/venv/packages need -o, without tool names.
-
-Python:
-  Installed: 3.13.7
-  Latest patch (same minor): 3.13.9
-  Latest minor: 3.14 (3.14.8)
-  Patch update: engram update -o python -y
-Python 3.14 dependency readiness verified. Next:
-  engram update -o python --latest -y
-
-Next steps:
-  engram update -o python -y
-  engram update -o python --latest -y
-~~~
-
-These versions illustrate the output; discovery supplies the actual releases.
-`engram update --only python` previews the patch plan; add `--yes` to apply.
-`--refresh` bypasses the discovery cache. Offline or failed discovery falls back
-to the pin, keeping the installed version if the pin would downgrade or cross
-a minor. Use `engram update -o python --latest -y` to upgrade to the highest
-stable Python, including minor jumps. Omit `-y` to preview the plan.
-`--latest` requires `--only python` or `--only nodejs`, cannot be combined
-with `--to`, and fails with "latest unavailable" when discovery fails or is
-offline; it never falls back to the pin or downgrades Python. Explicit `--to`
-remains available. Major changes still require `--allow-major-runtime-upgrade`.
-
-Before a minor change, Engram checks the python.org embed zip with HEAD and
-managed pip resolution of the complete baseline for the target interpreter.
-`--force` can override planning readiness refusal. Actual staging and package
-restore failures still block the update, and rebuilt venvs must pass pip check.
-Without a pinned SHA-256, Engram warns that the archive was downloaded over
-HTTPS from python.org and records the computed hash in the journal and output.
-A recorded cache hash still gates reuse; it is not a publisher-provided hash.
-
-Bootstrap installs only the validated `runtimes.json` pin. Newer versions produce
-a notice pointing to `engram update --check`; `--skip-update` skips that notice
-check for compatibility.
-
+Bootstrap installs only the validated `runtimes.json` pin. Its newer-version notice points to
+`engram update --check`; `--skip-update` skips that notice check for compatibility.
 
 #### engram doctor
 
@@ -389,7 +363,7 @@ Examples:
 
 Exit codes:
   0   ok
-  1   not set up, or the registry change failed
+  1   the registry change failed
   2   unknown subcommand
   14  an interrupted environment operation blocks Engram (run: engram repair)
 
@@ -429,6 +403,39 @@ See also:
 
 ### Health & repair
 
+#### engram isolation
+
+```text
+engram isolation - Check optional isolation providers
+Usage: engram isolation check [--json]
+
+Description:
+  Read-only probes for Windows Sandbox and WSL2. Missing or disabled optional
+  providers are normal. Reports stable codes and setup guidance; changes no
+  features, distributions, or files. WSL2 retains Windows interop and network
+  access and is not security-equivalent to Windows Sandbox.
+
+Options:
+  --json          Emit provider codes and guidance as JSON (default: off).
+  --help, -h, /?  Show this help (default: off).
+
+Examples:
+  engram isolation check
+  engram isolation check --json
+  engram isolation --help
+
+Exit codes:
+  0  Check completed, including UNAVAILABLE providers; or help printed.
+  1  Internal error (for example, unreadable guidance configuration).
+  2  Usage error (unknown action, option, or surplus argument).
+
+See also:
+  engram doctor --help
+  docs/isolation_guide.md
+```
+
+See the [optional isolation guide](isolation_guide.md) for setup and troubleshooting.
+
 #### engram repair
 
 ```text
@@ -440,12 +447,14 @@ Usage: engram repair [--apply] [--dry-run] [--yes] [--only LIST] [--offline]
 
 Description:
   Finds a broken venv, stale launchers, a missing Python, a missing manifest
-  or stale registry entries and plans the fix. It previews by default: nothing
-  changes until --apply. Every change runs under the environment lock and a
-  crash-safe journal, and replaced Python/venv copies are moved into the
-  backup registry (see 'engram snapshots'), never deleted. If a run is
-  interrupted, other commands refuse to run (exit 14) until you finish it
-  with --resume or undo it with --rollback.
+  or stale registry entries and plans the fix. New plans preview by default:
+  nothing changes until --apply. Recovery executes directly. Every change
+  runs under the environment lock and a crash-safe journal. Replaced
+  Python/venv copies move into the backup registry (see 'engram snapshots'),
+  never deleted. If a run is interrupted, other commands refuse to run
+  (exit 14) until you finish it with --resume or undo it with --rollback.
+  If managed Python is missing, only repair can recover using an alternate
+  interpreter; use engram repair --resume or engram repair --rollback.
   Failed writes after commit exit 1 and keep the updated environment.
   Fix write access or available disk space, then run engram repair --resume.
   Pending writes block new operations; committed swaps cannot be rolled back.
@@ -465,7 +474,8 @@ Description:
 
 Options:
   --apply          Execute the plan (default: off, preview only)
-  --dry-run        Preview only; wins over --apply (default: on)
+  --dry-run        Preview only; wins over --apply (default: on for new plans;
+                   cannot combine with --resume or --rollback)
   --yes, -y        Do not ask for confirmation with --apply (default: ask;
                    without a terminal --yes is required)
   --only LIST      Limit to: python,venv,registry,state,ai-state,manifest,
@@ -520,6 +530,9 @@ Description:
   It runs the same engine and plan as 'engram repair' (plus --from), so the
   safety is identical: preview by default, environment lock, crash-safe
   journal, backups moved into the registry and never deleted.
+  Recovery (--resume/--rollback) executes directly. If managed Python is
+  missing, alternate-interpreter recovery is available only via repair:
+  use engram repair --resume or engram repair --rollback.
   Failed writes after commit exit 1; fix write access or available disk
   space, then run engram repair --resume to retry pending writes.
 
@@ -527,8 +540,10 @@ Options:
   --from OLD_PATH  The previous location, if Engram cannot detect it
                    (default: auto-detected from the manifest)
   --apply          Execute the plan (default: off, preview only)
-  --dry-run        Preview only; wins over --apply (default: on)
-  --yes, -y        Do not ask for confirmation with --apply (default: ask)
+  --dry-run        Preview only; wins over --apply (default: on for new plans;
+                   cannot combine with --resume or --rollback)
+  --yes, -y        Do not ask for confirmation with --apply (default: ask;
+                   without a terminal --yes is required)
   --remap-ai-state Also rewrite folder paths in AI CLI state (default: off)
   --only LIST      Limit to: python,venv,registry,state,ai-state,manifest,
                    packages (default: everything found)
@@ -644,6 +659,7 @@ Examples:
 
 Exit codes:
   0   done, or preview shown
+  1   a legacy purge deletion failed
   2   usage error (unknown option or category)
   3   --purge-legacy declined at the prompt
   11  --purge-legacy refused: environment lock held, or the running Python
@@ -763,8 +779,9 @@ Description:
   moves it into a backup registry under _sys/data/backups/env first. This
   command shows what is there. NAME is the folder name from 'list', or
   KIND/NAME when two kinds share a name. Pinned entries are never removed by
-  'engram tidy'. restore previews by default, never overwrites an existing
-  target, and holds the environment lock. Python and venv backups are
+  'engram tidy'. restore previews by default. It runs while an operation
+  journal is open; the environment lock serialises it (busy: exit 11),
+  and it never overwrites an existing target. Python and venv backups are
   not restorable yet. Keep them; repair fixes the current environment.
 
 Options:
@@ -827,7 +844,8 @@ Examples:
 
 Exit codes:
   0   reset done, or preview shown
-  1   refused (an AI CLI is running)
+  1   refused (an AI CLI is running), safety snapshot verification failed,
+      or deletion failed
   2   usage error
   3   declined at a prompt
   14  an interrupted environment operation blocks Engram (run: engram repair)
@@ -894,42 +912,3 @@ When Engram replaces a runtime (Python, Node.js, Git, VS Code, ...) the previous
    asks `[y/N]` (or use `--yes`), then adopts and deletes all `legacy-old` backups at once. Pinned entries and all
    other backup kinds are never touched. It refuses, and says why, while an operation journal is open (exit 14),
    while the environment lock is held, or if the running Python lives inside what it would delete (exit 11).
-
-Layout migration is explicit: `_sys\core\dispatch.bat migrate-layout` (available to
-installation and maintenance callers). Public read-only and preview verbs never trigger it.
-Help and version reject surplus operands with exit 2.
-
-Backup/restore: empty directories are not preserved. Existing folder backups replace directory payloads, removing stale files. Restore previews create no files or directories. Confirmed updates maintain layout, merge declarations, retire obsolete shipped files, and clean preserved update staging; preview and --check skip this maintenance.
-
-#### engram isolation
-
-```text
-engram isolation - Check optional isolation providers
-Usage: engram isolation check [--json]
-
-Description:
-  Read-only probes for Windows Sandbox and WSL2. Missing or disabled optional
-  providers are normal. Reports stable codes and setup guidance; changes no
-  features, distributions, or files. WSL2 retains Windows interop and network
-  access and is not security-equivalent to Windows Sandbox.
-
-Options:
-  --json          Emit provider codes and guidance as JSON (default: off).
-  --help, -h, /?  Show this help (default: off).
-
-Examples:
-  engram isolation check
-  engram isolation check --json
-  engram isolation --help
-
-Exit codes:
-  0  Check completed, including UNAVAILABLE providers; or help printed.
-  1  Internal error (for example, unreadable guidance configuration).
-  2  Usage error (unknown action, option, or surplus argument).
-
-See also:
-  engram doctor --help
-  docs/isolation_guide.md
-```
-
-See the [optional isolation guide](isolation_guide.md) for setup and troubleshooting.

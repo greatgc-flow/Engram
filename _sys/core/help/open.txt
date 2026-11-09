@@ -26,7 +26,7 @@ Examples:
 
 Exit codes:
   0   opened (or help shown); scripts return their child exit code
-  1   not set up and setup was declined or failed
+  1   setup declined/failed, or the requested editor could not launch
   2   path not found or unknown option
   14  an interrupted environment operation blocks Engram (run: engram repair)
 

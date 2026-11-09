@@ -306,10 +306,56 @@ def test_dispatch_bat_without_exit_75_does_not_rerun(bat_root):
     assert proc.returncode == 0 and "PLAIN" in proc.stdout and "IN_RUNNER" not in proc.stdout
 
 
-def test_dispatch_bat_exit_75_without_a_handoff_file_is_an_error(bat_root):
+def test_dispatch_uninitialized_diagnostics_leave_stdout_empty(bat_root):
+    (bat_root / "_sys" / "env" / "python" / "python.exe").unlink()
+    proc = _run_bat(bat_root / "_sys" / "core" / "dispatch.bat", ["doctor", "--json"], bat_root)
+    assert proc.returncode == 1
+    assert proc.stdout == ""
+    assert "Engram is not set up" in proc.stderr
+    assert "bootstrap.bat" in proc.stderr
+
+
+@pytest.mark.parametrize("verb", ["repair", "relocate"])
+def test_dispatch_runner_handoff_preserves_json_stdout(bat_root, verb):
+    stub = bat_root / "_sys" / "core" / "dispatcher.py"
+    source = stub.read_text(encoding="utf-8")
+    source = source.replace("    print('IN_RUNNER exe=' + sys.executable)\n",
+                            "    print('{\"status\": \"success\"}')\n")
+    source = source.replace("    print('ASSUME_YES=' + os.environ.get('ENGRAM_ASSUME_YES', ''))\n", "")
+    source = source.replace("    print('ARGS=' + ' '.join(sys.argv[1:]))\n", "")
+    source = source.replace("    sys.exit(7)", "    sys.exit(0)").replace("print('FIRST_RUN')\n", "")
+    stub.write_text(source, encoding="utf-8")
+    proc = _run_bat(bat_root / "_sys" / "core" / "dispatch.bat", [verb, "--apply", "--json"], bat_root)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert json.loads(proc.stdout) == {"status": "success"}
+    assert "Continuing on the runner" in proc.stderr
+
+
+@pytest.mark.parametrize("handoff_text,message", [
+    (None, "no handoff file was written"),
+    ("", "handoff file is empty"),
+    ("..\\python.exe\n1\n", "handoff path is not allowed"),
+    ("missing/python.exe\n1\n", "interpreter named by the handoff file does not exist"),
+])
+def test_dispatch_bat_handoff_errors_leave_stdout_empty(bat_root, handoff_text, message):
     (bat_root / "_sys" / "core" / "dispatcher.py").write_text("import sys\nsys.exit(75)\n", encoding="utf-8")
+    if handoff_text is not None:
+        handoff = bat_root / "_sys" / "data" / "state" / "env-op" / "handoff.txt"
+        handoff.parent.mkdir(parents=True)
+        handoff.write_text(handoff_text, encoding="utf-8")
     proc = _run_bat(bat_root / "_sys" / "core" / "dispatch.bat", ["update"], bat_root)
-    assert proc.returncode != 0 and "handoff" in proc.stdout.lower()
+    assert proc.returncode == 1
+    assert proc.stdout == ""
+    assert message in proc.stderr
+
+
+def test_dispatch_missing_recovery_interpreter_leaves_stdout_empty(bat_root):
+    (bat_root / "_sys" / "env" / "python" / "python.exe").unlink()
+    (bat_root / "_sys" / "data" / "state" / "env-op.journal.jsonl").touch()
+    proc = _run_bat(bat_root / "_sys" / "core" / "dispatch.bat", ["repair", "--resume"], bat_root)
+    assert proc.returncode == 1
+    assert proc.stdout == ""
+    assert "No usable Python interpreter" in proc.stderr
 
 
 def test_dispatch_bat_never_loops_when_already_in_the_runner(bat_root):

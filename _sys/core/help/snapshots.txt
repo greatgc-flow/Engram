@@ -10,8 +10,9 @@ Description:
   moves it into a backup registry under _sys/data/backups/env first. This
   command shows what is there. NAME is the folder name from 'list', or
   KIND/NAME when two kinds share a name. Pinned entries are never removed by
-  'engram tidy'. restore previews by default, never overwrites an existing
-  target, and holds the environment lock. Python and venv backups are
+  'engram tidy'. restore previews by default. It runs while an operation
+  journal is open; the environment lock serialises it (busy: exit 11),
+  and it never overwrites an existing target. Python and venv backups are
   not restorable yet. Keep them; repair fixes the current environment.
 
 Options:

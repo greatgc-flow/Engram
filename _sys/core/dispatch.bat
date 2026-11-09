@@ -19,8 +19,8 @@ if not exist "%PY%" (
     if exist "%SYS_DIR%\data\state\env-op.journal.jsonl" (
         if /i "%~1"=="repair" goto :alt_python
     )
-    echo [Error] Portable environment not initialized.
-    echo Please run _sys/core/bootstrap.bat first.
+    echo [Error] Engram is not set up. 1>&2
+    echo Please run _sys/core/bootstrap.bat first. 1>&2
     exit /b 1
 )
 
@@ -34,7 +34,7 @@ if not "%_RC%"=="75" exit /b %_RC%
 :: prepared a runner copy and exited. Re-run the same command line on that runner (design 6.1).
 if "%ENGRAM_IN_RUNNER%"=="1" exit /b 75
 if not exist "%SYS_DIR%\data\state\env-op\handoff.txt" (
-    echo [Error] A runner handoff was requested but no handoff file was written.
+    echo [Error] A runner handoff was requested but no handoff file was written. 1>&2
     exit /b 1
 )
 set "_REL="
@@ -44,21 +44,21 @@ for /f "usebackq skip=1 delims=" %%Y in ("%SYS_DIR%\data\state\env-op\handoff.tx
 del /q "%SYS_DIR%\data\state\env-op\handoff.txt" >nul 2>&1
 :: The handoff names the runner RELATIVE to the sys dir (ASCII): immune to console code pages. Refuse traversal.
 if not defined _REL (
-    echo [Error] The runner handoff file is empty.
+    echo [Error] The runner handoff file is empty. 1>&2
     exit /b 1
 )
 if not "%_REL:..=%"=="%_REL%" (
-    echo [Error] The runner handoff path is not allowed.
+    echo [Error] The runner handoff path is not allowed. 1>&2
     exit /b 1
 )
 set "_RUNNER=%SYS_DIR%\%_REL%"
 if not exist "%_RUNNER%" (
-    echo [Error] The runner interpreter named by the handoff file does not exist.
+    echo [Error] The runner interpreter named by the handoff file does not exist. 1>&2
     exit /b 1
 )
 set "ENGRAM_IN_RUNNER=1"
 if "%_YES%"=="1" set "ENGRAM_ASSUME_YES=1"
-echo [i] Continuing on the runner interpreter so the Python tree can be replaced.
+echo [i] Continuing on the runner interpreter so the Python tree can be replaced. 1>&2
 "%_RUNNER%" "%SYS_DIR%\core\dispatcher.py" %*
 exit /b %errorlevel%
 
@@ -88,10 +88,10 @@ if exist "%SYS_DIR%\env\python.new\python.exe" (
 
 :alt_found
 if not defined PY (
-    echo [Error] No usable Python interpreter was found to recover the interrupted operation.
+    echo [Error] No usable Python interpreter was found to recover the interrupted operation. 1>&2
     exit /b 1
 )
-echo [i] Recovering an interrupted environment operation with an alternate interpreter: %_KIND%
+echo [i] Recovering an interrupted environment operation with an alternate interpreter: %_KIND% 1>&2
 :: an alternate interpreter is already outside the swap targets: never hand off again
 set "ENGRAM_IN_RUNNER=1"
 "%PY%" "%SYS_DIR%\core\dispatcher.py" %*

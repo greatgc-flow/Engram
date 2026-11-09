@@ -27,15 +27,24 @@ Removal:
 Run 'engram <command> --help' (or 'engram help <command>') for the full
 options, examples and exit codes of one command.
 
-Safety model (same words mean the same thing everywhere):
-  --apply      do it. Verbs that change things preview first: tidy, repair,
-               relocate, restore, reset and 'snapshots restore' only show a
-               plan until you pass --apply.
-  --dry-run    preview only; always wins over --apply.
-  --yes, -y    skip the confirmation prompt (for scripts).
-  --json       machine-readable output (doctor, repair, relocate, snapshots).
-  Nothing is deleted without a preview or a prompt; replaced Python/venv
-  copies are moved into a backup registry, never deleted outright.
+Safety model (shared flags and execution rules):
+  --apply      execute a new plan; tidy, repair, relocate, restore, reset and
+               'snapshots restore' preview by default. Repair, relocate and
+               reset still ask unless --yes. Ordinary tidy, restore and
+               snapshots restore do not ask; tidy --purge-legacy asks unless
+               --yes.
+  --dry-run    preview only; always wins over --apply. Cannot be combined
+               with repair/relocate --resume or --rollback (exit 2).
+  --yes, -y    skip ordinary confirmation prompts. Uninstall --purge-data
+               still requires the typed folder name.
+  --json       machine-readable output (doctor, isolation check, repair,
+               relocate and snapshots list).
+  Recovery (--resume/--rollback) executes directly.
+  Update core/tools and uninstall execute after a prompt (--yes skips it).
+  Update --dry-run/--check and uninstall --dry-run preview only. Managed
+  environment updates and update --latest preview until --yes.
+  Menu disable/clean remove entries immediately. Replaced Python/venv copies
+  move into a backup registry, never deleted outright.
 
 Common workflows:
   First time in a new folder:       engram
@@ -52,7 +61,9 @@ Common workflows:
   Start over, keep the programs:    engram reset --apply
   Remove Engram:                    engram uninstall --dry-run, then uninstall
 
-Exit codes (all commands): 0 ok, 1 failed, 2 usage error (unknown command or
-option), 3 declined at a prompt, 10-14 environment operations (see
-'engram repair --help').
+Exit codes (common): 0 ok, 1 failed (including "Engram is not set up" when
+initialization is required), 2 usage error (unknown command or option),
+3 declined at a prompt (repair, relocate and managed environment updates:
+10), 10-14 environment operations (see 'engram repair --help'). Command
+help adds verb-specific meanings.
 Full reference: docs/cli_reference.md

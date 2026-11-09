@@ -32,8 +32,8 @@
             "sha256": "b1f3e52216e2ed6882d1bebfd4d3fdf319bec40d2edbbf9fd26ec4fd3fce7ed1"
         },
         "vscode": {
-            "version": "1.144.0",
-            "url": "https://vscode.download.prss.microsoft.com/dbazure/download/stable/2c33b50b16c472efe58357d1d2a8a5414bc23fbf/VSCode-win32-x64-1.144.0.zip",
+            "version": "1.145.2",
+            "url": "https://vscode.download.prss.microsoft.com/dbazure/download/stable/c4453f8ea430795f941c1b2ff6c9321135a74a02/VSCode-win32-x64-1.145.2.zip",
             "install_mechanism": "zip_tool",
             "archive_layout": "preserve_tree",
             "strip_components": 0,
@@ -42,7 +42,7 @@
             ],
             "discovery_provider": "vscode_official",
             "discovery_id": "win32-x64-archive",
-            "sha256": "055722269e3c9531af0c50a8b757c14e8062a0d02fc973b038863d9732c567ea"
+            "sha256": "33cf166a751090fe7d244bf0e594e3c69c832d5ae2af1769140ad82a35ea1e0b"
         },
         "pwsh": {
             "version": "7.6.9",

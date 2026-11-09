@@ -11,6 +11,9 @@ Description:
   It runs the same engine and plan as 'engram repair' (plus --from), so the
   safety is identical: preview by default, environment lock, crash-safe
   journal, backups moved into the registry and never deleted.
+  Recovery (--resume/--rollback) executes directly. If managed Python is
+  missing, alternate-interpreter recovery is available only via repair:
+  use engram repair --resume or engram repair --rollback.
   Failed writes after commit exit 1; fix write access or available disk
   space, then run engram repair --resume to retry pending writes.
 
@@ -18,8 +21,10 @@ Options:
   --from OLD_PATH  The previous location, if Engram cannot detect it
                    (default: auto-detected from the manifest)
   --apply          Execute the plan (default: off, preview only)
-  --dry-run        Preview only; wins over --apply (default: on)
-  --yes, -y        Do not ask for confirmation with --apply (default: ask)
+  --dry-run        Preview only; wins over --apply (default: on for new plans;
+                   cannot combine with --resume or --rollback)
+  --yes, -y        Do not ask for confirmation with --apply (default: ask;
+                   without a terminal --yes is required)
   --remap-ai-state Also rewrite folder paths in AI CLI state (default: off)
   --only LIST      Limit to: python,venv,registry,state,ai-state,manifest,
                    packages (default: everything found)

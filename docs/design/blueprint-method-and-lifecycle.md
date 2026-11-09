@@ -1,7 +1,7 @@
 # Blueprint Method and Lifecycle Design
 
 Compact synthesis of blueprint design rules, invariants, contracts, and decisions absorbed into Engram.
-For repository background and historical findings, see [README.md](../../README.md), [CONTRIBUTING.md](../../CONTRIBUTING.md), [CONVENTION.md](../../CONVENTION.md), [release_gate.md](release_gate.md), and [audit-2026-10.md](../history/audit-2026-10.md).
+For repository background and historical findings, see [README.md](../../README.md), [CONTRIBUTING.md](../../CONTRIBUTING.md), [CONVENTION.md](../../CONVENTION.md), [release_gate.md](../release_gate.md), and [audit-2026-10.md](../history/audit-2026-10.md).
 
 ## 1. Architecture and Design Invariants
 

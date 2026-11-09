@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "product": "Engram",
-  "as_of": "2026-10-10",
+  "as_of": "2026-11-09",
   "components": [
     {
       "id": "kernel",
@@ -75,7 +75,8 @@
         "_sys/config/isolation-result.schema.json",
         "_sys/config/isolation-profiles/clean-room.json",
         "_sys/config/isolation-profiles/online-test.json",
-        "_sys/config/isolation-profiles/dev.json"
+        "_sys/config/isolation-profiles/dev.json",
+        "_sys/core/isolation_check.py"
       ]
     },
     {
@@ -104,7 +105,8 @@
         "_sys/core/python_manager.py",
         "_sys/core/venv_manager.py",
         "_sys/core/launcher.py",
-        "_sys/start.bat"
+        "_sys/start.bat",
+        "_sys/core/baseline_packages.py"
       ]
     },
     {
@@ -130,7 +132,8 @@
         "_sys/core/updater.py",
         "_sys/core/core_update_helper.ps1",
         "_sys/checks/check_tool_updates.py",
-        "_sys/core/network_tls.py"
+        "_sys/core/network_tls.py",
+        "tools/refresh_runtime_defaults.py"
       ]
     },
     {
@@ -402,7 +405,13 @@
         "tools/winget/build_package.py",
         "tools/winget/build_exe.py",
         "tools/winget/wrapper.cs",
-        "tools/winget/import_legacy_manifest.py"
+        "tools/winget/import_legacy_manifest.py",
+        "_sys/checks/_common.py",
+        "_sys/checks/check_encoding.py",
+        "_sys/checks/check_root_hygiene.py",
+        "_sys/checks/check_unreferenced_functions.py",
+        "_sys/checks/saturation_scan.py",
+        "_sys/checks/saturation-scan.bat"
       ]
     }
   ],

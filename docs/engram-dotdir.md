@@ -4,7 +4,7 @@ Ratified 2026-09-09: [`docs/design/dotdir-consolidation-RATIFIED-2026-09-09.md`]
 
 ## What it is
 
-Claude Code and Codex read and write their personal, durable config — memory, settings, session history, rules, skills — from `<portable-root>/.engram/{claude,codex}/`. Git's global config is also redirected to `.engram/git/.gitconfig` when one exists. PeerHub is a separate product and its configuration and state are deliberately outside Engram's ownership.
+Claude Code, Codex and the GitHub CLI read and write their personal, durable config — memory, settings, session history, rules, skills — from `<portable-root>/.engram/{claude,codex,gh}/`. Git's global config is also redirected to `.engram/git/.gitconfig` when that file exists (`GIT_CONFIG_GLOBAL`; while the file is absent Engram leaves the variable as inherited from the parent environment, so Git keeps whatever global config it had). PeerHub is a separate product and its configuration and state are deliberately outside Engram's ownership.
 
 This happens **automatically**, at every `engram`/`engram open`/environment build — there is nothing to run by hand. It works by setting each managed tool's own config-root environment variable for the launched session (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GH_CONFIG_DIR`), declared in [`_sys/env.json`](../_sys/env.json)'s `tool_env_vars` and resolved by [`_sys/core/launcher.py`](../_sys/core/launcher.py)'s `build_env()`. **No `subst` drive and no directory junction is used for this** — pure environment-variable redirection, so it works identically wherever the portable root happens to sit, with no host-registry or filesystem side effect to clean up on uninstall.
 
@@ -16,19 +16,14 @@ Antigravity CLI (`agy` 1.4.3, verified 2026-10-21) ignores `GEMINI_DIR`. Its set
 
 Consequences:
 - `.engram/` is **gitignored** at the portable root — it is never committed.
-- It is **never copied wholesale** for backup, migration, or sharing. [`_sys/checks/backup_personal_data.py`](../_sys/checks/backup_personal_data.py) exists for exactly this reason: it extracts only the durable, non-secret subset via an explicit named allowlist (never a wholesale directory copy with an exclude list, so a credential file simply has no entry that would ever copy it) into a separate bundle you can actually move around.
-  ```
-  python _sys/checks/backup_personal_data.py --base-dir . --backup --out ./my-backup
-  python _sys/checks/backup_personal_data.py --base-dir . --restore ./my-backup
-  python _sys/checks/backup_personal_data.py --list ./my-backup
-  ```
+- It is **never copied wholesale** for backup, migration, or sharing. `engram backup` and `engram restore` ([`user_lifecycle_guide.md`](user_lifecycle_guide.md)) exist for exactly this reason: they move only the durable, non-secret subset via an explicit named allowlist (never a wholesale directory copy with an exclude list, so a credential file simply has no entry that would ever copy it). The implementation is [`_sys/checks/backup_personal_data.py`](../_sys/checks/backup_personal_data.py), an internal module, not a user entry point.
 - `check_root_hygiene`/`_sys/checks/_common.py`'s vendor-cache allowlist treats `.engram/` the same way it already treats `.claude/`/`.codex/`/`.agy/`/`.peerhub/`/`.vscode/` — a recognized, expected root entry, not hygiene noise.
 
 ## Retired: `.ais/` and `ais-env.bat`
 
-`.ais/` was this feature's first prototype (built during a same-day parallel-install exercise, `<legacy-install-dir>`) — a folder you pointed `CLAUDE_CONFIG_DIR`/`CODEX_HOME` at yourself, by running `ais-env.bat` in every new shell. `.engram/` is the permanent replacement for supported tool config roots, applied automatically (no script to remember to run).
+`.ais/` was this feature's first prototype (built during a same-day parallel-install exercise) — a folder you pointed `CLAUDE_CONFIG_DIR`/`CODEX_HOME` at yourself, by running `ais-env.bat` in every new shell. `.engram/` is the permanent replacement for supported tool config roots, applied automatically (no script to remember to run).
 
-The prototype `.ais/` converter was removed in October 2026. Supported updates start at v3.2.6 (layout v2); older installs require reinstalling Engram, leaving data folders untouched.
+The prototype `.ais/` converter was removed in October 2026; the supported update boundary is stated in [`user_lifecycle_guide.md`](user_lifecycle_guide.md).
 
 ## Global vs. workspace
 

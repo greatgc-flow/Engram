@@ -22,7 +22,7 @@ Examples:
 
 Exit codes:
   0   ok
-  1   not set up, or the registry change failed
+  1   the registry change failed
   2   unknown subcommand
   14  an interrupted environment operation blocks Engram (run: engram repair)
 
