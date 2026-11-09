@@ -40,7 +40,8 @@ Exit codes:
   2   usage error (unknown action or option)
   11  failed: no such backup, ambiguous name, target exists, lock busy, or
       restoring this backup kind is not supported yet
-  14  restore --apply refused: an operation journal is open (engram repair)
+  14  restore --apply refused: an operation journal is open (engram repair);
+      name/kind errors (11) are reported first, the lock (11) is taken after
 
 See also:
   engram tidy      removes expired, unpinned backups

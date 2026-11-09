@@ -47,7 +47,7 @@ For AI peer collaboration rules, see [PeerHub docs/HANDOFF.md](https://github.co
 
 ## 4. Current state (3.11.9, as of 2026-11-09)
 
-- Latest release: v3.11.9 (2026-11-09; #112: `snapshots restore --apply` refused with exit 14 while a journal is open, cx/ag/cc unanimous option a). Previous: v3.11.8 (closure audit, [`history/closure-audit-2026-11-09.md`](history/closure-audit-2026-11-09.md)). See [`CHANGELOG.md`](../CHANGELOG.md). v3.11.6 was tagged but never published (YANKED).
+- Latest release: v3.11.9 (tagged from the `chore(release): v3.11.9` merge, 2026-11-09; #112: `snapshots restore --apply` refused with exit 14 while a journal is open, cx/ag/cc unanimous option a). Previous: v3.11.8 (closure audit, [`history/closure-audit-2026-11-09.md`](history/closure-audit-2026-11-09.md)). See [`CHANGELOG.md`](../CHANGELOG.md). v3.11.6 was tagged but never published (YANKED).
 - Open issues: none. Owner follow-ups: live install `engram update --refresh`; T92 per-item host clutter triage ([`history/migrated-backlog-open-items.md`](history/migrated-backlog-open-items.md)); native ACP=949 and prepared-host Sandbox/WSL acceptance need real hosts ([audit D10](history/audit-2026-10.md#4-open-decisions-for-the-maintainer)).
 - Keep the remote at `main` only: delete release/feature/automation branches after merge.
 - One-time owner setup is done: Actions PR creation, dependency graph/alerts/security updates, Dependabot pip for `/` and `/_sys/defaults`.

@@ -68,8 +68,9 @@ explicit `engram open PATH`; relative paths use the caller directory.
   the environment lock and write a crash-safe journal (`_sys/data/state/env-op.journal.jsonl`). If one is
   interrupted, every command except `help`, `version`, `doctor`, `isolation`, `repair`, `relocate` and `snapshots`
   refuses with exit 14 until you run `engram repair --resume` or `--rollback`.
-  `snapshots` stays usable for list/show/pin/preview, but `snapshots restore --apply` also refuses with exit 14 (#112);
-  otherwise the environment lock serialises it (busy: exit 11), and it never overwrites an existing target. `tidy` skips backups while the lock is held or a journal is open.
+  `snapshots` stays usable for list/show/pin/unpin and the restore preview (`--dry-run` wins over `--apply`), but
+  `snapshots restore --apply` also refuses with exit 14 (#112). Order: name/kind errors (exit 11) first, then the open
+  journal (exit 14, checked again under the lock), then the environment lock (busy: exit 11); it never overwrites an existing target. `tidy` skips backups while the lock is held or a journal is open.
 - **Personal data reset is limited to snapshot coverage.** `reset` deletes only archived portable files;
   credentials, secrets, uncovered `.engram/` files and workspace projects remain.
   `uninstall --purge-data` requires the folder name typed, even with `--yes`.
@@ -809,7 +810,8 @@ Exit codes:
   2   usage error (unknown action or option)
   11  failed: no such backup, ambiguous name, target exists, lock busy, or
       restoring this backup kind is not supported yet
-  14  restore --apply refused: an operation journal is open (engram repair)
+  14  restore --apply refused: an operation journal is open (engram repair);
+      name/kind errors (11) are reported first, the lock (11) is taken after
 
 See also:
   engram tidy      removes expired, unpinned backups

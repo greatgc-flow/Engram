@@ -12,7 +12,8 @@ Design record: [`design/engram-env-resilience-design-2026-10-02.md`](design/engr
   `--yes`. Recovery (`repair`/`relocate` `--resume` or `--rollback`) executes directly and rejects `--dry-run` (exit 2).
 - **Move, never delete.** Anything replaced (Python tree, venv, package list) is moved into a registered backup first.
 - **One commit point.** Each operation writes a journal (`_sys/data/state/env-op.journal.jsonl`). Until it reaches `COMMITTED`
-  (or `ROLLED_BACK`), only `help`, `version`, `doctor`, `isolation`, `repair`, `relocate` and `snapshots` run.
+  (or `ROLLED_BACK`), only `help`, `version`, `doctor`, `isolation`, `repair`, `relocate` and `snapshots` run; `snapshots restore --apply`
+  is refused there too (exit 14, #112), while list/show/pin/unpin and the restore preview stay available.
 - **Idempotent and resumable.** Re-running a command after a crash is safe.
 - **Python swaps run from a runner copy.** The running interpreter cannot replace itself on Windows, so the engine
   copies it to `data/temp/env-op/<op>/runner`, exits with code 75, and `dispatch.bat` re-runs the same command there.

@@ -72,8 +72,31 @@ def test_snapshots_restore_apply_is_refused_with_14_while_a_journal_is_open(sys_
 def test_snapshots_restore_dry_run_list_and_show_stay_allowed_while_a_journal_is_open(sys_dir, tmp_path):
     ref = _make(sys_dir, tmp_path, kind="state", label="restore")
     _open_journal(sys_dir)
-    for args in (["restore", ref.path.name], ["restore", ref.path.name, "--dry-run"], ["list"], ["show", ref.path.name]):
-        assert backups.snapshots_main({"sys_dir": sys_dir, "args": args})["status"] == "success"
+    for args in (["restore", ref.path.name], ["restore", ref.path.name, "--dry-run"],
+                 ["restore", ref.path.name, "--apply", "--dry-run"], ["list"], ["show", ref.path.name],
+                 ["pin", ref.path.name], ["unpin", ref.path.name]):
+        assert backups.snapshots_main({"sys_dir": sys_dir, "args": args})["status"] == "success", args
+    assert not Path(ref.meta["source_path"]).exists()
+
+
+def test_snapshots_restore_rechecks_the_journal_under_the_lock(sys_dir, tmp_path, monkeypatch):
+    """A journal opened between the first check and taking the lock still refuses (exit 14)."""
+    from core import env_ops
+
+    ref = _make(sys_dir, tmp_path, kind="state", label="restore")
+    answers = iter([None, {"op_id": "started-meanwhile"}])
+    monkeypatch.setattr(env_ops, "active_journal", lambda _sys_dir: next(answers))
+    result = backups.snapshots_main({"sys_dir": sys_dir, "args": ["restore", ref.path.name, "--apply"]})
+    assert result["exit_code"] == 14
+    assert not Path(ref.meta["source_path"]).exists()
+
+
+def test_snapshots_restore_validation_errors_precede_the_journal_check(sys_dir, tmp_path):
+    """Precedence: name/kind validation (11) first, then the open-journal refusal (14), then lock/restore (11)."""
+    venv = _make(sys_dir, tmp_path, kind="venv", label="engine-only")
+    _open_journal(sys_dir)
+    assert backups.snapshots_main({"sys_dir": sys_dir, "args": ["restore", "no-such", "--apply"]})["exit_code"] == 11
+    assert backups.snapshots_main({"sys_dir": sys_dir, "args": ["restore", venv.path.name, "--apply"]})["exit_code"] == 11
 
 
 @pytest.mark.parametrize("lock_busy", [False, True])

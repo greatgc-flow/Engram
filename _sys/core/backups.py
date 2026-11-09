@@ -781,11 +781,14 @@ def snapshots_main(ctx: dict) -> dict:
             print("          re-run with --apply to restore")
             return _ok()
         from core import env_ops  # local import, like env_lock above
+        journal_msg = ("An environment operation was interrupted; its journal is still open. "
+                       "Finish or undo it before restoring: engram repair --resume | engram repair --rollback")
         if env_ops.active_journal(sys_dir):
-            return _fail("An environment operation was interrupted; its journal is still open. "
-                         "Finish or undo it before restoring: engram repair --resume | engram repair --rollback", 14)
+            return _fail(journal_msg, 14)
         try:
             with env_lock.guard(sys_dir, f"snapshots-restore-{ref.path.name}"):
+                if env_ops.active_journal(sys_dir):  # recheck under the lock: an operation may have started meanwhile
+                    return _fail(journal_msg, 14)
                 restored = restore(ref)
         except env_lock.EnvLockBusy as exc:
             return _fail(f"environment lock is busy: {exc}")
