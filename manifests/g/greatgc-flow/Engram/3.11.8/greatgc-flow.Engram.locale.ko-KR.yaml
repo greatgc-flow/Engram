@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.1.12.0.schema.json
+
+PackageIdentifier: greatgc-flow.Engram
+PackageVersion: 3.11.8
+PackageLocale: ko-KR
+Publisher: greatgc-flow
+PublisherUrl: https://github.com/greatgc-flow
+PublisherSupportUrl: https://github.com/greatgc-flow/Engram/issues
+PackageName: Engram
+PackageUrl: https://github.com/greatgc-flow/Engram
+License: MIT
+LicenseUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+Copyright: Copyright (c) 2026 greatgc-flow
+CopyrightUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+ShortDescription: Windows용 무설치 포터블 개발 런타임 및 가상 환경 엔진
+Description: Engram은 호스트 설치나 레지스트리 수정 없이 격리된 Python/Node/Git 환경을 제공하는 Windows 전용 독립형 무설치 포터블 런타임 환경입니다. 서드파티 AI CLI 도구의 설치·업데이트·상태 확인을 선택적으로 지원하며, AI 간 협업 자체는 별도의 peerhub 패키지가 담당합니다.
+Tags:
+  - portable
+  - developer-tools
+  - workflow
+  - automation
+  - windows
+  - virtual-environment
+ReleaseNotes: |-
+  ### Changed
+  
+  - Default VS Code 1.145.2 (validated by the refresh-runtimes workflow; Python 3.15.2, Node.js 26.13.0, Git 2.56.0.windows.4 and PowerShell 7.6.9 were already current).
+  - `engram repair` / `engram relocate` reject `--dry-run` together with `--resume` or `--rollback` (exit 2) instead of executing recovery despite `--dry-run`; recovery always executes directly.
+  - Option abbreviations (for example `--j` for `--json`) are rejected with exit 2 on `update`, `repair`, `relocate`, `tidy` and `isolation`.
+  - `engram open PATH` exits 1 when VS Code is missing (previously a warning with exit 0); a VS Code launch failure also exits 1 with an `[Error]` line instead of a traceback.
+  - `engram snapshots list` rejects surplus operands (exit 2) before scanning the registry.
+  - Runner and recovery hand-off notices, the "Engram is not set up" error, the other `dispatch.bat` `[Error]` lines and config-load warnings go to stderr, so `--json` output on stdout stays parseable.
+  - The `engram update` notice no longer claims the core update finishes when the terminal/VS Code closes; the helper waits for the updater process itself to exit.
+  - Help: "Engram is not set up" (exit 1) is stated once as a rule for every command instead of per verb; exit 1 causes added for `open`, `tidy`, `reset`; `engram help` Safety model rewritten; `isolation` listed under Health & repair in README and the CLI reference.
+  - Docs consolidated (one fact, one place): maintainer handoff split into current state plus `docs/history/handoff-2026-10.md`; README, CONVENTION, CONTRIBUTING and the guides de-duplicated and corrected.
+  
+  ### Removed
+  
+  - Undocumented `tidy --base-dir` / `--sys-dir` options.
+  
+  ### Maintainers
+  
+  - Sandbox test results write to `_sys/data/test-results/` (gitignored) instead of the legacy `_archive/` marker directory.
+ReleaseNotesUrl: https://github.com/greatgc-flow/Engram/releases/tag/v3.11.8
+ManifestType: locale
+ManifestVersion: 1.12.0
