@@ -780,6 +780,10 @@ def snapshots_main(ctx: dict) -> dict:
             print(f"[dry-run] would move the payload of {ref.kind}/{ref.path.name} back to {target}")
             print("          re-run with --apply to restore")
             return _ok()
+        from core import env_ops  # local import, like env_lock above
+        if env_ops.active_journal(sys_dir):
+            return _fail("An environment operation was interrupted; its journal is still open. "
+                         "Finish or undo it before restoring: engram repair --resume | engram repair --rollback", 14)
         try:
             with env_lock.guard(sys_dir, f"snapshots-restore-{ref.path.name}"):
                 restored = restore(ref)

@@ -6,6 +6,12 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+## [3.11.9] - 2026-11-09
+
+### Changed
+
+- `engram snapshots restore NAME --apply` is refused with exit 14 while an operation journal is open (#112); finish or undo the interrupted operation first (`engram repair --resume` or `--rollback`). `list`, `show`, `pin`, `unpin` and the restore preview stay available. The previous behaviour could move back a still-pending backup that `repair --rollback` needs.
+
 ## [3.11.8] - 2026-11-09
 
 ### Changed
