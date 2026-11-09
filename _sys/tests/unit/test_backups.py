@@ -91,6 +91,18 @@ def test_snapshots_restore_rechecks_the_journal_under_the_lock(sys_dir, tmp_path
     assert not Path(ref.meta["source_path"]).exists()
 
 
+def test_snapshots_restore_open_journal_wins_over_a_busy_lock(sys_dir, tmp_path):
+    """Order pinned end to end: with a real open journal and the lock held, restore --apply returns 14, not 11."""
+    from core import env_lock
+
+    ref = _make(sys_dir, tmp_path, kind="state", label="restore")
+    _open_journal(sys_dir)
+    with env_lock.guard(sys_dir, "other-operation"):
+        result = backups.snapshots_main({"sys_dir": sys_dir, "args": ["restore", ref.path.name, "--apply"]})
+    assert result["exit_code"] == 14
+    assert not Path(ref.meta["source_path"]).exists()
+
+
 def test_snapshots_restore_validation_errors_precede_the_journal_check(sys_dir, tmp_path):
     """Precedence: name/kind validation (11) first, then the open-journal refusal (14), then lock/restore (11)."""
     venv = _make(sys_dir, tmp_path, kind="venv", label="engine-only")

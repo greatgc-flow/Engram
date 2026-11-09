@@ -79,7 +79,7 @@ the complete reference is [`docs/cli_reference.md`](docs/cli_reference.md).
 | | `tidy` | Clean temp files, caches and expired environment backups (previews until `--apply`). |
 | Backups & state | `backup` | Back up personal AI data (`.engram/`) to a zip. |
 | | `restore PATH` | Restore personal AI data (previews until `--apply`). |
-| | `snapshots` | List, pin and restore environment backups (Python and venv backups are not restorable yet; restore is refused while an interrupted operation's journal is open). |
+| | `snapshots` | List, pin and restore environment backups (Python and venv backups are not restorable yet; `restore --apply` is refused while an interrupted operation's journal is open; the preview stays available). |
 | Removal | `reset` | Delete personal AI data after a safety snapshot (previews until `--apply`). |
 | | `uninstall` | Remove Engram's program files; your data is kept unless `--purge-data`. |
 
