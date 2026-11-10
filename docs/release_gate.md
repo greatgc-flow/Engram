@@ -36,6 +36,14 @@ merged; no PR search is needed. Only an explicit HTTP 404 means `pending`.
 Auth/rate-limit/network errors or malformed responses never mean CLOSED.
 This checks upstream manifest availability, not client index propagation.
 
+WinGet is currently paused by owner decision (2026-11-10, #119):
+`release_policy.json` sets `"winget_channel": "paused"` (allowed `"active"` |
+`"paused"`; absent means `active`; any other value is DRIFT). While paused, digest
+and attestation checks still run and a mismatch is still DRIFT, but a matching
+candidate is CLOSED with WinGet recorded as `paused (owner policy)`: upstream is
+not queried and no pending deadline applies. To re-activate, set
+`"winget_channel": "active"`; the pending/21-day rules above then apply again.
+
 Each candidate gets `post_release_closure.json` containing status, original
 `candidate_sha256s`, `published_digests`, `checked_at`, publication time,
 WinGet availability, deadline, summary, and recheck instructions. CLOSED means
