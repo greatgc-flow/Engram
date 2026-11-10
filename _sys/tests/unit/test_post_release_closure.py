@@ -17,8 +17,15 @@ NOW = datetime(2026, 10, 10, tzinfo=timezone.utc)
 HASH = 'a' * 64
 
 
+SHIPPED_POLICY = json.loads((SCRIPT.parent / 'release_policy.json').read_text(encoding='utf-8'))
+
+
 class ClosureTests(unittest.TestCase):
     def setUp(self):
+        # Behaviour tests run against an active WinGet channel; the shipped policy is paused.
+        patcher = patch.object(closure, 'read_policy', return_value=dict(SHIPPED_POLICY, winget_channel='active'))
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.candidate = {'tag': 'v1.2.3', 'candidate_sha256s': {
             'app.zip': HASH, 'manifests/App.yaml': HASH}}
         self.release = {'tag_name': 'v1.2.3', 'draft': False,
@@ -93,6 +100,68 @@ class ClosureTests(unittest.TestCase):
     def test_pending_expires(self):
         self.release['published_at'] = '2026-09-01T00:00:00Z'
         self.assertEqual(self.check('pending')['status'], 'DRIFT')
+
+    def check_policy(self, channel, release=None, winget=None, **policy):
+        base = closure.read_policy()
+        base['winget_channel'] = channel
+        base.update(policy)
+        calls = []
+        def fetch_winget(version):
+            calls.append(version)
+            return winget or 'pending'
+        result = closure.check_closure(self.candidate,
+            fetch_release=lambda tag: deepcopy(self.release if release is None else release),
+            fetch_winget=fetch_winget, now=NOW, policy=base)
+        return result, calls
+
+    def test_paused_closes_even_past_deadline(self):
+        self.release['published_at'] = '2026-01-01T00:00:00Z'
+        result, calls = self.check_policy('paused')
+        self.assertEqual(result['status'], 'CLOSED')
+        self.assertEqual(result['winget'], 'paused (owner policy)')
+        self.assertIn('WinGet paused (owner policy)', result['summary'])
+        self.assertEqual(calls, [])
+        self.assertEqual(closure.exit_code(result), 0)
+
+    def test_paused_digest_mismatch_is_drift(self):
+        self.release['assets'][0]['digest'] = 'sha256:' + 'b' * 64
+        result, _ = self.check_policy('paused')
+        self.assertEqual(result['status'], 'DRIFT')
+        self.assertIn('published assets differ', result['summary'])
+
+    def test_paused_attestation_failure_is_drift(self):
+        self.candidate['tag'] = self.release['tag_name'] = 'v3.8.1'
+        with patch.object(closure, 'gh_api', side_effect=[
+                dict(self.release, id=1), deepcopy(self.release['assets'])]), \
+                patch.object(closure, 'verify_attestation', side_effect=RuntimeError('attestation verification failed')):
+            policy = dict(closure.read_policy(), winget_channel='paused')
+            result = closure.check_closure(self.candidate, now=NOW, policy=policy,
+                fetch_release=closure.release_fetcher('owner/repo', policy=policy),
+                fetch_winget=lambda _: 'available')
+        self.assertEqual(result['status'], 'DRIFT')
+        self.assertIn('attestation', result['summary'])
+
+    def test_active_channel_is_default_and_unchanged(self):
+        policy = closure.read_policy()
+        policy.pop('winget_channel', None)
+        self.release['published_at'] = '2026-01-01T00:00:00Z'
+        result = closure.check_closure(self.candidate, fetch_release=lambda _: deepcopy(self.release),
+                                       fetch_winget=lambda _: 'pending', now=NOW, policy=policy)
+        self.assertEqual(result['status'], 'DRIFT')
+        self.assertIn('WinGet pending deadline exceeded', result['summary'])
+        result, calls = self.check_policy('active', winget='available')
+        self.assertEqual((result['status'], result['winget'], calls), ('CLOSED', 'available', ['1.2.3']))
+
+    def test_invalid_channel_is_clear_error(self):
+        for value in ('Paused', 'off', None, True):
+            with self.subTest(value=value):
+                result, calls = self.check_policy(value)
+                self.assertEqual(result['status'], 'DRIFT')
+                self.assertIn("winget_channel must be 'active' or 'paused'", result['summary'])
+                self.assertEqual(calls, [])
+
+    def test_shipped_policy_pauses_winget(self):
+        self.assertEqual(SHIPPED_POLICY['winget_channel'], 'paused')
 
     def test_api_errors(self):
         def error(_):

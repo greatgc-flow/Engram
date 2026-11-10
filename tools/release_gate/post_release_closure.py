@@ -98,6 +98,9 @@ def check_closure(candidate, *, fetch_release, fetch_winget, now=None, pending_d
                 'published_digests': {}, 'checked_at': now.isoformat(),
                 'winget': 'unknown', 'recheck': 'weekly post-release-closure.yml or workflow_dispatch'}
     try:
+        channel = policy.get('winget_channel', 'active')
+        if channel not in ('active', 'paused'):
+            raise ValueError("winget_channel must be 'active' or 'paused'")
         tag = candidate.get('tag')
         if not isinstance(tag, str) or not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?', tag):
             raise ValueError('invalid version tag')
@@ -139,18 +142,21 @@ def check_closure(candidate, *, fetch_release, fetch_winget, now=None, pending_d
             extra = sorted(set(actual) - set(expected))
             replaced = sorted(name for name in expected.keys() & actual.keys() if expected[name] != actual[name])
             raise ValueError(f'published assets differ: missing={missing}, extra={extra}, replaced={replaced}')
-        winget = fetch_winget(tag[1:])
-        evidence['winget'] = winget
-        deadline = published_at + timedelta(days=pending_days)
-        evidence['pending_deadline'] = deadline.isoformat()
-        if winget == 'available':
+        if channel == 'paused':
+            winget = evidence['winget'] = 'paused (owner policy)'
             evidence['status'] = 'CLOSED'
-        elif winget == 'pending' and now < deadline:
-            evidence['status'] = 'OPEN_PENDING'
-        elif winget == 'pending':
-            raise ValueError('WinGet pending deadline exceeded')
         else:
-            raise ValueError('unknown WinGet availability')
+            winget = evidence['winget'] = fetch_winget(tag[1:])
+            deadline = published_at + timedelta(days=pending_days)
+            evidence['pending_deadline'] = deadline.isoformat()
+            if winget == 'available':
+                evidence['status'] = 'CLOSED'
+            elif winget == 'pending' and now < deadline:
+                evidence['status'] = 'OPEN_PENDING'
+            elif winget == 'pending':
+                raise ValueError('WinGet pending deadline exceeded')
+            else:
+                raise ValueError('unknown WinGet availability')
         evidence['summary'] = f'{evidence["status"]}: {tag}; published hashes match; WinGet {winget}'
         if predates_attestation:
             evidence['summary'] += '; attestation: ' + evidence['attestation']

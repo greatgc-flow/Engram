@@ -6,6 +6,10 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+### Changed
+
+- Post-release closure: new `winget_channel` release policy (`active` | `paused`, default `active`). The WinGet channel is paused by owner decision (#119); a candidate whose published digests and attestation verify is CLOSED with WinGet recorded as `paused (owner policy)` instead of OPEN_PENDING/DRIFT. Set `"winget_channel": "active"` to re-activate.
+
 ## [3.11.9] - 2026-11-09
 
 ### Changed

@@ -40,7 +40,8 @@ For AI peer collaboration rules, see [PeerHub docs/HANDOFF.md](https://github.co
 - Shipped Python defaults select latest stable; wheel incompatibility alone permits current-minor patch fallback. Node selects supported LTS. Fresh pip provisioning uses direct manifest pins; repair and snapshot restore keep their package policy.
 - Isolation `run` and an AI Skill are DEFERRED until a tracked request, a concrete caller/command, a reason existing workflows fail, and a supported host for live acceptance exist. Isolation is not in release gates.
 - A shared cross-AI memory folder/junction/standing-instruction scheme was tried and rejected by the owner (no junctions or subst) - do not retry.
-- WinGet manifests for 3.9.6-3.10.0 were deliberately not generated (owner choice); post-release closure may report DRIFT for them. Manifests resumed with 3.11.0.
+- WinGet manifests for 3.9.6-3.10.0 were deliberately not generated (owner choice). Manifests resumed with 3.11.0.
+- WinGet channel PAUSED by owner decision 2026-11-10 (#119): `release_policy.json` `"winget_channel": "paused"`; post-release closure treats WinGet as not submitted (CLOSED, "paused (owner policy)") once digests and attestation pass. Only G8 closure is paused: `winget-smoke` and manifest generation keep running. Re-activate with `"winget_channel": "active"` (see [`release_gate.md`](release_gate.md)).
 - Code signing / Defender false-positive submission for Engram.exe: #63 closed as not planned; reopen if users report AV blocks.
 - Not added as managed tools: zoxide (needs shell init) and 7-Zip (NSIS installer); ouch covers archives but is not `7z.exe`-compatible.
 - Closed as not planned with recorded start triggers: `--require-pinned-sha256` (#94), installed-layout evidence log (#97), `-E`/`-I` on venv pip calls (#79).

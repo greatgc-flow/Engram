@@ -5,6 +5,7 @@
   ],
   "evidence_wait_minutes": 45,
   "evidence_poll_seconds": 15,
+  "winget_channel": "paused",
   "winget_pending_days": 21,
   "closure_retention_days": 90,
   "attestation_required_from": "3.8.1",

@@ -36,9 +36,20 @@ merged; no PR search is needed. Only an explicit HTTP 404 means `pending`.
 Auth/rate-limit/network errors or malformed responses never mean CLOSED.
 This checks upstream manifest availability, not client index propagation.
 
+WinGet is currently paused by owner decision (2026-11-10, #119):
+`release_policy.json` sets `"winget_channel": "paused"` (allowed `"active"` |
+`"paused"`; absent means `active`; any other value is DRIFT). While paused, digest
+and attestation checks still run and a mismatch is still DRIFT, but a matching
+candidate is CLOSED with WinGet recorded as `paused (owner policy)`: upstream is
+not queried and no pending deadline applies. To re-activate, set
+`"winget_channel": "active"`; the pending/21-day rules above then apply again, so
+older releases without upstream manifests (3.8.0-3.10.0) report DRIFT again. The
+pause affects only this G8 closure: the `winget-smoke` gate (and its mandatory
+`--winget-evidence`) and manifest generation keep running.
+
 Each candidate gets `post_release_closure.json` containing status, original
 `candidate_sha256s`, `published_digests`, `checked_at`, publication time,
-WinGet availability, deadline, summary, and recheck instructions. CLOSED means
+WinGet availability, deadline (absent while paused), summary, and recheck instructions. CLOSED means
 exact inventory/digest equality and upstream availability. OPEN_PENDING is
 non-failing only while digests match and publication is less than 21 days old.
 Weekly/manual rechecks resolve pending; at 21 days it becomes DRIFT until
@@ -305,8 +316,8 @@ test dependencies, and runs the full unit/lifecycle/path suite. Hosted adds no
 source suite; archive integrity and fresh-root checks precede its installed suite.
 
 `tools/release_gate/release_policy.json` owns `evidence_wait_minutes: 45`,
-`evidence_poll_seconds: 15`, `winget_pending_days: 21`, and
-`closure_retention_days: 90`. The wait script, closure tool, and ledger upload
+`evidence_poll_seconds: 15`, `winget_channel: paused`, `winget_pending_days: 21`,
+and `closure_retention_days: 90`. The wait script, closure tool, and ledger upload
 read these values. Workflow job timeouts and the wait step's outer 46-minute
 safety timeout remain fixed; making YAML timeout expressions consume checkout
 files would require additional job-output plumbing. They must be reviewed if
