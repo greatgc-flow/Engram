@@ -143,24 +143,20 @@ def check_closure(candidate, *, fetch_release, fetch_winget, now=None, pending_d
             replaced = sorted(name for name in expected.keys() & actual.keys() if expected[name] != actual[name])
             raise ValueError(f'published assets differ: missing={missing}, extra={extra}, replaced={replaced}')
         if channel == 'paused':
-            evidence['winget'] = 'paused (owner policy)'
+            winget = evidence['winget'] = 'paused (owner policy)'
             evidence['status'] = 'CLOSED'
-            evidence['summary'] = f'CLOSED: {tag}; published hashes match; WinGet {evidence["winget"]}'
-            if predates_attestation:
-                evidence['summary'] += '; attestation: ' + evidence['attestation']
-            return evidence
-        winget = fetch_winget(tag[1:])
-        evidence['winget'] = winget
-        deadline = published_at + timedelta(days=pending_days)
-        evidence['pending_deadline'] = deadline.isoformat()
-        if winget == 'available':
-            evidence['status'] = 'CLOSED'
-        elif winget == 'pending' and now < deadline:
-            evidence['status'] = 'OPEN_PENDING'
-        elif winget == 'pending':
-            raise ValueError('WinGet pending deadline exceeded')
         else:
-            raise ValueError('unknown WinGet availability')
+            winget = evidence['winget'] = fetch_winget(tag[1:])
+            deadline = published_at + timedelta(days=pending_days)
+            evidence['pending_deadline'] = deadline.isoformat()
+            if winget == 'available':
+                evidence['status'] = 'CLOSED'
+            elif winget == 'pending' and now < deadline:
+                evidence['status'] = 'OPEN_PENDING'
+            elif winget == 'pending':
+                raise ValueError('WinGet pending deadline exceeded')
+            else:
+                raise ValueError('unknown WinGet availability')
         evidence['summary'] = f'{evidence["status"]}: {tag}; published hashes match; WinGet {winget}'
         if predates_attestation:
             evidence['summary'] += '; attestation: ' + evidence['attestation']
