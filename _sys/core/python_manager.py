@@ -23,6 +23,51 @@ def failure_reason(value) -> str:
     return text[:237] + "..." if len(text) > 240 else text
 
 
+def dependency_failure_reason(output: str) -> str:
+    """Keep the offending requirement without exposing a whole pip transcript."""
+    reason = "no compatible dependency set"
+    output = re.sub(r"\x1b\].*?(?:\x07|\x1b\\)", "", str(output), flags=re.DOTALL)
+    output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)
+    output = "".join(char for char in output if char.isprintable() or char in "\r\n\t")
+    lines = [" ".join(line.split()) for line in output.splitlines()]
+    detail = ""
+    for pattern in (
+        r"No matching distribution found for .+",
+        r"Could not find a version that satisfies the requirement .+",
+        r"Package .+ requires a different Python:.+",
+    ):
+        match = next((match for line in lines
+                      if (match := re.search(pattern, line, re.IGNORECASE))), None)
+        if match:
+            detail = re.split(r" \(from versions:", match.group(),
+                              maxsplit=1, flags=re.IGNORECASE)[0]
+            break
+    if not detail:
+        for index, line in enumerate(lines):
+            if line.lower() == "the conflict is caused by:":
+                causes = []
+                for cause in lines[index + 1:]:
+                    if not cause or cause.lower().startswith(("error:", "to fix")):
+                        break
+                    causes.append(cause)
+                    if len(causes) == 3:
+                        break
+                detail = "; ".join(causes)
+                break
+    if not detail:
+        match = re.search(r"Cannot install [^\n]+ because these package versions "
+                          r"have conflicting dependencies\.?", output, re.IGNORECASE)
+        detail = match.group() if match else ""
+    if not detail:
+        return reason
+    # Sanitize each URL before truncation; query/fragment values are not useful
+    # for diagnosing a requirement and may contain private index credentials.
+    detail = re.sub(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s<>'\"]+",
+                    lambda match: venv_manager.sanitize_url(match.group()).split("?", 1)[0]
+                    .split("#", 1)[0], detail)
+    return failure_reason(f"{reason}: {detail}")
+
+
 def preflight_restore(executable: Path, snapshot: dict, *, runner: Runner,
                       offline=False, parent: Path | None = None) -> None:
     """Resolve on the target interpreter, with isolated editable metadata builds.
@@ -67,7 +112,7 @@ def preflight_restore(executable: Path, snapshot: dict, *, runner: Runner,
             elif any(token in lower for token in (
                     "resolutionimpossible", "conflicting dependencies",
                     "no matching distribution", "different python")):
-                reason = "no compatible dependency set"
+                reason = dependency_failure_reason(output)
             else:
                 reason = "pip resolver failed: " + failure_reason(output or f"exit {rc}")
             raise RuntimeError(reason)

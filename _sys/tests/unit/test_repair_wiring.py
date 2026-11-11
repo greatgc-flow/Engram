@@ -354,7 +354,7 @@ def test_minor_preflight_resolves_target_patch_and_complete_baseline_once():
 def test_minor_preflight_dependency_and_requires_python_exclusion_block(output):
     result = _resolve(code=1, output=output)
     assert result.state == "blocked"
-    assert result.reason == "no compatible dependency set"
+    assert result.reason.startswith("no compatible dependency set")
 
 
 @pytest.mark.parametrize("output", [

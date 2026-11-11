@@ -492,7 +492,7 @@ def _python_minor_preflight(target: str, url: str, *, managed_python: Path,
                        "conflicting dependencies")
     if (any(marker in lower for marker in incompatibility)
             or re.search(r"error:.*requires a different python", lower)):
-        return result("blocked", "no compatible dependency set")
+        return result("blocked", python_manager.dependency_failure_reason(output))
     return result("unverifiable", "pip resolver failed: " + (output.strip() or
                   f"exit {resolved.returncode}"))
 
