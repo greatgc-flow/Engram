@@ -231,6 +231,17 @@ Venv:
   Failed pin/manifest writes after commit exit 1 and keep the update.
   Fix write access or available disk space, then run engram repair --resume.
 
+Python dependency blocks:
+  Minor updates preserve the installed baseline package versions. An older
+  package may lack a wheel for the new Python even when a newer package works.
+  The warning includes the failing requirement or dependency conflict when
+  pip supplies one. Update the baseline, then re-check the target:
+    engram update -o packages -y
+    engram update -o python --latest --refresh --check
+  If readiness succeeds, apply with engram update -o python --latest -y,
+  then run engram doctor. If it still blocks, use the reported requirement
+  to investigate; --force does not make incompatible packages compatible.
+
 Options:
   --yes, -y        Apply without asking (default: plan for Python or --latest;
                    otherwise ask first)
