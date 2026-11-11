@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
+
+PackageIdentifier: greatgc-flow.Engram
+PackageVersion: 3.11.10
+PackageLocale: en-US
+Publisher: greatgc-flow
+PublisherUrl: https://github.com/greatgc-flow
+PublisherSupportUrl: https://github.com/greatgc-flow/Engram/issues
+PackageName: Engram
+PackageUrl: https://github.com/greatgc-flow/Engram
+License: MIT
+LicenseUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+Copyright: Copyright (c) 2026 greatgc-flow
+CopyrightUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+ShortDescription: Portable Developer Runtime & Virtual Environment Engine for Windows
+Description: Engram is a zero-bloat, self-contained Windows portable runtime environment that provides isolated Python/Node/Git environments without requiring host installation or registry changes. It can optionally install, update, and manage the status of third-party AI CLI tools, but all AI-to-AI collaboration itself is handled by the separate peerhub package.
+Moniker: engram
+Tags:
+  - portable
+  - developer-tools
+  - workflow
+  - automation
+  - windows
+  - virtual-environment
+ReleaseNotes: |-
+  ### Changed
+  
+  - Python minor updates that cannot resolve the installed packages now name the blocker: the warning keeps `no compatible dependency set` and adds the failing requirement or dependency conflict pip reported (for example `No matching distribution found for pywinpty==3.0.2`), in both the update readiness check and the staged-interpreter restore preflight. Terminal control sequences and URL credentials, queries and fragments are removed and the text stays bounded. `engram update --help` and the CLI reference give the recovery order: update the baseline packages, re-check the target, then apply Python and run `engram doctor` (#121).
+  - Default runtimes (validated by the refresh-runtimes workflow): Git 2.56.1.windows.1, VS Code 1.145.3 and PowerShell 7.7.0; Python 3.15.2 and Node.js 26.13.0 were already current (#122).
+  - Post-release closure: new `winget_channel` release policy (`active` | `paused`, default `active`). The WinGet channel is paused by owner decision (#119); a candidate whose published digests and attestation verify is CLOSED with WinGet recorded as `paused (owner policy)` instead of OPEN_PENDING/DRIFT. Set `"winget_channel": "active"` to re-activate.
+ReleaseNotesUrl: https://github.com/greatgc-flow/Engram/releases/tag/v3.11.10
+ManifestType: defaultLocale
+ManifestVersion: 1.12.0
