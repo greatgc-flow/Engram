@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
+
+PackageIdentifier: greatgc-flow.Engram
+PackageVersion: 3.11.10
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+  - RelativeFilePath: Engram.exe
+    PortableCommandAlias: engram
+ReleaseDate: 2026-11-11
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/greatgc-flow/Engram/releases/download/v3.11.10/Engram-v3.11.10-portable-x64.zip
+    InstallerSha256: 614C46AA52AF1C9087AA341DE176D4FD927A7EB810AD668B8085A7A1184BD82B
+ManifestType: installer
+ManifestVersion: 1.12.0
