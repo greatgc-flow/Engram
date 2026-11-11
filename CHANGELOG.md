@@ -6,8 +6,12 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+## [3.11.10] - 2026-11-11
+
 ### Changed
 
+- Python minor updates that cannot resolve the installed packages now name the blocker: the warning keeps `no compatible dependency set` and adds the failing requirement or dependency conflict pip reported (for example `No matching distribution found for pywinpty==3.0.2`), in both the update readiness check and the staged-interpreter restore preflight. Terminal control sequences and URL credentials, queries and fragments are removed and the text stays bounded. `engram update --help` and the CLI reference give the recovery order: update the baseline packages, re-check the target, then apply Python and run `engram doctor` (#121).
+- Default runtimes (validated by the refresh-runtimes workflow): Git 2.56.1.windows.1, VS Code 1.145.3 and PowerShell 7.7.0; Python 3.15.2 and Node.js 26.13.0 were already current (#122).
 - Post-release closure: new `winget_channel` release policy (`active` | `paused`, default `active`). The WinGet channel is paused by owner decision (#119); a candidate whose published digests and attestation verify is CLOSED with WinGet recorded as `paused (owner policy)` instead of OPEN_PENDING/DRIFT. Set `"winget_channel": "active"` to re-activate.
 
 ## [3.11.9] - 2026-11-09
