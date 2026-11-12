@@ -23,12 +23,42 @@ def failure_reason(value) -> str:
     return text[:237] + "..." if len(text) > 240 else text
 
 
+def _dependency_output(output: str) -> str:
+    output = re.sub(r"\x1b\].*?(?:\x07|\x1b\\)", "", str(output), flags=re.DOTALL)
+    output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)
+    return "".join(char for char in output if char.isprintable() or char in "\r\n\t")
+
+
+def dependency_failure_kind(output: str) -> str:
+    """Advisory only: require one explicit pip diagnostic category, never guess."""
+    patterns = {
+        "no_wheel_for_target": (
+            r"^ERROR: (?:No matching distribution found for |"
+            r"Could not find a version that satisfies the requirement )\S.*"),
+        "requires_different_python": (
+            r"^ERROR: Package .+ requires a different Python:.+|"
+            r"^ERROR: Ignored the following versions that require a different python version:|"
+            r"^ERROR: Packages require a different Python\."),
+        "dependency_conflict": (
+            r"^ERROR: Cannot install .+ because these package versions "
+            r"have conflicting dependencies\.?$|^The conflict is caused by:$"),
+        "network_or_index": (
+            r"^(?:WARNING: Retrying .*(?:connection broken|ProxyError|SSLError)|"
+            r"(?:ERROR: )?Could not fetch URL .+|"
+            r"ERROR: (?:(?:ConnectionError|ProxyError|SSLError)(?:\(|:)|"
+            r"[45]\d\d (?:Client|Server) Error\b))"),
+        "resolver_failure": r"^ERROR: ResolutionTooDeep\b",
+    }
+    output = "\n".join(" ".join(line.split()) for line in _dependency_output(output).splitlines())
+    kinds = [kind for kind, pattern in patterns.items()
+             if re.search(pattern, output, re.IGNORECASE | re.MULTILINE)]
+    return kinds[0] if len(kinds) == 1 else "unknown"
+
+
 def dependency_failure_reason(output: str) -> str:
     """Keep the offending requirement without exposing a whole pip transcript."""
     reason = "no compatible dependency set"
-    output = re.sub(r"\x1b\].*?(?:\x07|\x1b\\)", "", str(output), flags=re.DOTALL)
-    output = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", output)
-    output = "".join(char for char in output if char.isprintable() or char in "\r\n\t")
+    output = _dependency_output(output)
     lines = [" ".join(line.split()) for line in output.splitlines()]
     detail = ""
     for pattern in (

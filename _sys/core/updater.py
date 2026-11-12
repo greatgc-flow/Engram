@@ -98,11 +98,15 @@ def _parse_args(args: list[str]) -> argparse.Namespace:
     parser.add_argument("--all-packages", action="store_true")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--offline", action="store_true")
+    parser.add_argument("--json", action="store_true")
     parsed = parser.parse_args(args)
     if parsed.latest and check_tool_updates.normalize_only_list(parsed.only) not in (["python"], ["nodejs"]):
         parser.error("--latest requires exactly one component: "
                      "engram update --latest --only python or "
                      "engram update --latest --only nodejs")
+    if parsed.json and (not parsed.only or not set(
+            check_tool_updates.normalize_only_list(parsed.only) or ()) <= _ENV_COMPONENTS):
+        parser.error("--json requires --only python, venv or packages")
     return parsed
 
 

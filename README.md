@@ -107,6 +107,18 @@ engram reset --apply                    :: start over, keep the programs
 engram uninstall --dry-run              :: preview removal, then run 'engram uninstall'
 ```
 
+If a Python minor update is blocked by dependencies, the new Python is not broken;
+the currently installed package versions could not be carried over. Update packages
+and re-check first:
+
+```bat
+engram update -o packages -y
+engram update -o python --latest --refresh --check
+```
+
+Only if that check passes, run `engram update -o python --latest -y`, then
+`engram doctor`. If it still blocks, investigate the reported requirement or conflict.
+
 Exit codes and the retired verbs (each prints its replacement and exits 2) are listed once in
 [`docs/cli_reference.md`](docs/cli_reference.md#exit-codes).
 
