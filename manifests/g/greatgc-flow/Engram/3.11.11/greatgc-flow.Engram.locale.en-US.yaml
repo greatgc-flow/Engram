@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
+
+PackageIdentifier: greatgc-flow.Engram
+PackageVersion: 3.11.11
+PackageLocale: en-US
+Publisher: greatgc-flow
+PublisherUrl: https://github.com/greatgc-flow
+PublisherSupportUrl: https://github.com/greatgc-flow/Engram/issues
+PackageName: Engram
+PackageUrl: https://github.com/greatgc-flow/Engram
+License: MIT
+LicenseUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+Copyright: Copyright (c) 2026 greatgc-flow
+CopyrightUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+ShortDescription: Portable Developer Runtime & Virtual Environment Engine for Windows
+Description: Engram is a zero-bloat, self-contained Windows portable runtime environment that provides isolated Python/Node/Git environments without requiring host installation or registry changes. It can optionally install, update, and manage the status of third-party AI CLI tools, but all AI-to-AI collaboration itself is handled by the separate peerhub package.
+Moniker: engram
+Tags:
+  - portable
+  - developer-tools
+  - workflow
+  - automation
+  - windows
+  - virtual-environment
+ReleaseNotes: |-
+  ### Changed
+  
+  - A Python minor update blocked by package compatibility now guides the user: after the blocker line the warning explains in one sentence that the new Python is fine but the installed package versions could not be carried over, then lists the next commands in order (`engram update -o packages -y`, `engram update -o python --latest --refresh --check`, and only if that check passes `engram update -o python --latest -y` and `engram doctor`); `--force` is never suggested. An advisory blocker kind (no wheel for the target, requires a different Python, dependency conflict, network or index, resolver failure, or unknown for ambiguous output) is derived from pip's output and never changes the blocked decision. `--check --json` adds `blocker`, `kind`, `advice` and `next_commands`, all sanitized. Staged restore, `pip check` and offline gates are unchanged (#125).
+ReleaseNotesUrl: https://github.com/greatgc-flow/Engram/releases/tag/v3.11.11
+ManifestType: defaultLocale
+ManifestVersion: 1.12.0
