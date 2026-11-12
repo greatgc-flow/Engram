@@ -196,7 +196,8 @@ Description:
   Python shows installed, latest patch (same minor) and latest minor only
   when newer versions exist; otherwise it says up to date or could not check.
   Minor update advice requires verified archive and dependency readiness.
-  Blocked or unverifiable targets show warnings without executable advice.
+  Dependency blocks show recovery steps; apply requires a passing check.
+  Unverifiable targets show warnings without apply advice.
   Next steps lists verified minor and applicable patch/core/tool commands.
   Package advice requires evidence that packages are outdated.
   Example --check output (versions are illustrative):
@@ -232,15 +233,21 @@ Venv:
   Fix write access or available disk space, then run engram repair --resume.
 
 Python dependency blocks:
-  Minor updates preserve the installed baseline package versions. An older
-  package may lack a wheel for the new Python even when a newer package works.
-  The warning includes the failing requirement or dependency conflict when
-  pip supplies one. Update the baseline, then re-check the target:
+  Minor updates preserve the installed baseline package versions. The warning
+  includes the failing requirement or conflict when pip supplies one, and
+  explicitly says when no specific dependency diagnostic is available.
+  The new Python is not broken; the currently installed package versions
+  could not be carried over. An older package may lack a wheel even when a
+  newer package works. Update the baseline packages, then re-check the target:
     engram update -o packages -y
     engram update -o python --latest --refresh --check
-  If readiness succeeds, apply with engram update -o python --latest -y,
-  then run engram doctor. If it still blocks, use the reported requirement
-  to investigate; --force does not make incompatible packages compatible.
+  Only if that check passes, apply Python and check its health:
+    engram update -o python --latest -y
+    engram doctor
+  If it still blocks, investigate the reported requirement or conflict.
+  With -o python --latest --check --json, readiness includes sanitized blocker,
+  kind, advice and next_commands; apply/doctor require a passing check.
+  The kind is advisory; ambiguous or overlapping diagnostics are unknown.
 
 Options:
   --yes, -y        Apply without asking (default: plan for Python or --latest;
@@ -268,6 +275,8 @@ Options:
   --force          With --only python: reinstall even when already current;
                    override minor planning readiness checks (default: off).
                    Restore preflight and pip check remain mandatory.
+  --json           With python/venv/packages: print a machine-readable result
+                   (default: off)
   --offline        With --only python: use only local files (default: off)
   -h, --help, /?   Show this help (default: off)
 

@@ -528,7 +528,8 @@ def test_minor_jump_requires_preflight_unless_forced(tmp_path, monkeypatch, forc
         assert "--force overrides" in "\n".join(result["plan"]["summary"])
     else:
         assert result["exit_code"] == 11
-        assert "no compatible dependency set" in result["detail"] and "Use --force" in result["detail"]
+        assert "no compatible dependency set" in result["detail"]
+        assert "--force" not in result["detail"]
 
 
 @pytest.fixture

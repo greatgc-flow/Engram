@@ -375,6 +375,8 @@ def python_update_status(sys_dir: Path, *, installed: str | None = None,
         if minor_ok:
             # Wrap prose only; executable advice must remain copyable.
             readiness_lines.append("  Next: engram update -o python --latest -y")
+        else:
+            readiness_lines.extend(_python_recovery_lines(readiness))
         lines.extend(readiness_lines)
     checked = bool(discovery.get("status") == "ok" and installed and patch and minor and latest)
     reason = None
@@ -438,19 +440,74 @@ class PythonReadiness(NamedTuple):
     specs: tuple[str, ...]
     state: str
     reason: str = ""
+    kind: str = "unknown"
 
 
 def _readiness_reason(value: Any) -> str:
-    text = " ".join(str(value).split()).encode("ascii", "backslashreplace").decode()
-    return text[:237] + "..." if len(text) > 240 else text
+    text = python_manager._dependency_output(str(value))
+    text = re.sub(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s<>'\"]+",
+                  lambda match: venv_manager.sanitize_url(match.group()).split("?", 1)[0]
+                  .split("#", 1)[0], text)
+    return python_manager.failure_reason(text)
+
+
+def _python_readiness_json(readiness: PythonReadiness, *, latest: bool = True) -> dict:
+    reason = _readiness_reason(readiness.reason)
+    dependency_block = (readiness.state == "blocked"
+                        and reason.startswith("no compatible dependency set"))
+    blocker = reason
+    if reason == "no compatible dependency set":
+        blocker += ": pip supplied no specific dependency diagnostic"
+    advice = ("The new Python is not broken; the currently installed package versions "
+              "could not be carried over." if dependency_block else "")
+    target = "--latest" if latest else f"--to {readiness.target}"
+    commands = [
+        ("engram update -o packages -y", "now"),
+        (f"engram update -o python {target} --refresh --check", "after_package_update"),
+        (f"engram update -o python {target} -y", "only_if_check_passes"),
+        ("engram doctor", "only_if_check_passes"),
+    ] if dependency_block else []
+    return {"state": _readiness_reason(readiness.state), "reason": reason,
+            "blocker": _readiness_reason(blocker), "kind": _readiness_reason(readiness.kind),
+            "advice": _readiness_reason(advice),
+            "next_commands": [{"command": _readiness_reason(command),
+                               "when": _readiness_reason(when)} for command, when in commands]}
+
+
+def _python_recovery_lines(readiness: PythonReadiness, *, latest: bool = True) -> list[str]:
+    import textwrap
+    guidance = _python_readiness_json(readiness, latest=latest)
+    if not guidance["advice"]:
+        return []
+    lines = []
+    if readiness.reason == "no compatible dependency set":
+        lines.append("  pip supplied no specific dependency diagnostic.")
+    lines.extend(textwrap.wrap(guidance["advice"], width=80, initial_indent="  ",
+                               subsequent_indent="  "))
+    lines.extend([
+        "  Update the baseline packages:",
+        "    " + guidance["next_commands"][0]["command"],
+        "  Re-check the target; if it still blocks, investigate the blocker above:",
+        "    " + guidance["next_commands"][1]["command"],
+        "  Only if that check passes:",
+        "    " + guidance["next_commands"][2]["command"],
+        "    " + guidance["next_commands"][3]["command"],
+    ])
+    return lines
+
+
+class PythonReadinessError(ValueError):
+    def __init__(self, readiness: PythonReadiness):
+        self.readiness = readiness
+        super().__init__(f"Python minor pre-flight {readiness.state}: {readiness.reason}")
 
 
 def _python_minor_preflight(target: str, url: str, *, managed_python: Path,
                             specs: tuple[str, ...], fetch: Callable | None = None,
                             run: Callable | None = None) -> PythonReadiness:
     """HEAD the archive and let managed pip resolve the complete target baseline."""
-    def result(state, reason=""):
-        return PythonReadiness(target, url, specs, state, _readiness_reason(reason))
+    def result(state, reason="", kind="unknown"):
+        return PythonReadiness(target, url, specs, state, _readiness_reason(reason), kind)
 
     fetch = fetch or _python_fetch
     run = run or subprocess.run
@@ -478,6 +535,7 @@ def _python_minor_preflight(target: str, url: str, *, managed_python: Path,
     lower = output.lower()
     if resolved.returncode == 0:
         return result("ok")
+    kind = python_manager.dependency_failure_kind(output)
     # Index outages can end with 'No matching distribution'; they take precedence.
     network_markers = ("retrying", "connectionerror", "connection error", "connection refused",
                        "connection reset", "network is unreachable", "network unavailable",
@@ -486,15 +544,15 @@ def _python_minor_preflight(target: str, url: str, *, managed_python: Path,
                        "could not fetch url", "401 client error", "403 client error",
                        "429 client error", "500 server error", "503 server error")
     if any(marker in lower for marker in network_markers):
-        return result("unverifiable", "network unavailable")
+        return result("unverifiable", "network unavailable", kind)
     incompatibility = ("resolutionimpossible", "no matching distribution found",
                        "could not find a version that satisfies the requirement",
                        "conflicting dependencies")
     if (any(marker in lower for marker in incompatibility)
             or re.search(r"error:.*requires a different python", lower)):
-        return result("blocked", python_manager.dependency_failure_reason(output))
+        return result("blocked", python_manager.dependency_failure_reason(output), kind)
     return result("unverifiable", "pip resolver failed: " + (output.strip() or
-                  f"exit {resolved.returncode}"))
+                  f"exit {resolved.returncode}"), kind)
 
 
 def _minor_readiness(sys_dir: Path, target: str, url: str, *,
@@ -650,6 +708,19 @@ def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callabl
     try:
         plan = build_plan_fn(sys_dir, base_dir, detection, only=only_set, remap_ai_state=args.remap_ai_state, offline=args.offline, cli_args=args, seams=seams)
     except ValueError as ve:
+        if isinstance(ve, PythonReadinessError):
+            readiness = ve.readiness
+            latest = getattr(args, "latest", False)
+            if not args.json:
+                import textwrap
+                minor = ".".join(readiness.target.split(".")[:2])
+                label = "blocked" if readiness.state == "blocked" else "readiness unverifiable"
+                print("\n".join(textwrap.wrap(
+                    f"[Warning] Python {minor} {label}: {readiness.reason.rstrip('.')}.",
+                    width=80, subsequent_indent="  ") + _python_recovery_lines(readiness, latest=latest)))
+            return {"status": "failed", "operation": "repair", "detail": str(ve),
+                    "exit_code": 1 if getattr(args, "check", False) else 11, "quiet": True,
+                    "readiness": _python_readiness_json(readiness, latest=latest)}
         return {"status": "failed", "operation": "repair", "detail": str(ve),
                 "exit_code": 1 if getattr(args, "check", False) else 11}
         
@@ -768,7 +839,7 @@ def update_env_main(ctx: dict, only: set[str]) -> dict:
                 if readiness.state != "ok":
                     message = f"Python minor pre-flight {readiness.state}: {readiness.reason}"
                     if not cli_args.force:
-                        raise ValueError(message + ". Use --force to override.")
+                        raise PythonReadinessError(readiness)
                     summary.append("[Warning] --force overrides: " + message)
             if change == "same" and not getattr(cli_args, "force", False):
                 summary.append(f"Python already at {target}")

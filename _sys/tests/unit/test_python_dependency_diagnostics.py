@@ -188,7 +188,7 @@ def test_target_interpreter_restore_reports_blocker_and_cleans_probe(tmp_path, o
     assert list(tmp_path.iterdir()) == []
 
 
-def test_status_names_blocking_installed_pin_without_upgrade_advice(tmp_path, monkeypatch):
+def test_status_names_blocking_installed_pin_with_conditional_upgrade_advice(tmp_path, monkeypatch):
     monkeypatch.setattr(repair.venv_manager, "build_snapshot", lambda *a, **k: {
         "packages": [{"name": "pywinpty", "version": "3.0.2", "requested": True}],
     })
@@ -215,7 +215,8 @@ def test_status_names_blocking_installed_pin_without_upgrade_advice(tmp_path, mo
     assert "pywinpty==3.0.2" in report
     assert "Latest minor: 3.15 (3.15.2)" in report
     assert "up to date" not in report
-    assert "engram update -o python --latest -y" not in report
+    assert report.index("Only if that check passes:") < report.index(
+        "engram update -o python --latest -y")
     assert status["commands"] == []
     assert len(calls) == 1 and "pywinpty==3.0.2" in calls[0]
     assert all(line.isascii() and len(line) <= 80 for line in status["report_lines"])

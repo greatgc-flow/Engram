@@ -305,7 +305,11 @@ def test_minor_readiness_controls_headline_and_next_steps(
         label = "blocked" if state == "blocked" else "readiness unverifiable"
         assert f"[Warning] Python 3.15 {label}: {reason}." in output
         assert "Next steps:" not in output
-        assert "engram update -o python --latest -y" not in output
+        if state == "blocked":
+            assert output.index("Only if that check passes:") < output.index(
+                "engram update -o python --latest -y")
+        else:
+            assert "engram update -o python --latest -y" not in output
     assert all(line.isascii() and len(line) <= 80 for line in output.splitlines())
 
 

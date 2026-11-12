@@ -6,6 +6,12 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+## [3.11.11] - 2026-11-13
+
+### Changed
+
+- A Python minor update blocked by package compatibility now guides the user: after the blocker line the warning explains in one sentence that the new Python is fine but the installed package versions could not be carried over, then lists the next commands in order (`engram update -o packages -y`, `engram update -o python --latest --refresh --check`, and only if that check passes `engram update -o python --latest -y` and `engram doctor`); `--force` is never suggested. An advisory blocker kind (no wheel for the target, requires a different Python, dependency conflict, network or index, resolver failure, or unknown for ambiguous output) is derived from pip's output and never changes the blocked decision. `--check --json` adds `blocker`, `kind`, `advice` and `next_commands`, all sanitized. Staged restore, `pip check` and offline gates are unchanged (#125).
+
 ## [3.11.10] - 2026-11-11
 
 ### Changed
