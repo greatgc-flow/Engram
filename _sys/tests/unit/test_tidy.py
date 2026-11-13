@@ -185,6 +185,23 @@ class TestTidy:
             
             # And caches
             assert "_sys\\tests\\.pytest_cache\\v\\cache\\lastfailed" not in after
+
+    def test_tidy_deep_preserves_locked_vscode_log(self, mock_env):
+        log_dir = mock_env / "_sys/data/logs/launcher"
+        vscode_log = log_dir / "vscode.log"
+        vscode_log.write_bytes(b"live VS Code output")
+        os.utime(vscode_log, (1, 1))  # Older than all seven start logs.
+        # On Windows this open handle denies unlink, like the live VS Code handle.
+        with vscode_log.open("ab") as locked:
+            if os.name == "nt":
+                with pytest.raises(PermissionError):
+                    vscode_log.unlink()
+            assert vscode_log not in tidy_temp.plan_launcher_logs(deep=True)
+            result = tidy_temp.run({"args": ["--deep", "--apply"]})
+            assert result["status"] == "success"
+            locked.write(b"\nstill writable")
+        assert vscode_log.read_bytes() == b"live VS Code output\nstill writable"
+        assert len(list(log_dir.glob("start_*.log"))) == 5
             
     def test_defense_in_depth_raises_assertion(self, mock_env):
         with patch.object(tidy_temp, "ROOT", mock_env):
