@@ -279,10 +279,11 @@ def plan_launcher_logs(deep: bool) -> list[Path]:
     if not log_dir.exists():
         return []
     logs = sorted(
-        [f for f in log_dir.rglob("*.log") if f.is_file()],
+        [f for f in log_dir.rglob("*.log") if f.is_file() and f.name.lower() != "vscode.log"],
         key=lambda f: f.stat().st_mtime
     )
-    # keep the 5 most recent
+    # VS Code holds its append log open; retain it separately from launch logs.
+    # Keep the 5 most recent remaining logs.
     return logs[:-5] if len(logs) > 5 else []
 
 def _vscode_is_running() -> bool:

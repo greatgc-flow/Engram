@@ -89,6 +89,13 @@ previews, `--yes`/`-y` skips a prompt, `--json` gives machine-readable output (`
 Safety model of `engram help` ([`docs/cli_reference.md`](docs/cli_reference.md#safety-model)). Replaced Python/venv
 copies are moved into a backup registry, never deleted outright.
 
+Double-clicking `Engram.exe` opens VS Code without a persistent console.
+The first run keeps the console for setup.
+Running `engram` with no arguments in a terminal keeps the sandbox shell.
+VS Code output no longer prints in the terminal; it goes to the launcher log
+at `_sys/data/logs/launcher/vscode.log`.
+Hidden-mode launcher diagnostics and failures are logged in the same folder's `start_*.log`. If nothing opens and no new log appears, run `engram` in a terminal to see the error.
+
 Common workflows:
 
 ```bat

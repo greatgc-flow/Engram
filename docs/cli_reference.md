@@ -136,6 +136,14 @@ Description:
   default app). Without PATH the default workspace is opened.
   Relative PATH uses the caller directory. ARGS are passed to script files.
   Use explicit open PATH; bare paths are not commands.
+  Double-clicking Engram.exe opens VS Code without a persistent console.
+  The first run keeps the console for setup.
+  Running engram with no arguments in a terminal keeps the sandbox shell.
+  VS Code output no longer prints in the terminal; it goes to the launcher
+  log: _sys\data\logs\launcher\vscode.log
+  Hidden-mode launcher diagnostics and failures go to start_*.log in the
+  same folder. If nothing opens and no new log appears, run engram in a
+  terminal to see the error.
   On the very first run (no managed Python yet) it offers to set Engram up
   in this folder and to add the right-click "Open in Engram" menu entry.
   A folder literally named like a command (for example "update") is only

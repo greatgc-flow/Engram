@@ -16,6 +16,9 @@ using Microsoft.Win32.SafeHandles;
 
 namespace Engram {
     static class Program {
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint GetConsoleProcessList([Out] uint[] processList, uint processCount);
+
         [DllImport("kernel32.dll", EntryPoint = "CreateFileW", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern SafeFileHandle CreateFile(
             string lpFileName,
@@ -132,6 +135,19 @@ namespace Engram {
             psi.UseShellExecute = false;
 
             try {
+                // Explorer gives this console wrapper its own console. Relaunch
+                // without one, then exit so that console (or Terminal tab) closes.
+                // Existing terminals and argument-bearing invocations stay as-is.
+                if (args.Length == 0 &&
+                    File.Exists(Path.Combine(exeDir, "_sys", "env", "python", "python.exe")) &&
+                    Environment.GetEnvironmentVariable("ENGRAM_HIDDEN_LAUNCH") == null &&
+                    GetConsoleProcessList(new uint[1], 1) == 1) {
+                    psi.CreateNoWindow = true;
+                    psi.EnvironmentVariables["ENGRAM_HIDDEN_LAUNCH"] = "1";
+                    using (Process child = Process.Start(psi)) {
+                        return 0;
+                    }
+                }
                 using (Process child = Process.Start(psi)) {
                     child.WaitForExit();
                     return child.ExitCode;

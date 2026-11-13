@@ -9,6 +9,7 @@ import sys
 import json
 import subprocess
 import time
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
 from datetime import datetime
 from pathlib import Path
 
@@ -191,28 +192,49 @@ def _note_root_drift(base_dir: Path, sys_dir: Path, print_fn=print) -> str:
 
 def main(ctx: dict) -> None:
     """Launch the sandbox: build env, open VS Code."""
-    base_dir = ctx["base_dir"]
+    # Consume the one-shot wrapper marker before any helper can spawn a child.
+    hidden = os.environ.pop("ENGRAM_HIDDEN_LAUNCH", None) == "1"
     sys_dir  = ctx["sys_dir"]
-    args     = ctx["args"]
-
-    if args and args[0].startswith("-"):
-        cli_help.unknown_option("open", args[0])
-
-    _note_root_drift(base_dir, sys_dir)
 
     # Log setup
     import state_paths
     log_dir = state_paths.launcher_log_dir(sys_dir)
-    log_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass  # Logging must not prevent a launch; VS Code can use DEVNULL.
     log_file = log_dir / f"start_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
     def log(msg: str) -> None:
-        print(msg)
+        if not hidden:
+            print(msg)
         try:
             with open(log_file, "a", encoding="utf-8") as f:
                 f.write(msg + "\n")
         except Exception:
             pass
+
+    with ExitStack() as stack:
+        if hidden:
+            # Helpers may print warnings too. Keep those in the start log.
+            try:
+                output = stack.enter_context(open(log_file, "a", encoding="utf-8", buffering=1))
+            except OSError:
+                output = stack.enter_context(open(os.devnull, "w", encoding="utf-8"))
+            stack.enter_context(redirect_stdout(output))
+            stack.enter_context(redirect_stderr(output))
+        _launch(ctx, hidden=hidden, log_dir=log_dir, log=log)
+
+
+def _launch(ctx: dict, *, hidden: bool, log_dir: Path, log) -> None:
+    base_dir = ctx["base_dir"]
+    sys_dir = ctx["sys_dir"]
+    args = ctx["args"]
+
+    if args and args[0].startswith("-"):
+        cli_help.unknown_option("open", args[0])
+
+    _note_root_drift(base_dir, sys_dir)
 
     log(f"Started : {datetime.now()}")
     log(f"BASE    : {base_dir}")
@@ -238,7 +260,7 @@ def main(ctx: dict) -> None:
         target_dir = Path(raw_target).parent
         run_mode   = "APP"
     else:
-        print(f"[Error] Path not found: {raw_target}")
+        log(f"[Error] Path not found: {raw_target}")
         sys.exit(2)
 
     os.chdir(target_dir)
@@ -249,17 +271,26 @@ def main(ctx: dict) -> None:
             (vscode_exe.parent / "data").mkdir(parents=True, exist_ok=True)
             provisioner.seed_vscode_default_settings(vscode_exe.parent)
             try:
-                subprocess.Popen([str(vscode_exe), "."], env=env)
+                vscode_log = open(log_dir / "vscode.log", "ab")
+            except OSError:
+                vscode_log = subprocess.DEVNULL
+            try:
+                subprocess.Popen([str(vscode_exe), "."], env=env,
+                                 stdout=vscode_log, stderr=subprocess.STDOUT,
+                                 creationflags=subprocess.CREATE_NO_WINDOW if hidden else 0)
             except OSError as exc:
                 log(f"[Error] Could not launch VS Code: {exc}")
                 sys.exit(1)
+            finally:
+                if not isinstance(vscode_log, int):
+                    vscode_log.close()
             log(f"[OK] VS Code: {target_dir}")
         else:
             log(f"[Warning] VS Code not found: {vscode_exe}")
             if raw_target:
                 sys.exit(1)
 
-        if not raw_target:
+        if not raw_target and not hidden:
             print(f"[Sandbox] Ready at {base_dir}")
             sys.exit(subprocess.run(["cmd", "/k"], env=env).returncode)
 
@@ -271,7 +302,8 @@ def main(ctx: dict) -> None:
             python_exe = provisioner.venv_python_exe(sys_dir)
             if not python_exe.exists():
                 python_exe = provisioner.portable_python_exe(sys_dir)
-            sys.exit(subprocess.run([str(python_exe), str(target_file), *args[1:]], env=env).returncode)
+            sys.exit(subprocess.run([str(python_exe), str(target_file), *args[1:]],
+                                    env=env).returncode)
         elif ext in (".bat", ".cmd"):
             # Use .\name with cwd= to avoid cmd.exe interpreting "&" in
             # absolute paths as a statement separator (D11 ampersand fix).

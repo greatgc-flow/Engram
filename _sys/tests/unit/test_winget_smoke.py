@@ -7,6 +7,7 @@ import shutil
 import sys
 import unittest
 import subprocess
+import time
 import pytest
 from evidence_fixtures import evidence_fixture
 from unittest.mock import patch
@@ -18,6 +19,69 @@ _spec = importlib.util.spec_from_file_location('winget_gate_checks', ROOT / '_sy
 gate = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(gate)
 import winget_smoke as smoke
+
+
+@pytest.fixture(scope="module")
+def compiled_wrapper(tmp_path_factory):
+    if sys.platform != "win32":
+        pytest.skip("Windows wrapper requires Windows")
+    spec = importlib.util.spec_from_file_location("build_wrapper", ROOT / "tools/winget/build_exe.py")
+    builder = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(builder)
+    if not builder.find_csc():
+        pytest.skip("C# compiler unavailable")
+    output = tmp_path_factory.mktemp("compiled-wrapper") / "Engram.exe"
+    assert builder.build_wrapper_exe(output_path=output) == 0
+    return output
+
+
+@pytest.mark.parametrize("case, expected_marker", [
+    ("ready", "1"),
+    ("first-run", ""),
+    ("renamed-sys", ""),
+    ("arguments", ""),
+    ("marker-set", "already-set"),
+    ("shared-console", ""),
+])
+def test_compiled_wrapper_hidden_gate(compiled_wrapper, tmp_path, case, expected_marker):
+    """Exercise the real wrapper with an answering setup prompt, never real setup."""
+    exe = tmp_path / "Engram.exe"
+    shutil.copyfile(compiled_wrapper, exe)
+    if case != "first-run":
+        sys_name = "renamed_runtime" if case == "renamed-sys" else "_sys"
+        python = tmp_path / sys_name / "env/python/python.exe"
+        python.parent.mkdir(parents=True)
+        python.touch()  # Presence gate only: the fixture batch never runs Python.
+    (tmp_path / "answer.txt").write_text("n\n", encoding="ascii")
+    (tmp_path / "engram.cmd").write_text(
+        '@echo off\n'
+        'set /p "choice=Set up Engram? " < "%~dp0answer.txt"\n'
+        '> "%~dp0result.txt" echo marker=%ENGRAM_HIDDEN_LAUNCH%\n'
+        '>> "%~dp0result.txt" echo choice=%choice%\n'
+        '> "%~dp0done.txt" echo done\n', encoding="ascii",
+    )
+    env = os.environ.copy()
+    env.pop("ENGRAM_HIDDEN_LAUNCH", None)
+    if case == "marker-set":
+        env["ENGRAM_HIDDEN_LAUNCH"] = expected_marker
+    argv = [str(exe)] + (["open"] if case == "arguments" else [])
+    if case == "shared-console":
+        # The waiting parent shares the new console with the wrapper (count > 1).
+        argv = [sys.executable, "-c",
+                "import subprocess,sys; sys.exit(subprocess.call(sys.argv[1:]))", *argv]
+    startup = subprocess.STARTUPINFO()
+    startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startup.wShowWindow = subprocess.SW_HIDE
+    result = subprocess.run(argv, env=env, cwd=tmp_path, timeout=10,
+                            creationflags=subprocess.CREATE_NEW_CONSOLE, startupinfo=startup)
+    assert result.returncode == 0
+    deadline = time.monotonic() + 5
+    while not (tmp_path / "done.txt").exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert (tmp_path / "done.txt").exists(), "wrapper batch did not finish its prompt"
+    assert (tmp_path / "result.txt").read_text().splitlines() == [
+        f"marker={expected_marker}", "choice=n",
+    ]
 
 @contextmanager
 def temporary_directory(**kwargs):
