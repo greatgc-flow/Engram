@@ -6,6 +6,12 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ## [Unreleased]
 
+## [3.11.13] - 2026-11-13
+
+### Fixed
+
+- A hidden double-click launch that fails unexpectedly (for example when `BASE_DIR_WORKSPACE` points at a folder that no longer exists, such as an unplugged drive) now writes `[Error] Launch failed: <type>: <message>` to `start_*.log` before exiting, as the docs promise; before, the log held only the start lines and nothing opened. Found by the shipped-release review of v3.11.12 (cc.fable).
+
 ## [3.11.12] - 2026-11-13
 
 ### Changed

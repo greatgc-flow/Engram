@@ -223,7 +223,13 @@ def main(ctx: dict) -> None:
                 output = stack.enter_context(open(os.devnull, "w", encoding="utf-8"))
             stack.enter_context(redirect_stdout(output))
             stack.enter_context(redirect_stderr(output))
-        _launch(ctx, hidden=hidden, log_dir=log_dir, log=log)
+        try:
+            _launch(ctx, hidden=hidden, log_dir=log_dir, log=log)
+        except Exception as exc:
+            # Hidden mode has no console: keep unexpected failures in the start log too.
+            if hidden:
+                log(f"[Error] Launch failed: {type(exc).__name__}: {exc}")
+            raise
 
 
 def _launch(ctx: dict, *, hidden: bool, log_dir: Path, log) -> None:
