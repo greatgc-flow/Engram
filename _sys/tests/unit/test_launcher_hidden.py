@@ -177,6 +177,23 @@ def test_hidden_spawn_failure_closes_log_and_logs_error(launch_setup, monkeypatc
     assert "spawn failed" in start_log.read_text(encoding="utf-8")
 
 
+def test_hidden_unexpected_launch_error_is_logged_then_raised(launch_setup, monkeypatch, capsys):
+    """Hidden mode has no console: an unexpected error (e.g. a missing workspace folder) must reach start_*.log."""
+    ctx, _, log_dir, _ = launch_setup
+    monkeypatch.setenv("ENGRAM_HIDDEN_LAUNCH", "1")
+
+    def missing_folder(path):
+        raise FileNotFoundError(f"workspace folder is missing: {path}")
+
+    monkeypatch.setattr(launcher.os, "chdir", missing_folder)
+    with pytest.raises(FileNotFoundError):
+        launcher.main(ctx)
+
+    assert capsys.readouterr() == ("", "")
+    start_log, = log_dir.glob("start_*.log")
+    assert "[Error] Launch failed: FileNotFoundError: workspace folder is missing" in start_log.read_text(encoding="utf-8")
+
+
 def test_terminal_no_args_keeps_sandbox_and_child_exit_code(launch_setup, monkeypatch, capsys):
     ctx, _, _, launches = launch_setup
     shells = []
