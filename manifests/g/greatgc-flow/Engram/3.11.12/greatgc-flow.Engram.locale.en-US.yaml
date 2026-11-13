@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
+
+PackageIdentifier: greatgc-flow.Engram
+PackageVersion: 3.11.12
+PackageLocale: en-US
+Publisher: greatgc-flow
+PublisherUrl: https://github.com/greatgc-flow
+PublisherSupportUrl: https://github.com/greatgc-flow/Engram/issues
+PackageName: Engram
+PackageUrl: https://github.com/greatgc-flow/Engram
+License: MIT
+LicenseUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+Copyright: Copyright (c) 2026 greatgc-flow
+CopyrightUrl: https://github.com/greatgc-flow/Engram/blob/main/LICENSE
+ShortDescription: Portable Developer Runtime & Virtual Environment Engine for Windows
+Description: Engram is a zero-bloat, self-contained Windows portable runtime environment that provides isolated Python/Node/Git environments without requiring host installation or registry changes. It can optionally install, update, and manage the status of third-party AI CLI tools, but all AI-to-AI collaboration itself is handled by the separate peerhub package.
+Moniker: engram
+Tags:
+  - portable
+  - developer-tools
+  - workflow
+  - automation
+  - windows
+  - virtual-environment
+ReleaseNotes: |-
+  ### Changed
+  
+  - Double-clicking `Engram.exe` no longer leaves a console window: when the wrapper owns its console alone, has no arguments and the managed Python exists, it relaunches `engram.cmd` hidden (`cmd.exe /d /s /c`, CreateNoWindow) with `ENGRAM_HIDDEN_LAUNCH=1` and exits, so the console window or Windows Terminal tab closes. The hidden launcher prints nothing, never opens the `cmd /k` sandbox shell, consumes the marker before starting VS Code and exits at once; nothing Engram-owned outlives VS Code. The first run (no managed Python yet) keeps the console so the setup prompt is answerable. Running `engram` from a terminal is unchanged (sandbox shell included). There is deliberately no job object: VS Code ends its own helpers; there is no cleanup guarantee for arbitrary VS Code descendants.
+  - VS Code output no longer prints in the terminal: it is appended to `vscode.log` next to `start_*.log` (falls back to discarding it when the log is locked); `engram tidy` keeps a `vscode.log` that VS Code holds open. If a double-click opens nothing and no new log appears, run `engram` in a terminal to see the error.
+  - Verified on Windows 11 with a stub `engram.cmd`: classic console host and Windows Terminal both close the launch window, a second double-click works, the first-run case stays visible at its prompt, and no launcher, shell or Python process remains. The rebuilt `Engram.exe` is unsigned. Design scored 100 unanimously (cx.deepthink, ag.deepthink, five rounds); reviews cc.fable and ag.deepthink 100.
+ReleaseNotesUrl: https://github.com/greatgc-flow/Engram/releases/tag/v3.11.12
+ManifestType: defaultLocale
+ManifestVersion: 1.12.0
