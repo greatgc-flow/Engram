@@ -62,6 +62,9 @@ The `Windows Sandbox release and weekly gate` workflow (`sandbox-gate.yml`) owns
 there is no separate release/publish workflow. CI is reusable via
 `workflow_call`; its checks must pass before the candidate is built. Manual and
 weekly (Saturday 03:00 Asia/Seoul) runs exercise the same gate but do not publish a release.
+On a run without a release tag, `upgrade-gate` upgrades from the newest published release whose version
+differs from the checkout's, so `main` right after a release is tested against the release before it (#133).
+A candidate that is not newer than that release still HOLDs.
 
 ### Local pre-release verification
 
@@ -74,9 +77,9 @@ This launches a fresh Windows Sandbox instance, downloads declared runtimes, ins
 ### Dry run before a release
 
 - Use `workflow_dispatch` for `sandbox-gate` on a throwaway branch, never the
-  release tag. Bump `version.json` above the previous stable version:
-  `upgrade-gate` requires candidate > previous; the same version produces HOLD
-  with a clear message. Promotion on a non-tag ref verifies evidence but does
+  release tag. `upgrade-gate` requires candidate > previous; a branch at the
+  latest release's version is compared with the release before it, and an
+  older version produces HOLD with a clear message. Promotion on a non-tag ref verifies evidence but does
   not publish. Delete the throwaway branch after the dry run.
 - A queued scheduled run on `main` waiting for a non-existent self-hosted runner
   holds the `engram-sandbox` concurrency group and blocks other runs. Cancel it
