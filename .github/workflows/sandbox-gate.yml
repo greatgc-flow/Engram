@@ -227,8 +227,11 @@ jobs:
           if (!(Test-Path release/candidate.json)) { throw 'HOLD: missing candidate' }
           $candidate = Get-Content release/candidate.json -Raw | ConvertFrom-Json
           $candTag = $candidate.tag
+          # A scheduled or manual run has no release tag (candTag is the branch name). Also skip the
+          # release this checkout already is, so the upgrade starts from the release before it (#133).
+          $sameVersionTag = 'v' + (Get-Content _sys/core/version.json -Raw | ConvertFrom-Json).version
           $releases = gh release list --json tagName,isDraft,isPrerelease --limit 30 | ConvertFrom-Json
-          $prevRelease = $releases | Where-Object { -not $_.isDraft -and -not $_.isPrerelease -and $_.tagName -ne $candTag } | Select-Object -First 1
+          $prevRelease = $releases | Where-Object { -not $_.isDraft -and -not $_.isPrerelease -and $_.tagName -ne $candTag -and $_.tagName -ne $sameVersionTag } | Select-Object -First 1
           if (-not $prevRelease) { throw 'HOLD: no previous published release found' }
           $prevTag = $prevRelease.tagName
           Write-Host "Previous stable release tag: $prevTag (candidate: $candTag)"

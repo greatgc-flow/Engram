@@ -152,5 +152,11 @@ run(github,context,core,require).catch(err => {console.error(err); process.exit(
         self.assertIn('names.includes(artifact.name)', script)
         self.assertIn('GITHUB_RUN_ATTEMPT', script)
 
+    def test_upgrade_gate_skips_the_release_this_checkout_already_is(self):
+        """#133: a scheduled or manual run on main must upgrade from the release before it, not from itself."""
+        workflow = (ROOT / '.github/workflows/sandbox-gate.yml').read_text()
+        self.assertIn("$sameVersionTag = 'v' + (Get-Content _sys/core/version.json -Raw | ConvertFrom-Json).version", workflow)
+        self.assertIn('$_.tagName -ne $candTag -and $_.tagName -ne $sameVersionTag', workflow)
+
 if __name__ == '__main__':
     unittest.main()
