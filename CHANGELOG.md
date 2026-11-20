@@ -8,6 +8,7 @@ Historical entries are reconstructed from git commits and merged PR titles.
 
 ### Changed
 
+- Validated runtime defaults refreshed: Node.js 26.13.1 and VS Code 1.146.0 (the bot PR's change, re-applied on a branch that runs CI).
 - ExifTool 13.64 (manual pin; SHA-256 of the oliverbetz.de 64-bit zip recomputed by hand, `ExifTool.exe -ver` prints 13.64).
 - Baseline packages for fresh provisioning: filelock 4.2.10, pydantic 2.14.3 and virtualenv 21.15.6 (repair keeps its existing package policy; #132).
 - Release tooling only: the weekly and manual sandbox gate now upgrades from the release before the checkout's version, so the scheduled run on `main` no longer HOLDs at `upgrade-gate` every week (#133).
