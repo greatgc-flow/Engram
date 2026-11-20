@@ -236,9 +236,9 @@
             ]
         },
         "exiftool": {
-            "version": "13.59",
-            "url": "https://oliverbetz.de/cms/files/Artikel/ExifTool-for-Windows/exiftool-13.59_64.zip",
-            "sha256": "577257dd22baebe77157d905792d6ed2c5916cd03aa627f40b2175db12110ac6",
+            "version": "13.64",
+            "url": "https://oliverbetz.de/cms/files/Artikel/ExifTool-for-Windows/exiftool-13.64_64.zip",
+            "sha256": "2e958ab143cf9f4a1af660cbfdeac90a7d61c588804b92b8c98283c1e5ceb438",
             "type": "zip",
             "bin": "ExifTool.exe",
             "install_mechanism": "zip_tool",
