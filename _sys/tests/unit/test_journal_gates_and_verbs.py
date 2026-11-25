@@ -394,4 +394,5 @@ def test_bootstrap_static_gate_precedes_every_download():
     text = BOOTSTRAP.read_text(encoding="utf-8")
     gate = text.index("env-op.journal.jsonl")
     assert gate < text.index("curl ")
-    assert gate < text.index("Expand-Archive")
+    assert gate < text.index('-xf "!ZIP_PATH!" -C "!PY_DIR!"')
+    assert gate < text.index("[System.IO.Compression.ZipFile]::ExtractToDirectory")
