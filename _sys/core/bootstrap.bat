@@ -156,18 +156,26 @@ if not exist "!PY_EXE!" (
     echo [i] Extracting Python...
     set "_PY_DIR_NEW=0"
     if not exist "!PY_DIR!" set "_PY_DIR_NEW=1"
-    if not exist "!PY_DIR!" mkdir "!PY_DIR!"
-    powershell -NoProfile -Command "Expand-Archive -Force -Path '!_ZIP_PS!' -DestinationPath '!PY_DIR!'"
-    if errorlevel 1 (
-        echo [Error] Failed to extract Python.
-        REM Never leave a zip that cannot be extracted behind as a "verified" cache.
-        del /q "!ZIP_PATH!" >nul 2>&1
-        del /q "!SHA_PATH!" >nul 2>&1
-        REM Remove a half-extracted tree only if this attempt created the directory.
-        if "!_PY_DIR_NEW!"=="1" if exist "!PY_DIR!" rmdir /s /q "!PY_DIR!"
-        if "%CI%"=="" pause
-        exit /b 1
+    REM Use Windows tar to extract the zip independently of the inherited PSModulePath.
+    if exist "%SystemRoot%\System32\tar.exe" (
+        if "!_PY_DIR_NEW!"=="1" mkdir "!PY_DIR!"
+        "%SystemRoot%\System32\tar.exe" -xf "!ZIP_PATH!" -C "!PY_DIR!"
+    ) else (
+        REM Stage the zip because Windows PowerShell's ZipFile cannot overwrite existing files.
+        powershell -NoProfile -Command ^
+            "$ErrorActionPreference='Stop'; try {" ^
+            "    Add-Type -AssemblyName System.IO.Compression.FileSystem;" ^
+            "    [void][System.IO.Directory]::CreateDirectory($env:PY_DIR);" ^
+            "    $stage = $env:PY_DIR + '.' + [guid]::NewGuid().ToString();" ^
+            "    try {" ^
+            "        [System.IO.Compression.ZipFile]::ExtractToDirectory($env:ZIP_PATH, $stage);" ^
+            "        Get-ChildItem -LiteralPath $stage -Force | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $env:PY_DIR -Recurse -Force }" ^
+            "    } finally { if ([System.IO.Directory]::Exists($stage)) { [System.IO.Directory]::Delete($stage, $true) } };" ^
+            "    exit 0" ^
+            "} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }"
     )
+    REM A top-level exit preserves the failure status when invoked directly with cmd /c.
+    if errorlevel 1 goto :python_extract_failed
     REM Record the hash only now that the zip is known to extract per design P9.
     if not "!_CACHE_OK!"=="1" >"!SHA_PATH!" echo !_ACTUAL_SHA!
 
@@ -199,3 +207,14 @@ call "!SYS_DIR!\core\dispatch.bat" install %* || (echo [FATAL] Setup failed. & p
 
 echo [OK] Setup completed successfully.
 endlocal
+exit /b 0
+
+:python_extract_failed
+echo [Error] Failed to extract Python.
+REM Never leave a zip that cannot be extracted behind as a "verified" cache.
+del /q "!ZIP_PATH!" >nul 2>&1
+del /q "!SHA_PATH!" >nul 2>&1
+REM Remove a half-extracted tree only if this attempt created the directory.
+if "!_PY_DIR_NEW!"=="1" if exist "!PY_DIR!" rmdir /s /q "!PY_DIR!"
+if "%CI%"=="" pause
+exit /b 1

@@ -2,7 +2,9 @@
 ratified in docs/design/engram-env-resilience-design-2026-10-02.md).
 """
 import datetime
+import hashlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -32,15 +34,54 @@ def test_python_download_fails_on_http_errors():
 
 
 def test_sha_record_is_written_only_after_the_zip_extracted_successfully():
-    extract = _idx("Expand-Archive")
+    tar = _idx('-xf "!ZIP_PATH!" -C "!PY_DIR!"')
+    zipfile = _idx("[System.IO.Compression.ZipFile]::ExtractToDirectory")
+    checksum_gate = _idx("Python zip checksum mismatch")
+    failure_check = _idx("if errorlevel 1 goto :python_extract_failed")
     record = _idx('>"!SHA_PATH!" echo')
-    assert record > extract, "the .sha256 record must not exist before extraction succeeded"
+    assert checksum_gate < tar < zipfile < failure_check < record
 
 
 def test_failed_extraction_removes_the_zip_and_its_record():
-    extract = _idx("Expand-Archive")
-    window = BOOTSTRAP[extract:extract + 700]
-    assert 'del /q "!ZIP_PATH!"' in window and 'del /q "!SHA_PATH!"' in window
+    failure = _idx("\n:python_extract_failed\n")
+    cleanup = BOOTSTRAP[failure:]
+    assert 'del /q "!ZIP_PATH!"' in cleanup and 'del /q "!SHA_PATH!"' in cleanup
+    assert 'rmdir /s /q "!PY_DIR!"' in cleanup and "exit /b 1" in cleanup
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="bootstrap.bat requires cmd.exe")
+def test_bootstrap_returns_failure_for_a_corrupt_cached_zip(tmp_path, monkeypatch):
+    sys_dir = tmp_path / "_sys"
+    core = sys_dir / "core"
+    core.mkdir(parents=True)
+    (core / "bootstrap.bat").write_text(BOOTSTRAP, encoding="ascii")
+    (sys_dir / "tool-catalog.v1.json").write_text("{}", encoding="ascii")
+    cache = sys_dir / "data" / "setup-files"
+    cache.mkdir(parents=True)
+    zip_path = cache / "python-3.14.8-embed-amd64.zip"
+    sha_path = zip_path.with_suffix(".zip.sha256")
+    payload = b"corrupt archive data\n"
+    digest = hashlib.sha256(payload).hexdigest()
+    zip_path.write_bytes(payload)
+    sha_path.write_text(digest + "\n", encoding="ascii")
+    (sys_dir / "runtimes.json").write_text(json.dumps({"runtimes": {"python": {
+        "version": "3.14.8",
+        "url": "https://example.invalid/python.zip",
+        "get_pip_url": "https://example.invalid/get-pip.py",
+        "sha256": digest,
+    }}}), encoding="ascii")
+    monkeypatch.setenv("CI", "1")
+    monkeypatch.delenv("ENGRAM_SYS_DIR", raising=False)
+
+    proc = subprocess.run(
+        ["cmd", "/d", "/c", r"_sys\core\bootstrap.bat", "--skip-update"],
+        cwd=tmp_path, capture_output=True, text=True, timeout=30,
+    )
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "Using the verified cached Python zip" in proc.stdout
+    assert "[Error] Failed to extract Python." in proc.stdout
+    assert not zip_path.exists() and not sha_path.exists()
+    assert not (sys_dir / "env" / "python").exists()
 
 
 def test_declared_hash_also_gates_a_cached_zip():

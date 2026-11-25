@@ -13,6 +13,10 @@ Historical entries are reconstructed from git commits and merged PR titles.
 - Baseline packages for fresh provisioning: filelock 4.2.10, pydantic 2.14.3 and virtualenv 21.15.6 (repair keeps its existing package policy; #132).
 - Release tooling only: the weekly and manual sandbox gate now upgrades from the release before the checkout's version, so the scheduled run on `main` no longer HOLDs at `upgrade-gate` every week (#133).
 
+### Fixed
+
+- Python bootstrap works from PowerShell 7 on Windows, including GitHub Actions runners. Failed ZIP extraction clears the archive and its checksum record (#140).
+
 ## [3.11.13] - 2026-11-13
 
 ### Fixed
