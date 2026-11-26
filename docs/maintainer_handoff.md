@@ -1,6 +1,6 @@
 Reference notes for maintainers. Not an instruction file: open it only when needed.
 
-For AI peer collaboration rules, see [PeerHub docs/HANDOFF.md](https://github.com/greatgc-flow/peerhub/blob/main/docs/HANDOFF.md).
+For AI peer collaboration rules, see the [PeerHub README](https://github.com/greatgc-flow/peerhub#readme) (`peerhub guide` prints its quick reference).
 
 ## 1. Release recipe
 

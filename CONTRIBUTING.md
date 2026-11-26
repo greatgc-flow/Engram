@@ -129,7 +129,7 @@ Operational decisions and environment constraints:
 - The VDI may force-logoff sessions; commit and push in small steps.
 - **Headless Shell Git Auth**: Pushing from a headless shell requires a GitHub credential helper (`gh auth setup-git` or per-command `-c credential.helper`).
 - **AI-to-AI Collaboration**: Multi-agent collaboration uses English exclusively for all design notes, reviews, and commits.
-  Peer roles and rules are PeerHub's domain: [PeerHub docs/HANDOFF.md](https://github.com/greatgc-flow/peerhub/blob/main/docs/HANDOFF.md).
+  Peer roles and rules are PeerHub's domain: [PeerHub README](https://github.com/greatgc-flow/peerhub#readme) (`peerhub guide` prints its quick reference).
   Independent cross-review and clean-room contract verification are required before changes are merged or promoted.
 - Maintainer handoff notes: [docs/maintainer_handoff.md](docs/maintainer_handoff.md)
 
