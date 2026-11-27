@@ -102,11 +102,14 @@ def _descriptor(raw, slots):
 
 def read_catalog(payloads, reviewed_slots):
     """The installation supplies slot policy independently of descriptor bytes."""
-    claimed = set(cli_help.verbs()) | {"engram", "pack", "help", "start"}
+    claimed = set(cli_help.verbs()) | {"engram", "pack", "help", "start", "python", "pip",
+                                       "git", "node", "npm", "npx", "cmd", "powershell", "pwsh"}
     slots, catalog = set(), []
     for raw in payloads:
         entry = _descriptor(raw, reviewed_slots)
         names = {entry.package_id, *entry.aliases}
+        _require(names.isdisjoint(reviewed_slots.keys() - {entry.package_id}),
+                 "alias belongs to another reviewed package")
         _require(claimed.isdisjoint(names), "reserved or duplicate package/alias name")
         slot = entry.slot_rel.casefold()
         _require(not any(slot == old or slot.startswith(old + "/") or old.startswith(slot + "/")
