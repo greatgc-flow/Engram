@@ -1,0 +1,175 @@
+"""Read-only legacy inventory and compare-and-swap recovery (Rev 0.6 T58/T64)."""
+import copy
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+import pytest
+
+from core import env_manifest, env_ops, provisioner
+
+
+def snapshot(root):
+    return {p.relative_to(root): p.read_bytes() if p.is_file() else None
+            for p in root.rglob("*")}
+
+
+def candidate():
+    build = {"implementation": "cpython", "series": "3.14", "version": "3.14.10",
+             "abi": "cp314", "arch": "win_amd64", "provider": "pbs", "flavor": "full",
+             "sha256": "a" * 64, "artifact_ref": "fixture-archive",
+             "executable_rel": "env/python-versions/3.14/build-a/python.exe",
+             "state": "ACTIVE", "owner": "engram"}
+    return {"schema_version": "1.0", "revision": 1, "installation_id": "fixture-install",
+            "default_binding": "legacy-default",
+            "series": {"3.14": {"channel": "stable", "active_build": "build-a",
+                                "policy": "compatible_patch"}},
+            "builds": {"build-a": build},
+            "bindings": {"legacy-default": {"kind": "legacy", "executable_rel": "env/venv/Scripts/python.exe"},
+                         "demo": {"kind": "app", "build_id": "build-a", "env_id": "env-a",
+                                  "constraint_ref": "fixture-constraint"}},
+            "environments": {"env-a": {"owner": "demo", "generation": 1, "build_id": "build-a",
+                                       "root_rel": "AI/apps/demo/envs/env-a", "lock_ref": "fixture-lock"}},
+            "external_refs": [], "rollback_refs": [], "vendor_exceptions": []}
+
+
+@pytest.fixture
+def installed(tmp_path):
+    root = tmp_path / "_sys"
+    env_manifest.write_manifest(root, {"schema_version": 1, "install_id": "fixture-install",
+                                       "root": {"physical": str(tmp_path), "logical": str(tmp_path)}})
+    return root
+
+
+@pytest.mark.parametrize("base,venv,status", [(False, False, "ABSENT"), (False, True, "PARTIAL"),
+                                             (True, False, "PARTIAL"), (True, True, "PRESENT")])
+def test_legacy_inventory_is_offline_and_pure(tmp_path, base, venv, status, monkeypatch):
+    from core import python_registry as reg
+    root = tmp_path / "한글 root" / "renamed-system"
+    for present, fn in [(base, provisioner.portable_python_exe), (venv, provisioner.venv_python_exe)]:
+        if present:
+            executable = fn(root)
+            executable.parent.mkdir(parents=True, exist_ok=True)
+            executable.write_bytes(b"fixture")
+    before = snapshot(tmp_path)
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: pytest.fail("unexpected child"))
+    import socket
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **kw: pytest.fail("unexpected network"))
+    result = reg.inventory(root)
+    assert result["revision"] == 0
+    assert result["legacy"] == {"status": status, "base_rel": "env/python/python.exe",
+                                "executable_rel": "env/venv/Scripts/python.exe"}
+    assert result["registry"] is None
+    assert snapshot(tmp_path) == before
+
+
+@pytest.mark.parametrize("keys,value", [
+    (("revision",), True), (("installation_id",), "foreign"), (("schema_version",), "2.0"),
+    (("default_binding",), "demo"), (("bindings", "legacy-default", "executable_rel"), "host/python.exe"),
+    (("builds", "build-a", "executable_rel"), "../python.exe"),
+    (("builds", "build-a", "executable_rel"), "C:/host/python.exe"),
+    (("builds", "build-a", "sha256"), "short"), (("builds", "build-a", "arch"), "win32"),
+    (("builds", "build-a", "abi"), "cp313"), (("series", "3.14", "active_build"), "absent"),
+    (("bindings", "demo", "env_id"), "absent"), (("environments", "env-a", "build_id"), "missing"),
+    (("environments", "env-a", "root_rel"), "AI/apps/other/envs/env-a"),
+    (("environments", "env-a", "owner"), ".."), (("environments", "env-a", "generation"), True),
+    (("external_refs",), ["unverified"]), (("builds", "BUILD-A"), {}),
+])
+def test_invalid_proposal_leaves_state_untouched(installed, keys, value):
+    from core import python_registry as reg
+    doc = candidate()
+    node = doc
+    for key in keys[:-1]:
+        node = node[key]
+    node[keys[-1]] = value
+    before = snapshot(installed)
+    with pytest.raises(reg.RegistryError):
+        reg.publish(installed, 0, doc)
+    assert snapshot(installed) == before
+
+
+def test_commit_conflict_and_immutable_identity(installed):
+    from core import python_registry as reg
+    doc = candidate()
+    assert reg.publish(installed, 0, doc)["phase"] == "COMMITTED"
+    before = snapshot(installed)
+    with pytest.raises(reg.RegistryError):
+        reg.publish(installed, 0, doc)
+    change = copy.deepcopy(doc)
+    change["revision"] = 2
+    change["builds"]["build-a"]["sha256"] = "b" * 64
+    with pytest.raises(reg.RegistryError):
+        reg.publish(installed, 1, change)
+    assert reg.inventory(installed)["registry"] == doc
+    assert snapshot(installed) == before
+
+
+@pytest.mark.parametrize("old_revision,mode,torn", [(0, "resume", False), (0, "rollback", False),
+                                                   (1, "resume", True), (1, "rollback", True)])
+def test_recover_after_replace_before_ack(installed, monkeypatch, old_revision, mode, torn):
+    from core import python_registry as reg
+    doc = candidate()
+    path = installed / "data/state/python-registry.json"
+    if old_revision:
+        reg.publish(installed, 0, doc)
+    before = path.read_bytes() if path.exists() else None
+    doc["revision"] += old_revision
+    write = env_manifest._atomic_write_text
+    def interrupt(path, text):
+        write(path, text[:25] if torn else text)
+        raise env_ops.SimulatedCrash()
+    with monkeypatch.context() as m:
+        m.setattr(env_manifest, "_atomic_write_text", interrupt)
+        with pytest.raises(env_ops.SimulatedCrash):
+            reg.publish(installed, old_revision, doc)
+    with env_ops.journal_path(installed).open("ab") as f:
+        f.write(b'{"incomplete"')
+    if os.name == "nt":
+        from core import repair
+        result = repair.repair_main({"sys_dir": installed, "base_dir": installed.parent,
+                                     "args": ["--" + mode, "--json"]})
+        assert result["exit_code"] == 0, result
+    else:
+        result = getattr(env_ops, mode)(installed, lambda active: reg.recovery_steps(installed, active, mode))
+        assert result["phase"] == ("COMMITTED" if mode == "resume" else "ROLLED_BACK")
+    assert env_ops.active_journal(installed) is None
+    if mode == "resume":
+        assert reg.inventory(installed)["registry"] == doc
+    else:
+        assert (path.read_bytes() if path.exists() else None) == before
+
+
+def test_corrupt_registry_never_adopted_on_read_or_publish(installed):
+    from core import python_registry as reg
+    path = installed / "data/state/python-registry.json"
+    path.write_bytes(b'{"schema')
+    before = snapshot(installed)
+    for action in [lambda: reg.inventory(installed), lambda: reg.publish(installed, 0, candidate())]:
+        with pytest.raises(reg.RegistryError):
+            action()
+    assert snapshot(installed) == before
+
+
+def test_cross_process_stale_proposal(installed):
+    from core import python_registry as reg
+    # Both independent planners observed revision zero. Only one may publish.
+    script = """
+import json, sys
+from pathlib import Path
+from core import python_registry as reg
+try:
+    result = reg.publish(Path(sys.argv[1]), 0, json.load(sys.stdin))
+except reg.RegistryError:
+    sys.exit(11)
+sys.exit(result["exit_code"])
+"""
+    processes = [subprocess.Popen([sys.executable, "-B", "-c", script, str(installed)], stdin=subprocess.PIPE,
+                                  env={**os.environ, "PYTHONPATH": str(Path(provisioner.__file__).parents[1])})
+                 for _ in range(2)]
+    for proc in processes:
+        proc.stdin.write(json.dumps(candidate()).encode("utf-8"))
+        proc.stdin.close()
+    assert sorted(proc.wait(30) for proc in processes) == [0, 11]
+    assert reg.inventory(installed)["registry"] == candidate()
