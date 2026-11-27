@@ -26,3 +26,5 @@ python -m pytest -q -p no:cacheprovider _sys/tests/unit/test_version_resolver.py
 The remaining T59 work joins independently trusted binary/version and consumer-compatibility receipts and distinguishes a proven source-only patch from unavailable inventory. The next registry work covers legacy binding inventory, CAS/recovery, path ownership and reference validation (T58/T64). Provider publication, multiple-series selection and dependent AI installation stay behind their respective gates. No target-hardware benchmark has been performed.
 
 The [registry implementation and recovery handoff](WP1-registry.md) records the subsequent T58/T64 increment, its supported schema and native Windows verification.
+
+The [Windows provider and artifact admission handoff](WP1-provider.md) records the subsequent T59/T60 implementation, publisher scope and consumer evidence contract.

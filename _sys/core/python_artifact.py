@@ -1,4 +1,5 @@
 """Admit a cached Windows CPython archive against a trusted provider selection."""
+
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -42,25 +43,39 @@ class Artifact:
 
     def __post_init__(self):
         require(isinstance(self.tag, str) and re.fullmatch(r"[0-9]{8}", self.tag), "invalid release tag")
-        require(isinstance(self.version, str) and re.fullmatch(VERSION, self.version), "invalid stable version")
+        require(
+            isinstance(self.version, str) and re.fullmatch(VERSION, self.version), "invalid stable version"
+        )
         require(type(self.asset_id) is int and self.asset_id > 0, "invalid asset ID")
-        require(isinstance(self.sha256, str) and re.fullmatch(DIGEST, self.sha256), "invalid publisher SHA-256")
+        require(
+            isinstance(self.sha256, str) and re.fullmatch(DIGEST, self.sha256), "invalid publisher SHA-256"
+        )
         require(type(self.size) is int and 0 < self.size <= MAX_COMPRESSED, "unsupported archive size")
 
     def identity(self):
         minor = self.version.split(".")[1]
-        return {"implementation": "cpython", "version": self.version, "abi": f"cp3{minor}",
-                "arch": "win_amd64", "flavor": "full", "provider": "python-build-standalone",
-                "sha256": self.sha256, "artifact_ref": f"pbs-{self.tag}-{self.asset_id}"}
+        return {
+            "implementation": "cpython",
+            "version": self.version,
+            "abi": f"cp3{minor}",
+            "arch": "win_amd64",
+            "flavor": "full",
+            "provider": "python-build-standalone",
+            "sha256": self.sha256,
+            "artifact_ref": f"pbs-{self.tag}-{self.asset_id}",
+        }
 
 
 def validate_member_name(name):
     parts = name.split("/")
     require(parts[0] == "python" and len(name) <= 512, "invalid archive root or path length")
     for part in parts:
-        require(re.fullmatch(r"[A-Za-z0-9._ -]{1,255}", part) and not part.endswith((".", " "))
-                and not re.fullmatch(r"(?i)CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9]", part.split(".", 1)[0].rstrip()),
-                "invalid Windows path component")
+        require(
+            re.fullmatch(r"[A-Za-z0-9._ -]{1,255}", part)
+            and not part.endswith((".", " "))
+            and not re.fullmatch(r"(?i)CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9]", part.split(".", 1)[0].rstrip()),
+            "invalid Windows path component",
+        )
     return parts
 
 
@@ -95,8 +110,14 @@ def _inspect(raw, artifact):
 def _inspect_members(archive, artifact, tar_bytes):
     minor = artifact.version.split(".")[1]
     dll = f"python/python3{minor}.dll"
-    required = {"python/python.exe", dll, "python/include/patchlevel.h", "python/LICENSE.txt",
-                "python/Lib/venv/__init__.py", "python/Lib/ensurepip/__init__.py"}
+    required = {
+        "python/python.exe",
+        dll,
+        "python/include/patchlevel.h",
+        "python/LICENSE.txt",
+        "python/Lib/venv/__init__.py",
+        "python/Lib/ensurepip/__init__.py",
+    }
     nodes = {}
     explicit = set()
     files = set()
@@ -106,10 +127,17 @@ def _inspect_members(archive, artifact, tar_bytes):
         require(index <= MAX_MEMBERS, "archive has too many members")
         name = member.name
         parts = validate_member_name(name)
-        require(member.isdir() or member.type in (tarfile.REGTYPE, tarfile.AREGTYPE), "unsupported archive member")
-        require(member.sparse is None and not any("sparse" in k.lower() for k in member.pax_headers),
-                "unsupported sparse archive member")
-        require(name not in explicit and (name != "python" or member.isdir()), "duplicate or invalid archive member")
+        require(
+            member.isdir() or member.type in (tarfile.REGTYPE, tarfile.AREGTYPE), "unsupported archive member"
+        )
+        require(
+            member.sparse is None and not any("sparse" in k.lower() for k in member.pax_headers),
+            "unsupported sparse archive member",
+        )
+        require(
+            name not in explicit and (name != "python" or member.isdir()),
+            "duplicate or invalid archive member",
+        )
         explicit.add(name)
         for end in range(1, len(parts) + 1):
             prefix = "/".join(parts[:end])
@@ -127,15 +155,21 @@ def _inspect_members(archive, artifact, tar_bytes):
         elif name == "python/include/patchlevel.h":
             require(member.size <= 65536, "oversized version header")
             with archive.extractfile(member) as stream:
-                versions = re.findall(rb'(?m)^#define[ \t]+PY_VERSION[ \t]+"([^"]+)"[ \t]*\r?$', stream.read())
+                versions = re.findall(
+                    rb'(?m)^#define[ \t]+PY_VERSION[ \t]+"([^"]+)"[ \t]*\r?$', stream.read()
+                )
             require(versions == [artifact.version.encode("ascii")], "CPython patch mismatch")
         elif re.fullmatch(r"python/python3[0-9]+(?:t|_d)?\.dll", name, re.IGNORECASE):
             raise ProviderError("unexpected CPython ABI DLL")
         elif re.fullmatch(r"python/Lib/ensurepip/_bundled/pip-[^/]+-py3-none-any\.whl", name):
             bundled_pip = member.size > 0 or bundled_pip
     require(required <= files and bundled_pip, "incomplete full CPython layout")
-    return {"regular_files": len(files), "uncompressed_bytes": content_bytes, "python_pe_machine": "AMD64",
-            "identity": artifact.identity()}
+    return {
+        "regular_files": len(files),
+        "uncompressed_bytes": content_bytes,
+        "python_pe_machine": "AMD64",
+        "identity": artifact.identity(),
+    }
 
 
 @contextmanager
@@ -153,7 +187,9 @@ def open_verified(path: Path, artifact: Artifact, expected_identity: dict):
                     require(count <= artifact.size, "archive grew during verification")
                     digest.update(chunk)
                     private.write(chunk)
-            require(count == artifact.size and digest.hexdigest() == artifact.sha256, "archive digest mismatch")
+            require(
+                count == artifact.size and digest.hexdigest() == artifact.sha256, "archive digest mismatch"
+            )
             private.seek(0)
             receipt = _inspect(private, artifact)
         except (OSError, EOFError, tarfile.TarError, zlib.error) as exc:

@@ -1182,11 +1182,33 @@ def _resolve_engram_release(
     )
 
 
+def _installed_python_series(root):
+    from core import python_registry
+    try:
+        inventory = python_registry.inventory(root)
+    except (OSError, python_registry.RegistryError) as exc:
+        return {"coverage": "UNKNOWN", "detail": str(exc)}
+    registry = inventory["registry"]
+    series = {}
+    if registry:
+        for minor, settings in registry["series"].items():
+            active = settings["active_build"]
+            series[minor] = {"active_build": active, "version": registry["builds"][active]["version"],
+                             "sha256": registry["builds"][active]["sha256"]}
+    return {"coverage": "MEASURED", "revision": inventory["revision"], "legacy": inventory["legacy"],
+            "series": series}
+
+
 def resolve_python_candidates(cache_path=None, *, force_refresh=False, ttl_seconds=DEFAULT_CACHE_TTL_SECONDS,
-                              consumer_locks=None, receipts=()):
+                              consumer_locks=None, receipts=(), registry_root=None):
     """Explicit provider check. Legacy Python discovery keeps its original network budget."""
     from core import python_provider
     source = _resolve_python(cache_path, force_refresh=force_refresh, ttl_seconds=ttl_seconds)
+    if registry_root is not None:
+        installed = _installed_python_series(Path(registry_root))
+        source = {**source, "installed": installed}
+        if installed["coverage"] != "MEASURED":
+            consumer_locks = {}
     if source.get("status") != "ok":
         return source
     try:
@@ -1227,7 +1249,8 @@ def resolve_latest(
     elif provider == "sqlite_org_page":
         result = _resolve_sqlite(discovery_id)
     elif provider == "engram_python_candidates":
-        result = resolve_python_candidates(cache_path, force_refresh=force_refresh, ttl_seconds=ttl_seconds)
+        result = resolve_python_candidates(cache_path, force_refresh=force_refresh, ttl_seconds=ttl_seconds,
+                                           registry_root=_SYS_DIR)
         result = {**result, "provider": provider}
     elif provider == "endoflife_python":
         result = _resolve_python(cache_path, force_refresh=force_refresh, ttl_seconds=ttl_seconds)

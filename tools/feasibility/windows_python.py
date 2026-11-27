@@ -122,6 +122,7 @@ def check_publisher(artifact, wheel_pin, receipt):
     row = joined["series"][artifact.version.rsplit(".", 1)[0]]
     return {"release": release.tag, "source": row["source_version"], "binary": row["windows_binary"],
             "consumer": consumer, "lock_sha256": lock_digest, "compatible": row["compatible_candidate"],
+            "support_phase": row["support_phase"],
             "evidence_sha256": receipts[0].evidence_sha256 if receipts else None}
 
 
