@@ -310,8 +310,9 @@ def execute(
 
         # A CAS operation must compare state while holding the lifecycle lock.
         # Journal its recovery images before the first effect.
-        prepared = prepare() if prepare is not None else {}
-        data = {**(initial_data or {}), **prepared}
+        data = initial_data or {}
+        if prepare is not None:
+            data = {**data, **prepare()}
         if jpath.exists():
             _rotate_journal(jpath, _peek_op_id(sys_dir))
         _truncate_torn_tail(jpath)

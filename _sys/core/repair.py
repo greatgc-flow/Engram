@@ -697,9 +697,11 @@ def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callabl
                 return python_registry.recovery_steps(sys_dir, locked, mode)
             return steps_from_spec(sys_dir, base_dir, spec, **seams)
 
-        recover = env_ops.resume if args.resume else env_ops.rollback
         try:
-            res = recover(sys_dir, steps_for)
+            if args.resume:
+                res = env_ops.resume(sys_dir, steps_for)
+            else:
+                res = env_ops.rollback(sys_dir, steps_for)
         except env_ops.JournalError as exc:
             return {"status": "failed", "operation": "repair", "detail": str(exc), "exit_code": 11}
         return _cli_result(res, mode=mode, sys_dir=sys_dir)

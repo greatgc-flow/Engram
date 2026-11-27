@@ -291,3 +291,49 @@ def test_lost_intent_before_first_effect_can_roll_back(installed, monkeypatch):
         env_ops.resume(installed, lambda a: reg.recovery_steps(installed, a, "resume"))
     assert env_ops.rollback(installed, lambda a: reg.recovery_steps(installed, a, "rollback"))["phase"] == "ROLLED_BACK"
     assert not reg.registry_path(installed).exists()
+
+
+@pytest.mark.parametrize("prior", [0, 1], ids=["create", "update"])
+@pytest.mark.parametrize("mode", ["resume", "rollback"])
+@pytest.mark.parametrize("side", ["before", "after"])
+@pytest.mark.parametrize("boundary", ["PLANNED", "PATHS", "DATA", "POSTS", "STEPS_RUNNING",
+                                     "started", "done", "COMMITTED"])
+def test_every_publication_journal_boundary(installed, monkeypatch, prior, mode, side, boundary):
+    from core import python_registry as reg
+    doc = candidate()
+    if prior:
+        assert reg.publish(installed, 0, doc)["phase"] == "COMMITTED"
+    doc["revision"] = prior + 1
+    factory = env_ops._append_record_fn
+
+    def interrupt(*args):
+        append = factory(*args)
+        def record(event, **fields):
+            label = fields.get("state") or fields.get("name") or event
+            if label == boundary and side == "before":
+                raise env_ops.SimulatedCrash()
+            append(event, **fields)
+            if label == boundary and side == "after":
+                raise env_ops.SimulatedCrash()
+        return record
+
+    with monkeypatch.context() as m:
+        m.setattr(env_ops, "_append_record_fn", interrupt)
+        with pytest.raises(env_ops.SimulatedCrash):
+            reg.publish(installed, prior, doc)
+
+    active = env_ops.active_journal(installed)
+    if active:
+        if not active["data"] and mode == "resume":
+            with pytest.raises(env_ops.JournalError):
+                env_ops.resume(installed, lambda a: reg.recovery_steps(installed, a, "resume"))
+        recovery = mode if active["data"] else "rollback"
+        rebuild = lambda a: reg.recovery_steps(installed, a, recovery)
+        result = getattr(env_ops, recovery)(installed, rebuild)
+        committed = recovery == "resume"
+        assert result["phase"] == ("COMMITTED" if committed else "ROLLED_BACK")
+    else:
+        # Before the first record or after durable commit, there is nothing to recover.
+        committed = boundary == "COMMITTED" and side == "after"
+    assert not env_ops.active_journal(installed)
+    assert reg.inventory(installed)["revision"] == prior + int(committed)
