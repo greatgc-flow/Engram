@@ -1,0 +1,16 @@
+{
+  "archive": {
+    "filename": "cpython-3.13.18+20261124-x86_64-pc-windows-msvc-install_only.tar.gz",
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.13.18%2B20261124-x86_64-pc-windows-msvc-install_only.tar.gz",
+    "metadata": "https://api.github.com/repos/astral-sh/python-build-standalone/releases/tags/20261124",
+    "sha256": "9c22438c8f107dc88505394a87a61aab3504d33d1ce4e22eb177381e5e9b244f",
+    "size": 48600477
+  },
+  "wheel": {
+    "filename": "markupsafe-3.0.3-cp313-cp313-win_amd64.whl",
+    "url": "https://files.pythonhosted.org/packages/05/73/c4abe620b841b6b791f2edc248f556900667a5a1cf023a6646967ae98335/markupsafe-3.0.3-cp313-cp313-win_amd64.whl",
+    "metadata": "https://pypi.org/pypi/MarkupSafe/3.0.3/json",
+    "sha256": "9a1abfdc021a164803f4d485104931fb8f8c1efd55bc6b748d2f5774e78b62c5",
+    "size": 15113
+  }
+}

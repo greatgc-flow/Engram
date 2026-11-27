@@ -34,10 +34,18 @@ jobs:
           $dir = $env:RUNNER_TEMP
           $receipt = Join-Path $dir 'basic-user-output.txt'
           $done = Join-Path $dir 'basic-user-complete.txt'
+          $extra = Get-Content tools/feasibility/windows-pair.lock.json -Raw | ConvertFrom-Json
+          foreach ($pin in @($extra.archive, $extra.wheel)) {
+            Invoke-WebRequest $pin.url -OutFile (Join-Path $dir $pin.filename)
+          }
+          $pair = (Resolve-Path tools/feasibility/windows_pair.py).Path
+          $pairOutput = Join-Path $dir 'basic-user-pair.txt'
           $cmdFile = Join-Path $dir 'wp0-basic-user.cmd'
           @(
             '@echo off'
             ('"{0}" -B "{1}" --archive "{2}" --wheel "{3}" > "{4}" 2>&1' -f $interpreter,$script,(Join-Path $dir $pins.archive.filename),(Join-Path $dir $pins.wheel.filename),$receipt)
+            ('if errorlevel 1 (echo 1 > "{0}" & exit /b 1)' -f $done)
+            ('"{0}" -B "{1}" --cache "{2}" --second-temp-parent "{2}" > "{3}" 2>&1' -f $interpreter,$pair,$dir,$pairOutput)
             ('echo %ERRORLEVEL% > "{0}"' -f $done)
           ) | Set-Content $cmdFile -Encoding ascii
           & runas.exe /trustlevel:0x20000 "cmd.exe /d /c `"`"$cmdFile`"`""
@@ -47,6 +55,7 @@ jobs:
           if (!(Test-Path $done)) { throw 'No completed Basic User receipt' }
           $output = Get-Content $receipt -Raw
           Write-Output $output
+          if (Test-Path $pairOutput) { Get-Content $pairOutput }
           if ([int](Get-Content $done -Raw) -ne 0) { throw 'Basic User probe failed' }
           $result = $output | ConvertFrom-Json
           if ($result.native -ne 'PASS' -or $result.effective_admin -ne $false) { throw 'Effective non-admin token required' }
