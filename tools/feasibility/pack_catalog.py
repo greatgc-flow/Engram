@@ -7,7 +7,7 @@ import sys
 SYSTEM = Path(__file__).resolve().parents[2] / "_sys"
 sys.path.insert(0, str(SYSTEM))
 from core import cli_help, provisioner  # noqa: E402
-from core.pack_catalog import MAX_BYTES, observe_slots, read_catalog  # noqa: E402
+from optional_pack_catalog import MAX_BYTES, observe_slots, read_catalog  # noqa: E402
 
 REVIEWED_SLOTS = {"ai": "AI", "contentflow": "ContentFlow"}
 

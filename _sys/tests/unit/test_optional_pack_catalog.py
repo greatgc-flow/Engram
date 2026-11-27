@@ -11,6 +11,7 @@ from _sys.core.root import find_root
 SYSTEM = find_root(__file__)
 FIXTURES = SYSTEM / "tests/fixtures/optional-pack"
 sys.path.insert(0, str(SYSTEM))
+sys.path.insert(0, str(SYSTEM.parent / "tools/feasibility"))
 from core import cli_help
 
 SLOTS = {"ai": "AI", "contentflow": "ContentFlow"}
@@ -27,7 +28,7 @@ def fixture(stem):
 
 def test_frozen_cross_repo_bytes_and_all_three_packages():
     from hashlib import sha256
-    from core.pack_catalog import read_catalog
+    from optional_pack_catalog import read_catalog
     for stem, expected in PIN.items():
         assert sha256(fixture(stem)).hexdigest() == expected
     for names in ([], ["ai"], ["cf"], ["ai", "cf"], list(PIN)):
@@ -49,7 +50,7 @@ def variant(**changes):
     {"trust_key_ids": []}, {"aliases": {}}, {"host": "any"}, {"display_name": ""},
 ])
 def test_reject_invalid_descriptor(change):
-    from core.pack_catalog import read_catalog
+    from optional_pack_catalog import read_catalog
     with pytest.raises(ValueError):
         read_catalog([variant(**change)], SLOTS, cli_help.verbs())
 
@@ -60,7 +61,7 @@ def test_reject_invalid_descriptor(change):
     {"requires_capabilities": ["ffmpeg"], "optional_capabilities": ["ffmpeg"]},
 ])
 def test_reject_invalid_profile(change):
-    from core.pack_catalog import read_catalog
+    from optional_pack_catalog import read_catalog
     doc = json.loads(fixture("gamma"))
     doc["profiles"][0].update(change)
     with pytest.raises(ValueError):
@@ -68,7 +69,7 @@ def test_reject_invalid_profile(change):
 
 
 def test_catalog_wide_namespace_and_unique_profiles():
-    from core.pack_catalog import read_catalog
+    from optional_pack_catalog import read_catalog
     profile = json.loads(fixture("gamma"))["profiles"][0]
     for raw in ([fixture("ai")] * 2, [variant(aliases=["ai"]), fixture("ai")],
                 [fixture("ai"), variant(aliases=["ai"])], [variant(profiles=[profile, profile])],
@@ -80,13 +81,13 @@ def test_catalog_wide_namespace_and_unique_profiles():
 @pytest.mark.parametrize("raw", [b'{"a":1,"a":2}', b'\xef\xbb\xbf{}', b'x'*1048577,
                                   b'['*1500+b']'*1500, b'{}\x00'])
 def test_reject_bad_wire(raw):
-    from core.pack_catalog import read_catalog
+    from optional_pack_catalog import read_catalog
     with pytest.raises(ValueError):
         read_catalog([raw], SLOTS, cli_help.verbs())
 
 
 def test_read_only_probe_across_mixed_slots(tmp_path):
-    from core.pack_catalog import read_catalog, observe_slots
+    from optional_pack_catalog import read_catalog, observe_slots
     root = tmp_path / "renamed system"
     root.mkdir()
     catalog = read_catalog([fixture(n) for n in PIN], SLOTS, cli_help.verbs())
@@ -104,7 +105,7 @@ def test_read_only_probe_across_mixed_slots(tmp_path):
 
 
 def test_unknown_root_is_never_empty_installation(tmp_path):
-    from core.pack_catalog import observe_slots, read_catalog
+    from optional_pack_catalog import observe_slots, read_catalog
     with pytest.raises(ValueError):
         observe_slots(tmp_path / "missing", read_catalog([fixture("gamma")], SLOTS, cli_help.verbs()))
 
@@ -122,13 +123,13 @@ def test_feasibility_cli_from_unrelated_cwd(tmp_path):
 
 @pytest.mark.parametrize("borrowed", ["contentflow", "ai", "python", "git", "node"])
 def test_alias_does_not_claim_an_absent_reserved_identity(borrowed):
-    from core.pack_catalog import read_catalog
+    from optional_pack_catalog import read_catalog
     with pytest.raises(ValueError):
         read_catalog([variant(aliases=[borrowed])], SLOTS, cli_help.verbs())
 
 
 def test_folded_slots_and_linked_parents_are_unknown(tmp_path):
-    from core.pack_catalog import observe_slots, read_catalog
+    from optional_pack_catalog import observe_slots, read_catalog
     catalog = read_catalog([fixture(n) for n in PIN], SLOTS, cli_help.verbs())
     (tmp_path / "aI").mkdir()
     assert observe_slots(tmp_path, catalog)["ai"] == "UNKNOWN"
