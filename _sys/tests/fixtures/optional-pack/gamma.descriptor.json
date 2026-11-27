@@ -1,0 +1,26 @@
+{
+  "fixture_only": true,
+  "schema_version": "1.0",
+  "package_id": "gamma",
+  "slot_rel": "packages/gamma",
+  "display_name": "gamma",
+  "host": "windows-x64",
+  "protocol_min": "1.0",
+  "protocol_max": "1.0",
+  "aliases": [
+    "gamma"
+  ],
+  "profiles": [
+    {
+      "id": "lite",
+      "requires_capabilities": [],
+      "optional_capabilities": [],
+      "requires_packages": []
+    }
+  ],
+  "default_profile": "lite",
+  "adapter_operations": [],
+  "trust_key_ids": [
+    "synthetic-key"
+  ]
+}

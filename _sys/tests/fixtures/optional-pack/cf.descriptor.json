@@ -1,0 +1,34 @@
+{
+  "fixture_only": true,
+  "schema_version": "1.0",
+  "package_id": "contentflow",
+  "slot_rel": "ContentFlow",
+  "display_name": "contentflow",
+  "host": "windows-x64",
+  "protocol_min": "1.0",
+  "protocol_max": "1.0",
+  "aliases": [
+    "contentflow"
+  ],
+  "profiles": [
+    {
+      "id": "lite",
+      "requires_capabilities": [
+        "python-extra",
+        "ffmpeg",
+        "cpu-render"
+      ],
+      "optional_capabilities": [],
+      "requires_packages": []
+    }
+  ],
+  "default_profile": "lite",
+  "adapter_operations": [
+    "checkpoint",
+    "restore",
+    "health"
+  ],
+  "trust_key_ids": [
+    "synthetic-key"
+  ]
+}
