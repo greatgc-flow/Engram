@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from core import cli_help, env_lock, env_manifest, env_ops, provisioner, state_paths, venv_manager
+from core import cli_help, env_lock, env_manifest, env_ops, provisioner, python_registry, state_paths, venv_manager
 
 try:  # registrar needs winreg (Windows); keep doctor importable elsewhere
     from core import registrar
@@ -576,6 +576,15 @@ def run(ctx: dict) -> dict[str, Any]:
         check_env_journal(sys_dir),
         check_elevation(),
     ]
+    try:
+        view = python_registry.inventory(sys_dir) if python_registry.registry_path(sys_dir).exists() else None
+    except (python_registry.RegistryError, OSError) as exc:
+        checks.append({"name": "python_registry", "ok": False, "level": "error", "detail": str(exc)})
+    else:
+        if view is not None and view["registry"] is not None:
+            registry = view["registry"]
+            checks.append({"name": "python_registry", "ok": True, "level": "ok",
+                           "detail": f"revision {registry['revision']}, {len(registry['builds'])} managed builds, legacy {view['legacy']['status']}"})
     broken = [c for c in checks if not c.get("ok")]
     overall = "failed" if broken else "success"
 
