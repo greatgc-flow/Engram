@@ -485,7 +485,8 @@ def test_extra_series_separates_source_and_runtime_evidence(monkeypatch, series_
         _source_row("3.14", "3.14.9"), _source_row("3.14", "3.14.10"),
         dict(_source_row("3.14", "3.14.11"), latestReleaseDate="2026-12-01"),
         _source_row("3.13", "3.13.8", support="2026-11-28"),
-        _source_row("3.10", "3.10.20", support="2023-10-01", eol="2026-11-28"),
+        dict(_source_row("3.10", "3.10.20", support="2023-10-01", eol="2026-11-28"),
+             releaseDate="2021-10-04"),
         _source_row("3.16", "3.16.0rc1"), _source_row("2.7", "2.7.18"),
     ]
     monkeypatch.setattr(vr.urllib.request, "urlopen", lambda *a, **k: FakeResponse(json.dumps(rows)))

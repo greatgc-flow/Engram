@@ -16,7 +16,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -644,6 +644,59 @@ def _resolve_sqlite(discovery_id: str = "sqlite-tools-win-x64") -> dict[str, Any
     )
 
 
+def _feed_date(value: Any) -> date | None:
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _python_source_catalog(entries: list[dict], today: date) -> dict:
+    """Describe dated CPython 3 source releases. Artifact and dependency evidence arrive separately."""
+    series = {}
+    selected = {}
+    lifecycle = {}
+    incomplete = False
+    for row in entries:
+        cycle, version = row["cycle"], row["latest"]
+        if not re.fullmatch(r"3\.(?:0|[1-9][0-9]*)", cycle):
+            continue
+        release = _feed_date(row.get("releaseDate"))
+        patch_release = _feed_date(row.get("latestReleaseDate"))
+        if release is None or patch_release is None or patch_release < release:
+            incomplete = True
+            continue
+        if patch_release > today:
+            continue
+        patch = int(version.rsplit(".", 1)[1])
+        if patch < selected.get(cycle, -1):
+            continue
+        dates = (release, _feed_date(row.get("support")), _feed_date(row.get("eol")))
+        if patch == selected.get(cycle):
+            if dates != lifecycle[cycle]:
+                series[cycle]["support_phase"] = "UNKNOWN"
+            continue
+        support, eol = dates[1:]
+        phase = "UNKNOWN"
+        if support and eol and release <= support <= eol:
+            if today >= eol:
+                phase = "EOL"
+            elif today >= support:
+                phase = "SECURITY_ONLY"
+            else:
+                phase = "BUGFIX"
+        selected[cycle], lifecycle[cycle] = patch, dates
+        series[cycle] = {"source_version": version, "support_phase": phase,
+                         "windows_binary": None, "compatible_candidate": None}
+
+    cycles = sorted(series, key=lambda cycle: int(cycle.split(".")[1]), reverse=True)
+    incomplete |= any(item["support_phase"] == "UNKNOWN" for item in series.values())
+    return {"observed_on": today.isoformat(), "coverage": "PARTIAL" if incomplete or not series else "MEASURED",
+            "series": {cycle: series[cycle] for cycle in cycles}}
+
+
 def _resolve_python(
     cache_path: Path | None = None, *, force_refresh: bool = False,
     ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS,
@@ -651,8 +704,15 @@ def _resolve_python(
     provider = "endoflife_python"
     cache = _load_cache(cache_path) if cache_path else {}
     cached = _cache_get(cache, provider, "python")
+    today = datetime.now(timezone.utc).date()
     if not force_refresh and _is_cache_fresh(cached, ttl_seconds) and cached.get("result"):
-        return dict(cached["result"])
+        result = dict(cached["result"])
+        catalog = result.get("source_catalog")
+        if not isinstance(catalog, dict) or not _feed_date(catalog.get("observed_on")):
+            result["source_catalog"] = {"observed_on": None, "coverage": "UNKNOWN", "series": {}}
+        elif catalog["observed_on"] != today.isoformat():
+            result["source_catalog"] = {**catalog, "coverage": "STALE"}
+        return result
     req = urllib.request.Request(
         "https://endoflife.date/api/python.json",
         headers={"User-Agent": "portable-dev-version-resolver"},
@@ -693,7 +753,8 @@ def _resolve_python(
             error_type="parse_error",
         )
 
-    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    now_str = today.isoformat()
+    releases = []
     patches = {}
     if not isinstance(data, list):
         data = []
@@ -706,6 +767,7 @@ def _resolve_python(
                 and re.fullmatch(r"\d+\.\d+\.\d+", version)
                 and version.startswith(cycle + ".")
                 and str(entry.get("releaseDate", "")) <= now_str):
+            releases.append({**entry, "cycle": cycle, "latest": version})
             previous = patches.get(cycle)
             if previous is None or tuple(map(int, version.split("."))) > tuple(map(int, previous.split("."))):
                 patches[cycle] = version
@@ -729,6 +791,7 @@ def _resolve_python(
         source="endoflife.date",
         detail="notice_only",
     )
+    result["source_catalog"] = _python_source_catalog(releases, today)
     result["latest_minor_cycle"] = cycles[0]
     result["latest_patch_by_cycle"] = {cycle: patches[cycle] for cycle in cycles}
     if cache_path:
