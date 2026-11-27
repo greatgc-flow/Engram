@@ -238,3 +238,56 @@ def test_duplicate_disk_keys_are_rejected(installed):
     (installed / "data/state/python-registry.json").write_text(raw, encoding="utf-8")
     with pytest.raises(reg.RegistryError, match="duplicate"):
         reg.inventory(installed)
+
+
+def test_interrupted_undo_can_repeat_from_old_image_prefix(installed, monkeypatch):
+    from core import python_registry as reg
+    doc = candidate()
+    reg.publish(installed, 0, doc)
+    path = reg.registry_path(installed)
+    # Older writers can use other valid UTF-8 whitespace. Rollback restores exact bytes.
+    previous = (json.dumps(doc, indent=4) + "\r\n").encode("utf-8")
+    path.write_bytes(previous)
+    doc["revision"] = 2
+    write = env_manifest._atomic_write_text
+    def stop_after(path, text):
+        write(path, text)
+        raise env_ops.SimulatedCrash()
+    with monkeypatch.context() as m:
+        m.setattr(env_manifest, "_atomic_write_text", stop_after)
+        with pytest.raises(env_ops.SimulatedCrash):
+            reg.publish(installed, 1, doc)
+    def torn_undo(path, text):
+        write(path, text[:100])
+        raise env_ops.SimulatedCrash()
+    def rebuild(active):
+        return reg.recovery_steps(installed, active, "rollback")
+    with monkeypatch.context() as m:
+        m.setattr(env_manifest, "_atomic_write_text", torn_undo)
+        with pytest.raises(env_ops.SimulatedCrash):
+            env_ops.rollback(installed, rebuild)
+    assert env_ops.rollback(installed, rebuild)["phase"] == "ROLLED_BACK"
+    assert path.read_bytes() == previous
+
+
+def test_lost_intent_before_first_effect_can_roll_back(installed, monkeypatch):
+    from core import python_registry as reg
+    append_fn = env_ops._append_record_fn
+    def interrupt_before_data(*args):
+        append = append_fn(*args)
+        def write(event, **fields):
+            if event == "DATA":
+                raise env_ops.SimulatedCrash()
+            return append(event, **fields)
+        return write
+    with monkeypatch.context() as m:
+        m.setattr(env_ops, "_append_record_fn", interrupt_before_data)
+        with pytest.raises(env_ops.SimulatedCrash):
+            reg.publish(installed, 0, candidate())
+    assert not reg.registry_path(installed).exists()
+    active = env_ops.active_journal(installed)
+    assert active["phase"] == "PLANNED"
+    with pytest.raises(env_ops.JournalError):
+        env_ops.resume(installed, lambda a: reg.recovery_steps(installed, a, "resume"))
+    assert env_ops.rollback(installed, lambda a: reg.recovery_steps(installed, a, "rollback"))["phase"] == "ROLLED_BACK"
+    assert not reg.registry_path(installed).exists()

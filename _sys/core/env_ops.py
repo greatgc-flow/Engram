@@ -309,7 +309,7 @@ def execute(
             raise JournalError(f"active journal exists for {active['op_id']}")
 
         # A CAS operation must compare state while holding the lifecycle lock.
-        # Persist its recovery images in the first complete record, before effects.
+        # Journal its recovery images before the first effect.
         prepared = prepare() if prepare is not None else {}
         data = {**(initial_data or {}), **prepared}
         if jpath.exists():
@@ -320,11 +320,10 @@ def execute(
         seq = [0]
         append_record = _append_record_fn(jpath, seq, now)
 
-        append_record("PHASE", name="PLANNED", op_id=op_id, kind=kind,
-                      **({"data": prepared} if prepare is not None else {}))
+        append_record("PHASE", name="PLANNED", op_id=op_id, kind=kind)
         append_record("PATHS", paths={k: str(v) for k, v in paths.items()})
-        if initial_data:
-            append_record("DATA", data=initial_data)
+        if data:
+            append_record("DATA", data=data)
 
         group_a = [s for s in steps if s.group == "A"]
         group_b = [s for s in steps if s.group == "B"]

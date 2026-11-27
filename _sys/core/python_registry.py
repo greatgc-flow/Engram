@@ -209,7 +209,9 @@ def _reconcile(ctx, *, undo=False):
     if current == target:
         return
     # Only the recorded images and a torn prefix of this write belong to the transaction.
-    _require(current in (old, new) or (current is not None and new.startswith(current)),
+    torn_write = current is not None and new.startswith(current)
+    torn_undo = undo and old is not None and current is not None and old.startswith(current)
+    _require(current in (old, new) or torn_write or torn_undo,
              "registry diverged from journal images")
     path = _state_file(ctx.sys_dir)
     if target is None:
@@ -226,7 +228,12 @@ def recovery_steps(root, active, mode):
     """Reconstruct the fixed operation under the lifecycle lock before replay."""
     try:
         data = active["data"]
-        _require(active["kind"] == KIND and isinstance(data.get("after"), str)
+        _require(active["kind"] == KIND, "unexpected recovery operation")
+        if not data and not active["steps"] and active["phase"] == "PLANNED":
+            if mode == "rollback":
+                return []
+            raise RegistryError("publication intent was interrupted before effects; run repair --rollback")
+        _require(isinstance(data.get("after"), str)
                  and "before" in data and (data["before"] is None or isinstance(data["before"], str)),
                  "invalid registry journal images")
         before = _decode(root, data["before"]) if data["before"] is not None else None
