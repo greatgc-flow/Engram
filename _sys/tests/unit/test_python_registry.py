@@ -173,3 +173,68 @@ sys.exit(result["exit_code"])
         proc.stdin.close()
     assert sorted(proc.wait(30) for proc in processes) == [0, 11]
     assert reg.inventory(installed)["registry"] == candidate()
+
+
+def test_public_doctor_only_reports_existing_registry(installed, capsys):
+    from core import doctor, python_registry as reg
+    ctx = {"sys_dir": installed, "base_dir": installed.parent, "args": ["--json"], "env": {}}
+    def inspect():
+        doctor.run(ctx)
+        return [c for c in json.loads(capsys.readouterr().out)["checks"] if c["name"] == "python_registry"]
+    before = snapshot(installed)
+    assert inspect() == []
+    assert snapshot(installed) == before
+    reg.publish(installed, 0, candidate())
+    before = snapshot(installed)
+    assert inspect()[0]["ok"]
+    assert snapshot(installed) == before
+    (installed / "data/state/python-registry.json").write_bytes(b"{")
+    assert inspect()[0]["level"] == "error"
+
+
+def test_managed_path_reparse_denied(installed, tmp_path):
+    from core import python_registry as reg
+    other = tmp_path / "outside"
+    other.mkdir()
+    alias = installed / "env"
+    if os.name == "nt":
+        # Directory junctions work with a standard account on NTFS.
+        subprocess.run(["cmd", "/d", "/c", "mklink", "/J", str(alias), str(other)],
+                       check=True, capture_output=True)
+    else:
+        alias.symlink_to(other, target_is_directory=True)
+    with pytest.raises(reg.RegistryError):
+        reg.publish(installed, 0, candidate())
+    assert list(other.iterdir()) == []
+
+
+def test_directory_case_collision(installed):
+    from core import python_registry as reg
+    (installed / "ai").mkdir()
+    with pytest.raises(reg.RegistryError):
+        reg.publish(installed, 0, candidate())
+    assert not env_ops.journal_path(installed).exists()
+
+
+def test_foreign_change_during_interrupted_operation_preserved(installed, monkeypatch):
+    from core import python_registry as reg
+    def crash(path, text):
+        raise env_ops.SimulatedCrash()
+    with monkeypatch.context() as m:
+        m.setattr(env_manifest, "_atomic_write_text", crash)
+        with pytest.raises(env_ops.SimulatedCrash):
+            reg.publish(installed, 0, candidate())
+    path = installed / "data/state/python-registry.json"
+    path.write_bytes(b'{"unrelated":true}')
+    result = env_ops.resume(installed, lambda active: reg.recovery_steps(installed, active, "resume"))
+    assert result["phase"] == "ROLLBACK_FAILED"
+    assert env_ops.active_journal(installed)
+    assert path.read_bytes() == b'{"unrelated":true}'
+
+
+def test_duplicate_disk_keys_are_rejected(installed):
+    from core import python_registry as reg
+    raw = json.dumps(candidate()).replace('"revision": 1', '"revision": 2, "revision": 1')
+    (installed / "data/state/python-registry.json").write_text(raw, encoding="utf-8")
+    with pytest.raises(reg.RegistryError, match="duplicate"):
+        reg.inventory(installed)

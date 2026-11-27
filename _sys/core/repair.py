@@ -14,7 +14,7 @@ from typing import Optional, Callable, Any, NamedTuple
 
 from core.baseline_packages import BASELINE_PACKAGES
 from core import cli_help, env_manifest, venv_manager, env_ops, env_lock
-from core import python_manager, relocation, venv_repair, layout_migration
+from core import python_manager, python_registry, relocation, venv_repair, layout_migration
 from core.venv_manager import default_runner
 from core.registrar import find_stale_entries
 from core.relocation import RegistryOps
@@ -681,29 +681,28 @@ def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callabl
                 print(msg)
             return {"status": "failed", "operation": "repair", "detail": msg, "exit_code": 14}
             
-    if args.resume:
+    if args.resume or args.rollback:
+        mode = "resume" if args.resume else "rollback"
         active = detection["journal"]
         if not active:
-            return {"status": "failed", "operation": "repair", "detail": "No journal to resume", "exit_code": 11}
+            return {"status": "failed", "operation": "repair", "detail": f"No journal to {mode}", "exit_code": 11}
         spec = active.get("data", {}).get("spec", [])
         if _spec_needs_runner(spec) and not _in_runner():
-            return _handoff_result(sys_dir, "resume")
-        def steps_for(a): return steps_from_spec(sys_dir, base_dir, spec, **seams)
-        return _cli_result(env_ops.resume(sys_dir, steps_for), mode="resume", sys_dir=sys_dir)
-        
-    if args.rollback:
-        active = detection["journal"]
-        if not active:
-            return {"status": "failed", "operation": "repair", "detail": "No journal to rollback", "exit_code": 11}
-        spec = active.get("data", {}).get("spec", [])
-        if _spec_needs_runner(spec) and not _in_runner():
-            return _handoff_result(sys_dir, "rollback")
-        def steps_for(a): return steps_from_spec(sys_dir, base_dir, spec, **seams)
+            return _handoff_result(sys_dir, mode)
+
+        def steps_for(locked):
+            if locked["op_id"] != active["op_id"] or locked["kind"] != active["kind"]:
+                raise env_ops.JournalError("Active operation changed before recovery")
+            if locked["kind"] == python_registry.KIND:
+                return python_registry.recovery_steps(sys_dir, locked, mode)
+            return steps_from_spec(sys_dir, base_dir, spec, **seams)
+
+        recover = env_ops.resume if args.resume else env_ops.rollback
         try:
-            res = env_ops.rollback(sys_dir, steps_for)
+            res = recover(sys_dir, steps_for)
         except env_ops.JournalError as exc:
             return {"status": "failed", "operation": "repair", "detail": str(exc), "exit_code": 11}
-        return _cli_result(res, mode="rollback", sys_dir=sys_dir)
+        return _cli_result(res, mode=mode, sys_dir=sys_dir)
 
     try:
         plan = build_plan_fn(sys_dir, base_dir, detection, only=only_set, remap_ai_state=args.remap_ai_state, offline=args.offline, cli_args=args, seams=seams)
