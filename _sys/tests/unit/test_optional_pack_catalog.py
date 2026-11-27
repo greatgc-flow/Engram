@@ -116,3 +116,23 @@ def test_feasibility_cli_from_unrelated_cwd(tmp_path):
     assert p.returncode == 0, p.stderr
     assert json.loads(p.stdout) == {"ai": "ABSENT", "contentflow": "ABSENT", "gamma": "ABSENT"}
     assert list(root.iterdir()) == []
+
+
+@pytest.mark.parametrize("borrowed", ["contentflow", "ai", "python", "git", "node"])
+def test_alias_does_not_claim_an_absent_reserved_identity(borrowed):
+    from core.pack_catalog import read_catalog
+    with pytest.raises(ValueError):
+        read_catalog([variant(aliases=[borrowed])], SLOTS)
+
+
+def test_folded_slots_and_linked_parents_are_unknown(tmp_path):
+    from core.pack_catalog import observe_slots, read_catalog
+    catalog = read_catalog([fixture(n) for n in PIN], SLOTS)
+    (tmp_path / "aI").mkdir()
+    assert observe_slots(tmp_path, catalog)["ai"] == "UNKNOWN"
+    link = tmp_path / "packages"
+    try:
+        link.symlink_to(tmp_path / "missing", target_is_directory=True)
+    except OSError:
+        pytest.skip("creating a symlink requires OS permission")
+    assert observe_slots(tmp_path, catalog)["gamma"] == "UNKNOWN"
