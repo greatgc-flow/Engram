@@ -1,0 +1,26 @@
+name: WP0 Windows Python feasibility
+on:
+  push:
+    branches: [test/local-ai-wp0-windows]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  python-provider:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.14'
+      - name: Fetch the two public test artifacts and run offline canaries
+        shell: pwsh
+        run: |
+          $pins = Get-Content tools/feasibility/windows-python.lock.json -Raw | ConvertFrom-Json
+          $archive = Join-Path $env:RUNNER_TEMP $pins.archive.filename
+          $wheel = Join-Path $env:RUNNER_TEMP $pins.wheel.filename
+          Invoke-WebRequest $pins.archive.url -OutFile $archive
+          Invoke-WebRequest $pins.wheel.url -OutFile $wheel
+          python -B tools/feasibility/windows_python.py --archive $archive --wheel $wheel
+          exit $LASTEXITCODE
