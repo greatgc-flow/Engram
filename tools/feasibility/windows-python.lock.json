@@ -1,6 +1,7 @@
 {
   "scope": "WP0 disposable compatibility probe only",
   "archive": {
+    "asset_id": 788332448,
     "filename": "cpython-3.14.10+20261124-x86_64-pc-windows-msvc-install_only.tar.gz",
     "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.14.10%2B20261124-x86_64-pc-windows-msvc-install_only.tar.gz",
     "metadata": "https://api.github.com/repos/astral-sh/python-build-standalone/releases/tags/20261124",

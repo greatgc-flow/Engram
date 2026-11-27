@@ -134,27 +134,28 @@ def make_archive(path, *, patch="3.14.10", machine=0x8664, dll="python314.dll"):
     ("3.14.10",0x8664,"python314t.dll",False)])
 def test_admission_checks_bytes_and_packaging_without_install(monkeypatch,tmp_path,patch,machine,dll,ok):
     from core import python_provider as provider
+    from core import python_artifact
     path=tmp_path/"cache"
     make_archive(path,patch=patch,machine=machine,dll=dll)
     data=path.read_bytes()
     release,_=discover(monkeypatch,[upstream("3.14.10",hashlib.sha256(data).hexdigest(),len(data))])
     artifact=release.artifacts[0]
     if ok:
-        result=provider.verify_cached(path,artifact,artifact.identity())
+        result=python_artifact.verify_cached(path,artifact,artifact.identity())
         assert result["regular_files"] == 7
         assert result["python_pe_machine"] == "AMD64"
         for field in ("provider","flavor","arch","implementation","version","abi","sha256","artifact_ref"):
             with pytest.raises(provider.ProviderError):
-                provider.verify_cached(path,artifact,{**artifact.identity(),field:"other"})
+                python_artifact.verify_cached(path,artifact,{**artifact.identity(),field:"other"})
         path.write_bytes(data[:-1] + bytes([data[-1]^1]))
     with pytest.raises(provider.ProviderError):
-        provider.verify_cached(path,artifact,artifact.identity())
+        python_artifact.verify_cached(path,artifact,artifact.identity())
     assert list(tmp_path.iterdir()) == [path]
 
 
 @pytest.mark.parametrize("name",["../outside","python/../other","C:/tool","python/AUX.txt",
     "python/bin:alias","python/dir./tool","python/back\\slash","python//name","other/tool"])
 def test_windows_member_names_rejected_before_extraction(name):
-    from core import python_provider as provider
-    with pytest.raises(provider.ProviderError):
-        provider.validate_member_name(name)
+    from core import python_artifact
+    with pytest.raises(python_artifact.ProviderError):
+        python_artifact.validate_member_name(name)

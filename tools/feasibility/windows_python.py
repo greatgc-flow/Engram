@@ -7,16 +7,16 @@ import json
 import os
 from pathlib import Path
 import shutil
-import struct
 import subprocess
 import sys
 import tarfile
 import tempfile
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_sys"))
+from core import python_provider, version_resolver
+from core.python_artifact import Artifact, open_verified, verify_cached
+
 LOCK = Path(__file__).with_name("windows-python.lock.json")
-REQUIRED = {"python/python.exe", "python/python314.dll", "python/DLLs/_ssl.pyd",
-            "python/DLLs/_sqlite3.pyd", "python/DLLs/_ctypes.pyd", "python/LICENSE.txt",
-            "python/Lib/venv/__init__.py", "python/Lib/ensurepip/_bundled/pip-26.3-py3-none-any.whl"}
 
 
 def require(condition, message):
@@ -31,20 +31,6 @@ def stage(source, pin, root):
     with dest.open("rb") as f:
         require(hashlib.file_digest(f, "sha256").hexdigest() == pin["sha256"], "artifact digest mismatch")
     return dest
-
-
-def inspect_archive(archive):
-    members = archive.getmembers()
-    names = {m.name for m in members}
-    require(all(m.isfile() for m in members) and REQUIRED <= names, "unexpected archive layout")
-    require(len(names) == len(members), "duplicate member")
-    with archive.extractfile("python/python.exe") as exe:
-        require(exe.read(2) == b"MZ", "missing DOS header")
-        exe.seek(60)
-        exe.seek(struct.unpack("<I", exe.read(4))[0])
-        require(exe.read(6) == b"PE\0\0\x64\x86", "not AMD64 PE")
-    return {"regular_files": len(members), "uncompressed_bytes": sum(m.size for m in members),
-            "python_pe_machine": "AMD64"}
 
 
 def footprint():
@@ -81,12 +67,12 @@ print(json.dumps({'python': sys.version.split()[0], 'abi': sys.implementation.ca
 """
 
 
-def native(root, archive_path, wheel):
+def native(root, archive_bytes, wheel):
     work = root / "fixture one"
     work.mkdir()
     # All bytes come from the verified private stage; no network or updater.
     before = footprint()
-    with tarfile.open(archive_path) as archive:
+    with tarfile.open(fileobj=archive_bytes, mode="r:gz") as archive:
         archive.extractall(work, filter="data")
     child_env = {k: os.environ[k] for k in ("SystemRoot", "WINDIR", "COMSPEC") if k in os.environ}
     child_env.update(PATH=str(Path(os.environ["SystemRoot"]) / "System32"),
@@ -118,25 +104,52 @@ def native(root, archive_path, wheel):
             "fresh_and_rebuilt": receipts, "sampled_host_footprint_equal": True}
 
 
+def check_publisher(artifact, wheel_pin, receipt):
+    """Join publisher metadata and, if available, this run's native consumer evidence."""
+    release = python_provider.fetch_release(tag=artifact.tag)
+    require(artifact in release.artifacts, "publisher selection differs from the reviewed WP0 lock")
+    consumer = "wp0-markupsafe"
+    lock_bytes = json.dumps(wheel_pin, sort_keys=True, separators=(",", ":")).encode()
+    lock_digest = hashlib.sha256(lock_bytes).hexdigest()
+    receipts = []
+    if receipt["native"] == "PASS":
+        native_bytes = json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode()
+        evidence = hashlib.sha256(native_bytes).hexdigest()
+        receipts.append(python_provider.ConsumerReceipt(artifact, consumer, lock_digest, "PASS", evidence))
+    source = version_resolver.resolve_latest("python", "endoflife_python", "", "python")
+    require(source["status"] == "ok", "source feed unavailable")
+    joined = python_provider.assess(source["source_catalog"], release, {consumer: lock_digest}, receipts)
+    row = joined["series"][artifact.version.rsplit(".", 1)[0]]
+    return {"release": release.tag, "source": row["source_version"], "binary": row["windows_binary"],
+            "consumer": consumer, "lock_sha256": lock_digest, "compatible": row["compatible_candidate"],
+            "evidence_sha256": receipts[0].evidence_sha256 if receipts else None}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", required=True, type=Path)
     parser.add_argument("--wheel", required=True, type=Path)
     parser.add_argument("--inventory-only", action="store_true", help="Verify archive without native execution")
+    parser.add_argument("--check-publisher", action="store_true",
+                        help="Read the fixed publisher release and source feed and join this probe's evidence")
     args = parser.parse_args()
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
     with tempfile.TemporaryDirectory(prefix="engram-wp0-") as temp:
         root = Path(temp)
-        archive_path = stage(args.archive, lock["archive"], root)
+        pin = lock["archive"]
+        artifact = Artifact("20261124", "3.14.10", pin["asset_id"], pin["sha256"], pin["size"])
         wheel = stage(args.wheel, lock["wheel"], root)
-        with tarfile.open(archive_path) as archive:
-            receipt = inspect_archive(archive)
-        receipt.update(artifact_bytes="PASS", native="NOT_RUN")
-        if not args.inventory_only:
-            if sys.platform != "win32":
-                receipt.update(native="BLOCKED", reason="Windows execution required")
-            else:
-                receipt.update(native(root, archive_path, wheel))
+        if args.inventory_only or sys.platform != "win32":
+            receipt = verify_cached(args.archive, artifact, artifact.identity())
+            receipt["native"] = "NOT_RUN" if args.inventory_only else "BLOCKED"
+            if receipt["native"] == "BLOCKED":
+                receipt["reason"] = "Windows execution required"
+        else:
+            with open_verified(args.archive, artifact, artifact.identity()) as (archive_bytes, receipt):
+                receipt.update(native(root, archive_bytes, wheel))
+        receipt["artifact_bytes"] = "PASS"
+        if args.check_publisher:
+            receipt["publisher"] = check_publisher(artifact, lock["wheel"], receipt)
         print(json.dumps(receipt, sort_keys=True))
         return 2 if receipt["native"] == "BLOCKED" else 0
 

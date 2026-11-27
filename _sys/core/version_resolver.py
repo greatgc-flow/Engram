@@ -670,6 +670,7 @@ def _python_source_catalog(entries: list[dict], today: date) -> dict:
     """Describe dated CPython 3 releases. Only a separate artifact probe can confirm a binary."""
     releases = {}
     incomplete = False
+    incomplete_series = set()
     for row in entries:
         version = str(row["latest"])
         if not re.fullmatch(r"3\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", version):
@@ -679,6 +680,7 @@ def _python_source_catalog(entries: list[dict], today: date) -> dict:
         patched = _feed_date(row.get("latestReleaseDate"))
         if released is None or patched is None or patched < released:
             incomplete = True
+            incomplete_series.add(cycle)
             continue
         if patched <= today:
             dates = released, _feed_date(row.get("support")), _feed_date(row.get("eol"))
@@ -690,6 +692,7 @@ def _python_source_catalog(entries: list[dict], today: date) -> dict:
         phase = _support_phase(releases[cycle][latest], today)
         if phase == "UNKNOWN":
             incomplete = True
+            incomplete_series.add(cycle)
         series[cycle] = {
             "source_version": f"{cycle}.{latest}", "support_phase": phase,
             "windows_binary": None, "compatible_candidate": None,
@@ -699,6 +702,7 @@ def _python_source_catalog(entries: list[dict], today: date) -> dict:
         "observed_on": today.isoformat(),
         "coverage": "PARTIAL" if incomplete or not series else "MEASURED",
         "series": series,
+        **({"incomplete_series": sorted(incomplete_series)} if incomplete else {}),
     }
 
 
@@ -1178,6 +1182,24 @@ def _resolve_engram_release(
     )
 
 
+def resolve_python_candidates(cache_path=None, *, force_refresh=False, ttl_seconds=DEFAULT_CACHE_TTL_SECONDS,
+                              consumer_locks=None, receipts=()):
+    """Explicit provider check. Legacy Python discovery keeps its original network budget."""
+    from core import python_provider
+    source = _resolve_python(cache_path, force_refresh=force_refresh, ttl_seconds=ttl_seconds)
+    if source.get("status") != "ok":
+        return source
+    try:
+        release = python_provider.fetch_release()
+        detail = None
+    except python_provider.ProviderError as exc:
+        release, detail = None, str(exc)
+    catalog = python_provider.assess(source["source_catalog"], release, consumer_locks or {}, receipts)
+    if detail:
+        catalog["binary_detail"] = detail
+    return {**source, "source_catalog": catalog}
+
+
 def resolve_latest(
     tool_name: str,
     provider: str,
@@ -1204,6 +1226,9 @@ def resolve_latest(
         result = _resolve_npm(discovery_id)
     elif provider == "sqlite_org_page":
         result = _resolve_sqlite(discovery_id)
+    elif provider == "engram_python_candidates":
+        result = resolve_python_candidates(cache_path, force_refresh=force_refresh, ttl_seconds=ttl_seconds)
+        result = {**result, "provider": provider}
     elif provider == "endoflife_python":
         result = _resolve_python(cache_path, force_refresh=force_refresh, ttl_seconds=ttl_seconds)
     elif provider == "engram_release":
