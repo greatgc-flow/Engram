@@ -136,3 +136,12 @@ def test_folded_slots_and_linked_parents_are_unknown(tmp_path):
     except OSError:
         pytest.skip("creating a symlink requires OS permission")
     assert observe_slots(tmp_path, catalog)["gamma"] == "UNKNOWN"
+
+
+def test_existing_tool_alias_blocks_generic_entry(tmp_path):
+    doc = tmp_path / "gamma.json"
+    doc.write_bytes(variant(aliases=["cc"]))
+    run = subprocess.run([sys.executable, "-B", str(SYSTEM.parent / "tools/feasibility/pack_catalog.py"),
+                          str(tmp_path), str(doc)], text=True, capture_output=True)
+    assert run.returncode == 2
+    assert "alias" in run.stderr
