@@ -1,0 +1,160 @@
+"""WP1 provider admission and source/binary/consumer joins (R03, T59/T60)."""
+from dataclasses import replace
+from datetime import date, timedelta
+import hashlib
+import io
+import tarfile
+import urllib.error
+
+import pytest
+
+from core import version_resolver
+
+TODAY = date(2026, 11, 28)
+TAG = "20261124"
+API = "https://api.github.com/repos/astral-sh/python-build-standalone/releases"
+WEB = "https://github.com/astral-sh/python-build-standalone/releases"
+
+
+def upstream(version, digest="a" * 64, size=120, ident=100):
+    name = f"cpython-{version}+{TAG}-x86_64-pc-windows-msvc-install_only.tar.gz"
+    return {"name": name, "id": ident, "digest": "sha256:" + digest, "size": size,
+            "state": "uploaded", "url": f"{API}/assets/{ident}",
+            "browser_download_url": f"{WEB}/download/{TAG}/{name.replace('+', '%2B')}"}
+
+
+def release_info():
+    return {"url": API + "/21", "assets_url": API + "/21/assets", "id": 21,
+            "html_url": WEB + "/tag/" + TAG, "tag_name": TAG, "immutable": True,
+            "draft": False, "prerelease": False, "published_at": "2026-11-24T01:02:03Z"}
+
+
+def discover(monkeypatch, assets, info=None, observed=TODAY):
+    from core import python_provider as provider
+    pages = []
+    def fetch(url):
+        pages.append(url)
+        if url == API + "/latest":
+            return release_info() if info is None else info
+        n = len(pages) - 2
+        assert url == API + f"/21/assets?per_page=100&page={n + 1}"
+        return assets[100*n:100*(n+1)]
+    monkeypatch.setattr(provider, "_read_api", fetch)
+    return provider.fetch_release(today=observed), pages
+
+
+def catalog(source="3.14.11", phase="SECURITY_ONLY", observed=TODAY):
+    return {"observed_on": observed.isoformat(), "coverage": "MEASURED", "series": {
+        "3.14": {"source_version": source, "support_phase": phase,
+                 "windows_binary": None, "compatible_candidate": None}}}
+
+
+def test_complete_release_pages_and_scoped_negative(monkeypatch):
+    from core import python_provider as provider
+    assets = [{"id": i+1000, "name": f"notes-{i}"} for i in range(100)]
+    assets += [upstream("3.14.9"), upstream("3.14.10", ident=101)]
+    release, pages = discover(monkeypatch, assets)
+    source = catalog()
+    joined = provider.assess(source, release, {}, (), today=TODAY)
+    row = joined["series"]["3.14"]
+    assert row["windows_binary"] == "3.14.10"
+    assert row["binary_status"] == "SOURCE_NEWER_NO_BINARY"
+    assert row["compatible_candidate"] is None
+    assert joined["binary_release"] == TAG and len(pages) == 3
+    assert source["series"]["3.14"]["windows_binary"] is None
+
+
+@pytest.mark.parametrize("field,value", [("url", API.replace("astral-sh","someone")+"/21"),
+    ("immutable", False), ("draft", True), ("prerelease", True), ("id", True),
+    ("published_at","2027-01-01T00:00:00Z"), ("tag_name","nightly")])
+def test_release_requires_trusted_stable_origin(monkeypatch, field, value):
+    from core import python_provider as provider
+    info = {**release_info(), field: value}
+    with pytest.raises(provider.ProviderError):
+        discover(monkeypatch, [upstream("3.14.10")], info=info)
+
+
+@pytest.mark.parametrize("field,value", [("digest",None),("digest","sha256:bad"),("size",0),
+    ("state","new"),("url",API+"/assets/99"),("browser_download_url","https://example.invalid/asset")])
+def test_incomplete_or_substituted_asset_cannot_prove_absence(monkeypatch, field, value):
+    from core import python_provider as provider
+    with pytest.raises(provider.ProviderError):
+        discover(monkeypatch, [{**upstream("3.14.10"), field:value}])
+
+
+def test_receipts_bind_every_current_consumer_and_full_build(monkeypatch):
+    from core import python_provider as provider
+    release, _ = discover(monkeypatch, [upstream("3.14.10")])
+    artifact = release.artifacts[0]
+    locks = {"app-one": "1"*64, "app-two": "2"*64}
+    good = [provider.ConsumerReceipt(artifact, k, v, "PASS", "e"*64) for k,v in locks.items()]
+    def selected(receipts, source=None, snapshot=release, constraints=locks):
+        return provider.assess(source or catalog(), snapshot, constraints, receipts, today=TODAY)["series"]["3.14"]
+    assert selected(good)["compatible_candidate"] == "3.14.10"
+    assert selected(good[:1])["compatible_candidate"] is None
+    for changed in (replace(good[1],lock_sha256="3"*64), replace(good[1],evidence_sha256=""),
+                    replace(good[1],artifact=replace(artifact,sha256="b"*64))):
+        assert selected([good[0],changed])["compatible_candidate"] is None
+    assert selected([*good,replace(good[0],outcome="FAIL")])["compatible_candidate"] is None
+    assert selected(good, source=catalog(phase="EOL"))["compatible_candidate"] is None
+    assert selected(good, source=catalog(phase="UNKNOWN"))["compatible_candidate"] is None
+    assert selected(good, source=catalog(observed=TODAY-timedelta(days=1)))["compatible_candidate"] is None
+    assert selected(good, snapshot=replace(release, observed_on=TODAY-timedelta(days=1)))["compatible_candidate"] is None
+
+
+def test_partial_provider_failure_preserves_legacy_source(monkeypatch):
+    from core import python_provider as provider
+    source = {"status": "ok", "latest_patch_by_cycle": {"3.14":"3.14.10"}, "source_catalog": catalog()}
+    monkeypatch.setattr(version_resolver,"_resolve_python",lambda *args,**kw:source.copy())
+    def unavailable(*args,**kw):
+        raise provider.ProviderError("public metadata unavailable")
+    monkeypatch.setattr(provider,"fetch_release",unavailable)
+    result = version_resolver.resolve_python_candidates()
+    assert result["latest_patch_by_cycle"] == {"3.14":"3.14.10"}
+    assert result["source_catalog"]["binary_coverage"] == "UNKNOWN"
+    assert result["source_catalog"]["series"]["3.14"]["binary_status"] == "UNVERIFIABLE"
+
+
+def make_archive(path, *, patch="3.14.10", machine=0x8664, dll="python314.dll"):
+    pe = b"MZ" + bytes(58) + (64).to_bytes(4,"little") + b"PE\0\0" + machine.to_bytes(2,"little")
+    contents = {"python/python.exe": pe, "python/"+dll:pe,
+                "python/include/patchlevel.h": f'#define PY_VERSION "{patch}"\n'.encode(),
+                "python/Lib/venv/__init__.py":b"# fixture", "python/Lib/ensurepip/__init__.py":b"# fixture",
+                "python/Lib/ensurepip/_bundled/pip-1.0-py3-none-any.whl":b"placeholder",
+                "python/LICENSE.txt":b"fixture"}
+    with tarfile.open(path,"w:gz") as tar:
+        for name,raw in contents.items():
+            m=tarfile.TarInfo(name)
+            m.size=len(raw)
+            tar.addfile(m,io.BytesIO(raw))
+
+
+@pytest.mark.parametrize("patch,machine,dll,ok", [("3.14.10",0x8664,"python314.dll",True),
+    ("3.14.9",0x8664,"python314.dll",False), ("3.14.10",0x14c,"python314.dll",False),
+    ("3.14.10",0x8664,"python314t.dll",False)])
+def test_admission_checks_bytes_and_packaging_without_install(monkeypatch,tmp_path,patch,machine,dll,ok):
+    from core import python_provider as provider
+    path=tmp_path/"cache"
+    make_archive(path,patch=patch,machine=machine,dll=dll)
+    data=path.read_bytes()
+    release,_=discover(monkeypatch,[upstream("3.14.10",hashlib.sha256(data).hexdigest(),len(data))])
+    artifact=release.artifacts[0]
+    if ok:
+        result=provider.verify_cached(path,artifact,artifact.identity())
+        assert result["regular_files"] == 7
+        assert result["python_pe_machine"] == "AMD64"
+        for field in ("provider","flavor","arch","implementation","version","abi","sha256","artifact_ref"):
+            with pytest.raises(provider.ProviderError):
+                provider.verify_cached(path,artifact,{**artifact.identity(),field:"other"})
+        path.write_bytes(data[:-1] + bytes([data[-1]^1]))
+    with pytest.raises(provider.ProviderError):
+        provider.verify_cached(path,artifact,artifact.identity())
+    assert list(tmp_path.iterdir()) == [path]
+
+
+@pytest.mark.parametrize("name",["../outside","python/../other","C:/tool","python/AUX.txt",
+    "python/bin:alias","python/dir./tool","python/back\\slash","python//name","other/tool"])
+def test_windows_member_names_rejected_before_extraction(name):
+    from core import python_provider as provider
+    with pytest.raises(provider.ProviderError):
+        provider.validate_member_name(name)
