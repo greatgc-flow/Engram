@@ -1,0 +1,19 @@
+{
+  "scope": "WP0 disposable compatibility probe only",
+  "archive": {
+    "filename": "cpython-3.14.10+20261124-x86_64-pc-windows-msvc-install_only.tar.gz",
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.14.10%2B20261124-x86_64-pc-windows-msvc-install_only.tar.gz",
+    "metadata": "https://api.github.com/repos/astral-sh/python-build-standalone/releases/tags/20261124",
+    "sha256": "b062f2d8879a72b3d624697534aa8f736bf5eaf200ffbb1274602891a0e9e964",
+    "size": 51515993,
+    "licenses": "CPython PSF license and bundled component notices; python/LICENSE.txt. Redistribution review open."
+  },
+  "wheel": {
+    "filename": "markupsafe-3.0.3-cp314-cp314-win_amd64.whl",
+    "url": "https://files.pythonhosted.org/packages/28/52/182836104b33b444e400b14f797212f720cbc9ed6ba34c800639d154e821/markupsafe-3.0.3-cp314-cp314-win_amd64.whl",
+    "metadata": "https://pypi.org/pypi/MarkupSafe/3.0.3/json",
+    "sha256": "bdc919ead48f234740ad807933cdf545180bfbe9342c2bb451556db2ed958581",
+    "size": 15341,
+    "license": "BSD-3-Clause"
+  }
+}
