@@ -66,16 +66,16 @@ import ctypes, json, os, sqlite3, ssl, sys, sysconfig
 from pathlib import Path
 from markupsafe import _speedups
 base, env = map(Path, sys.argv[1:])
-def check(condition):
+def check(condition, name):
     if not condition:
-        raise RuntimeError('runtime identity or isolation mismatch')
-check(Path(sys.executable).samefile(env / 'Scripts' / 'python.exe'))
-check(Path(sys.prefix).samefile(env) and Path(sys.base_prefix).samefile(base))
-check(sys.version_info[:3] == (3, 14, 10) and sysconfig.get_platform() == 'win-amd64')
-check(Path(_speedups.__file__).resolve().is_relative_to(env))
+        raise RuntimeError('runtime mismatch: ' + name)
+check(Path(sys.executable).samefile(env / 'Scripts' / 'python.exe'), 'executable')
+check(Path(sys.prefix).samefile(env) and Path(sys.base_prefix).samefile(base), 'prefixes')
+check(sys.version_info[:3] == (3, 14, 10) and sysconfig.get_platform() == 'win-amd64', 'version or platform')
+check(Path(_speedups.__file__).resolve().is_relative_to(env.resolve()), 'wheel location')
 with sqlite3.connect(':memory:') as db:
-    check(db.execute('SELECT 17').fetchone() == (17,))
-check(bool(ssl.OPENSSL_VERSION) and ctypes.sizeof(ctypes.c_void_p) == 8)
+    check(db.execute('SELECT 17').fetchone() == (17,), 'SQLite query')
+check(bool(ssl.OPENSSL_VERSION) and ctypes.sizeof(ctypes.c_void_p) == 8, 'OpenSSL or pointer size')
 print(json.dumps({'python': sys.version.split()[0], 'abi': sys.implementation.cache_tag,
                   'sqlite': sqlite3.sqlite_version, 'ssl': ssl.OPENSSL_VERSION, 'wheel': 'MarkupSafe 3.0.3'}))
 """
@@ -94,7 +94,9 @@ def native(root, archive_path, wheel):
 
     def run(exe, *args):
         result = subprocess.run([exe, "-I", "-B", *args], cwd=work, env=child_env,
-                                check=True, capture_output=True, timeout=120, text=True, errors="replace")
+                                capture_output=True, timeout=120, text=True, errors="replace")
+        if result.returncode:
+            raise RuntimeError(f"offline child exited {result.returncode}: {result.stderr[-1500:]}")
         return result.stdout
 
     receipts = []
