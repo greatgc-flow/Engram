@@ -67,6 +67,9 @@ jobs:
         pytest -p no:cacheprovider "_sys/tests/unit/test_venv_repair.py::test_real_venv_refresh_and_regen" -v -rs --tb=short
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+    - name: Verify legacy Multi-Python binding after bootstrap
+      run: python -B tools/feasibility/windows_legacy_binding.py
+
     - name: Upload contract results
       if: always()
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
