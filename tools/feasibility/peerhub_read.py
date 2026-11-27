@@ -7,6 +7,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 
@@ -35,10 +36,10 @@ def probe(source, root):
     sys.addaudithook(guard)
 
     db = root / "store" / "fixture.db"
-    def cli(*args, code=0):
+    def cli(*args, code=0, database=db):
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
-            actual = main(["--db", str(db), *args, "--json"])
+            actual = main(["--db", str(database), *args, "--json"])
         if actual != code:
             raise RuntimeError(f"{args[0]} returned {actual}, expected {code}")
         return json.loads(stdout.getvalue())
@@ -60,15 +61,24 @@ def probe(source, root):
                   "--profile", "cc.standard", "--workspace", str(root), "--timeout-seconds", "180",
                   "--max-output-bytes", "65536", "--dry-run")
     check(before == tree(db.parent), "ask preview changed source files")
-    streams = cli("stream", "list", "--limit", "1")
-    records = cli("record", "read", "--stream", "wp0", "--after", "0", "--limit", "1")
-    sessions = cli("session", "list")
-    check([s["stream_id"] for s in streams["items"]] == ["wp0"], "stream selection")
-    check(records == [record] and sessions["items"] == [], "record or session mismatch")
     expected = {"store_exists": True, "stream_exists": True, "peer_id": "cc", "profile": "cc.standard",
                 "stream_id": "wp0", "request_id": "wp0-01", "workspace": str(root),
                 "session_mode": "fresh", "writable": False, "replay": False}
     check(all(preview.get(k) == v for k, v in expected.items()), "dry-run binding")
+
+    def check_history(database):
+        streams = cli("stream", "list", "--limit", "1", database=database)
+        records = cli("record", "read", "--stream", "wp0", "--after", "0", "--limit", "1", database=database)
+        sessions = cli("session", "list", database=database)
+        check([s["stream_id"] for s in streams["items"]] == ["wp0"], "stream selection")
+        check(records == [record] and sessions["items"] == [], "record or session mismatch")
+
+    # The synthetic producer has closed every handle. Never use this as a live DB backup.
+    working = root / "disposable-snapshot-copy"
+    shutil.copytree(db.parent, working)
+    check_history(working / db.name)
+    check(tree(db.parent) == before, "snapshot replay changed the source")
+    check_history(db)
     after = tree(db.parent)
     changed = {p for p in before.keys() | after.keys() if before.get(p) != after.get(p)}
     allowed = {Path(db.name + suffix) for suffix in ("-shm", "-wal")}
@@ -77,7 +87,8 @@ def probe(source, root):
     # Keep physical no-write as a distinct oracle instead of silently accepting it.
     history_footprint = "FAIL" if changed else "PASS"
     check(not blocked, "process/network audit events observed")
-    return {"version": __version__, "logical_read": "PASS", "preview_tree_equal": True,
+    return {"version": __version__, "logical_read": "PASS", "closed_snapshot_source_equal": True,
+            "preview_tree_equal": True,
             "history_tree_equal": history_footprint, "history_created": sorted(map(str, changed)),
             "record_shape": "array", "session_shape": "object", "preview_keys": sorted(preview),
             "observed_blocked_operations": len(blocked)}
