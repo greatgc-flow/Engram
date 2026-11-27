@@ -653,48 +653,53 @@ def _feed_date(value: Any) -> date | None:
         return None
 
 
+def _support_phase(boundaries: set[tuple], today: date) -> str:
+    if len(boundaries) != 1:
+        return "UNKNOWN"
+    released, support_end, eol = next(iter(boundaries))
+    if support_end is None or eol is None or not released <= support_end <= eol:
+        return "UNKNOWN"
+    if today >= eol:
+        return "EOL"
+    if today >= support_end:
+        return "SECURITY_ONLY"
+    return "BUGFIX"
+
+
 def _python_source_catalog(entries: list[dict], today: date) -> dict:
-    """Describe dated CPython 3 source releases. Artifact and dependency evidence arrive separately."""
-    series = {}
-    selected = {}
-    lifecycle = {}
+    """Describe dated CPython 3 releases. Only a separate artifact probe can confirm a binary."""
+    releases = {}
     incomplete = False
     for row in entries:
-        cycle, version = row["cycle"], row["latest"]
-        if not re.fullmatch(r"3\.(?:0|[1-9][0-9]*)", cycle):
+        version = str(row["latest"])
+        if not re.fullmatch(r"3\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", version):
             continue
-        release = _feed_date(row.get("releaseDate"))
-        patch_release = _feed_date(row.get("latestReleaseDate"))
-        if release is None or patch_release is None or patch_release < release:
+        cycle, patch = version.rsplit(".", 1)
+        released = _feed_date(row.get("releaseDate"))
+        patched = _feed_date(row.get("latestReleaseDate"))
+        if released is None or patched is None or patched < released:
             incomplete = True
             continue
-        if patch_release > today:
-            continue
-        patch = int(version.rsplit(".", 1)[1])
-        if patch < selected.get(cycle, -1):
-            continue
-        dates = (release, _feed_date(row.get("support")), _feed_date(row.get("eol")))
-        if patch == selected.get(cycle):
-            if dates != lifecycle[cycle]:
-                series[cycle]["support_phase"] = "UNKNOWN"
-            continue
-        support, eol = dates[1:]
-        phase = "UNKNOWN"
-        if support and eol and release <= support <= eol:
-            if today >= eol:
-                phase = "EOL"
-            elif today >= support:
-                phase = "SECURITY_ONLY"
-            else:
-                phase = "BUGFIX"
-        selected[cycle], lifecycle[cycle] = patch, dates
-        series[cycle] = {"source_version": version, "support_phase": phase,
-                         "windows_binary": None, "compatible_candidate": None}
+        if patched <= today:
+            dates = released, _feed_date(row.get("support")), _feed_date(row.get("eol"))
+            releases.setdefault(cycle, {}).setdefault(int(patch), set()).add(dates)
 
-    cycles = sorted(series, key=lambda cycle: int(cycle.split(".")[1]), reverse=True)
-    incomplete |= any(item["support_phase"] == "UNKNOWN" for item in series.values())
-    return {"observed_on": today.isoformat(), "coverage": "PARTIAL" if incomplete or not series else "MEASURED",
-            "series": {cycle: series[cycle] for cycle in cycles}}
+    series = {}
+    for cycle in sorted(releases, key=lambda c: int(c.split(".")[1]), reverse=True):
+        latest = max(releases[cycle])
+        phase = _support_phase(releases[cycle][latest], today)
+        if phase == "UNKNOWN":
+            incomplete = True
+        series[cycle] = {
+            "source_version": f"{cycle}.{latest}", "support_phase": phase,
+            "windows_binary": None, "compatible_candidate": None,
+        }
+
+    return {
+        "observed_on": today.isoformat(),
+        "coverage": "PARTIAL" if incomplete or not series else "MEASURED",
+        "series": series,
+    }
 
 
 def _resolve_python(
@@ -767,7 +772,7 @@ def _resolve_python(
                 and re.fullmatch(r"\d+\.\d+\.\d+", version)
                 and version.startswith(cycle + ".")
                 and str(entry.get("releaseDate", "")) <= now_str):
-            releases.append({**entry, "cycle": cycle, "latest": version})
+            releases.append(entry)
             previous = patches.get(cycle)
             if previous is None or tuple(map(int, version.split("."))) > tuple(map(int, previous.split("."))):
                 patches[cycle] = version
