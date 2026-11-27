@@ -11,6 +11,8 @@ from _sys.core.root import find_root
 SYSTEM = find_root(__file__)
 FIXTURES = SYSTEM / "tests/fixtures/optional-pack"
 sys.path.insert(0, str(SYSTEM))
+from core import cli_help
+
 SLOTS = {"ai": "AI", "contentflow": "ContentFlow"}
 PIN = {
     "ai": "2b9cf838e2c83b4197716f89a443a5f3fe0595d51e954fe7a9b0f19beb5cdaf9",
@@ -29,7 +31,7 @@ def test_frozen_cross_repo_bytes_and_all_three_packages():
     for stem, expected in PIN.items():
         assert sha256(fixture(stem)).hexdigest() == expected
     for names in ([], ["ai"], ["cf"], ["ai", "cf"], list(PIN)):
-        catalog = read_catalog([fixture(n) for n in names], SLOTS)
+        catalog = read_catalog([fixture(n) for n in names], SLOTS, cli_help.verbs())
         assert sorted(d.package_id for d in catalog) == sorted(
             json.loads(fixture(n))["package_id"] for n in names)
 
@@ -49,7 +51,7 @@ def variant(**changes):
 def test_reject_invalid_descriptor(change):
     from core.pack_catalog import read_catalog
     with pytest.raises(ValueError):
-        read_catalog([variant(**change)], SLOTS)
+        read_catalog([variant(**change)], SLOTS, cli_help.verbs())
 
 
 @pytest.mark.parametrize("change", [
@@ -62,7 +64,7 @@ def test_reject_invalid_profile(change):
     doc = json.loads(fixture("gamma"))
     doc["profiles"][0].update(change)
     with pytest.raises(ValueError):
-        read_catalog([json.dumps(doc).encode()], SLOTS)
+        read_catalog([json.dumps(doc).encode()], SLOTS, cli_help.verbs())
 
 
 def test_catalog_wide_namespace_and_unique_profiles():
@@ -72,7 +74,7 @@ def test_catalog_wide_namespace_and_unique_profiles():
                 [fixture("ai"), variant(aliases=["ai"])], [variant(profiles=[profile, profile])],
                 [variant(aliases=["ai", "contentflow"]), fixture("cf")]):
         with pytest.raises(ValueError):
-            read_catalog(raw, SLOTS)
+            read_catalog(raw, SLOTS, cli_help.verbs())
 
 
 @pytest.mark.parametrize("raw", [b'{"a":1,"a":2}', b'\xef\xbb\xbf{}', b'x'*1048577,
@@ -80,14 +82,14 @@ def test_catalog_wide_namespace_and_unique_profiles():
 def test_reject_bad_wire(raw):
     from core.pack_catalog import read_catalog
     with pytest.raises(ValueError):
-        read_catalog([raw], SLOTS)
+        read_catalog([raw], SLOTS, cli_help.verbs())
 
 
 def test_read_only_probe_across_mixed_slots(tmp_path):
     from core.pack_catalog import read_catalog, observe_slots
     root = tmp_path / "renamed system"
     root.mkdir()
-    catalog = read_catalog([fixture(n) for n in PIN], SLOTS)
+    catalog = read_catalog([fixture(n) for n in PIN], SLOTS, cli_help.verbs())
     assert set(observe_slots(root, catalog).values()) == {"ABSENT"}
     assert list(root.iterdir()) == []
     (root / "AI").mkdir()
@@ -104,7 +106,7 @@ def test_read_only_probe_across_mixed_slots(tmp_path):
 def test_unknown_root_is_never_empty_installation(tmp_path):
     from core.pack_catalog import observe_slots, read_catalog
     with pytest.raises(ValueError):
-        observe_slots(tmp_path / "missing", read_catalog([fixture("gamma")], SLOTS))
+        observe_slots(tmp_path / "missing", read_catalog([fixture("gamma")], SLOTS, cli_help.verbs()))
 
 
 def test_feasibility_cli_from_unrelated_cwd(tmp_path):
@@ -122,12 +124,12 @@ def test_feasibility_cli_from_unrelated_cwd(tmp_path):
 def test_alias_does_not_claim_an_absent_reserved_identity(borrowed):
     from core.pack_catalog import read_catalog
     with pytest.raises(ValueError):
-        read_catalog([variant(aliases=[borrowed])], SLOTS)
+        read_catalog([variant(aliases=[borrowed])], SLOTS, cli_help.verbs())
 
 
 def test_folded_slots_and_linked_parents_are_unknown(tmp_path):
     from core.pack_catalog import observe_slots, read_catalog
-    catalog = read_catalog([fixture(n) for n in PIN], SLOTS)
+    catalog = read_catalog([fixture(n) for n in PIN], SLOTS, cli_help.verbs())
     (tmp_path / "aI").mkdir()
     assert observe_slots(tmp_path, catalog)["ai"] == "UNKNOWN"
     link = tmp_path / "packages"

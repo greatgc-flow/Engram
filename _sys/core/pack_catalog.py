@@ -5,8 +5,6 @@ from pathlib import Path
 import re
 import stat
 
-from core import cli_help
-
 MAX_BYTES = 1024 * 1024
 _ID = re.compile(r"[a-z][a-z0-9-]{0,47}")
 _KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
@@ -100,9 +98,9 @@ def _descriptor(raw, slots):
     return Descriptor(package, slot, aliases, profiles, doc["default_profile"], operations)
 
 
-def read_catalog(payloads, reviewed_slots):
+def read_catalog(payloads, reviewed_slots, host_commands):
     """The installation supplies slot policy independently of descriptor bytes."""
-    claimed = set(cli_help.verbs()) | {"engram", "pack", "help", "start", "python", "pip",
+    claimed = set(host_commands) | {"engram", "pack", "help", "start", "python", "pip",
                                        "git", "node", "npm", "npx", "cmd", "powershell", "pwsh"}
     slots, catalog = set(), []
     for raw in payloads:

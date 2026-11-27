@@ -6,6 +6,7 @@ import sys
 
 SYSTEM = Path(__file__).resolve().parents[2] / "_sys"
 sys.path.insert(0, str(SYSTEM))
+from core import cli_help, provisioner  # noqa: E402
 from core.pack_catalog import MAX_BYTES, observe_slots, read_catalog  # noqa: E402
 
 REVIEWED_SLOTS = {"ai": "AI", "contentflow": "ContentFlow"}
@@ -16,7 +17,13 @@ def load_fixtures(paths):
     for path in paths:
         with path.open("rb") as stream:
             payloads.append(stream.read(MAX_BYTES + 1))
-    return read_catalog(payloads, REVIEWED_SLOTS)
+    commands = set(cli_help.verbs())
+    catalog_path = provisioner.resolve_declared_config(SYSTEM, provisioner.TOOL_CATALOG_FILENAME)
+    host_tools = json.loads(catalog_path.read_text(encoding="utf-8"))
+    for tool in host_tools["tools"]:
+        commands.add(tool["tool_id"])
+        commands.update(tool["aliases"])
+    return read_catalog(payloads, REVIEWED_SLOTS, commands)
 
 
 def main():
