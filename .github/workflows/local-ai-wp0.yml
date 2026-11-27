@@ -24,3 +24,29 @@ jobs:
           Invoke-WebRequest $pins.wheel.url -OutFile $wheel
           python -B tools/feasibility/windows_python.py --archive $archive --wheel $wheel
           exit $LASTEXITCODE
+      - name: Repeat using a Windows Basic User token
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pins = Get-Content tools/feasibility/windows-python.lock.json -Raw | ConvertFrom-Json
+          $script = (Resolve-Path tools/feasibility/windows_python.py).Path
+          $interpreter = (Get-Command python.exe).Source
+          $dir = $env:RUNNER_TEMP
+          $receipt = Join-Path $dir 'basic-user-output.txt'
+          $done = Join-Path $dir 'basic-user-complete.txt'
+          $cmdFile = Join-Path $dir 'wp0-basic-user.cmd'
+          @(
+            '@echo off'
+            ('"{0}" -B "{1}" --archive "{2}" --wheel "{3}" > "{4}" 2>&1' -f $interpreter,$script,(Join-Path $dir $pins.archive.filename),(Join-Path $dir $pins.wheel.filename),$receipt)
+            ('echo %ERRORLEVEL% > "{0}"' -f $done)
+          ) | Set-Content $cmdFile -Encoding ascii
+          & runas.exe /trustlevel:0x20000 "cmd.exe /d /c `"`"$cmdFile`"`""
+          if ($LASTEXITCODE -ne 0) { throw 'Windows Basic User launch unavailable' }
+          $deadline = [DateTime]::UtcNow.AddMinutes(4)
+          while (!(Test-Path $done) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Seconds 2 }
+          if (!(Test-Path $done)) { throw 'No completed Basic User receipt' }
+          $output = Get-Content $receipt -Raw
+          Write-Output $output
+          if ([int](Get-Content $done -Raw) -ne 0) { throw 'Basic User probe failed' }
+          $result = $output | ConvertFrom-Json
+          if ($result.native -ne 'PASS' -or $result.effective_admin -ne $false) { throw 'Effective non-admin token required' }
