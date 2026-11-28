@@ -43,21 +43,3 @@ This component scope can follow the usual Engram relocation when a portable inst
 ## Extra Python as a scoped Engram update
 
 `engram update --only python-versions --offline --check --json` invokes the same patch planner as `engram python update` for all registered extra series. A preview is the default. Apply with `--yes`. The check has no install side effects, even when combined with `--yes`. Mixed component scopes and unsupported version overrides fail before discovery. With no registered series, the planner returns an empty plan without contacting the providers. The legacy default continues to use `engram update --only python`. Combined bare update and detached core handoff participation remain open in T69.
-
-## Observe running Python images before retirement
-
-`engram python doctor [3.MINOR] --scan-processes --json` opts into a local
-process snapshot through Engram's existing psutil dependency. An observed
-exact registered interpreter or app venv launcher adds `LIVE_PROCESS` and
-protects the build, including a retained patch whose old project pin has
-been removed. Matching uses normalized executable paths and includes
-managed windowed launchers. Results contain the build reference and
-coverage; process IDs, executable paths and command lines stay out of the
-report. The ordinary doctor avoids process enumeration.
-
-A sample has partial coverage. Processes can race the snapshot, access can
-be denied and aliases or unmanaged environments can evade matching. A
-missing observation leaves retirement unverified. This evidence covers
-observed live processes in T72. External project and backup reference
-coverage, quiescence at removal and the destructive removal workflow remain
-open.
