@@ -131,3 +131,25 @@ def test_continue_or_warn_failure_keeps_operation_notice(monkeypatch, capsys, po
     with pytest.raises(RuntimeError, match="pipeline 'testcmd' incomplete; failed operations: op1"):
         dispatcher.main(["dispatcher.py", "testcmd"])
     assert capsys.readouterr().out == "  [Error] Operation 'op1' returned failure: False\n"
+
+
+def test_update_dry_run_keeps_json_stdout_parseable(tmp_path, monkeypatch, capsys):
+    import json
+    from core import dispatcher
+
+    # Exercise the real update pipeline, including the post-update venv.snapshot.
+    # Substitute only the planner's platform-dependent Python discovery.
+    updater = types.ModuleType("core.updater")
+    def plan(ctx):
+        print(json.dumps({"status": "success", "exit_code": 0}))
+        return {"status": "success"}
+    updater.run = plan
+    monkeypatch.setitem(sys.modules, "core.updater", updater)
+    monkeypatch.setattr(dispatcher, "_build_ctx", lambda cmd, args: {
+        "command": cmd, "args": args, "sys_dir": tmp_path / "_sys", "base_dir": tmp_path})
+    result = dispatcher.main(["dispatcher.py", "update", "--only", "python", "--dry-run", "--offline", "--json"])
+    assert result == 0
+    output = capsys.readouterr()
+    assert json.loads(output.out) == {"status": "success", "exit_code": 0}
+    assert "venv snapshot" in output.err
+    assert not (tmp_path / "_sys").exists()
