@@ -338,7 +338,7 @@ Usage: engram python list [--json]
 
 Description:
   List the legacy binding and registered active builds. Where prints the
-  existing default venv executable or the active executable for a series.
+  executable selected for the current project and requested series.
   Run launches that interpreter from the caller's directory and forwards
   everything after -- as Python arguments. Without a series, run selects the
   legacy venv unless the project has an exact Python pin. A different series
@@ -369,7 +369,7 @@ Examples:
   engram python unpin
 
 Exit codes:
-  0   inventory or lookup succeeded
+  0   command completed
   1   interpreter unavailable, incomplete plan or failed staging
   2   invalid arguments
   10  install declined or confirmation unavailable

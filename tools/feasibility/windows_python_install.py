@@ -84,7 +84,7 @@ def main(cache):
         child = project / "nested dir"
         child.mkdir()
         pin = command("pin", "3.13", "--json", cwd=child)
-        assert pin["changed"] and Path(pin["pin"]).parent == project
+        assert pin["changed"] and Path(pin["pin"]).parent.samefile(project)
         executable = command("where", "3.13", "--json")["executable"]
         assert Path(command("where", "--json", cwd=child)["executable"]).samefile(executable)
         command("run", "3.14", "--", "--version", cwd=child, code=1, parse=False)

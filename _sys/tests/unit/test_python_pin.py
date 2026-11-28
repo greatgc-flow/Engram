@@ -77,3 +77,32 @@ def test_pin_keeps_previous_exact_build_after_active_build_changes(workspace):
     doc["revision"] += 1
     assert python_registry.publish(system, 1, doc)["phase"] == "COMMITTED"
     assert invoke(workspace, "where", "3.14")["executable"] == str(executable)
+
+
+def test_foreign_pin_blocks_execution_and_survives_explicit_unpin(workspace, monkeypatch):
+    from core import python_pin
+
+    assert invoke(workspace, "pin", "3.14")["exit_code"] == 0
+    path = workspace[1] / python_pin.FILENAME
+    document = json.loads(path.read_bytes())
+    document["installation_id"] = "foreign-install"
+    foreign = json.dumps(document).encode()
+    path.write_bytes(foreign)
+    spawn = Mock()
+    monkeypatch.setattr(python_cli.subprocess, "run", spawn)
+    assert invoke(workspace, "run", "--", "--version")["exit_code"] == 1
+    assert invoke(workspace, "unpin")["exit_code"] == 1
+    assert path.read_bytes() == foreign
+    spawn.assert_not_called()
+
+
+def test_nested_git_root_has_independent_pin(workspace, monkeypatch):
+    from core import python_pin
+
+    assert invoke(workspace, "pin", "3.14")["exit_code"] == 0
+    nested = workspace[1] / "scripts"
+    (nested / ".git").write_text("gitdir: ../separate-worktree", encoding="utf-8")
+    assert invoke(workspace, "where")["exit_code"] == 1
+    assert invoke(workspace, "pin", "3.14")["exit_code"] == 0
+    assert (nested / python_pin.FILENAME).is_file()
+    assert (workspace[1] / python_pin.FILENAME).is_file()
