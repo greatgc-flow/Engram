@@ -273,3 +273,43 @@ def test_offline_pack_bounds_zip_central_directory_before_entry_parsing(offline_
     monkeypatch.setattr(python_runtime_backup, "_MAX_ZIP_DIRECTORY", 128)
     with pytest.raises(OSError, match="directory exceeds"):
         _restore(ctx, bundle, "--dry-run")
+
+
+def test_doctor_protects_retained_build_listed_by_explicit_packed_backup(offline_pack, capsys):
+    from core import python_cli
+
+    ctx, bundle, registry, _, archive, wheel = offline_pack
+    _pack(ctx, bundle)
+    doc = json.loads(registry.read_bytes())
+    old = doc["builds"]["build-a"]
+    old["state"] = "RETAINED"
+    newer = {**old, "version": "3.14.11", "state": "ACTIVE", "sha256": "c" * 64,
+             "executable_rel": "env/python-versions/3.14/build-b/python.exe"}
+    doc["series"]["3.14"]["active_build"] = "build-b"
+    doc["builds"]["build-b"] = newer
+    doc["bindings"].pop("demo")
+    doc["environments"].clear()
+    doc["revision"] += 1
+    registry.write_text(json.dumps(doc), encoding="utf-8")
+    capsys.readouterr()
+    # Drop the local cache payloads from the observation. The inventory refers to the archive.
+    archive.rename(archive.with_suffix(".held"))
+    wheel.rename(wheel.with_suffix(".held"))
+    before = snapshot(ctx["base_dir"])
+    args = ["doctor", "3.14", "--backup", str(bundle), "--json"]
+    result = python_cli.run({**ctx, "args": args})
+    row = next(row for row in result["builds"] if row["build_id"] == "build-a")
+    assert row["references"] == ["BACKUP_REFERENCE"] and row["retirement"] == "PROTECTED"
+    assert result["coverage"]["backups"] == "PARTIAL"
+    assert str(bundle) not in capsys.readouterr().out
+    assert snapshot(ctx["base_dir"]) == before
+
+
+def test_doctor_reports_invalid_explicit_backup_without_claiming_reference_coverage(runtime):
+    from core import python_cli
+
+    ctx, _, bundle = runtime
+    bundle.write_bytes(b"invalid zip")
+    result = python_cli.run({**ctx, "args": ["doctor", "3.14", "--backup", str(bundle), "--json"]})
+    assert result["exit_code"] == 1 and result["coverage"]["backups"] == "UNKNOWN"
+    assert "BACKUP_REFERENCE_UNAVAILABLE" in {finding["code"] for finding in result["findings"]}
