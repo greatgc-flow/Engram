@@ -74,6 +74,10 @@ def _run_child(root, argv, parser):
     selector, payload = argv[1:boundary], argv[boundary + 1:]
     if not payload or len(selector) > 1 or (selector and not _SERIES.fullmatch(selector[0])):
         parser.error("expected run [3.MINOR] -- PYTHON_ARGS")
+    return _launch_child(root, selector[0] if selector else None, payload)
+
+
+def _launch_child(root, series, payload=None):
     try:
         if env_ops.active_journal(root) is not None:
             print("An environment operation needs recovery. Run engram repair --resume or --rollback.",
@@ -83,9 +87,28 @@ def _run_child(root, argv, parser):
             print("An environment operation is in progress. Retry when it finishes.", file=sys.stderr)
             return 14
         cwd = _caller_directory()
-        executable = _executable(root, python_registry.inventory(root), selector[0] if selector else None, cwd)
-        return subprocess.run([str(executable), *payload], cwd=cwd,
-                              env=_child_environment(root, executable)).returncode
+        executable = _executable(root, python_registry.inventory(root), series, cwd)
+        env = _child_environment(root, executable)
+        if payload is not None:
+            command = [str(executable), *payload]
+        else:
+            if sys.platform != "win32":
+                raise ValueError("Python child shells require Windows.")
+            if cwd.drive.startswith("\\\\"):
+                raise ValueError("CMD needs a local working directory or a mapped drive.")
+            windows = Path(os.environ.get("SystemRoot", ""))
+            if not windows.is_absolute():
+                raise ValueError("Windows SystemRoot is unavailable.")
+            system = windows / "System32"
+            cmd = system / "cmd.exe"
+            # Exclude host Python and pip from shell lookup. Disable CMD AutoRun
+            # and implicit search in the project directory.
+            env["PATH"] = os.pathsep.join(map(str, (executable.parent, system, windows)))
+            env["COMSPEC"] = str(cmd)
+            env.pop("NODEFAULTCURRENTDIRECTORYINEXEPATH", None)
+            env["NoDefaultCurrentDirectoryInExePath"] = "1"
+            command = [str(cmd), "/d", "/q"]
+        return subprocess.run(command, cwd=cwd, env=env).returncode
     except (ValueError, OSError, env_ops.JournalError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -93,7 +116,7 @@ def _run_child(root, argv, parser):
 
 def run(ctx):
     parser = cli_help.CliParser("python")
-    parser.add_argument("action", nargs="?", choices=("list", "where", "run", "install", "pin", "unpin"))
+    parser.add_argument("action", nargs="?", choices=("list", "where", "run", "use", "install", "pin", "unpin"))
     parser.add_argument("series", nargs="*")
     parser.add_argument("--all-supported", action="store_true")
     parser.add_argument("--offline", action="store_true")
@@ -132,11 +155,16 @@ def run(ctx):
         return {**result, "quiet": True}
     if args.all_supported or args.offline or args.cache_dir is not None or args.dry_run or args.yes:
         parser.error("Installation flags require the install action.")
-    max_series = {"list": 0, "where": 1, "pin": 1, "unpin": 0}
+    max_series = {"list": 0, "where": 1, "use": 1, "pin": 1, "unpin": 0}
     if args.action not in max_series or len(args.series) > max_series[args.action]:
-        parser.error("expected list, where [3.MINOR], run, install, pin SERIES, or unpin")
+        parser.error("expected list, where [3.MINOR], run, use, install, pin SERIES, or unpin")
     if args.action == "pin" and not args.series:
         parser.error("pin requires an installed Python series")
+    if args.action == "use":
+        if args.json:
+            parser.error("use starts an interactive shell and takes no --json")
+        code = _launch_child(root, args.series[0] if args.series else None)
+        return {"status": "failed" if code else "success", "exit_code": code, "quiet": True}
     try:
         if args.action == "list":
             data = _inventory(python_registry.inventory(root))

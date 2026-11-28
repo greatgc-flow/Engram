@@ -1,8 +1,9 @@
-engram python - inspect, run, install or pin local Python runtimes
+engram python - manage local Python runtimes
 
 Usage: engram python list [--json]
        engram python where [3.MINOR] [--json]
        engram python run [3.MINOR] -- PYTHON_ARGS
+       engram python use [3.MINOR]
        engram python install SERIES [SERIES ...] | --all-supported
        engram python pin SERIES [--json]
        engram python unpin [--json]
@@ -16,6 +17,8 @@ Description:
   request conflicts with that pin. Install adds stable Windows x64 builds. It
   previews the candidates, asks for confirmation and checks each runtime
   in an isolated test venv before publishing the registry.
+  Use opens a child CMD shell with the selected runtime and Windows system
+  paths. Type exit to return to the parent shell.
   Pin selects the current exact build. Unpin removes this installation's pin.
   Both use the nearest Git root or the current directory outside Git.
 
@@ -36,6 +39,7 @@ Examples:
   engram python where 3.14
   engram python run 3.14 -- -m venv .venv
   engram python install 3.14 3.13 --dry-run
+  engram python use 3.14
   engram python pin 3.14
   engram python unpin
 

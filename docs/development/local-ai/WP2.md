@@ -46,3 +46,10 @@ engram python run 3.14 -- --version
 The Engram repository ignores the pin because it identifies a local installation. Restore and move must preserve installation identity and the referenced build to keep a pin usable. WP3 retirement must account for project-held references before removing a retained build, including pins outside the portable root.
 
 The disposable Windows test invokes pin, where, run and unpin from a nested Korean project path against the installed 3.13.18 fixture. It also exercises a fresh 3.12 online install with public source and provider metadata, downloads the exact approved archive, and runs the selected build. CI records the actual observed version. Online preview remains distinct from a successful installation.
+
+
+## Child shell for a selected runtime
+
+`engram python use [3.MINOR]` opens a child CMD process with the same selection and pin rules as `run`. It starts in the caller directory and passes the child exit code to the launching shell. The child search path starts with the selected runtime and includes Windows system directories. CMD AutoRun and implicit lookup in the caller directory are disabled. This gives the child a predictable Python and prevents inherited host package-manager executables from taking priority. For extra interpreter installations, use a project venv for packages.
+
+The Windows shell gate checks an exact project pin, an explicit conflict, a same-named command in the project directory, and a nonzero exit. It also checks the parent process environment and existing default binding. UNC directories require a mapped drive because CMD cannot keep a UNC working directory.

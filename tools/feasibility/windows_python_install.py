@@ -17,11 +17,11 @@ print(json.dumps({"version": sys.version.split()[0], "exe": sys.executable,
 """
 
 
-def command(*argv, code=0, parse=True, cwd=ROOT):
+def command(*argv, code=0, parse=True, cwd=ROOT, text_input=None):
     entry = ROOT / "engram.cmd"
     args = subprocess.list2cmdline(["python", *argv])
     line = f'cmd.exe /d /s /c ""{entry}" {args}"'
-    result = subprocess.run(line, cwd=cwd, capture_output=True, encoding="utf-8", errors="replace", timeout=300)
+    result = subprocess.run(line, cwd=cwd, input=text_input, capture_output=True, encoding="utf-8", errors="replace", timeout=300)
     if result.returncode != code:
         raise RuntimeError(f"{argv[:3]} returned {result.returncode}: {result.stdout} {result.stderr}")
     return json.loads(result.stdout) if parse else result.stdout
@@ -90,6 +90,13 @@ def main(cache):
         command("run", "3.14", "--", "--version", cwd=child, code=1, parse=False)
         version = command("run", "--", "--version", cwd=child, parse=False)
         assert version.strip() == f"Python {actual['3.13']}"
+        (child / "python.cmd").write_text("@exit /b 66\n", encoding="ascii")
+        before_use = os.environ.copy()
+        shell = command("use", cwd=child, code=47, parse=False,
+                        text_input="python --version\nexit 47\n")
+        assert f"Python {actual['3.13']}" in shell
+        assert os.environ == before_use
+        command("use", "3.14", cwd=child, code=1, parse=False)
         assert command("unpin", "--json", cwd=child)["changed"]
         assert command("where", "--json", cwd=child)["executable"] == default
 
@@ -102,7 +109,7 @@ def main(cache):
     assert version == f"Python {selected['version']}"
     assert command("where", "--json")["executable"] == default
     print(json.dumps({"selective_install": "PASS", "installed": actual, "revision": added["revision"],
-                      "parallel_project_venvs": True, "exact_project_pin": True,
+                      "parallel_project_venvs": True, "exact_project_pin": True, "child_shell": True,
                       "online_installed": selected["version"],
                       "offline": True, "legacy_default_preserved": True}))
 
