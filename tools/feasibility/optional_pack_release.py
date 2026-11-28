@@ -14,7 +14,8 @@ import subprocess
 from tempfile import TemporaryDirectory, TemporaryFile
 from zipfile import BadZipFile, ZipFile, ZIP_STORED
 
-from optional_pack_group import _activation, _fixture_root, _path as _group_path, publish
+from core.python_registry import _plain as _system_path
+from optional_pack_group import _activation, _fixture_root, publish
 
 from optional_pack_catalog import _KEY, decode_document
 
@@ -256,11 +257,15 @@ def run_staged(release, root, executable, executable_sha256):
     return _run(release, root, executable, executable_sha256, nullcontext(), release.entry, (), None)
 
 
+def _generation_rel(descriptor, release):
+    return f"{descriptor.slot_rel}/app/generations/gen-{release.manifest_sha256}"
+
+
 def _admitted(root, descriptor, release, policy, now):
     _fixture_root(root)
     _need(release.package == descriptor.package_id and release.policy == policy, "changed release trust")
     _fresh(policy, now)
-    return _group_path(root, descriptor.package_id, "signed/" + release.manifest_sha256)
+    return _system_path(root, _generation_rel(descriptor, release))
 
 
 def install_signed(root, descriptor, expected_revision, runtime_id, release, *, policy, now,
@@ -292,3 +297,74 @@ def launch_signed(root, descriptor, release, executable, executable_sha256, *, p
     generation = _admitted(root, descriptor, release, policy, now)
     return _run(release, generation, executable, executable_sha256,
                 _signed_activation(root, descriptor, release), release.entry, (), None)
+
+
+_ECHO = ("fixture_only", "schema_version", "protocol_version", "request_id", "parent_op_id",
+         "installation_id", "package_id", "generation", "operation")
+
+
+class AdapterOutcomeUnknown(ValueError):
+    """An effectful adapter started without trustworthy completion evidence."""
+
+
+def _reply(raw, request, *, effectful):
+    reply = decode_document(raw)
+    _need(type(reply) is dict and reply.keys() == set(_ECHO) | {"status", "findings", "receipt", "next_action"}
+          and reply["fixture_only"] is True and all(reply[k] == request[k] for k in _ECHO),
+          "adapter response echo does not match")
+    status = reply["status"]
+    _need(status in ("OK", "BLOCKED", "UNSUPPORTED", "UNKNOWN", "FAILED")
+          and reply["next_action"] in ("NONE", "REPLAN", "RECONCILE", "REPAIR", "STOP"),
+          "invalid adapter outcome")
+    findings = reply["findings"]
+    _need(type(findings) is list and len(findings) <= 32, "bad finding count")
+    for item in findings:
+        _need(type(item) is dict and item.keys() == {"code", "message"}
+              and type(item["code"]) is str and _KEY.fullmatch(item["code"])
+              and type(item["message"]) is str and 0 < len(item["message"]) <= 512, "invalid finding")
+    receipt = reply["receipt"]
+    if status == "OK" or receipt is not None:
+        _need(type(receipt) is dict and receipt.keys() == {"effect_id", "checkpoint_sha256",
+                                                         "observed_state", "owned_process_ids"}
+              and type(receipt["effect_id"]) is str and _KEY.fullmatch(receipt["effect_id"])
+              and receipt["observed_state"] in ("NEW", "OLD", "UNCHANGED", "UNKNOWN")
+              and receipt["owned_process_ids"] == []
+              and (receipt["checkpoint_sha256"] is None or _dig(receipt["checkpoint_sha256"])),
+              "invalid fixture receipt")
+        if status == "OK":
+            expected = "NEW" if effectful else "UNCHANGED"
+            _need(reply["next_action"] == "NONE" and receipt["observed_state"] == expected
+                  and (receipt["checkpoint_sha256"] is not None) == effectful,
+                  "successful adapter reply lacks operation evidence")
+    return reply
+
+
+def launch_adapter(root, descriptor, release, executable, executable_sha256, request, args, *, policy, now):
+    """Run an admitted adapter and validate one v1 response against its request."""
+    generation = _admitted(root, descriptor, release, policy, now)
+    rel = _generation_rel(descriptor, release)
+    _need(type(request) is dict and request.keys() == set(_ECHO) | {
+        "phase", "plan_digest", "scope", "deadline", "working_rel", "checkpoint_rel"},
+        "unknown adapter request shape")
+    _need(release.adapter_entry is not None and request["fixture_only"] is True
+          and request["protocol_version"] == request["schema_version"] == "1.0"
+          and request["package_id"] == descriptor.package_id and request["working_rel"] == rel
+          and request["generation"] == rel.rsplit("/", 1)[1]
+          and request["operation"] in descriptor.operations
+          and _dig(request["plan_digest"])
+          and all(type(request[k]) is str and _KEY.fullmatch(request[k])
+                  for k in ("request_id", "parent_op_id", "installation_id"))
+          and type(request["deadline"]) is str, "adapter request does not match signed generation")
+    deadline = datetime.fromisoformat(request["deadline"])
+    _need(deadline.utcoffset() == timedelta(0) and now < deadline, "expired adapter request")
+    wire = json.dumps(request, allow_nan=False, sort_keys=True, separators=(",", ":")).encode("ascii")
+    _need(len(wire) <= _MAX_OUTPUT, "oversized adapter request")
+    effectful = request["operation"] in ("checkpoint", "restore", "migrate", "relocate")
+    try:
+        raw = _run(release, generation, executable, executable_sha256,
+                   _signed_activation(root, descriptor, release), release.adapter_entry, args, wire)
+        return _reply(raw, request, effectful=effectful)
+    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        if effectful:
+            raise AdapterOutcomeUnknown("fixture effect needs reconciliation") from exc
+        raise
