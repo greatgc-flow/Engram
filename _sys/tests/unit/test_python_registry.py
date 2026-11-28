@@ -337,3 +337,48 @@ def test_every_publication_journal_boundary(installed, monkeypatch, prior, mode,
         committed = boundary == "COMMITTED" and side == "after"
     assert not env_ops.active_journal(installed)
     assert reg.inventory(installed)["revision"] == prior + int(committed)
+
+
+@pytest.mark.parametrize("mode", ["resume", "rollback"])
+def test_real_registry_joins_package_journal(installed, mode, monkeypatch):
+    from hashlib import sha256
+    from io import BytesIO
+    from zipfile import ZipFile
+    from core import python_registry as reg
+
+    tools = Path(__file__).resolve().parents[3] / "tools/feasibility"
+    monkeypatch.syspath_prepend(str(tools))
+    from optional_pack_group import activate, initialize_fixture, publish, recover
+    from pack_catalog import load_fixtures
+
+    root = installed.parent / "group"
+    root.mkdir()
+    initialize_fixture(root)
+    env_manifest.write_manifest(root, {"schema_version": 1, "install_id": "fixture-install",
+                                       "root": {"physical": str(root), "logical": str(root)}})
+    fixture = Path(__file__).resolve().parents[1] / "fixtures/optional-pack/gamma.descriptor.json"
+    descriptor, = load_fixtures([fixture])
+    proposal = candidate()
+    proposal["bindings"]["gamma"] = proposal["bindings"].pop("demo")
+    proposal["environments"]["env-a"].update(owner="gamma", root_rel="env/python-envs/gamma/env-a")
+    buf = BytesIO()
+    with ZipFile(buf, "w") as archive:
+        archive.writestr("app.txt", b"fixture")
+    data = buf.getvalue()
+    with pytest.raises(env_ops.SimulatedCrash):
+        publish(root, descriptor, 0, "build-a", data, sha256(data).hexdigest(),
+                registry_proposal=(0, proposal), crash_after=reg.STEP)
+    assert reg.inventory(root)["registry"] == proposal
+    with pytest.raises(ValueError, match="recovery"):
+        activate(root, descriptor)
+    assert not (root / "data/state/fixture-packs/gamma/package.json").exists()
+    recover(root, descriptor, mode)
+    if mode == "resume":
+        assert activate(root, descriptor) == (1, "build-a", b"fixture")
+        assert reg.inventory(root)["registry"] == proposal
+        reg.registry_path(root).unlink()
+        with pytest.raises(ValueError, match="binding"):
+            activate(root, descriptor)
+    else:
+        assert activate(root, descriptor) is None
+        assert reg.inventory(root)["revision"] == 0
