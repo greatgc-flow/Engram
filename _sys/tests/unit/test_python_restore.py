@@ -60,3 +60,36 @@ def test_restore_uses_existing_build_id_and_never_replaces_partial_directory(dam
     with pytest.raises(ValueError, match="Incomplete build directory"):
         python_restore.plan(root)
     assert exe.parent.is_dir()
+
+
+@pytest.mark.parametrize("mode", ["resume", "rollback"])
+def test_resume_and_rollback_after_atomic_restore_rename(damaged, monkeypatch, mode):
+    from pathlib import Path
+    from core import python_restore
+
+    root, cache, archive = damaged
+    cache.parent.mkdir(parents=True)
+    cache.write_bytes(archive)
+    def unpack(_, artifact, destination):
+        payload = destination / "python"
+        payload.mkdir()
+        (payload / "python.exe").touch()
+    monkeypatch.setattr(python_install, "extract_verified", unpack)
+    monkeypatch.setattr(python_install, "_probe", lambda *args: None)
+    spec = python_restore.plan(root)[0]
+    restore = python_restore.step(root, **spec["params"])
+    original = Path.rename
+    def crash_after_publish(path, destination):
+        result = original(path, destination)
+        if Path(destination).name == "build-a":
+            raise env_ops.SimulatedCrash()
+        return result
+    with monkeypatch.context() as m:
+        m.setattr(Path, "rename", crash_after_publish)
+        with pytest.raises(env_ops.SimulatedCrash):
+            env_ops.execute(root, "repair", [restore], initial_data={"spec": [spec]})
+    cache.unlink()
+    result = getattr(env_ops, mode)(root, lambda active: [python_restore.step(root, **spec["params"])])
+    exe = root / "env/python-versions/3.14/build-a/python.exe"
+    assert result["phase"] == ("COMMITTED" if mode == "resume" else "ROLLED_BACK")
+    assert exe.is_file() is (mode == "resume")

@@ -177,6 +177,12 @@ def _probe(base, scratch, artifact):
     checked(exe, "-m", "pip", "--isolated", "--disable-pip-version-check", "check")
 
 
+def extract_verified(source, artifact, destination):
+    with open_verified(source, artifact, artifact.identity()) as (stream, _):
+        with tarfile.open(fileobj=stream, mode="r:gz") as archive:
+            archive.extractall(destination, filter="data")
+
+
 def _stage(root, destination, artifact, source, offline):
     series = python_registry._plain(root, destination.parent.relative_to(root).as_posix())
     series.mkdir(parents=True, exist_ok=True)
@@ -185,9 +191,7 @@ def _stage(root, destination, artifact, source, offline):
         if not source.is_file() and not offline:
             source = scratch / "download.tar.gz"
             _download(source, artifact)
-        with open_verified(source, artifact, artifact.identity()) as (stream, _):
-            with tarfile.open(fileobj=stream, mode="r:gz") as archive:
-                archive.extractall(scratch, filter="data")
+        extract_verified(source, artifact, scratch)
         if destination.exists():
             raise ProviderError("The selected build directory already exists.")
         (scratch / "python").rename(destination)

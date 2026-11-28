@@ -573,7 +573,9 @@ Options:
   --yes, -y        Do not ask for confirmation with --apply (default: ask;
                    without a terminal --yes is required)
   --only LIST      Limit to: python,venv,registry,state,ai-state,manifest,
-                   packages (comma-separated; default: everything found)
+                   packages (comma-separated; default: legacy checks).
+                   Use python-versions alone to rebuild missing extra builds
+                   from exact archives in Engram's local Python cache.
   --offline        Never download anything (default: off)
   --remap-ai-state Also rewrite folder paths inside AI CLI state after a move
                    (default: off)
@@ -588,6 +590,7 @@ Examples:
   engram repair
   engram repair --apply
   engram repair --apply --yes --only venv
+  engram repair --only python-versions --offline --dry-run
   engram repair --json
   engram repair --resume
   engram repair --rollback

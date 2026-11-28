@@ -119,6 +119,13 @@ def build_plan(
     sys_dir = Path(sys_dir)
     base_dir = Path(base_dir)
     
+    if only == {"python-versions"}:
+        from core import python_restore
+        spec = python_restore.plan(sys_dir)
+        summary = [f"Restore exact offline build {item['params']['build_id']}" for item in spec]
+        return {"steps": steps_from_spec(sys_dir, base_dir, spec, **seams), "spec": spec,
+                "summary": summary, "kind": "repair"}
+
     valid_only = {"python", "venv", "registry", "state", "ai-state", "manifest", "packages"}
     if only is not None:
         invalid = only - valid_only
@@ -245,6 +252,10 @@ def steps_from_spec(sys_dir: Path | str, base_dir: Path | str, spec: list[dict],
             )
             out.extend(v_steps)
             
+        elif kind == "python-versions":
+            from core import python_restore
+            out.append(python_restore.step(sys_dir, **params))
+
         elif kind == "python":
             target = params.get("target_version")
             url = params.get("url")
@@ -654,6 +665,10 @@ def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callabl
             recovery_flag = "--resume" if args.resume else "--rollback"
             p.error(f"--dry-run cannot be combined with {recovery_flag}")
         valid_only = {"python", "venv", "registry", "state", "ai-state", "manifest", "packages"}
+        if help_verb == "repair":
+            valid_only.add("python-versions")
+        if args.only and "python-versions" in args.only.split(",") and args.only != "python-versions":
+            p.error("python-versions must be repaired as a separate scope")
         if args.only is not None and (not args.only or set(args.only.split(",")) - valid_only):
             p.error("--only requires comma-separated names: " + ",".join(sorted(valid_only)))
     except SystemExit as e:
