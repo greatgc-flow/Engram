@@ -48,8 +48,9 @@ def volumes(stack):
     raise RuntimeError("BLOCKED: two writable Windows volumes are required.")
 
 
-def repair_scope(root, *flags):
-    return repair.repair_main({"sys_dir": root, "base_dir": root.parent, "command": "repair",
+def repair_scope(root, *flags, verb="repair"):
+    handler = repair.relocate_main if verb == "relocate" else repair.repair_main
+    return handler({"sys_dir": root, "base_dir": root.parent, "command": verb,
                                "args": ["--only", "python-envs", "--offline", "--json", *flags]})
 
 
@@ -119,17 +120,22 @@ def main(wheel):
         shutil.copytree(source, target)
         stale = repair_scope(target, "--dry-run")
         assert stale["exit_code"] == 11 and "stale base path" in stale["detail"]
-        (target / _ENV).rename(second / "held-stale-env")
+        stale_before = (target / _ENV / "pyvenv.cfg").read_bytes()
         (target / _WHEELS / wheel.name).rename(second / wheel.name)
-        missing = repair_scope(target, "--apply", "--yes")
+        missing = repair_scope(target, "--apply", "--yes", verb="relocate")
         assert missing["exit_code"] == 11 and wheel.name in missing["detail"]
-        assert not (target / _ENV).exists()
+        assert (target / _ENV / "pyvenv.cfg").read_bytes() == stale_before
         (second / wheel.name).rename(target / _WHEELS / wheel.name)
         # Make the old absolute runtime paths unavailable during the build and execution.
         held_source = first / "held-source"
         source.rename(held_source)
         assert not source.exists()
-        assert repair_scope(target, "--apply", "--yes")["exit_code"] == 0
+        planned = repair_scope(target, "--dry-run", verb="relocate")
+        assert planned["exit_code"] == 0 and len(planned["plan"]["steps"]) == 1
+        assert (target / _ENV / "pyvenv.cfg").read_bytes() == stale_before
+        assert repair_scope(target, "--apply", "--yes", verb="relocate")["exit_code"] == 0
+        archived, = (target / _ENV).parent.glob(".locked-demo.previous-*")
+        assert (archived / "pyvenv.cfg").read_bytes() == stale_before
         active = target / build["executable_rel"]
         assert digest(probe(target, active.parent)) == original_extension
         selected = python_cli.run({"sys_dir": target, "args": ["where", "--json"]})

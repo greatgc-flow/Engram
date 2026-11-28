@@ -88,27 +88,48 @@ def _existing(root, destination, executable):
         raise ValueError(f"Incomplete managed environment: {relative}. Preserve it before rebuilding.")
     with config.open(encoding="utf-8") as stream:
         homes = [line.partition("=")[2].strip() for line in stream if line.partition("=")[0].strip() == "home"]
-    if len(homes) != 1 or not Path(homes[0]).is_dir() or not Path(homes[0]).samefile(executable.parent):
-        raise ValueError(f"Managed environment has a stale base path: {relative}. Preserve it before rebuilding.")
+    return (len(homes) == 1 and Path(homes[0]).is_absolute() and Path(homes[0]).is_dir()
+            and Path(homes[0]).samefile(executable.parent))
 
 
-def plan(root):
+def _previous_marker(root, destination, env_id, lock_ref):
+    marker = python_registry._plain(root, (destination / _MARKER).relative_to(root).as_posix())
+    if not marker.is_file():
+        raise ValueError(f"Stale environment has no Engram ownership marker: {env_id}.")
+    with marker.open("rb") as stream:
+        raw = stream.read(4097)
+    if len(raw) > 4096:
+        raise ValueError(f"Invalid environment ownership marker: {env_id}.")
+    value = json.loads(raw, object_pairs_hook=python_registry._unique)
+    if (not isinstance(value, dict) or value.keys() != {"op_id", "env_id", "lock_ref", "state"}
+            or value["env_id"] != env_id or value["lock_ref"] != lock_ref or value["state"] != "complete"):
+        raise ValueError(f"Invalid environment ownership marker: {env_id}.")
+    python_registry._identifier(value["op_id"])
+    return hashlib.sha256(raw).hexdigest()
+
+
+def plan(root, *, relocate=False):
     registry = python_registry.inventory(root)["registry"]
     if registry is None:
         return []
     specs = []
     for key, environment in registry["environments"].items():
         base, destination, build = _paths(root, registry, environment)
+        previous = None
         if destination.exists():
-            _existing(root, destination, base)
-            continue
+            if _existing(root, destination, base):
+                continue
+            if not relocate:
+                raise ValueError(f"Managed environment has a stale base path: {environment['root_rel']}. Use relocate.")
+            previous = _previous_marker(root, destination, key, environment["lock_ref"])
         lock = _lock(root, environment, build)
         for name, expected in lock["wheels"]:
             if provisioner._hash_file(_wheel_path(root, name), "sha256") != expected:
                 raise ValueError(f"Wheel digest mismatch: {name}")
         specs.append({"kind": "python-envs", "name": "restore-env-" + key, "group": "A",
                       "params": {"env_id": key, "revision": registry["revision"],
-                                 "installation_id": registry["installation_id"]}})
+                                 "installation_id": registry["installation_id"],
+                                 "previous": previous}})
     return specs
 
 
@@ -136,7 +157,7 @@ def _rebuild(base, target, work, lock):
     checked("interpreter probe", python, "-c", _PROBE, python, base.parent, target, lock["version"])
 
 
-def step(root, *, env_id, revision, installation_id):
+def step(root, *, env_id, revision, installation_id, previous=None):
     def current():
         registry = python_registry.inventory(root)["registry"]
         if (registry is None or registry["revision"] != revision or registry["installation_id"] != installation_id
@@ -160,13 +181,30 @@ def step(root, *, env_id, revision, installation_id):
                 return state
         return None
 
+    def backup_path(ctx, destination):
+        op_id = python_registry._identifier(ctx.op_id)
+        backup = destination.with_name(f".{destination.name}.previous-{op_id}")
+        return python_registry._plain(root, backup.relative_to(root).as_posix())
+
+    def verify_previous(path, environment):
+        if _previous_marker(root, path, env_id, environment["lock_ref"]) != previous:
+            raise ValueError(f"The preserved environment changed during relocation: {env_id}.")
+
     def done(ctx):
         environment, (_, destination, _) = current()
-        return owner(ctx, environment, destination) == "complete" and (destination / "Scripts/python.exe").is_file()
+        if owner(ctx, environment, destination) != "complete" or not (destination / "Scripts/python.exe").is_file():
+            return False
+        if previous is not None:
+            verify_previous(backup_path(ctx, destination), environment)
+        return True
 
     def restore(ctx):
         environment, (base, destination, build) = current()
-        if destination.exists() and owner(ctx, environment, destination) != "creating":
+        owned = owner(ctx, environment, destination) == "creating"
+        backup = backup_path(ctx, destination) if previous is not None else None
+        if backup is not None and backup.exists():
+            verify_previous(backup, environment)
+        if destination.exists() and not owned and (backup is None or backup.exists()):
             raise ValueError(f"Restore destination already exists: {env_id}")
         lock = _lock(root, environment, build)
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -177,6 +215,11 @@ def step(root, *, env_id, revision, installation_id):
                 shutil.copyfile(_wheel_path(root, name), target)
                 if provisioner._hash_file(target, "sha256") != expected:
                     raise ValueError(f"Wheel digest mismatch: {name}")
+            if backup is not None and not backup.exists():
+                if _existing(root, destination, base):
+                    raise ValueError(f"Environment already resolves at the new path: {env_id}.")
+                verify_previous(destination, environment)
+                destination.rename(backup)
             if not destination.exists():
                 payload = work / "owner"
                 payload.mkdir()
@@ -188,7 +231,14 @@ def step(root, *, env_id, revision, installation_id):
 
     def undo(ctx):
         environment, (_, destination, _) = current()
+        backup = backup_path(ctx, destination) if previous is not None else None
+        if backup is not None and backup.exists():
+            verify_previous(backup, environment)
         if owner(ctx, environment, destination):
             shutil.rmtree(destination)
+        if backup is not None and backup.exists():
+            if destination.exists():
+                raise ValueError(f"Cannot return preserved environment to occupied path: {env_id}.")
+            backup.rename(destination)
 
     return env_ops.Step("restore-env-" + env_id, do=restore, undo=undo, done=done)

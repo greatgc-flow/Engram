@@ -645,7 +645,9 @@ Options:
                    without a terminal --yes is required)
   --remap-ai-state Also rewrite folder paths in AI CLI state (default: off)
   --only LIST      Limit to: python,venv,registry,state,ai-state,manifest,
-                   packages (default: everything found)
+                   packages (default: legacy checks).
+                   Use python-envs alone to rebuild stale managed venvs
+                   from their exact lock and wheel cache.
   --offline        Never download anything (default: off)
   --resume         Continue an interrupted operation (default: off;
                    mutually exclusive with --rollback)
@@ -658,6 +660,7 @@ Examples:
   engram relocate --apply
   engram relocate --from D:\old\Engram --apply --yes
   engram relocate --apply --remap-ai-state
+  engram relocate --only python-envs --offline --dry-run
 
 Exit codes:
   0   ok, nothing to do, or preview shown

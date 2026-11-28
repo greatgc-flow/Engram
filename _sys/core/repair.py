@@ -121,7 +121,7 @@ def build_plan(
     
     if only == {"python-envs"}:
         from core import python_env_restore
-        spec = python_env_restore.plan(sys_dir)
+        spec = python_env_restore.plan(sys_dir, relocate=seams.get("relocate_managed", False))
         summary = [f"Rebuild locked environment {item['params']['env_id']}" for item in spec]
         return {"steps": steps_from_spec(sys_dir, base_dir, spec, **seams), "spec": spec,
                 "summary": summary, "kind": "repair"}
@@ -676,8 +676,10 @@ def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callabl
             recovery_flag = "--resume" if args.resume else "--rollback"
             p.error(f"--dry-run cannot be combined with {recovery_flag}")
         valid_only = {"python", "venv", "registry", "state", "ai-state", "manifest", "packages"}
+        if help_verb in ("repair", "relocate"):
+            valid_only.add("python-envs")
         if help_verb == "repair":
-            valid_only.update({"python-versions", "python-envs"})
+            valid_only.add("python-versions")
         selected = set(args.only.split(",")) if args.only else set()
         if selected & {"python-versions", "python-envs"} and len(selected) != 1:
             p.error("python-versions and python-envs must be repaired as separate scopes")
@@ -805,7 +807,9 @@ def repair_main(ctx: dict) -> dict:
 def relocate_main(ctx: dict) -> dict:
     def setup(p):
         p.add_argument("--from", dest="from_path")
-    return _repair_engine_main(ctx, build_plan, setup)
+    def plan_managed(*args, **kwargs):
+        return build_plan(*args, relocate_managed=True, **kwargs)
+    return _repair_engine_main(ctx, plan_managed, setup)
 
 
 def update_env_main(ctx: dict, only: set[str]) -> dict:
