@@ -460,3 +460,90 @@ def test_python_network_failure_is_reported(monkeypatch):
     monkeypatch.setattr(vr.urllib.request, "urlopen", fail)
     result = vr._resolve_python()
     assert result["status"] == "error" and result["error_type"] == "network_error"
+
+
+@pytest.fixture
+def series_clock(monkeypatch):
+    class Clock(vr.datetime):
+        day_offset = 0
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 11, 28 + cls.day_offset, 0, 0, tzinfo=tz)
+
+    monkeypatch.setattr(vr, "datetime", Clock)
+    return Clock
+
+
+def _source_row(series, version, support="2027-10-01", eol="2030-10-01"):
+    return {"cycle": series, "latest": version, "releaseDate": "2024-10-01",
+            "latestReleaseDate": "2026-10-25", "support": support, "eol": eol}
+
+
+def test_extra_series_separates_source_and_runtime_evidence(monkeypatch, series_clock):
+    rows = [
+        _source_row("3.14", "3.14.9"), _source_row("3.14", "3.14.10"),
+        dict(_source_row("3.14", "3.14.11"), latestReleaseDate="2026-12-01"),
+        _source_row("3.13", "3.13.8", support="2026-11-28"),
+        dict(_source_row("3.10", "3.10.20", support="2023-10-01", eol="2026-11-28"),
+             releaseDate="2021-10-04"),
+        _source_row("3.16", "3.16.0rc1"), _source_row("2.7", "2.7.18"),
+    ]
+    monkeypatch.setattr(vr.urllib.request, "urlopen", lambda *a, **k: FakeResponse(json.dumps(rows)))
+    result = vr.resolve_latest("python", "endoflife_python", "3.14.9", "python", None)
+    catalog = result["source_catalog"]
+    assert catalog["observed_on"] == "2026-11-28"
+    assert catalog["coverage"] == "MEASURED"
+    assert list(catalog["series"]) == ["3.14", "3.13", "3.10"]
+    assert catalog["series"]["3.14"] == {
+        "source_version": "3.14.10", "support_phase": "BUGFIX",
+        "windows_binary": None, "compatible_candidate": None,
+    }
+    assert catalog["series"]["3.13"]["support_phase"] == "SECURITY_ONLY"
+    assert catalog["series"]["3.10"]["support_phase"] == "EOL"
+    assert result["latest_patch_by_cycle"]["3.14"] == "3.14.11"  # existing notice contract
+
+
+@pytest.mark.parametrize("change", [
+    {"eol": None}, {"eol": "2030-02-31"}, {"support": True},
+    {"support": "2031-10-01"}, {"support": "2023-01-01"},
+])
+def test_extra_series_unknown_lifecycle(monkeypatch, series_clock, change):
+    row = dict(_source_row("3.14", "3.14.10"), **change)
+    monkeypatch.setattr(vr.urllib.request, "urlopen", lambda *a, **k: FakeResponse(json.dumps([row])))
+    assert vr._resolve_python()["source_catalog"]["series"]["3.14"]["support_phase"] == "UNKNOWN"
+
+
+def test_extra_series_conflict_order_and_unconfirmed_release(monkeypatch, series_clock):
+    good = _source_row("3.14", "3.14.10")
+    entries = [good, dict(good, support="2025-10-01"),
+               dict(_source_row("3.13", "3.13.7"), latestReleaseDate=None)]
+    for order in (entries, entries[::-1]):
+        monkeypatch.setattr(vr.urllib.request, "urlopen", lambda *a, **k: FakeResponse(json.dumps(order)))
+        catalog = vr._resolve_python()["source_catalog"]
+        assert catalog["series"]["3.14"]["support_phase"] == "UNKNOWN"
+        assert "3.13" not in catalog["series"]
+        assert catalog["coverage"] == "PARTIAL"
+
+
+def test_extra_series_old_and_past_date_cache_are_read_only(monkeypatch, tmp_path, series_clock):
+    cache = tmp_path / "cache.json"
+    provider = "endoflife_python"
+    row = _source_row("3.14", "3.14.10")
+    monkeypatch.setattr(vr.urllib.request, "urlopen", lambda *a, **k: FakeResponse(json.dumps([row])))
+    vr._resolve_python(cache)
+    original = cache.read_bytes()
+    monkeypatch.setattr(vr.urllib.request, "urlopen", lambda *a, **k: pytest.fail("unexpected fetch"))
+    series_clock.day_offset = 1
+    stale = vr._resolve_python(cache, ttl_seconds=172800)
+    assert stale["source_catalog"]["coverage"] == "STALE"
+    assert stale["source_catalog"]["observed_on"] == "2026-11-28"
+    assert cache.read_bytes() == original
+    legacy = json.loads(original)
+    legacy[provider]["python"]["result"].pop("source_catalog")
+    cache.write_text(json.dumps(legacy), encoding="utf-8")
+    original = cache.read_bytes()
+    restored = vr._resolve_python(cache, ttl_seconds=172800)
+    assert restored["latest_version"] == "3.14.10"
+    assert restored["source_catalog"] == {"coverage": "UNKNOWN", "observed_on": None, "series": {}}
+    assert cache.read_bytes() == original
