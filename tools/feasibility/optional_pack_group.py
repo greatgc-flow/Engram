@@ -108,8 +108,11 @@ def _execution_lease(root, package, revision):
             path.unlink()
 
 
-def _retained(revision, retired_digest):
-    return {"state": "DATA_RETAINED", "revision": revision, "retired_sha256": retired_digest}
+def _retained(revision, retired_digest, registered):
+    marker = {"state": "DATA_RETAINED", "revision": revision, "retired_sha256": retired_digest}
+    if registered:
+        marker["registered"] = True
+    return marker
 
 
 def _current(root, package):
@@ -126,8 +129,9 @@ def _current(root, package):
         raise ValueError("invalid fixture pointer revision")
     if binding.get("state") == "DATA_RETAINED":
         retired = binding.get("retired_sha256")
+        retained = _retained(generation, retired, binding.get("registered") is True)
         if (type(retired) is not str or not re.fullmatch(r"[0-9a-f]{64}", retired)
-                or binding != _retained(generation, retired) or pointer != binding):
+                or binding != retained or pointer != retained):
             raise ValueError("incoherent fixture retention pointers")
         return None, [runtime, app]
     runtime_id = binding.get("runtime")
@@ -257,9 +261,10 @@ def retire(root, descriptor, expected_revision, expected_payload, *, verify_arti
         observed, before = _current(root, package)
         if observed is None or observed[0] != expected_revision or observed[2] != expected_payload:
             raise ValueError("fixture retirement generation conflict")
-        marker = _wire(_retained(expected_revision + 1, sha256(expected_payload).hexdigest()))
+        registered = json.loads(before[0]).get("registered") is True
+        marker = _wire(_retained(expected_revision + 1, sha256(expected_payload).hexdigest(), registered))
         data = {"package": package, "before": before, "after": [marker, marker], "remove": True}
-        if json.loads(before[0]).get("registered"):
+        if registered:
             registry = python_registry.inventory(root)["registry"]
             _require_binding(registry, package, observed[1])
             revision = registry["revision"]
@@ -295,9 +300,9 @@ def recover(root, descriptor, mode):
         removing = data.get("remove") is True
         if removing:
             binding, pointer = map(json.loads, data["before"])
-            marker = _wire(_retained(binding["revision"] + 1, pointer["sha256"]))
-            if data["after"] != [marker, marker] or (binding.get("registered") is True) != (
-                    _REGISTRY_KEY in data):
+            registered = binding.get("registered") is True
+            marker = _wire(_retained(binding["revision"] + 1, pointer["sha256"], registered))
+            if data["after"] != [marker, marker] or registered != (_REGISTRY_KEY in data):
                 raise ValueError("fixture retirement journal images mismatch")
         else:
             sha = data["sha256"]
