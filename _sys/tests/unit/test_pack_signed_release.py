@@ -189,7 +189,7 @@ def test_signed_generation_switch_recovers_without_touching_retained_state(tmp_p
 
 def test_adapter_starts_signed_member_and_rejects_wrong_echo(tmp_path, signing):
     from optional_pack_group import initialize_fixture
-    from optional_pack_release import admit, install_signed, launch_adapter
+    from optional_pack_release import AdapterOutcomeUnknown, admit, install_signed, launch_adapter
 
     policy, descriptor = policy_and_descriptor(signing)
     root = tmp_path / "fixture"
@@ -203,8 +203,16 @@ keys = ('fixture_only', 'schema_version', 'protocol_version', 'request_id', 'par
 reply = {k: req[k] for k in keys}
 if sys.argv[1:] == ['wrong']:
     reply['parent_op_id'] = 'wrong'
+if sys.argv[1:] == ['slow']:
+    import time
+    time.sleep(0.5)
+if sys.argv[1:] == ['oversize']:
+    print('x' * 65537)
+    raise SystemExit(0)
 reply.update(status='OK', findings=[], receipt={'effect_id':'receipt','checkpoint_sha256':None,
     'observed_state':'UNCHANGED','owned_process_ids':[]}, next_action='NONE')
+if req['operation'] == 'checkpoint':
+    reply['receipt'].update(observed_state='NEW',checkpoint_sha256='b'*64)
 print(json.dumps(reply))
 """
     doc, artifact = build_release({"bin/app.py": app, "bin/adapter.py": adapter})
@@ -225,3 +233,12 @@ print(json.dumps(reply))
     assert answer["status"] == "OK" and answer["request_id"] == "req"
     with pytest.raises(ValueError, match="echo"):
         launch_adapter(root, descriptor, release, exe, pin, request, ("wrong",), policy=policy, now=NOW)
+
+    with pytest.raises(ValueError, match="output"):
+        launch_adapter(root, descriptor, release, exe, pin, request, ("oversize",), policy=policy, now=NOW)
+    short = request | {"operation": "checkpoint", "phase": "DRAINED", "scope": ["BACKUP"],
+                       "checkpoint_rel": "ContentFlow/checkpoints/first",
+                       "deadline": (NOW + timedelta(milliseconds=150)).isoformat()}
+    with pytest.raises(AdapterOutcomeUnknown) as exc:
+        launch_adapter(root, descriptor, release, exe, pin, short, ("slow",), policy=policy, now=NOW)
+    assert isinstance(exc.value.__cause__, subprocess.TimeoutExpired)
