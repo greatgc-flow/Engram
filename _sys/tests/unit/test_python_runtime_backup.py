@@ -190,7 +190,7 @@ def test_offline_pack_restores_only_registered_cache_files(offline_pack):
     unrelated.write_bytes(b"exclude me")
     _pack(ctx, bundle)
     with zipfile.ZipFile(bundle) as archive:
-        assert len(archive.namelist()) == 5
+        assert len(archive.namelist()) == 6
         assert all(unrelated.name not in name for name in archive.namelist())
     for path in files:
         path.rename(path.with_suffix(".held"))

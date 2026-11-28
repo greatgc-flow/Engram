@@ -891,12 +891,16 @@ def run_backup(ctx: dict) -> None:
     out_path = None
     out_is_folder = False
     include_uncovered = False
+    include_artifacts = False
     runtime_only = False
     i = 0
     while i < len(args):
         arg = args[i]
         if arg == "--include-uncovered":
             include_uncovered = True
+            i += 1
+        elif arg == "--include-artifacts":
+            include_artifacts = True
             i += 1
         elif arg == "--only":
             if runtime_only or args[i + 1:i + 2] != ["python-runtime"]:
@@ -934,11 +938,13 @@ def run_backup(ctx: dict) -> None:
             cli_help.usage_error("backup", "Python runtime backup requires --out PATH and an exclusive scope.")
         try:
             _check_restore_path(out_path.parent, out_path)
-            revision = python_runtime_backup.export(sys_dir, out_path)
+            revision = python_runtime_backup.export(sys_dir, out_path, include_artifacts=include_artifacts)
         except (ValueError, env_ops.JournalError) as exc:
             raise OSError(str(exc)) from exc
         print(f"Saved Python runtime metadata revision {revision}.")
         return
+    if include_artifacts:
+        cli_help.usage_error("backup", "--include-artifacts requires --only python-runtime.")
     if out_is_folder:
         out_path.mkdir(parents=True, exist_ok=True)
     custom_extras = scan_uncovered_items(base_dir) if include_uncovered else None

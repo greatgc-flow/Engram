@@ -795,7 +795,7 @@ See also:
 engram backup - back up personal AI data to a zip archive
 
 Usage: engram backup [--out PATH] [--include-uncovered]
-       engram backup --only python-runtime --out PATH
+       engram backup --only python-runtime --out PATH [--include-artifacts]
 
 Description:
   Packs the durable part of .engram/ (memory, settings, rules, skills,
@@ -809,7 +809,8 @@ Description:
   copies see 'engram snapshots'.
   The python-runtime scope saves the exact registry and referenced wheel
   locks to a new ZIP. It requires an explicit .zip path and saves metadata
-  only. Keep the interpreter archives and wheels separately.
+  by default. Add --include-artifacts to bundle all referenced interpreter
+  archives and wheels from the managed offline cache.
 
 Options:
   --out PATH           Where to write the archive (default:
@@ -819,6 +820,8 @@ Options:
                        configs such as .peerhub (default: off)
   --only SCOPE        Select the python-runtime metadata scope (default:
                        personal data). Use it with an explicit --out ZIP.
+  --include-artifacts  Include verified local interpreter archives and
+                       wheels with --only python-runtime (default: off)
   -h, --help, /?       Show this help (default: off)
 
 Examples:
@@ -860,7 +863,8 @@ Description:
   Secret files stay excluded. Redirected source/destination paths are refused.
   The python-runtime scope validates the metadata ZIP and needs the original
   installation identity. It fills missing registry and lock files and
-  refuses conflicting destinations. Preview and apply are offline.
+  refuses conflicting destinations. A full pack also fills its referenced
+  offline cache files. Preview and apply are offline.
 
 Options:
   PATH             Backup .zip or bundle folder to restore (required)

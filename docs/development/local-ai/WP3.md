@@ -83,3 +83,29 @@ pin. A first Windows run found that echoing the archive path to redirected
 CP1252 output could fail after a successful write. The scoped success
 message now reports the revision, and a dedicated regression covers the
 same output encoding. The final job passed 2,633 tests and 154 subtests.
+
+## Complete offline Python recovery pack
+
+Add `--include-artifacts` to `engram backup --only python-runtime --out PATH.zip`.
+The pack contains the same registry and lock data, the exact archive for each
+registered build, and every wheel named by a registered lock. Artifacts must
+already exist in the standard cache. Missing, conflicting or modified
+artifacts block export. Keep the completed ZIP in approved private storage.
+Registry and lock hashes check consistency. Use a bundle from the original
+trusted installation because the ZIP does not authenticate its producer.
+
+The existing scoped restore command previews and checks each member before
+apply. Apply restores only missing cache files, then publishes metadata under
+the lifecycle lock. Verified cache files already published remain usable after
+an interruption. Retry with the same ZIP if cache publication was interrupted.
+A journal interruption after caching uses the existing resume and rollback
+commands. Metadata-only ZIPs retain the same behavior.
+
+The pack streams compressed source files as stored ZIP entries. This format
+limits the cache to 4,096 artifacts and 32 GiB total, with the existing 256 MiB
+interpreter archive limit and a 2 GiB wheel limit. It excludes unregistered
+caches and the installed interpreter and venv trees. Restore reconstructs
+missing builds through `engram repair --only python-versions --offline`, then
+rebuilds environments through the corresponding repair or relocate scope.
+Operator-owned project pins and the original installation identity must be
+preserved separately. A pack does not copy or start any application.

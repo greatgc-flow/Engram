@@ -12,7 +12,8 @@ Description:
   Secret files stay excluded. Redirected source/destination paths are refused.
   The python-runtime scope validates the metadata ZIP and needs the original
   installation identity. It fills missing registry and lock files and
-  refuses conflicting destinations. Preview and apply are offline.
+  refuses conflicting destinations. A full pack also fills its referenced
+  offline cache files. Preview and apply are offline.
 
 Options:
   PATH             Backup .zip or bundle folder to restore (required)

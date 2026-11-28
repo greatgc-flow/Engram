@@ -16,20 +16,23 @@ def _target(root, build):
     return python_registry._plain(root, build["executable_rel"]).parent
 
 
-def _source(root, build):
+def archive_identity(root, build):
     reference = re.fullmatch(r"pbs-([0-9]{8})-([1-9][0-9]*)", build["artifact_ref"])
     if build["provider"] != "python-build-standalone" or reference is None:
         raise ProviderError("This build has no supported offline archive identity.")
     tag, ident = reference.groups()
-    name = python_provider.asset_name(Artifact(tag, build["version"], int(ident), build["sha256"], 1))
-    path = python_registry._plain(root, f"{_CACHE}/{name}")
-    if not path.is_file():
-        raise ProviderError(f"Missing offline archive: {name}")
-    artifact = Artifact(tag, build["version"], int(ident), build["sha256"], path.stat().st_size)
+    artifact = Artifact(tag, build["version"], int(ident), build["sha256"], 1)
+    name = python_provider.asset_name(artifact)
     if any(build[key] != value for key, value in artifact.identity().items()):
         raise ProviderError("Offline archive identity conflicts with the registered build.")
-    return path, artifact
+    return python_registry._plain(root, f"{_CACHE}/{name}"), artifact
 
+
+def _source(root, build):
+    path, identity = archive_identity(root, build)
+    if not path.is_file():
+        raise ProviderError(f"Missing offline archive: {path.name}")
+    return path, Artifact(identity.tag, identity.version, identity.asset_id, identity.sha256, path.stat().st_size)
 
 def plan(root):
     registry = python_registry.inventory(root)["registry"]

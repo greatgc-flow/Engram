@@ -122,7 +122,8 @@ jobs:
         $pin = (Get-Content tools/feasibility/windows-python.lock.json -Raw | ConvertFrom-Json).wheel
         $wheel = Join-Path $env:RUNNER_TEMP $pin.filename
         Invoke-WebRequest $pin.url -OutFile $wheel
-        python -B tools/feasibility/windows_python_env_move.py $wheel
+        $cache = Join-Path $env:RUNNER_TEMP 'engram-offline-archives'
+        python -B tools/feasibility/windows_python_env_move.py $wheel $cache
         exit $LASTEXITCODE
 
     - name: Upload contract results

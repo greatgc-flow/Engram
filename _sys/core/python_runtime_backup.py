@@ -6,7 +6,7 @@ import stat
 import tempfile
 import zipfile
 
-from core import env_lock, env_manifest, env_ops, python_env_restore, python_registry
+from core import env_lock, env_manifest, env_ops, python_artifact_pack, python_env_restore, python_registry
 
 KIND = "python-runtime-metadata"
 STEP = "restore-python-runtime-metadata"
@@ -75,7 +75,7 @@ def _publish_new(source, target):
         os.link(source, target)
 
 
-def export(root, archive):
+def export(root, archive, *, include_artifacts=False):
     if archive.suffix.lower() != ".zip":
         raise ValueError("Python runtime backup needs an explicit .zip output.")
     if os.path.lexists(archive):
@@ -101,6 +101,9 @@ def export(root, archive):
             bundle.writestr(_DIGEST, hashlib.sha256(raw).hexdigest())
             for ref, data in locks.items():
                 bundle.writestr(_PREFIX + ref + ".json", data)
+            if include_artifacts:
+                files = python_artifact_pack.entries(root, registry, locks)
+                python_artifact_pack.write(bundle, files)
         _journal_clear(root)
         if python_registry._read(root) != raw:
             raise ValueError("Python registry changed during backup. Retry the operation.")
@@ -108,26 +111,36 @@ def export(root, archive):
     return registry["revision"]
 
 
-def _read_bundle(root, source):
-    if not source.is_file() or source.stat().st_size > _MAX_BYTES + 1024 * 1024:
-        raise ValueError("Python runtime backup must be a ZIP within the archive size limit.")
-    with zipfile.ZipFile(source) as bundle:
-        entries = bundle.infolist()
-        names = {entry.filename for entry in entries}
-        if (len(names) != len(entries) or len(entries) > _MAX_FILES
-                or sum(entry.file_size for entry in entries) > _MAX_BYTES
-                or any(stat.S_IFMT(entry.external_attr >> 16) not in (0, stat.S_IFREG) for entry in entries)
-                or not {REGISTRY, _DIGEST} <= names):
-            raise ValueError("Invalid Python runtime backup entries.")
-        raw = bundle.read(REGISTRY)
-        if hashlib.sha256(raw).hexdigest().encode("ascii") != bundle.read(_DIGEST):
-            raise ValueError("Python runtime backup registry digest mismatch.")
-        _, paths = _inputs(root, raw)
-        expected = {_PREFIX + ref + ".json": ref for ref in paths}
-        if names != {REGISTRY, _DIGEST, *expected}:
-            raise ValueError("Unexpected or missing Python runtime backup entry.")
-        locks = {ref: bundle.read(name) for name, ref in expected.items()}
-    return raw, locks
+def _read_bundle(root, bundle):
+    entries = bundle.infolist()
+    names = {entry.filename for entry in entries}
+    packed = python_artifact_pack.MARKER in names
+    metadata = [entry for entry in entries if not entry.filename.startswith(python_artifact_pack.PREFIX)]
+    if (len(names) != len(entries) or len(metadata) > _MAX_FILES + int(packed)
+            or sum(entry.file_size for entry in metadata) > _MAX_BYTES + len(python_artifact_pack.VERSION)
+            or any(stat.S_IFMT(entry.external_attr >> 16) not in (0, stat.S_IFREG) for entry in entries)
+            or not {REGISTRY, _DIGEST} <= names):
+        raise ValueError("Invalid Python runtime backup entries.")
+    raw = bundle.read(REGISTRY)
+    if hashlib.sha256(raw).hexdigest().encode("ascii") != bundle.read(_DIGEST):
+        raise ValueError("Python runtime backup registry digest mismatch.")
+    _, paths = _inputs(root, raw)
+    expected = {_PREFIX + ref + ".json": ref for ref in paths}
+    if not expected.keys() <= names:
+        raise ValueError("Missing Python runtime backup lock.")
+    locks = {ref: bundle.read(name) for name, ref in expected.items()}
+    registry, _ = _validate(root, raw, locks)
+    required = {REGISTRY, _DIGEST, *expected}
+    files = {}
+    if packed:
+        marker = python_artifact_pack.MARKER
+        if bundle.read(marker) != python_artifact_pack.VERSION:
+            raise ValueError("Unsupported Python artifact pack version.")
+        files = python_artifact_pack.entries(root, registry, locks)
+        required.update((marker, *files))
+    if names != required:
+        raise ValueError("Unexpected or missing Python runtime backup entry.")
+    return raw, locks, files
 
 
 def _check_destination(root, raw, locks):
@@ -191,20 +204,30 @@ def recovery_steps(root, active, mode):
 
 def restore(root, source, *, apply):
     _journal_clear(root)
-    raw, locks = _read_bundle(root, source)
-    revision, before, missing = _check_destination(root, raw, locks)
-    if not apply:
-        return f"Python runtime metadata preview. Revision {revision}, {len(missing)} locks to restore."
-    if before is not None and not missing:
-        return f"Python runtime metadata already matches revision {revision}."
+    if not source.is_file() or source.stat().st_size > python_artifact_pack.MAX_BYTES + 2 * _MAX_BYTES:
+        raise ValueError("Python runtime backup must be a ZIP within the archive size limit.")
+    with zipfile.ZipFile(source) as bundle:
+        if len(bundle.infolist()) > _MAX_FILES + python_artifact_pack.MAX_ENTRIES + 1:
+            raise ValueError("Too many Python runtime backup entries.")
+        raw, locks, files = _read_bundle(root, bundle)
+        revision, before, missing = _check_destination(root, raw, locks)
+        cache_missing = python_artifact_pack.check(bundle, files, verify_payload=True)
+        if not apply:
+            return (f"Python runtime metadata preview. Revision {revision}, "
+                    f"{len(missing)} locks and {len(cache_missing)} artifacts to restore.")
+        if before is not None and not missing and not cache_missing:
+            return f"Python runtime metadata already matches revision {revision}."
 
-    def prepare():
-        _, current, _ = _check_destination(root, raw, locks)
-        return {"before": current.decode("utf-8") if current is not None else None,
-                "after": raw.decode("utf-8"),
-                "locks": {ref: data.decode("utf-8") for ref, data in locks.items()}}
+        def prepare():
+            _, current, _ = _check_destination(root, raw, locks)
+            to_copy = python_artifact_pack.check(bundle, files, verify_payload=False)
+            # Finish and verify the additive cache before journaling metadata publication.
+            python_artifact_pack.populate(bundle, files, to_copy, _publish_new)
+            return {"before": current.decode("utf-8") if current is not None else None,
+                    "after": raw.decode("utf-8"),
+                    "locks": {ref: data.decode("utf-8") for ref, data in locks.items()}}
 
-    result = env_ops.execute(root, KIND, [_step()], prepare=prepare)
+        result = env_ops.execute(root, KIND, [_step()], prepare=prepare)
     if result["phase"] != "COMMITTED":
         raise ValueError(result.get("detail") or "Python metadata restore did not commit.")
     return f"Restored Python runtime metadata revision {revision}."
