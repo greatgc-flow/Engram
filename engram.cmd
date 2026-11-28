@@ -1,7 +1,7 @@
 @echo off
-set "ENGRAM_CALLER_CWD=%CD%"
-cd /d "%~dp0"
 setlocal DisableDelayedExpansion
+set "ENGRAM_CALLER_CWD=%CD%"
+if /i not "%~1"=="python" cd /d "%~dp0"
 
 :: ============================================================================
 :: Discovery Hierarchy for Engram System Directory
@@ -307,10 +307,10 @@ goto :forward_command
 set "_JOURNAL_ACTIVE=0"
 set "_LASTN="
 set "_TERMN="
-if not exist "%ENGRAM_SYS_DIR%\data\state\env-op.journal.jsonl" exit /b 0
-for /f "tokens=1 delims=:" %%N in ('findstr /n /l /c:"\"event\":\"PHASE\"" "%ENGRAM_SYS_DIR%\data\state\env-op.journal.jsonl"') do set "_LASTN=%%N"
+if not exist "%SYS_PATH%\data\state\env-op.journal.jsonl" exit /b 0
+for /f "tokens=1 delims=:" %%N in ('findstr /n /l /c:"\"event\":\"PHASE\"" "%SYS_PATH%\data\state\env-op.journal.jsonl"') do set "_LASTN=%%N"
 if not defined _LASTN exit /b 0
-for /f "tokens=1 delims=:" %%N in ('findstr /n /l /c:"\"name\":\"COMMITTED\"" /c:"\"name\":\"ROLLED_BACK\"" "%ENGRAM_SYS_DIR%\data\state\env-op.journal.jsonl"') do set "_TERMN=%%N"
+for /f "tokens=1 delims=:" %%N in ('findstr /n /l /c:"\"name\":\"COMMITTED\"" /c:"\"name\":\"ROLLED_BACK\"" "%SYS_PATH%\data\state\env-op.journal.jsonl"') do set "_TERMN=%%N"
 if not "%_LASTN%"=="%_TERMN%" set "_JOURNAL_ACTIVE=1"
 exit /b 0
 

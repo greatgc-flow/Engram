@@ -1,12 +1,15 @@
-engram python - inspect local Python runtimes
+engram python - inspect or run local Python runtimes
 
 Usage: engram python list [--json]
        engram python where [3.MINOR] [--json]
+       engram python run [3.MINOR] -- PYTHON_ARGS
 
 Description:
   List the legacy binding and registered active builds. Where prints the
   existing default venv executable or the active executable for a series.
-  Both commands read the local installation and work offline.
+  Run launches that interpreter from the caller's directory and forwards
+  everything after -- as Python arguments. Without a series, run selects the
+  legacy venv. All commands work offline.
 
 Options:
   --json           Print one JSON object (default: off)
@@ -16,11 +19,14 @@ Examples:
   engram python list --json
   engram python where
   engram python where 3.14
+  engram python run 3.14 -- -m pip --version
 
 Exit codes:
   0   inventory or lookup succeeded
   1   unreadable registry or unavailable executable
   2   invalid arguments
+  14  environment operation in progress or awaiting recovery
+  A started child returns its own process exit code.
 
 See also:
   engram doctor     check environment health

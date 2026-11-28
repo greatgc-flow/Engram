@@ -70,7 +70,10 @@ def _resolve_paths(base_dir: Path, target_sys_dir: Path | None = None) -> dict:
 
 
 def _build_ctx(cmd: str, extra_args: list) -> dict:
-    paths = _resolve_paths(base_dir, sys_dir)
+    # An explicit Python child uses the caller's environment, with runtime
+    # conflicts filtered by python_cli. Avoid applying the launcher overlay.
+    python_child = cmd == "python" and extra_args[:1] == ["run"]
+    paths = {} if python_child else _resolve_paths(base_dir, sys_dir)
     ctx = {
         "base_dir": base_dir,
         "sys_dir":  sys_dir,
@@ -208,7 +211,8 @@ def run_pipeline(cmd: str, extra_args: list) -> None:
         sys.exit(1)
 
     help_verb = "open" if cmd == "start" else cmd
-    if help_verb in cli_help.verbs() and cli_help.wants_help(extra_args):
+    python_child = cmd == "python" and extra_args[:1] == ["run"]
+    if not python_child and help_verb in cli_help.verbs() and cli_help.wants_help(extra_args):
         if len(extra_args) != 1:
             cli_help.usage_error(help_verb, "Help accepts no surplus operands.")
         # one help source for every verb (core/help/<verb>.txt); needs no config, no environment, no network
