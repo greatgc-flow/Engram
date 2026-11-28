@@ -32,6 +32,10 @@ def main():
     if os.name != "nt":
         raise RuntimeError("requires a disposable bootstrapped Windows checkout")
     before = state_digests()
+    inventory = json.loads(run(["cmd.exe", "/d", "/c", "engram.cmd", "python", "list", "--json"]))
+    assert inventory["legacy"]["status"] == "PRESENT" and inventory["series"] == {}
+    location = json.loads(run(["cmd.exe", "/d", "/c", "engram.cmd", "python", "where", "--json"]))
+    assert Path(location["executable"]).samefile(SYSTEM / "env/venv/Scripts/python.exe")
     view = python_registry.inventory(SYSTEM)
     assert view["registry"] is None and view["legacy"]["status"] == "PRESENT", "expected legacy-only checkout"
     base = SYSTEM / view["legacy"]["base_rel"]
