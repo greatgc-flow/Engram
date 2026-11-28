@@ -116,6 +116,11 @@ ROOT_FILES_ALLOW = {
     "README.md",
 }
 
+# Every optional package lives under one of these reserved top-level slots.
+# The core bundle deliberately contains none of their members.
+PACK_SLOT_ROOTS = {"ai", "contentflow", "packages"}
+
+
 SYS_EXCLUDE_DIR_PATTERNS = {
     "logs",
     "state",
@@ -173,6 +178,10 @@ def collect_package_files(repo_root: Path) -> list[tuple[Path, str]]:
             if any(p in parts for p in SYS_EXCLUDE_DIR_PATTERNS):
                 dirs.clear()
                 continue
+
+            if Path(root) == sys_dir:
+                dirs[:] = [name for name in dirs if name.casefold() not in PACK_SLOT_ROOTS]
+                files = [name for name in files if name.casefold() not in PACK_SLOT_ROOTS]
 
             # In-place directory pruning to avoid traversing excluded subtrees
             dirs[:] = [

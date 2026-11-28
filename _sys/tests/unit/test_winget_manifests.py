@@ -241,7 +241,6 @@ def test_core_archive_omits_optional_package_slots_and_payloads(tmp_path: Path):
             member = sys_dir / slot / suffix
             member.parent.mkdir(parents=True, exist_ok=True)
             member.write_bytes(b"private sentinel")
-    (sys_dir / "Packages").touch(exist_ok=True) if not (sys_dir / "Packages").exists() else None
     archive, _, _, _ = create_portable_archive(tmp_path, tmp_path / "dist", "0.0.0")
     with ZipFile(archive) as zipped:
         assert set(zipped.namelist()) == {"_sys/core/fixture.py", "_sys/core/release-manifest.json"}
