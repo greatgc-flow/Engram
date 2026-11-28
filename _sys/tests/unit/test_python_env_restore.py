@@ -81,3 +81,41 @@ def test_rebuild_uses_final_path_and_preserves_registry(fixture, monkeypatch, fa
     assert result["phase"] == ("ROLLED_BACK" if fail else "COMMITTED")
     assert destination.exists() is not fail
     assert python_registry.registry_path(root).read_bytes() == before
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_relocate_keeps_stale_environment_bytes_even_when_rebuild_fails(fixture, monkeypatch, failure):
+    from core import python_env_restore as recovery
+
+    root, destination, wheel, payload, _ = fixture
+    wheel.parent.mkdir(parents=True)
+    wheel.write_bytes(payload)
+    (destination / "Scripts").mkdir(parents=True)
+    (destination / "Scripts/python.exe").write_bytes(b"source venv")
+    config = b"home = a directory that was moved\n"
+    (destination / "pyvenv.cfg").write_bytes(config)
+    lock_ref = python_registry.inventory(root)["registry"]["environments"]["env-a"]["lock_ref"]
+    marker = {"op_id": "fixture-operation", "env_id": "env-a", "lock_ref": lock_ref, "state": "complete"}
+    (destination / recovery._MARKER).write_text(json.dumps(marker))
+    with pytest.raises(ValueError, match="stale base path"):
+        recovery.plan(root)
+    spec, = recovery.plan(root, relocate=True)
+
+    def rebuild(base, target, work, lock):
+        (target / "Scripts").mkdir()
+        (target / "Scripts/python.exe").write_bytes(b"destination venv")
+        if failure:
+            raise ValueError("fixture rebuilding failed")
+
+    monkeypatch.setattr(recovery, "_rebuild", rebuild)
+    result = env_ops.execute(root, "relocate", [recovery.step(root, **spec["params"])])
+    if failure:
+        assert result["phase"] == "ROLLED_BACK"
+        assert (destination / "pyvenv.cfg").read_bytes() == config
+        assert (destination / "Scripts/python.exe").read_bytes() == b"source venv"
+    else:
+        assert result["phase"] == "COMMITTED"
+        assert (destination / "Scripts/python.exe").read_bytes() == b"destination venv"
+        preserved, = destination.parent.glob(".env-a.previous-*")
+        assert (preserved / "pyvenv.cfg").read_bytes() == config
+        assert (preserved / "Scripts/python.exe").read_bytes() == b"source venv"
