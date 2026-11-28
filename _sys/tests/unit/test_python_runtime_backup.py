@@ -1,7 +1,9 @@
 """T71 runtime recovery metadata through Engram's existing backup verbs."""
 import hashlib
+import io
 import json
 import os
+import sys
 import zipfile
 
 import pytest
@@ -136,3 +138,16 @@ def test_interrupted_metadata_restore_has_recovery(runtime, monkeypatch, mode):
     assert env_ops.active_journal(root) is None
     assert (registry.read_bytes() if registry.exists() else None) == (exact if mode == "resume" else None)
     assert lock.is_file()
+
+
+def test_unicode_archive_path_when_output_is_redirected_to_cp1252(runtime, monkeypatch):
+    ctx, _, bundle = runtime
+    bundle = bundle.with_name("runtime 한글.zip")
+    output = io.BytesIO()
+    with io.TextIOWrapper(output, encoding="cp1252") as console:
+        with monkeypatch.context() as patch:
+            patch.setattr(sys, "stdout", console)
+            _backup(ctx, bundle)
+        console.flush()
+        assert b"Saved Python runtime metadata revision 2." in output.getvalue()
+    assert bundle.is_file()

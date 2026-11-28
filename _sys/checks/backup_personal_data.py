@@ -937,7 +937,7 @@ def run_backup(ctx: dict) -> None:
             revision = python_runtime_backup.export(sys_dir, out_path)
         except (ValueError, env_ops.JournalError) as exc:
             raise OSError(str(exc)) from exc
-        print(f"Python runtime metadata revision {revision} saved to {out_path}.")
+        print(f"Saved Python runtime metadata revision {revision}.")
         return
     if out_is_folder:
         out_path.mkdir(parents=True, exist_ok=True)
