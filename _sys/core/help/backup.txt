@@ -1,6 +1,7 @@
 engram backup - back up personal AI data to a zip archive
 
 Usage: engram backup [--out PATH] [--include-uncovered]
+       engram backup --only python-runtime --out PATH
 
 Description:
   Packs the durable part of .engram/ (memory, settings, rules, skills,
@@ -12,6 +13,9 @@ Description:
   Existing archives are replaced atomically after the new archive is ready.
   This is not the environment backup registry: for replaced Python/venv
   copies see 'engram snapshots'.
+  The python-runtime scope saves the exact registry and referenced wheel
+  locks to a new ZIP. It requires an explicit .zip path and saves metadata
+  only. Keep the interpreter archives and wheels separately.
 
 Options:
   --out PATH           Where to write the archive (default:
@@ -19,6 +23,8 @@ Options:
                        a trailing \ or / means "a folder, use the default name"
   --include-uncovered  Also package discovered extra dotfolders and project
                        configs such as .peerhub (default: off)
+  --only SCOPE        Select the python-runtime metadata scope (default:
+                       personal data). Use it with an explicit --out ZIP.
   -h, --help, /?       Show this help (default: off)
 
 Examples:
@@ -26,6 +32,7 @@ Examples:
   engram backup --out D:\backups\engram.zip
   engram backup --out D:\backups\
   engram backup --include-uncovered
+  engram backup --only python-runtime --out D:\backups\runtime.zip
 
 Exit codes:
   0   archive written
