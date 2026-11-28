@@ -58,6 +58,17 @@ def test_model_opt_in_and_evidence_never_implicitly_substitute_for_cpu(plan):
     assert by_id(plan, host, **options)["speech-transcribe"]["status"] == "CPU_CANDIDATE"
 
 
+def test_korean_tts_candidate_requires_a_local_model_receipt(plan):
+    host = inventory()
+    voice = receipt("speech-synthesis", "melotts")
+    host["receipts"] = [voice]
+    assert by_id(plan, host)["speech-synthesis"]["status"] == "OPT_IN"
+    options = {"enable": ["speech-synthesis"]}
+    assert by_id(plan, host, **options)["speech-synthesis"]["status"] == "NEEDS_LOCAL_MODEL"
+    voice["model_sha256"] = "c" * 64
+    assert by_id(plan, host, **options)["speech-synthesis"]["status"] == "CPU_CANDIDATE"
+
+
 def test_hardware_choice_requires_exact_device_and_fits_each_budget(plan):
     host = inventory()
     cpu = receipt("video-transcode", "ffmpeg")
