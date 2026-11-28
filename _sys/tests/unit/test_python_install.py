@@ -102,3 +102,20 @@ def test_cancel_and_eof_do_not_stage(root, tmp_path, monkeypatch):
     monkeypatch.setattr("builtins.input", eof)
     assert python_install.run(root, ["3.14"], **kwargs)["exit_code"] == 10
     assert python_registry.inventory(root)["revision"] == 0 and not (root / "env").exists()
+
+
+def test_stale_plan_refuses_before_staging(root, tmp_path, monkeypatch):
+    from core import python_install
+    from test_python_registry import candidate
+
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    artifact = python_install.offline_artifacts()[0]
+    (cache / python_install.python_provider.asset_name(artifact)).touch()
+    stale = python_install.plan(root, ["3.14"], False, True, cache)
+    assert python_registry.publish(root, 0, candidate())["phase"] == "COMMITTED"
+    def unexpected(*args):
+        pytest.fail("stale plans must not materialize build paths")
+    monkeypatch.setattr(python_install, "_stage", unexpected)
+    assert python_install.apply(root, stale)["exit_code"] == 1
+    assert not (root / "env").exists()

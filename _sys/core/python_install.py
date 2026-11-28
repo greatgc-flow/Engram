@@ -172,6 +172,9 @@ def apply(root, plan):
     if env_ops.active_journal(root) or env_lock.inspect(root)["state"] == "held":
         return _result(14, plan=plan.rows, detail="Finish the current Engram lifecycle operation before installing Python.")
 
+    current = python_registry.inventory(root)["registry"] or python_registry.new_document(root)
+    if current["revision"] != plan.registry["revision"] or current["installation_id"] != plan.registry["installation_id"]:
+        return _result(1, plan=plan.rows, detail="The Python registry changed. Review a fresh install plan.")
     registry = deepcopy(plan.registry)
     staged_paths = []
     try:

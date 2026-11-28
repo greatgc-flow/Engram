@@ -1,4 +1,5 @@
 """Native selective installation proof for a disposable bootstrapped Windows checkout."""
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
@@ -16,14 +17,12 @@ print(json.dumps({"version": sys.version.split()[0], "exe": sys.executable,
 """
 
 
-def command(*argv, code=0, cwd=ROOT):
-    if cwd != ROOT:
-        raise ValueError("The install gate requires the disposable checkout root.")
+def command(*argv, code=0, parse=True):
     result = subprocess.run(["cmd.exe", "/d", "/c", "engram.cmd", "python", *argv],
-                            cwd=cwd, capture_output=True, encoding="utf-8", errors="replace", timeout=300)
+                            cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace", timeout=300)
     if result.returncode != code:
         raise RuntimeError(f"{argv[:3]} returned {result.returncode}: {result.stdout} {result.stderr}")
-    return json.loads(result.stdout)
+    return json.loads(result.stdout) if parse else result.stdout
 
 
 def main(cache):
@@ -59,7 +58,26 @@ def main(cache):
         assert selected.parent.samefile(result["base_prefix"])
         assert result["version"].startswith(series + ".")
         actual[series] = result["version"]
+    with tempfile.TemporaryDirectory(prefix="engram-isolated-") as temp:
+        environments = {series: Path(temp) / ("isolated " + series) for series in actual}
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            jobs = [executor.submit(command, "run", series, "--", "-I", "-B", "-m", "venv",
+                                    "--copies", str(path), parse=False)
+                    for series, path in environments.items()]
+            for job in jobs:
+                job.result()
+        for series, path in environments.items():
+            selected = Path(command("where", series, "--json")["executable"])
+            probe = ("import json,sys,pip; print(json.dumps([sys.version.split()[0],sys.prefix,"
+                     "sys.base_prefix,pip.__file__]))")
+            output = subprocess.check_output([path / "Scripts/python.exe", "-I", "-B", "-c", probe],
+                                             cwd=path, timeout=30)
+            version, prefix, base, pip = json.loads(output)
+            assert version == actual[series]
+            assert Path(prefix).samefile(path) and Path(base).samefile(selected.parent)
+            assert Path(pip).resolve().is_relative_to(path.resolve())
     print(json.dumps({"selective_install": "PASS", "installed": actual, "revision": added["revision"],
+                      "parallel_project_venvs": True,
                       "offline": True, "legacy_default_preserved": True}))
 
 
