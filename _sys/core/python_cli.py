@@ -116,7 +116,7 @@ def _launch_child(root, series, payload=None):
 
 def run(ctx):
     parser = cli_help.CliParser("python")
-    parser.add_argument("action", nargs="?", choices=("list", "where", "run", "use", "install", "update", "pin", "unpin"))
+    parser.add_argument("action", nargs="?", choices=("list", "where", "doctor", "run", "use", "install", "update", "pin", "unpin"))
     parser.add_argument("series", nargs="*")
     parser.add_argument("--all-supported", action="store_true")
     parser.add_argument("--offline", action="store_true")
@@ -163,9 +163,9 @@ def run(ctx):
         return {**result, "quiet": True}
     if args.all_supported or args.offline or args.cache_dir is not None or args.dry_run or args.check or args.yes:
         parser.error("Installation and update flags require those actions.")
-    max_series = {"list": 0, "where": 1, "use": 1, "pin": 1, "unpin": 0}
+    max_series = {"list": 0, "where": 1, "doctor": 1, "use": 1, "pin": 1, "unpin": 0}
     if args.action not in max_series or len(args.series) > max_series[args.action]:
-        parser.error("expected list, where [3.MINOR], run, use, install, pin SERIES, or unpin")
+        parser.error("expected list, where, doctor, run, use, install, update, pin, or unpin")
     if args.action == "pin" and not args.series:
         parser.error("pin requires an installed Python series")
     if args.action == "use":
@@ -178,6 +178,12 @@ def run(ctx):
             data = _inventory(python_registry.inventory(root))
             lines = [f"Legacy default: {data['legacy']['status']} ({data['legacy']['executable_rel']})"]
             lines.extend(f"{minor}  {row['version']}  {row['executable_rel']}" for minor, row in data["series"].items())
+        elif args.action == "doctor":
+            from core import python_diagnostics
+            data = python_diagnostics.report(root, _caller_directory(), args.series[0] if args.series else None)
+            lines = [f"Python registry revision: {data['revision']}"]
+            lines.extend(f"{row['version']} {row['build_id']} {row['retirement']}" for row in data["builds"])
+            lines.extend(f"{issue['code']}: {issue['detail']}" for issue in data["findings"])
         elif args.action in ("pin", "unpin"):
             data = python_pin.change(root, _caller_directory(), args.series[0] if args.series else None)
             verb = "Updated" if data["changed"] else "No change to"
@@ -187,7 +193,7 @@ def run(ctx):
                                      args.series[0] if args.series else None, _caller_directory())
             data = {"executable": str(executable)}
             lines = [str(executable)]
-        code = 0
+        code = int(bool(data.get("findings")))
     except (env_lock.EnvLockBusy, env_ops.JournalError) as exc:
         data = {"detail": str(exc)}
         lines = [str(exc)]

@@ -140,6 +140,12 @@ def main(wheel):
         assert digest(probe(target, active.parent)) == original_extension
         selected = python_cli.run({"sys_dir": target, "args": ["where", "--json"]})
         assert selected["exit_code"] == 0 and Path(selected["executable"]).samefile(active)
+        health = python_cli.run({"sys_dir": target, "args": ["doctor", "3.14", "--json"]})
+        assert health["exit_code"] == 0
+        assert set(health["builds"][0]["references"]) == {
+            "ACTIVE_SERIES", "REGISTERED_ENVIRONMENT", "CONSUMER_BINDING", "PROJECT_PIN",
+        }
+        assert health["coverage"]["external_projects"] == "UNKNOWN"
         assert python_registry.registry_path(target).read_bytes() == original_registry
         assert digest(held_source / extension_rel) == original_extension
         assert pin_path.read_bytes() == original_pin

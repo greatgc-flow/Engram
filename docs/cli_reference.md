@@ -331,6 +331,7 @@ engram python - manage local Python runtimes
 
 Usage: engram python list [--json]
        engram python where [3.MINOR] [--json]
+       engram python doctor [3.MINOR] [--json]
        engram python run [3.MINOR] -- PYTHON_ARGS
        engram python use [3.MINOR]
        engram python install SERIES [SERIES ...] | --all-supported
@@ -341,6 +342,8 @@ Usage: engram python list [--json]
 Description:
   List the legacy binding and registered active builds. Where prints the
   executable selected for the current project and requested series.
+  Doctor reports missing builds and environments, recovery state and known
+  references. External project, backup and process coverage is unverified.
   Run launches that interpreter from the caller's directory and forwards
   everything after -- as Python arguments. Without a series, run selects the
   legacy venv unless the project has an exact Python pin. A different series
@@ -370,6 +373,7 @@ Examples:
   engram python list --json
   engram python where
   engram python where 3.14
+  engram python doctor --json
   engram python run 3.14 -- -m venv .venv
   engram python install 3.14 3.13 --dry-run
   engram python use 3.14
@@ -379,7 +383,7 @@ Examples:
 
 Exit codes:
   0   command completed
-  1   interpreter unavailable, incomplete plan or failed staging
+  1   health finding, unavailable interpreter or incomplete plan
   2   invalid arguments
   10  install declined or confirmation unavailable
   14  environment operation in progress or awaiting recovery

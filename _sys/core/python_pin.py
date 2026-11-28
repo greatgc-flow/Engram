@@ -48,11 +48,7 @@ def _read(path):
     return document
 
 
-def selected_build(cwd, registry, series):
-    """Honor an exact saved build, including a retained build, or defer to normal selection."""
-    document = _read(_location(cwd))
-    if document is None:
-        return None
+def _pinned_build(document, registry, series):
     if not registry or document["installation_id"] != registry["installation_id"]:
         raise ValueError("The project Python pin belongs to an unavailable Engram installation.")
     if series is not None and series != document["series"]:
@@ -61,6 +57,20 @@ def selected_build(cwd, registry, series):
     if not build or build["series"] != document["series"] or build["sha256"] != document["sha256"]:
         raise ValueError("The exact build required by the project Python pin is unavailable.")
     return build
+
+
+def selected_build(cwd, registry, series):
+    """Honor an exact saved build, including a retained build, or defer to normal selection."""
+    document = _read(_location(cwd))
+    return _pinned_build(document, registry, series) if document is not None else None
+
+
+def current_build_id(cwd, registry):
+    document = _read(_location(cwd))
+    if document is None:
+        return None
+    _pinned_build(document, registry, None)
+    return document["build_id"]
 
 
 def change(root, cwd, series=None):
