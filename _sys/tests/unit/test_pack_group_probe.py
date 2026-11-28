@@ -184,3 +184,34 @@ publish(Path(sys.argv[3]), descriptor, 1, 'runtime-b', bytes.fromhex(sys.argv[4]
             with self.assertRaises(ValueError):
                 launch(self.root, descriptor)
         spawn.assert_not_called()
+
+    def test_retirement_is_recoverable_and_reinstall_requires_retained_revision(self):
+        from core.env_ops import SimulatedCrash
+        from optional_pack_group import activate, publish, recover, retire
+
+        descriptor = CATALOG[-1]
+        other = CATALOG[0]
+        data = self.root / descriptor.slot_rel / "workspaces" / "kept.txt"
+        data.parent.mkdir(parents=True)
+        data.write_bytes(b"original workspace")
+        publish(self.root, descriptor, 0, "runtime-a", *archive(b"first"))
+        publish(self.root, other, 0, "runtime-a", *archive(b"other"))
+
+        for interrupted, decision in (("fixture-runtime", "rollback"), ("fixture-package", "resume")):
+            with self.assertRaises(SimulatedCrash):
+                retire(self.root, descriptor, 1, b"first", crash_after=interrupted)
+            with self.assertRaisesRegex(ValueError, "recovery"):
+                activate(self.root, descriptor)
+            recover(self.root, descriptor, decision)
+            expected = (1, "runtime-a", b"first") if decision == "rollback" else None
+            self.assertEqual(activate(self.root, descriptor), expected)
+
+        for revision, reuse in ((0, False), (1, True), (2, False)):
+            with self.assertRaises(ValueError):
+                publish(self.root, descriptor, revision, "runtime-a", *archive(b"new"),
+                        reuse_retained=reuse)
+        reinstall = publish(self.root, descriptor, 2, "runtime-a", *archive(b"new"), reuse_retained=True)
+        self.assertEqual(reinstall["phase"], "COMMITTED")
+        self.assertEqual(activate(self.root, descriptor), (3, "runtime-a", b"new"))
+        self.assertEqual(activate(self.root, other), (1, "runtime-a", b"other"))
+        self.assertEqual(data.read_bytes(), b"original workspace")

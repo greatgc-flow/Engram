@@ -242,3 +242,72 @@ print(json.dumps(reply))
     with pytest.raises(AdapterOutcomeUnknown) as exc:
         launch_adapter(root, descriptor, release, exe, pin, short, ("slow",), policy=policy, now=NOW)
     assert isinstance(exc.value.__cause__, subprocess.TimeoutExpired)
+
+
+def test_retire_and_update_refuse_live_signed_program_then_preserve_workspace(tmp_path, signing, monkeypatch):
+    from threading import Event, Thread
+    from time import monotonic, sleep
+
+    from core import env_lock
+    from optional_pack_group import initialize_fixture
+    from optional_pack_release import admit, install_signed, launch_signed, remove_signed
+
+    policy, descriptor = policy_and_descriptor(signing)
+    root = tmp_path / "fixture"
+    root.mkdir()
+    initialize_fixture(root)
+    release_child = tmp_path / "let-child-finish"
+    program = ("from pathlib import Path\n"
+               "from time import monotonic, sleep\n"
+               f"stop = Path({ascii(str(release_child))})\n"
+               "deadline = monotonic() + 15\n"
+               "while not stop.is_file() and monotonic() < deadline:\n"
+               "    sleep(0.01)\n"
+               "assert stop.is_file()\n"
+               "print('owned signed child')\n").encode("ascii")
+    doc, artifact = build_release({"bin/app.py": program})
+    data = wire(doc)
+    release = admit(descriptor, policy, data, signing[2](data), artifact, sha256(data).hexdigest(), NOW)
+    exe = Path(sys.executable).resolve()
+    pin = sha256(exe.read_bytes()).hexdigest()
+    trust = dict(policy=policy, now=NOW)
+    install_signed(root, descriptor, 0, "runtime-a", release, **trust)
+    state = root / "ContentFlow/workspaces/user.txt"
+    state.parent.mkdir()
+    state.write_bytes(b"original workspace")
+    started = Event()
+    spawn = subprocess.Popen
+    children = []
+
+    def observed_start(*args, **kwargs):
+        children.append(spawn(*args, **kwargs))
+        started.set()
+        return children[-1]
+
+    result = []
+    with monkeypatch.context() as changes:
+        changes.setattr("optional_pack_release.subprocess.Popen", observed_start)
+        runner = Thread(target=lambda: result.append(launch_signed(root, descriptor, release, exe, pin, **trust)))
+        runner.start()
+        try:
+            assert started.wait(10)
+            deadline = monotonic() + 5
+            while env_lock.inspect(root)["state"] == "held" and monotonic() < deadline:
+                sleep(0.01)
+            assert env_lock.inspect(root)["state"] == "free"
+            assert children[0].poll() is None
+            with pytest.raises(ValueError, match="execution lease"):
+                remove_signed(root, descriptor, 1, release, **trust)
+            with pytest.raises(ValueError, match="execution lease"):
+                install_signed(root, descriptor, 1, "runtime-a", release, **trust)
+        finally:
+            release_child.touch()
+            runner.join(timeout=10)
+    assert result and result[0].strip() == b"owned signed child"
+    assert remove_signed(root, descriptor, 1, release, **trust)["phase"] == "COMMITTED"
+    with pytest.raises(ValueError, match="active signed generation"):
+        launch_signed(root, descriptor, release, exe, pin, **trust)
+    assert install_signed(root, descriptor, 2, "runtime-a", release, reuse_retained=True,
+                          **trust)["phase"] == "COMMITTED"
+    assert launch_signed(root, descriptor, release, exe, pin, **trust).strip() == b"owned signed child"
+    assert state.read_bytes() == b"original workspace"
