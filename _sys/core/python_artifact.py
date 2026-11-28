@@ -71,7 +71,7 @@ def validate_member_name(name):
     require(parts[0] == "python" and len(name) <= 512, "invalid archive root or path length")
     for part in parts:
         require(
-            re.fullmatch(r"[A-Za-z0-9._ -]{1,255}", part)
+            re.fullmatch(r"[A-Za-z0-9._+ -]{1,255}", part)
             and not part.endswith((".", " "))
             and not re.fullmatch(r"(?i)CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9]", part.split(".", 1)[0].rstrip()),
             "invalid Windows path component",
