@@ -17,9 +17,11 @@ print(json.dumps({"version": sys.version.split()[0], "exe": sys.executable,
 """
 
 
-def command(*argv, code=0, parse=True):
-    result = subprocess.run(["cmd.exe", "/d", "/c", "engram.cmd", "python", *argv],
-                            cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace", timeout=300)
+def command(*argv, code=0, parse=True, cwd=ROOT):
+    entry = ROOT / "engram.cmd"
+    args = subprocess.list2cmdline(["python", *argv])
+    line = f'cmd.exe /d /s /c ""{entry}" {args}"'
+    result = subprocess.run(line, cwd=cwd, capture_output=True, encoding="utf-8", errors="replace", timeout=300)
     if result.returncode != code:
         raise RuntimeError(f"{argv[:3]} returned {result.returncode}: {result.stdout} {result.stderr}")
     return json.loads(result.stdout) if parse else result.stdout
@@ -76,8 +78,32 @@ def main(cache):
             assert version == actual[series]
             assert Path(prefix).samefile(path) and Path(base).samefile(selected.parent)
             assert Path(pip).resolve().is_relative_to(path.resolve())
+    with tempfile.TemporaryDirectory(prefix="engram-project-") as temp:
+        project = Path(temp) / "project 한글"
+        (project / ".git").mkdir(parents=True)
+        child = project / "nested dir"
+        child.mkdir()
+        pin = command("pin", "3.13", "--json", cwd=child)
+        assert pin["changed"] and Path(pin["pin"]).parent == project
+        executable = command("where", "3.13", "--json")["executable"]
+        assert Path(command("where", "--json", cwd=child)["executable"]).samefile(executable)
+        command("run", "3.14", "--", "--version", cwd=child, code=1, parse=False)
+        version = command("run", "--", "--version", cwd=child, parse=False)
+        assert version.strip() == f"Python {actual['3.13']}"
+        assert command("unpin", "--json", cwd=child)["changed"]
+        assert command("where", "--json", cwd=child)["executable"] == default
+
+    # The offline fixtures cover 3.13 and 3.14. Apply the current public 3.12
+    # selection separately so CI exercises discovery and download together.
+    online = command("install", "3.12", "--yes", "--json")
+    selected = online["plan"][0]
+    assert online["revision"] == added["revision"] + 1 and selected["status"] == "INSTALLED"
+    version = command("run", "3.12", "--", "--version", parse=False).strip()
+    assert version == f"Python {selected['version']}"
+    assert command("where", "--json")["executable"] == default
     print(json.dumps({"selective_install": "PASS", "installed": actual, "revision": added["revision"],
-                      "parallel_project_venvs": True,
+                      "parallel_project_venvs": True, "exact_project_pin": True,
+                      "online_installed": selected["version"],
                       "offline": True, "legacy_default_preserved": True}))
 
 

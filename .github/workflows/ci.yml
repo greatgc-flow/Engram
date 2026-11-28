@@ -83,9 +83,9 @@ jobs:
     - name: Verify explicit Python execution across Windows shells
       run: python -B tools/feasibility/windows_python_run.py
 
-    - name: Verify real offline selective Python installation
+    - name: Verify selective Python installation and project pins
       shell: pwsh
-      timeout-minutes: 8
+      timeout-minutes: 12
       run: |
         $ErrorActionPreference = 'Stop'
         $cache = Join-Path $env:RUNNER_TEMP 'engram-offline-archives'

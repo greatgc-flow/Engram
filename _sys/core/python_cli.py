@@ -6,14 +6,13 @@ import re
 import subprocess
 import sys
 
-from core import cli_help, env_lock, env_ops, provisioner, python_registry
+from core import cli_help, env_lock, env_ops, provisioner, python_pin, python_registry
 
 _SERIES = re.compile(r"3\.(0|[1-9][0-9]*)")
 _RUNTIME_OVERRIDES = ("PYTHON", "PIP_", "UV_", "NPM_CONFIG_", "CONDA_", "_CONDA", "_CE_")
 
 
-def _inventory(root):
-    view = python_registry.inventory(root)
+def _inventory(view):
     registry = view["registry"] or {}
     builds = registry.get("builds", {})
     series = {}
@@ -25,8 +24,18 @@ def _inventory(root):
     return {"revision": view["revision"], "legacy": view["legacy"], "series": series}
 
 
-def _executable(root, view, series):
-    selected = view["series"].get(series) if series else view["legacy"]
+def _caller_directory():
+    return Path(os.environ.get("ENGRAM_CALLER_CWD") or Path.cwd())
+
+
+def _executable(root, view, series, cwd):
+    registry = view["registry"]
+    selected = python_pin.selected_build(cwd, registry, series)
+    if selected is None and series is None:
+        selected = view["legacy"]
+    elif selected is None and registry and series in registry["series"]:
+        build_id = registry["series"][series]["active_build"]
+        selected = registry["builds"][build_id]
     if selected is None:
         raise ValueError("Requested Python series is not registered.")
     executable = root / selected["executable_rel"]
@@ -73,8 +82,8 @@ def _run_child(root, argv, parser):
         if env_lock.inspect(root)["state"] == "held":
             print("An environment operation is in progress. Retry when it finishes.", file=sys.stderr)
             return 14
-        executable = _executable(root, _inventory(root), selector[0] if selector else None)
-        cwd = Path(os.environ.get("ENGRAM_CALLER_CWD") or Path.cwd())
+        cwd = _caller_directory()
+        executable = _executable(root, python_registry.inventory(root), selector[0] if selector else None, cwd)
         return subprocess.run([str(executable), *payload], cwd=cwd,
                               env=_child_environment(root, executable)).returncode
     except (ValueError, OSError, env_ops.JournalError) as exc:
@@ -84,7 +93,7 @@ def _run_child(root, argv, parser):
 
 def run(ctx):
     parser = cli_help.CliParser("python")
-    parser.add_argument("action", nargs="?", choices=("list", "where", "run", "install"))
+    parser.add_argument("action", nargs="?", choices=("list", "where", "run", "install", "pin", "unpin"))
     parser.add_argument("series", nargs="*")
     parser.add_argument("--all-supported", action="store_true")
     parser.add_argument("--offline", action="store_true")
@@ -123,19 +132,30 @@ def run(ctx):
         return {**result, "quiet": True}
     if args.all_supported or args.offline or args.cache_dir is not None or args.dry_run or args.yes:
         parser.error("Installation flags require the install action.")
-    if args.action not in ("list", "where") or len(args.series) > int(args.action == "where"):
-        parser.error("expected list, where [3.MINOR], run [3.MINOR] -- PYTHON_ARGS, or install")
+    max_series = {"list": 0, "where": 1, "pin": 1, "unpin": 0}
+    if args.action not in max_series or len(args.series) > max_series[args.action]:
+        parser.error("expected list, where [3.MINOR], run, install, pin SERIES, or unpin")
+    if args.action == "pin" and not args.series:
+        parser.error("pin requires an installed Python series")
     try:
-        view = _inventory(root)
         if args.action == "list":
-            data = view
-            lines = [f"Legacy default: {view['legacy']['status']} ({view['legacy']['executable_rel']})"]
-            lines.extend(f"{minor}  {row['version']}  {row['executable_rel']}" for minor, row in view["series"].items())
+            data = _inventory(python_registry.inventory(root))
+            lines = [f"Legacy default: {data['legacy']['status']} ({data['legacy']['executable_rel']})"]
+            lines.extend(f"{minor}  {row['version']}  {row['executable_rel']}" for minor, row in data["series"].items())
+        elif args.action in ("pin", "unpin"):
+            data = python_pin.change(root, _caller_directory(), args.series[0] if args.series else None)
+            verb = "Updated" if data["changed"] else "No change to"
+            lines = [f"{verb} project Python pin at {data['pin']}"]
         else:
-            executable = _executable(root, view, args.series[0] if args.series else None)
+            executable = _executable(root, python_registry.inventory(root),
+                                     args.series[0] if args.series else None, _caller_directory())
             data = {"executable": str(executable)}
             lines = [str(executable)]
         code = 0
+    except (env_lock.EnvLockBusy, env_ops.JournalError) as exc:
+        data = {"detail": str(exc)}
+        lines = [str(exc)]
+        code = 14
     except (ValueError, OSError) as exc:
         data = {"detail": str(exc)}
         lines = [str(exc)]

@@ -327,24 +327,29 @@ Bootstrap installs only the validated `runtimes.json` pin. Its newer-version not
 #### engram python
 
 ```text
-engram python - inspect, run or install local Python runtimes
+engram python - inspect, run, install or pin local Python runtimes
 
 Usage: engram python list [--json]
        engram python where [3.MINOR] [--json]
        engram python run [3.MINOR] -- PYTHON_ARGS
        engram python install SERIES [SERIES ...] | --all-supported
+       engram python pin SERIES [--json]
+       engram python unpin [--json]
 
 Description:
   List the legacy binding and registered active builds. Where prints the
   existing default venv executable or the active executable for a series.
   Run launches that interpreter from the caller's directory and forwards
   everything after -- as Python arguments. Without a series, run selects the
-  legacy venv. Install adds selected stable Windows x64 interpreters. It
+  legacy venv unless the project has an exact Python pin. A different series
+  request conflicts with that pin. Install adds stable Windows x64 builds. It
   previews the candidates, asks for confirmation and checks each runtime
   in an isolated test venv before publishing the registry.
+  Pin selects the current exact build. Unpin removes this installation's pin.
+  Both use the nearest Git root or the current directory outside Git.
 
 Options:
-  --json           Print one JSON object for list, where or install
+  --json           Print one JSON object for inventory, install or pins
                    (default: off)
   --all-supported  Select all eligible series in the current catalog
                    (default: explicit series)
@@ -360,6 +365,8 @@ Examples:
   engram python where 3.14
   engram python run 3.14 -- -m venv .venv
   engram python install 3.14 3.13 --dry-run
+  engram python pin 3.14
+  engram python unpin
 
 Exit codes:
   0   inventory or lookup succeeded

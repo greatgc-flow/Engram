@@ -36,3 +36,13 @@ engram python install 3.13 3.14 --offline --cache-dir D:\python-cache --yes
 engram python run 3.13 -- --version
 engram python run 3.14 -- --version
 ```
+
+## Project pins and online install proof
+
+`engram python pin 3.14` records the selected build ID, series, artifact digest and Engram installation identity in `.engram-python.json`. The pin lives at the closest Git root, including a worktree with a `.git` file. Outside Git, it applies to the current directory. Invoking the command from a nested Git directory targets that repository's root. Repeating an identical pin is idempotent. An explicit `unpin` is required before changing it. The Engram lock serializes pin mutations from the same installation.
+
+`where` and `run` use the pinned build, even when a newer patch becomes active in the same series. Supplying that same series still selects the exact pinned build. A different explicit series, a malformed pin, a foreign installation, a missing executable or a mismatched digest stops the command. Unpin accepts a valid Engram pin owned by the current installation even if the pinned build is unavailable. The operation preserves other tool files such as `.python-version` and project dependency metadata. Engram does not interpret external tool pins or package constraints in this increment.
+
+Pins identify local installations. Restore and move must preserve installation identity and the referenced build to keep a pin usable. WP3 retirement must account for project-held references before removing a retained build, including pins outside the portable root.
+
+The disposable Windows test invokes pin, where, run and unpin from a nested Korean project path against the installed 3.13.18 fixture. It also exercises a fresh 3.12 online install with public source and provider metadata, downloads the exact approved archive, and runs the selected build. CI records the actual observed version. Online preview remains distinct from a successful installation.
