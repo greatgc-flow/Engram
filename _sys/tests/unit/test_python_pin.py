@@ -110,12 +110,12 @@ def test_nested_git_root_has_independent_pin(workspace, monkeypatch):
 
 def test_use_launches_one_cmd_child_with_pinned_runtime(workspace, monkeypatch):
     import os
-    from pathlib import Path
     from core import python_cli
 
     assert invoke(workspace, "pin", "3.14")["exit_code"] == 0
     monkeypatch.setattr(python_cli.sys, "platform", "win32")
-    monkeypatch.setenv("SystemRoot", str(workspace[1] / "Windows"))
+    windows = workspace[1] / "Windows"
+    monkeypatch.setenv("SystemRoot", str(windows))
     monkeypatch.setenv("PYTHONPATH", "foreign")
     monkeypatch.setenv("COMSPEC", "unapproved.exe")
     monkeypatch.setenv("PATH", str(workspace[1] / "foreign-path"))
@@ -125,7 +125,6 @@ def test_use_launches_one_cmd_child_with_pinned_runtime(workspace, monkeypatch):
     assert invoke(workspace, "use")["exit_code"] == 47
     command, = spawn.call_args.args
     kwargs = spawn.call_args.kwargs
-    windows = Path(before["SystemRoot"])
     assert command == [str(windows / "System32/cmd.exe"), "/d", "/q"]
     assert kwargs["cwd"] == workspace[1] / "scripts"
     assert kwargs["env"]["PATH"].split(os.pathsep) == [
