@@ -22,7 +22,9 @@ separate, portable backup bundle (.zip by default).
 
 Usage:
     engram backup [--out PATH] [--include-uncovered]
+    engram backup --only python-runtime --out PATH
     engram restore PATH [--force] [--apply]
+    engram restore PATH --only python-runtime [--apply]
     engram reset [--yes] [--apply]
 
 Or standalone script:
@@ -58,7 +60,7 @@ sys.path.insert(0, str(_SYS_DIR / "core"))
 from root import bootstrap_root_package  # noqa: E402
 
 bootstrap_root_package(_SYS_DIR)
-from core import cli_help  # noqa: E402
+from core import cli_help, env_ops, python_runtime_backup  # noqa: E402
 
 # Filenames that look like vendor credentials. This is a defensive
 # assertion on the allowlist itself (see _assert_no_credential_shaped_items)
@@ -728,6 +730,8 @@ def do_restore(
         with tempfile.TemporaryDirectory() as tmp_dir:
             temp_bundle = Path(tmp_dir)
             with zipfile.ZipFile(src_path, "r") as zf:
+                if python_runtime_backup.REGISTRY in zf.namelist():
+                    raise ValueError("Restore runtime metadata with --only python-runtime.")
                 zf.extractall(temp_bundle)
             _restore_bundle_dir(temp_bundle)
     elif src_path.is_dir():
@@ -885,13 +889,24 @@ def run_backup(ctx: dict) -> None:
         sys.exit(0)
 
     out_path = None
+    out_is_folder = False
     include_uncovered = False
+    include_artifacts = False
+    runtime_only = False
     i = 0
     while i < len(args):
         arg = args[i]
         if arg == "--include-uncovered":
             include_uncovered = True
             i += 1
+        elif arg == "--include-artifacts":
+            include_artifacts = True
+            i += 1
+        elif arg == "--only":
+            if runtime_only or args[i + 1:i + 2] != ["python-runtime"]:
+                cli_help.usage_error("backup", "--only requires python-runtime once.")
+            runtime_only = True
+            i += 2
         elif arg == "--out" or arg.startswith("--out="):
             if out_path is not None:
                 cli_help.usage_error("backup", "--out specified more than once.")
@@ -912,13 +927,26 @@ def run_backup(ctx: dict) -> None:
                 out_path = Path(caller_cwd) / raw_out
             else:
                 out_path = Path(raw_out)
-            if raw_out.endswith(("/", "\\")):
-                out_path.mkdir(parents=True, exist_ok=True)
+            out_is_folder = raw_out.endswith(("/", "\\"))
         elif arg.startswith("-"):
             cli_help.unknown_option("backup", arg)
         else:
             cli_help.unexpected_argument("backup", arg)
 
+    if runtime_only:
+        if out_path is None or out_is_folder or include_uncovered:
+            cli_help.usage_error("backup", "Python runtime backup requires --out PATH and an exclusive scope.")
+        try:
+            _check_restore_path(out_path.parent, out_path)
+            revision = python_runtime_backup.export(sys_dir, out_path, include_artifacts=include_artifacts)
+        except (ValueError, env_ops.JournalError) as exc:
+            raise OSError(str(exc)) from exc
+        print(f"Saved Python runtime metadata revision {revision}.")
+        return
+    if include_artifacts:
+        cli_help.usage_error("backup", "--include-artifacts requires --only python-runtime.")
+    if out_is_folder:
+        out_path.mkdir(parents=True, exist_ok=True)
     custom_extras = scan_uncovered_items(base_dir) if include_uncovered else None
     try:
         do_backup(engram_dir, out_path, as_zip=True, base_dir=base_dir, sys_dir=sys_dir, custom_extras=custom_extras)
@@ -942,8 +970,14 @@ def run_restore(ctx: dict) -> None:
 
     target_path = None
     dry_run = False
-    for a in args:
-        if a == "--apply":
+    runtime_only = False
+    tokens = iter(args)
+    for a in tokens:
+        if a == "--only":
+            if runtime_only or next(tokens, None) != "python-runtime":
+                cli_help.usage_error("restore", "--only requires python-runtime once.")
+            runtime_only = True
+        elif a == "--apply":
             apply = True
         elif a == "--dry-run":
             dry_run = True
@@ -964,6 +998,16 @@ def run_restore(ctx: dict) -> None:
         cli_help.usage_error("restore", "'engram restore' requires a PATH to a backup .zip or bundle folder.")
     if dry_run:
         apply = False  # --dry-run always wins
+
+    if runtime_only:
+        if force:
+            cli_help.usage_error("restore", "Python runtime metadata restore does not accept --force.")
+        try:
+            _check_restore_path(target_path.parent, target_path)
+            print(python_runtime_backup.restore(sys_dir, target_path, apply=apply))
+        except (ValueError, env_ops.JournalError, zipfile.BadZipFile) as exc:
+            raise OSError(str(exc)) from exc
+        return
 
     try:
         do_restore(engram_dir, target_path, force=force, base_dir=base_dir, sys_dir=sys_dir, apply=apply)
