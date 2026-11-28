@@ -57,6 +57,11 @@ _ACTIONS = {
     "CPU_CANDIDATE": "Recheck resources and the exact workload before running.",
     "ACCELERATOR_CANDIDATE": "Recheck device resources and acquire the shared lease before running.",
 }
+_MANUAL_ACTIONS = {
+    "hwp-layout-review": "Keep the original and compare it with an approved local rendering, including tables and shapes.",
+    "image-visual-review": "Review the original pixels locally or opt in to OCR for text regions.",
+    "live-url": "Provide an approved saved HTML file or local media file.",
+}
 
 
 def _need(condition, message):
@@ -139,7 +144,7 @@ def _decision(feature, receipts, budget, accelerators, enable, prefer_accelerato
         return "ACCELERATOR_OPT_IN", None, []
 
     blockers = set()
-    # Provider order follows the catalog. Measured latency breaks ties on the same backend class.
+    # Select an eligible accelerator first when requested, then rank by measured duration.
     for row in sorted(allowed, key=lambda r: (r["backend"] == "cpu", r["seconds"],
                                               feature.providers.index(r["provider"]), r["canary_sha256"],
                                               r["artifact_sha256"], r["model_sha256"] or "",
@@ -152,19 +157,24 @@ def _decision(feature, receipts, budget, accelerators, enable, prefer_accelerato
     return "RESOURCE_LIMIT", None, sorted(blockers)
 
 
-def plan(host, *, enable=(), prefer_accelerator=False):
+def plan(host, *, enable=(), prefer_accelerator=False, workloads=None):
     """Select an evidence-backed preview candidate per capability, without launching anything."""
     budget, devices, grouped = _load_inventory(host)
     _need(type(prefer_accelerator) is bool and type(enable) in (list, tuple)
           and all(_matches(_ID, item) and item in _BY_ID and _BY_ID[item].policy == "model" for item in enable),
           "unknown optional capability")
+    workloads = {} if workloads is None else workloads
+    _need(type(workloads) is dict and all(key in _BY_ID and _BY_ID[key].providers and _matches(_HASH, digest)
+                                       for key, digest in workloads.items()), "invalid target canary")
     results = []
     for feature in CATALOG:
-        status, selection, blockers = _decision(feature, grouped[feature.id], budget, devices, enable,
-                                                prefer_accelerator)
+        target = workloads.get(feature.id)
+        receipts = [row for row in grouped[feature.id] if target is None or row["canary_sha256"] == target]
+        status, selection, blockers = _decision(feature, receipts, budget, devices, enable, prefer_accelerator)
         results.append({"capability": feature.id, "family": feature.family, "status": status,
                         "providers": list(feature.providers), "selection": selection,
-                        "blockers": blockers, "next_action": _ACTIONS[status]})
+                        "target_canary_sha256": target, "blockers": blockers,
+                        "next_action": _MANUAL_ACTIONS.get(feature.id, _ACTIONS[status])})
     return results
 
 
@@ -179,6 +189,7 @@ def main():
     parser.add_argument("inventory", type=Path, help="local reviewed inventory JSON")
     parser.add_argument("--enable", action="append", default=[], metavar="CAPABILITY")
     parser.add_argument("--prefer-accelerator", action="store_true")
+    parser.add_argument("--canary", action="append", default=[], metavar="CAPABILITY=SHA256")
     args = parser.parse_args()
     try:
         _need(not str(args.inventory).replace("\\", "/").startswith("//"), "network paths are unsupported")
@@ -190,7 +201,8 @@ def main():
             data = stream.read(_MAX_BYTES + 1)
         _need(len(data) <= _MAX_BYTES, "inventory exceeds size limit")
         host = json.loads(data.decode("utf-8"), object_pairs_hook=_unique)
-        rows = plan(host, enable=args.enable, prefer_accelerator=args.prefer_accelerator)
+        canaries = _unique([item.split("=", 1) for item in args.canary])
+        rows = plan(host, enable=args.enable, prefer_accelerator=args.prefer_accelerator, workloads=canaries)
     except (OSError, ValueError, RecursionError) as exc:
         parser.error(str(exc))
     print(json.dumps({"schema_version": 1, "preview_only": True, "capabilities": rows}, sort_keys=True))
