@@ -11,6 +11,26 @@ from core.python_registry import _plain
 _KIND = "fixture-pack-group"
 _ID = re.compile(r"[a-z][a-z0-9-]{0,47}")
 _LIMIT = 4096
+_MARKER = "fixture-root.txt"
+_MARKER_BYTES = b"ENGRAM_GROUP_TEST_ONLY_V1\n"
+
+
+def initialize_fixture(root):
+    if not root.is_dir() or root.is_symlink() or list(root.iterdir()):
+        raise ValueError("expected an empty fixture directory")
+    with (root / _MARKER).open("xb") as stream:
+        stream.write(_MARKER_BYTES)
+
+
+def _fixture_root(root):
+    try:
+        with _plain(root, _MARKER).open("rb") as stream:
+            if stream.read(len(_MARKER_BYTES) + 1) != _MARKER_BYTES:
+                raise ValueError("unrecognized fixture root")
+    except FileNotFoundError as exc:
+        raise ValueError("unrecognized fixture root") from exc
+    for path in (env_lock.lock_path(root), env_ops.journal_path(root)):
+        _plain(root, path.relative_to(root).as_posix())
 
 
 def _payload(archive, digest):
@@ -63,12 +83,15 @@ def _current(root, package):
     if runtime is None or app is None:
         raise ValueError("incomplete fixture pointers")
     binding, pointer = json.loads(runtime), json.loads(app)
+    if type(binding) is not dict or type(pointer) is not dict:
+        raise ValueError("invalid fixture pointers")
     generation = binding.get("revision")
     runtime_id = binding.get("runtime")
     sha = pointer.get("sha256")
     if (type(generation) is not int or not 1 <= generation <= 2**53 - 1
             or type(runtime_id) is not str or not _ID.fullmatch(runtime_id)
             or type(sha) is not str or not re.fullmatch(r"[0-9a-f]{64}", sha)
+            or binding != {"revision": generation, "runtime": runtime_id}
             or pointer != {"revision": generation, "runtime": runtime_id, "sha256": sha}):
         raise ValueError("incoherent fixture pointers")
     stored = _read(_path(root, package, sha + ".hex"))
@@ -125,6 +148,7 @@ def publish(root, descriptor, expected_revision, runtime_id, archive, digest, *,
     if (type(expected_revision) is not int or not 0 <= expected_revision < 2**53 - 1
             or not isinstance(runtime_id, str) or not _ID.fullmatch(runtime_id)):
         raise ValueError("invalid fixture generation or runtime")
+    _fixture_root(root)
     raw = _payload(archive, digest)
     sha = sha256(raw).hexdigest()
     next_binding = {"revision": expected_revision + 1, "runtime": runtime_id}
@@ -141,6 +165,7 @@ def publish(root, descriptor, expected_revision, runtime_id, archive, digest, *,
 
 
 def recover(root, descriptor, mode):
+    _fixture_root(root)
     package = descriptor.package_id
 
     def factory(active):
@@ -174,6 +199,7 @@ def recover(root, descriptor, mode):
 
 def activate(root, descriptor):
     """Return a verified fixture snapshot while holding the lifecycle lock."""
+    _fixture_root(root)
     try:
         with env_lock.guard(root, "fixture-inspect"):
             if env_ops.journal_blocks(root):

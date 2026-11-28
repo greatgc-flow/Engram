@@ -28,6 +28,8 @@ class GroupProbeTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
+        from optional_pack_group import initialize_fixture
+        initialize_fixture(self.root)
 
     def test_each_descriptor_uses_same_install_and_update(self):
         from optional_pack_group import activate, publish
@@ -79,7 +81,7 @@ class GroupProbeTests(unittest.TestCase):
             publish(self.root, CATALOG[0], 0, "runtime-a", payload, "0"*64)
         with self.assertRaises(ValueError):
             publish(self.root, CATALOG[0], 0, "runtime-a", *archive(b"bytes", "unlisted.txt"))
-        self.assertEqual(list(self.root.iterdir()), [])
+        self.assertEqual([p.name for p in self.root.iterdir()], ["fixture-root.txt"])
 
     def test_non_fixture_root_is_rejected_before_lifecycle_access(self):
         from optional_pack_group import publish
