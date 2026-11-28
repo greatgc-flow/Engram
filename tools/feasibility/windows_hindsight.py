@@ -43,14 +43,16 @@ hindsight = importlib.metadata.distribution("hindsight-api-slim")
 if hindsight.version != "1.3.0":
     raise RuntimeError("Unexpected Hindsight version.")
 from hindsight_api.main import main
-sys.argv = ["hindsight-api", "--version"]
+sys.argv = ["hindsight-api", "--help"]
 try:
     main()
 except SystemExit as exit_signal:
     if exit_signal.code:
         raise
+else:
+    raise RuntimeError("The CLI help did not exit before startup.")
 print(json.dumps({"native_extensions": native, "python": "3.14.10",
-                  "hindsight": hindsight.version, "version_entrypoint": "PASS"}))
+                  "hindsight": hindsight.version, "help_entrypoint": "PASS"}))
 """
 
 
@@ -82,7 +84,16 @@ def probe(root, archive, wheels):
                  "COMSPEC": str(system / "System32/cmd.exe"), "PATH": str(system / "System32"),
                  "APPDATA": str(home), "LOCALAPPDATA": str(home), "USERPROFILE": str(home), "HOME": str(home),
                  "TMP": str(root), "TEMP": str(root), "PIP_CONFIG_FILE": os.devnull,
-                 "HF_HUB_OFFLINE": "1", "HF_HUB_DISABLE_TELEMETRY": "1"}
+                 "HF_HUB_OFFLINE": "1", "HF_HUB_DISABLE_TELEMETRY": "1",
+                 # Placeholder endpoints are never contacted by this help/import probe.
+                 "HINDSIGHT_API_DATABASE_URL": "postgresql://wp0@127.0.0.1:1/wp0",
+                 "HINDSIGHT_API_LLM_PROVIDER": "ollama",
+                 "HINDSIGHT_API_LLM_BASE_URL": "http://127.0.0.1:1/v1",
+                 "HINDSIGHT_API_LLM_MODEL": "fixture-only",
+                 "HINDSIGHT_API_EMBEDDINGS_PROVIDER": "tei",
+                 "HINDSIGHT_API_EMBEDDINGS_TEI_URL": "http://127.0.0.1:1",
+                 "HINDSIGHT_API_RERANKER_PROVIDER": "none",
+                 "HINDSIGHT_API_KB_EMBEDDINGS_PROVIDER": "text"}
     base, target = root / "python", root / "app venv"
     command(base / "python.exe", root, child_env, "-m", "venv", "--copies", target)
     executable = target / "Scripts/python.exe"
@@ -91,7 +102,10 @@ def probe(root, archive, wheels):
             "--only-binary", ":all:", "--no-deps", "--require-hashes", "--no-compile",
             "-r", REQUIREMENTS, timeout=300)
     command(executable, root, child_env, *pip, "check")
-    result = json.loads(command(executable, root, child_env, "-c", SMOKE, base, target).splitlines()[-1])
+    stdout = command(executable, root, child_env, "-c", SMOKE, base, target)
+    if "usage: hindsight-api" not in stdout:
+        raise RuntimeError("Pinned Hindsight entrypoint did not print CLI help.")
+    result = json.loads(stdout.splitlines()[-1])
     if footprint() != baseline:
         raise RuntimeError("Sampled registry or drive mappings changed.")
     return {**result, "status": "PASS", "effective_admin": False, "wheel_count": len(wheel_files),
