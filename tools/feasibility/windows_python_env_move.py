@@ -62,7 +62,8 @@ def probe(root, base):
     assert Path(result["base"]).samefile(base)
     extension = Path(result["extension"]).resolve()
     assert extension.is_relative_to(environment.resolve())
-    output = subprocess.check_output([environment / "Scripts/pip.exe", "--version"], timeout=30, text=True)
+    output = subprocess.check_output([environment / "Scripts/pip.exe", "--version"], timeout=30,
+                                     env={**os.environ, "PYTHONUTF8": "1"}, encoding="utf-8")
     assert "markupsafe" in {p.name.casefold() for p in extension.parent.parent.iterdir()}
     assert " (python 3.14)" in output
     return extension
