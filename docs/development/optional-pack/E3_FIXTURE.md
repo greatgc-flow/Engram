@@ -21,3 +21,9 @@ The same synthetic package coordinator can now opt into the actual `core.python_
 The two RED cases initially failed because grouped publication had no registry interface. GREEN interrupts immediately after publishing the real Python registry and before package pointer publication. Activation sees the pending journal and rejects the mixed state. Resume publishes the package pointers and verifies materialized fixture bytes. Rollback restores the prior registry and pointer images. Removing a registered binding after commit makes subsequent fixture activation fail.
 
 The current explicit Python runner branch performs separate journal and lock observations before resolving the executable. A real package activation and launch must use a common lifecycle fence across resolution and handoff. This increment exercises that fence only during fixture activation and has no product invocation path. Public dispatch and recovery routing, exact native binary/environment materialization, artifact signatures and production trust policy remain separate gates.
+
+## Process-start fence
+
+The fixture launch uses the same lock from journal and registry checks through actual process creation. It hands a bounded in-memory snapshot of the admitted bytes to a fixed isolated Python worker over stdin. The worker reports their digest and exits. The coordinator releases the lifecycle lock before waiting for the worker. A writer can then commit the next generation while the child still holds the previous verified snapshot. Native optional-package entrypoints, package lifetime leases and shipping execution remain separate gates.
+
+The RED cases failed because no process handoff entrypoint existed. GREEN exercised a real child and competing publication while the parent held and then released the lock. A pending journal blocks process creation. The worker only interprets the admitted member as bytes and cannot invoke package code.

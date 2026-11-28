@@ -152,15 +152,25 @@ publish(Path(sys.argv[3]), descriptor, 1, 'runtime-b', bytes.fromhex(sys.argv[4]
             self.assertEqual(env_lock.inspect(self.root)["state"], "held")
             attempt = publish(self.root, descriptor, 1, "runtime-b", *archive(b"new"))
             self.assertEqual(attempt["exit_code"], 11)
-            return run(*args, **kwargs)
+            child = run(*args, **kwargs)
+            communicate = child.communicate
+
+            def wait(*args, **kwargs):
+                self.assertEqual(env_lock.inspect(self.root)["state"], "free")
+                result = publish(self.root, descriptor, 1, "runtime-b", *archive(b"new"))
+                self.assertEqual(result["phase"], "COMMITTED")
+                return communicate(*args, **kwargs)
+
+            child.communicate = wait
+            return child
 
         with patch("optional_pack_group.subprocess.Popen", side_effect=spawn):
             launched = launch(self.root, descriptor)
         self.assertEqual(launched, {"revision": 1, "runtime": "runtime-a",
                                     "sha256": sha256(b"verified fixture").hexdigest()})
         self.assertEqual(env_lock.inspect(self.root)["state"], "free")
-        self.assertEqual(publish(self.root, descriptor, 1, "runtime-b", *archive(b"new"))["phase"],
-                         "COMMITTED")
+        from optional_pack_group import activate
+        self.assertEqual(activate(self.root, descriptor), (2, "runtime-b", b"new"))
 
     def test_launch_refuses_active_journal_without_spawning(self):
         from unittest.mock import patch
