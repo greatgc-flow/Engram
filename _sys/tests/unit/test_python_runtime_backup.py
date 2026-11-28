@@ -151,3 +151,89 @@ def test_unicode_archive_path_when_output_is_redirected_to_cp1252(runtime, monke
         console.flush()
         assert b"Saved Python runtime metadata revision 2." in output.getvalue()
     assert bundle.is_file()
+
+
+@pytest.fixture
+def offline_pack(runtime):
+    ctx, lock, bundle = runtime
+    root = ctx["sys_dir"]
+    registry = python_registry.registry_path(root)
+    document = json.loads(registry.read_bytes())
+    archive = root / "data/setup-files/python-archives/cpython-3.14.10+20261124-x86_64-pc-windows-msvc-install_only.tar.gz"
+    wheel = root / "data/setup-files/python-wheels/demo-1.0-py3-none-any.whl"
+    for path, contents in ((archive, b"synthetic interpreter archive"), (wheel, b"synthetic wheel")):
+        path.parent.mkdir(parents=True)
+        path.write_bytes(contents)
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    document["builds"]["build-a"].update(provider="python-build-standalone",
+                                       artifact_ref="pbs-20261124-788332448", sha256=digest)
+    raw = json.dumps({"schema": 1, "build_sha256": digest,
+                      "wheels": [{"filename": wheel.name, "sha256": hashlib.sha256(wheel.read_bytes()).hexdigest()}]}).encode()
+    ref = "sha256-" + hashlib.sha256(raw).hexdigest()
+    new_lock = lock.with_name(ref + ".json")
+    new_lock.write_bytes(raw)
+    document["environments"]["env-a"]["lock_ref"] = ref
+    registry.write_text(json.dumps(document), encoding="utf-8")
+    return ctx, bundle, registry, new_lock, archive, wheel
+
+
+def _pack(ctx, bundle):
+    backup_personal_data.run_backup({
+        **ctx, "args": ["--only", "python-runtime", "--include-artifacts", "--out", str(bundle)],
+    })
+
+
+def test_offline_pack_restores_only_registered_cache_files(offline_pack):
+    ctx, bundle, *paths = offline_pack
+    files = {path: path.read_bytes() for path in paths}
+    unrelated = paths[-1].with_name("unrelated-1.0-py3-none-any.whl")
+    unrelated.write_bytes(b"exclude me")
+    _pack(ctx, bundle)
+    with zipfile.ZipFile(bundle) as archive:
+        assert len(archive.namelist()) == 5
+        assert all(unrelated.name not in name for name in archive.namelist())
+    for path in files:
+        path.rename(path.with_suffix(".held"))
+    preview = snapshot(ctx["base_dir"])
+    _restore(ctx, bundle, "--apply", "--dry-run")
+    assert snapshot(ctx["base_dir"]) == preview
+    _restore(ctx, bundle, "--apply")
+    assert {path: path.read_bytes() for path in files} == files
+    _restore(ctx, bundle, "--apply")
+
+
+@pytest.mark.parametrize("broken", ["missing", "changed"])
+def test_offline_pack_invalid_input_does_not_publish(offline_pack, broken):
+    ctx, bundle, _, _, _, wheel = offline_pack
+    if broken == "missing":
+        wheel.rename(wheel.with_suffix(".held"))
+    else:
+        wheel.write_bytes(b"wrong bytes")
+    with pytest.raises(OSError, match="artifact|wheel"):
+        _pack(ctx, bundle)
+    assert not bundle.exists()
+
+
+@pytest.mark.parametrize("broken", ["archive payload", "wheel destination", "missing member"])
+def test_offline_pack_conflict_or_tampering_preserves_destination(offline_pack, broken):
+    ctx, bundle, registry, lock, archive, wheel = offline_pack
+    _pack(ctx, bundle)
+    if broken == "wheel destination":
+        wheel.write_bytes(b"conflicting file")
+    else:
+        with zipfile.ZipFile(bundle) as original:
+            files = {entry.filename: original.read(entry) for entry in original.infolist()}
+        named = next(name for name in files if name.endswith(wheel.name))
+        if broken == "archive payload":
+            files[named] = b"forged wheel content"
+        else:
+            del files[named]
+        with zipfile.ZipFile(bundle, "w") as rewritten:
+            for key, contents in files.items():
+                rewritten.writestr(key, contents)
+    for path in (registry, lock, archive):
+        path.rename(path.with_suffix(".held"))
+    before = snapshot(ctx["base_dir"])
+    with pytest.raises(OSError):
+        _restore(ctx, bundle, "--apply")
+    assert snapshot(ctx["base_dir"]) == before
