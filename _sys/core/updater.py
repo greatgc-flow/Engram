@@ -54,6 +54,7 @@ def _download_and_stage_core_update(
 
 
 _ENV_COMPONENTS = frozenset({"python", "venv", "packages"})
+_EXTRA_PYTHON = "python-versions"
 _MIGRATE_LAYOUT_COMMAND = r"_sys\core\dispatch.bat migrate-layout"
 
 
@@ -100,13 +101,22 @@ def _parse_args(args: list[str]) -> argparse.Namespace:
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--json", action="store_true")
     parsed = parser.parse_args(args)
-    if parsed.latest and check_tool_updates.normalize_only_list(parsed.only) not in (["python"], ["nodejs"]):
-        parser.error("--latest requires exactly one component: "
-                     "engram update --latest --only python or "
-                     "engram update --latest --only nodejs")
-    if parsed.json and (not parsed.only or not set(
-            check_tool_updates.normalize_only_list(parsed.only) or ()) <= _ENV_COMPONENTS):
-        parser.error("--json requires --only python, venv or packages")
+    only = check_tool_updates.normalize_only_list(parsed.only) or []
+    if _EXTRA_PYTHON in only:
+        if only != [_EXTRA_PYTHON]:
+            parser.error("--only python-versions requires an exclusive component scope")
+        if (parsed.latest or parsed.to_version or parsed.force or parsed.all_packages
+                or parsed.allow_major_runtime_upgrade):
+            parser.error("--only python-versions patches installed series and takes no explicit version or force options")
+        if parsed.refresh and parsed.offline:
+            parser.error("--refresh cannot be combined with --offline for python-versions")
+    else:
+        if parsed.latest and only not in (["python"], ["nodejs"]):
+            parser.error("--latest requires exactly one component: "
+                         "engram update --latest --only python or "
+                         "engram update --latest --only nodejs")
+        if parsed.json and (not parsed.only or not set(only) <= _ENV_COMPONENTS):
+            parser.error("--json requires --only python, venv, packages or python-versions")
     return parsed
 
 
@@ -127,6 +137,18 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
 
     normalized_only = check_tool_updates.normalize_only_list(getattr(args, "only", None))
     only_set = set(normalized_only) if normalized_only is not None else None
+    if only_set == {_EXTRA_PYTHON}:
+        from core import python_cli
+        flags = ["update"]
+        if args.dry_run or args.check or not args.yes:
+            flags.append("--check")
+        else:
+            flags.append("--yes")
+        if args.offline:
+            flags.append("--offline")
+        if args.json:
+            flags.append("--json")
+        return python_cli.run({**ctx, "args": flags})
 
     # Managed environment components (design section 10): python / venv / packages go through the
     # journaled repair engine (dry-run by default; --yes applies), never through tool discovery.

@@ -2,6 +2,8 @@ engram update - check for and apply updates
 
 Usage: engram update [--yes] [--check | --dry-run] [--refresh] [--only NAMES]
        engram update --only python|venv|packages [options]
+       engram update --only python-versions [--check | --dry-run | --yes]
+                     [--offline] [--json]
        engram update -o python|nodejs --latest [-y] [options]
 
 Description:
@@ -14,6 +16,10 @@ Description:
   python, venv and packages are managed environment components: they run
   through the journaled repair engine (a backup is taken before the swap,
   dry-run by default, --yes applies) and cannot be mixed with tool names.
+  python-versions alone uses the extra Python patch planner. It includes all
+  registered extra series. The default is a preview and --yes applies.
+  Online checks already fetch fresh metadata. Offline mode uses the local
+  archive cache and the reviewed pins; --refresh requires online mode.
   --latest requires --only python or --only nodejs and defaults to a dry-run
   plan; add --yes to apply. It cannot be combined with --to.
 
@@ -108,9 +114,10 @@ Options:
   --force          With --only python: reinstall even when already current;
                    override minor planning readiness checks (default: off).
                    Restore preflight and pip check remain mandatory.
-  --json           With python/venv/packages: print a machine-readable result
-                   (default: off)
-  --offline        With --only python: use only local files (default: off)
+  --json           With python, venv, packages or python-versions: print a
+                   machine-readable result (default: off)
+  --offline        With --only python or python-versions: use only local
+                   files and metadata (default: off)
   -h, --help, /?   Show this help (default: off)
 
 Examples:
@@ -119,6 +126,7 @@ Examples:
   engram update --check
   engram update --only claude,codex,agy --yes
   engram update --only python --yes
+  engram update --only python-versions --offline --check --json
   engram update --only python --to 3.14.8 --yes
   engram update -o python --latest -y
   engram update -o nodejs --latest

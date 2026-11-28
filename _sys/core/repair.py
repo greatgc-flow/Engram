@@ -14,7 +14,7 @@ from typing import Optional, Callable, Any, NamedTuple
 
 from core.baseline_packages import BASELINE_PACKAGES
 from core import cli_help, env_manifest, venv_manager, env_ops, env_lock
-from core import python_manager, relocation, venv_repair, layout_migration
+from core import python_manager, python_registry, relocation, venv_repair, layout_migration
 from core.venv_manager import default_runner
 from core.registrar import find_stale_entries
 from core.relocation import RegistryOps
@@ -119,6 +119,20 @@ def build_plan(
     sys_dir = Path(sys_dir)
     base_dir = Path(base_dir)
     
+    if only == {"python-envs"}:
+        from core import python_env_restore
+        spec = python_env_restore.plan(sys_dir, relocate=seams.get("relocate_managed", False))
+        summary = [f"Rebuild locked environment {item['params']['env_id']}" for item in spec]
+        return {"steps": steps_from_spec(sys_dir, base_dir, spec, **seams), "spec": spec,
+                "summary": summary, "kind": "repair"}
+
+    if only == {"python-versions"}:
+        from core import python_restore
+        spec = python_restore.plan(sys_dir)
+        summary = [f"Restore exact offline build {item['params']['build_id']}" for item in spec]
+        return {"steps": steps_from_spec(sys_dir, base_dir, spec, **seams), "spec": spec,
+                "summary": summary, "kind": "repair"}
+
     valid_only = {"python", "venv", "registry", "state", "ai-state", "manifest", "packages"}
     if only is not None:
         invalid = only - valid_only
@@ -245,6 +259,14 @@ def steps_from_spec(sys_dir: Path | str, base_dir: Path | str, spec: list[dict],
             )
             out.extend(v_steps)
             
+        elif kind == "python-envs":
+            from core import python_env_restore
+            out.append(python_env_restore.step(sys_dir, **params))
+
+        elif kind == "python-versions":
+            from core import python_restore
+            out.append(python_restore.step(sys_dir, **params))
+
         elif kind == "python":
             target = params.get("target_version")
             url = params.get("url")
@@ -654,6 +676,13 @@ def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callabl
             recovery_flag = "--resume" if args.resume else "--rollback"
             p.error(f"--dry-run cannot be combined with {recovery_flag}")
         valid_only = {"python", "venv", "registry", "state", "ai-state", "manifest", "packages"}
+        if help_verb in ("repair", "relocate"):
+            valid_only.add("python-envs")
+        if help_verb == "repair":
+            valid_only.add("python-versions")
+        selected = set(args.only.split(",")) if args.only else set()
+        if selected & {"python-versions", "python-envs"} and len(selected) != 1:
+            p.error("python-versions and python-envs must be repaired as separate scopes")
         if args.only is not None and (not args.only or set(args.only.split(",")) - valid_only):
             p.error("--only requires comma-separated names: " + ",".join(sorted(valid_only)))
     except SystemExit as e:
@@ -668,7 +697,10 @@ def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callabl
     seams = ctx.get("seams", {})
     input_fn = seams.get("input_fn", input)
     
-    detection = detect(sys_dir, base_dir, now=seams.get("now"))
+    if only_set == {"python-envs"}:
+        detection = {"journal": env_ops.journal_blocks(sys_dir)}
+    else:
+        detection = detect(sys_dir, base_dir, now=seams.get("now"))
     
     if hasattr(args, "from_path") and args.from_path and not detection.get("drift", {}).get("previous_root"):
         status = "moved" if not Path(args.from_path).exists() else "copied"
@@ -681,29 +713,30 @@ def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callabl
                 print(msg)
             return {"status": "failed", "operation": "repair", "detail": msg, "exit_code": 14}
             
-    if args.resume:
+    if args.resume or args.rollback:
+        mode = "resume" if args.resume else "rollback"
         active = detection["journal"]
         if not active:
-            return {"status": "failed", "operation": "repair", "detail": "No journal to resume", "exit_code": 11}
+            return {"status": "failed", "operation": "repair", "detail": f"No journal to {mode}", "exit_code": 11}
         spec = active.get("data", {}).get("spec", [])
         if _spec_needs_runner(spec) and not _in_runner():
-            return _handoff_result(sys_dir, "resume")
-        def steps_for(a): return steps_from_spec(sys_dir, base_dir, spec, **seams)
-        return _cli_result(env_ops.resume(sys_dir, steps_for), mode="resume", sys_dir=sys_dir)
-        
-    if args.rollback:
-        active = detection["journal"]
-        if not active:
-            return {"status": "failed", "operation": "repair", "detail": "No journal to rollback", "exit_code": 11}
-        spec = active.get("data", {}).get("spec", [])
-        if _spec_needs_runner(spec) and not _in_runner():
-            return _handoff_result(sys_dir, "rollback")
-        def steps_for(a): return steps_from_spec(sys_dir, base_dir, spec, **seams)
+            return _handoff_result(sys_dir, mode)
+
+        def steps_for(locked):
+            if locked["op_id"] != active["op_id"] or locked["kind"] != active["kind"]:
+                raise env_ops.JournalError("Active operation changed before recovery")
+            if locked["kind"] == python_registry.KIND:
+                return python_registry.recovery_steps(sys_dir, locked, mode)
+            return steps_from_spec(sys_dir, base_dir, spec, **seams)
+
         try:
-            res = env_ops.rollback(sys_dir, steps_for)
+            if args.resume:
+                res = env_ops.resume(sys_dir, steps_for)
+            else:
+                res = env_ops.rollback(sys_dir, steps_for)
         except env_ops.JournalError as exc:
             return {"status": "failed", "operation": "repair", "detail": str(exc), "exit_code": 11}
-        return _cli_result(res, mode="rollback", sys_dir=sys_dir)
+        return _cli_result(res, mode=mode, sys_dir=sys_dir)
 
     try:
         plan = build_plan_fn(sys_dir, base_dir, detection, only=only_set, remap_ai_state=args.remap_ai_state, offline=args.offline, cli_args=args, seams=seams)
@@ -774,7 +807,9 @@ def repair_main(ctx: dict) -> dict:
 def relocate_main(ctx: dict) -> dict:
     def setup(p):
         p.add_argument("--from", dest="from_path")
-    return _repair_engine_main(ctx, build_plan, setup)
+    def plan_managed(*args, **kwargs):
+        return build_plan(*args, relocate_managed=True, **kwargs)
+    return _repair_engine_main(ctx, plan_managed, setup)
 
 
 def update_env_main(ctx: dict, only: set[str]) -> dict:
