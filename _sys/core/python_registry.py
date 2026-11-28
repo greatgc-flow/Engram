@@ -200,8 +200,8 @@ def _transition(old, new):
         _require(new["environments"].get(key) == env, "immutable environment changed or disappeared")
 
 
-def _reconcile(ctx, *, undo=False):
-    before, after = ctx.data["before"], ctx.data["after"]
+def _reconcile(ctx, images, *, undo=False):
+    before, after = images["before"], images["after"]
     current = _read(ctx.sys_dir)
     old = before.encode("utf-8") if before is not None else None
     new = after.encode("utf-8")
@@ -220,20 +220,25 @@ def _reconcile(ctx, *, undo=False):
         env_manifest._atomic_write_text(path, target.decode("utf-8"))
 
 
-def _step():
-    return env_ops.Step(STEP, _reconcile, undo=lambda ctx: _reconcile(ctx, undo=True))
+def publication_step(*, journal_key=None):
+    """Build the registry writer for a lifecycle coordinator that owns the lock."""
+    def reconcile(ctx, *, undo=False):
+        images = ctx.data if journal_key is None else ctx.data[journal_key]
+        _reconcile(ctx, images, undo=undo)
+
+    return env_ops.Step(STEP, reconcile, undo=lambda ctx: reconcile(ctx, undo=True))
 
 
-def recovery_steps(root, active, mode):
+def recovery_steps(root, active, mode, *, kind=KIND, journal_key=None):
     """Reconstruct the fixed operation under the lifecycle lock before replay."""
     try:
-        data = active["data"]
-        _require(active["kind"] == KIND, "unexpected recovery operation")
+        data = active["data"] if journal_key is None else active["data"].get(journal_key)
+        _require(active["kind"] == kind, "unexpected recovery operation")
         if not data and not active["steps"] and active["phase"] == "PLANNED":
-            if mode == "rollback":
+            if mode == "rollback" and journal_key is None:
                 return []
             raise RegistryError("publication intent was interrupted before effects; run repair --rollback")
-        _require(isinstance(data.get("after"), str)
+        _require(isinstance(data, dict) and isinstance(data.get("after"), str)
                  and "before" in data and (data["before"] is None or isinstance(data["before"], str)),
                  "invalid registry journal images")
         before = _decode(root, data["before"]) if data["before"] is not None else None
@@ -243,24 +248,35 @@ def recovery_steps(root, active, mode):
             _require(_read(root) == data["after"].encode("utf-8"), "acknowledged registry diverged")
     except (OSError, RegistryError) as exc:
         raise env_ops.JournalError(str(exc)) from exc
-    return [_step()]
+    return [publication_step(journal_key=journal_key)]
+
+
+def _proposal(root, expected_revision, document):
+    _require(type(expected_revision) is int and expected_revision >= 0, "invalid expected revision")
+    _validate(root, document)
+    proposed = json.dumps(document, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
+    _require(len(proposed.encode("utf-8")) <= _MAX_BYTES, "proposed registry exceeds size limit")
+    for name in (FILENAME, env_lock.LOCK_FILENAME, env_ops.JOURNAL_FILENAME):
+        _state_file(root, name)
+    return proposed
+
+
+def prepare_publication(root: Path, expected_revision: int, document: dict) -> dict:
+    """Compare and capture registry images while the calling coordinator owns the lock."""
+    proposed = _proposal(root, expected_revision, document)
+    raw = _read(root)
+    current = _decode(root, raw) if raw is not None else None
+    _require(expected_revision == (current["revision"] if current else 0), "stale registry revision")
+    _transition(current, _decode(root, proposed))
+    return {"before": raw.decode("utf-8") if raw is not None else None, "after": proposed}
 
 
 # WIRING-EXEMPT: EXPORTED_API reason="WP1 transaction interface for explicit provider apply planners; discovery and doctor are read-only."
 def publish(root: Path, expected_revision: int, document: dict) -> dict:
     """Publish already verified build metadata, called only by an explicit apply planner."""
-    _require(type(expected_revision) is int and expected_revision >= 0, "invalid expected revision")
-    _validate(root, document)
-    proposed = json.dumps(document, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
-    _require(len(proposed.encode("utf-8")) <= _MAX_BYTES, "Python registry exceeds size limit")
-    for name in (FILENAME, env_lock.LOCK_FILENAME, env_ops.JOURNAL_FILENAME):
-        _state_file(root, name)
+    _proposal(root, expected_revision, document)
 
     def prepare():
-        raw = _read(root)
-        current = _decode(root, raw) if raw is not None else None
-        _require(expected_revision == (current["revision"] if current else 0), "stale registry revision")
-        _transition(current, _decode(root, proposed))
-        return {"before": raw.decode("utf-8") if raw is not None else None, "after": proposed}
+        return prepare_publication(root, expected_revision, document)
 
-    return env_ops.execute(root, KIND, [_step()], prepare=prepare)
+    return env_ops.execute(root, KIND, [publication_step()], prepare=prepare)

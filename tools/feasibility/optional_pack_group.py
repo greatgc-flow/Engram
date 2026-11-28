@@ -5,10 +5,11 @@ import json
 import re
 from zipfile import BadZipFile, ZipFile
 
-from core import env_lock, env_manifest, env_ops
+from core import env_lock, env_manifest, env_ops, python_registry
 from core.python_registry import _plain
 
 _KIND = "fixture-pack-group"
+_REGISTRY_KEY = "python_registry"
 _ID = re.compile(r"[a-z][a-z0-9-]{0,47}")
 _LIMIT = 4096
 _MARKER = "fixture-root.txt"
@@ -94,12 +95,18 @@ def _current(root, package):
     generation = binding.get("revision")
     runtime_id = binding.get("runtime")
     sha = pointer.get("sha256")
+    expected = {"revision": generation, "runtime": runtime_id}
+    if binding.get("registered") is True:
+        expected["registered"] = True
     if (type(generation) is not int or not 1 <= generation <= 2**53 - 1
             or type(runtime_id) is not str or not _ID.fullmatch(runtime_id)
             or type(sha) is not str or not re.fullmatch(r"[0-9a-f]{64}", sha)
-            or binding != {"revision": generation, "runtime": runtime_id}
-            or pointer != {"revision": generation, "runtime": runtime_id, "sha256": sha}):
+            or binding != expected
+            or pointer != expected | {"sha256": sha}):
         raise ValueError("incoherent fixture pointers")
+    if expected.get("registered"):
+        registry = python_registry.inventory(root)["registry"]
+        _require_binding(registry, package, runtime_id)
     stored = _read(_path(root, package, sha + ".hex"))
     if stored is None:
         raise ValueError("fixture artifact is missing")
@@ -121,7 +128,13 @@ def _reconcile(path, before, after, undo=False):
             env_manifest._atomic_write_text(path, target)
 
 
-def _steps(package):
+def _require_binding(registry, package, runtime_id):
+    binding = registry["bindings"].get(package, {}) if registry else {}
+    if binding.get("kind") != "app" or binding.get("build_id") != runtime_id:
+        raise ValueError("fixture Python registry binding mismatch")
+
+
+def _steps(package, registry_step=None):
     def stage(ctx):
         raw = ctx.data["payload"]
         path = _path(ctx.sys_dir, package, ctx.data["sha256"] + ".hex")
@@ -144,12 +157,14 @@ def _steps(package):
             raise ValueError("fixture activation failed validation")
 
     return [env_ops.Step("fixture-stage", stage),
+            *([registry_step] if registry_step is not None else []),
             env_ops.Step("fixture-runtime", pointer(0), undo=pointer(0, True)),
             env_ops.Step("fixture-package", pointer(1), undo=pointer(1, True)),
             env_ops.Step("fixture-verify", verify)]
 
 
-def publish(root, descriptor, expected_revision, runtime_id, archive, digest, *, crash_after=None):
+def publish(root, descriptor, expected_revision, runtime_id, archive, digest, *,
+            registry_proposal=None, crash_after=None):
     package = descriptor.package_id
     if (type(expected_revision) is not int or not 0 <= expected_revision < 2**53 - 1
             or not isinstance(runtime_id, str) or not _ID.fullmatch(runtime_id)):
@@ -159,16 +174,27 @@ def publish(root, descriptor, expected_revision, runtime_id, archive, digest, *,
     sha = sha256(raw).hexdigest()
     next_binding = {"revision": expected_revision + 1, "runtime": runtime_id}
 
+    registry_step = None
+    if registry_proposal is not None:
+        next_binding["registered"] = True
+        registry_step = python_registry.publication_step(journal_key=_REGISTRY_KEY)
+
     def prepare():
         _check_journal(root)
         observed, before = _current(root, package)
         if (observed[0] if observed else 0) != expected_revision:
             raise ValueError("fixture generation conflict")
-        return {"package": package, "before": before or [None, None],
+        data = {"package": package, "before": before or [None, None],
                 "after": [_wire(next_binding), _wire(next_binding | {"sha256": sha})],
                 "payload": raw.hex(), "sha256": sha}
+        if registry_proposal is not None:
+            revision, document = registry_proposal
+            images = python_registry.prepare_publication(root, revision, document)
+            _require_binding(json.loads(images["after"]), package, runtime_id)
+            data[_REGISTRY_KEY] = images
+        return data
 
-    return env_ops.execute(root, _KIND, _steps(package), prepare=prepare, crash_after=crash_after)
+    return env_ops.execute(root, _KIND, _steps(package, registry_step), prepare=prepare, crash_after=crash_after)
 
 
 def recover(root, descriptor, mode):
@@ -195,7 +221,11 @@ def recover(root, descriptor, mode):
             staged = _read(_path(root, package, sha + ".hex"))
             if active["steps"].get("fixture-stage") == "done" and staged != data["payload"]:
                 raise ValueError("acknowledged fixture stage diverged")
-        return _steps(package)
+        registry_step = None
+        if _REGISTRY_KEY in data:
+            registry_step, = python_registry.recovery_steps(
+                root, active, mode, kind=_KIND, journal_key=_REGISTRY_KEY)
+        return _steps(package, registry_step)
 
     if mode == "resume":
         return env_ops.resume(root, factory)
