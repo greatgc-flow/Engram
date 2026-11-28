@@ -31,7 +31,7 @@ CATALOG = (
     Capability("image-visual-review", "image", (), "manual"),
     Capability("audio-transform", "audio", ("ffmpeg",)),
     Capability("speech-transcribe", "audio", ("faster-whisper", "whisper.cpp"), "model"),
-    Capability("speech-synthesis", "audio", ("piper",), "model"),
+    Capability("speech-synthesis", "audio", ("piper", "melotts"), "model"),
     Capability("rule-speech", "audio", ("espeak-ng",)),
     Capability("video-inspect", "video", ("ffprobe",)),
     Capability("video-transcode", "video", ("ffmpeg",)),
