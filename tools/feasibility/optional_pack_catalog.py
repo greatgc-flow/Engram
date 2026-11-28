@@ -68,12 +68,16 @@ def _profile(row):
     return Profile(row["id"], required, optional)
 
 
-def _descriptor(raw, slots):
-    _require(type(raw) is bytes and len(raw) <= MAX_BYTES, "invalid descriptor payload")
+def decode_document(raw):
+    _require(type(raw) is bytes and len(raw) <= MAX_BYTES, "invalid metadata payload")
     try:
-        doc = json.loads(raw.decode("utf-8"), object_pairs_hook=_pairs)
+        return json.loads(raw.decode("utf-8"), object_pairs_hook=_pairs)
     except RecursionError as exc:
-        raise ValueError("descriptor nesting exceeds parser limit") from exc
+        raise ValueError("metadata nesting exceeds parser limit") from exc
+
+
+def _descriptor(raw, slots):
+    doc = decode_document(raw)
     _require(isinstance(doc, dict) and doc.keys() == _HEADER, "invalid descriptor fields")
     _require(doc["fixture_only"] is True and doc["host"] == "windows-x64", "unsupported fixture or host")
     _require(all(doc[k] == "1.0" for k in ("schema_version", "protocol_min", "protocol_max")),
@@ -124,19 +128,23 @@ def _ordinary_dir(path):
             and not getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT)
 
 
-def _absent(root, rel):
-    """A missing member proves absence only below an unambiguous ordinary directory."""
+def inspect_path(root, rel):
+    """Inspect exact components without following links or accepting case aliases."""
     current = root
     for part in rel.split("/"):
         if not _ordinary_dir(current):
-            return False
+            return "ambiguous", current
         matches = [p for p in current.iterdir() if p.name.casefold() == part.casefold()]
         if not matches:
-            return True
+            return "absent", current / part
         if len(matches) != 1 or matches[0].name != part:
-            return False
+            return "ambiguous", current
         current = matches[0]
-    return False
+    return "present", current
+
+
+def _absent(root, rel):
+    return inspect_path(root, rel)[0] == "absent"
 
 
 def observe_slots(system_dir: Path, catalog):

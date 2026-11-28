@@ -9,6 +9,8 @@ sys.path.insert(0, str(SYSTEM))
 from core import cli_help, provisioner  # noqa: E402
 from optional_pack_catalog import MAX_BYTES, observe_slots, read_catalog  # noqa: E402
 
+from optional_pack_registry import observe_registry  # noqa: E402
+
 REVIEWED_SLOTS = {"ai": "AI", "contentflow": "ContentFlow"}
 
 
@@ -30,10 +32,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("system_dir", type=Path)
     parser.add_argument("descriptors", type=Path, nargs="*")
+    parser.add_argument("--installation-id", help="expected fixture owner for registry inspection")
     args = parser.parse_args()
     try:
         catalog = load_fixtures(args.descriptors)
-        print(json.dumps(observe_slots(args.system_dir, catalog), sort_keys=True))
+        if args.installation_id is None:
+            status = observe_slots(args.system_dir, catalog)
+        else:
+            status = observe_registry(args.system_dir, catalog, args.installation_id)
+        print(json.dumps(status, sort_keys=True))
     except (OSError, ValueError) as exc:
         parser.exit(2, f"Catalog inspection failed: {exc}\n")
 

@@ -19,7 +19,7 @@ class RegistryProbeTests(unittest.TestCase):
         self.root = Path(tmp.name)
         self.registry = self.root / "data/state/package-registry.json"
         self.registry.parent.mkdir(parents=True)
-        self.doc = json.loads((FIXTURES / "mixed.registry.json").read_bytes())
+        self.doc = json.loads((FIXTURES / "registry/mixed.registry.json").read_bytes())
         self.marker = self.root / "AI/state/ownership.json"
         self.marker.parent.mkdir(parents=True)
         receipt = {"installation_id": "fixture-install", "package_id": "ai", "slot_rel": "AI"}
@@ -54,7 +54,7 @@ class RegistryProbeTests(unittest.TestCase):
         self.assertEqual(self.run_probe()["ai"], "FOREIGN")
 
     def test_semantically_invalid_or_torn_registry_is_corrupt(self):
-        for raw in ((FIXTURES / "retained-active.semantic-negative.json").read_bytes(),
+        for raw in ((FIXTURES / "registry/retained-active.semantic-negative.json").read_bytes(),
                     b'{"revision":1,"revision":2}', b'{"torn'):
             self.registry.write_bytes(raw)
             self.assertEqual(set(self.run_probe().values()), {"CORRUPT"})
