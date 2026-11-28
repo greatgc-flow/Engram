@@ -138,3 +138,39 @@ publish(Path(sys.argv[3]), descriptor, 1, 'runtime-b', bytes.fromhex(sys.argv[4]
         with self.assertRaises(ValueError):
             publish(self.root, descriptor, 1, "runtime-b", *archive(b"new"))
         self.assertEqual(journal.read_bytes(), b"torn first record")
+
+    def test_process_handoff_holds_the_lock_and_uses_verified_fixture_bytes(self):
+        from unittest.mock import patch
+        import subprocess
+        from core import env_lock
+        from optional_pack_group import launch, publish
+        descriptor = CATALOG[-1]
+        publish(self.root, descriptor, 0, "runtime-a", *archive(b"verified fixture"))
+        run = subprocess.Popen
+
+        def spawn(*args, **kwargs):
+            self.assertEqual(env_lock.inspect(self.root)["state"], "held")
+            attempt = publish(self.root, descriptor, 1, "runtime-b", *archive(b"new"))
+            self.assertEqual(attempt["exit_code"], 11)
+            return run(*args, **kwargs)
+
+        with patch("optional_pack_group.subprocess.Popen", side_effect=spawn):
+            launched = launch(self.root, descriptor)
+        self.assertEqual(launched, {"revision": 1, "runtime": "runtime-a",
+                                    "sha256": sha256(b"verified fixture").hexdigest()})
+        self.assertEqual(env_lock.inspect(self.root)["state"], "free")
+        self.assertEqual(publish(self.root, descriptor, 1, "runtime-b", *archive(b"new"))["phase"],
+                         "COMMITTED")
+
+    def test_launch_refuses_active_journal_without_spawning(self):
+        from unittest.mock import patch
+        from core.env_ops import SimulatedCrash
+        from optional_pack_group import launch, publish
+        descriptor = CATALOG[-1]
+        with self.assertRaises(SimulatedCrash):
+            publish(self.root, descriptor, 0, "runtime-a", *archive(b"fixture"),
+                    crash_after="fixture-package")
+        with patch("optional_pack_group.subprocess.Popen") as spawn:
+            with self.assertRaises(ValueError):
+                launch(self.root, descriptor)
+        spawn.assert_not_called()
