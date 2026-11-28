@@ -52,7 +52,8 @@ class GroupProbeTests(unittest.TestCase):
                 publish(self.root, descriptor, 1, "runtime-b", *archive(b"new"), crash_after=step)
             with self.assertRaises(ValueError):
                 activate(self.root, descriptor)
-            self.assertEqual(recover(self.root, descriptor, mode)["status"], "success")
+            self.assertEqual(recover(self.root, descriptor, mode)["phase"],
+                             "ROLLED_BACK" if mode == "rollback" else "COMMITTED")
             self.assertEqual(activate(self.root, descriptor), expected)
 
     def test_foreign_pointer_and_wrong_scope_block_recovery(self):
