@@ -88,6 +88,17 @@ def test_duplicate_and_unknown_receipts_and_invalid_limits_are_rejected(plan):
         plan(inventory(), enable=["live-url"])
 
 
+def test_target_canary_cannot_borrow_capacity_from_another_workload(plan):
+    host = inventory()
+    host["receipts"] = [receipt("video-transcode", "ffmpeg"),
+                        receipt("video-transcode", "ffmpeg", canary_sha256="d" * 64, ram_mib=700)]
+    assert by_id(plan, host)["video-transcode"]["status"] == "CPU_CANDIDATE"
+    row = by_id(plan, host, workloads={"video-transcode": "d" * 64})["video-transcode"]
+    assert row["status"] == "RESOURCE_LIMIT" and row["blockers"] == ["ram_mib"]
+    row = by_id(plan, host, workloads={"video-transcode": "f" * 64})["video-transcode"]
+    assert row["status"] == "NEEDS_LOCAL_PROOF" and row["target_canary_sha256"] == "f" * 64
+
+
 def test_json_cli_works_from_unrelated_directory_and_rejects_duplicate_keys(tmp_path):
     source = tmp_path / "host.json"
     source.write_text(json.dumps(inventory()), encoding="utf-8")
@@ -95,6 +106,11 @@ def test_json_cli_works_from_unrelated_directory_and_rejects_duplicate_keys(tmp_
     response = subprocess.run(args, cwd=tmp_path, capture_output=True, text=True, timeout=15)
     assert response.returncode == 0, response.stderr
     assert json.loads(response.stdout)["preview_only"] is True
+    response = subprocess.run([*args, "--canary", "video-transcode=" + "f" * 64], cwd=tmp_path,
+                              capture_output=True, text=True, timeout=15)
+    assert response.returncode == 0, response.stderr
+    rows = {r["capability"]: r for r in json.loads(response.stdout)["capabilities"]}
+    assert rows["video-transcode"]["target_canary_sha256"] == "f" * 64
     source.write_text('{"schema_version":1,"schema_version":1}', encoding="utf-8")
     response = subprocess.run(args, cwd=tmp_path, capture_output=True, text=True, timeout=15)
     assert response.returncode == 2 and not response.stdout
