@@ -23,7 +23,9 @@ import sys
 import sysconfig
 
 def deny_effect(event, args):
-    if event.startswith("socket.") or event in ("subprocess.Popen", "os.system", "os.startfile"):
+    # platform.uname() reads the local hostname during asyncpg import.
+    network_event = event.startswith("socket.") and event != "socket.gethostname"
+    if network_event or event in ("subprocess.Popen", "os.system", "os.startfile"):
         raise RuntimeError("Unexpected side effect during dependency smoke: " + event)
 
 sys.addaudithook(deny_effect)
