@@ -18,7 +18,7 @@ T67 covers the extra-series patch transaction and exact reference retention. Com
 
 Repair preserves the existing build IDs, registry bytes and references. It verifies the private archive and probes the reconstructed interpreter in a temporary venv before an atomic directory rename. A marker identifies the operation's completed output for journal resume and rollback. Only a directory created by that operation is eligible for automatic undo. The ordinary repair scope and legacy Python remain on their original path.
 
-The Windows fixture removes a retained build from the managed path inside a disposable root, proves the missing-cache blocker, and restores the exact older version under the existing build ID. It checks the active patched version and the registry bytes after recovery. Fault fixtures interrupt after the atomic rename, then exercise both resume and rollback with the archive unavailable. This covers exact reconstruction of registered interpreter directories. The following sections cover application venvs and managed relocation. Backup export and retention policy remain open.
+The Windows fixture removes a retained build from the managed path inside a disposable root, proves the missing-cache blocker, and restores the exact older version under the existing build ID. It checks the active patched version and the registry bytes after recovery. Fault fixtures interrupt after the atomic rename, then exercise both resume and rollback with the archive unavailable. This covers exact reconstruction of registered interpreter directories. The following sections cover application venvs and managed relocation. Offline artifact packing and retention policy remain open.
 
 ## Offline reconstruction of registered environments
 
@@ -72,3 +72,14 @@ retain their existing scope.
 This is a T71 metadata and recovery-chain slice. Artifact packing, disaster
 restore under a replacement installation identity, and coordinated
 application data backups remain open.
+
+The [Windows regression and native job](https://github.com/greatgc-flow/Engram/actions/runs/46143926894/job/140975706616)
+passed against `8d373b6434ceda07da3755429080862936560244`.
+It restored the registry and lock byte-for-byte on a different volume
+using a Korean archive path. The preview made no destination writes. The
+recovered registry and lock supported the existing offline venv rebuild,
+including native MarkupSafe, the regenerated pip launcher and exact project
+pin. A first Windows run found that echoing the archive path to redirected
+CP1252 output could fail after a successful write. The scoped success
+message now reports the revision, and a dedicated regression covers the
+same output encoding. The final job passed 2,633 tests and 154 subtests.
