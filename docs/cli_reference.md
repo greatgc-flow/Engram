@@ -324,6 +324,37 @@ digest; unpinned Python archives are fetched over HTTPS from python.org.
 Bootstrap installs only the validated `runtimes.json` pin. Its newer-version notice points to
 `engram update --check`; `--skip-update` skips that notice check for compatibility.
 
+#### engram python
+
+```text
+engram python - inspect local Python runtimes
+
+Usage: engram python list [--json]
+       engram python where [3.MINOR] [--json]
+
+Description:
+  List the legacy binding and registered active builds. Where prints the
+  existing default venv executable or the active executable for a series.
+  Both commands read the local installation and work offline.
+
+Options:
+  --json           Print one JSON object (default: off)
+  -h, --help, /?   Show this help (default: off)
+
+Examples:
+  engram python list --json
+  engram python where
+  engram python where 3.14
+
+Exit codes:
+  0   inventory or lookup succeeded
+  1   unreadable registry or unavailable executable
+  2   invalid arguments
+
+See also:
+  engram doctor     check environment health
+```
+
 #### engram doctor
 
 ```text
