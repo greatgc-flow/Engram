@@ -125,3 +125,16 @@ publish(Path(sys.argv[3]), descriptor, 1, 'runtime-b', bytes.fromhex(sys.argv[4]
             activate(self.root, descriptor)
         self.assertEqual(recover(self.root, descriptor, "resume")["phase"], "COMMITTED")
         self.assertEqual(activate(self.root, descriptor), (2, "runtime-b", b"new"))
+
+    def test_unreadable_journal_blocks_even_a_coherent_pointer_pair(self):
+        from core.env_ops import journal_path
+        from optional_pack_group import activate, publish
+        descriptor = CATALOG[-1]
+        publish(self.root, descriptor, 0, "runtime-a", *archive(b"payload"))
+        journal = journal_path(self.root)
+        journal.write_bytes(b"torn first record")
+        with self.assertRaises(ValueError):
+            activate(self.root, descriptor)
+        with self.assertRaises(ValueError):
+            publish(self.root, descriptor, 1, "runtime-b", *archive(b"new"))
+        self.assertEqual(journal.read_bytes(), b"torn first record")
