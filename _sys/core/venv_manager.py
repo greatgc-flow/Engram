@@ -11,6 +11,7 @@ import ntpath
 import os
 import re
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -637,12 +638,14 @@ def snapshot_op(ctx: dict, *, now: Optional[str] = None) -> dict:
     """
     sys_dir = Path(ctx["sys_dir"])
     op = {"status": "success", "operation": "venv.snapshot"}
-    if any(a in ("--dry-run", "--check") for a in (ctx.get("args") or [])):
-        print("  [--] venv snapshot: skipped (dry-run/check)")
+    args = ctx.get("args") or []
+    stream = sys.stderr if "--json" in args else sys.stdout
+    if any(a in ("--dry-run", "--check") for a in args):
+        print("  [--] venv snapshot: skipped (dry-run/check)", file=stream)
         return {**op, "skipped": True, "detail": "dry-run"}
     venv_dir = sys_dir / "env" / "venv"
     if not (venv_dir / "Scripts" / "python.exe").is_file():
-        print("  [--] venv snapshot: no venv present")
+        print("  [--] venv snapshot: no venv present", file=stream)
         return {**op, "skipped": True, "detail": "no venv present"}
     stamp = now or _utc_now()
     try:
@@ -650,11 +653,11 @@ def snapshot_op(ctx: dict, *, now: Optional[str] = None) -> dict:
             snapshot = build_snapshot(sys_dir, now=stamp)
             previous = latest_snapshot(sys_dir)
             if previous is not None and _snapshot_fingerprint(previous) == _snapshot_fingerprint(snapshot):
-                print("  [--] venv snapshot: unchanged since the last one")
+                print("  [--] venv snapshot: unchanged since the last one", file=stream)
                 return {**op, "skipped": True, "detail": "unchanged"}
             path = write_snapshot(sys_dir, snapshot)
     except env_lock.EnvLockBusy as exc:
-        print(f"  [!] venv snapshot skipped: environment lock busy ({exc})")
+        print(f"  [!] venv snapshot skipped: environment lock busy ({exc})", file=stream)
         return {**op, "skipped": True, "detail": f"environment lock busy: {exc}"}
-    print(f"  [OK] venv snapshot recorded: {path.name} ({len(snapshot['packages'])} packages)")
+    print(f"  [OK] venv snapshot recorded: {path.name} ({len(snapshot['packages'])} packages)", file=stream)
     return {**op, "snapshot": str(path)}

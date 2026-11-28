@@ -28,6 +28,7 @@ if not exist "%PY%" (
 set "PYTHONUTF8=1"
 "%PY%" "%SYS_DIR%\core\dispatcher.py" %*
 set "_RC=%errorlevel%"
+if /i "%~1"=="python" exit /b %_RC%
 if not "%_RC%"=="75" exit /b %_RC%
 
 :: Exit 75 = runner handoff (python swap). The engine process ran ON env\python, so it cannot rename it: it
