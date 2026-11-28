@@ -370,3 +370,27 @@ def test_windows_tcl_timezone_name_with_plus_is_valid():
 
     name = "python/tcl/tcl8.6/tzdata/Etc/GMT+1"
     assert validate_member_name(name) == name.split("/")
+
+
+def test_archive_verifier_reads_gzip_from_read_write_named_snapshot(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    import tempfile
+
+    from core import python_artifact
+
+    path = tmp_path / "cache"
+    make_archive(path)
+    data = path.read_bytes()
+    release, _ = discover(monkeypatch, [upstream("3.14.10", hashlib.sha256(data).hexdigest(), len(data))])
+    artifact = release.artifacts[0]
+    # The Windows TemporaryFile wrapper exposes a read/write creation mode.
+    # GzipFile must explicitly request reading regardless of the wrapper mode.
+    @contextmanager
+    def named_snapshot():
+        with tempfile.NamedTemporaryFile() as stream:
+            stream.mode = "w+b"
+            yield stream
+
+    monkeypatch.setattr(python_artifact.tempfile, "TemporaryFile", named_snapshot)
+    assert python_artifact.verify_cached(path, artifact, artifact.identity())["regular_files"] == 7
+    assert path.read_bytes() == data

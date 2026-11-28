@@ -91,7 +91,7 @@ def _amd64(stream):
 def _inspect(raw, artifact):
     # Spool the bounded expanded tar before parsing headers with extended lengths.
     # Never materialize member paths or execute code during admission.
-    with tempfile.TemporaryFile() as expanded, gzip.GzipFile(fileobj=raw) as compressed:
+    with tempfile.TemporaryFile() as expanded, gzip.GzipFile(fileobj=raw, mode="rb") as compressed:
         total = 0
         while block := compressed.read(BLOCK):
             total += len(block)
