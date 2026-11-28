@@ -16,7 +16,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -644,6 +644,68 @@ def _resolve_sqlite(discovery_id: str = "sqlite-tools-win-x64") -> dict[str, Any
     )
 
 
+def _feed_date(value: Any) -> date | None:
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _support_phase(boundaries: set[tuple], today: date) -> str:
+    if len(boundaries) != 1:
+        return "UNKNOWN"
+    released, support_end, eol = next(iter(boundaries))
+    if support_end is None or eol is None or not released <= support_end <= eol:
+        return "UNKNOWN"
+    if today >= eol:
+        return "EOL"
+    if today >= support_end:
+        return "SECURITY_ONLY"
+    return "BUGFIX"
+
+
+def _python_source_catalog(entries: list[dict], today: date) -> dict:
+    """Describe dated CPython 3 releases. Only a separate artifact probe can confirm a binary."""
+    releases = {}
+    incomplete = False
+    incomplete_series = set()
+    for row in entries:
+        version = str(row["latest"])
+        if not re.fullmatch(r"3\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", version):
+            continue
+        cycle, patch = version.rsplit(".", 1)
+        released = _feed_date(row.get("releaseDate"))
+        patched = _feed_date(row.get("latestReleaseDate"))
+        if released is None or patched is None or patched < released:
+            incomplete = True
+            incomplete_series.add(cycle)
+            continue
+        if patched <= today:
+            dates = released, _feed_date(row.get("support")), _feed_date(row.get("eol"))
+            releases.setdefault(cycle, {}).setdefault(int(patch), set()).add(dates)
+
+    series = {}
+    for cycle in sorted(releases, key=lambda c: int(c.split(".")[1]), reverse=True):
+        latest = max(releases[cycle])
+        phase = _support_phase(releases[cycle][latest], today)
+        if phase == "UNKNOWN":
+            incomplete = True
+            incomplete_series.add(cycle)
+        series[cycle] = {
+            "source_version": f"{cycle}.{latest}", "support_phase": phase,
+            "windows_binary": None, "compatible_candidate": None,
+        }
+
+    return {
+        "observed_on": today.isoformat(),
+        "coverage": "PARTIAL" if incomplete or not series else "MEASURED",
+        "series": series,
+        **({"incomplete_series": sorted(incomplete_series)} if incomplete else {}),
+    }
+
+
 def _resolve_python(
     cache_path: Path | None = None, *, force_refresh: bool = False,
     ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS,
@@ -651,8 +713,15 @@ def _resolve_python(
     provider = "endoflife_python"
     cache = _load_cache(cache_path) if cache_path else {}
     cached = _cache_get(cache, provider, "python")
+    today = datetime.now(timezone.utc).date()
     if not force_refresh and _is_cache_fresh(cached, ttl_seconds) and cached.get("result"):
-        return dict(cached["result"])
+        result = dict(cached["result"])
+        catalog = result.get("source_catalog")
+        if not isinstance(catalog, dict) or not _feed_date(catalog.get("observed_on")):
+            result["source_catalog"] = {"observed_on": None, "coverage": "UNKNOWN", "series": {}}
+        elif catalog["observed_on"] != today.isoformat():
+            result["source_catalog"] = {**catalog, "coverage": "STALE"}
+        return result
     req = urllib.request.Request(
         "https://endoflife.date/api/python.json",
         headers={"User-Agent": "portable-dev-version-resolver"},
@@ -693,7 +762,8 @@ def _resolve_python(
             error_type="parse_error",
         )
 
-    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    now_str = today.isoformat()
+    releases = []
     patches = {}
     if not isinstance(data, list):
         data = []
@@ -706,6 +776,7 @@ def _resolve_python(
                 and re.fullmatch(r"\d+\.\d+\.\d+", version)
                 and version.startswith(cycle + ".")
                 and str(entry.get("releaseDate", "")) <= now_str):
+            releases.append(entry)
             previous = patches.get(cycle)
             if previous is None or tuple(map(int, version.split("."))) > tuple(map(int, previous.split("."))):
                 patches[cycle] = version
@@ -729,6 +800,7 @@ def _resolve_python(
         source="endoflife.date",
         detail="notice_only",
     )
+    result["source_catalog"] = _python_source_catalog(releases, today)
     result["latest_minor_cycle"] = cycles[0]
     result["latest_patch_by_cycle"] = {cycle: patches[cycle] for cycle in cycles}
     if cache_path:
@@ -1110,6 +1182,46 @@ def _resolve_engram_release(
     )
 
 
+def _installed_python_series(root):
+    from core import python_registry
+    try:
+        inventory = python_registry.inventory(root)
+    except (OSError, python_registry.RegistryError) as exc:
+        return {"coverage": "UNKNOWN", "detail": str(exc)}
+    registry = inventory["registry"]
+    series = {}
+    if registry:
+        for minor, settings in registry["series"].items():
+            active = settings["active_build"]
+            series[minor] = {"active_build": active, "version": registry["builds"][active]["version"],
+                             "sha256": registry["builds"][active]["sha256"]}
+    return {"coverage": "MEASURED", "revision": inventory["revision"], "legacy": inventory["legacy"],
+            "series": series}
+
+
+def resolve_python_candidates(cache_path=None, *, force_refresh=False, ttl_seconds=DEFAULT_CACHE_TTL_SECONDS,
+                              consumer_locks=None, receipts=(), registry_root=None):
+    """Explicit provider check. Legacy Python discovery keeps its original network budget."""
+    from core import python_provider
+    source = _resolve_python(cache_path, force_refresh=force_refresh, ttl_seconds=ttl_seconds)
+    if registry_root is not None:
+        installed = _installed_python_series(Path(registry_root))
+        source = {**source, "installed": installed}
+        if installed["coverage"] != "MEASURED":
+            consumer_locks = {}
+    if source.get("status") != "ok":
+        return source
+    try:
+        release = python_provider.fetch_release()
+        detail = None
+    except python_provider.ProviderError as exc:
+        release, detail = None, str(exc)
+    catalog = python_provider.assess(source["source_catalog"], release, consumer_locks or {}, receipts)
+    if detail:
+        catalog["binary_detail"] = detail
+    return {**source, "source_catalog": catalog}
+
+
 def resolve_latest(
     tool_name: str,
     provider: str,
@@ -1136,6 +1248,10 @@ def resolve_latest(
         result = _resolve_npm(discovery_id)
     elif provider == "sqlite_org_page":
         result = _resolve_sqlite(discovery_id)
+    elif provider == "engram_python_candidates":
+        result = resolve_python_candidates(cache_path, force_refresh=force_refresh, ttl_seconds=ttl_seconds,
+                                           registry_root=_SYS_DIR)
+        result = {**result, "provider": provider}
     elif provider == "endoflife_python":
         result = _resolve_python(cache_path, force_refresh=force_refresh, ttl_seconds=ttl_seconds)
     elif provider == "engram_release":
