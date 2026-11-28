@@ -96,6 +96,33 @@ def test_release_is_idempotent_and_does_not_remove_foreign_lock(sys_dir):
     other.release()
 
 
+@pytest.mark.parametrize("replacement", [False, True])
+def test_release_rechecks_owner_after_transient_sharing_denial(sys_dir, monkeypatch, replacement):
+    probe = _probe_factory({1: 1.0, 2: 2.0})
+    handle = env_lock.acquire(sys_dir, "op-a", pid=1, start_time=1.0, process_probe=probe)
+    path = env_lock.lock_path(sys_dir)
+    attempts = []
+    unlink = Path.unlink
+
+    def sharing_violation(candidate, *args, **kwargs):
+        if candidate == path:
+            attempts.append(candidate)
+            if len(attempts) == 1:
+                if replacement:
+                    path.write_text(json.dumps({"pid": 2, "start_time": 2.0, "op_id": "op-b"}), encoding="utf-8")
+                raise PermissionError("temporary file sharing denial")
+        return unlink(candidate, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", sharing_violation)
+    handle.release()
+    if replacement:
+        assert len(attempts) == 1
+        assert json.loads(path.read_text(encoding="utf-8"))["op_id"] == "op-b"
+    else:
+        assert len(attempts) == 2
+        assert not path.exists()
+
+
 def test_exactly_one_winner_under_contention(sys_dir):
     probe = _probe_factory({i: float(i) for i in range(1, 17)})
     winners, busy = [], []
