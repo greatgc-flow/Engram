@@ -1,7 +1,7 @@
 @echo off
-set "ENGRAM_CALLER_CWD=%CD%"
-cd /d "%~dp0"
 setlocal DisableDelayedExpansion
+set "ENGRAM_CALLER_CWD=%CD%"
+if /i not "%~1"=="python" cd /d "%~dp0"
 
 :: ============================================================================
 :: Discovery Hierarchy for Engram System Directory
@@ -68,7 +68,7 @@ set "SUBCMD=%~1"
 
 :: Help for any verb is a static file: print it before any setup/Python check (works on a fresh folder)
 set "_HELPVERB="
-for %%V in (open update doctor isolation menu tidy snapshots repair relocate uninstall backup restore reset version) do if /i "%SUBCMD%"=="%%V" set "_HELPVERB=%%V"
+for %%V in (open update python doctor isolation menu tidy snapshots repair relocate uninstall backup restore reset version) do if /i "%SUBCMD%"=="%%V" set "_HELPVERB=%%V"
 if not defined _HELPVERB goto :verb_help_done
 if /i "%~2"=="-h" goto :verb_help_out
 if /i "%~2"=="--help" goto :verb_help_out
@@ -97,7 +97,7 @@ exit /b 0
 :: `engram`) is refused.
 call :journal_active
 if not "%_JOURNAL_ACTIVE%"=="1" goto :journal_gate_pass
-for %%V in (help --help -h /? version --version -v doctor isolation repair relocate snapshots) do if /i "%SUBCMD%"=="%%V" goto :journal_gate_pass
+for %%V in (help --help -h /? version --version -v python doctor isolation repair relocate snapshots) do if /i "%SUBCMD%"=="%%V" goto :journal_gate_pass
 goto :journal_blocked
 :journal_gate_pass
 
@@ -116,6 +116,7 @@ if /i "%SUBCMD%"=="-v" goto :show_version
 :: Public verbs; paths require explicit open PATH. No automatic migration.
 if /i "%SUBCMD%"=="open" goto :cmd_open
 if /i "%SUBCMD%"=="update" goto :cmd_update
+if /i "%SUBCMD%"=="python" goto :cmd_python
 if /i "%SUBCMD%"=="doctor" goto :cmd_doctor
 if /i "%SUBCMD%"=="isolation" goto :cmd_isolation
 if /i "%SUBCMD%"=="menu" goto :cmd_menu
@@ -230,6 +231,7 @@ for %%V in (repair relocate snapshots doctor isolation) do if /i "%SUBCMD%"=="%%
 )
 exit /b 0
 
+:cmd_python
 :cmd_isolation
 :cmd_doctor
 call :check_setup
@@ -305,10 +307,10 @@ goto :forward_command
 set "_JOURNAL_ACTIVE=0"
 set "_LASTN="
 set "_TERMN="
-if not exist "%ENGRAM_SYS_DIR%\data\state\env-op.journal.jsonl" exit /b 0
-for /f "tokens=1 delims=:" %%N in ('findstr /n /l /c:"\"event\":\"PHASE\"" "%ENGRAM_SYS_DIR%\data\state\env-op.journal.jsonl"') do set "_LASTN=%%N"
+if not exist "%SYS_PATH%\data\state\env-op.journal.jsonl" exit /b 0
+for /f "tokens=1 delims=:" %%N in ('findstr /n /l /c:"\"event\":\"PHASE\"" "%SYS_PATH%\data\state\env-op.journal.jsonl"') do set "_LASTN=%%N"
 if not defined _LASTN exit /b 0
-for /f "tokens=1 delims=:" %%N in ('findstr /n /l /c:"\"name\":\"COMMITTED\"" /c:"\"name\":\"ROLLED_BACK\"" "%ENGRAM_SYS_DIR%\data\state\env-op.journal.jsonl"') do set "_TERMN=%%N"
+for /f "tokens=1 delims=:" %%N in ('findstr /n /l /c:"\"name\":\"COMMITTED\"" /c:"\"name\":\"ROLLED_BACK\"" "%SYS_PATH%\data\state\env-op.journal.jsonl"') do set "_TERMN=%%N"
 if not "%_LASTN%"=="%_TERMN%" set "_JOURNAL_ACTIVE=1"
 exit /b 0
 
