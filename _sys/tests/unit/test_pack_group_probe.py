@@ -80,3 +80,46 @@ class GroupProbeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             publish(self.root, CATALOG[0], 0, "runtime-a", *archive(b"bytes", "unlisted.txt"))
         self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_non_fixture_root_is_rejected_before_lifecycle_access(self):
+        from optional_pack_group import publish
+        foreign = self.root / "foreign"
+        foreign.mkdir()
+        sentinel = foreign / "env.manifest.json"
+        sentinel.write_bytes(b"user data")
+        with self.assertRaises(ValueError):
+            publish(foreign, CATALOG[0], 0, "runtime-a", *archive(b"bytes"))
+        self.assertEqual(list(foreign.iterdir()), [sentinel])
+        self.assertEqual(sentinel.read_bytes(), b"user data")
+
+    def test_process_exit_after_runtime_write_before_acknowledgement(self):
+        import subprocess
+        from optional_pack_group import activate, publish, recover
+        descriptor = CATALOG[-1]
+        publish(self.root, descriptor, 0, "runtime-a", *archive(b"old"))
+        payload, digest = archive(b"new")
+        child = """
+import os
+from pathlib import Path
+import sys
+sys.path.insert(0, sys.argv[1])
+from pack_catalog import load_fixtures
+from optional_pack_group import publish
+from core import env_manifest
+original = env_manifest._atomic_write_text
+def stop_after_runtime(path, text):
+    original(path, text)
+    if path.name == 'runtime.json':
+        os._exit(73)
+env_manifest._atomic_write_text = stop_after_runtime
+descriptor, = load_fixtures([Path(sys.argv[2])])
+publish(Path(sys.argv[3]), descriptor, 1, 'runtime-b', bytes.fromhex(sys.argv[4]), sys.argv[5])
+"""
+        proc = subprocess.run([sys.executable, "-B", "-c", child, str(REPO / "tools/feasibility"),
+                               str(FIXTURES / "gamma.descriptor.json"), str(self.root), payload.hex(), digest],
+                              capture_output=True, timeout=15)
+        self.assertEqual(proc.returncode, 73, proc.stderr)
+        with self.assertRaises(ValueError):
+            activate(self.root, descriptor)
+        self.assertEqual(recover(self.root, descriptor, "resume")["phase"], "COMMITTED")
+        self.assertEqual(activate(self.root, descriptor), (2, "runtime-b", b"new"))
