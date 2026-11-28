@@ -1,0 +1,97 @@
+name: Native Windows PostgreSQL and pgvector proof
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/feasibility/windows-postgres.lock.json'
+      - 'tools/feasibility/windows_postgres.py'
+      - '.github/workflows/windows-postgres-proof.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-pair:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.14'
+      - name: Stage the pinned binaries and pgvector source under runner temp
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pins = Get-Content tools/feasibility/windows-postgres.lock.json -Raw | ConvertFrom-Json
+          $stage = Join-Path $env:RUNNER_TEMP "engram-pgvector-$([guid]::NewGuid())"
+          New-Item -ItemType Directory $stage | Out-Null
+          $env:ENGRAM_PG_STAGE = $stage
+          "ENGRAM_PG_STAGE=$stage" >> $env:GITHUB_ENV
+          $zip = Join-Path $stage 'postgresql.zip'
+          Invoke-WebRequest $pins.postgresql.url -OutFile $zip
+          if ((Get-Item $zip).Length -ne $pins.postgresql.bytes -or
+              (Get-FileHash $zip -Algorithm SHA256).Hash -ne $pins.postgresql.sha256) {
+            throw 'PostgreSQL archive identity mismatch'
+          }
+          $package = [IO.Compression.ZipFile]::OpenRead($zip)
+          try {
+            foreach ($entry in $package.Entries) {
+              if ($entry.FullName -cnotmatch '^pgsql/((bin|include|lib|share)/[A-Za-z0-9_./+ -]+|server_license\.txt|commandlinetools_3rd_party_licenses\.txt)$' -or
+                  $entry.FullName.EndsWith('/')) { continue }
+              if ($entry.FullName.Split('/') -contains '..') { throw 'Unexpected path in the pinned PostgreSQL ZIP' }
+              $out = Join-Path $stage $entry.FullName
+              [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($out))
+              [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $out)
+            }
+          } finally {
+            $package.Dispose()
+          }
+          $source = Join-Path $stage 'pgvector'
+          git -c advice.detachedHead=false clone --depth 1 --branch $pins.pgvector.tag $pins.pgvector.repository $source
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ((git -C $source rev-parse HEAD) -ne $pins.pgvector.commit) { throw 'pgvector source identity mismatch' }
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $visualStudio = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
+          if (!$visualStudio) { throw 'The runner has no x64 Visual C++ compiler' }
+          $build = Join-Path $stage 'build-vector.cmd'
+          @(
+            '@echo off'
+            ('call "{0}"' -f (Join-Path $visualStudio 'VC/Auxiliary/Build/vcvars64.bat'))
+            'if errorlevel 1 exit /b 1'
+            ('set "PGROOT={0}"' -f (Join-Path $stage 'pgsql'))
+            ('cd /d "{0}"' -f $source)
+            'if errorlevel 1 exit /b 1'
+            'nmake /NOLOGO /F Makefile.win'
+            'if errorlevel 1 exit /b 1'
+            'nmake /NOLOGO /F Makefile.win install'
+          ) | Set-Content $build -Encoding ascii
+          & cmd.exe /d /c $build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Search and restore the independent clusters with a Windows Basic User token
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pins = Get-Content tools/feasibility/windows-postgres.lock.json -Raw | ConvertFrom-Json
+          $stage = $env:ENGRAM_PG_STAGE
+          $python = (Get-Command python.exe).Source
+          $probe = (Resolve-Path tools/feasibility/windows_postgres.py).Path
+          $receipt = Join-Path $stage 'probe-receipt.txt'
+          $done = Join-Path $stage 'probe-exit.txt'
+          $batch = Join-Path $stage 'native-probe.cmd'
+          @(
+            '@echo off'
+            ('"{0}" -B "{1}" "{2}" "{3}" > "{4}" 2>&1' -f $python,$probe,(Join-Path $stage 'pgsql/bin'),$pins.postgresql.version,$receipt)
+            ('echo %ERRORLEVEL% > "{0}"' -f $done)
+          ) | Set-Content $batch -Encoding ascii
+          & runas.exe /trustlevel:0x20000 "cmd.exe /d /c `"`"$batch`"`""
+          if ($LASTEXITCODE -ne 0) { throw 'Basic User launch failed' }
+          $deadline = [DateTime]::UtcNow.AddMinutes(5)
+          while (!(Test-Path $done) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Seconds 2 }
+          if (!(Test-Path $done)) { throw 'No completed PostgreSQL receipt' }
+          $output = Get-Content $receipt -Raw
+          Write-Output $output
+          if ([int](Get-Content $done -Raw) -ne 0) { throw 'PostgreSQL probe failed' }
+          $parsed = $output | ConvertFrom-Json
+          if ($parsed.status -ne 'PASS' -or $parsed.effective_admin -ne $false) { throw 'Standard-user proof required' }
