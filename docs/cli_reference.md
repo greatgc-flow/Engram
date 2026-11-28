@@ -177,6 +177,8 @@ engram update - check for and apply updates
 
 Usage: engram update [--yes] [--check | --dry-run] [--refresh] [--only NAMES]
        engram update --only python|venv|packages [options]
+       engram update --only python-versions [--check | --dry-run | --yes]
+                     [--offline] [--json]
        engram update -o python|nodejs --latest [-y] [options]
 
 Description:
@@ -189,6 +191,10 @@ Description:
   python, venv and packages are managed environment components: they run
   through the journaled repair engine (a backup is taken before the swap,
   dry-run by default, --yes applies) and cannot be mixed with tool names.
+  python-versions alone uses the extra Python patch planner. It includes all
+  registered extra series. The default is a preview and --yes applies.
+  Online checks already fetch fresh metadata. Offline mode uses the local
+  archive cache and the reviewed pins; --refresh requires online mode.
   --latest requires --only python or --only nodejs and defaults to a dry-run
   plan; add --yes to apply. It cannot be combined with --to.
 
@@ -283,9 +289,10 @@ Options:
   --force          With --only python: reinstall even when already current;
                    override minor planning readiness checks (default: off).
                    Restore preflight and pip check remain mandatory.
-  --json           With python/venv/packages: print a machine-readable result
-                   (default: off)
-  --offline        With --only python: use only local files (default: off)
+  --json           With python, venv, packages or python-versions: print a
+                   machine-readable result (default: off)
+  --offline        With --only python or python-versions: use only local
+                   files and metadata (default: off)
   -h, --help, /?   Show this help (default: off)
 
 Examples:
@@ -294,6 +301,7 @@ Examples:
   engram update --check
   engram update --only claude,codex,agy --yes
   engram update --only python --yes
+  engram update --only python-versions --offline --check --json
   engram update --only python --to 3.14.8 --yes
   engram update -o python --latest -y
   engram update -o nodejs --latest
@@ -323,6 +331,83 @@ digest; unpinned Python archives are fetched over HTTPS from python.org.
 
 Bootstrap installs only the validated `runtimes.json` pin. Its newer-version notice points to
 `engram update --check`; `--skip-update` skips that notice check for compatibility.
+
+#### engram python
+
+```text
+engram python - manage local Python runtimes
+
+Usage: engram python list [--json]
+       engram python where [3.MINOR] [--json]
+       engram python doctor [3.MINOR] [--scan-processes] [--backup ZIP]
+                            [--json]
+       engram python run [3.MINOR] -- PYTHON_ARGS
+       engram python use [3.MINOR]
+       engram python install SERIES [SERIES ...] | --all-supported
+       engram python update [SERIES ...] [--check | --yes]
+       engram python pin SERIES [--json]
+       engram python unpin [--json]
+
+Description:
+  List the legacy binding and registered active builds. Where prints the
+  executable selected for the current project and requested series.
+  Doctor reports missing builds and environments, recovery state and known
+  references. The optional process scan reports exact observed runtime
+  images. Explicit same-installation backups can also report a protected
+  build. This is a partial observation. Other references remain unknown.
+  Run launches that interpreter from the caller's directory and forwards
+  everything after -- as Python arguments. Without a series, run selects the
+  legacy venv unless the project has an exact Python pin. A different series
+  request conflicts with that pin. Install adds stable Windows x64 builds. It
+  previews the candidates, asks for confirmation and checks each runtime
+  in an isolated test venv before publishing the registry.
+  Update checks installed extra series for newer compatible patches. The
+  prior build stays available to exact consumers and project pins.
+  Use opens a child CMD shell with the selected runtime and Windows system
+  paths. Type exit to return to the parent shell.
+  Pin selects the current exact build. Unpin removes this installation's pin.
+  Both use the nearest Git root or the current directory outside Git.
+
+Options:
+  --json           Print one JSON object for inventory, install or pins
+                   (default: off)
+  --all-supported  Select all eligible series in the current catalog
+                   (default: explicit series)
+  --offline        Use reviewed pins and cached archives (default: off)
+  --cache-dir DIR  Read archives from DIR (default: Engram's setup cache)
+  --dry-run        Show the plan without installing (default: off)
+  --scan-processes  Observe live runtime executable paths in doctor
+                   (default: off)
+  --backup ZIP     Observe references from a runtime ZIP in doctor;
+                   repeat up to 16 times (default: none)
+  --check          Preview extra-series update candidates (default: off)
+  --yes, -y        Approve the shown selection automatically (default: off)
+  -h, --help, /?   Show this help (default: off)
+
+Examples:
+  engram python list --json
+  engram python where
+  engram python where 3.14
+  engram python doctor --scan-processes --json
+  engram python doctor --backup D:\backups\runtime.zip --json
+  engram python run 3.14 -- -m venv .venv
+  engram python install 3.14 3.13 --dry-run
+  engram python use 3.14
+  engram python update 3.14 --check --json
+  engram python pin 3.14
+  engram python unpin
+
+Exit codes:
+  0   command completed
+  1   health finding, unavailable interpreter or incomplete plan
+  2   invalid arguments
+  10  install declined or confirmation unavailable
+  14  environment operation in progress or awaiting recovery
+  A started child returns its own process exit code.
+
+See also:
+  engram doctor     check environment health
+```
 
 #### engram doctor
 
@@ -508,7 +593,11 @@ Options:
   --yes, -y        Do not ask for confirmation with --apply (default: ask;
                    without a terminal --yes is required)
   --only LIST      Limit to: python,venv,registry,state,ai-state,manifest,
-                   packages (comma-separated; default: everything found)
+                   packages (comma-separated; default: legacy checks).
+                   Use python-versions alone to rebuild missing extra builds
+                   from exact archives in Engram's local Python cache.
+                   Use python-envs alone to rebuild missing managed venvs
+                   from their exact lock and wheel cache.
   --offline        Never download anything (default: off)
   --remap-ai-state Also rewrite folder paths inside AI CLI state after a move
                    (default: off)
@@ -523,6 +612,7 @@ Examples:
   engram repair
   engram repair --apply
   engram repair --apply --yes --only venv
+  engram repair --only python-versions --offline --dry-run
   engram repair --json
   engram repair --resume
   engram repair --rollback
@@ -575,7 +665,9 @@ Options:
                    without a terminal --yes is required)
   --remap-ai-state Also rewrite folder paths in AI CLI state (default: off)
   --only LIST      Limit to: python,venv,registry,state,ai-state,manifest,
-                   packages (default: everything found)
+                   packages (default: legacy checks).
+                   Use python-envs alone to rebuild stale managed venvs
+                   from their exact lock and wheel cache.
   --offline        Never download anything (default: off)
   --resume         Continue an interrupted operation (default: off;
                    mutually exclusive with --rollback)
@@ -588,6 +680,7 @@ Examples:
   engram relocate --apply
   engram relocate --from D:\old\Engram --apply --yes
   engram relocate --apply --remap-ai-state
+  engram relocate --only python-envs --offline --dry-run
 
 Exit codes:
   0   ok, nothing to do, or preview shown
@@ -710,6 +803,7 @@ See also:
 engram backup - back up personal AI data to a zip archive
 
 Usage: engram backup [--out PATH] [--include-uncovered]
+       engram backup --only python-runtime --out PATH [--include-artifacts]
 
 Description:
   Packs the durable part of .engram/ (memory, settings, rules, skills,
@@ -721,6 +815,10 @@ Description:
   Existing archives are replaced atomically after the new archive is ready.
   This is not the environment backup registry: for replaced Python/venv
   copies see 'engram snapshots'.
+  The python-runtime scope saves the exact registry and referenced wheel
+  locks to a new ZIP. It requires an explicit .zip path and saves metadata
+  by default. Add --include-artifacts to bundle all referenced interpreter
+  archives and wheels from the managed offline cache.
 
 Options:
   --out PATH           Where to write the archive (default:
@@ -728,6 +826,10 @@ Options:
                        a trailing \ or / means "a folder, use the default name"
   --include-uncovered  Also package discovered extra dotfolders and project
                        configs such as .peerhub (default: off)
+  --only SCOPE        Select the python-runtime metadata scope (default:
+                       personal data). Use it with an explicit --out ZIP.
+  --include-artifacts  Include verified local interpreter archives and
+                       wheels with --only python-runtime (default: off)
   -h, --help, /?       Show this help (default: off)
 
 Examples:
@@ -735,6 +837,7 @@ Examples:
   engram backup --out D:\backups\engram.zip
   engram backup --out D:\backups\
   engram backup --include-uncovered
+  engram backup --only python-runtime --out D:\backups\runtime.zip
 
 Exit codes:
   0   archive written
@@ -757,6 +860,7 @@ removed.
 engram restore - restore personal AI data from a backup archive
 
 Usage: engram restore PATH [--apply] [--dry-run] [--force]
+       engram restore PATH --only python-runtime [--apply] [--dry-run]
 
 Description:
   Restores .engram/ (and any extra items the archive recorded) from a .zip
@@ -765,6 +869,10 @@ Description:
   CLI is running, and takes an automatic safety snapshot of the current
   destinations it will overwrite, including extras, unless --force is given.
   Secret files stay excluded. Redirected source/destination paths are refused.
+  The python-runtime scope validates the metadata ZIP and needs the original
+  installation identity. It fills missing registry and lock files and
+  refuses conflicting destinations. A full pack also fills its referenced
+  offline cache files. Preview and apply are offline.
 
 Options:
   PATH             Backup .zip or bundle folder to restore (required)
@@ -772,12 +880,15 @@ Options:
   --dry-run        Preview only; wins over --apply (default: on)
   --force, -f      Overwrite existing live session/project data and skip the
                    automatic pre-restore snapshot (default: off)
+  --only SCOPE     Select the python-runtime metadata scope (default:
+                   personal data). Conflicting runtime files stay protected.
   -h, --help, /?   Show this help (default: off)
 
 Examples:
   engram restore D:\backups\engram.zip
   engram restore D:\backups\engram.zip --apply
   engram restore D:\backups\engram.zip --apply --force
+  engram restore D:\backups\runtime.zip --only python-runtime --apply
 
 Exit codes:
   0   restored, or preview shown

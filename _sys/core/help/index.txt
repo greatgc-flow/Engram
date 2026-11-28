@@ -5,6 +5,7 @@ Usage:
 Daily use:
   engram open        Open a workspace (the default when no command is given)
   engram update      Check for and apply runtime, tool and Python updates
+  engram python      Inspect installed Python runtimes and executable paths
   engram doctor      Report environment health (read-only, no network)
   engram menu        Manage the Explorer right-click "Open in Engram" entry
   engram version     Print the Engram version

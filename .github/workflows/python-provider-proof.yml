@@ -1,0 +1,58 @@
+name: Windows Python provider proof
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '_sys/core/python_artifact.py'
+      - '_sys/core/python_provider.py'
+      - 'tools/feasibility/windows_python.py'
+      - 'tools/feasibility/windows-python.lock.json'
+      - '.github/workflows/python-provider-proof.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-provider:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.14'
+      - name: Verify the pinned archive, offline wheel and consumer binding as a standard user
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pins = Get-Content tools/feasibility/windows-python.lock.json -Raw | ConvertFrom-Json
+          $dir = $env:RUNNER_TEMP
+          foreach ($pin in @($pins.archive, $pins.wheel)) {
+            Invoke-WebRequest $pin.url -OutFile (Join-Path $dir $pin.filename)
+          }
+          $interpreter = (Get-Command python.exe).Source
+          $probe = (Resolve-Path tools/feasibility/windows_python.py).Path
+          $archive = Join-Path $dir $pins.archive.filename
+          $wheel = Join-Path $dir $pins.wheel.filename
+          $receipt = Join-Path $dir 'provider-receipt.txt'
+          $done = Join-Path $dir 'provider-exit.txt'
+          $batch = Join-Path $dir 'provider-basic-user.cmd'
+          @(
+            '@echo off'
+            ('"{0}" -B "{1}" --archive "{2}" --wheel "{3}" --check-publisher > "{4}" 2>&1' -f $interpreter,$probe,$archive,$wheel,$receipt)
+            ('echo %ERRORLEVEL% > "{0}"' -f $done)
+          ) | Set-Content $batch -Encoding ascii
+          & runas.exe /trustlevel:0x20000 "cmd.exe /d /c `"`"$batch`"`""
+          if ($LASTEXITCODE -ne 0) { throw 'Basic User launch failed' }
+          $deadline = [DateTime]::UtcNow.AddMinutes(5)
+          while (!(Test-Path $done) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Seconds 2 }
+          if (!(Test-Path $done)) { throw 'No completed provider receipt' }
+          $output = Get-Content $receipt -Raw
+          Write-Output $output
+          if ([int](Get-Content $done -Raw) -ne 0) { throw 'Provider probe failed' }
+          $result = $output | ConvertFrom-Json
+          if ($result.native -ne 'PASS' -or $result.effective_admin -ne $false) { throw 'Standard-user proof required' }
+          if ($result.publisher.evidence_sha256 -notmatch '^[a-f0-9]{64}$') { throw 'Missing consumer evidence' }
+          if ($result.publisher.support_phase -in @('BUGFIX', 'SECURITY_ONLY') -and
+              $result.publisher.compatible -ne $result.identity.version) { throw 'Consumer selection mismatch' }

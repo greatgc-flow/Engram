@@ -1,0 +1,315 @@
+"""T71 runtime recovery metadata through Engram's existing backup verbs."""
+import hashlib
+import io
+import json
+import os
+import sys
+import zipfile
+
+import pytest
+
+from checks import backup_personal_data
+from core import env_manifest, env_ops, python_registry
+from test_python_registry import candidate, snapshot
+
+
+@pytest.fixture
+def runtime(tmp_path):
+    base = tmp_path / "portable 한글"
+    root = base / "_sys"
+    env_manifest.write_manifest(root, {"schema_version": 1, "install_id": "fixture-install",
+                                      "root": {"physical": str(base), "logical": str(base)}})
+    document = candidate()
+    lock = json.dumps({"schema": 1, "build_sha256": "a" * 64, "wheels": []}).encode()
+    ref = "sha256-" + hashlib.sha256(lock).hexdigest()
+    document["environments"]["env-a"]["lock_ref"] = ref
+    assert python_registry.publish(root, 0, document)["phase"] == "COMMITTED"
+    document["revision"] += 1
+    assert python_registry.publish(root, 1, document)["phase"] == "COMMITTED"
+    destination = root / "data/setup-files/python-locks" / (ref + ".json")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(lock)
+    personal = base / ".engram/claude"
+    personal.mkdir(parents=True)
+    (personal / "CLAUDE.md").write_text("private synthetic sentinel", encoding="utf-8")
+    return {"sys_dir": root, "base_dir": base}, destination, tmp_path / "runtime.zip"
+
+
+def _backup(ctx, bundle):
+    backup_personal_data.run_backup({**ctx, "args": ["--only", "python-runtime", "--out", str(bundle)]})
+
+
+def _restore(ctx, bundle, *flags):
+    backup_personal_data.run_restore({**ctx, "args": [str(bundle), "--only", "python-runtime", *flags]})
+
+
+def test_backup_and_restore_exact_metadata(runtime, monkeypatch):
+    ctx, lock, bundle = runtime
+    def forbidden(*args, **kwargs):
+        pytest.fail("Scoped runtime backup entered the personal-data pipeline.")
+    monkeypatch.setattr(backup_personal_data, "check_running_processes", forbidden)
+    registry = python_registry.registry_path(ctx["sys_dir"])
+    before = registry.read_bytes(), lock.read_bytes()
+    _backup(ctx, bundle)
+    with zipfile.ZipFile(bundle) as archive:
+        assert len(archive.namelist()) == 3
+        assert not any(b"private synthetic sentinel" in archive.read(name) for name in archive.namelist())
+    registry.rename(registry.with_suffix(".held"))
+    lock.rename(lock.with_suffix(".held"))
+    preview = snapshot(ctx["base_dir"])
+    _restore(ctx, bundle, "--apply", "--dry-run")
+    assert snapshot(ctx["base_dir"]) == preview
+    _restore(ctx, bundle, "--apply")
+    assert (registry.read_bytes(), lock.read_bytes()) == before
+    assert python_registry.inventory(ctx["sys_dir"])["revision"] == 2
+    _restore(ctx, bundle, "--apply")
+    assert (registry.read_bytes(), lock.read_bytes()) == before
+
+
+def test_backup_refuses_missing_lock_and_preserves_output(runtime):
+    ctx, lock, bundle = runtime
+    lock.rename(lock.with_suffix(".held"))
+    with pytest.raises(OSError, match="Missing offline lock"):
+        _backup(ctx, bundle)
+    assert not bundle.exists()
+    bundle.write_bytes(b"existing")
+    with pytest.raises(OSError, match="already exists"):
+        _backup(ctx, bundle)
+    assert bundle.read_bytes() == b"existing"
+
+
+@pytest.mark.parametrize("conflict", ["registry", "lock", "foreign", "extra_entry"])
+def test_restore_refuses_before_any_destination_writes(runtime, conflict):
+    ctx, lock, bundle = runtime
+    _backup(ctx, bundle)
+    root = ctx["sys_dir"]
+    path = python_registry.registry_path(root)
+    if conflict == "registry":
+        doc = python_registry.inventory(root)["registry"]
+        doc["revision"] = 3
+        python_registry.publish(root, 2, doc)
+        lock.rename(lock.with_suffix(".held"))
+    elif conflict == "lock":
+        path.rename(path.with_suffix(".held"))
+        lock.write_bytes(b"conflicting file")
+    elif conflict == "foreign":
+        different = root.parent.parent / "other"
+        env_manifest.write_manifest(different, {"schema_version": 1, "install_id": "other",
+                                                 "root": {"physical": str(different), "logical": str(different)}})
+        ctx = {"sys_dir": different, "base_dir": different.parent}
+    else:
+        with zipfile.ZipFile(bundle, "a") as archive:
+            archive.writestr("../escape", b"sentinel")
+    before = snapshot(ctx["base_dir"])
+    with pytest.raises(OSError):
+        _restore(ctx, bundle, "--apply")
+    assert snapshot(ctx["base_dir"]) == before
+
+
+@pytest.mark.parametrize("mode", ["resume", "rollback"])
+def test_interrupted_metadata_restore_has_recovery(runtime, monkeypatch, mode):
+    from core import python_runtime_backup
+
+    ctx, lock, bundle = runtime
+    root = ctx["sys_dir"]
+    registry = python_registry.registry_path(root)
+    exact = registry.read_bytes()
+    _backup(ctx, bundle)
+    registry.rename(registry.with_suffix(".held"))
+    lock.rename(lock.with_suffix(".held"))
+    write = env_manifest._atomic_write_text
+    def interrupt(path, text, **kwargs):
+        write(path, text, **kwargs)
+        if path == registry:
+            raise env_ops.SimulatedCrash()
+    with monkeypatch.context() as patch:
+        patch.setattr(env_manifest, "_atomic_write_text", interrupt)
+        with pytest.raises(env_ops.SimulatedCrash):
+            _restore(ctx, bundle, "--apply")
+    bundle.rename(bundle.with_suffix(".held"))
+    if os.name == "nt":
+        from core import repair
+        result = repair.repair_main({**ctx, "args": ["--" + mode, "--json"]})
+        assert result["exit_code"] == 0, result
+    else:
+        result = getattr(env_ops, mode)(
+            root, lambda active: python_runtime_backup.recovery_steps(root, active, mode))
+        assert result["phase"] == ("COMMITTED" if mode == "resume" else "ROLLED_BACK")
+    assert env_ops.active_journal(root) is None
+    assert (registry.read_bytes() if registry.exists() else None) == (exact if mode == "resume" else None)
+    assert lock.is_file()
+
+
+def test_unicode_archive_path_when_output_is_redirected_to_cp1252(runtime, monkeypatch):
+    ctx, _, bundle = runtime
+    bundle = bundle.with_name("runtime 한글.zip")
+    output = io.BytesIO()
+    with io.TextIOWrapper(output, encoding="cp1252") as console:
+        with monkeypatch.context() as patch:
+            patch.setattr(sys, "stdout", console)
+            _backup(ctx, bundle)
+        console.flush()
+        assert b"Saved Python runtime metadata revision 2." in output.getvalue()
+    assert bundle.is_file()
+
+
+@pytest.fixture
+def offline_pack(runtime):
+    ctx, lock, bundle = runtime
+    root = ctx["sys_dir"]
+    registry = python_registry.registry_path(root)
+    document = json.loads(registry.read_bytes())
+    archive = root / "data/setup-files/python-archives/cpython-3.14.10+20261124-x86_64-pc-windows-msvc-install_only.tar.gz"
+    wheel = root / "data/setup-files/python-wheels/demo-1.0-py3-none-any.whl"
+    for path, contents in ((archive, b"synthetic interpreter archive"), (wheel, b"synthetic wheel")):
+        path.parent.mkdir(parents=True)
+        path.write_bytes(contents)
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    document["builds"]["build-a"].update(provider="python-build-standalone",
+                                       artifact_ref="pbs-20261124-788332448", sha256=digest)
+    raw = json.dumps({"schema": 1, "build_sha256": digest,
+                      "wheels": [{"filename": wheel.name, "sha256": hashlib.sha256(wheel.read_bytes()).hexdigest()}]}).encode()
+    ref = "sha256-" + hashlib.sha256(raw).hexdigest()
+    new_lock = lock.with_name(ref + ".json")
+    new_lock.write_bytes(raw)
+    document["environments"]["env-a"]["lock_ref"] = ref
+    registry.write_text(json.dumps(document), encoding="utf-8")
+    return ctx, bundle, registry, new_lock, archive, wheel
+
+
+def _pack(ctx, bundle):
+    backup_personal_data.run_backup({
+        **ctx, "args": ["--only", "python-runtime", "--include-artifacts", "--out", str(bundle)],
+    })
+
+
+def test_offline_pack_restores_only_registered_cache_files(offline_pack):
+    ctx, bundle, *paths = offline_pack
+    files = {path: path.read_bytes() for path in paths}
+    unrelated = paths[-1].with_name("unrelated-1.0-py3-none-any.whl")
+    unrelated.write_bytes(b"exclude me")
+    _pack(ctx, bundle)
+    with zipfile.ZipFile(bundle) as archive:
+        assert len(archive.namelist()) == 6
+        assert all(unrelated.name not in name for name in archive.namelist())
+    for path in files:
+        path.rename(path.with_suffix(".held"))
+    preview = snapshot(ctx["base_dir"])
+    _restore(ctx, bundle, "--apply", "--dry-run")
+    assert snapshot(ctx["base_dir"]) == preview
+    _restore(ctx, bundle, "--apply")
+    assert {path: path.read_bytes() for path in files} == files
+    _restore(ctx, bundle, "--apply")
+
+
+@pytest.mark.parametrize("broken", ["missing", "changed"])
+def test_offline_pack_invalid_input_does_not_publish(offline_pack, broken):
+    ctx, bundle, _, _, _, wheel = offline_pack
+    if broken == "missing":
+        wheel.rename(wheel.with_suffix(".held"))
+    else:
+        wheel.write_bytes(b"wrong bytes")
+    with pytest.raises(OSError, match="artifact|wheel"):
+        _pack(ctx, bundle)
+    assert not bundle.exists()
+
+
+@pytest.mark.parametrize("broken", ["archive payload", "wheel destination", "missing member"])
+def test_offline_pack_conflict_or_tampering_preserves_destination(offline_pack, broken):
+    ctx, bundle, registry, lock, archive, wheel = offline_pack
+    _pack(ctx, bundle)
+    if broken == "wheel destination":
+        wheel.write_bytes(b"conflicting file")
+    else:
+        with zipfile.ZipFile(bundle) as original:
+            files = {entry.filename: original.read(entry) for entry in original.infolist()}
+        named = next(name for name in files if name.endswith(wheel.name))
+        if broken == "archive payload":
+            files[named] = b"forged wheel content"
+        else:
+            del files[named]
+        with zipfile.ZipFile(bundle, "w") as rewritten:
+            for key, contents in files.items():
+                rewritten.writestr(key, contents)
+    for path in (registry, lock, archive):
+        path.rename(path.with_suffix(".held"))
+    before = snapshot(ctx["base_dir"])
+    with pytest.raises(OSError):
+        _restore(ctx, bundle, "--apply")
+    assert snapshot(ctx["base_dir"]) == before
+
+
+def test_interrupted_artifact_population_can_resume_by_reapplying(offline_pack, monkeypatch):
+    from core import python_runtime_backup
+
+    ctx, bundle, registry, lock, archive, wheel = offline_pack
+    _pack(ctx, bundle)
+    for path in (registry, lock, archive, wheel):
+        path.rename(path.with_suffix(".held"))
+    publish = python_runtime_backup._publish_new
+
+    def fail_wheel(source, target):
+        if target == wheel:
+            raise OSError("simulated cache publication failure")
+        publish(source, target)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(python_runtime_backup, "_publish_new", fail_wheel)
+        with pytest.raises(OSError, match="simulated cache"):
+            _restore(ctx, bundle, "--apply")
+    assert archive.is_file()
+    assert not any(path.exists() for path in (registry, lock, wheel))
+    assert env_ops.active_journal(ctx["sys_dir"]) is None
+    _restore(ctx, bundle, "--apply")
+    assert all(path.is_file() for path in (registry, lock, archive, wheel))
+
+
+def test_offline_pack_bounds_zip_central_directory_before_entry_parsing(offline_pack, monkeypatch):
+    from core import python_runtime_backup
+
+    ctx, bundle, *_ = offline_pack
+    _pack(ctx, bundle)
+    # The limit is applied to ZIP metadata reads, before ZipFile builds its entry list.
+    monkeypatch.setattr(python_runtime_backup, "_MAX_ZIP_DIRECTORY", 128)
+    with pytest.raises(OSError, match="directory exceeds"):
+        _restore(ctx, bundle, "--dry-run")
+
+
+def test_doctor_protects_retained_build_listed_by_explicit_packed_backup(offline_pack, capsys):
+    from core import python_cli
+
+    ctx, bundle, registry, _, archive, wheel = offline_pack
+    _pack(ctx, bundle)
+    doc = json.loads(registry.read_bytes())
+    old = doc["builds"]["build-a"]
+    old["state"] = "RETAINED"
+    newer = {**old, "version": "3.14.11", "state": "ACTIVE", "sha256": "c" * 64,
+             "executable_rel": "env/python-versions/3.14/build-b/python.exe"}
+    doc["series"]["3.14"]["active_build"] = "build-b"
+    doc["builds"]["build-b"] = newer
+    doc["bindings"].pop("demo")
+    doc["environments"].clear()
+    doc["revision"] += 1
+    registry.write_text(json.dumps(doc), encoding="utf-8")
+    capsys.readouterr()
+    # Drop the local cache payloads from the observation. The inventory refers to the archive.
+    archive.rename(archive.with_suffix(".held"))
+    wheel.rename(wheel.with_suffix(".held"))
+    before = snapshot(ctx["base_dir"])
+    args = ["doctor", "3.14", "--backup", str(bundle), "--json"]
+    result = python_cli.run({**ctx, "args": args})
+    row = next(row for row in result["builds"] if row["build_id"] == "build-a")
+    assert row["references"] == ["BACKUP_REFERENCE"] and row["retirement"] == "PROTECTED"
+    assert result["coverage"]["backups"] == "PARTIAL"
+    assert str(bundle) not in capsys.readouterr().out
+    assert snapshot(ctx["base_dir"]) == before
+
+
+def test_doctor_reports_invalid_explicit_backup_without_claiming_reference_coverage(runtime):
+    from core import python_cli
+
+    ctx, _, bundle = runtime
+    bundle.write_bytes(b"invalid zip")
+    result = python_cli.run({**ctx, "args": ["doctor", "3.14", "--backup", str(bundle), "--json"]})
+    assert result["exit_code"] == 1 and result["coverage"]["backups"] == "UNKNOWN"
+    assert "BACKUP_REFERENCE_UNAVAILABLE" in {finding["code"] for finding in result["findings"]}
