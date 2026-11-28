@@ -116,12 +116,13 @@ def _launch_child(root, series, payload=None):
 
 def run(ctx):
     parser = cli_help.CliParser("python")
-    parser.add_argument("action", nargs="?", choices=("list", "where", "run", "use", "install", "pin", "unpin"))
+    parser.add_argument("action", nargs="?", choices=("list", "where", "run", "use", "install", "update", "pin", "unpin"))
     parser.add_argument("series", nargs="*")
     parser.add_argument("--all-supported", action="store_true")
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--cache-dir")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--check", action="store_true")
     parser.add_argument("--yes", "-y", action="store_true")
     parser.add_argument("--json", action="store_true")
     argv = ctx.get("args", [])
@@ -133,8 +134,15 @@ def run(ctx):
     args = parser.parse_args(argv)
     if any(not _SERIES.fullmatch(minor) for minor in args.series):
         parser.error("Python series must use 3.MINOR format.")
-    if args.action == "install":
-        if bool(args.series) == args.all_supported or len(set(args.series)) != len(args.series):
+    if args.action in ("install", "update"):
+        patch = args.action == "update"
+        if patch and args.check and args.yes:
+            parser.error("update --check cannot be combined with --yes")
+        if patch and args.all_supported:
+            parser.error("update selects installed series; --all-supported is an install flag")
+        if not patch and args.check:
+            parser.error("install previews with --dry-run")
+        if len(set(args.series)) != len(args.series) or (not patch and bool(args.series) == args.all_supported):
             parser.error("Choose distinct Python series or --all-supported.")
         from core import python_install
         cache = Path(args.cache_dir) if args.cache_dir else root / "data/setup-files/python-archives"
@@ -142,7 +150,7 @@ def run(ctx):
             cache = Path(os.environ.get("ENGRAM_CALLER_CWD") or Path.cwd()) / cache
         try:
             result = python_install.run(root, args.series, all_supported=args.all_supported, offline=args.offline,
-                                       cache=cache, preview=args.dry_run, yes=args.yes)
+                                       cache=cache, preview=args.dry_run or args.check, yes=args.yes, patch=patch)
         except (ValueError, OSError, subprocess.SubprocessError, env_ops.JournalError) as exc:
             result = {"status": "failed", "exit_code": 1, "detail": str(exc)}
         if args.json:
@@ -153,8 +161,8 @@ def run(ctx):
             if result.get("detail"):
                 print(result["detail"], file=sys.stderr)
         return {**result, "quiet": True}
-    if args.all_supported or args.offline or args.cache_dir is not None or args.dry_run or args.yes:
-        parser.error("Installation flags require the install action.")
+    if args.all_supported or args.offline or args.cache_dir is not None or args.dry_run or args.check or args.yes:
+        parser.error("Installation and update flags require those actions.")
     max_series = {"list": 0, "where": 1, "use": 1, "pin": 1, "unpin": 0}
     if args.action not in max_series or len(args.series) > max_series[args.action]:
         parser.error("expected list, where [3.MINOR], run, use, install, pin SERIES, or unpin")

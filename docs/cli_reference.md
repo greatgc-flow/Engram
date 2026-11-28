@@ -334,6 +334,7 @@ Usage: engram python list [--json]
        engram python run [3.MINOR] -- PYTHON_ARGS
        engram python use [3.MINOR]
        engram python install SERIES [SERIES ...] | --all-supported
+       engram python update [SERIES ...] [--check | --yes]
        engram python pin SERIES [--json]
        engram python unpin [--json]
 
@@ -346,6 +347,8 @@ Description:
   request conflicts with that pin. Install adds stable Windows x64 builds. It
   previews the candidates, asks for confirmation and checks each runtime
   in an isolated test venv before publishing the registry.
+  Update checks installed extra series for newer compatible patches. The
+  prior build stays available to exact consumers and project pins.
   Use opens a child CMD shell with the selected runtime and Windows system
   paths. Type exit to return to the parent shell.
   Pin selects the current exact build. Unpin removes this installation's pin.
@@ -359,6 +362,7 @@ Options:
   --offline        Use reviewed pins and cached archives (default: off)
   --cache-dir DIR  Read archives from DIR (default: Engram's setup cache)
   --dry-run        Show the plan without installing (default: off)
+  --check          Preview extra-series update candidates (default: off)
   --yes, -y        Approve the shown selection automatically (default: off)
   -h, --help, /?   Show this help (default: off)
 
@@ -369,6 +373,7 @@ Examples:
   engram python run 3.14 -- -m venv .venv
   engram python install 3.14 3.13 --dry-run
   engram python use 3.14
+  engram python update 3.14 --check --json
   engram python pin 3.14
   engram python unpin
 

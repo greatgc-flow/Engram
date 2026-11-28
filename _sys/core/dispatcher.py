@@ -71,7 +71,7 @@ def _resolve_paths(base_dir: Path, target_sys_dir: Path | None = None) -> dict:
 
 def _build_ctx(cmd: str, extra_args: list) -> dict:
     # Python execution and install use the physical root, without the launcher overlay.
-    python_action = cmd == "python" and extra_args[:1] in (["run"], ["use"], ["install"])
+    python_action = cmd == "python" and extra_args[:1] in (["run"], ["use"], ["install"], ["update"])
     paths = {} if python_action else _resolve_paths(base_dir, sys_dir)
     ctx = {
         "base_dir": base_dir,

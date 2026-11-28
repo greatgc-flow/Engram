@@ -45,6 +45,7 @@ class InstallPlan:
     rows: list[dict]
     staged: list[tuple[str, Artifact, Path]]
     offline: bool
+    patch: bool = False
 
 
 def offline_artifacts():
@@ -94,6 +95,43 @@ def plan(root, selected, all_supported, offline, cache):
             if status == "READY":
                 staged.append((minor, artifact, source))
     return InstallPlan(registry, rows, staged, offline)
+
+
+def plan_update(root, selected, offline, cache):
+    view = python_registry.inventory(root)
+    registry = view["registry"] or python_registry.new_document(root)
+    installed = registry["series"]
+    targets = selected or sorted(installed, key=lambda minor: int(minor.split(".")[1]))
+    if any(minor not in installed for minor in targets):
+        raise ProviderError("Python update requires installed extra series. Use install to add one.")
+    candidates = {item.version.rsplit(".", 1)[0]: item for item in _candidates(offline)} if targets else {}
+    rows, staged = [], []
+    for minor in targets:
+        build = registry["builds"][installed[minor]["active_build"]]
+        row = {"series": minor, "installed": build["version"], "version": build["version"]}
+        candidate = candidates.get(minor)
+        if not (root / build["executable_rel"]).is_file():
+            row["status"] = "INSTALLED_MISSING"
+        elif candidate is None:
+            row["status"] = "UNAVAILABLE"
+        elif int(candidate.version.rsplit(".", 1)[1]) <= int(build["version"].rsplit(".", 1)[1]):
+            row["status"] = "NO_NEWER_BUILD"
+        elif any(build[key] != candidate.identity()[key]
+                 for key in ("implementation", "provider", "abi", "arch", "flavor")):
+            row["status"] = "IDENTITY_CONFLICT"
+        else:
+            source = cache / python_provider.asset_name(candidate)
+            status = "MISSING_CACHE" if offline and not source.is_file() else "READY"
+            row.update({"status": status, "version": candidate.version,
+                        "sha256": candidate.sha256, "asset": source.name})
+            if status == "READY":
+                staged.append((minor, candidate, source))
+        rows.append(row)
+    return InstallPlan(registry, rows, staged, offline, patch=True)
+
+
+def _eligible(plan):
+    return all(row["status"] in ("READY", "INSTALLED", "NO_NEWER_BUILD") for row in plan.rows)
 
 
 class _HttpsRedirect(provisioner._SameHostRedirectHandler):
@@ -165,12 +203,12 @@ def _result(code, **details):
 
 
 def apply(root, plan):
-    if any(row["status"] not in ("READY", "INSTALLED") for row in plan.rows):
+    if not _eligible(plan):
         return _result(1, plan=plan.rows)
     if not plan.staged:
         return _result(0, plan=plan.rows, revision=plan.registry["revision"])
     if env_ops.active_journal(root) or env_lock.inspect(root)["state"] == "held":
-        return _result(14, plan=plan.rows, detail="Finish the current Engram lifecycle operation before installing Python.")
+        return _result(14, plan=plan.rows, detail="Finish the current Engram lifecycle operation before changing Python.")
 
     current = python_registry.inventory(root)["registry"] or python_registry.new_document(root)
     if current["revision"] != plan.registry["revision"] or current["installation_id"] != plan.registry["installation_id"]:
@@ -184,6 +222,9 @@ def apply(root, plan):
             destination = python_registry._plain(root, relative)
             _stage(root, destination, artifact, source, plan.offline)
             staged_paths.append(destination)
+            if plan.patch:
+                previous = registry["series"][minor]["active_build"]
+                registry["builds"][previous]["state"] = "RETAINED"
             registry["series"][minor] = {"channel": "stable", "active_build": build, "policy": "compatible_patch"}
             registry["builds"][build] = {**artifact.identity(), "series": minor, "owner": "engram", "state": "ACTIVE",
                                          "executable_rel": relative + "/python.exe"}
@@ -197,29 +238,30 @@ def apply(root, plan):
     committed = python_registry.publish(root, plan.registry["revision"], registry)
     if committed["phase"] != "COMMITTED":
         return _result(committed["exit_code"], plan=plan.rows, detail=committed["detail"])
-    rows = [{**row, "status": "INSTALLED"} for row in plan.rows]
+    status = "UPDATED" if plan.patch else "INSTALLED"
+    rows = [{**row, "status": status} if row["status"] == "READY" else row for row in plan.rows]
     return _result(0, plan=rows, revision=registry["revision"])
 
 
-def run(root, selected, *, all_supported, offline, cache, preview, yes):
-    proposal = plan(root, selected, all_supported, offline, cache)
-    eligible = all(row["status"] in ("READY", "INSTALLED") for row in proposal.rows)
+def run(root, selected, *, all_supported, offline, cache, preview, yes, patch=False):
+    proposal = plan_update(root, selected, offline, cache) if patch else plan(root, selected, all_supported, offline, cache)
+    eligible = _eligible(proposal)
     if preview or not eligible:
         return _result(0 if eligible else 1, plan=proposal.rows, preview=True, offline=offline)
     if not proposal.staged:
         return _result(0, plan=proposal.rows, revision=proposal.registry["revision"])
     if sys.platform != "win32":
-        return _result(1, plan=proposal.rows, detail="Managed installs require Windows x64.")
+        return _result(1, plan=proposal.rows, detail="Managed Python changes require Windows x64.")
     if not yes:
         for row in proposal.rows:
             print(f"{row['series']} {row['status']} {row.get('version', '')} {row.get('sha256', '')}", file=sys.stderr)
         if not sys.stdin.isatty():
-            return _result(10, plan=proposal.rows, detail="Use --yes for a non-interactive install.")
-        print("Apply this Python install plan? [y/N] ", end="", file=sys.stderr, flush=True)
+            return _result(10, plan=proposal.rows, detail="Use --yes for a non-interactive Python change.")
+        print("Apply this Python plan? [y/N] ", end="", file=sys.stderr, flush=True)
         try:
             answer = input()
         except EOFError:
             answer = ""
         if answer.strip().lower() not in ("y", "yes"):
-            return _result(10, plan=proposal.rows, detail="Installation cancelled.")
+            return _result(10, plan=proposal.rows, detail="Python change cancelled.")
     return apply(root, proposal)
