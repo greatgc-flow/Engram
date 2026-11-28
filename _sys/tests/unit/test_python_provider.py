@@ -365,10 +365,13 @@ def test_candidate_provider_records_separate_installed_inventory(tmp_path, monke
     assert not root.exists()
 
 
-def test_windows_tcl_timezone_name_with_plus_is_valid():
+@pytest.mark.parametrize("name", [
+    "python/tcl/tcl8.6/tzdata/Etc/GMT+1",
+    "python/Lib/site-packages/setuptools/script (dev).tmpl",
+])
+def test_published_windows_member_names_are_valid(name):
     from core.python_artifact import validate_member_name
 
-    name = "python/tcl/tcl8.6/tzdata/Etc/GMT+1"
     assert validate_member_name(name) == name.split("/")
 
 
