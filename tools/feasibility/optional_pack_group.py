@@ -1,8 +1,12 @@
 """Exercise Engram's lifecycle journal with two synthetic package activation pointers."""
+from contextlib import ExitStack, contextmanager
 from hashlib import sha256
 from io import BytesIO
 import json
+import os
 import re
+import subprocess
+import sys
 from zipfile import BadZipFile, ZipFile
 
 from core import env_lock, env_manifest, env_ops, python_registry
@@ -234,8 +238,8 @@ def recover(root, descriptor, mode):
     raise ValueError("unknown fixture recovery mode")
 
 
-def activate(root, descriptor):
-    """Return a verified fixture snapshot while holding the lifecycle lock."""
+@contextmanager
+def _activation(root, descriptor):
     _fixture_root(root)
     try:
         with env_lock.guard(root, "fixture-inspect"):
@@ -243,6 +247,44 @@ def activate(root, descriptor):
             if env_ops.journal_blocks(root):
                 raise ValueError("fixture group recovery required")
             current, _ = _current(root, descriptor.package_id)
-            return current
+            yield current
     except env_lock.EnvLockBusy as exc:
         raise ValueError("fixture lifecycle is busy") from exc
+
+
+def activate(root, descriptor):
+    """Return a verified fixture snapshot while holding the lifecycle lock."""
+    with _activation(root, descriptor) as current:
+        return current
+
+
+_READER = (
+    "import hashlib, sys; "
+    "data = sys.stdin.buffer.read(4097); "
+    "assert len(data) <= 4096; "
+    "sys.stdout.write(hashlib.sha256(data).hexdigest())"
+)
+
+
+def launch(root, descriptor):
+    """Start a fixed reader and hand it the verified immutable fixture bytes."""
+    with ExitStack() as process:
+        with _activation(root, descriptor) as current:
+            if current is None:
+                raise ValueError("fixture package is not installed")
+            revision, runtime, payload = current
+            environment = {key: value for key, value in os.environ.items()
+                           if key.upper() in {"SYSTEMROOT", "WINDIR", "TEMP", "TMP"}}
+            child = process.enter_context(subprocess.Popen(
+                [sys.executable, "-I", "-S", "-c", _READER], cwd=root, env=environment,
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
+        try:
+            observed, _ = child.communicate(payload, timeout=15)
+        except BaseException:
+            child.kill()
+            child.communicate()
+            raise
+        expected = sha256(payload).hexdigest()
+        if child.returncode != 0 or observed != expected.encode("ascii"):
+            raise ValueError("fixture subprocess did not confirm admitted payload")
+    return {"revision": revision, "runtime": runtime, "sha256": expected}
