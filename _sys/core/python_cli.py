@@ -84,8 +84,13 @@ def _run_child(root, argv, parser):
 
 def run(ctx):
     parser = cli_help.CliParser("python")
-    parser.add_argument("action", nargs="?", choices=("list", "where", "run"))
-    parser.add_argument("series", nargs="?")
+    parser.add_argument("action", nargs="?", choices=("list", "where", "run", "install"))
+    parser.add_argument("series", nargs="*")
+    parser.add_argument("--all-supported", action="store_true")
+    parser.add_argument("--offline", action="store_true")
+    parser.add_argument("--cache-dir")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--yes", "-y", action="store_true")
     parser.add_argument("--json", action="store_true")
     argv = ctx.get("args", [])
     root = Path(ctx["sys_dir"]).absolute()
@@ -94,8 +99,32 @@ def run(ctx):
         return {"status": "failed" if code else "success", "exit_code": code, "quiet": True}
 
     args = parser.parse_args(argv)
-    if not args.action or (args.series and (args.action != "where" or not _SERIES.fullmatch(args.series))):
-        parser.error("expected list, where [3.MINOR], or run [3.MINOR] -- PYTHON_ARGS")
+    if any(not _SERIES.fullmatch(minor) for minor in args.series):
+        parser.error("Python series must use 3.MINOR format.")
+    if args.action == "install":
+        if bool(args.series) == args.all_supported or len(set(args.series)) != len(args.series):
+            parser.error("Choose distinct Python series or --all-supported.")
+        from core import python_install
+        cache = Path(args.cache_dir) if args.cache_dir else root / "data/setup-files/python-archives"
+        if not cache.is_absolute():
+            cache = Path(os.environ.get("ENGRAM_CALLER_CWD") or Path.cwd()) / cache
+        try:
+            result = python_install.run(root, args.series, all_supported=args.all_supported, offline=args.offline,
+                                       cache=cache, preview=args.dry_run, yes=args.yes)
+        except (ValueError, OSError, subprocess.SubprocessError, env_ops.JournalError) as exc:
+            result = {"status": "failed", "exit_code": 1, "detail": str(exc)}
+        if args.json:
+            print(json.dumps(result))
+        else:
+            for row in result.get("plan", []):
+                print(f"{row['series']} {row.get('version', '')} {row['status']}")
+            if result.get("detail"):
+                print(result["detail"], file=sys.stderr)
+        return {**result, "quiet": True}
+    if args.all_supported or args.offline or args.cache_dir is not None or args.dry_run or args.yes:
+        parser.error("Installation flags require the install action.")
+    if args.action not in ("list", "where") or len(args.series) > int(args.action == "where"):
+        parser.error("expected list, where [3.MINOR], run [3.MINOR] -- PYTHON_ARGS, or install")
     try:
         view = _inventory(root)
         if args.action == "list":
@@ -103,7 +132,7 @@ def run(ctx):
             lines = [f"Legacy default: {view['legacy']['status']} ({view['legacy']['executable_rel']})"]
             lines.extend(f"{minor}  {row['version']}  {row['executable_rel']}" for minor, row in view["series"].items())
         else:
-            executable = _executable(root, view, args.series)
+            executable = _executable(root, view, args.series[0] if args.series else None)
             data = {"executable": str(executable)}
             lines = [str(executable)]
         code = 0

@@ -38,7 +38,7 @@ def test_batch_publishes_only_selected_builds_once(root, tmp_path, monkeypatch):
     observed = []
     def stage(root, destination, artifact, source, offline):
         assert source.is_file() and offline
-        destination.mkdir()
+        destination.mkdir(parents=True)
         (destination / "python.exe").touch()
         observed.append(artifact.version)
     monkeypatch.setattr(python_install, "_stage", stage)
@@ -66,7 +66,7 @@ def test_failed_second_stage_keeps_registry_and_removes_own_first_stage(root, tm
     def stage(root, destination, artifact, source, offline):
         if artifact.version.startswith("3.13"):
             raise ValueError("fixture failure")
-        destination.mkdir()
+        destination.mkdir(parents=True)
         (destination / "python.exe").touch()
     monkeypatch.setattr(python_install, "_stage", stage)
     with pytest.raises(ValueError, match="fixture failure"):
@@ -83,3 +83,22 @@ def test_cli_offline_dry_run_is_one_json_object(root, tmp_path, capsys):
     data = json.loads(capsys.readouterr().out)
     assert result["exit_code"] == 1 and data["plan"][0]["status"] == "MISSING_CACHE"
     assert not (root / "env").exists()
+
+
+def test_cancel_and_eof_do_not_stage(root, tmp_path, monkeypatch):
+    from core import python_install
+    import sys
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    artifact = python_install.offline_artifacts()[0]
+    (cache / python_install.python_provider.asset_name(artifact)).touch()
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda: "no")
+    kwargs = {"all_supported": False, "offline": True, "cache": cache, "preview": False, "yes": False}
+    assert python_install.run(root, ["3.14"], **kwargs)["exit_code"] == 10
+    def eof():
+        raise EOFError
+    monkeypatch.setattr("builtins.input", eof)
+    assert python_install.run(root, ["3.14"], **kwargs)["exit_code"] == 10
+    assert python_registry.inventory(root)["revision"] == 0 and not (root / "env").exists()

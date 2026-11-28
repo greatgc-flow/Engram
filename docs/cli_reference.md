@@ -327,33 +327,45 @@ Bootstrap installs only the validated `runtimes.json` pin. Its newer-version not
 #### engram python
 
 ```text
-engram python - inspect or run local Python runtimes
+engram python - inspect, run or install local Python runtimes
 
 Usage: engram python list [--json]
        engram python where [3.MINOR] [--json]
        engram python run [3.MINOR] -- PYTHON_ARGS
+       engram python install SERIES [SERIES ...] | --all-supported
 
 Description:
   List the legacy binding and registered active builds. Where prints the
   existing default venv executable or the active executable for a series.
   Run launches that interpreter from the caller's directory and forwards
   everything after -- as Python arguments. Without a series, run selects the
-  legacy venv. All commands work offline.
+  legacy venv. Install adds selected stable Windows x64 interpreters. It
+  previews the candidates, asks for confirmation and checks each runtime
+  in an isolated test venv before publishing the registry.
 
 Options:
-  --json           Print one JSON object (default: off)
+  --json           Print one JSON object for list, where or install
+                   (default: off)
+  --all-supported  Select all eligible series in the current catalog
+                   (default: explicit series)
+  --offline        Use reviewed pins and cached archives (default: off)
+  --cache-dir DIR  Read archives from DIR (default: Engram's setup cache)
+  --dry-run        Show the plan without installing (default: off)
+  --yes, -y        Approve the shown selection automatically (default: off)
   -h, --help, /?   Show this help (default: off)
 
 Examples:
   engram python list --json
   engram python where
   engram python where 3.14
-  engram python run 3.14 -- -m pip --version
+  engram python run 3.14 -- -m venv .venv
+  engram python install 3.14 3.13 --dry-run
 
 Exit codes:
   0   inventory or lookup succeeded
-  1   unreadable registry or unavailable executable
+  1   interpreter unavailable, incomplete plan or failed staging
   2   invalid arguments
+  10  install declined or confirmation unavailable
   14  environment operation in progress or awaiting recovery
   A started child returns its own process exit code.
 

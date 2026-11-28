@@ -187,6 +187,15 @@ def inventory(root: Path) -> dict:
                        "base_rel": base, "executable_rel": exe}}
 
 
+def new_document(root):
+    """Start an empty registry for a provisioned Engram installation."""
+    legacy = provisioner.venv_python_exe(root).relative_to(root).as_posix()
+    return {"schema_version": "1.0", "revision": 0, "installation_id": _installation(root),
+            "default_binding": DEFAULT, "series": {}, "builds": {},
+            "bindings": {DEFAULT: {"kind": "legacy", "executable_rel": legacy}},
+            "environments": {}, "external_refs": [], "vendor_exceptions": [], "rollback_refs": []}
+
+
 def _transition(old, new):
     previous = old["revision"] if old else 0
     _require(new["revision"] == previous + 1, "registry revision must advance by one")

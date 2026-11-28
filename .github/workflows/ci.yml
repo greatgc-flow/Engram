@@ -83,6 +83,23 @@ jobs:
     - name: Verify explicit Python execution across Windows shells
       run: python -B tools/feasibility/windows_python_run.py
 
+    - name: Verify real offline selective Python installation
+      shell: pwsh
+      timeout-minutes: 8
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $cache = Join-Path $env:RUNNER_TEMP 'engram-offline-archives'
+        New-Item -ItemType Directory $cache | Out-Null
+        $pins = Get-Content _sys/defaults/python-offline-artifacts.json -Raw | ConvertFrom-Json
+        foreach ($item in $pins.artifacts) {
+          $name = "cpython-$($item.version)+$($pins.release)-x86_64-pc-windows-msvc-install_only.tar.gz"
+          $encoded = $name.Replace('+', '%2B')
+          $url = "https://github.com/astral-sh/python-build-standalone/releases/download/$($pins.release)/$encoded"
+          Invoke-WebRequest $url -OutFile (Join-Path $cache $name)
+        }
+        python -B tools/feasibility/windows_python_install.py $cache
+        exit $LASTEXITCODE
+
     - name: Upload contract results
       if: always()
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

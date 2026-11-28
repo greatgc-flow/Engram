@@ -59,6 +59,14 @@ def _read_api(url):
         raise ProviderError(f"publisher metadata unavailable: {type(exc).__name__}") from exc
 
 
+def asset_name(artifact):
+    return f"cpython-{artifact.version}+{artifact.tag}-x86_64-pc-windows-msvc-install_only.tar.gz"
+
+
+def download_url(artifact):
+    return f"{WEB}/download/{artifact.tag}/" + asset_name(artifact).replace("+", "%2B")
+
+
 def fetch_release(*, today=None, tag=None) -> Release:
     """Read the current release and enumerate that immutable release by numeric ID."""
     today = today or datetime.now(timezone.utc).date()

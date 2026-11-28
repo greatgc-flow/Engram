@@ -70,10 +70,9 @@ def _resolve_paths(base_dir: Path, target_sys_dir: Path | None = None) -> dict:
 
 
 def _build_ctx(cmd: str, extra_args: list) -> dict:
-    # An explicit Python child uses the caller's environment, with runtime
-    # conflicts filtered by python_cli. Avoid applying the launcher overlay.
-    python_child = cmd == "python" and extra_args[:1] == ["run"]
-    paths = {} if python_child else _resolve_paths(base_dir, sys_dir)
+    # Python execution and install use the physical root, without the launcher overlay.
+    python_action = cmd == "python" and extra_args[:1] in (["run"], ["install"])
+    paths = {} if python_action else _resolve_paths(base_dir, sys_dir)
     ctx = {
         "base_dir": base_dir,
         "sys_dir":  sys_dir,
