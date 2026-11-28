@@ -1,4 +1,5 @@
 """Signed TEST_ONLY release admission, materialization and isolated execution."""
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -12,6 +13,7 @@ import shutil
 import stat
 import subprocess
 from tempfile import TemporaryDirectory, TemporaryFile
+from time import monotonic
 from zipfile import BadZipFile, ZipFile, ZIP_STORED
 
 from core.python_registry import _plain as _system_path
@@ -231,24 +233,40 @@ def _verified_paths(release, root):
     return observed
 
 
-def _run(release, root, executable, executable_sha256, guard, entry, args, wire):
+def _run(release, root, executable, executable_sha256, guard, entry, args, wire, timeout=30):
     _pin_executable(executable, executable_sha256)
-    with TemporaryFile() as stdout, ExitStack() as child_scope:
+    end = monotonic() + timeout
+
+    def remaining():
+        delay = end - monotonic()
+        if delay <= 0:
+            raise subprocess.TimeoutExpired(entry, timeout)
+        return delay
+
+    with TemporaryFile() as stdin, ExitStack() as child_scope:
+        if wire is not None:
+            stdin.write(wire)
+            stdin.seek(0)
         with guard:
             paths = _verified_paths(release, root)
+            remaining()
             child = child_scope.enter_context(subprocess.Popen(
                 [executable, "-I", "-B", "-S", paths[entry], *args], cwd=root,
-                env=_environment(), stdin=subprocess.DEVNULL if wire is None else subprocess.PIPE,
-                stdout=stdout, stderr=subprocess.DEVNULL))
-        try:
-            child.communicate(wire, timeout=30)
-        except BaseException:
-            child.kill()
-            child.communicate()
-            raise
-        stdout.seek(0)
-        output = stdout.read(_MAX_OUTPUT + 1)
-    _need(child.returncode == 0 and len(output) <= _MAX_OUTPUT, "signed fixture entry did not complete")
+                env=_environment(), stdin=subprocess.DEVNULL if wire is None else stdin,
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL))
+        with ThreadPoolExecutor(max_workers=1) as reader:
+            pending = reader.submit(child.stdout.read, _MAX_OUTPUT + 1)
+            try:
+                try:
+                    output = pending.result(timeout=remaining())
+                except TimeoutError as exc:
+                    raise subprocess.TimeoutExpired(entry, timeout) from exc
+                _need(len(output) <= _MAX_OUTPUT, "signed fixture output exceeds its limit")
+                _need(child.wait(timeout=remaining()) == 0, "signed fixture entry did not complete")
+            except BaseException:
+                child.kill()
+                child.wait()
+                raise
     return output
 
 
@@ -362,7 +380,8 @@ def launch_adapter(root, descriptor, release, executable, executable_sha256, req
     effectful = request["operation"] in ("checkpoint", "restore", "migrate", "relocate")
     try:
         raw = _run(release, generation, executable, executable_sha256,
-                   _signed_activation(root, descriptor, release), release.adapter_entry, args, wire)
+                   _signed_activation(root, descriptor, release), release.adapter_entry, args, wire,
+                   timeout=min(30, (deadline - now).total_seconds()))
         return _reply(raw, request, effectful=effectful)
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
         if effectful:
