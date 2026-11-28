@@ -1,0 +1,79 @@
+"""Project runtime selection binds the exact build and preserves other pin files."""
+import json
+from unittest.mock import Mock
+
+import pytest
+
+from core import env_manifest, python_cli, python_registry
+from test_python_registry import candidate
+
+
+@pytest.fixture
+def workspace(tmp_path, monkeypatch):
+    system = tmp_path / "system"
+    env_manifest.write_manifest(system, {"schema_version": 1, "install_id": "fixture-install",
+                                        "root": {"physical": str(tmp_path), "logical": str(tmp_path)}})
+    doc = candidate()
+    assert python_registry.publish(system, 0, doc)["phase"] == "COMMITTED"
+    executable = system / doc["builds"]["build-a"]["executable_rel"]
+    executable.parent.mkdir(parents=True)
+    executable.touch()
+    project = tmp_path / "project 한글"
+    (project / ".git").mkdir(parents=True)
+    nested = project / "scripts"
+    nested.mkdir()
+    monkeypatch.setenv("ENGRAM_CALLER_CWD", str(nested))
+    return system, project, executable
+
+
+def invoke(workspace, *argv):
+    return python_cli.run({"sys_dir": workspace[0], "args": list(argv)})
+
+
+def test_project_pin_conflict_and_removal(workspace, monkeypatch, capsys):
+    from core import python_pin
+
+    system, project, executable = workspace
+    outside = project / ".python-version"
+    outside.write_text("3.15\n")
+    assert invoke(workspace, "pin", "3.14", "--json")["exit_code"] == 0
+    pin = project / python_pin.FILENAME
+    content = pin.read_bytes()
+    assert json.loads(content)["build_id"] == "build-a"
+    assert invoke(workspace, "pin", "3.14")["exit_code"] == 0
+    assert pin.read_bytes() == content
+    spawn = Mock(return_value=Mock(returncode=32))
+    monkeypatch.setattr(python_cli.subprocess, "run", spawn)
+    assert invoke(workspace, "run", "3.13", "--", "--version")["exit_code"] == 1
+    spawn.assert_not_called()
+    assert invoke(workspace, "run", "--", "--version")["exit_code"] == 32
+    assert spawn.call_args.args[0][0] == str(executable)
+    capsys.readouterr()
+    assert invoke(workspace, "where", "--json")["exit_code"] == 0
+    assert json.loads(capsys.readouterr().out)["executable"] == str(executable)
+    assert invoke(workspace, "unpin")["exit_code"] == 0
+    assert not pin.exists() and outside.read_text() == "3.15\n"
+
+
+@pytest.mark.parametrize("action", [("pin", "3.14"), ("unpin",), ("where",)])
+def test_malformed_pin_is_preserved(workspace, action):
+    from core import python_pin
+
+    pin = workspace[1] / python_pin.FILENAME
+    pin.write_bytes(b"{user-owned content")
+    assert invoke(workspace, *action)["exit_code"] == 1
+    assert pin.read_bytes() == b"{user-owned content"
+
+
+def test_pin_keeps_previous_exact_build_after_active_build_changes(workspace):
+    system, _, executable = workspace
+    assert invoke(workspace, "pin", "3.14")["exit_code"] == 0
+    doc = python_registry.inventory(system)["registry"]
+    old = doc["builds"]["build-a"]
+    old["state"] = "RETAINED"
+    doc["builds"]["build-b"] = {**old, "version": "3.14.11", "sha256": "b" * 64, "state": "ACTIVE",
+                                "executable_rel": "env/python-versions/3.14/build-b/python.exe"}
+    doc["series"]["3.14"]["active_build"] = "build-b"
+    doc["revision"] += 1
+    assert python_registry.publish(system, 1, doc)["phase"] == "COMMITTED"
+    assert invoke(workspace, "where", "3.14")["executable"] == str(executable)
