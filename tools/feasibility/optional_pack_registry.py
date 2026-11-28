@@ -23,6 +23,8 @@ def _read(path, limit=MAX_BYTES):
         raise ValueError("expected an ordinary metadata file")
     with path.open("rb") as stream:
         data = stream.read(limit + 1)
+    if len(data) > limit:
+        raise ValueError("metadata file exceeds its inspection limit")
     return decode_document(data), data
 
 
