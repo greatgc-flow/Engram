@@ -153,3 +153,75 @@ def test_signed_activation_relocates_and_blocks_wrong_active_release(tmp_path, s
     with pytest.raises(ValueError):
         launch_signed(moved, descriptor, foreign, exe, exe_pin, policy=policy, now=NOW)
     assert launch_signed(moved, descriptor, release, exe, exe_pin, policy=policy, now=NOW).strip() == b"signed generation"
+
+
+def test_signed_generation_switch_recovers_without_touching_retained_state(tmp_path, signing):
+    from core.env_ops import SimulatedCrash
+    from optional_pack_group import initialize_fixture, recover
+    from optional_pack_release import admit, install_signed, launch_signed
+
+    policy, descriptor = policy_and_descriptor(signing)
+    root = tmp_path / "fixture"
+    root.mkdir()
+    initialize_fixture(root)
+    state = root / "ContentFlow/data/user.txt"
+    state.parent.mkdir(parents=True)
+    state.write_bytes(b"durable owner bytes")
+
+    def release(label):
+        doc, artifact = build_release({"bin/app.py": f"print({label!r})".encode()})
+        data = wire(doc)
+        return admit(descriptor, policy, data, signing[2](data), artifact, sha256(data).hexdigest(), NOW)
+
+    old, new = release("old"), release("new")
+    exe = Path(sys.executable).resolve()
+    pinned = sha256(exe.read_bytes()).hexdigest()
+    install_signed(root, descriptor, 0, "runtime-a", old, policy=policy, now=NOW)
+    with pytest.raises(SimulatedCrash):
+        install_signed(root, descriptor, 1, "runtime-b", new, policy=policy, now=NOW,
+                       crash_after="fixture-runtime")
+    with pytest.raises(ValueError, match="recovery"):
+        launch_signed(root, descriptor, old, exe, pinned, policy=policy, now=NOW)
+    assert recover(root, descriptor, "rollback")["phase"] == "ROLLED_BACK"
+    assert launch_signed(root, descriptor, old, exe, pinned, policy=policy, now=NOW).strip() == b"old"
+    assert state.read_bytes() == b"durable owner bytes"
+
+
+def test_adapter_starts_signed_member_and_rejects_wrong_echo(tmp_path, signing):
+    from optional_pack_group import initialize_fixture
+    from optional_pack_release import admit, install_signed, launch_adapter
+
+    policy, descriptor = policy_and_descriptor(signing)
+    root = tmp_path / "fixture"
+    root.mkdir()
+    initialize_fixture(root)
+    app = b"raise RuntimeError('application should not run for adapter calls')"
+    adapter = b"""import json, sys
+req = json.load(sys.stdin)
+keys = ('fixture_only', 'schema_version', 'protocol_version', 'request_id', 'parent_op_id',
+        'installation_id', 'package_id', 'generation', 'operation')
+reply = {k: req[k] for k in keys}
+if sys.argv[1:] == ['wrong']:
+    reply['parent_op_id'] = 'wrong'
+reply.update(status='OK', findings=[], receipt={'effect_id':'receipt','checkpoint_sha256':None,
+    'observed_state':'UNCHANGED','owned_process_ids':[]}, next_action='NONE')
+print(json.dumps(reply))
+"""
+    doc, artifact = build_release({"bin/app.py": app, "bin/adapter.py": adapter})
+    doc["adapter_entry_rel"] = "bin/adapter.py"
+    data = wire(doc)
+    release = admit(descriptor, policy, data, signing[2](data), artifact, sha256(data).hexdigest(), NOW)
+    exe = Path(sys.executable).resolve()
+    pin = sha256(exe.read_bytes()).hexdigest()
+    install_signed(root, descriptor, 0, "runtime-a", release, policy=policy, now=NOW)
+    generation = "gen-" + release.manifest_sha256
+    request = {"fixture_only": True, "schema_version": "1.0", "protocol_version": "1.0",
+               "request_id": "req", "parent_op_id": "op", "installation_id": "fixture",
+               "package_id": "contentflow", "generation": generation, "operation": "health",
+               "working_rel": "ContentFlow/app/generations/" + generation, "checkpoint_rel": None,
+               "phase": "COMMITTED", "plan_digest": "a"*64, "scope": ["PROGRAM"],
+               "deadline": (NOW + timedelta(minutes=1)).isoformat()}
+    answer = launch_adapter(root, descriptor, release, exe, pin, request, (), policy=policy, now=NOW)
+    assert answer["status"] == "OK" and answer["request_id"] == "req"
+    with pytest.raises(ValueError, match="echo"):
+        launch_adapter(root, descriptor, release, exe, pin, request, ("wrong",), policy=policy, now=NOW)
