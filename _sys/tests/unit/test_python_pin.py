@@ -136,3 +136,19 @@ def test_use_launches_one_cmd_child_with_pinned_runtime(workspace, monkeypatch):
     spawn.reset_mock()
     assert invoke(workspace, "use", "3.13")["exit_code"] == 1
     spawn.assert_not_called()
+
+
+def test_doctor_reports_retirement_protection_without_writes(workspace, capsys):
+    system, project, executable = workspace
+    assert invoke(workspace, "pin", "3.14")["exit_code"] == 0
+    capsys.readouterr()
+    snapshot = {p: p.read_bytes() for root in (system, project) for p in root.rglob("*") if p.is_file()}
+    result = invoke(workspace, "doctor", "3.14", "--json")
+    assert result["exit_code"] == 1  # The referenced managed venv fixture is not built.
+    data = json.loads(capsys.readouterr().out)
+    row, = data["builds"]
+    assert row["build_id"] == "build-a" and row["installed"]
+    assert set(row["references"]) == {"ACTIVE_SERIES", "REGISTERED_ENVIRONMENT", "CONSUMER_BINDING", "PROJECT_PIN"}
+    assert row["retirement"] == "PROTECTED"
+    assert data["coverage"]["external_projects"] == "UNKNOWN"
+    assert {p: p.read_bytes() for root in (system, project) for p in root.rglob("*") if p.is_file()} == snapshot
