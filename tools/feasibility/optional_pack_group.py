@@ -51,6 +51,12 @@ def _payload(archive, digest):
         raise ValueError("invalid fixture archive") from exc
 
 
+def _check_journal(root):
+    journal = env_ops.journal_path(root)
+    if journal.exists() and not env_ops.read_journal(root):
+        raise ValueError("fixture journal is unreadable")
+
+
 def _path(root, package, leaf):
     if not _ID.fullmatch(package):
         raise ValueError("invalid fixture package identity")
@@ -154,6 +160,7 @@ def publish(root, descriptor, expected_revision, runtime_id, archive, digest, *,
     next_binding = {"revision": expected_revision + 1, "runtime": runtime_id}
 
     def prepare():
+        _check_journal(root)
         observed, before = _current(root, package)
         if (observed[0] if observed else 0) != expected_revision:
             raise ValueError("fixture generation conflict")
@@ -202,6 +209,7 @@ def activate(root, descriptor):
     _fixture_root(root)
     try:
         with env_lock.guard(root, "fixture-inspect"):
+            _check_journal(root)
             if env_ops.journal_blocks(root):
                 raise ValueError("fixture group recovery required")
             current, _ = _current(root, descriptor.package_id)
