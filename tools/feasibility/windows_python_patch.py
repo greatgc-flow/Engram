@@ -9,7 +9,7 @@ import tempfile
 
 SYSTEM = Path(__file__).resolve().parents[2] / "_sys"
 sys.path.insert(0, str(SYSTEM))
-from core import env_manifest, python_cli, python_install, python_provider, python_registry, repair  # noqa: E402
+from core import env_manifest, python_cli, python_install, python_provider, python_registry, repair, updater  # noqa: E402
 from core.python_artifact import Artifact  # noqa: E402
 
 
@@ -54,7 +54,17 @@ def main(cache):
         assert preview["plan"][0]["status"] == "READY"
         assert python_registry.registry_path(root).read_bytes() == before
 
-        updated = cli("update", series, "--yes", "--offline", "--cache-dir", str(cache))
+        destination_cache = root / "data/setup-files/python-archives"
+        destination_cache.mkdir(parents=True)
+        shutil.copyfile(cache / preview["plan"][0]["asset"], destination_cache / preview["plan"][0]["asset"])
+
+        def scoped_update(*flags):
+            return updater.run({"sys_dir": root, "base_dir": base, "command": "update",
+                                "args": ["--only", "python-versions", "--offline", "--json", *flags]})
+
+        assert scoped_update()["plan"] == preview["plan"]
+        assert python_registry.registry_path(root).read_bytes() == before
+        updated = scoped_update("--yes")
         assert updated["revision"] == 2 and updated["plan"][0]["status"] == "UPDATED"
         new_version = updated["plan"][0]["version"]
         assert Path(pin["pin"]).read_bytes() == pin_before
@@ -65,8 +75,6 @@ def main(cache):
         assert not new_path.samefile(old_path) and version(new_path) == "Python " + new_version
         assert cli("update", "--offline", "--cache-dir", str(cache), "--yes")["revision"] == 2
         old_path.parent.rename(base / "held-previous-build")
-        destination_cache = root / "data/setup-files/python-archives"
-        destination_cache.mkdir(parents=True)
         state = python_registry.registry_path(root).read_bytes()
 
         def repair_cli(*flags):
@@ -88,7 +96,7 @@ def main(cache):
         assert python_registry.registry_path(root).read_bytes() == state
         print(json.dumps({"python_patch": "PASS", "old": artifact.version, "new": new_version,
                           "exact_pin_preserved": True, "old_executable_retained": True,
-                          "offline_exact_restore": True, "revision": 2}))
+                          "offline_exact_restore": True, "unified_extra_scope": True, "revision": 2}))
 
 
 if __name__ == "__main__":

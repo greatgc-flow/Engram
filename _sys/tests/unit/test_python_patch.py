@@ -56,3 +56,50 @@ def test_missing_or_failed_update_keeps_exact_preimage(existing, monkeypatch):
     with pytest.raises(ValueError, match="postcheck"):
         python_install.apply(root, preview)
     assert python_registry.registry_path(root).read_bytes() == before
+
+
+def test_unified_extra_scope_matches_existing_offline_preview(existing, monkeypatch, capsys):
+    import json
+    from core import python_cli, updater
+
+    root, cache, _ = existing
+    standard_cache = root / "data/setup-files/python-archives"
+    standard_cache.parent.mkdir(parents=True)
+    cache.rename(standard_cache)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Scoped read-only update reached unrelated discovery or application.")
+
+    monkeypatch.setattr(updater.check_tool_updates, "run", forbidden)
+    monkeypatch.setattr(python_install, "apply", forbidden)
+    before = python_registry.registry_path(root).read_bytes()
+    direct = python_cli.run({"sys_dir": root, "args": ["update", "--check", "--offline", "--json"]})
+    capsys.readouterr()
+    result = updater.run({"sys_dir": root, "args": [
+        "--only", "python-versions", "--offline", "--dry-run", "--yes", "--json",
+    ]})
+    assert result == direct
+    assert json.loads(capsys.readouterr().out)["plan"] == direct["plan"]
+    assert [row["series"] for row in result["plan"]] == ["3.14"]
+    assert result["plan"][0]["status"] == "READY"
+    assert python_registry.registry_path(root).read_bytes() == before
+
+
+@pytest.mark.parametrize("arguments", [
+    ["--only", "python-versions,python"], ["--only", "python-versions", "codex"],
+    ["--only", "python-versions", "--latest"], ["--only", "python-versions", "--to", "3.14.10"],
+    ["--only", "python-versions", "--force"], ["--only", "python-versions", "--all-packages"],
+    ["--only", "python-versions", "--refresh", "--offline"],
+    ["--only", "python-versions", "--allow-major-runtime-upgrade"],
+])
+def test_unified_extra_scope_rejects_other_components_and_unsupported_flags(existing, monkeypatch, arguments):
+    from core import python_cli, updater
+
+    root, _, _ = existing
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("An invalid update scope entered a lifecycle or discovery handler.")
+
+    monkeypatch.setattr(python_cli, "run", forbidden)
+    monkeypatch.setattr(updater.check_tool_updates, "run", forbidden)
+    assert updater.run({"sys_dir": root, "args": arguments})["exit_code"] == 2

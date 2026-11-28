@@ -10,7 +10,7 @@ The journal stores the exact before and after registry images and protects the a
 
 The Windows patch fixture uses a disposable root and the published Python Build Standalone 3.14.8 archive from the immutable 20261020 release. The public update handler consumes the reviewed offline 3.14.10 archive, preserves the project pin's exact bytes and selects 3.14.10 after unpinning. See the PR for the observed outcome.
 
-T67 covers the extra-series patch transaction and exact reference retention. Compatible consumer rebinding, cross-volume relocation, complete offline restore, reference-aware removal, and AI uninstall/reuse remain open in WP3.
+T67 covers the extra-series patch transaction and exact reference retention. Compatible consumer rebinding remains open.
 
 ## Exact offline repair for missing extra build directories
 
@@ -18,7 +18,7 @@ T67 covers the extra-series patch transaction and exact reference retention. Com
 
 Repair preserves the existing build IDs, registry bytes and references. It verifies the private archive and probes the reconstructed interpreter in a temporary venv before an atomic directory rename. A marker identifies the operation's completed output for journal resume and rollback. Only a directory created by that operation is eligible for automatic undo. The ordinary repair scope and legacy Python remain on their original path.
 
-The Windows fixture removes a retained build from the managed path inside a disposable root, proves the missing-cache blocker, and restores the exact older version under the existing build ID. It checks the active patched version and the registry bytes after recovery. Fault fixtures interrupt after the atomic rename, then exercise both resume and rollback with the archive unavailable. This covers exact reconstruction of registered interpreter directories. Managed app venvs, dependency wheel packs, backup export, cross-volume lifecycle integration and retention policy remain open.
+The Windows fixture removes a retained build from the managed path inside a disposable root, proves the missing-cache blocker, and restores the exact older version under the existing build ID. It checks the active patched version and the registry bytes after recovery. Fault fixtures interrupt after the atomic rename, then exercise both resume and rollback with the archive unavailable. This covers exact reconstruction of registered interpreter directories. The following sections cover application venvs and managed relocation. Backup export and retention policy remain open.
 
 ## Offline reconstruction of registered environments
 
@@ -39,3 +39,7 @@ This component scope can follow the usual Engram relocation when a portable inst
 ## Reference diagnostics before retirement
 
 `engram python doctor [3.MINOR] --json` reports missing registered build or environment files, stale managed venv locations, an unusable caller project pin, and pending lifecycle recovery. The command reads local state and launches no interpreter, provider or repair operation. Each build reports active series, registered environments, consumer bindings, the current project pin and pending recovery as applicable. Known references produce PROTECTED. External project pins, backup references and live processes have unverified coverage, so a build with no known reference is UNVERIFIED. The diagnostic supplies evidence for a subsequent retention decision.
+
+## Extra Python as a scoped Engram update
+
+`engram update --only python-versions --offline --check --json` invokes the same patch planner as `engram python update` for all registered extra series. A preview is the default. Apply with `--yes`. The check has no install side effects, even when combined with `--yes`. Mixed component scopes and unsupported version overrides fail before discovery. With no registered series, the planner returns an empty plan without contacting the providers. The legacy default continues to use `engram update --only python`. Combined bare update and detached core handoff participation remain open in T69.
