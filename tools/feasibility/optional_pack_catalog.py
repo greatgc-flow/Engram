@@ -57,6 +57,7 @@ class Descriptor:
     profiles: tuple[Profile, ...]
     default_profile: str
     operations: tuple[str, ...]
+    trust_key_ids: tuple[str, ...] = ()
 
 
 def _profile(row):
@@ -93,13 +94,13 @@ def _descriptor(raw, slots):
     label.encode("utf-8")
     aliases = _strings(doc["aliases"], _identifier, 0, 8, "aliases")
     operations = _strings(doc["adapter_operations"], _OPS.__contains__, 0, 12, "adapter operations")
-    _strings(doc["trust_key_ids"], _KEY.fullmatch, 1, 8, "key identifiers")
+    trust = _strings(doc["trust_key_ids"], _KEY.fullmatch, 1, 8, "key identifiers")
     rows = doc["profiles"]
     _require(type(rows) is list and 1 <= len(rows) <= 16, "invalid profiles")
     profiles = tuple(_profile(row) for row in rows)
     ids = [p.id for p in profiles]
     _require(len(set(ids)) == len(ids) and doc["default_profile"] in ids, "duplicate or missing profile")
-    return Descriptor(package, slot, aliases, profiles, doc["default_profile"], operations)
+    return Descriptor(package, slot, aliases, profiles, doc["default_profile"], operations, trust)
 
 
 def read_catalog(payloads, reviewed_slots, host_commands):
