@@ -431,3 +431,10 @@ def test_package_retirement_removes_only_its_binding_in_the_same_journal(install
         assert observed["environments"] == proposal["environments"]
         assert observed["builds"] == proposal["builds"]
         assert activate(root, descriptor) is None
+        with pytest.raises(ValueError, match="registry proposal"):
+            publish(root, descriptor, 2, "build-a", data, sha256(data).hexdigest(), reuse_retained=True)
+        observed["bindings"]["gamma"] = owning
+        observed["revision"] += 1
+        assert publish(root, descriptor, 2, "build-a", data, sha256(data).hexdigest(),
+                       reuse_retained=True, registry_proposal=(2, observed))["phase"] == "COMMITTED"
+        assert activate(root, descriptor) == (3, "build-a", b"fixture")
