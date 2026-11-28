@@ -1,5 +1,6 @@
 """Portable backup of one installation's Python registry and dependency locks."""
 import hashlib
+import io
 import os
 from pathlib import Path
 import stat
@@ -15,6 +16,15 @@ REGISTRY = _PREFIX + "registry.json"
 _DIGEST = _PREFIX + "registry.sha256"
 _MAX_FILES = 128
 _MAX_BYTES = 4 * 1024 * 1024
+_MAX_ZIP_DIRECTORY = _MAX_BYTES
+
+
+class _ArchiveStream(io.BufferedReader):
+    def read(self, size=-1):
+        # ZipFile reads the entire central directory in a single sized call.
+        if size > _MAX_ZIP_DIRECTORY:
+            raise ValueError("Python runtime ZIP directory exceeds the size limit.")
+        return super().read(size)
 
 
 def _inputs(root, raw):
@@ -118,7 +128,9 @@ def _read_bundle(root, bundle):
     metadata = [entry for entry in entries if not entry.filename.startswith(python_artifact_pack.PREFIX)]
     if (len(names) != len(entries) or len(metadata) > _MAX_FILES + int(packed)
             or sum(entry.file_size for entry in metadata) > _MAX_BYTES + len(python_artifact_pack.VERSION)
-            or any(stat.S_IFMT(entry.external_attr >> 16) not in (0, stat.S_IFREG) for entry in entries)
+            or any(entry.orig_filename != entry.filename or entry.flag_bits & 1
+                   or stat.S_IFMT(entry.external_attr >> 16) not in (0, stat.S_IFREG) for entry in entries)
+            or any(entry.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED) for entry in metadata)
             or not {REGISTRY, _DIGEST} <= names):
         raise ValueError("Invalid Python runtime backup entries.")
     raw = bundle.read(REGISTRY)
@@ -206,7 +218,7 @@ def restore(root, source, *, apply):
     _journal_clear(root)
     if not source.is_file() or source.stat().st_size > python_artifact_pack.MAX_BYTES + 2 * _MAX_BYTES:
         raise ValueError("Python runtime backup must be a ZIP within the archive size limit.")
-    with zipfile.ZipFile(source) as bundle:
+    with _ArchiveStream(source.open("rb", buffering=0)) as stream, zipfile.ZipFile(stream) as bundle:
         if len(bundle.infolist()) > _MAX_FILES + python_artifact_pack.MAX_ENTRIES + 1:
             raise ValueError("Too many Python runtime backup entries.")
         raw, locks, files = _read_bundle(root, bundle)

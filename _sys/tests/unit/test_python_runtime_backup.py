@@ -237,3 +237,39 @@ def test_offline_pack_conflict_or_tampering_preserves_destination(offline_pack, 
     with pytest.raises(OSError):
         _restore(ctx, bundle, "--apply")
     assert snapshot(ctx["base_dir"]) == before
+
+
+def test_interrupted_artifact_population_can_resume_by_reapplying(offline_pack, monkeypatch):
+    from core import python_runtime_backup
+
+    ctx, bundle, registry, lock, archive, wheel = offline_pack
+    _pack(ctx, bundle)
+    for path in (registry, lock, archive, wheel):
+        path.rename(path.with_suffix(".held"))
+    publish = python_runtime_backup._publish_new
+
+    def fail_wheel(source, target):
+        if target == wheel:
+            raise OSError("simulated cache publication failure")
+        publish(source, target)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(python_runtime_backup, "_publish_new", fail_wheel)
+        with pytest.raises(OSError, match="simulated cache"):
+            _restore(ctx, bundle, "--apply")
+    assert archive.is_file()
+    assert not any(path.exists() for path in (registry, lock, wheel))
+    assert env_ops.active_journal(ctx["sys_dir"]) is None
+    _restore(ctx, bundle, "--apply")
+    assert all(path.is_file() for path in (registry, lock, archive, wheel))
+
+
+def test_offline_pack_bounds_zip_central_directory_before_entry_parsing(offline_pack, monkeypatch):
+    from core import python_runtime_backup
+
+    ctx, bundle, *_ = offline_pack
+    _pack(ctx, bundle)
+    # The limit is applied to ZIP metadata reads, before ZipFile builds its entry list.
+    monkeypatch.setattr(python_runtime_backup, "_MAX_ZIP_DIRECTORY", 128)
+    with pytest.raises(OSError, match="directory exceeds"):
+        _restore(ctx, bundle, "--dry-run")

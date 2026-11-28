@@ -34,6 +34,7 @@ def _source(root, build):
         raise ProviderError(f"Missing offline archive: {path.name}")
     return path, Artifact(identity.tag, identity.version, identity.asset_id, identity.sha256, path.stat().st_size)
 
+
 def plan(root):
     registry = python_registry.inventory(root)["registry"]
     if registry is None:
