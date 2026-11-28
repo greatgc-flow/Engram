@@ -245,11 +245,12 @@ print(json.dumps(reply))
 
 
 def test_retire_and_update_refuse_live_signed_program_then_preserve_workspace(tmp_path, signing, monkeypatch):
+    from contextlib import contextmanager
     from threading import Event, Thread
-    from time import monotonic, sleep
 
     from core import env_lock
     from optional_pack_group import initialize_fixture
+    import optional_pack_release
     from optional_pack_release import admit, install_signed, launch_signed, remove_signed
 
     policy, descriptor = policy_and_descriptor(signing)
@@ -275,25 +276,29 @@ def test_retire_and_update_refuse_live_signed_program_then_preserve_workspace(tm
     state = root / "ContentFlow/workspaces/user.txt"
     state.parent.mkdir()
     state.write_bytes(b"original workspace")
-    started = Event()
+    gate_released = Event()
     spawn = subprocess.Popen
+    activation = optional_pack_release._activation
     children = []
 
     def observed_start(*args, **kwargs):
         children.append(spawn(*args, **kwargs))
-        started.set()
         return children[-1]
+
+    @contextmanager
+    def observed_activation(*args):
+        with activation(*args) as current:
+            yield current
+        gate_released.set()
 
     result = []
     with monkeypatch.context() as changes:
         changes.setattr("optional_pack_release.subprocess.Popen", observed_start)
+        changes.setattr(optional_pack_release, "_activation", observed_activation)
         runner = Thread(target=lambda: result.append(launch_signed(root, descriptor, release, exe, pin, **trust)))
         runner.start()
         try:
-            assert started.wait(10)
-            deadline = monotonic() + 5
-            while env_lock.inspect(root)["state"] == "held" and monotonic() < deadline:
-                sleep(0.01)
+            assert gate_released.wait(10)
             assert env_lock.inspect(root)["state"] == "free"
             assert children[0].poll() is None
             with pytest.raises(ValueError, match="execution lease"):
