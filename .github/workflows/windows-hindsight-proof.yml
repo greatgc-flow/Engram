@@ -1,0 +1,59 @@
+name: Native Windows Hindsight dependency proof
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/feasibility/windows-hindsight-cp314.lock.txt'
+      - 'tools/feasibility/windows_hindsight.py'
+      - '.github/workflows/windows-hindsight-proof.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-hindsight:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.14'
+      - name: Download exact Windows wheel artifacts and the existing pinned interpreter
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pin = (Get-Content tools/feasibility/windows-python.lock.json -Raw | ConvertFrom-Json).archive
+          $stage = Join-Path $env:RUNNER_TEMP "engram-hindsight-$([guid]::NewGuid())"
+          New-Item -ItemType Directory $stage | Out-Null
+          "ENGRAM_HINDSIGHT_STAGE=$stage" >> $env:GITHUB_ENV
+          Invoke-WebRequest $pin.url -OutFile (Join-Path $stage 'python.tar.gz')
+          $env:PIP_CONFIG_FILE = 'NUL'
+          python -m pip --isolated --disable-pip-version-check download --no-deps --only-binary ':all:' --require-hashes --index-url https://pypi.org/simple --dest (Join-Path $stage 'wheels') -r tools/feasibility/windows-hindsight-cp314.lock.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Rebuild offline and import the native dependencies under Windows Basic User
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = $env:ENGRAM_HINDSIGHT_STAGE
+          $python = (Get-Command python.exe).Source
+          $probe = (Resolve-Path tools/feasibility/windows_hindsight.py).Path
+          $receipt = Join-Path $stage 'probe-receipt.txt'
+          $done = Join-Path $stage 'probe-exit.txt'
+          $batch = Join-Path $stage 'native-probe.cmd'
+          @(
+            '@echo off'
+            ('"{0}" -B "{1}" "{2}" "{3}" > "{4}" 2>&1' -f $python,$probe,(Join-Path $stage 'python.tar.gz'),(Join-Path $stage 'wheels'),$receipt)
+            ('echo %ERRORLEVEL% > "{0}"' -f $done)
+          ) | Set-Content $batch -Encoding ascii
+          & runas.exe /trustlevel:0x20000 "cmd.exe /d /c `"`"$batch`"`""
+          if ($LASTEXITCODE -ne 0) { throw 'Basic User launch failed' }
+          $deadline = [DateTime]::UtcNow.AddMinutes(9)
+          while (!(Test-Path $done) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Seconds 2 }
+          if (!(Test-Path $done)) { throw 'No completed Hindsight dependency receipt' }
+          $output = Get-Content $receipt -Raw
+          Write-Output $output
+          if ([int](Get-Content $done -Raw) -ne 0) { throw 'Hindsight dependency probe failed' }
+          $parsed = $output | ConvertFrom-Json
+          if ($parsed.status -ne 'PASS' -or $parsed.effective_admin -ne $false) { throw 'Standard-user proof required' }
