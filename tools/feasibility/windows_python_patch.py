@@ -71,6 +71,24 @@ def main(cache):
         assert Path(cli("where", series)["executable"]).samefile(old_path)
         assert version(old_path) == "Python " + artifact.version
         cli("unpin")
+        # A retained build with no registered app or project references can
+        # still have an active process. Observe one owned child, then close it.
+        before_scan = cli("doctor", series, "--scan-processes")
+        assert not any("LIVE_PROCESS" in row["references"] for row in before_scan["builds"])
+        with subprocess.Popen([old_path, "-I", "-B", "-u", "-c",
+                               "print('ready', flush=True); input()"],
+                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as child:
+            try:
+                assert child.stdout.readline().strip() == "ready"
+                observed = cli("doctor", series, "--scan-processes")
+                retained = next(row for row in observed["builds"] if row["state"] == "RETAINED")
+                assert retained["retirement"] == "PROTECTED" and retained["references"] == ["LIVE_PROCESS"]
+                assert observed["coverage"]["live_processes"] == "PARTIAL"
+            finally:
+                child.communicate(input="done\n", timeout=30)
+        after_scan = cli("doctor", series, "--scan-processes")
+        retained = next(row for row in after_scan["builds"] if row["state"] == "RETAINED")
+        assert retained["retirement"] == "UNVERIFIED" and not retained["references"]
         new_path = Path(cli("where", series)["executable"])
         assert not new_path.samefile(old_path) and version(new_path) == "Python " + new_version
         assert cli("update", "--offline", "--cache-dir", str(cache), "--yes")["revision"] == 2
@@ -96,7 +114,8 @@ def main(cache):
         assert python_registry.registry_path(root).read_bytes() == state
         print(json.dumps({"python_patch": "PASS", "old": artifact.version, "new": new_version,
                           "exact_pin_preserved": True, "old_executable_retained": True,
-                          "offline_exact_restore": True, "unified_extra_scope": True, "revision": 2}))
+                          "offline_exact_restore": True, "unified_extra_scope": True,
+                          "retained_live_process_detected": True, "revision": 2}))
 
 
 if __name__ == "__main__":
