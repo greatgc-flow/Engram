@@ -9,6 +9,7 @@ import tempfile
 
 SYSTEM = Path(__file__).resolve().parents[2] / "_sys"
 sys.path.insert(0, str(SYSTEM))
+from checks import backup_personal_data  # noqa: E402
 from core import env_manifest, python_cli, python_install, python_provider, python_registry, repair, updater  # noqa: E402
 from core.python_artifact import Artifact  # noqa: E402
 
@@ -48,6 +49,9 @@ def main(cache):
         pin = cli("pin", series)
         pin_before = Path(pin["pin"]).read_bytes()
 
+        backup = base / "runtime backup 한글.zip"
+        backup_personal_data.run_backup({"sys_dir": root, "base_dir": base,
+                                         "args": ["--only", "python-runtime", "--out", str(backup)]})
         before = python_registry.registry_path(root).read_bytes()
         preview = cli("update", "--check", "--offline", "--cache-dir", str(cache))
         assert preview["plan"][0]["installed"] == artifact.version
@@ -89,6 +93,10 @@ def main(cache):
         after_scan = cli("doctor", series, "--scan-processes")
         retained = next(row for row in after_scan["builds"] if row["state"] == "RETAINED")
         assert retained["retirement"] == "UNVERIFIED" and not retained["references"]
+        saved = cli("doctor", series, "--scan-processes", "--backup", str(backup))
+        retained = next(row for row in saved["builds"] if row["state"] == "RETAINED")
+        assert retained["retirement"] == "PROTECTED" and retained["references"] == ["BACKUP_REFERENCE"]
+        assert saved["coverage"]["backups"] == "PARTIAL"
         new_path = Path(cli("where", series)["executable"])
         assert not new_path.samefile(old_path) and version(new_path) == "Python " + new_version
         assert cli("update", "--offline", "--cache-dir", str(cache), "--yes")["revision"] == 2
@@ -115,7 +123,8 @@ def main(cache):
         print(json.dumps({"python_patch": "PASS", "old": artifact.version, "new": new_version,
                           "exact_pin_preserved": True, "old_executable_retained": True,
                           "offline_exact_restore": True, "unified_extra_scope": True,
-                          "retained_live_process_detected": True, "revision": 2}))
+                          "retained_live_process_detected": True, "retained_backup_reference_detected": True,
+                          "revision": 2}))
 
 
 if __name__ == "__main__":

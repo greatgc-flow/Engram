@@ -1,7 +1,8 @@
 """Read-only registered Python health and reference observations."""
 import os
+import zipfile
 
-from core import env_ops, python_env_restore, python_pin, python_registry
+from core import env_ops, python_env_restore, python_pin, python_registry, python_runtime_backup
 
 
 def _live_builds(root, builds, environments):
@@ -40,7 +41,26 @@ def _live_builds(root, builds, environments):
     return found, "PARTIAL"
 
 
-def report(root, cwd, series, *, scan_processes=False):
+def _backup_builds(root, sources, builds, findings):
+    references = set()
+    observed = False
+    for number, source in enumerate(sources, start=1):
+        try:
+            snapshot = python_runtime_backup.build_references(root, source)
+        except (ValueError, OSError, zipfile.BadZipFile):
+            findings.append({"code": "BACKUP_REFERENCE_UNAVAILABLE", "detail": f"Backup input {number}"})
+            continue
+        observed = True
+        saved = {(build["sha256"], build["version"], build["provider"], build["abi"])
+                 for build in snapshot.values()}
+        for key, build in builds.items():
+            identity = (build["sha256"], build["version"], build["provider"], build["abi"])
+            if key in snapshot or identity in saved:
+                references.add(key)
+    return references, "PARTIAL" if observed else "UNKNOWN"
+
+
+def report(root, cwd, series, *, scan_processes=False, backups=()):
     view = python_registry.inventory(root)
     registry = view["registry"] or {}
     selected = registry.get("series", {})
@@ -56,6 +76,7 @@ def report(root, cwd, series, *, scan_processes=False):
     registrations = {row["build_id"] for row in environments.values()}
     bindings = {row["build_id"] for row in registry.get("bindings", {}).values() if "build_id" in row}
     findings = []
+    backup_refs, backup_coverage = _backup_builds(root, backups, builds, findings)
     try:
         pin = python_pin.current_build_id(cwd, view["registry"])
     except (OSError, ValueError) as exc:
@@ -79,6 +100,7 @@ def report(root, cwd, series, *, scan_processes=False):
                                (key in bindings, "CONSUMER_BINDING"),
                                (key == pin, "PROJECT_PIN"),
                                (key in live, "LIVE_PROCESS"),
+                               (key in backup_refs, "BACKUP_REFERENCE"),
                                (pending, "PENDING_OPERATION")):
             if present:
                 references.append(label)
@@ -100,4 +122,4 @@ def report(root, cwd, series, *, scan_processes=False):
         if not usable:
             findings.append({"code": "ENVIRONMENT_REBUILD_REQUIRED", "detail": key})
     return {"revision": view["revision"], "legacy": view["legacy"], "builds": rows, "findings": findings,
-            "coverage": {"external_projects": "UNKNOWN", "backups": "UNKNOWN", "live_processes": live_coverage}}
+            "coverage": {"external_projects": "UNKNOWN", "backups": backup_coverage, "live_processes": live_coverage}}

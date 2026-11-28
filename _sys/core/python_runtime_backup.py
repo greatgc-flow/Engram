@@ -6,6 +6,7 @@ from pathlib import Path
 import stat
 import tempfile
 import zipfile
+from contextlib import contextmanager
 
 from core import env_lock, env_manifest, env_ops, python_artifact_pack, python_env_restore, python_registry
 
@@ -214,13 +215,26 @@ def recovery_steps(root, active, mode):
     return [_step()]
 
 
-def restore(root, source, *, apply):
-    _journal_clear(root)
+@contextmanager
+def _open_bundle(source):
     if not source.is_file() or source.stat().st_size > python_artifact_pack.MAX_BYTES + 2 * _MAX_BYTES:
         raise ValueError("Python runtime backup must be a ZIP within the archive size limit.")
     with _ArchiveStream(source.open("rb", buffering=0)) as stream, zipfile.ZipFile(stream) as bundle:
         if len(bundle.infolist()) > _MAX_FILES + python_artifact_pack.MAX_ENTRIES + 1:
             raise ValueError("Too many Python runtime backup entries.")
+        yield bundle
+
+
+def build_references(root, source):
+    """Read validated same-installation reference metadata without reading artifact payloads."""
+    with _open_bundle(source) as bundle:
+        raw, _, _ = _read_bundle(root, bundle)
+    return python_registry._decode(root, raw)["builds"]
+
+
+def restore(root, source, *, apply):
+    _journal_clear(root)
+    with _open_bundle(source) as bundle:
         raw, locks, files = _read_bundle(root, bundle)
         revision, before, missing = _check_destination(root, raw, locks)
         cache_missing = python_artifact_pack.check(bundle, files, verify_payload=True)

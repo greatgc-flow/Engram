@@ -339,7 +339,8 @@ engram python - manage local Python runtimes
 
 Usage: engram python list [--json]
        engram python where [3.MINOR] [--json]
-       engram python doctor [3.MINOR] [--scan-processes] [--json]
+       engram python doctor [3.MINOR] [--scan-processes] [--backup ZIP]
+                            [--json]
        engram python run [3.MINOR] -- PYTHON_ARGS
        engram python use [3.MINOR]
        engram python install SERIES [SERIES ...] | --all-supported
@@ -352,7 +353,8 @@ Description:
   executable selected for the current project and requested series.
   Doctor reports missing builds and environments, recovery state and known
   references. The optional process scan reports exact observed runtime
-  images. External projects, backups and unseen processes remain unknown.
+  images. Explicit same-installation backups can also report a protected
+  build. This is a partial observation. Other references remain unknown.
   Run launches that interpreter from the caller's directory and forwards
   everything after -- as Python arguments. Without a series, run selects the
   legacy venv unless the project has an exact Python pin. A different series
@@ -376,6 +378,8 @@ Options:
   --dry-run        Show the plan without installing (default: off)
   --scan-processes  Observe live runtime executable paths in doctor
                    (default: off)
+  --backup ZIP     Observe references from a runtime ZIP in doctor;
+                   repeat up to 16 times (default: none)
   --check          Preview extra-series update candidates (default: off)
   --yes, -y        Approve the shown selection automatically (default: off)
   -h, --help, /?   Show this help (default: off)
@@ -385,6 +389,7 @@ Examples:
   engram python where
   engram python where 3.14
   engram python doctor --scan-processes --json
+  engram python doctor --backup D:\backups\runtime.zip --json
   engram python run 3.14 -- -m venv .venv
   engram python install 3.14 3.13 --dry-run
   engram python use 3.14

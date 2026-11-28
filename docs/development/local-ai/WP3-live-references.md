@@ -20,3 +20,17 @@ The [Windows patch job](https://github.com/greatgc-flow/Engram/actions/runs/4614
 passed with an actual retained 3.14.8 Python child and an active 3.14.10
 series. The build was PROTECTED while the process was observed and
 UNVERIFIED after it exited. The job passed 2,626 tests and 154 subtests.
+
+## Explicit backup references
+
+`engram python doctor --backup PATH.zip --json` checks the reference metadata
+of a named runtime recovery ZIP with the same installation identity. Pass
+`--backup` up to 16 times. Relative paths use the caller's directory. A
+registered build matching a saved ID or artifact identity receives
+`BACKUP_REFERENCE`. An unavailable archive is reported by input number
+without printing its filesystem path.
+
+This step reads bounded archive metadata, including the registry and its
+locks. It does not read artifact payloads or prove a restore would succeed.
+Coverage is partial when at least one input validates. No result establishes
+that all backup copies or externally managed projects are known.

@@ -126,6 +126,7 @@ def run(ctx):
     parser.add_argument("--yes", "-y", action="store_true")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--scan-processes", action="store_true")
+    parser.add_argument("--backup", action="append", default=[])
     argv = ctx.get("args", [])
     root = Path(ctx["sys_dir"]).absolute()
     if argv[:1] == ["run"]:
@@ -133,8 +134,10 @@ def run(ctx):
         return {"status": "failed" if code else "success", "exit_code": code, "quiet": True}
 
     args = parser.parse_args(argv)
-    if args.scan_processes and args.action != "doctor":
-        parser.error("--scan-processes requires doctor")
+    if (args.scan_processes or args.backup) and args.action != "doctor":
+        parser.error("--scan-processes and --backup require doctor")
+    if len(args.backup) > 16:
+        parser.error("doctor accepts at most 16 explicit backup paths")
     if any(not _SERIES.fullmatch(minor) for minor in args.series):
         parser.error("Python series must use 3.MINOR format.")
     if args.action in ("install", "update"):
@@ -183,9 +186,10 @@ def run(ctx):
             lines.extend(f"{minor}  {row['version']}  {row['executable_rel']}" for minor, row in data["series"].items())
         elif args.action == "doctor":
             from core import python_diagnostics
-            data = python_diagnostics.report(root, _caller_directory(),
-                                             args.series[0] if args.series else None,
-                                             scan_processes=args.scan_processes)
+            caller = _caller_directory()
+            data = python_diagnostics.report(root, caller, args.series[0] if args.series else None,
+                                             scan_processes=args.scan_processes,
+                                             backups=[caller / path for path in args.backup])
             lines = [f"Python registry revision: {data['revision']}"]
             lines.extend(f"{row['version']} {row['build_id']} {row['retirement']}" for row in data["builds"])
             lines.extend(f"{issue['code']}: {issue['detail']}" for issue in data["findings"])
