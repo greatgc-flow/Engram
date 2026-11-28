@@ -34,3 +34,10 @@ This step reads bounded archive metadata, including the registry and its
 locks. It does not read artifact payloads or prove a restore would succeed.
 Coverage is partial when at least one input validates. No result establishes
 that all backup copies or externally managed projects are known.
+
+The [combined Windows job](https://github.com/greatgc-flow/Engram/actions/runs/46151235477/job/140998113997)
+passed at `e2c5b35e7e1bd875eb282e5c2ff99c5cc813b902`. A retained CPython
+3.14.8 build became unverified after its process exited, then gained
+BACKUP_REFERENCE protection when the original runtime ZIP was supplied.
+The same run verified the full offline pack and passed 2,645 tests and
+154 subtests.

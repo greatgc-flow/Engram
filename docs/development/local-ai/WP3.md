@@ -18,7 +18,7 @@ T67 covers the extra-series patch transaction and exact reference retention. Com
 
 Repair preserves the existing build IDs, registry bytes and references. It verifies the private archive and probes the reconstructed interpreter in a temporary venv before an atomic directory rename. A marker identifies the operation's completed output for journal resume and rollback. Only a directory created by that operation is eligible for automatic undo. The ordinary repair scope and legacy Python remain on their original path.
 
-The Windows fixture removes a retained build from the managed path inside a disposable root, proves the missing-cache blocker, and restores the exact older version under the existing build ID. It checks the active patched version and the registry bytes after recovery. Fault fixtures interrupt after the atomic rename, then exercise both resume and rollback with the archive unavailable. This covers exact reconstruction of registered interpreter directories. The following sections cover application venvs and managed relocation. Offline artifact packing and retention policy remain open.
+The Windows fixture removes a retained build from the managed path inside a disposable root, proves the missing-cache blocker, and restores the exact older version under the existing build ID. It checks the active patched version and the registry bytes after recovery. Fault fixtures interrupt after the atomic rename, then exercise both resume and rollback with the archive unavailable. This covers exact reconstruction of registered interpreter directories. The following sections cover application venvs and managed relocation. The complete offline pack is documented below. Retention policy remains open.
 
 ## Offline reconstruction of registered environments
 
@@ -69,9 +69,9 @@ interpreter archives and wheels separately, then run the scoped repairs for
 missing builds and environments. Older personal backup and restore paths
 retain their existing scope.
 
-This is a T71 metadata and recovery-chain slice. Artifact packing, disaster
-restore under a replacement installation identity, and coordinated
-application data backups remain open.
+This is a T71 metadata and recovery-chain slice. The optional artifact pack extends this slice. Disaster restore under a
+replacement installation identity and coordinated application data backups
+remain open.
 
 The [Windows regression and native job](https://github.com/greatgc-flow/Engram/actions/runs/46143926894/job/140975706616)
 passed against `8d373b6434ceda07da3755429080862936560244`.
@@ -109,3 +109,12 @@ missing builds through `engram repair --only python-versions --offline`, then
 rebuilds environments through the corresponding repair or relocate scope.
 Operator-owned project pins and the original installation identity must be
 preserved separately. A pack does not copy or start any application.
+
+The [Windows pack job](https://github.com/greatgc-flow/Engram/actions/runs/46151045848/job/140997543721)
+passed at `e3c3e304f207b666cfa42320bc5ef737866c0268`. It recreated the
+interpreter and the locked venv on a different volume after removing all
+target caches and taking the original source path offline. The native
+MarkupSafe wheel, regenerated pip launcher, prior venv and exact project pin
+passed verification. The job passed 2,641 tests and 154 subtests. Metadata
+and artifact names were validated before writes, and the input ZIP was
+preserved.
