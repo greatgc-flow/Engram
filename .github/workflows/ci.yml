@@ -31,6 +31,16 @@ jobs:
         pip install -r requirements-dev.txt
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+    - name: Observe Windows display adapters
+      shell: pwsh
+      run: |
+        $observation = python -B tools/feasibility/windows_accelerators.py
+        $code = $LASTEXITCODE
+        $inventory = $observation | ConvertFrom-Json -ErrorAction Stop
+        Write-Output $observation
+        if ($code -eq 1 -and $inventory.coverage -eq 'UNKNOWN') { exit 0 }
+        exit $code
+
     - name: Run consistency checks
       run: |
         python _sys/checks/check_encoding.py
@@ -66,6 +76,43 @@ jobs:
       run: |
         pytest -p no:cacheprovider "_sys/tests/unit/test_venv_repair.py::test_real_venv_refresh_and_regen" -v -rs --tb=short
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    - name: Verify legacy Multi-Python binding after bootstrap
+      run: python -B tools/feasibility/windows_legacy_binding.py
+
+    - name: Verify explicit Python execution across Windows shells
+      run: python -B tools/feasibility/windows_python_run.py
+
+    - name: Verify selective Python installation and project pins
+      shell: pwsh
+      timeout-minutes: 12
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $cache = Join-Path $env:RUNNER_TEMP 'engram-offline-archives'
+        New-Item -ItemType Directory $cache | Out-Null
+        $pins = Get-Content _sys/defaults/python-offline-artifacts.json -Raw | ConvertFrom-Json
+        foreach ($item in $pins.artifacts) {
+          $name = "cpython-$($item.version)+$($pins.release)-x86_64-pc-windows-msvc-install_only.tar.gz"
+          $encoded = $name.Replace('+', '%2B')
+          $url = "https://github.com/astral-sh/python-build-standalone/releases/download/$($pins.release)/$encoded"
+          Invoke-WebRequest $url -OutFile (Join-Path $cache $name)
+        }
+        python -B tools/feasibility/windows_python_install.py $cache
+        exit $LASTEXITCODE
+
+    - name: Verify atomic Python patch and retained project pin
+      shell: pwsh
+      timeout-minutes: 8
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $cache = Join-Path $env:RUNNER_TEMP 'engram-offline-archives'
+        $old = Get-Content tools/feasibility/windows-python-patch.lock.json -Raw | ConvertFrom-Json
+        $name = "cpython-$($old.version)+$($old.tag)-x86_64-pc-windows-msvc-install_only.tar.gz"
+        $encoded = $name.Replace('+', '%2B')
+        $url = "https://github.com/astral-sh/python-build-standalone/releases/download/$($old.tag)/$encoded"
+        Invoke-WebRequest $url -OutFile (Join-Path $cache $name)
+        python -B tools/feasibility/windows_python_patch.py $cache
+        exit $LASTEXITCODE
 
     - name: Upload contract results
       if: always()

@@ -28,6 +28,7 @@ from _common import VENDOR_CACHE_DIRS
 
 ALLOWLIST = {
     ".agents",
+    ".engram-python.json",
     ".gitattributes",
     ".github",
     ".gitignore",

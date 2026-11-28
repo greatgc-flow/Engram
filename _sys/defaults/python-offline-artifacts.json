@@ -1,0 +1,19 @@
+{
+  "release": "20261124",
+  "artifacts": [
+    {
+      "version": "3.14.10",
+      "asset_id": 788332448,
+      "sha256": "b062f2d8879a72b3d624697534aa8f736bf5eaf200ffbb1274602891a0e9e964",
+      "size": 51515993,
+      "support_through": "2030-09-30"
+    },
+    {
+      "version": "3.13.18",
+      "asset_id": 788329983,
+      "sha256": "9c22438c8f107dc88505394a87a61aab3504d33d1ce4e22eb177381e5e9b244f",
+      "size": 48600477,
+      "support_through": "2029-09-30"
+    }
+  ]
+}
