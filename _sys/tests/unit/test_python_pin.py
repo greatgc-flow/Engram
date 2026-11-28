@@ -152,3 +152,48 @@ def test_doctor_reports_retirement_protection_without_writes(workspace, capsys):
     assert row["retirement"] == "PROTECTED"
     assert data["coverage"]["external_projects"] == "UNKNOWN"
     assert {p: p.read_bytes() for root in (system, project) for p in root.rglob("*") if p.is_file()} == snapshot
+
+
+def test_doctor_opt_in_process_scan_uses_exact_registered_image(workspace, monkeypatch, capsys):
+    from types import SimpleNamespace
+    import psutil
+
+    system, project, executable = workspace
+    other = system.parent / "other" / "python.exe"
+    scanned = False
+
+    def denied():
+        raise psutil.AccessDenied(pid=22)
+
+    def processes(attributes):
+        nonlocal scanned
+        scanned = True
+        assert attributes == ["name"]
+        yield SimpleNamespace(info={"name": other.name}, exe=lambda: str(other), is_running=lambda: True)
+        yield SimpleNamespace(info={"name": executable.name}, exe=denied)
+        yield SimpleNamespace(info={"name": executable.name}, exe=lambda: str(executable), is_running=lambda: True)
+
+    monkeypatch.setattr(psutil, "process_iter", processes)
+    assert invoke(workspace, "doctor", "3.14", "--json")["coverage"]["live_processes"] == "UNKNOWN"
+    assert not scanned
+    capsys.readouterr()
+    result = invoke(workspace, "doctor", "3.14", "--scan-processes", "--json")
+    assert scanned and result["coverage"]["live_processes"] == "PARTIAL"
+    assert "LIVE_PROCESS" in result["builds"][0]["references"]
+    captured = capsys.readouterr().out
+    assert str(other) not in captured and str(executable) not in captured
+
+
+def test_doctor_scan_ignores_unrelated_image_and_exited_process(workspace, monkeypatch):
+    from types import SimpleNamespace
+    import psutil
+
+    system, _, executable = workspace
+    other = system.with_name(system.name + "-other") / executable.relative_to(system)
+    monkeypatch.setattr(psutil, "process_iter", lambda attrs: iter((
+        SimpleNamespace(info={"name": executable.name}, exe=lambda: str(other), is_running=lambda: True),
+        SimpleNamespace(info={"name": executable.name}, exe=lambda: str(executable), is_running=lambda: False),
+    )))
+    result = invoke(workspace, "doctor", "--scan-processes", "--json")
+    assert "LIVE_PROCESS" not in result["builds"][0]["references"]
+    assert result["coverage"]["live_processes"] == "PARTIAL"
