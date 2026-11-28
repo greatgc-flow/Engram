@@ -670,7 +670,7 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
     # Core update handoff would go here (Section 8.4)
     if core_update:
         print("\nStaging Engram core update...")
-        from core.layout import INSTALL_ROOT_ENTRIES
+        from core.layout import INSTALL_ROOT_ENTRIES, OPTIONAL_PACK_SLOT_ROOTS
 
         target_version = core_update["latest_version"]
         temp_update_dir = _SYS_DIR / "data" / "temp" / "core-update" / target_version
@@ -723,10 +723,12 @@ def run(ctx: dict[str, Any]) -> dict[str, Any]:
                     "_sys/data/backups",
                     "_sys/runtimes.json", "_sys/tool-catalog.v1.json",
                 ])
+            protected.extend(f"{prefix}/{slot}" for prefix in {_SYS_DIR.name, "_sys"}
+                             for slot in OPTIONAL_PACK_SLOT_ROOTS)
             for p in staged_dir.rglob("*"):
                 rel_p = p.relative_to(staged_dir).as_posix()
                 for prot in protected:
-                    if rel_p == prot or rel_p.startswith(prot + "/"):
+                    if rel_p.casefold() == prot.casefold() or rel_p.casefold().startswith(prot.casefold() + "/"):
                         raise ValueError(f"staged path '{rel_p}' falls under protected area '{prot}'")
                     
             # Check manifest hashes

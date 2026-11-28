@@ -21,3 +21,6 @@ INSTALL_ROOT_ENTRIES = {
     "workspace",
     ".engram",
 }
+
+# Case-folded system-relative slot roots reserved for optional packages.
+OPTIONAL_PACK_SLOT_ROOTS = frozenset({"ai", "contentflow", "packages"})

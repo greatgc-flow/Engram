@@ -244,6 +244,11 @@ def run(ctx: dict) -> dict[str, Any] | None:
     base_dir = ctx["base_dir"]
     sys_dir = ctx.get("sys_dir") or find_root(base_dir)
 
+    registry = sys_dir / "data/state/package-registry.json"
+    if os.path.lexists(registry):
+        print("[Error] Refusing to uninstall while optional package recovery state is present.")
+        sys.exit(1)
+
     # Parse arguments from ctx["args"]
     yes = ("--yes" in args) or ("-y" in args)
     purge_data = "--purge-data" in args
