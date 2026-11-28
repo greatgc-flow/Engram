@@ -1,6 +1,9 @@
 """A local portal snapshot reuses the planner and displays bounded exception evidence."""
+from base64 import b64encode
+from hashlib import sha256
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -45,9 +48,17 @@ def test_invalid_findings_are_rejected(portal, changes):
 
 def test_duplicate_source_findings_and_conflicting_source_digests_fail(portal):
     for rows in ([finding(), finding(detail="changed")],
-                 [finding(), finding(locator="Slide 4", source_sha256="b" * 64)]):
+                 [finding(), finding(locator="Slide 4", source_sha256="b" * 64)],
+                 [finding(), finding(source="INBOX/회의.pptx", locator="Slide 4")]):
         with pytest.raises(ValueError):
             portal.snapshot(inventory(), {"schema_version": 1, "findings": rows})
+
+
+def test_absent_report_is_distinct_from_an_empty_report(portal):
+    absent = portal.render(portal.snapshot(inventory()))
+    empty = portal.render(portal.snapshot(inventory(), {"schema_version": 1, "findings": []}))
+    assert "No exception report supplied" in absent and "No exceptions in this report." not in absent
+    assert "Imported local findings" in empty and "No exceptions in this report." in empty
 
 
 def test_render_keeps_markup_as_text_and_contains_no_external_dependencies(portal):
@@ -58,6 +69,10 @@ def test_render_keeps_markup_as_text_and_contains_no_external_dependencies(porta
     assert "connect-src 'none'" in html
     assert "src=\"http" not in html
     assert 'id="findings"' in html and 'id="capabilities"' in html
+    for tag, directive in (("style", "style-src"), ("script", "script-src")):
+        contents, = re.findall(fr"<{tag}>(.*?)</{tag}>", html, re.DOTALL)
+        digest = b64encode(sha256(contents.encode()).digest()).decode()
+        assert f"{directive} 'sha256-{digest}'" in html
 
 
 def test_cli_works_outside_checkout_and_preserves_existing_file(tmp_path):

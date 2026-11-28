@@ -111,7 +111,7 @@ def _capability(row):
     if selected:
         device = selected["accelerator"] or "CPU"
         detail += f'<p><strong>Selected:</strong> {escape(selected["provider"])} · {escape(device)}</p>'
-        detail += ''.join(f'<p><strong>{label}:</strong> {selected[field]:,} {unit}</p>'
+        detail += ''.join(f'<p><strong>{"Duration" if field == "seconds" else label}:</strong> {selected[field]:,} {unit}</p>'
                           for field, (label, unit) in DIMENSIONS.items() if field != "accelerator")
         evidence = [("Artifact", selected["artifact_sha256"]), ("Canary", selected["canary_sha256"]),
                     ("Model", selected["model_sha256"])]
