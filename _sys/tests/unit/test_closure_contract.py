@@ -160,11 +160,12 @@ def _comparison_flags(fn):
 
 @pytest.mark.parametrize("verb", cli_help.verbs())
 def test_public_parser_options_equal_help_options(verb, tmp_path, monkeypatch):
-    from core import backups, doctor, isolation_check, tidy_temp, uninstaller, updater
+    from core import backups, doctor, isolation_check, python_cli, tidy_temp, uninstaller, updater
     from checks import backup_personal_data
 
     ctx = {"base_dir": tmp_path, "sys_dir": tmp_path / "_sys", "command": verb, "args": []}
     entries = {
+        "python": lambda: python_cli.run(ctx),
         "repair": lambda: repair.repair_main(ctx),
         "relocate": lambda: repair.relocate_main(ctx),
         "update": lambda: updater._parse_args([]),

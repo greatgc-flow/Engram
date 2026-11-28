@@ -134,8 +134,11 @@ def _parse_journal(records: list[dict]) -> Optional[dict]:
     steps = {}
     paths = {}
     planned_posts = []
+    data = {}
 
     for r in records:
+        if isinstance(r.get("data"), dict):
+            data.update(r["data"])
         evt = r.get("event")
         if evt == "PHASE":
             phase = r.get("name")
@@ -159,7 +162,7 @@ def _parse_journal(records: list[dict]) -> Optional[dict]:
 
     pending_post = [p for p in planned_posts if steps.get(p) != "done"]
 
-    return {"op_id": op_id, "kind": kind, "phase": phase, "steps": steps, "paths": paths, "pending_post": pending_post, "planned_posts": planned_posts, "data": {}}
+    return {"op_id": op_id, "kind": kind, "phase": phase, "steps": steps, "paths": paths, "pending_post": pending_post, "planned_posts": planned_posts, "data": data}
 
 def active_journal(sys_dir: Path | str) -> Optional[dict]:
     records = read_journal(sys_dir)
@@ -171,11 +174,6 @@ def active_journal(sys_dir: Path | str) -> Optional[dict]:
 
     if j["phase"] == "COMMITTED" and not blocking_posts:
         return None
-
-    # Also parse data fields
-    for r in records:
-        if "data" in r and isinstance(r["data"], dict):
-            j["data"].update(r["data"])
 
     return j
 
@@ -289,7 +287,8 @@ def _post_failure(ctx: OpContext, post_failed: list[str], posts: list[Step]) -> 
 def execute(
     sys_dir: Path | str, kind: str, steps: list[Step], *, paths: Optional[dict[str, Path]] = None,
     op_id: Optional[str] = None, now: Callable[[], str] = utc_now, crash_after: Optional[str] = None,
-    lock_probe=None, initial_data: Optional[dict] = None
+    lock_probe=None, initial_data: Optional[dict] = None,
+    prepare: Optional[Callable[[], dict]] = None
 ) -> dict:
     sys_dir = Path(sys_dir)
     jpath = journal_path(sys_dir)
@@ -309,18 +308,23 @@ def execute(
         if active is not None:
             raise JournalError(f"active journal exists for {active['op_id']}")
 
+        # A CAS operation must compare state while holding the lifecycle lock.
+        # Journal its recovery images before the first effect.
+        data = initial_data or {}
+        if prepare is not None:
+            data = {**data, **prepare()}
         if jpath.exists():
             _rotate_journal(jpath, _peek_op_id(sys_dir))
         _truncate_torn_tail(jpath)
 
-        ctx = OpContext(sys_dir, op_id, kind, paths, initial_data or {})
+        ctx = OpContext(sys_dir, op_id, kind, paths, data)
         seq = [0]
         append_record = _append_record_fn(jpath, seq, now)
 
         append_record("PHASE", name="PLANNED", op_id=op_id, kind=kind)
         append_record("PATHS", paths={k: str(v) for k, v in paths.items()})
-        if initial_data:
-            append_record("DATA", data=initial_data)
+        if data:
+            append_record("DATA", data=data)
 
         group_a = [s for s in steps if s.group == "A"]
         group_b = [s for s in steps if s.group == "B"]
