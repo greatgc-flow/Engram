@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'; script-src $script_hash; style-src $css_hash">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Engram Local Media</title>
+  <style>$css</style>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="masthead"><div class="wrap masthead-inner">
+    <a class="brand" href="#main"><span class="brand-icon" aria-hidden="true">E</span> Engram</a>
+    <nav aria-label="Portal sections"><a href="#capabilities">Capabilities</a><a href="#findings">Exception queue</a></nav>
+    <span class="offline"><span aria-hidden="true"></span> Offline snapshot</span>
+  </div></header>
+  <main id="main" class="wrap">
+    <section class="overview" aria-labelledby="title">
+      <div><h1 id="title">Local media</h1><p>Check what fits your resource budget and review files that need attention.</p></div>
+      <dl class="totals"><div><dt>Execution candidates</dt><dd>$candidate_count <span>/ $capability_count</span></dd></div>
+        <div><dt>File exceptions</dt><dd>$finding_count</dd></div></dl>
+    </section>
+    <section class="resources" aria-labelledby="budget-title">
+      <div class="resource-title"><h2 id="budget-title">Resource budget</h2><p>Per job · $device_summary</p></div>
+      <dl>$resources</dl>
+    </section>
+    <div class="workspace">
+      <section class="panel" id="capabilities" data-filter-section aria-labelledby="capabilities-title">
+        <div class="panel-head"><h2 id="capabilities-title">Capabilities</h2><p>Readiness from reviewed canary evidence</p></div>
+        <div class="filters" hidden>
+          <label>Search<input type="search" placeholder="Capability or tool" data-query></label>
+          <label>Media<select data-field="family"><option value="">All media</option>$family_options</select></label>
+          <label>Status<select data-field="status"><option value="">All statuses</option><option value="ready">Candidate</option><option value="attention">Needs attention</option><option value="optional">Opt-in</option><option value="manual">Manual review</option></select></label>
+        </div>
+        <p class="match" aria-live="polite" data-count hidden></p>
+        <div class="rows">$capability_rows</div><p class="empty" data-empty hidden>No capabilities match these filters.</p>
+      </section>
+      <section class="panel" id="findings" data-filter-section aria-labelledby="findings-title">
+        <div class="panel-head"><h2 id="findings-title">Exception queue</h2><p>$finding_summary</p></div>
+        <div class="filters finding-filters" hidden>
+          <label>Search<input type="search" placeholder="File, location or issue" data-query></label>
+          <label>Reason<select data-field="reason"><option value="">All reasons</option>$reason_options</select></label>
+        </div>
+        <p class="match" aria-live="polite" data-count hidden></p>
+        <div class="rows">$finding_rows</div><p class="empty" data-empty $findings_hidden>$finding_empty</p>
+      </section>
+    </div>
+  </main>
+  <script>$script</script>
+</body>
+</html>

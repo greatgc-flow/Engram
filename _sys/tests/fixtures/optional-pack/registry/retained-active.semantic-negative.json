@@ -1,0 +1,32 @@
+{
+  "fixture_only": true,
+  "schema_version": "1.0",
+  "installation_id": "fixture-install",
+  "revision": 3,
+  "entries": [
+    {
+      "package_id": "ai",
+      "state": "DATA_RETAINED",
+      "slot_rel": "AI",
+      "profile": "runtime",
+      "active_generation": "gen-2",
+      "previous_generation": null,
+      "release_manifest_sha256": null,
+      "runtime_binding_ids": [],
+      "ownership_receipt_sha256": "b708cf42b6ebcacfaeef10f257197a1f2ed78a683011d9e15ce4430c033f05a6"
+    },
+    {
+      "package_id": "contentflow",
+      "state": "INSTALLED",
+      "slot_rel": "ContentFlow",
+      "profile": "lite",
+      "active_generation": "gen-1",
+      "previous_generation": null,
+      "release_manifest_sha256": "b708cf42b6ebcacfaeef10f257197a1f2ed78a683011d9e15ce4430c033f05a6",
+      "runtime_binding_ids": [
+        "pack-contentflow-main"
+      ],
+      "ownership_receipt_sha256": "b708cf42b6ebcacfaeef10f257197a1f2ed78a683011d9e15ce4430c033f05a6"
+    }
+  ]
+}

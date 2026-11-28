@@ -748,3 +748,19 @@ def test_uninstaller_discovers_dotdirs_for_purge(tmp_path):
     assert peerhub_dir in plan_purge.targets
 
 
+
+
+def test_whole_uninstall_refuses_unexported_package_state(uninstall_fixture, capsys):
+    from core import uninstaller
+
+    ctx, _, _ = uninstall_fixture
+    ctx["args"] = ["--apply", "--yes"]
+    registry = ctx["sys_dir"] / "data/state/package-registry.json"
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    registry.write_bytes(b"package recovery evidence, even if format is unknown")
+    with pytest.raises(SystemExit) as exc:
+        uninstaller.run(ctx)
+    assert exc.value.code == 1
+    assert "package" in capsys.readouterr().out.lower()
+    assert registry.read_bytes() == b"package recovery evidence, even if format is unknown"
+    assert (ctx["base_dir"] / "Engram.exe").is_file()

@@ -227,3 +227,21 @@ def test_package_missing_changelog_fails_before_archive(monkeypatch, capsys):
     monkeypatch.setattr(_BUILD_PACKAGE, "create_portable_archive", unexpected)
     assert _BUILD_PACKAGE.main(["--version", "999.0.0"]) == 1
     assert "CHANGELOG section [999.0.0] is missing" in capsys.readouterr().err
+
+
+def test_core_archive_omits_optional_package_slots_and_payloads(tmp_path: Path):
+    from zipfile import ZipFile
+    sys_dir = tmp_path / "_sys"
+    (sys_dir / "core").mkdir(parents=True)
+    (sys_dir / "core" / "fixture.py").write_bytes(b"core sentinel")
+    # Case and flavor vary because the same names share a Windows identity.
+    for slot in ("aI", "ContentFlow", "pAcKaGeS/third"):
+        for suffix in ("config/key.bin", "models/model.bin", "workspaces/content.db",
+                       "app/generations/build/output.mp4", "foreign/secret.txt"):
+            member = sys_dir / slot / suffix
+            member.parent.mkdir(parents=True, exist_ok=True)
+            member.write_bytes(b"private sentinel")
+    archive, _, _, _ = create_portable_archive(tmp_path, tmp_path / "dist", "0.0.0")
+    with ZipFile(archive) as zipped:
+        assert set(zipped.namelist()) == {"_sys/core/fixture.py", "_sys/core/release-manifest.json"}
+        assert all(b"private sentinel" not in zipped.read(member) for member in zipped.namelist())

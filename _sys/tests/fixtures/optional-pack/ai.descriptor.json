@@ -1,0 +1,62 @@
+{
+  "fixture_only": true,
+  "schema_version": "1.0",
+  "package_id": "ai",
+  "slot_rel": "AI",
+  "display_name": "ai",
+  "host": "windows-x64",
+  "protocol_min": "1.0",
+  "protocol_max": "1.0",
+  "aliases": [
+    "ai"
+  ],
+  "profiles": [
+    {
+      "id": "runtime",
+      "requires_capabilities": [
+        "python-extra",
+        "local-llm"
+      ],
+      "optional_capabilities": [],
+      "requires_packages": []
+    },
+    {
+      "id": "agent",
+      "requires_capabilities": [
+        "python-extra",
+        "local-llm"
+      ],
+      "optional_capabilities": [],
+      "requires_packages": []
+    },
+    {
+      "id": "memory",
+      "requires_capabilities": [
+        "python-extra",
+        "local-llm",
+        "postgres"
+      ],
+      "optional_capabilities": [],
+      "requires_packages": []
+    },
+    {
+      "id": "full",
+      "requires_capabilities": [
+        "python-extra",
+        "local-llm",
+        "postgres"
+      ],
+      "optional_capabilities": [],
+      "requires_packages": []
+    }
+  ],
+  "default_profile": "full",
+  "adapter_operations": [
+    "checkpoint",
+    "restore",
+    "health"
+  ],
+  "trust_key_ids": [
+    "synthetic-key"
+  ]
+}

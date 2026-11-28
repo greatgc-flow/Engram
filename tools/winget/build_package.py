@@ -152,6 +152,8 @@ def collect_package_files(repo_root: Path) -> list[tuple[Path, str]]:
     Collects relative file mappings (source_path, arcname) adhering to
     the zero-bloat portable runtime contract.
     """
+    from _sys.core.layout import OPTIONAL_PACK_SLOT_ROOTS
+
     items: list[tuple[Path, str]] = []
 
     # 1. Root files
@@ -173,6 +175,10 @@ def collect_package_files(repo_root: Path) -> list[tuple[Path, str]]:
             if any(p in parts for p in SYS_EXCLUDE_DIR_PATTERNS):
                 dirs.clear()
                 continue
+
+            if Path(root) == sys_dir:
+                dirs[:] = [name for name in dirs if name.casefold() not in OPTIONAL_PACK_SLOT_ROOTS]
+                files = [name for name in files if name.casefold() not in OPTIONAL_PACK_SLOT_ROOTS]
 
             # In-place directory pruning to avoid traversing excluded subtrees
             dirs[:] = [

@@ -318,7 +318,8 @@ def test_updater_core_staging_hash_mismatch(monkeypatch, capsys, tmp_path):
     assert exc.value.code == 1
     out = capsys.readouterr().out
     assert 'Checksum mismatch' in out
-def test_updater_core_staged_path_escape(monkeypatch, capsys, tmp_path):
+@pytest.mark.parametrize("protected", ["_sys/env", "_sys/aI", "_sys/ContentFlow", "_sys/Packages"])
+def test_updater_core_staged_path_escape(monkeypatch, capsys, tmp_path, protected):
     import core.updater as updater
     import core.version_resolver as version_resolver
     import zipfile
@@ -333,7 +334,7 @@ def test_updater_core_staged_path_escape(monkeypatch, capsys, tmp_path):
     with zipfile.ZipFile(prebuilt_zip, 'w') as zf:
         zf.writestr('_sys/core/version.json', '{"version": "9.9.9"}')
         zf.writestr('README.md', 'dummy')
-        zf.writestr('_sys/env/evil.txt', 'malicious')
+        zf.writestr(protected + '/candidate.txt', 'unexpected protected bytes')
         
     import hashlib
     h = hashlib.sha256()
@@ -367,7 +368,7 @@ def test_updater_core_staged_path_escape(monkeypatch, capsys, tmp_path):
 
     assert exc.value.code == 1
     out = capsys.readouterr().out
-    assert "falls under protected area '_sys/env'" in out
+    assert "falls under protected area" in out
 
 
 def test_updater_core_update_rejects_zip_slip_traversal(monkeypatch, capsys, tmp_path):

@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "budget": {"ram_mib": 4096, "scratch_mib": 8192, "cpu_threads": 4, "seconds": 180},
+  "accelerators": [],
+  "receipts": []
+}

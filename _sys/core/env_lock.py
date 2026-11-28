@@ -144,10 +144,19 @@ class LockHandle:
         if self._released:
             return
         self._released = True
-        owner = _read_owner(self.path)
-        if owner and owner.get("op_id") == self.op_id and owner.get("pid") == self.pid:
-            with contextlib.suppress(OSError):
+        for attempt in range(4):
+            owner = _read_owner(self.path)
+            if not owner or owner.get("op_id") != self.op_id or owner.get("pid") != self.pid:
+                return
+            try:
                 self.path.unlink()
+                return
+            except PermissionError:
+                # A concurrent Windows reader can briefly deny deletion.
+                if attempt < 3:
+                    time.sleep(0.01)
+            except OSError:
+                return
 
     def __enter__(self) -> "LockHandle":
         return self
