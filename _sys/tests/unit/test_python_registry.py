@@ -382,3 +382,52 @@ def test_real_registry_joins_package_journal(installed, mode, monkeypatch):
     else:
         assert activate(root, descriptor) is None
         assert reg.inventory(root)["revision"] == 0
+
+
+@pytest.mark.parametrize("mode", ["resume", "rollback"])
+def test_package_retirement_removes_only_its_binding_in_the_same_journal(installed, mode, monkeypatch):
+    from hashlib import sha256
+    from io import BytesIO
+    from zipfile import ZipFile
+
+    from core import python_registry as reg
+
+    tools = Path(__file__).resolve().parents[3] / "tools/feasibility"
+    monkeypatch.syspath_prepend(str(tools))
+    from optional_pack_group import activate, initialize_fixture, publish, recover, retire
+    from pack_catalog import load_fixtures
+
+    root = installed.parent / "retire"
+    root.mkdir()
+    initialize_fixture(root)
+    env_manifest.write_manifest(root, {"schema_version": 1, "install_id": "fixture-install",
+                                       "root": {"physical": str(root), "logical": str(root)}})
+    fixture = Path(__file__).resolve().parents[1] / "fixtures/optional-pack/gamma.descriptor.json"
+    descriptor, = load_fixtures([fixture])
+    proposal = candidate()
+    owning = proposal["bindings"]["demo"] | {"env_id": "env-gamma"}
+    proposal["bindings"]["gamma"] = owning
+    proposal["environments"]["env-gamma"] = proposal["environments"]["env-a"] | {
+        "owner": "gamma", "root_rel": "env/python-envs/gamma/env-gamma"}
+    buf = BytesIO()
+    with ZipFile(buf, "w") as archive:
+        archive.writestr("app.txt", b"fixture")
+    data = buf.getvalue()
+    publish(root, descriptor, 0, "build-a", data, sha256(data).hexdigest(), registry_proposal=(0, proposal))
+    prior = reg.registry_path(root).read_bytes()
+    with pytest.raises(env_ops.SimulatedCrash):
+        retire(root, descriptor, 1, b"fixture", crash_after=reg.STEP)
+    assert reg.inventory(root)["registry"]["bindings"] == {
+        k: v for k, v in proposal["bindings"].items() if k != "gamma"}
+    with pytest.raises(ValueError, match="recovery"):
+        activate(root, descriptor)
+    recover(root, descriptor, mode)
+    if mode == "rollback":
+        assert reg.registry_path(root).read_bytes() == prior
+        assert activate(root, descriptor) == (1, "build-a", b"fixture")
+    else:
+        observed = reg.inventory(root)["registry"]
+        assert observed["revision"] == 2 and "gamma" not in observed["bindings"]
+        assert observed["environments"] == proposal["environments"]
+        assert observed["builds"] == proposal["builds"]
+        assert activate(root, descriptor) is None
