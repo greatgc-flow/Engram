@@ -119,6 +119,13 @@ def build_plan(
     sys_dir = Path(sys_dir)
     base_dir = Path(base_dir)
     
+    if only == {"python-envs"}:
+        from core import python_env_restore
+        spec = python_env_restore.plan(sys_dir)
+        summary = [f"Rebuild locked environment {item['params']['env_id']}" for item in spec]
+        return {"steps": steps_from_spec(sys_dir, base_dir, spec, **seams), "spec": spec,
+                "summary": summary, "kind": "repair"}
+
     if only == {"python-versions"}:
         from core import python_restore
         spec = python_restore.plan(sys_dir)
@@ -252,6 +259,10 @@ def steps_from_spec(sys_dir: Path | str, base_dir: Path | str, spec: list[dict],
             )
             out.extend(v_steps)
             
+        elif kind == "python-envs":
+            from core import python_env_restore
+            out.append(python_env_restore.step(sys_dir, **params))
+
         elif kind == "python-versions":
             from core import python_restore
             out.append(python_restore.step(sys_dir, **params))
@@ -666,9 +677,10 @@ def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callabl
             p.error(f"--dry-run cannot be combined with {recovery_flag}")
         valid_only = {"python", "venv", "registry", "state", "ai-state", "manifest", "packages"}
         if help_verb == "repair":
-            valid_only.add("python-versions")
-        if args.only and "python-versions" in args.only.split(",") and args.only != "python-versions":
-            p.error("python-versions must be repaired as a separate scope")
+            valid_only.update({"python-versions", "python-envs"})
+        selected = set(args.only.split(",")) if args.only else set()
+        if selected & {"python-versions", "python-envs"} and len(selected) != 1:
+            p.error("python-versions and python-envs must be repaired as separate scopes")
         if args.only is not None and (not args.only or set(args.only.split(",")) - valid_only):
             p.error("--only requires comma-separated names: " + ",".join(sorted(valid_only)))
     except SystemExit as e:
@@ -683,7 +695,10 @@ def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callabl
     seams = ctx.get("seams", {})
     input_fn = seams.get("input_fn", input)
     
-    detection = detect(sys_dir, base_dir, now=seams.get("now"))
+    if only_set == {"python-envs"}:
+        detection = {"journal": env_ops.journal_blocks(sys_dir)}
+    else:
+        detection = detect(sys_dir, base_dir, now=seams.get("now"))
     
     if hasattr(args, "from_path") and args.from_path and not detection.get("drift", {}).get("previous_root"):
         status = "moved" if not Path(args.from_path).exists() else "copied"

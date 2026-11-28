@@ -41,6 +41,8 @@ Options:
                    packages (comma-separated; default: legacy checks).
                    Use python-versions alone to rebuild missing extra builds
                    from exact archives in Engram's local Python cache.
+                   Use python-envs alone to rebuild missing managed venvs
+                   from their exact lock and wheel cache.
   --offline        Never download anything (default: off)
   --remap-ai-state Also rewrite folder paths inside AI CLI state after a move
                    (default: off)
