@@ -130,7 +130,7 @@ def test_valid_signature_does_not_admit_unsafe_archive_names(name, signing):
 
 def test_signed_activation_relocates_and_blocks_wrong_active_release(tmp_path, signing):
     from optional_pack_group import initialize_fixture
-    from optional_pack_release import admit, install_signed, launch_signed, stage
+    from optional_pack_release import admit, install_signed, launch_signed
 
     policy, descriptor = policy_and_descriptor(signing)
     root = tmp_path / "old root"
@@ -141,15 +141,15 @@ def test_signed_activation_relocates_and_blocks_wrong_active_release(tmp_path, s
     release = admit(descriptor, policy, data, signing[2](data), artifact, sha256(data).hexdigest(), NOW)
     exe = Path(sys.executable).resolve()
     exe_pin = sha256(exe.read_bytes()).hexdigest()
-    assert install_signed(root, descriptor, 0, "runtime-a", release)["phase"] == "COMMITTED"
-    assert launch_signed(root, descriptor, release, exe, exe_pin).strip() == b"signed generation"
+    assert install_signed(root, descriptor, 0, "runtime-a", release, policy=policy, now=NOW)["phase"] == "COMMITTED"
+    assert launch_signed(root, descriptor, release, exe, exe_pin, policy=policy, now=NOW).strip() == b"signed generation"
     moved = tmp_path / "moved 경로"
     root.rename(moved)
-    assert launch_signed(moved, descriptor, release, exe, exe_pin).strip() == b"signed generation"
+    assert launch_signed(moved, descriptor, release, exe, exe_pin, policy=policy, now=NOW).strip() == b"signed generation"
     new_doc, new_artifact = build_release({"bin/app.py": b"print('foreign generation')"})
     new_data = wire(new_doc)
     foreign = admit(descriptor, policy, new_data, signing[2](new_data), new_artifact,
                     sha256(new_data).hexdigest(), NOW)
     with pytest.raises(ValueError):
-        launch_signed(moved, descriptor, foreign, exe, exe_pin)
-    assert launch_signed(moved, descriptor, release, exe, exe_pin).strip() == b"signed generation"
+        launch_signed(moved, descriptor, foreign, exe, exe_pin, policy=policy, now=NOW)
+    assert launch_signed(moved, descriptor, release, exe, exe_pin, policy=policy, now=NOW).strip() == b"signed generation"

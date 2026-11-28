@@ -1,4 +1,5 @@
 """Signed TEST_ONLY release admission, materialization and isolated execution."""
+from contextlib import ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from hashlib import file_digest, sha256
@@ -11,7 +12,9 @@ import shutil
 import stat
 import subprocess
 from tempfile import TemporaryDirectory, TemporaryFile
-from zipfile import BadZipFile, ZipFile
+from zipfile import BadZipFile, ZipFile, ZIP_STORED
+
+from optional_pack_group import _activation, _fixture_root, _path as _group_path, publish
 
 from optional_pack_catalog import _KEY, decode_document
 
@@ -44,6 +47,9 @@ class TrustPolicy:
 class AdmittedRelease:
     manifest_sha256: str
     entry: str
+    adapter_entry: str | None
+    package: str
+    policy: TrustPolicy
     members: tuple[tuple[str, bytes], ...]
 
 
@@ -69,10 +75,14 @@ def _pin_executable(path, expected):
         _need(file_digest(stream, "sha256").hexdigest() == expected, "executable pin mismatch")
 
 
-def _verify(policy, manifest, signature, now):
+def _fresh(policy, now):
     _need(isinstance(now, datetime) and now.utcoffset() == timedelta(0)
           and isinstance(policy.valid_until, datetime) and policy.valid_until.utcoffset() == timedelta(0)
           and policy.revoked is False and now < policy.valid_until, "publisher trust is expired or revoked")
+
+
+def _verify(policy, manifest, signature, now):
+    _fresh(policy, now)
     _need(type(signature) is bytes and len(signature) == 64, "invalid Ed25519 signature size")
     _need(type(policy.public_pem) is bytes and 0 < len(policy.public_pem) <= 4096, "invalid publisher key")
     _pin_executable(policy.openssl, policy.openssl_sha256)
@@ -181,7 +191,8 @@ def admit(descriptor, policy, manifest, signature, archive, manifest_sha256, now
                 members.append((entry.filename, data))
     except (BadZipFile, RuntimeError, NotImplementedError) as exc:
         raise ValueError("invalid release archive") from exc
-    return AdmittedRelease(digest, doc["app_entry_rel"], tuple(sorted(members)))
+    return AdmittedRelease(digest, doc["app_entry_rel"], doc["adapter_entry_rel"],
+                           descriptor.package_id, policy, tuple(sorted(members)))
 
 
 def stage(release, root):
@@ -209,20 +220,75 @@ def _staged_members(root):
             yield path
 
 
-def run_staged(release, root, executable, executable_sha256):
-    """Run the pinned signed entry from an ordinary verified fixture generation."""
-    _pin_executable(executable, executable_sha256)
+def _verified_paths(release, root):
     expected = dict(release.members)
     observed = {p.relative_to(root).as_posix(): p for p in _staged_members(root)}
     _need(observed.keys() == expected.keys(), "staged generation inventory mismatch")
     for name, data in expected.items():
         with observed[name].open("rb") as stream:
             _need(stream.read(len(data) + 1) == data, "staged release bytes changed")
-    with TemporaryFile() as stdout:
-        proc = subprocess.run([executable, "-I", "-B", "-S", observed[release.entry]], cwd=root,
-                              env=_environment(), stdin=subprocess.DEVNULL, stdout=stdout,
-                              stderr=subprocess.DEVNULL, timeout=30)
+    return observed
+
+
+def _run(release, root, executable, executable_sha256, guard, entry, args, wire):
+    _pin_executable(executable, executable_sha256)
+    with TemporaryFile() as stdout, ExitStack() as child_scope:
+        with guard:
+            paths = _verified_paths(release, root)
+            child = child_scope.enter_context(subprocess.Popen(
+                [executable, "-I", "-B", "-S", paths[entry], *args], cwd=root,
+                env=_environment(), stdin=subprocess.DEVNULL if wire is None else subprocess.PIPE,
+                stdout=stdout, stderr=subprocess.DEVNULL))
+        try:
+            child.communicate(wire, timeout=30)
+        except BaseException:
+            child.kill()
+            child.communicate()
+            raise
         stdout.seek(0)
         output = stdout.read(_MAX_OUTPUT + 1)
-    _need(proc.returncode == 0 and len(output) <= _MAX_OUTPUT, "signed fixture entry did not complete")
+    _need(child.returncode == 0 and len(output) <= _MAX_OUTPUT, "signed fixture entry did not complete")
     return output
+
+
+def run_staged(release, root, executable, executable_sha256):
+    """Run the pinned signed entry from an ordinary verified fixture generation."""
+    return _run(release, root, executable, executable_sha256, nullcontext(), release.entry, (), None)
+
+
+def _admitted(root, descriptor, release, policy, now):
+    _fixture_root(root)
+    _need(release.package == descriptor.package_id and release.policy == policy, "changed release trust")
+    _fresh(policy, now)
+    return _group_path(root, descriptor.package_id, "signed/" + release.manifest_sha256)
+
+
+def install_signed(root, descriptor, expected_revision, runtime_id, release, *, policy, now,
+                   registry_proposal=None, crash_after=None):
+    """Stage only an admitted release and publish its manifest digest through the existing journal."""
+    generation = _admitted(root, descriptor, release, policy, now)
+    generation.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        stage(release, generation)
+    except FileExistsError:
+        _verified_paths(release, generation)
+    marker = BytesIO()
+    with ZipFile(marker, "w", compression=ZIP_STORED) as archive:
+        archive.writestr("app.txt", release.manifest_sha256.encode("ascii"))
+    raw = marker.getvalue()
+    return publish(root, descriptor, expected_revision, runtime_id, raw, sha256(raw).hexdigest(),
+                   registry_proposal=registry_proposal, crash_after=crash_after)
+
+
+@contextmanager
+def _signed_activation(root, descriptor, release):
+    with _activation(root, descriptor) as active:
+        _need(active is not None and active[2] == release.manifest_sha256.encode("ascii"),
+              "release is outside the active signed generation")
+        yield
+
+
+def launch_signed(root, descriptor, release, executable, executable_sha256, *, policy, now):
+    generation = _admitted(root, descriptor, release, policy, now)
+    return _run(release, generation, executable, executable_sha256,
+                _signed_activation(root, descriptor, release), release.entry, (), None)
