@@ -17,7 +17,7 @@ from time import monotonic
 from zipfile import BadZipFile, ZipFile, ZIP_STORED
 
 from core.python_registry import _plain as _system_path
-from optional_pack_group import _activation, _fixture_root, publish
+from optional_pack_group import _activation, _execution_lease, _fixture_root, publish, retire
 
 from optional_pack_catalog import _KEY, decode_document
 
@@ -287,34 +287,48 @@ def _admitted(root, descriptor, release, policy, now):
 
 
 def install_signed(root, descriptor, expected_revision, runtime_id, release, *, policy, now,
-                   registry_proposal=None, crash_after=None):
+                   registry_proposal=None, crash_after=None, reuse_retained=False):
     """Stage only an admitted release and publish its manifest digest through the existing journal."""
-    generation = _admitted(root, descriptor, release, policy, now)
-    generation.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        stage(release, generation)
-    except FileExistsError:
-        _verified_paths(release, generation)
+    def materialize():
+        generation = _admitted(root, descriptor, release, policy, now)
+        generation.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            stage(release, generation)
+        except FileExistsError:
+            _verified_paths(release, generation)
+
     marker = BytesIO()
     with ZipFile(marker, "w", compression=ZIP_STORED) as archive:
         archive.writestr("app.txt", release.manifest_sha256.encode("ascii"))
     raw = marker.getvalue()
     return publish(root, descriptor, expected_revision, runtime_id, raw, sha256(raw).hexdigest(),
-                   registry_proposal=registry_proposal, crash_after=crash_after)
+                   registry_proposal=registry_proposal, crash_after=crash_after,
+                   reuse_retained=reuse_retained, verify_artifact=materialize)
+
+
+def remove_signed(root, descriptor, expected_revision, release, *, policy, now, crash_after=None):
+    """Retire a verified active fixture generation with user data and rollback assets retained."""
+    def verify():
+        _verified_paths(release, _admitted(root, descriptor, release, policy, now))
+
+    return retire(root, descriptor, expected_revision, release.manifest_sha256.encode("ascii"),
+                  verify_artifact=verify, crash_after=crash_after)
 
 
 @contextmanager
-def _signed_activation(root, descriptor, release):
+def _signed_activation(root, descriptor, release, execution):
     with _activation(root, descriptor) as active:
         _need(active is not None and active[2] == release.manifest_sha256.encode("ascii"),
               "release is outside the active signed generation")
+        execution.enter_context(_execution_lease(root, descriptor.package_id, active[0]))
         yield
 
 
 def launch_signed(root, descriptor, release, executable, executable_sha256, *, policy, now):
     generation = _admitted(root, descriptor, release, policy, now)
-    return _run(release, generation, executable, executable_sha256,
-                _signed_activation(root, descriptor, release), release.entry, (), None)
+    with ExitStack() as execution:
+        return _run(release, generation, executable, executable_sha256,
+                    _signed_activation(root, descriptor, release, execution), release.entry, (), None)
 
 
 _ECHO = ("fixture_only", "schema_version", "protocol_version", "request_id", "parent_op_id",
@@ -379,10 +393,11 @@ def launch_adapter(root, descriptor, release, executable, executable_sha256, req
     _need(len(wire) <= _MAX_OUTPUT, "oversized adapter request")
     effectful = request["operation"] in ("checkpoint", "restore", "migrate", "relocate")
     try:
-        raw = _run(release, generation, executable, executable_sha256,
-                   _signed_activation(root, descriptor, release), release.adapter_entry, args, wire,
-                   timeout=min(30, (deadline - now).total_seconds()))
-        return _reply(raw, request, effectful=effectful)
+        with ExitStack() as execution:
+            raw = _run(release, generation, executable, executable_sha256,
+                       _signed_activation(root, descriptor, release, execution), release.adapter_entry, args, wire,
+                       timeout=min(30, (deadline - now).total_seconds()))
+            return _reply(raw, request, effectful=effectful)
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
         if effectful:
             raise AdapterOutcomeUnknown("fixture effect needs reconciliation") from exc

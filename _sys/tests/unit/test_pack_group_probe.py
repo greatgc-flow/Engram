@@ -208,10 +208,12 @@ publish(Path(sys.argv[3]), descriptor, 1, 'runtime-b', bytes.fromhex(sys.argv[4]
 
         for revision, reuse in ((0, False), (1, True), (2, False)):
             with self.assertRaises(ValueError):
-                publish(self.root, descriptor, revision, "runtime-a", *archive(b"new"),
+                publish(self.root, descriptor, revision, "runtime-a", *archive(b"first"),
                         reuse_retained=reuse)
-        reinstall = publish(self.root, descriptor, 2, "runtime-a", *archive(b"new"), reuse_retained=True)
+        with self.assertRaisesRegex(ValueError, "exact retained program"):
+            publish(self.root, descriptor, 2, "runtime-a", *archive(b"new"), reuse_retained=True)
+        reinstall = publish(self.root, descriptor, 2, "runtime-a", *archive(b"first"), reuse_retained=True)
         self.assertEqual(reinstall["phase"], "COMMITTED")
-        self.assertEqual(activate(self.root, descriptor), (3, "runtime-a", b"new"))
+        self.assertEqual(activate(self.root, descriptor), (3, "runtime-a", b"first"))
         self.assertEqual(activate(self.root, other), (1, "runtime-a", b"other"))
         self.assertEqual(data.read_bytes(), b"original workspace")

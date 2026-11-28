@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+from uuid import uuid4
 from zipfile import BadZipFile, ZipFile
 
 from core import env_lock, env_manifest, env_ops, python_registry
@@ -87,6 +88,30 @@ def _paths(root, package):
     return [_path(root, package, leaf) for leaf in ("runtime.json", "package.json")]
 
 
+def _guard_idle(root, package):
+    path = _path(root, package, "execution.json")
+    if _read(path) is not None:
+        raise ValueError("fixture package has an outstanding execution lease")
+    return path
+
+
+@contextmanager
+def _execution_lease(root, package, revision):
+    """Record intent under the activation gate and release after the owned child exits."""
+    path = _guard_idle(root, package)
+    token = _wire({"revision": revision, "launcher_pid": os.getpid(), "token": uuid4().hex})
+    env_manifest._atomic_write_text(path, token)
+    try:
+        yield
+    finally:
+        if _read(_path(root, package, "execution.json")) == token:
+            path.unlink()
+
+
+def _retained(revision, retired_digest):
+    return {"state": "DATA_RETAINED", "revision": revision, "retired_sha256": retired_digest}
+
+
 def _current(root, package):
     runtime, app = map(_read, _paths(root, package))
     if runtime is None and app is None:
@@ -97,13 +122,20 @@ def _current(root, package):
     if type(binding) is not dict or type(pointer) is not dict:
         raise ValueError("invalid fixture pointers")
     generation = binding.get("revision")
+    if type(generation) is not int or not 1 <= generation <= 2**53 - 1:
+        raise ValueError("invalid fixture pointer revision")
+    if binding.get("state") == "DATA_RETAINED":
+        retired = binding.get("retired_sha256")
+        if (type(retired) is not str or not re.fullmatch(r"[0-9a-f]{64}", retired)
+                or binding != _retained(generation, retired) or pointer != binding):
+            raise ValueError("incoherent fixture retention pointers")
+        return None, [runtime, app]
     runtime_id = binding.get("runtime")
     sha = pointer.get("sha256")
     expected = {"revision": generation, "runtime": runtime_id}
     if binding.get("registered") is True:
         expected["registered"] = True
-    if (type(generation) is not int or not 1 <= generation <= 2**53 - 1
-            or type(runtime_id) is not str or not _ID.fullmatch(runtime_id)
+    if (type(runtime_id) is not str or not _ID.fullmatch(runtime_id)
             or type(sha) is not str or not re.fullmatch(r"[0-9a-f]{64}", sha)
             or binding != expected
             or pointer != expected | {"sha256": sha}):
@@ -138,7 +170,7 @@ def _require_binding(registry, package, runtime_id):
         raise ValueError("fixture Python registry binding mismatch")
 
 
-def _steps(package, registry_step=None):
+def _steps(package, registry_step=None, *, removing=False):
     def stage(ctx):
         raw = ctx.data["payload"]
         path = _path(ctx.sys_dir, package, ctx.data["sha256"] + ".hex")
@@ -156,11 +188,12 @@ def _steps(package, registry_step=None):
         return act
 
     def verify(ctx):
-        observed, _ = _current(ctx.sys_dir, package)
-        if observed is None or observed[2].hex() != ctx.data["payload"]:
+        observed, images = _current(ctx.sys_dir, package)
+        if images != ctx.data["after"] or (removing and observed is not None) or (
+                not removing and (observed is None or observed[2].hex() != ctx.data["payload"])):
             raise ValueError("fixture activation failed validation")
 
-    return [env_ops.Step("fixture-stage", stage),
+    return [*([] if removing else [env_ops.Step("fixture-stage", stage)]),
             *([registry_step] if registry_step is not None else []),
             env_ops.Step("fixture-runtime", pointer(0), undo=pointer(0, True)),
             env_ops.Step("fixture-package", pointer(1), undo=pointer(1, True)),
@@ -168,7 +201,7 @@ def _steps(package, registry_step=None):
 
 
 def publish(root, descriptor, expected_revision, runtime_id, archive, digest, *,
-            registry_proposal=None, crash_after=None):
+            registry_proposal=None, crash_after=None, reuse_retained=False, verify_artifact=None):
     package = descriptor.package_id
     if (type(expected_revision) is not int or not 0 <= expected_revision < 2**53 - 1
             or not isinstance(runtime_id, str) or not _ID.fullmatch(runtime_id)):
@@ -185,9 +218,16 @@ def publish(root, descriptor, expected_revision, runtime_id, archive, digest, *,
 
     def prepare():
         _check_journal(root)
+        _guard_idle(root, package)
         observed, before = _current(root, package)
-        if (observed[0] if observed else 0) != expected_revision:
+        previous = json.loads(before[0]) if before is not None else {}
+        retained = before is not None and observed is None
+        if previous.get("revision", 0) != expected_revision:
             raise ValueError("fixture generation conflict")
+        if retained and (reuse_retained is not True or previous["retired_sha256"] != sha):
+            raise ValueError("fixture reinstall requires explicit reuse with the exact retained program")
+        if previous.get("registered") and registry_proposal is None:
+            raise ValueError("registered package publication requires an exact registry proposal")
         data = {"package": package, "before": before or [None, None],
                 "after": [_wire(next_binding), _wire(next_binding | {"sha256": sha})],
                 "payload": raw.hex(), "sha256": sha}
@@ -196,9 +236,51 @@ def publish(root, descriptor, expected_revision, runtime_id, archive, digest, *,
             images = python_registry.prepare_publication(root, revision, document)
             _require_binding(json.loads(images["after"]), package, runtime_id)
             data[_REGISTRY_KEY] = images
+        if verify_artifact is not None:
+            verify_artifact()
         return data
 
     return env_ops.execute(root, _KIND, _steps(package, registry_step), prepare=prepare, crash_after=crash_after)
+
+
+def retire(root, descriptor, expected_revision, expected_payload, *, verify_artifact=None, crash_after=None):
+    """Retire exactly the selected program and unbind its runtime without deleting data."""
+    _fixture_root(root)
+    package = descriptor.package_id
+    if (type(expected_revision) is not int or not 1 <= expected_revision < 2**53 - 1
+            or type(expected_payload) is not bytes or len(expected_payload) > _LIMIT):
+        raise ValueError("invalid fixture retirement precondition")
+
+    def prepare():
+        _check_journal(root)
+        _guard_idle(root, package)
+        observed, before = _current(root, package)
+        if observed is None or observed[0] != expected_revision or observed[2] != expected_payload:
+            raise ValueError("fixture retirement generation conflict")
+        marker = _wire(_retained(expected_revision + 1, sha256(expected_payload).hexdigest()))
+        data = {"package": package, "before": before, "after": [marker, marker], "remove": True}
+        if json.loads(before[0]).get("registered"):
+            registry = python_registry.inventory(root)["registry"]
+            _require_binding(registry, package, observed[1])
+            revision = registry["revision"]
+            del registry["bindings"][package]
+            registry["revision"] += 1
+            data[_REGISTRY_KEY] = python_registry.prepare_publication(root, revision, registry)
+        if verify_artifact is not None:
+            verify_artifact()
+        return data
+
+    # The presence of a registry image is decided by the initial prepare under the gate.
+    registry_step = _optional_registry_step()
+    return env_ops.execute(root, _KIND, _steps(package, registry_step, removing=True),
+                           prepare=prepare, crash_after=crash_after)
+
+
+def _optional_registry_step():
+    step = python_registry.publication_step(journal_key=_REGISTRY_KEY)
+    return env_ops.Step(step.name,
+                        lambda ctx: step.do(ctx) if _REGISTRY_KEY in ctx.data else None,
+                        undo=lambda ctx: step.undo(ctx) if _REGISTRY_KEY in ctx.data else None)
 
 
 def recover(root, descriptor, mode):
@@ -209,10 +291,19 @@ def recover(root, descriptor, mode):
         data = active["data"]
         if active["kind"] != _KIND or data.get("package") != package:
             raise ValueError("fixture recovery scope mismatch")
-        sha = data["sha256"]
-        if (not re.fullmatch(r"[0-9a-f]{64}", sha)
-                or sha256(bytes.fromhex(data["payload"])).hexdigest() != sha):
-            raise ValueError("fixture journal payload mismatch")
+        _guard_idle(root, package)
+        removing = data.get("remove") is True
+        if removing:
+            binding, pointer = map(json.loads, data["before"])
+            marker = _wire(_retained(binding["revision"] + 1, pointer["sha256"]))
+            if data["after"] != [marker, marker] or (binding.get("registered") is True) != (
+                    _REGISTRY_KEY in data):
+                raise ValueError("fixture retirement journal images mismatch")
+        else:
+            sha = data["sha256"]
+            if (not re.fullmatch(r"[0-9a-f]{64}", sha)
+                    or sha256(bytes.fromhex(data["payload"])).hexdigest() != sha):
+                raise ValueError("fixture journal payload mismatch")
         for index, path in enumerate(_paths(root, package)):
             current = _read(path)
             before, after = data["before"][index], data["after"][index]
@@ -221,15 +312,15 @@ def recover(root, descriptor, mode):
             step = ("fixture-runtime", "fixture-package")[index]
             if mode == "resume" and active["steps"].get(step) == "done" and current != after:
                 raise ValueError("acknowledged fixture pointer was reverted")
-        if mode == "resume":
+        if mode == "resume" and not removing:
             staged = _read(_path(root, package, sha + ".hex"))
             if active["steps"].get("fixture-stage") == "done" and staged != data["payload"]:
                 raise ValueError("acknowledged fixture stage diverged")
-        registry_step = None
+        registry_step = _optional_registry_step() if removing else None
         if _REGISTRY_KEY in data:
             registry_step, = python_registry.recovery_steps(
                 root, active, mode, kind=_KIND, journal_key=_REGISTRY_KEY)
-        return _steps(package, registry_step)
+        return _steps(package, registry_step, removing=removing)
 
     if mode == "resume":
         return env_ops.resume(root, factory)
