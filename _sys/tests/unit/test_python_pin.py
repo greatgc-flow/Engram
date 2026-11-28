@@ -106,3 +106,34 @@ def test_nested_git_root_has_independent_pin(workspace, monkeypatch):
     assert invoke(workspace, "pin", "3.14")["exit_code"] == 0
     assert (nested / python_pin.FILENAME).is_file()
     assert (workspace[1] / python_pin.FILENAME).is_file()
+
+
+def test_use_launches_one_cmd_child_with_pinned_runtime(workspace, monkeypatch):
+    import os
+    from pathlib import Path
+    from core import python_cli
+
+    assert invoke(workspace, "pin", "3.14")["exit_code"] == 0
+    monkeypatch.setattr(python_cli.sys, "platform", "win32")
+    monkeypatch.setenv("SystemRoot", str(workspace[1] / "Windows"))
+    monkeypatch.setenv("PYTHONPATH", "foreign")
+    monkeypatch.setenv("COMSPEC", "unapproved.exe")
+    monkeypatch.setenv("PATH", str(workspace[1] / "foreign-path"))
+    before = os.environ.copy()
+    spawn = Mock(return_value=Mock(returncode=47))
+    monkeypatch.setattr(python_cli.subprocess, "run", spawn)
+    assert invoke(workspace, "use")["exit_code"] == 47
+    command, = spawn.call_args.args
+    kwargs = spawn.call_args.kwargs
+    windows = Path(before["SystemRoot"])
+    assert command == [str(windows / "System32/cmd.exe"), "/d", "/q"]
+    assert kwargs["cwd"] == workspace[1] / "scripts"
+    assert kwargs["env"]["PATH"].split(os.pathsep) == [
+        str(workspace[2].parent), str(windows / "System32"), str(windows),
+    ]
+    assert kwargs["env"]["COMSPEC"] == command[0]
+    assert kwargs["env"]["NoDefaultCurrentDirectoryInExePath"] == "1"
+    assert "PYTHONPATH" not in kwargs["env"] and dict(os.environ) == before
+    spawn.reset_mock()
+    assert invoke(workspace, "use", "3.13")["exit_code"] == 1
+    spawn.assert_not_called()
