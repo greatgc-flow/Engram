@@ -184,25 +184,36 @@ def _unique(pairs):
     return value
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("inventory", type=Path, help="local reviewed inventory JSON")
+def read_local_json(path, limit=_MAX_BYTES):
+    _need(not str(path).replace("\\", "/").startswith("//"), "network paths are unsupported")
+    info = path.lstat()
+    _need(stat.S_ISREG(info.st_mode)
+          and not getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT,
+          "input must be an ordinary file")
+    with path.open("rb") as stream:
+        data = stream.read(limit + 1)
+    _need(len(data) <= limit, "input exceeds size limit")
+    return json.loads(data.decode("utf-8"), object_pairs_hook=_unique)
+
+
+def add_plan_options(parser):
     parser.add_argument("--enable", action="append", default=[], metavar="CAPABILITY")
     parser.add_argument("--prefer-accelerator", action="store_true")
     parser.add_argument("--canary", action="append", default=[], metavar="CAPABILITY=SHA256")
+
+
+def plan_options(args):
+    return {"enable": args.enable, "prefer_accelerator": args.prefer_accelerator,
+            "workloads": _unique([item.split("=", 1) for item in args.canary])}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("inventory", type=Path, help="local reviewed inventory JSON")
+    add_plan_options(parser)
     args = parser.parse_args()
     try:
-        _need(not str(args.inventory).replace("\\", "/").startswith("//"), "network paths are unsupported")
-        info = args.inventory.lstat()
-        _need(stat.S_ISREG(info.st_mode)
-              and not getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT,
-              "inventory must be an ordinary file")
-        with args.inventory.open("rb") as stream:
-            data = stream.read(_MAX_BYTES + 1)
-        _need(len(data) <= _MAX_BYTES, "inventory exceeds size limit")
-        host = json.loads(data.decode("utf-8"), object_pairs_hook=_unique)
-        canaries = _unique([item.split("=", 1) for item in args.canary])
-        rows = plan(host, enable=args.enable, prefer_accelerator=args.prefer_accelerator, workloads=canaries)
+        rows = plan(read_local_json(args.inventory), **plan_options(args))
     except (OSError, ValueError, RecursionError) as exc:
         parser.error(str(exc))
     print(json.dumps({"schema_version": 1, "preview_only": True, "capabilities": rows}, sort_keys=True))
