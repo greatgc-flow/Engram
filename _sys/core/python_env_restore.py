@@ -40,17 +40,15 @@ def _paths(root, registry, environment):
     return base, python_registry._plain(root, environment["root_rel"]), build
 
 
-def _lock(root, environment, build):
-    ref = environment["lock_ref"]
+def _lock_path(root, ref):
     if not re.fullmatch("sha256-" + _HASH, ref):
         raise ValueError(f"Unsupported managed environment lock reference: {ref}")
-    path = python_registry._plain(root, f"{_LOCKS}/{ref}.json")
-    if not path.is_file():
-        raise ValueError(f"Missing offline lock: {path.name}")
-    with path.open("rb") as stream:
-        raw = stream.read(1024 * 1024 + 1)
+    return python_registry._plain(root, f"{_LOCKS}/{ref}.json")
+
+
+def _decode_lock(raw, ref, build):
     if len(raw) > 1024 * 1024 or hashlib.sha256(raw).hexdigest() != ref[7:]:
-        raise ValueError(f"Lock digest mismatch: {path.name}")
+        raise ValueError(f"Lock digest mismatch: {ref}.json")
     locked = json.loads(raw, object_pairs_hook=python_registry._unique)
     if (not isinstance(locked, dict) or locked.keys() != {"schema", "build_sha256", "wheels"}
             or type(locked["schema"]) is not int or locked["schema"] != 1
@@ -71,6 +69,16 @@ def _lock(root, environment, build):
             raise ValueError(f"Duplicate project in wheel lock: {package}")
         wheels[package] = (name, wheel["sha256"])
     return {"version": build["version"], "wheels": tuple(wheels.values())}
+
+
+def _lock(root, environment, build):
+    ref = environment["lock_ref"]
+    path = _lock_path(root, ref)
+    if not path.is_file():
+        raise ValueError(f"Missing offline lock: {path.name}")
+    with path.open("rb") as stream:
+        raw = stream.read(1024 * 1024 + 1)
+    return _decode_lock(raw, ref, build)
 
 
 def _wheel_path(root, name):

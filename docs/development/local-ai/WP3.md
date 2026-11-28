@@ -43,3 +43,32 @@ This component scope can follow the usual Engram relocation when a portable inst
 ## Extra Python as a scoped Engram update
 
 `engram update --only python-versions --offline --check --json` invokes the same patch planner as `engram python update` for all registered extra series. A preview is the default. Apply with `--yes`. The check has no install side effects, even when combined with `--yes`. Mixed component scopes and unsupported version overrides fail before discovery. With no registered series, the planner returns an empty plan without contacting the providers. The legacy default continues to use `engram update --only python`. Combined bare update and detached core handoff participation remain open in T69.
+
+## Scoped Python runtime metadata backup
+
+`engram backup --only python-runtime --out PATH.zip` writes the byte-exact
+Python registry and its referenced content-addressed wheel locks to a new
+ZIP. Export validates each lock against its registry reference and build
+digest. It checks the same registry image again before publication. Treat
+the metadata as private because its identifiers describe local consumers.
+
+`engram restore PATH.zip --only python-runtime` previews after verifying the
+bounded ZIP, registry, lock set and destination. Use `--apply` to restore
+missing files into the same Engram installation identity. Existing identical
+files are reusable. Conflicting live files and foreign identities stop the
+operation. `--force` is unavailable for this scope. Copying an archive to a new
+machine with a different Engram installation ID requires an explicit future
+adoption contract.
+
+The restore journal keeps the exact metadata and supports `engram repair
+--resume` and `--rollback` even after moving the backup ZIP away. Rollback
+restores the prior registry state. Verified content-addressed locks can
+remain available to matching consumers. The lock set is published before the
+registry. The archive carries metadata only. Preserve the exact offline
+interpreter archives and wheels separately, then run the scoped repairs for
+missing builds and environments. Older personal backup and restore paths
+retain their existing scope.
+
+This is a T71 metadata and recovery-chain slice. Artifact packing, disaster
+restore under a replacement installation identity, and coordinated
+application data backups remain open.

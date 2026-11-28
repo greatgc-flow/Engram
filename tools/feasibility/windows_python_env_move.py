@@ -12,6 +12,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 SYSTEM = ROOT / "_sys"
 sys.path.insert(0, str(SYSTEM))
+from checks import backup_personal_data  # noqa: E402
 from core import env_manifest, python_cli, python_registry, repair  # noqa: E402
 
 _FIXTURE = Path(__file__).with_name("windows-python.lock.json")
@@ -118,7 +119,22 @@ def main(wheel):
         original_extension = digest(source_extension)
         original_registry = python_registry.registry_path(source).read_bytes()
 
+        metadata = second / "python-runtime 한글.zip"
+        backup_personal_data.run_backup({
+            "sys_dir": source, "base_dir": source.parent,
+            "args": ["--only", "python-runtime", "--out", str(metadata)],
+        })
         shutil.copytree(source, target)
+        target_registry = python_registry.registry_path(target)
+        target_lock = target / _LOCKS / (ref + ".json")
+        target_registry.rename(second / "held-registry.json")
+        target_lock.rename(second / "held-lock.json")
+        restore_ctx = {"sys_dir": target, "base_dir": target.parent,
+                       "args": [str(metadata), "--only", "python-runtime"]}
+        backup_personal_data.run_restore(restore_ctx)
+        assert not target_registry.exists() and not target_lock.exists()
+        backup_personal_data.run_restore({**restore_ctx, "args": [*restore_ctx["args"], "--apply"]})
+        assert target_registry.read_bytes() == original_registry and target_lock.read_bytes() == lock
         stale = repair_scope(target, "--dry-run")
         assert stale["exit_code"] == 11 and "stale base path" in stale["detail"]
         stale_before = (target / _ENV / "pyvenv.cfg").read_bytes()
@@ -151,7 +167,8 @@ def main(wheel):
         assert digest(held_source / extension_rel) == original_extension
         assert pin_path.read_bytes() == original_pin
         print(json.dumps({"managed_env_move": "PASS", "different_volumes": True,
-                          "stale_directory_preserved": True, "missing_wheel_blocked": True,
+                          "metadata_bundle_roundtrip": True, "stale_directory_preserved": True,
+                          "missing_wheel_blocked": True,
                           "offline_wheel": wheel.name, "project_pin_preserved": True,
                           "exact_build_registry_preserved": True,
                           "native_wheel_and_regenerated_pip_launcher": True}))

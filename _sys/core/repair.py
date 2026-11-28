@@ -727,6 +727,9 @@ def _repair_engine_run(ctx: dict, build_plan_fn: Callable, parser_setup: Callabl
                 raise env_ops.JournalError("Active operation changed before recovery")
             if locked["kind"] == python_registry.KIND:
                 return python_registry.recovery_steps(sys_dir, locked, mode)
+            from core import python_runtime_backup
+            if locked["kind"] == python_runtime_backup.KIND:
+                return python_runtime_backup.recovery_steps(sys_dir, locked, mode)
             return steps_from_spec(sys_dir, base_dir, spec, **seams)
 
         try:

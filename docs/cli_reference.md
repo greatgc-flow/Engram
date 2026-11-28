@@ -795,6 +795,7 @@ See also:
 engram backup - back up personal AI data to a zip archive
 
 Usage: engram backup [--out PATH] [--include-uncovered]
+       engram backup --only python-runtime --out PATH
 
 Description:
   Packs the durable part of .engram/ (memory, settings, rules, skills,
@@ -806,6 +807,9 @@ Description:
   Existing archives are replaced atomically after the new archive is ready.
   This is not the environment backup registry: for replaced Python/venv
   copies see 'engram snapshots'.
+  The python-runtime scope saves the exact registry and referenced wheel
+  locks to a new ZIP. It requires an explicit .zip path and saves metadata
+  only. Keep the interpreter archives and wheels separately.
 
 Options:
   --out PATH           Where to write the archive (default:
@@ -813,6 +817,8 @@ Options:
                        a trailing \ or / means "a folder, use the default name"
   --include-uncovered  Also package discovered extra dotfolders and project
                        configs such as .peerhub (default: off)
+  --only SCOPE        Select the python-runtime metadata scope (default:
+                       personal data). Use it with an explicit --out ZIP.
   -h, --help, /?       Show this help (default: off)
 
 Examples:
@@ -820,6 +826,7 @@ Examples:
   engram backup --out D:\backups\engram.zip
   engram backup --out D:\backups\
   engram backup --include-uncovered
+  engram backup --only python-runtime --out D:\backups\runtime.zip
 
 Exit codes:
   0   archive written
@@ -842,6 +849,7 @@ removed.
 engram restore - restore personal AI data from a backup archive
 
 Usage: engram restore PATH [--apply] [--dry-run] [--force]
+       engram restore PATH --only python-runtime [--apply] [--dry-run]
 
 Description:
   Restores .engram/ (and any extra items the archive recorded) from a .zip
@@ -850,6 +858,9 @@ Description:
   CLI is running, and takes an automatic safety snapshot of the current
   destinations it will overwrite, including extras, unless --force is given.
   Secret files stay excluded. Redirected source/destination paths are refused.
+  The python-runtime scope validates the metadata ZIP and needs the original
+  installation identity. It fills missing registry and lock files and
+  refuses conflicting destinations. Preview and apply are offline.
 
 Options:
   PATH             Backup .zip or bundle folder to restore (required)
@@ -857,12 +868,15 @@ Options:
   --dry-run        Preview only; wins over --apply (default: on)
   --force, -f      Overwrite existing live session/project data and skip the
                    automatic pre-restore snapshot (default: off)
+  --only SCOPE     Select the python-runtime metadata scope (default:
+                   personal data). Conflicting runtime files stay protected.
   -h, --help, /?   Show this help (default: off)
 
 Examples:
   engram restore D:\backups\engram.zip
   engram restore D:\backups\engram.zip --apply
   engram restore D:\backups\engram.zip --apply --force
+  engram restore D:\backups\runtime.zip --only python-runtime --apply
 
 Exit codes:
   0   restored, or preview shown

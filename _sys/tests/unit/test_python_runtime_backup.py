@@ -1,6 +1,7 @@
 """T71 runtime recovery metadata through Engram's existing backup verbs."""
 import hashlib
 import json
+import os
 import zipfile
 
 import pytest
@@ -115,8 +116,8 @@ def test_interrupted_metadata_restore_has_recovery(runtime, monkeypatch, mode):
     registry.rename(registry.with_suffix(".held"))
     lock.rename(lock.with_suffix(".held"))
     write = env_manifest._atomic_write_text
-    def interrupt(path, text):
-        write(path, text)
+    def interrupt(path, text, **kwargs):
+        write(path, text, **kwargs)
         if path == registry:
             raise env_ops.SimulatedCrash()
     with monkeypatch.context() as patch:
@@ -124,9 +125,14 @@ def test_interrupted_metadata_restore_has_recovery(runtime, monkeypatch, mode):
         with pytest.raises(env_ops.SimulatedCrash):
             _restore(ctx, bundle, "--apply")
     bundle.rename(bundle.with_suffix(".held"))
-    def steps(active):
-        return python_runtime_backup.recovery_steps(root, active, mode)
-    result = getattr(env_ops, mode)(root, steps)
-    assert result["phase"] == ("COMMITTED" if mode == "resume" else "ROLLED_BACK")
+    if os.name == "nt":
+        from core import repair
+        result = repair.repair_main({**ctx, "args": ["--" + mode, "--json"]})
+        assert result["exit_code"] == 0, result
+    else:
+        result = getattr(env_ops, mode)(
+            root, lambda active: python_runtime_backup.recovery_steps(root, active, mode))
+        assert result["phase"] == ("COMMITTED" if mode == "resume" else "ROLLED_BACK")
+    assert env_ops.active_journal(root) is None
     assert (registry.read_bytes() if registry.exists() else None) == (exact if mode == "resume" else None)
     assert lock.is_file()
